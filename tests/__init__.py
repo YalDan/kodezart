@@ -1,0 +1,1 @@
+"""kodezart test suite."""
