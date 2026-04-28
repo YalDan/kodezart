@@ -1,5 +1,6 @@
 """Shared async test fixtures — no mocking, full chain exercised."""
 
+import os
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -9,6 +10,19 @@ from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
 from tests.fakes import FakeAgentExecutor, FakeWorkspaceProvider
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _git_test_identity() -> None:
+    """Provide a git identity to subprocess git commands invoked by tests.
+
+    Tests shell out to `git commit` in tmp repos; CI runners have no global
+    git config, so without this they fail with "Author identity unknown".
+    """
+    os.environ.setdefault("GIT_AUTHOR_NAME", "kodezart-test")
+    os.environ.setdefault("GIT_AUTHOR_EMAIL", "test@kodezart-test.invalid")
+    os.environ.setdefault("GIT_COMMITTER_NAME", "kodezart-test")
+    os.environ.setdefault("GIT_COMMITTER_EMAIL", "test@kodezart-test.invalid")
 
 
 def pytest_collection_modifyitems(
