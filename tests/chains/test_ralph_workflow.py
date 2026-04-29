@@ -716,6 +716,27 @@ async def test_generate_ticket_runs_in_order() -> None:
     assert ticket_idx < criteria_idx
 
 
+async def test_generate_ticket_node_forwards_base_branch() -> None:
+    """ExecutionContext.base_branch must reach the ticket generator unchanged."""
+    ticket_gen = FakeTicketGenerator()
+    engine = _make_engine(ticket_generator=ticket_gen)
+
+    _ = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="develop",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    assert len(ticket_gen.calls) == 1
+    assert ticket_gen.calls[0]["base_branch"] == "develop"
+
+
 async def test_criteria_receives_formatted_ticket() -> None:
     """The criteria-generation executor call receives formatted ticket markdown
     (containing 'Test ticket') and NOT the raw user prompt ('fix it')."""
@@ -842,6 +863,7 @@ async def test_no_ticket_event_raises() -> None:
             repo_path: str | None,
             repo_url: str | None,
             cache_key: str,
+            base_branch: str,
         ) -> AsyncGenerator[AgentEvent, None]:
             self.calls.append(
                 {
@@ -849,6 +871,7 @@ async def test_no_ticket_event_raises() -> None:
                     "repo_path": repo_path,
                     "repo_url": repo_url,
                     "cache_key": cache_key,
+                    "base_branch": base_branch,
                 }
             )
             yield AssistantTextEvent(text="thinking...", model="m")

@@ -346,6 +346,7 @@ class RalphWorkflowEngine:
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             cache_key=ctx.cache_key,
+            base_branch=ctx.base_branch,
         ):
             writer(event)
             if isinstance(event, WorkflowTicketEvent):

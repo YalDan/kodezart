@@ -359,7 +359,7 @@ class FakeWorkspaceProvider:
         *,
         repo_path: str | None = None,
         repo_url: str | None = None,
-        ref: str = "HEAD",
+        ref: str,
         branch_name: str | None = None,
         create_branch: bool = True,
         cache_key: str | None = None,
@@ -920,6 +920,7 @@ class FakeTicketGenerator:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        base_branch: str,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
@@ -927,6 +928,7 @@ class FakeTicketGenerator:
                 "repo_path": repo_path,
                 "repo_url": repo_url,
                 "cache_key": cache_key,
+                "base_branch": base_branch,
             }
         )
         yield WorkflowTicketEvent(
