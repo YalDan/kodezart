@@ -359,7 +359,7 @@ class FakeWorkspaceProvider:
         *,
         repo_path: str | None = None,
         repo_url: str | None = None,
-        ref: str = "HEAD",
+        ref: str,
         branch_name: str | None = None,
         create_branch: bool = True,
         cache_key: str | None = None,
