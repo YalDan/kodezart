@@ -51,7 +51,7 @@ async def test_acquire_local_repo(
     provider: GitWorktreeProvider,
     git_repo: Path,
 ) -> None:
-    wt_path = await provider.acquire(repo_path=str(git_repo))
+    wt_path = await provider.acquire(repo_path=str(git_repo), ref="HEAD")
     assert Path(wt_path).is_dir()
     await provider.release(wt_path)
 
@@ -60,14 +60,14 @@ async def test_acquire_failure_bad_path(
     provider: GitWorktreeProvider,
 ) -> None:
     with pytest.raises(WorkspaceError):
-        await provider.acquire(repo_path="/nonexistent/path")
+        await provider.acquire(repo_path="/nonexistent/path", ref="HEAD")
 
 
 async def test_release_after_acquire(
     provider: GitWorktreeProvider,
     git_repo: Path,
 ) -> None:
-    wt_path = await provider.acquire(repo_path=str(git_repo))
+    wt_path = await provider.acquire(repo_path=str(git_repo), ref="HEAD")
     assert Path(wt_path).is_dir()
     await provider.release(wt_path)
     assert not Path(wt_path).exists()
@@ -97,7 +97,7 @@ async def test_release_backs_up_uncommitted_changes() -> None:
         committer_name="bot",
         committer_email="b@t.dev",
     )
-    wt = await p.acquire(repo_path="/repo", branch_name="feat")
+    wt = await p.acquire(repo_path="/repo", ref="HEAD", branch_name="feat")
     await p.release(wt)
 
     call_names = [c[0] for c in git.calls]
@@ -118,7 +118,7 @@ async def test_release_pushes_even_when_clean() -> None:
         committer_name="bot",
         committer_email="b@t.dev",
     )
-    wt = await p.acquire(repo_path="/repo", branch_name="feat")
+    wt = await p.acquire(repo_path="/repo", ref="HEAD", branch_name="feat")
     await p.release(wt)
 
     call_names = [c[0] for c in git.calls]
@@ -138,7 +138,7 @@ async def test_release_skips_backup_when_no_branch() -> None:
         committer_name="bot",
         committer_email="b@t.dev",
     )
-    wt = await p.acquire(repo_path="/repo")  # no branch_name → detached
+    wt = await p.acquire(repo_path="/repo", ref="HEAD")  # no branch_name → detached
     await p.release(wt)
 
     call_names = [c[0] for c in git.calls]
@@ -162,7 +162,7 @@ async def test_release_backup_failure_does_not_crash() -> None:
         committer_name="bot",
         committer_email="b@t.dev",
     )
-    wt = await p.acquire(repo_path="/repo", branch_name="feat")
+    wt = await p.acquire(repo_path="/repo", ref="HEAD", branch_name="feat")
     await p.release(wt)  # should NOT raise
 
     # remove_worktree must still be called despite push failure
