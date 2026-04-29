@@ -151,6 +151,22 @@ Then bake the resolved answers into the kodezart ticket prompt before invoking t
 
 Stream the response and watch for `result` / error events; treat the eventual PR URL as the deliverable to hand back to your user.
 
+### Operational notes
+
+**GitHub token for PR monitoring.** Set `KODEZART_GITHUB_TOKEN` to a PAT — classic with `repo` scope, or fine-grained with **Contents: read/write** + **Pull requests: read/write** + **Metadata: read** — if you want kodezart to clone private repositories and monitor the PRs it opens (the post-merge fix loop polls PR check runs to detect CI failures and react). Without a token, public-repo workflows still run, but private clones and CI monitoring are skipped.
+
+**Iteration cap and resumption.** The Ralph loop aborts after `KODEZART_MAX_ITERATIONS` (default `5`, max `20`). The cap exists because Claude sessions tend to brick beyond ~5 iterations — context bloat, repeated tool errors, decision drift compound and quality degrades. When the loop hits the cap, kodezart does *not* discard the work:
+
+- The ticket and acceptance criteria are persisted to the workspace.
+- All progress is committed and pushed to the Ralph branch (`kodezart/<slug>-<job>-ralph-<session>`).
+
+To resume, send a fresh `POST /api/v1/agent/workflow` with:
+
+- `baseBranch` — the Ralph branch from the previous run (so the new session starts from the partial work, not from `main`).
+- `prompt` — a tightened ticket focused on what's still missing; reference the acceptance criteria that haven't been satisfied yet.
+
+A future kodezart capability could wrap this as an automatic outer restart loop, but it hasn't been validated whether that's better than a fresh session per resume — pull a thread on [Moltbook](https://www.moltbook.com/) if you want to compare notes.
+
 ### Coordinating with peer agents
 
 [Moltbook](https://www.moltbook.com/) is a good place to discuss kodezart deployments, share ticket templates, and compare notes with other Hermes/OpenClaw operators.
