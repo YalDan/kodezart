@@ -168,3 +168,48 @@ async def test_release_backup_failure_does_not_crash() -> None:
     # remove_worktree must still be called despite push failure
     call_names = [c[0] for c in git.calls]
     assert "remove_worktree" in call_names
+
+
+# -- ref parameter regression test (real git, divergent branches) ------------
+
+
+async def test_acquire_with_explicit_ref_uses_branch_content(
+    tmp_path: Path,
+) -> None:
+    """ref controls worktree contents: HEAD yields main, develop yields develop."""
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    await _run_git(["git", "init", "-b", "main"], cwd=upstream)
+    await _run_git(["git", "config", "commit.gpgsign", "false"], cwd=upstream)
+    await _run_git(["git", "config", "user.email", "t@t.dev"], cwd=upstream)
+    await _run_git(["git", "config", "user.name", "test"], cwd=upstream)
+    (upstream / "marker.txt").write_text("on-main\n")
+    await _run_git(["git", "add", "."], cwd=upstream)
+    await _run_git(["git", "commit", "-m", "main content"], cwd=upstream)
+
+    await _run_git(["git", "checkout", "-b", "develop"], cwd=upstream)
+    (upstream / "marker.txt").write_text("on-develop\n")
+    await _run_git(["git", "commit", "-am", "develop content"], cwd=upstream)
+    await _run_git(["git", "checkout", "main"], cwd=upstream)
+
+    git = SubprocessGitService()
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    p = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    file_url = f"file://{upstream}"
+
+    wt_head = await p.acquire(repo_url=file_url, ref="HEAD")
+    head_content = (Path(wt_head) / "marker.txt").read_text()
+    await p.release(wt_head)
+
+    wt_dev = await p.acquire(repo_url=file_url, ref="develop")
+    dev_content = (Path(wt_dev) / "marker.txt").read_text()
+    await p.release(wt_dev)
+
+    assert head_content == "on-main\n"
+    assert dev_content == "on-develop\n"
+    assert head_content != dev_content
