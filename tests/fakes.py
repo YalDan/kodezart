@@ -920,6 +920,7 @@ class FakeTicketGenerator:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        base_branch: str,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
@@ -927,6 +928,7 @@ class FakeTicketGenerator:
                 "repo_path": repo_path,
                 "repo_url": repo_url,
                 "cache_key": cache_key,
+                "base_branch": base_branch,
             }
         )
         yield WorkflowTicketEvent(

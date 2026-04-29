@@ -70,6 +70,7 @@ class TicketGenerationLoop:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        base_branch: str,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the ticket generation loop.
 
@@ -95,7 +96,7 @@ class TicketGenerationLoop:
             workspace_path = await self._workspace.acquire(
                 repo_path=repo_path,
                 repo_url=repo_url,
-                ref="HEAD",
+                ref=base_branch,
                 cache_key=cache_key,
             )
         except WorkspaceError as exc:

@@ -40,6 +40,7 @@ def _run_kwargs() -> dict[str, object]:
         "repo_path": "/tmp/fake",
         "repo_url": None,
         "cache_key": "test-cache-key",
+        "base_branch": "main",
     }
 
 
@@ -387,6 +388,7 @@ async def test_validation_rejects_invalid_context() -> None:
                 repo_path="/tmp/fake",
                 repo_url=None,
                 cache_key="test-cache-key",
+                base_branch="main",
             )
         ]
 
@@ -665,3 +667,15 @@ async def test_workspace_released_on_success() -> None:
     assert len(acquire_calls) == 1
     assert len(release_calls) == 1
     assert release_calls[0][1] == "/tmp/fake-workspace"
+
+
+async def test_run_forwards_base_branch_to_acquire() -> None:
+    """base_branch passed to run() must reach workspace.acquire() as ref."""
+    workspace = FakeWorkspaceProvider()
+    executor = FakeAgentExecutor(events=[])
+    loop = _make_loop_with_workspace(executor=executor, workspace=workspace)
+
+    _ = [e async for e in loop.run(**(_run_kwargs() | {"base_branch": "develop"}))]
+
+    acquire_calls = [c for c in workspace.calls if c[0] == "acquire"]
+    assert acquire_calls == [("acquire", "/tmp/fake", "develop")]

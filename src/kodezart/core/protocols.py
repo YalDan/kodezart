@@ -356,6 +356,7 @@ class TicketGenerator(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        base_branch: str,
     ) -> AsyncIterator[AgentEvent]:
         """Draft/review loop until approved or max reviews."""
         ...
