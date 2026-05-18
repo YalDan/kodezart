@@ -85,10 +85,16 @@ def test_isinstance_workspace_provider(
     assert isinstance(provider, WorkspaceProvider)
 
 
-# -- Backup tests (Phase 1: safe release) ------------------------------------
+# -- Release-state tests (post-#13: no silent backup branches) ----------------
 
 
-async def test_release_backs_up_uncommitted_changes() -> None:
+def test_backup_if_needed_method_is_gone() -> None:
+    """Closes #13 at the introspection layer: the silent creator is gone."""
+    assert not hasattr(GitWorktreeProvider, "_backup_if_needed")
+
+
+async def test_release_dirty_emits_warning_no_push() -> None:
+    """Dirty release: workspace_release_unclean warning, NO backup push."""
     git = FakeGitService(has_changes_result=True)
     cache = FakeRepoCache()
     p = GitWorktreeProvider(
@@ -101,15 +107,17 @@ async def test_release_backs_up_uncommitted_changes() -> None:
     await p.release(wt)
 
     call_names = [c[0] for c in git.calls]
-    assert "add_all" in call_names
-    assert "commit" in call_names
+    # No staging, no commit, no backup push.
+    assert "add_all" not in call_names
+    assert "commit" not in call_names
     push_calls = [c for c in git.calls if c[0] == "push"]
-    assert len(push_calls) == 1
-    assert "feat-backup-" in push_calls[0][2]
+    assert len(push_calls) == 0
+    # remove_worktree still happens.
     assert "remove_worktree" in call_names
 
 
-async def test_release_pushes_even_when_clean() -> None:
+async def test_release_clean_no_push() -> None:
+    """Clean release: no push of any kind."""
     git = FakeGitService(has_changes_result=False)
     cache = FakeRepoCache()
     p = GitWorktreeProvider(
@@ -125,11 +133,12 @@ async def test_release_pushes_even_when_clean() -> None:
     assert "commit" not in call_names
     assert "add_all" not in call_names
     push_calls = [c for c in git.calls if c[0] == "push"]
-    assert len(push_calls) == 1
+    assert len(push_calls) == 0
     assert "remove_worktree" in call_names
 
 
-async def test_release_skips_backup_when_no_branch() -> None:
+async def test_release_detached_no_push() -> None:
+    """Detached release (no branch_name): no push of any kind."""
     git = FakeGitService(has_changes_result=True)
     cache = FakeRepoCache()
     p = GitWorktreeProvider(
@@ -147,14 +156,15 @@ async def test_release_skips_backup_when_no_branch() -> None:
     assert "remove_worktree" in call_names
 
 
-async def test_release_backup_failure_does_not_crash() -> None:
+async def test_release_has_changes_failure_does_not_crash() -> None:
+    """has_changes raising must not prevent worktree removal."""
     git = FakeGitService(has_changes_result=False)
     cache = FakeRepoCache()
 
-    async def failing_push(cwd: str, branch: str) -> None:
-        raise RuntimeError("push failed")
+    async def failing_has_changes(cwd: str) -> bool:
+        raise RuntimeError("status failed")
 
-    git.push = failing_push  # type: ignore[assignment]
+    git.has_changes = failing_has_changes  # type: ignore[assignment]
 
     p = GitWorktreeProvider(
         git=git,
@@ -165,7 +175,6 @@ async def test_release_backup_failure_does_not_crash() -> None:
     wt = await p.acquire(repo_path="/repo", ref="HEAD", branch_name="feat")
     await p.release(wt)  # should NOT raise
 
-    # remove_worktree must still be called despite push failure
     call_names = [c[0] for c in git.calls]
     assert "remove_worktree" in call_names
 

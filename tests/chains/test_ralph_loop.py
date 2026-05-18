@@ -13,10 +13,12 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.persist import PersistResult, PersistSource
 from tests.fakes import (
     FakeAgentExecutor,
     FakeChangePersister,
+    FakeGitService,
+    FakeRepoCache,
     FakeWorkspaceProvider,
 )
 
@@ -27,13 +29,20 @@ def _make_loop(
     persister: FakeChangePersister | None = None,
     workspace: FakeWorkspaceProvider | None = None,
     max_iterations: int = 3,
+    git: FakeGitService | None = None,
+    cache: FakeRepoCache | None = None,
 ) -> RalphLoop:
     service = AgentService(
         executor=executor,
         workspace=workspace or FakeWorkspaceProvider(),
         persister=persister,
     )
-    return RalphLoop(service=service, max_iterations=max_iterations)
+    return RalphLoop(
+        service=service,
+        max_iterations=max_iterations,
+        git=git or FakeGitService(),
+        cache=cache or FakeRepoCache(),
+    )
 
 
 def _run_kwargs(
@@ -83,6 +92,7 @@ async def test_loop_single_iteration_accepted():
             commit_sha="a" * 40,
             branch="test",
             message="feat: fix",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -127,6 +137,7 @@ async def test_loop_max_iterations_exhausted():
             commit_sha="b" * 40,
             branch="test",
             message="fix: attempt",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister, max_iterations=2)
@@ -220,6 +231,7 @@ async def test_loop_second_iteration_succeeds():
             commit_sha="c" * 40,
             branch="test",
             message="fix: attempt",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     service = AgentService(
@@ -227,7 +239,12 @@ async def test_loop_second_iteration_succeeds():
         workspace=FakeWorkspaceProvider(),
         persister=persister,
     )
-    loop = RalphLoop(service=service, max_iterations=3)
+    loop = RalphLoop(
+        service=service,
+        max_iterations=3,
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+    )
 
     events = [e async for e in loop.run(**_run_kwargs())]
 
@@ -266,6 +283,7 @@ async def test_loop_streams_events_per_node():
             commit_sha="c" * 40,
             branch="test",
             message="feat: done",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -306,6 +324,7 @@ async def test_loop_does_not_emit_complete_event():
             commit_sha="a" * 40,
             branch="test",
             message="feat: done",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -351,6 +370,7 @@ async def test_loop_exactly_one_iteration_event_per_cycle():
             commit_sha="a" * 40,
             branch="test",
             message="feat: fix",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -420,12 +440,14 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
     class of bug where a fix passes previously-failing criteria but
     regresses a previously-passing one.
     """
+    from kodezart.types.domain.consolidation import ChangesetDigest
+
     captured: list[list[str]] = []
     original = evaluation.build_prompt
 
-    def spy(criteria: list[str]) -> str:
+    def spy(*, criteria: list[str], changeset: ChangesetDigest) -> str:
         captured.append(list(criteria))
-        return original(criteria)
+        return original(criteria=criteria, changeset=changeset)
 
     monkeypatch.setattr(evaluation, "build_prompt", spy)
 
@@ -526,6 +548,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             commit_sha="a" * 40,
             branch="test",
             message="fix: attempt",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -550,3 +573,175 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
     assert captured[1] == criteria, (
         "Iteration 2 must re-evaluate ALL criteria — regression blindness guard."
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-iter iteration_commit_sha regression tests (closes #5 Bug A)
+# ---------------------------------------------------------------------------
+
+
+async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WorkflowIterationEvent.commit_sha carries the per-iter SHA.
+
+    Iter 1 commits → event[0].commit_sha set. Iter 2 makes no commit →
+    event[1].commit_sha is None, NOT the SHA from iter 1.
+    """
+
+    class TwoIterTracker:
+        def __init__(self) -> None:
+            self._eval_count = 0
+            self._exec_count = 0
+
+        async def stream(
+            self,
+            *,
+            prompt: str,
+            cwd: str,
+            permission_mode: str,
+            allowed_tools: list[str],
+            session_id: str | None = None,
+            output_format: dict[str, object] | None = None,
+        ):
+            if output_format is not None:
+                schema = output_format.get("schema")
+                if isinstance(schema, dict):
+                    props = schema.get("properties", {})
+                    if isinstance(props, dict) and "criteriaResults" in props:
+                        self._eval_count += 1
+                        passed = self._eval_count >= 2
+                        yield ResultEvent(
+                            subtype="result",
+                            duration_ms=1,
+                            duration_api_ms=1,
+                            is_error=False,
+                            num_turns=1,
+                            session_id="s",
+                            structured_output={
+                                "criteriaResults": [
+                                    {
+                                        "criterion": "Tests pass",
+                                        "passed": passed,
+                                        "reasoning": "ok",
+                                    },
+                                ],
+                            },
+                        )
+                        return
+            # Exec calls: iter 1 produces commit, iter 2 does not.
+            self._exec_count += 1
+            yield AssistantTextEvent(text=f"iter {self._exec_count}", model="m")
+            if self._exec_count == 1:
+                yield ResultEvent(
+                    subtype="result",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="s",
+                    commit_sha="d" * 40,
+                )
+            else:
+                yield ResultEvent(
+                    subtype="result",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="s",
+                )
+
+    executor = TwoIterTracker()
+    service = AgentService(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    loop = RalphLoop(
+        service=service,
+        max_iterations=3,
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+    )
+
+    events = [e async for e in loop.run(**_run_kwargs())]
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iteration_events) == 2
+    assert iteration_events[0].commit_sha == "d" * 40
+    assert iteration_events[1].commit_sha is None
+
+
+async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch():
+    """_evaluate_node must call diff_summary(base_branch, ralph_branch)."""
+    git = FakeGitService()
+    executor = FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=10,
+                duration_api_ms=5,
+                is_error=False,
+                num_turns=1,
+                session_id="s1",
+                structured_output={
+                    "criteriaResults": [
+                        {
+                            "criterion": "Tests pass",
+                            "passed": True,
+                            "reasoning": "ok",
+                        },
+                    ],
+                },
+            ),
+        ]
+    )
+    loop = _make_loop(executor=executor, git=git)
+    _ = [e async for e in loop.run(**_run_kwargs())]
+    diff_calls = [c for c in git.calls if c[0] == "diff_summary"]
+    assert len(diff_calls) >= 1
+    # diff_summary(cwd, base_ref, head_ref)
+    assert diff_calls[0][2] == "main"
+    assert diff_calls[0][3] == "kodezart/test-12345678-ralph-abcdef01"
+
+
+async def test_evaluate_node_passes_changeset_to_build_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """build_prompt receives a ChangesetDigest, not raw shell commands."""
+    from kodezart.types.domain.consolidation import ChangesetDigest
+
+    captured: list[ChangesetDigest] = []
+    original = evaluation.build_prompt
+
+    def spy(*, criteria: list[str], changeset: ChangesetDigest) -> str:
+        captured.append(changeset)
+        return original(criteria=criteria, changeset=changeset)
+
+    monkeypatch.setattr(evaluation, "build_prompt", spy)
+
+    executor = FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=10,
+                duration_api_ms=5,
+                is_error=False,
+                num_turns=1,
+                session_id="s1",
+                structured_output={
+                    "criteriaResults": [
+                        {
+                            "criterion": "Tests pass",
+                            "passed": True,
+                            "reasoning": "ok",
+                        },
+                    ],
+                },
+            ),
+        ]
+    )
+    loop = _make_loop(executor=executor)
+    _ = [e async for e in loop.run(**_run_kwargs())]
+    assert len(captured) >= 1
+    assert isinstance(captured[0], ChangesetDigest)

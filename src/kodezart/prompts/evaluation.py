@@ -1,5 +1,12 @@
 """Prompt for acceptance criteria evaluation."""
 
+from kodezart.types.domain.consolidation import ChangesetDigest
+
+_EMPTY_CHANGESET_NOTE = (
+    "No commits between the base and head refs; the previous verdict's "
+    "failures persist unchanged."
+)
+
 _EVALUATION_PRELUDE = """\
 Ultrathink. You are Sherlock Holmes. Code changes have been produced by \
 another agent and your job is to render the verdict on whether those \
@@ -169,14 +176,43 @@ out-of-scope file paths.\
 """
 
 
-def build_prompt(criteria: list[str]) -> str:
-    """Build prompt to evaluate acceptance criteria."""
-    numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(criteria))
+def build_prompt(*, criteria: list[str], changeset: ChangesetDigest) -> str:
+    """Build prompt to evaluate acceptance criteria.
+
+    Keyword-only.  *changeset* is the typed digest of commits between the
+    base and head refs the engine has already computed via
+    ``GitService.diff_summary``.  The prompt inlines this digest verbatim
+    rather than asking the agent to run shell commands (data, not
+    commands).  When ``changeset.is_empty`` is True, the changeset block
+    renders a single escape clause so the reviewer cannot silently
+    "Cannot verify" — the previous verdict's failures persist.
+    """
+    numbered_criteria = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(criteria))
     return (
         f"{_EVALUATION_PRELUDE}\n\n"
-        f"── ACCEPTANCE CRITERIA TO EVALUATE ──\n\n{numbered}\n\n"
+        f"── ACCEPTANCE CRITERIA TO EVALUATE ──\n\n{numbered_criteria}\n\n"
+        f"── CHANGESET TO EVALUATE ──\n\n{_render_changeset(changeset)}\n\n"
         "For each criterion, return a result with: the verbatim criterion "
         "text (do not rephrase or correct it), whether it passes, and a "
         "brief evidence-based reasoning citing specific tool output "
         "(e.g., test file names and line numbers, lint rule IDs)."
+    )
+
+
+def _render_changeset(changeset: ChangesetDigest) -> str:
+    """Render a ``ChangesetDigest`` as plain prompt text."""
+    if changeset.is_empty:
+        return _EMPTY_CHANGESET_NOTE
+    files_block = (
+        "\n".join(f"{i + 1}. {p}" for i, p in enumerate(changeset.file_paths))
+        if changeset.file_paths
+        else "(none)"
+    )
+    subjects_block = "\n".join(
+        f"{i + 1}. {s}" for i, s in enumerate(changeset.commit_subjects)
+    )
+    return (
+        f"Commit count: {changeset.commit_count}\n\n"
+        f"Files changed:\n{files_block}\n\n"
+        f"Commit subjects:\n{subjects_block}"
     )

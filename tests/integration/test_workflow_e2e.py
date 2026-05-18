@@ -123,7 +123,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=3)
+    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
     ticket_generator = TicketGenerationLoop(
         service=service,
         workspace=workspace,
@@ -135,6 +135,8 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         ticket_generator=ticket_generator,
         merger=merger,
         git_base_url="https://github.com",
+        git=git,
+        cache=cache,
         artifact_persister=None,
     )
 
@@ -213,7 +215,7 @@ async def test_workflow_e2e_exhausts_iterations(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=2)
+    ralph_loop = RalphLoop(service=service, max_iterations=2, git=git, cache=cache)
     ticket_generator = TicketGenerationLoop(
         service=service,
         workspace=workspace,
@@ -225,6 +227,8 @@ async def test_workflow_e2e_exhausts_iterations(
         ticket_generator=ticket_generator,
         merger=merger,
         git_base_url="https://github.com",
+        git=git,
+        cache=cache,
         artifact_persister=None,
     )
 
@@ -352,7 +356,7 @@ async def test_workflow_e2e_divergent_base_branch(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=3)
+    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
     ticket_generator = TicketGenerationLoop(
         service=service,
         workspace=workspace,
@@ -364,6 +368,8 @@ async def test_workflow_e2e_divergent_base_branch(
         ticket_generator=ticket_generator,
         merger=merger,
         git_base_url="https://github.com",
+        git=git,
+        cache=cache,
         artifact_persister=None,
     )
 

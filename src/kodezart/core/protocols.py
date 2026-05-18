@@ -4,6 +4,10 @@ from collections.abc import AsyncIterator, Mapping
 from typing import Protocol, runtime_checkable
 
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.consolidation import (
+    ChangesetDigest,
+    ConsolidationOutcome,
+)
 from kodezart.types.domain.persist import PersistResult
 
 
@@ -80,6 +84,49 @@ class GitService(Protocol):
         """List remote branch names starting with *prefix*."""
         ...
 
+    async def is_ancestor(
+        self,
+        cwd: str,
+        ancestor_ref: str,
+        descendant_ref: str,
+    ) -> bool:
+        """True iff *ancestor_ref* is reachable from *descendant_ref*.
+
+        Maps to ``git merge-base --is-ancestor`` (exit 0 → True,
+        exit 1 → False, any other exit raises).
+        """
+        ...
+
+    async def remote_branch_sha(
+        self,
+        cwd: str,
+        remote: str,
+        branch: str,
+    ) -> str | None:
+        """Tip SHA of *branch* on *remote*, or ``None`` when absent.
+
+        Maps to ``git ls-remote --exit-code --heads <remote> refs/heads/<branch>``
+        (exit 0 → SHA, exit 2 → None, any other exit raises).  Does NOT
+        invoke ``git fetch`` — ls-remote queries the remote directly.
+        """
+        ...
+
+    async def diff_summary(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+    ) -> ChangesetDigest:
+        """File paths and commit subjects for ``base_ref..head_ref``.
+
+        Empty digest when refs are equal.
+        """
+        ...
+
+    async def head_commit_subject(self, cwd: str) -> str:
+        """Return the subject line of the current HEAD commit."""
+        ...
+
 
 @runtime_checkable
 class RepoCache(Protocol):
@@ -151,9 +198,17 @@ class ChangePersister(Protocol):
 
 @runtime_checkable
 class BranchMerger(Protocol):
-    """Merges a source branch into a feature branch and pushes."""
+    """Consolidates a source branch into a feature branch.
 
-    async def merge_and_push(
+    `consolidate` is a total function over the four
+    `ConsolidationStatus` values — it never raises on ``DIVERGENT`` or
+    ``SOURCE_MISSING``.  Callers route on ``outcome.status``.  Source-
+    branch deletion (the prior ``cleanup_source``) is an internal
+    implementation detail of the FAST_FORWARDED branch and is never
+    exposed on this protocol.
+    """
+
+    async def consolidate(
         self,
         *,
         repo_path: str | None,
@@ -162,19 +217,14 @@ class BranchMerger(Protocol):
         feature_branch: str,
         source_branch: str,
         cache_key: str | None = None,
-    ) -> str:
-        """FF-merge source into feature, push. Returns SHA."""
-        ...
+    ) -> ConsolidationOutcome:
+        """Classify and (if FAST_FORWARDED) merge source into feature.
 
-    async def cleanup_source(
-        self,
-        *,
-        repo_path: str | None,
-        repo_url: str | None,
-        source_branch: str,
-        cache_key: str | None = None,
-    ) -> None:
-        """Delete source_branch from the remote. Must not raise."""
+        Never raises on ``DIVERGENT`` or ``SOURCE_MISSING``.  Returns
+        a ``ConsolidationOutcome`` whose ``feature_tip_sha`` is the
+        post-consolidation tip (or current tip on ALREADY_INTEGRATED
+        and SOURCE_MISSING).
+        """
         ...
 
     async def cleanup_backup_branches(

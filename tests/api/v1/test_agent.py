@@ -18,8 +18,10 @@ from tests.fakes import (
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
+    FakeGitService,
     FakeQualityGate,
     FakeRaisingExecutor,
+    FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     make_passing_evaluation,
@@ -189,6 +191,8 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
         artifact_persister=None,
     )
     app.state.agent_service = service

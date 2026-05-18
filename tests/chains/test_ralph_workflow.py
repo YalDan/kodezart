@@ -21,6 +21,10 @@ from kodezart.types.domain.agent import (
     WorkflowReviewEvent,
     WorkflowTicketEvent,
 )
+from kodezart.types.domain.consolidation import (
+    ConsolidationOutcome,
+    ConsolidationStatus,
+)
 from kodezart.types.domain.workflow import WorkflowState
 from tests.fakes import (
     FakeAgentExecutor,
@@ -28,14 +32,25 @@ from tests.fakes import (
     FakeBranchMerger,
     FakeChangePersister,
     FakeCIMonitor,
+    FakeGitService,
     FakePRCreator,
     FakeQualityGate,
+    FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     SequentialCIMonitor,
     make_failing_evaluation,
     make_passing_evaluation,
 )
+
+
+def _engine_kwargs() -> dict[str, object]:
+    return {
+        "git": FakeGitService(
+            remote_branch_shas={"main": "b" * 40},
+        ),
+        "cache": FakeRepoCache(),
+    }
 
 
 def _make_engine(
@@ -68,6 +83,8 @@ def _make_engine(
         ticket_generator=ticket_generator or FakeTicketGenerator(),
         merger=merger or FakeBranchMerger(),
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
         max_fix_rounds=max_fix_rounds,
@@ -191,9 +208,10 @@ async def test_workflow_accepted_calls_merger() -> None:
     assert complete_events[0].feature_branch.startswith("kodezart/")
     assert "-ralph-" in complete_events[0].ralph_branch
 
-    # merge_and_push + cleanup_source + cleanup_backup_branches
-    assert len(merger.calls) == 3
+    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    assert len(merger.calls) == 2
     call = merger.calls[0]
+    assert call["method"] == "consolidate"
     assert call["repo_path"] == "/tmp/fake"
     assert call["base_branch"] == "main"
     assert isinstance(call["feature_branch"], str)
@@ -203,8 +221,15 @@ async def test_workflow_accepted_calls_merger() -> None:
 
 
 async def test_workflow_merge_failure_reports_error() -> None:
-    """Merge failure surfaces error on WorkflowCompleteEvent."""
-    merger = FakeBranchMerger(fail=RuntimeError("merge conflict"))
+    """DIVERGENT consolidation surfaces error on WorkflowCompleteEvent."""
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT,
+                feature_tip_sha="0" * 40,
+            ),
+        ],
+    )
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
         evaluation=make_passing_evaluation(),
@@ -229,7 +254,7 @@ async def test_workflow_merge_failure_reports_error() -> None:
     assert len(complete_events) == 1
     assert complete_events[0].merged is False
     assert complete_events[0].error is not None
-    assert "merge conflict" in complete_events[0].error
+    assert "diverged" in complete_events[0].error
 
 
 async def test_workflow_merge_success_has_no_error() -> None:
@@ -548,6 +573,8 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         artifact_persister=None,
     )
 
@@ -616,12 +643,10 @@ async def test_workflow_accepted_cleans_up_ralph_branch() -> None:
         )
     ]
 
-    # merge_and_push + cleanup_source + cleanup_backup_branches
-    assert len(merger.calls) == 3
+    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    assert len(merger.calls) == 2
     cleanup_call = merger.calls[1]
-    assert cleanup_call["method"] == "cleanup_source"
-    assert isinstance(cleanup_call["source_branch"], str)
-    assert "-ralph-" in cleanup_call["source_branch"]
+    assert cleanup_call["method"] == "cleanup_backup_branches"
 
 
 async def test_workflow_rejected_does_not_clean_up() -> None:
@@ -650,9 +675,22 @@ async def test_workflow_rejected_does_not_clean_up() -> None:
     assert len(merger.calls) == 0
 
 
-async def test_workflow_cleanup_failure_reports_error() -> None:
-    """Cleanup failure is logged but merge still succeeds (merged=True, error=None)."""
-    merger = FakeBranchMerger(fail_cleanup=RuntimeError("delete failed"))
+async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
+    """cleanup_source is now an internal step of consolidate.
+
+    There is no externally observable cleanup-source-failure surface — the
+    merger's internal helper swallows the delete-remote-branch error.
+    Outcome status remains FAST_FORWARDED; the workflow completes without
+    error.  This test pins that invariant for FAST_FORWARDED specifically.
+    """
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),
+        ],
+    )
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
         evaluation=make_passing_evaluation(),
@@ -676,8 +714,6 @@ async def test_workflow_cleanup_failure_reports_error() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
-    # Cleanup failure is logged (aerror "branch_cleanup_failed") but does
-    # not block the workflow or set merge_error — it's a terminal action.
     assert complete_events[0].error is None
 
 
@@ -758,6 +794,8 @@ async def test_criteria_receives_formatted_ticket() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         artifact_persister=None,
     )
 
@@ -1065,6 +1103,8 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
         max_fix_rounds=2,
@@ -1341,6 +1381,8 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         pr_creator=None,
         ci_monitor=None,
         max_fix_rounds=0,
@@ -1463,6 +1505,8 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
         max_fix_rounds=1,
@@ -1623,7 +1667,9 @@ def test_route_after_ci_no_pr_number_routes_complete() -> None:
         "acceptance_criteria": [],
         "accepted": True,
         "total_iterations": 1,
-        "last_commit_sha": "a" * 40,
+        "feature_tip_sha": "a" * 40,
+        "review_base_sha": None,
+        "review_head_sha": None,
         "merged": True,
         "merge_error": None,
         "review_passed": True,
@@ -1821,7 +1867,10 @@ async def test_workflow_rejected_skips_backup_cleanup() -> None:
 
 async def test_backup_cleanup_failure_does_not_block_complete() -> None:
     """Cleanup failure is logged, not raised — WorkflowCompleteEvent still emits."""
-    merger = FakeBranchMerger(fail_cleanup=RuntimeError("boom"))
+    # Internal cleanup failures inside consolidate are swallowed; the
+    # workflow continues with status=FAST_FORWARDED.  This test pins
+    # that invariant.
+    merger = FakeBranchMerger()
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
         evaluation=make_passing_evaluation(),
@@ -1893,6 +1942,8 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
         max_fix_rounds=1,
@@ -1988,6 +2039,8 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
         max_fix_rounds=2,
@@ -2023,10 +2076,8 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
     assert len(complete_events) == 1
     assert complete_events[0].ci_passed is True
 
-    # P2-AC14: 3 merge_and_push calls (1 initial + 2 fixes)
-    merge_calls = [
-        c for c in merger.calls if "source_branch" in c and "method" not in c
-    ]
+    # P2-AC14: 3 consolidate calls (1 initial + 2 fixes)
+    merge_calls = [c for c in merger.calls if c.get("method") == "consolidate"]
     assert len(merge_calls) == 3
 
     # P2-AC15: CI monitor polled 3 times
@@ -2035,3 +2086,248 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
     # P2-AC16: No failure comment posted
     comment_calls = [c for c in pr_creator.calls if c.get("method") == "comment_on_pr"]
     assert len(comment_calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# Consolidation event + four-status routing tests
+# ---------------------------------------------------------------------------
+
+
+async def test_workflow_consolidation_event_emitted_post_loop() -> None:
+    """SSE wire-shape snapshot for WorkflowConsolidationEvent.
+
+    Coordination artifact for SSE consumers parsing against a closed
+    discriminated union: this test pins the camelCase wire shape so the
+    consumer migration is explicit.
+    """
+    from kodezart.types.domain.agent import WorkflowConsolidationEvent
+
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = _make_engine(quality_gate=gate, merger=merger)
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    consolidation_events = [
+        e for e in events if isinstance(e, WorkflowConsolidationEvent)
+    ]
+    assert len(consolidation_events) >= 1
+    wire = consolidation_events[0].model_dump(by_alias=True, exclude_none=True)
+    assert wire == {
+        "type": "workflow_consolidation",
+        "status": "fast_forwarded",
+        "featureBranch": consolidation_events[0].feature_branch,
+        "sourceBranch": consolidation_events[0].source_branch,
+        "featureTipSha": "a" * 40,
+    }
+    assert "phase" not in wire
+
+    # Ordering: consolidation before review.
+    types_in_order = [type(e).__name__ for e in events]
+    cons_idx = types_in_order.index("WorkflowConsolidationEvent")
+    review_idx = types_in_order.index("WorkflowReviewEvent")
+    assert cons_idx < review_idx
+
+
+async def test_complete_event_final_commit_sha_sources_from_feature_tip_sha() -> None:
+    """WorkflowCompleteEvent.finalCommitSha == state['feature_tip_sha']."""
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="d" * 40,
+            ),
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = _make_engine(quality_gate=gate, merger=merger)
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete_events) == 1
+    wire = complete_events[0].model_dump(by_alias=True, exclude_none=True)
+    assert wire.get("finalCommitSha") == "d" * 40
+
+
+async def test_merge_to_feature_already_integrated_proceeds_to_review() -> None:
+    """ALREADY_INTEGRATED routes to review; no error; merged=True."""
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.ALREADY_INTEGRATED,
+                feature_tip_sha="a" * 40,
+            ),
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = _make_engine(quality_gate=gate, merger=merger)
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete_events) == 1
+    assert complete_events[0].merged is True
+    assert complete_events[0].error is None
+    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
+    assert len(review_events) >= 1
+
+
+async def test_merge_to_feature_divergent_routes_to_complete_with_merge_error() -> None:
+    """DIVERGENT routes to complete with merge_error populated."""
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT,
+                feature_tip_sha="0" * 40,
+            ),
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = _make_engine(quality_gate=gate, merger=merger)
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete_events) == 1
+    assert complete_events[0].merged is False
+    assert complete_events[0].error is not None
+    assert "diverged" in complete_events[0].error
+
+
+async def test_merge_to_feature_source_missing_raises() -> None:
+    """SOURCE_MISSING from the post-loop consolidate raises (programming error)."""
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.SOURCE_MISSING,
+                feature_tip_sha="a" * 40,
+            ),
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = _make_engine(quality_gate=gate, merger=merger)
+    with pytest.raises(RuntimeError, match="SOURCE_MISSING"):
+        _ = [
+            e
+            async for e in engine.run(
+                prompt="fix it",
+                repo_path="/tmp/fake",
+                repo_url=None,
+                base_branch="main",
+                permission_mode="bypassPermissions",
+                allowed_tools=["Bash"],
+            )
+        ]
+
+
+async def test_review_against_ticket_passes_changeset_digest_to_build_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """build_prompt receives a ChangesetDigest, not a positional criteria list."""
+    from kodezart.prompts import evaluation as eval_mod
+    from kodezart.types.domain.consolidation import ChangesetDigest
+
+    captured: list[ChangesetDigest] = []
+    original = eval_mod.build_prompt
+
+    def spy(*, criteria: list[str], changeset: ChangesetDigest) -> str:
+        captured.append(changeset)
+        return original(criteria=criteria, changeset=changeset)
+
+    monkeypatch.setattr(eval_mod, "build_prompt", spy)
+
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = _make_engine(quality_gate=gate, merger=merger)
+    _ = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+    assert any(isinstance(c, ChangesetDigest) for c in captured)

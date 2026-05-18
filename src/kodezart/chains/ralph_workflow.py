@@ -21,8 +21,10 @@ from kodezart.core.protocols import (
     ArtifactPersister,
     BranchMerger,
     CIMonitor,
+    GitService,
     PRCreator,
     QualityGate,
+    RepoCache,
     TicketGenerator,
 )
 from kodezart.core.retry import should_retry
@@ -45,13 +47,17 @@ from kodezart.types.domain.agent import (
     TicketDraftOutput,
     WorkflowCIEvent,
     WorkflowCompleteEvent,
+    WorkflowConsolidationEvent,
     WorkflowCriteriaEvent,
     WorkflowIterationEvent,
     WorkflowPREvent,
     WorkflowReviewEvent,
     WorkflowTicketEvent,
 )
+from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
+
+_REMOTE = "origin"
 
 _CRITERIA_TA: TypeAdapter[list[str]] = TypeAdapter(list[str])
 
@@ -70,6 +76,8 @@ class RalphWorkflowEngine:
         ticket_generator: TicketGenerator,
         merger: BranchMerger,
         git_base_url: str,
+        git: GitService,
+        cache: RepoCache,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
@@ -83,6 +91,11 @@ class RalphWorkflowEngine:
         self._ticket_generator: TicketGenerator = ticket_generator
         self._merger: BranchMerger = merger
         self._git_base_url: str = git_base_url
+        # git/cache are injected so _review_against_ticket_node and the
+        # consolidation nodes can pre-compute ChangesetDigest /
+        # query canonical SHAs without leaking shell into the workflow body.
+        self._git: GitService = git
+        self._cache: RepoCache = cache
         self._pr_creator: PRCreator | None = pr_creator
         self._ci_monitor: CIMonitor | None = ci_monitor
         self._max_fix_rounds: int = max_fix_rounds
@@ -159,7 +172,9 @@ class RalphWorkflowEngine:
             "acceptance_criteria": [],
             "accepted": False,
             "total_iterations": 0,
-            "last_commit_sha": None,
+            "feature_tip_sha": None,
+            "review_base_sha": None,
+            "review_head_sha": None,
             "merged": False,
             "merge_error": None,
             "review_passed": False,
@@ -274,7 +289,15 @@ class RalphWorkflowEngine:
                 "comment_failure": "comment_failure",
             },
         )
-        graph.add_edge("fix_code", "review_against_ticket")
+        graph.add_conditional_edges(
+            "fix_code",
+            self._route_after_fix,
+            {
+                "review_against_ticket": "review_against_ticket",
+                "comment_failure": "comment_failure",
+                "complete": "complete",
+            },
+        )
         graph.add_conditional_edges(
             "open_pr",
             self._route_after_pr,
@@ -447,10 +470,12 @@ class RalphWorkflowEngine:
             msg = "Ralph loop completed without emitting an iteration event."
             raise RuntimeError(msg)
 
+        # feature_tip_sha is left None here; _merge_to_feature_node sets it
+        # from the merger's outcome.feature_tip_sha (canonical, post-push).
         return {
             "accepted": last_iteration_event.accepted,
             "total_iterations": last_iteration_event.iteration,
-            "last_commit_sha": last_iteration_event.commit_sha,
+            "feature_tip_sha": None,
         }
 
     async def _persist_artifacts_node(
@@ -498,37 +523,81 @@ class RalphWorkflowEngine:
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Merge ralph branch into feature branch (extracted from old finalize)."""
+        """Consolidate ralph branch into feature branch.
+
+        Single ``BranchMerger.consolidate`` call; routes on the four-status
+        outcome.  Never catches exceptions around the merger — the merger
+        is a total function over the four statuses.  ``SOURCE_MISSING`` is
+        a programming error (the loop must have pushed) and raises.
+        """
         ctx = ExecutionContext.from_configurable(config)
-        merged_sha: str | None = None
-        merge_error: str | None = None
+        writer = get_stream_writer()
 
-        if state["accepted"] and state["last_commit_sha"] is not None:
-            try:
-                merged_sha = await self._merger.merge_and_push(
-                    repo_path=ctx.repo_path,
-                    repo_url=ctx.repo_url,
-                    base_branch=ctx.base_branch,
-                    feature_branch=state["feature_branch"],
-                    source_branch=state["ralph_branch"],
-                    cache_key=ctx.cache_key,
-                )
-            except Exception as exc:
-                merge_error = str(exc)
-                await self._log.aerror("merge_failed", error=merge_error)
+        if not state["accepted"]:
+            return {
+                "merged": False,
+                "merge_error": None,
+                "feature_tip_sha": None,
+                "review_base_sha": None,
+                "review_head_sha": None,
+            }
 
-            if merged_sha is not None:
-                await self._merger.cleanup_source(
-                    repo_path=ctx.repo_path,
-                    repo_url=ctx.repo_url,
-                    source_branch=state["ralph_branch"],
-                    cache_key=ctx.cache_key,
-                )
+        outcome = await self._merger.consolidate(
+            repo_path=ctx.repo_path,
+            repo_url=ctx.repo_url,
+            base_branch=ctx.base_branch,
+            feature_branch=state["feature_branch"],
+            source_branch=state["ralph_branch"],
+            cache_key=ctx.cache_key,
+        )
+        writer(
+            WorkflowConsolidationEvent(
+                status=outcome.status,
+                feature_branch=state["feature_branch"],
+                source_branch=state["ralph_branch"],
+                feature_tip_sha=outcome.feature_tip_sha,
+            )
+        )
 
+        if outcome.status is ConsolidationStatus.SOURCE_MISSING:
+            msg = (
+                f"consolidate returned SOURCE_MISSING for "
+                f"{state['ralph_branch']!r} — the loop must have pushed"
+            )
+            raise RuntimeError(msg)
+
+        if outcome.status is ConsolidationStatus.DIVERGENT:
+            return {
+                "merged": False,
+                "merge_error": (
+                    f"ralph diverged from feature: "
+                    f"{state['ralph_branch']} ⇄ {state['feature_branch']}"
+                ),
+                "feature_tip_sha": outcome.feature_tip_sha,
+                "review_base_sha": None,
+                "review_head_sha": None,
+            }
+
+        # FAST_FORWARDED or ALREADY_INTEGRATED — both yield a merged
+        # feature tip the reviewer can evaluate against the base branch.
+        cwd = await self._resolve_cwd(ctx)
+        base_tip = await self._git.remote_branch_sha(
+            cwd,
+            _REMOTE,
+            ctx.base_branch,
+        )
+        if base_tip is None:
+            msg = (
+                f"Base branch {ctx.base_branch!r} not found on origin "
+                "after successful consolidation"
+            )
+            raise RuntimeError(msg)
         return {
-            "merged": merged_sha is not None,
-            "merge_error": merge_error,
-            "last_commit_sha": merged_sha or state["last_commit_sha"],
+            "merged": True,
+            "merge_error": None,
+            "feature_tip_sha": outcome.feature_tip_sha,
+            "review_base_sha": base_tip,
+            "review_head_sha": outcome.feature_tip_sha,
         }
 
     def _route_after_merge(self, state: WorkflowState) -> str:
@@ -536,6 +605,15 @@ class RalphWorkflowEngine:
         if state["merged"]:
             return "review_against_ticket"
         return "complete"
+
+    async def _resolve_cwd(self, ctx: ExecutionContext) -> str:
+        """Resolve a usable cwd for GitService calls in the outer engine."""
+        if ctx.repo_path is not None:
+            return ctx.repo_path
+        if ctx.repo_url is None:
+            msg = "Neither repo_path nor repo_url set on ExecutionContext"
+            raise RuntimeError(msg)
+        return await self._cache.ensure_available(ctx.repo_url, ctx.cache_key)
 
     async def _review_against_ticket_node(
         self,
@@ -546,7 +624,24 @@ class RalphWorkflowEngine:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        prompt = evaluation_prompt.build_prompt(state["acceptance_criteria"])
+        review_base_sha = state["review_base_sha"]
+        review_head_sha = state["review_head_sha"]
+        if review_base_sha is None or review_head_sha is None:
+            msg = (
+                "review_against_ticket requires review_base_sha and "
+                "review_head_sha to be set by the consolidation node"
+            )
+            raise RuntimeError(msg)
+        cwd = await self._resolve_cwd(ctx)
+        changeset = await self._git.diff_summary(
+            cwd=cwd,
+            base_ref=review_base_sha,
+            head_ref=review_head_sha,
+        )
+        prompt = evaluation_prompt.build_prompt(
+            criteria=state["acceptance_criteria"],
+            changeset=changeset,
+        )
 
         result_event: ResultEvent | None = None
         async for event in self._service.stream(
@@ -618,14 +713,27 @@ class RalphWorkflowEngine:
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Create a fix branch, run the agent, merge back into feature branch."""
+        """Create a fix branch, run the agent, consolidate into feature.
+
+        Key correctness fix: the consolidation's ``base_branch`` is the
+        feature branch (not ``ctx.base_branch``) so the worktree is
+        acquired atop the feature tip — closing the bug where the fix
+        attempted to merge atop ``main``.  No ``try/except`` around the
+        merger.  Routing decisions live in ``_route_after_fix``.
+        """
         ctx = ExecutionContext.from_configurable(config)
+        writer = get_stream_writer()
 
         fix_branch = generate_ralph_branch_name(state["feature_branch"])
 
         ticket = state["ticket"]
         if ticket is None:
             msg = "fix_code requires a ticket but state['ticket'] is None."
+            raise RuntimeError(msg)
+
+        pre_fix_head_sha = state["feature_tip_sha"]
+        if pre_fix_head_sha is None:
+            msg = "fix_code requires feature_tip_sha to be set."
             raise RuntimeError(msg)
 
         task_md = format_ticket_as_task(ticket)
@@ -652,28 +760,66 @@ class RalphWorkflowEngine:
         ):
             pass  # consume stream
 
-        merged_sha = await self._merger.merge_and_push(
+        outcome = await self._merger.consolidate(
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
-            base_branch=ctx.base_branch,
+            base_branch=state["feature_branch"],
             feature_branch=state["feature_branch"],
             source_branch=fix_branch,
             cache_key=ctx.cache_key,
         )
-
-        await self._merger.cleanup_source(
-            repo_path=ctx.repo_path,
-            repo_url=ctx.repo_url,
-            source_branch=fix_branch,
-            cache_key=ctx.cache_key,
+        writer(
+            WorkflowConsolidationEvent(
+                status=outcome.status,
+                feature_branch=state["feature_branch"],
+                source_branch=fix_branch,
+                feature_tip_sha=outcome.feature_tip_sha,
+            )
         )
 
+        if outcome.status in (
+            ConsolidationStatus.DIVERGENT,
+            ConsolidationStatus.SOURCE_MISSING,
+        ):
+            return {
+                "fix_rounds_used": state["fix_rounds_used"] + 1,
+                "feature_tip_sha": pre_fix_head_sha,
+                "merged": False,
+                "merge_error": (
+                    f"fix consolidation failed: status={outcome.status.value}"
+                ),
+                "review_base_sha": None,
+                "review_head_sha": None,
+                "ci_passed": False,
+                "ci_summary": None,
+            }
+
+        # FAST_FORWARDED or ALREADY_INTEGRATED — both yield a fresh
+        # tip the reviewer can evaluate against the pre-fix tip.
         return {
             "fix_rounds_used": state["fix_rounds_used"] + 1,
-            "last_commit_sha": merged_sha or state["last_commit_sha"],
+            "feature_tip_sha": outcome.feature_tip_sha,
+            "merged": True,
+            "merge_error": None,
+            "review_base_sha": pre_fix_head_sha,
+            "review_head_sha": outcome.feature_tip_sha,
             "ci_passed": False,
             "ci_summary": None,
         }
+
+    def _route_after_fix(self, state: WorkflowState) -> str:
+        """Route after fix_code: review on success, comment_failure on diverge.
+
+        Empty-changeset (ALREADY_INTEGRATED) reviews are allowed to
+        proceed — the prompt's escape clause fires and the reviewer
+        returns ``passed=False``, advancing fix_rounds_used.  This is
+        intentional truth-telling.
+        """
+        if state["merge_error"] is None:
+            return "review_against_ticket"
+        if state["pr_url"] is not None and self._pr_creator is not None:
+            return "comment_failure"
+        return "complete"
 
     async def _open_pr_node(
         self,
@@ -875,7 +1021,7 @@ class RalphWorkflowEngine:
                 total_iterations=state["total_iterations"],
                 accepted=state["accepted"],
                 merged=state["merged"],
-                final_commit_sha=state["last_commit_sha"],
+                final_commit_sha=state["feature_tip_sha"],
                 error=state["merge_error"],
                 pr_url=state["pr_url"],
                 pr_number=state["pr_number"],

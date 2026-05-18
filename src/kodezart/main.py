@@ -85,6 +85,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ralph_loop = RalphLoop(
         service=agent_service,
         max_iterations=config.max_iterations,
+        git=git,
+        cache=cache,
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,
@@ -103,6 +105,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ticket_generator=ticket_generator,
         merger=merger,
         git_base_url=config.git_base_url,
+        git=git,
+        cache=cache,
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,

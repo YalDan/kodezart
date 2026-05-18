@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from kodezart.core.protocols import GitAuth
+from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
 
 _REMOTE = "origin"
@@ -190,6 +191,102 @@ class SubprocessGitService:
                     branches.append(name)
         return branches
 
+    async def is_ancestor(
+        self,
+        cwd: str,
+        ancestor_ref: str,
+        descendant_ref: str,
+    ) -> bool:
+        """Return True iff *ancestor_ref* is reachable from *descendant_ref*.
+
+        Maps to ``git merge-base --is-ancestor``: exit 0 → True,
+        exit 1 → False, any other exit raises.
+        """
+        exit_code, _ = await self._run_with_exit_codes(
+            ["git", "merge-base", "--is-ancestor", ancestor_ref, descendant_ref],
+            cwd=cwd,
+            allowed=frozenset({0, 1}),
+        )
+        return exit_code == 0
+
+    async def remote_branch_sha(
+        self,
+        cwd: str,
+        remote: str,
+        branch: str,
+    ) -> str | None:
+        """Tip SHA of *branch* on *remote*, or ``None`` when absent.
+
+        Maps to ``git ls-remote --exit-code --heads <remote>
+        refs/heads/<branch>``: exit 0 → parse SHA, exit 2 → None,
+        any other exit raises.  Does NOT invoke ``git fetch``.
+        """
+        exit_code, stdout = await self._run_with_exit_codes(
+            [
+                "git",
+                "ls-remote",
+                "--exit-code",
+                "--heads",
+                remote,
+                f"refs/heads/{branch}",
+            ],
+            cwd=cwd,
+            allowed=frozenset({0, 2}),
+            env=self._auth.subprocess_env() if self._auth else None,
+        )
+        if exit_code == 2:
+            return None
+        if not stdout:
+            return None
+        first_line = stdout.split("\n", 1)[0]
+        parts = first_line.split("\t")
+        if len(parts) != 2:
+            msg = f"Unexpected ls-remote output: {first_line!r}"
+            raise RuntimeError(msg)
+        return parts[0]
+
+    async def head_commit_subject(self, cwd: str) -> str:
+        """Return the subject line of the current HEAD commit."""
+        return await self._run_output(
+            ["git", "log", "-1", "--format=%s", "HEAD"],
+            cwd=cwd,
+        )
+
+    async def diff_summary(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+    ) -> ChangesetDigest:
+        """Return a ``ChangesetDigest`` for ``base_ref..head_ref``."""
+        if base_ref == head_ref:
+            return ChangesetDigest(
+                file_paths=[],
+                commit_subjects=[],
+                commit_count=0,
+            )
+        files_output = await self._run_output(
+            ["git", "diff", "--name-only", f"{base_ref}..{head_ref}"],
+            cwd=cwd,
+        )
+        subjects_output = await self._run_output(
+            [
+                "git",
+                "log",
+                "--no-merges",
+                "--format=%s",
+                f"{base_ref}..{head_ref}",
+            ],
+            cwd=cwd,
+        )
+        file_paths = [line for line in files_output.split("\n") if line.strip()]
+        commit_subjects = [line for line in subjects_output.split("\n") if line.strip()]
+        return ChangesetDigest(
+            file_paths=file_paths,
+            commit_subjects=commit_subjects,
+            commit_count=len(commit_subjects),
+        )
+
     async def _branch_exists(self, repo_path: str, branch_name: str) -> bool:
         try:
             await self._run_output(
@@ -233,3 +330,37 @@ class SubprocessGitService:
         if proc.returncode != 0:
             msg = f"{' '.join(cmd[:3])} failed: {stderr.decode().strip()}"
             raise RuntimeError(msg)
+
+    async def _run_with_exit_codes(
+        self,
+        cmd: list[str],
+        cwd: str,
+        allowed: frozenset[int],
+        env: dict[str, str] | None = None,
+    ) -> tuple[int, str]:
+        """Run *cmd*, allow declared exit codes, return ``(exit_code, stdout)``.
+
+        Raises ``RuntimeError`` if the exit code is not in *allowed*.  Used
+        by ``is_ancestor`` (exit 1 valid) and ``remote_branch_sha``
+        (exit 2 valid) — the existing ``_run`` and ``_run_output`` continue
+        to raise on any non-zero exit.
+        """
+        process_env: dict[str, str] | None = None
+        if env is not None:
+            process_env = {**os.environ, **env}
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=process_env,
+        )
+        stdout, stderr = await proc.communicate()
+        returncode = proc.returncode if proc.returncode is not None else -1
+        if returncode not in allowed:
+            msg = (
+                f"{' '.join(cmd[:3])} exited {returncode} "
+                f"(allowed {sorted(allowed)}): {stderr.decode().strip()}"
+            )
+            raise RuntimeError(msg)
+        return returncode, stdout.decode().strip()

@@ -11,6 +11,7 @@ from pydantic import (
 )
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.consolidation import ConsolidationStatus
 
 # ---------------------------------------------------------------------------
 # Ticket-generation structured outputs
@@ -305,6 +306,24 @@ class WorkflowIterationEvent(AgentEvent):
     commit_sha: str | None = None
     accepted: bool
     evaluation: AcceptanceCriteriaOutput
+
+
+class WorkflowConsolidationEvent(AgentEvent):
+    """Emitted after every `BranchMerger.consolidate(...)` call.
+
+    Reports the four-way outcome (``ALREADY_INTEGRATED``,
+    ``FAST_FORWARDED``, ``DIVERGENT``, ``SOURCE_MISSING``) without
+    routing semantics — routing lives in the workflow graph's
+    conditional edges, not on this event.  No ``phase`` field: both
+    emission sites (post-loop and post-fix) are distinguished by
+    event ordering relative to ``WorkflowReviewEvent``.
+    """
+
+    type: Literal["workflow_consolidation"] = "workflow_consolidation"
+    status: ConsolidationStatus
+    feature_branch: str = Field(min_length=1)
+    source_branch: str = Field(min_length=1)
+    feature_tip_sha: str = Field(min_length=40, max_length=40)
 
 
 class WorkflowCompleteEvent(AgentEvent):

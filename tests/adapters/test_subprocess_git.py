@@ -162,3 +162,133 @@ async def test_create_worktree_idempotent_existing_branch(
     )
     assert Path(wt).is_dir()
     await git_service.remove_worktree(str(git_repo), wt)
+
+
+# ---------------------------------------------------------------------------
+# is_ancestor / remote_branch_sha / diff_summary / head_commit_subject
+# ---------------------------------------------------------------------------
+
+
+async def test_is_ancestor_returns_true_when_descendant(git_service, git_repo):
+    """HEAD is its own ancestor → exit 0 → True."""
+    head_sha = await git_service.current_sha(str(git_repo))
+    assert await git_service.is_ancestor(str(git_repo), head_sha, "HEAD") is True
+
+
+async def test_is_ancestor_returns_false_when_not_ancestor(git_service, git_repo):
+    """Sibling branches not ancestral → exit 1 → False."""
+    # Create a divergent branch from HEAD
+    await _run_git(["git", "branch", "branch-a"], cwd=git_repo)
+    (git_repo / "b.txt").write_text("b")
+    await _run_git(["git", "add", "b.txt"], cwd=git_repo)
+    await _run_git(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "b-commit"],
+        cwd=git_repo,
+    )
+    # HEAD now has the b-commit. branch-a still points at the initial commit.
+    # Now create branch-c from branch-a with a different change
+    await _run_git(["git", "checkout", "-b", "branch-c", "branch-a"], cwd=git_repo)
+    (git_repo / "c.txt").write_text("c")
+    await _run_git(["git", "add", "c.txt"], cwd=git_repo)
+    await _run_git(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "c-commit"],
+        cwd=git_repo,
+    )
+    # main contains b-commit; branch-c contains c-commit. Neither is ancestor.
+    assert await git_service.is_ancestor(str(git_repo), "main", "branch-c") is False
+
+
+async def test_is_ancestor_raises_on_unknown_ref(git_service, git_repo):
+    with pytest.raises(RuntimeError):
+        await git_service.is_ancestor(str(git_repo), "no-such-ref", "HEAD")
+
+
+async def test_remote_branch_sha_returns_sha_when_present(
+    git_service, git_repo, tmp_path
+):
+    bare = tmp_path / "remote.git"
+    bare.mkdir()
+    await _run_git(["git", "init", "--bare"], cwd=bare)
+    await _run_git(["git", "remote", "add", "origin", str(bare)], cwd=git_repo)
+    await _run_git(
+        ["git", "push", "-u", "origin", "HEAD:refs/heads/main"],
+        cwd=git_repo,
+    )
+    sha = await git_service.remote_branch_sha(str(git_repo), "origin", "main")
+    assert sha is not None
+    assert len(sha) == 40
+
+
+async def test_remote_branch_sha_returns_none_when_absent(
+    git_service, git_repo, tmp_path
+):
+    bare = tmp_path / "remote-empty.git"
+    bare.mkdir()
+    await _run_git(["git", "init", "--bare"], cwd=bare)
+    await _run_git(["git", "remote", "add", "origin", str(bare)], cwd=git_repo)
+    sha = await git_service.remote_branch_sha(str(git_repo), "origin", "no-such-branch")
+    assert sha is None
+
+
+async def test_remote_branch_sha_raises_on_unexpected_exit(git_service, tmp_path):
+    # Pointing at a non-existent remote URL produces a non-{0,2} exit code.
+    bogus = tmp_path / "bogus-repo"
+    bogus.mkdir()
+    await _run_git(["git", "init"], cwd=bogus)
+    with pytest.raises(RuntimeError):
+        await git_service.remote_branch_sha(str(bogus), "no-such-remote", "x")
+
+
+async def test_remote_branch_sha_does_not_invoke_fetch(
+    git_service, git_repo, tmp_path, monkeypatch
+):
+    """Pin the documented ls-remote contract: no fetch required."""
+    fetch_calls: list[str] = []
+    original_fetch = git_service.fetch
+
+    async def spy_fetch(repo_path: str) -> None:
+        fetch_calls.append(repo_path)
+        await original_fetch(repo_path)
+
+    monkeypatch.setattr(git_service, "fetch", spy_fetch)
+
+    bare = tmp_path / "remote-nf.git"
+    bare.mkdir()
+    await _run_git(["git", "init", "--bare"], cwd=bare)
+    await _run_git(["git", "remote", "add", "origin", str(bare)], cwd=git_repo)
+    await _run_git(
+        ["git", "push", "-u", "origin", "HEAD:refs/heads/main"],
+        cwd=git_repo,
+    )
+
+    _ = await git_service.remote_branch_sha(str(git_repo), "origin", "main")
+    assert fetch_calls == []
+
+
+async def test_diff_summary_returns_changeset_digest(git_service, git_repo):
+    """diff_summary returns file paths and commit subjects."""
+    await _run_git(["git", "checkout", "-b", "feat-x"], cwd=git_repo)
+    (git_repo / "feat.txt").write_text("feat")
+    await _run_git(["git", "add", "feat.txt"], cwd=git_repo)
+    await _run_git(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "feat: add x"],
+        cwd=git_repo,
+    )
+    digest = await git_service.diff_summary(str(git_repo), "main", "feat-x")
+    assert digest.commit_count >= 1
+    assert "feat.txt" in digest.file_paths
+    assert "feat: add x" in digest.commit_subjects
+
+
+async def test_diff_summary_empty_when_refs_equal(git_service, git_repo):
+    digest = await git_service.diff_summary(str(git_repo), "HEAD", "HEAD")
+    assert digest.commit_count == 0
+    assert digest.file_paths == []
+    assert digest.commit_subjects == []
+    assert digest.is_empty is True
+
+
+async def test_head_commit_subject_returns_subject(git_service, git_repo):
+    """head_commit_subject returns the subject line of HEAD."""
+    subject = await git_service.head_commit_subject(str(git_repo))
+    assert subject == "init"

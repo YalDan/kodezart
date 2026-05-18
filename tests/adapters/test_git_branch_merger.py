@@ -76,7 +76,7 @@ async def git_env(tmp_path: Path) -> tuple[Path, Path]:
     return repo, bare
 
 
-async def test_merge_and_push_creates_feature_branch(
+async def test_consolidate_fast_forwarded_creates_feature_branch(
     git_env: tuple[Path, Path],
     tmp_path: Path,
 ) -> None:
@@ -92,7 +92,7 @@ async def test_merge_and_push_creates_feature_branch(
     )
     merger = GitBranchMerger(git=git, workspace=workspace)
 
-    sha = await merger.merge_and_push(
+    outcome = await merger.consolidate(
         repo_path=str(repo),
         repo_url=None,
         base_branch="main",
@@ -100,9 +100,12 @@ async def test_merge_and_push_creates_feature_branch(
         source_branch="ralph-source",
     )
 
+    from kodezart.types.domain.consolidation import ConsolidationStatus
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
     # SHA is 40 hex chars
-    assert len(sha) == 40
-    assert all(c in "0123456789abcdef" for c in sha)
+    assert len(outcome.feature_tip_sha) == 40
+    assert all(c in "0123456789abcdef" for c in outcome.feature_tip_sha)
 
     # Feature branch exists on remote
     branches = await _git_output(
@@ -219,14 +222,17 @@ async def test_cleanup_backup_branches_empty_list_still_releases() -> None:
     assert ("release", "/tmp/fake-workspace") in fake_workspace.calls
 
 
-async def test_cleanup_source_deletes_ralph_branch(
+async def test_consolidate_fast_forwarded_deletes_source_internally(
     git_env: tuple[Path, Path],
     tmp_path: Path,
 ) -> None:
-    """cleanup_source removes the source branch from the remote."""
+    """FAST_FORWARDED consolidation deletes the source branch on remote.
+
+    Cleanup is now internal to consolidate: callers no longer invoke it.
+    """
     repo, bare = git_env
 
-    # Verify ralph branch exists on remote before cleanup
+    # Verify ralph branch exists on remote before consolidate
     branches_before = await _git_output(
         ["git", "branch", "--list"],
         cwd=bare,
@@ -243,13 +249,14 @@ async def test_cleanup_source_deletes_ralph_branch(
     )
     merger = GitBranchMerger(git=git, workspace=workspace)
 
-    await merger.cleanup_source(
+    await merger.consolidate(
         repo_path=str(repo),
         repo_url=None,
+        base_branch="main",
+        feature_branch="feat/cleanup",
         source_branch="ralph-source",
     )
 
-    # Ralph branch no longer exists on the remote
     branches_after = await _git_output(
         ["git", "branch", "--list"],
         cwd=bare,
@@ -257,25 +264,91 @@ async def test_cleanup_source_deletes_ralph_branch(
     assert "ralph-source" not in branches_after
 
 
-async def test_cleanup_source_does_not_raise_on_failure(
-    git_env: tuple[Path, Path],
+async def test_consolidate_source_missing_returns_status_without_acquiring_worktree(
     tmp_path: Path,
 ) -> None:
-    """cleanup_source catches errors internally — must not raise."""
-    repo, _bare = git_env
-    git = SubprocessGitService()
-    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
-    workspace = GitWorktreeProvider(
-        git=git,
-        cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
-    )
-    merger = GitBranchMerger(git=git, workspace=workspace)
+    """SOURCE_MISSING: ls-remote returns None, no feature worktree acquired."""
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
 
-    # Deleting a branch that doesn't exist would fail — adapter must catch
-    await merger.cleanup_source(
-        repo_path=str(repo),
-        repo_url=None,
-        source_branch="nonexistent-branch",
+    fake_git = FakeGitService(
+        remote_branch_shas={
+            "ralph-source": None,
+            "feat/x": "a" * 40,
+            "main": "b" * 40,
+        },
     )
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+
+    outcome = await merger.consolidate(
+        repo_path="/tmp/repo",
+        repo_url=None,
+        base_branch="main",
+        feature_branch="feat/x",
+        source_branch="ralph-source",
+    )
+
+    from kodezart.types.domain.consolidation import ConsolidationStatus
+
+    assert outcome.status is ConsolidationStatus.SOURCE_MISSING
+    # Worktree on feature_branch was NOT acquired.
+    feature_acquires = [
+        c for c in fake_workspace.calls if c[0] == "acquire" and c[2] == "main"
+    ]
+    assert feature_acquires == []
+    _ = tmp_path  # unused placeholder for pytest fixture compatibility
+
+
+async def test_consolidate_already_integrated_returns_no_push() -> None:
+    """ALREADY_INTEGRATED: no merge_branch, no push, no delete."""
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
+
+    fake_git = FakeGitService(
+        remote_branch_shas={"ralph-source": "a" * 40, "main": "b" * 40},
+        ancestor_pairs={("origin/ralph-source", "HEAD")},
+    )
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+
+    outcome = await merger.consolidate(
+        repo_path="/tmp/repo",
+        repo_url=None,
+        base_branch="main",
+        feature_branch="feat/x",
+        source_branch="ralph-source",
+    )
+
+    from kodezart.types.domain.consolidation import ConsolidationStatus
+
+    assert outcome.status is ConsolidationStatus.ALREADY_INTEGRATED
+    method_names = [c[0] for c in fake_git.calls]
+    assert "merge_branch" not in method_names
+    assert "push" not in method_names
+    assert "delete_remote_branch" not in method_names
+
+
+async def test_consolidate_divergent_does_not_raise() -> None:
+    """DIVERGENT: no ancestor relation either way; no exception, no push."""
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
+
+    fake_git = FakeGitService(
+        remote_branch_shas={"ralph-source": "a" * 40, "main": "b" * 40},
+        # ancestor_pairs is empty — no ancestor relation either way.
+    )
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+
+    outcome = await merger.consolidate(
+        repo_path="/tmp/repo",
+        repo_url=None,
+        base_branch="main",
+        feature_branch="feat/x",
+        source_branch="ralph-source",
+    )
+
+    from kodezart.types.domain.consolidation import ConsolidationStatus
+
+    assert outcome.status is ConsolidationStatus.DIVERGENT
+    method_names = [c[0] for c in fake_git.calls]
+    assert "merge_branch" not in method_names
+    assert "push" not in method_names

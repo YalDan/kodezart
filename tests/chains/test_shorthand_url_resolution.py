@@ -24,7 +24,9 @@ from tests.fakes import (
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
+    FakeGitService,
     FakeQualityGate,
+    FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     make_passing_evaluation,
@@ -55,6 +57,8 @@ def _make_engine(
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
         artifact_persister=None,
     )
 
@@ -84,8 +88,8 @@ async def test_merger_receives_resolved_url_not_shorthand() -> None:
     assert complete_events[0].merged is True
 
     # The merger must receive a resolved URL, not shorthand
-    # merge_and_push + cleanup_source + cleanup_backup_branches
-    assert len(merger.calls) == 3
+    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    assert len(merger.calls) == 2
     merger_url = merger.calls[0]["repo_url"]
     assert merger_url is not None
     assert merger_url.startswith("https://"), (
@@ -116,8 +120,8 @@ async def test_full_url_passes_through_unchanged() -> None:
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
 
-    # merge_and_push + cleanup_source + cleanup_backup_branches
-    assert len(merger.calls) == 3
+    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    assert len(merger.calls) == 2
     merger_url = merger.calls[0]["repo_url"]
     assert merger_url is not None
     assert merger_url.startswith("https://"), (
@@ -148,7 +152,7 @@ async def test_local_repo_path_not_affected() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
 
-    # merge_and_push + cleanup_source + cleanup_backup_branches
-    assert len(merger.calls) == 3
+    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    assert len(merger.calls) == 2
     assert merger.calls[0]["repo_url"] is None
     assert merger.calls[0]["repo_path"] == "/tmp/fake"
