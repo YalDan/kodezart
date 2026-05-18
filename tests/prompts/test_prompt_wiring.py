@@ -4,8 +4,6 @@ Catches the exact regression where a prelude constant is defined but never
 referenced by the public function (dead code).
 """
 
-import pytest
-
 from kodezart.prompts.acceptance_criteria import build_prompt as criteria_prompt
 from kodezart.prompts.evaluation import build_prompt as evaluation_prompt
 from kodezart.prompts.iteration_feedback import augment_prompt
@@ -78,6 +76,13 @@ def test_evaluation_prompt_handles_empty_changeset() -> None:
 
 
 def test_evaluation_prompt_rejects_positional_args() -> None:
-    """build_prompt is keyword-only — positional invocation raises TypeError."""
-    with pytest.raises(TypeError):
-        evaluation_prompt(["Tests pass"], _EMPTY_DIGEST)  # type: ignore[misc]
+    """build_prompt is keyword-only — its signature has no positional params."""
+    import inspect
+
+    sig = inspect.signature(evaluation_prompt)
+    for param in sig.parameters.values():
+        assert param.kind is inspect.Parameter.KEYWORD_ONLY, (
+            f"Parameter {param.name!r} is {param.kind.name}, "
+            "expected KEYWORD_ONLY"
+        )
+    assert set(sig.parameters) == {"criteria", "changeset"}

@@ -114,9 +114,9 @@ class GitBranchMerger:
                 await self._git.merge_branch(workspace_path, origin_source)
                 await self._git.push(workspace_path, feature_branch)
                 new_head = await self._git.current_sha(workspace_path)
-                await self._cleanup_source_internal(
+                await self._delete_remote_branch_quietly(
                     workspace_path=workspace_path,
-                    source_branch=source_branch,
+                    branch=source_branch,
                 )
                 return ConsolidationOutcome(
                     status=ConsolidationStatus.FAST_FORWARDED,
@@ -256,13 +256,13 @@ class GitBranchMerger:
         finally:
             await self._workspace.release(workspace_path)
 
-    async def _cleanup_source_internal(
+    async def _delete_remote_branch_quietly(
         self,
         *,
         workspace_path: str,
-        source_branch: str,
+        branch: str,
     ) -> None:
-        """Delete source from the remote.  Logs but does not raise.
+        """Delete *branch* from the remote.  Logs but does not raise.
 
         Invoked only on the FAST_FORWARDED branch of `consolidate`.
         Callers MUST NOT depend on this side effect — it's an internal
@@ -272,11 +272,11 @@ class GitBranchMerger:
             await self._git.delete_remote_branch(
                 workspace_path,
                 _REMOTE,
-                source_branch,
+                branch,
             )
         except Exception as exc:
             await self._log.aerror(
                 "branch_cleanup_failed",
-                branch=source_branch,
+                branch=branch,
                 error=str(exc),
             )

@@ -621,9 +621,9 @@ class RalphWorkflowEngine:
         config: RunnableConfig,
     ) -> dict[str, object]:
         """Evaluate merged code against ticket acceptance criteria."""
-        ctx = ExecutionContext.from_configurable(config)
-        writer = get_stream_writer()
-
+        # Fail-fast on programming-error preconditions BEFORE touching the
+        # LangGraph runtime (so callers — and tests — see the precondition
+        # error, not a misleading "outside of a runnable context" error).
         review_base_sha = state["review_base_sha"]
         review_head_sha = state["review_head_sha"]
         if review_base_sha is None or review_head_sha is None:
@@ -632,6 +632,9 @@ class RalphWorkflowEngine:
                 "review_head_sha to be set by the consolidation node"
             )
             raise RuntimeError(msg)
+
+        ctx = ExecutionContext.from_configurable(config)
+        writer = get_stream_writer()
         cwd = await self._resolve_cwd(ctx)
         changeset = await self._git.diff_summary(
             cwd=cwd,

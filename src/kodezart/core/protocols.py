@@ -123,10 +123,6 @@ class GitService(Protocol):
         """
         ...
 
-    async def head_commit_subject(self, cwd: str) -> str:
-        """Return the subject line of the current HEAD commit."""
-        ...
-
 
 @runtime_checkable
 class RepoCache(Protocol):
@@ -203,9 +199,8 @@ class BranchMerger(Protocol):
     `consolidate` is a total function over the four
     `ConsolidationStatus` values — it never raises on ``DIVERGENT`` or
     ``SOURCE_MISSING``.  Callers route on ``outcome.status``.  Source-
-    branch deletion (the prior ``cleanup_source``) is an internal
-    implementation detail of the FAST_FORWARDED branch and is never
-    exposed on this protocol.
+    branch deletion is an internal implementation detail of the
+    FAST_FORWARDED branch and is never exposed on this protocol.
     """
 
     async def consolidate(

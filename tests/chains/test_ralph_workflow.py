@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 
 import pytest
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
@@ -208,7 +209,7 @@ async def test_workflow_accepted_calls_merger() -> None:
     assert complete_events[0].feature_branch.startswith("kodezart/")
     assert "-ralph-" in complete_events[0].ralph_branch
 
-    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    # consolidate + cleanup_backup_branches (source-branch deletion is internal)
     assert len(merger.calls) == 2
     call = merger.calls[0]
     assert call["method"] == "consolidate"
@@ -396,6 +397,9 @@ async def test_workflow_run_rejects_acceptance_criteria_kwarg() -> None:
     """engine.run() no longer accepts acceptance_criteria — the old API is dead."""
     engine = _make_engine()
 
+    # Pass extra kwargs via dict unpacking so static type-checkers do not see
+    # the call signature mismatch — the runtime contract is what we assert here.
+    extra_kwargs: dict[str, object] = {"acceptance_criteria": ["Tests pass"]}
     with pytest.raises(TypeError):
         _ = [
             e
@@ -406,7 +410,7 @@ async def test_workflow_run_rejects_acceptance_criteria_kwarg() -> None:
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
-                acceptance_criteria=["Tests pass"],  # type: ignore[call-arg]
+                **extra_kwargs,
             )
         ]
 
@@ -643,7 +647,7 @@ async def test_workflow_accepted_cleans_up_ralph_branch() -> None:
         )
     ]
 
-    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    # consolidate + cleanup_backup_branches (source-branch deletion is internal)
     assert len(merger.calls) == 2
     cleanup_call = merger.calls[1]
     assert cleanup_call["method"] == "cleanup_backup_branches"
@@ -676,12 +680,13 @@ async def test_workflow_rejected_does_not_clean_up() -> None:
 
 
 async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
-    """cleanup_source is now an internal step of consolidate.
+    """Source-branch deletion is now an internal step of consolidate.
 
-    There is no externally observable cleanup-source-failure surface — the
-    merger's internal helper swallows the delete-remote-branch error.
-    Outcome status remains FAST_FORWARDED; the workflow completes without
-    error.  This test pins that invariant for FAST_FORWARDED specifically.
+    There is no externally observable failure surface for the post-merge
+    source-branch deletion — the merger's internal helper swallows the
+    delete-remote-branch error.  Outcome status remains FAST_FORWARDED;
+    the workflow completes without error.  This test pins that invariant
+    for FAST_FORWARDED specifically.
     """
     merger = FakeBranchMerger(
         consolidation_outcomes=[
@@ -2331,3 +2336,374 @@ async def test_review_against_ticket_passes_changeset_digest_to_build_prompt(
         )
     ]
     assert any(isinstance(c, ChangesetDigest) for c in captured)
+
+
+# ---------------------------------------------------------------------------
+# fix_code_node four-status routing tests
+# ---------------------------------------------------------------------------
+
+
+def _make_engine_with_executor(
+    *,
+    executor: object,
+    merger: FakeBranchMerger,
+    pr_creator: FakePRCreator | None = None,
+    ci_monitor: FakeCIMonitor | None = None,
+    max_fix_rounds: int = 2,
+) -> RalphWorkflowEngine:
+    """Build an engine wired to a pre-configured executor (e.g. _Sequential)."""
+    service = AgentService(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    return RalphWorkflowEngine(
+        service=service,
+        quality_gate=gate,
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger,
+        git_base_url="https://github.com",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        pr_creator=pr_creator,
+        ci_monitor=ci_monitor,
+        max_fix_rounds=max_fix_rounds,
+        artifact_persister=None,
+    )
+
+
+async def test_fix_code_node_divergent_routes_to_comment_failure_when_pr_url_set() -> (
+    None
+):
+    """fix_code DIVERGENT + pr_url set → comment_failure → complete."""
+    failing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+        ],
+    }
+    passing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+        ],
+    }
+    # 1st review: pass → open_pr; 2nd review (after CI fail + fix): fail → comment.
+    # But here we want the fix consolidation itself to DIVERGE, so we drive
+    # the review path with: pass, then CI fail triggers fix, fix DIVERGES,
+    # _route_after_fix sees merge_error + pr_url set → comment_failure.
+    executor = _SequentialReviewExecutor(
+        review_results=[passing_review, failing_review],
+    )
+    pr_creator = FakePRCreator()
+    ci_monitor = FakeCIMonitor(passed=False, summary="CI failed: lint")
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),  # post-loop merge
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT,
+                feature_tip_sha="0" * 40,
+            ),  # fix consolidation diverges
+        ],
+    )
+    engine = _make_engine_with_executor(
+        executor=executor,
+        merger=merger,
+        pr_creator=pr_creator,
+        ci_monitor=ci_monitor,
+        max_fix_rounds=1,
+    )
+
+    _ = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url="https://github.com/owner/repo",
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    comment_calls = [c for c in pr_creator.calls if c.get("method") == "comment_on_pr"]
+    assert len(comment_calls) >= 1
+
+
+async def test_fix_code_node_divergent_routes_to_complete_when_no_pr_url() -> None:
+    """fix_code DIVERGENT + no pr_url → complete (no comment_failure)."""
+    failing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+        ],
+    }
+    executor = _SequentialReviewExecutor(review_results=[failing_review])
+    # No pr_creator, no ci_monitor — workflow stays in review/fix loop.
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),  # post-loop merge succeeds
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT,
+                feature_tip_sha="0" * 40,
+            ),  # fix consolidation diverges
+        ],
+    )
+    engine = _make_engine_with_executor(
+        executor=executor,
+        merger=merger,
+        pr_creator=None,
+        ci_monitor=None,
+        max_fix_rounds=1,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    # Workflow completes; no PR comment was made (no PR exists).
+    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete_events) == 1
+    assert complete_events[0].pr_url is None
+
+
+async def test_fix_code_node_already_integrated_does_not_raise_advances_fix_round() -> (
+    None
+):
+    """fix_code ALREADY_INTEGRATED → no raise, fix_rounds_used += 1, route to review.
+
+    The empty-changeset escape clause in the evaluator prompt fires on the
+    subsequent review; the second review returns failing, advancing
+    fix_rounds_used to the limit and terminating.
+    """
+    failing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+        ],
+    }
+    # Two failing reviews so fix runs (and fix_rounds_used reaches max_fix_rounds=1).
+    executor = _SequentialReviewExecutor(
+        review_results=[failing_review, failing_review],
+    )
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),  # post-loop merge
+            ConsolidationOutcome(
+                status=ConsolidationStatus.ALREADY_INTEGRATED,
+                feature_tip_sha="a" * 40,
+            ),  # fix's consolidate sees nothing new
+        ],
+    )
+    engine = _make_engine_with_executor(
+        executor=executor,
+        merger=merger,
+        pr_creator=None,
+        ci_monitor=None,
+        max_fix_rounds=1,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    # Did NOT raise.  Workflow terminated; two reviews occurred.
+    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
+    assert len(review_events) == 2
+    # Second review's fix_round counter is 1 (advanced after fix_code).
+    assert review_events[1].fix_round == 1
+    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete_events) == 1
+
+
+async def test_fix_code_node_source_missing_routes_terminally() -> None:
+    """fix_code SOURCE_MISSING populates merge_error and routes terminally.
+
+    Unlike the post-loop SOURCE_MISSING (which raises — programming
+    error), the fix-node SOURCE_MISSING is folded into the merge_error
+    surface so the workflow terminates gracefully via _route_after_fix.
+    """
+    failing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+        ],
+    }
+    executor = _SequentialReviewExecutor(review_results=[failing_review])
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),  # post-loop merge
+            ConsolidationOutcome(
+                status=ConsolidationStatus.SOURCE_MISSING,
+                feature_tip_sha="a" * 40,
+            ),  # fix's source push never happened
+        ],
+    )
+    engine = _make_engine_with_executor(
+        executor=executor,
+        merger=merger,
+        pr_creator=None,
+        ci_monitor=None,
+        max_fix_rounds=1,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    # Workflow completes without raising (fix-node SOURCE_MISSING is non-terminal).
+    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete_events) == 1
+    # Only one review (the first); no re-review after the failed fix consolidation.
+    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
+    assert len(review_events) == 1
+
+
+async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs() -> (
+    None
+):
+    """_review_against_ticket_node calls diff_summary with 40-char SHA refs.
+
+    Regression guard: branch names (e.g. ``main``, ``kodezart/...``) MUST
+    NOT be passed as base_ref/head_ref to diff_summary — the consolidator
+    plumbs the canonical 40-char SHAs through state instead.
+    """
+    base_sha = "b" * 40
+    feature_tip = "a" * 40
+    git = FakeGitService(remote_branch_shas={"main": base_sha})
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha=feature_tip,
+            ),
+        ],
+    )
+    service = AgentService(
+        executor=FakeAgentExecutor(events=[]),
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha=feature_tip,
+    )
+    engine = RalphWorkflowEngine(
+        service=service,
+        quality_gate=gate,
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger,
+        git_base_url="https://github.com",
+        git=git,
+        cache=FakeRepoCache(),
+        artifact_persister=None,
+    )
+
+    _ = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    diff_calls = [c for c in git.calls if c[0] == "diff_summary"]
+    assert len(diff_calls) >= 1
+    _name, _cwd, base_ref, head_ref = diff_calls[0]
+    # Both refs are 40-char hex SHAs — NOT branch names like "main" or
+    # "kodezart/...".  This pins the review_base_sha / review_head_sha
+    # contract end-to-end.
+    assert len(base_ref) == 40
+    assert len(head_ref) == 40
+    assert base_ref == base_sha
+    assert head_ref == feature_tip
+
+
+async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
+    """_review_against_ticket_node raises if review_base_sha or _head_sha is None.
+
+    Programming-error guard: the consolidation node MUST set both SHAs
+    before routing to review.  This pins the explicit raise.
+    """
+    engine = _make_engine()
+    # Craft a state that bypasses the consolidation handshake (both SHAs
+    # absent) and call the node directly.  ExecutionContext is derived
+    # from the RunnableConfig configurable, so we build that mapping
+    # explicitly.
+    state: WorkflowState = {
+        "feature_branch": "kodezart/test",
+        "ralph_branch": "kodezart/test-ralph-abc",
+        "ticket": None,
+        "acceptance_criteria": ["Tests pass"],
+        "accepted": True,
+        "total_iterations": 1,
+        "feature_tip_sha": "a" * 40,
+        "review_base_sha": None,
+        "review_head_sha": None,
+        "merged": True,
+        "merge_error": None,
+        "review_passed": False,
+        "review_feedback": None,
+        "fix_rounds_used": 0,
+        "pr_url": None,
+        "pr_number": None,
+        "ci_passed": None,
+        "ci_summary": None,
+        "repo_url": None,
+    }
+    config: RunnableConfig = {
+        "configurable": {
+            "prompt": "fix it",
+            "repo_path": "/tmp/fake",
+            "repo_url": None,
+            "cache_key": "test-cache",
+            "base_branch": "main",
+            "permission_mode": "bypassPermissions",
+            "allowed_tools": ["Bash"],
+        }
+    }
+    with pytest.raises(RuntimeError, match="review_base_sha"):
+        await engine._review_against_ticket_node(state, config)

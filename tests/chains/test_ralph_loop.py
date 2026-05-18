@@ -13,7 +13,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.persist import PersistResult
 from tests.fakes import (
     FakeAgentExecutor,
     FakeChangePersister,
@@ -91,8 +91,6 @@ async def test_loop_single_iteration_accepted():
         result=PersistResult(
             commit_sha="a" * 40,
             branch="test",
-            message="feat: fix",
-            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -136,8 +134,6 @@ async def test_loop_max_iterations_exhausted():
         result=PersistResult(
             commit_sha="b" * 40,
             branch="test",
-            message="fix: attempt",
-            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister, max_iterations=2)
@@ -230,8 +226,6 @@ async def test_loop_second_iteration_succeeds():
         result=PersistResult(
             commit_sha="c" * 40,
             branch="test",
-            message="fix: attempt",
-            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     service = AgentService(
@@ -282,8 +276,6 @@ async def test_loop_streams_events_per_node():
         result=PersistResult(
             commit_sha="c" * 40,
             branch="test",
-            message="feat: done",
-            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -323,8 +315,6 @@ async def test_loop_does_not_emit_complete_event():
         result=PersistResult(
             commit_sha="a" * 40,
             branch="test",
-            message="feat: done",
-            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -369,8 +359,6 @@ async def test_loop_exactly_one_iteration_event_per_cycle():
         result=PersistResult(
             commit_sha="a" * 40,
             branch="test",
-            message="feat: fix",
-            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -547,8 +535,6 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
         result=PersistResult(
             commit_sha="a" * 40,
             branch="test",
-            message="fix: attempt",
-            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)

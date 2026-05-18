@@ -35,7 +35,6 @@ class FakeGitService:
         remote_branch_shas: dict[str, str | None] | None = None,
         ancestor_pairs: set[tuple[str, str]] | None = None,
         diff_digests: dict[tuple[str, str], ChangesetDigest] | None = None,
-        head_subject: str = "feat: scripted commit",
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.has_changes_result: bool = has_changes_result
@@ -49,7 +48,6 @@ class FakeGitService:
         self._diff_digests: dict[tuple[str, str], ChangesetDigest] = (
             dict(diff_digests) if diff_digests is not None else {}
         )
-        self._head_subject = head_subject
 
     async def validate_repo(self, repo_path: str) -> None:
         self.calls.append(("validate_repo", repo_path))
@@ -168,10 +166,6 @@ class FakeGitService:
             commit_subjects=["feat: scripted"],
             commit_count=1,
         )
-
-    async def head_commit_subject(self, cwd: str) -> str:
-        self.calls.append(("head_commit_subject", cwd))
-        return self._head_subject
 
 
 class FakeAgentExecutor:

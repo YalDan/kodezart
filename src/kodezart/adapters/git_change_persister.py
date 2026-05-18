@@ -2,10 +2,8 @@
 
 Two paths:
 - Dirty working tree: generate commit message, stage, commit, push.
-  Returns ``PersistResult(source=WORKING_TREE_COMMIT, ...)``.
 - Clean working tree, but workspace HEAD ahead of (or equal to) the
-  remote tip: push HEAD's existing commit (no new commit), return
-  ``PersistResult(source=AGENT_DIRECT_COMMIT, message=<real HEAD subject>)``.
+  remote tip: push HEAD's existing commit (no new commit).
 
 Returns ``None`` only when HEAD already equals the remote tip.  Raises
 ``RuntimeError`` if HEAD has diverged from the remote tip — silent
@@ -20,7 +18,7 @@ from kodezart.types.domain.agent import (
     CommitMessageOutput,
     ResultEvent,
 )
-from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.persist import PersistResult
 
 _REMOTE = "origin"
 
@@ -52,13 +50,10 @@ class GitChangePersister:
         """Ensure ``origin/<branch>`` equals workspace HEAD.
 
         Decision tree:
-        - dirty working tree → stage+commit+push, return
-          ``PersistResult(source=WORKING_TREE_COMMIT)``;
+        - dirty working tree → stage+commit+push, return ``PersistResult``;
         - clean tree and HEAD == remote tip → ``None`` (no-op);
         - clean tree and HEAD descends from remote tip (or remote is
-          absent) → push, return
-          ``PersistResult(source=AGENT_DIRECT_COMMIT,
-          message=<real HEAD subject>)``;
+          absent) → push, return ``PersistResult``;
         - clean tree and HEAD diverged → raise ``RuntimeError``
           describing the divergence.
         """
@@ -92,18 +87,12 @@ class GitChangePersister:
             raise RuntimeError(msg)
 
         await self._git.push(workspace_path, branch)
-        head_message = await self._git.head_commit_subject(workspace_path)
         await self._log.ainfo(
             "agent_direct_commit_pushed",
             commit_sha=head_sha,
             branch=branch,
         )
-        return PersistResult(
-            commit_sha=head_sha,
-            branch=branch,
-            message=head_message,
-            source=PersistSource.AGENT_DIRECT_COMMIT,
-        )
+        return PersistResult(commit_sha=head_sha, branch=branch)
 
     async def _persist_dirty(
         self,
@@ -125,12 +114,7 @@ class GitChangePersister:
         )
         await self._git.push(workspace_path, branch)
         await self._log.ainfo("changes_persisted", commit_sha=sha, branch=branch)
-        return PersistResult(
-            commit_sha=sha,
-            branch=branch,
-            message=commit_msg.title,
-            source=PersistSource.WORKING_TREE_COMMIT,
-        )
+        return PersistResult(commit_sha=sha, branch=branch)
 
     async def _generate_commit_message(
         self,

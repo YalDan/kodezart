@@ -4,7 +4,7 @@ import pytest
 
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
-from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.persist import PersistResult
 from tests.fakes import (
     FakeAgentExecutor,
     FakeChangePersister,
@@ -18,8 +18,6 @@ async def test_stream_workflow_persists_changes():
         result=PersistResult(
             commit_sha="a" * 40,
             branch="kodezart/test",
-            message="fix: it",
-            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     service = AgentService(

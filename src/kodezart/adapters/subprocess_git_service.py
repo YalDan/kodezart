@@ -245,13 +245,6 @@ class SubprocessGitService:
             raise RuntimeError(msg)
         return parts[0]
 
-    async def head_commit_subject(self, cwd: str) -> str:
-        """Return the subject line of the current HEAD commit."""
-        return await self._run_output(
-            ["git", "log", "-1", "--format=%s", "HEAD"],
-            cwd=cwd,
-        )
-
     async def diff_summary(
         self,
         cwd: str,

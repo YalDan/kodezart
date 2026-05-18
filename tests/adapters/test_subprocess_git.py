@@ -286,9 +286,3 @@ async def test_diff_summary_empty_when_refs_equal(git_service, git_repo):
     assert digest.file_paths == []
     assert digest.commit_subjects == []
     assert digest.is_empty is True
-
-
-async def test_head_commit_subject_returns_subject(git_service, git_repo):
-    """head_commit_subject returns the subject line of HEAD."""
-    subject = await git_service.head_commit_subject(str(git_repo))
-    assert subject == "init"

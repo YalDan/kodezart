@@ -156,15 +156,19 @@ async def test_release_detached_no_push() -> None:
     assert "remove_worktree" in call_names
 
 
+class _HasChangesRaisingGitService(FakeGitService):
+    """FakeGitService whose ``has_changes`` raises — for release-resilience test."""
+
+    async def has_changes(self, cwd: str) -> bool:
+        self.calls.append(("has_changes", cwd))
+        msg = "status failed"
+        raise RuntimeError(msg)
+
+
 async def test_release_has_changes_failure_does_not_crash() -> None:
     """has_changes raising must not prevent worktree removal."""
-    git = FakeGitService(has_changes_result=False)
+    git = _HasChangesRaisingGitService()
     cache = FakeRepoCache()
-
-    async def failing_has_changes(cwd: str) -> bool:
-        raise RuntimeError("status failed")
-
-    git.has_changes = failing_has_changes  # type: ignore[assignment]
 
     p = GitWorktreeProvider(
         git=git,

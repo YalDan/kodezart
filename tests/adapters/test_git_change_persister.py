@@ -7,9 +7,9 @@ import pytest
 
 from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.core.protocols import ChangePersister
+from kodezart.core.protocols import ChangePersister, GitService
 from kodezart.types.domain.agent import ResultEvent
-from tests.fakes import FakeAgentExecutor
+from tests.fakes import FakeAgentExecutor, FakeGitService
 
 
 async def _run_git(cmd: list[str], cwd: Path) -> None:
@@ -84,13 +84,10 @@ async def test_persist_with_changes(persister, git_repo):
     assert result is not None
     assert len(result.commit_sha) == 40
     assert result.branch == "test-branch"
-    assert result.message == "feat: add new file"
 
 
-async def test_persist_returns_working_tree_commit_source(persister, git_repo):
-    """Dirty-tree path returns source=WORKING_TREE_COMMIT."""
-    from kodezart.types.domain.persist import PersistSource
-
+async def test_persist_dirty_tree_returns_result(persister, git_repo):
+    """Dirty-tree path returns a PersistResult with the new commit SHA."""
     await _run_git(["git", "checkout", "-b", "wt-branch"], cwd=git_repo)
     (git_repo / "new.txt").write_text("content")
     executor = FakeAgentExecutor(
@@ -115,16 +112,12 @@ async def test_persist_returns_working_tree_commit_source(persister, git_repo):
         executor=executor,
     )
     assert result is not None
-    assert result.source is PersistSource.WORKING_TREE_COMMIT
+    assert result.branch == "wt-branch"
+    assert len(result.commit_sha) == 40
 
 
-async def test_persist_returns_agent_direct_commit_source(persister, git_repo):
-    """Clean-tree-HEAD-ahead-of-remote path returns AGENT_DIRECT_COMMIT.
-
-    Asserts ``message`` equals the actual HEAD commit subject, NOT a sentinel.
-    """
-    from kodezart.types.domain.persist import PersistSource
-
+async def test_persist_agent_direct_commit_pushes_existing_head(persister, git_repo):
+    """Clean-tree-HEAD-ahead-of-remote path pushes HEAD and returns its SHA."""
     # New branch with a real commit; not yet pushed.
     await _run_git(["git", "checkout", "-b", "direct-branch"], cwd=git_repo)
     (git_repo / "direct.txt").write_text("agent-authored")
@@ -148,13 +141,11 @@ async def test_persist_returns_agent_direct_commit_source(persister, git_repo):
         executor=executor,
     )
     assert result is not None
-    assert result.source is PersistSource.AGENT_DIRECT_COMMIT
-    assert result.message == "feat: agent direct work"
-    # No sentinel string is used.
-    assert result.message != "<agent-direct>"
+    assert result.branch == "direct-branch"
+    assert len(result.commit_sha) == 40
 
 
-async def test_persist_raises_on_diverged_head(persister, git_repo, tmp_path):
+async def test_persist_raises_on_diverged_head(git_repo):
     """Diverged HEAD raises RuntimeError matching /diverged/.
 
     Uses an injected GitService fake to drive the divergence detection
@@ -163,24 +154,19 @@ async def test_persist_raises_on_diverged_head(persister, git_repo, tmp_path):
     needs is_ancestor → False from a GitService implementation, however
     that boolean is produced).
     """
-    from kodezart.adapters.git_change_persister import GitChangePersister
-    from tests.fakes import FakeGitService
-
     # FakeGitService.current_sha returns "a"*40 by default; configure the
     # remote tip to a DIFFERENT SHA and leave ancestor_pairs empty so
     # HEAD ≠ remote tip AND HEAD does not descend from remote tip → diverged.
-    fake_git = FakeGitService(
+    fake_git: GitService = FakeGitService(
         remote_branch_shas={"diverge": "b" * 40},
         ancestor_pairs=set(),
     )
     persister_with_fake = GitChangePersister(
-        git=fake_git,  # type: ignore[arg-type]
+        git=fake_git,
         committer_name="t",
         committer_email="t@t.dev",
     )
     executor = FakeAgentExecutor(events=[])
-    _ = tmp_path  # unused (placeholder for fixture compatibility)
-    _ = persister  # unused (a fresh persister is constructed above)
     with pytest.raises(RuntimeError, match="diverged"):
         await persister_with_fake.persist(
             workspace_path=str(git_repo),

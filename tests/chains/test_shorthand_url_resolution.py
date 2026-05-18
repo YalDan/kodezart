@@ -3,10 +3,10 @@
 Observation: Live test with repoUrl='YalDan/kodezart' produced
   workflow_complete.error = "Not a recognized git URL scheme: YalDan/kodezart"
   The execute step succeeded (shorthand resolved in AgentService._run_in_workspace)
-  but the finalize step's merge_and_push failed (shorthand NOT resolved).
+  but the finalize step's consolidate call failed (shorthand NOT resolved).
 
 Hypothesis: RalphWorkflowEngine stores raw repo_url in WorkflowState.
-  _finalize_node passes state["repo_url"] directly to merger.merge_and_push(),
+  _finalize_node passes state["repo_url"] directly to merger.consolidate(),
   which calls workspace.acquire() — but neither merger nor workspace resolve
   shorthand. Only AgentService._run_in_workspace() calls resolve_repo_url().
 
@@ -88,7 +88,7 @@ async def test_merger_receives_resolved_url_not_shorthand() -> None:
     assert complete_events[0].merged is True
 
     # The merger must receive a resolved URL, not shorthand
-    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    # consolidate + cleanup_backup_branches (source-branch deletion is internal)
     assert len(merger.calls) == 2
     merger_url = merger.calls[0]["repo_url"]
     assert merger_url is not None
@@ -120,7 +120,7 @@ async def test_full_url_passes_through_unchanged() -> None:
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
 
-    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    # consolidate + cleanup_backup_branches (source-branch deletion is internal)
     assert len(merger.calls) == 2
     merger_url = merger.calls[0]["repo_url"]
     assert merger_url is not None
@@ -152,7 +152,7 @@ async def test_local_repo_path_not_affected() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
 
-    # consolidate + cleanup_backup_branches (cleanup_source is internal)
+    # consolidate + cleanup_backup_branches (source-branch deletion is internal)
     assert len(merger.calls) == 2
     assert merger.calls[0]["repo_url"] is None
     assert merger.calls[0]["repo_path"] == "/tmp/fake"
