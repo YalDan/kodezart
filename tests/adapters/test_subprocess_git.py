@@ -12,7 +12,8 @@ from kodezart.adapters.subprocess_git_service import SubprocessGitService
 async def git_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "test-repo"
     repo.mkdir()
-    await _run_git(["git", "init"], cwd=repo)
+    # pin initial branch so 'main' is a valid local ref independent of host gitconfig
+    await _run_git(["git", "init", "-b", "main"], cwd=repo)
     (repo / "README.md").write_text("test")
     await _run_git(["git", "add", "."], cwd=repo)
     await _run_git(["git", "commit", "-m", "init"], cwd=repo)
