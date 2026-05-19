@@ -1,324 +1,75 @@
 {
-  "title": "Consolidate post-merge via BranchMerger.consolidate primitive and ChangesetDigest prompt input",
-  "summary": "Close all four facets of the consolidation bug class (#5 Bug A, Bug B, Mode 3; #12; #13) by replacing `BranchMerger.merge_and_push` with one total-function primitive `consolidate(...) -> ConsolidationOutcome` whose four mutually exclusive statuses (`ALREADY_INTEGRATED`, `FAST_FORWARDED`, `DIVERGENT`, `SOURCE_MISSING`) callers route on (no `try/except`, no silent skip, no `phase` discriminant); making the evaluator prompt accept a typed `ChangesetDigest` data object pre-computed by the engine via a new `GitService.diff_summary` (no shell-command strings in the prompt body); renaming `WorkflowState.last_commit_sha` → `feature_tip_sha`; preserving the per-iter `WorkflowIterationEvent.commit_sha` semantic via a new `RalphLoopState.iteration_commit_sha: NotRequired[str | None]` (PEP 655); typing the persister's success path with `PersistResult.source: PersistSource` (no `<agent-direct>` sentinel string); and DELETING `GitWorktreeProvider._backup_if_needed` so the silent backup-branch creator that produces issue #13's `-backup-<hex>` topology is gone. Every reviewer concern from the previous draft is addressed: no boolean discriminants, no exception-swallowing, no string-literal cross-component contracts, no YAGNI fields, no parallel ff-bypass methods, no `git status --porcelain` reliance for commit detection.",
-  "context": "A previous draft was rejected. The reviewer agreed with the diagnosis (all four issues share one architectural root: silent-skip + assumed-universal-ff in the consolidation path) but flagged that the proposed remedy re-introduced the very anti-patterns it was meant to eliminate. This revision was produced after re-investigating the codebase (every reviewer claim verified against actual files via Explore agents) and re-consulting the relevant first-party documentation.\n\nVerified facts from re-investigation:\n- `GitWorktreeProvider._backup_if_needed` (src/kodezart/adapters/git_worktree_provider.py:102-142) is the actual creator of issue #13's `-backup-<hex>` branches. It is called on every `release()` (line 98), commits uncommitted work with \"kodezart: emergency backup of in-progress work\" (line 121), and pushes to a `BackupBranchName`-derived branch (line 131). The previous draft punted on this as out-of-scope; reviewer required it be brought into the typed contract or disabled.\n- `tests/prompts/test_prompt_wiring.py` already exists (41 lines) and tests `evaluation.build_prompt` positionally at line 15 — a new `tests/prompts/test_evaluation.py` would be duplicate (DRY violation per reviewer). Extend the existing file.\n- `tests/chains/test_ralph_loop.py:413-431` contains a positional `build_prompt` spy used by `test_loop_re_evaluates_all_criteria_every_iteration` — the spy signature must migrate alongside the production signature change.\n- `tests/chains/test_ralph_workflow.py:205-232` (`test_workflow_merge_failure_reports_error`) injects `FakeBranchMerger(fail=RuntimeError(\"merge conflict\"))`. Under the new `consolidate` contract that never raises on DIVERGENT, the test must be reshaped to inject a DIVERGENT outcome while preserving the same `WorkflowCompleteEvent.error` assertion surface.\n- `tests/chains/test_ralph_workflow.py:194-202`, `tests/chains/test_shorthand_url_resolution.py:87-89`, `tests/chains/test_ralph_workflow.py:2026-2028` all assert `len(merger.calls) == 3` (merge_and_push + cleanup_source + cleanup_backup_branches). After consolidation absorbs cleanup_source internally, the count becomes 2 (consolidate + cleanup_backup_branches).\n- `src/kodezart/main.py:54-113` instantiates `git = SubprocessGitService(auth=auth)` (line 54) and `cache` (line 56) in scope; both are trivially passable to new `RalphWorkflowEngine(..., git=git, cache=cache)` and `RalphLoop(..., git=git, cache=cache)` constructor parameters.\n- `NotRequired` (PEP 655) is in `typing` since Python 3.11; project targets 3.12.\n- `enum.StrEnum` added in 3.11; recommended over `class Foo(str, Enum)` for 3.11+.\n- `git ls-remote --exit-code --heads <remote> refs/heads/<branch>` exits 2 when no matching refs found (per git-scm.com/docs/git-ls-remote.html); without `--exit-code` the command exits 0 silently — adapter MUST use `--exit-code` and map exit 2 → None explicitly.\n- `git merge-base --is-ancestor` exits 0 iff ancestor, 1 iff not (per git-scm.com/docs/git-merge-base); anything else is an error — adapter uses a new `_run_with_exit_codes(allowed={0, 1})` helper.\n- `git ls-remote` queries the remote directly — NO `git fetch` is needed before. `git fetch` IS needed before in-worktree `is_ancestor` calls (operates on local refs).\n- Pydantic v2 discriminated-union backward compat is NOT automatic (docs.pydantic.dev/latest/concepts/unions/): SSE consumers parsing against a closed union with `extra=\"forbid\"` will reject `workflow_consolidation` unless their schema is updated. A snapshot test of the camelCase wire shape is added as the explicit coordination artifact.\n- `_run` in subprocess_git_service.py:216-235 raises on non-zero exit; new helper required for ls-remote (exit 2 valid) and merge-base --is-ancestor (exit 1 valid).\n- PersistResult is `@dataclass(frozen=True, slots=True)` with `commit_sha`, `branch`, `message` — extending with required `source: PersistSource` is fully additive at the only consumer (`agent_service.py:167-179` reads only commit_sha and branch).\n- All AgentEvent subclasses pass through one uniform `model_dump(by_alias=True, exclude_none=True)` call in `agent_handler.py:52,78` — new event types need no handler-side wiring.\n\nFirst-party documentation consulted:\n- LangGraph state management — https://docs.langchain.com/oss/python/langgraph/use-graph-api (TypedDict default-overwrite reducer; nodes omit unwritten keys).\n- PEP 655 — https://peps.python.org/pep-0655/ (NotRequired semantics; available in `typing` from Python 3.11).\n- Python enum.StrEnum — https://docs.python.org/3/library/enum.html (Python 3.11+; serializes naturally with Pydantic v2).\n- git merge-base — https://git-scm.com/docs/git-merge-base (`--is-ancestor` exit codes).\n- git ls-remote — https://git-scm.com/docs/git-ls-remote.html (`--exit-code` flag; no fetch required).\n- git diff — https://git-scm.com/docs/git-diff (`--name-only base..head`).\n- Pydantic v2 discriminated unions — https://docs.pydantic.dev/latest/concepts/unions/ (adding Literal variants is NOT automatically backwards-compatible for closed-union consumers).",
+  "title": "Pin `git_repo` fixture initial branch to `main` in `tests/adapters/test_subprocess_git.py`",
+  "summary": "The `git_repo` async fixture in `tests/adapters/test_subprocess_git.py:11-19` runs bare `git init` and leaves the initial branch name up to the host's git config. On the GitHub Actions ubuntu-24.04 runner there is no global `init.defaultBranch`, so git falls back to its compiled-in default (currently `master`), and the two new tests that pass the literal ref `\"main\"` to `SubprocessGitService.is_ancestor` / `SubprocessGitService.diff_summary` fail because `main` is not a valid local ref. Fix: add `-b main` to the existing `git init` call in the fixture, matching the short-form convention already in use elsewhere in this repo. The change is a single token added to an existing argv list — no new helper, fixture, parameter, or abstraction. No production code under `src/kodezart/` changes; no assertion is weakened; no test is skipped or renamed; the unknown-ref `RuntimeError` contract pinned by `test_is_ancestor_raises_on_unknown_ref` is preserved.",
+  "context": "## Why this change is being made\n\nThe open consolidation PR on branch `kodezart/fix-ralph-post-merge-consolidation-b4caf4dd-ralph-7c0974a9` has CI failing at the pytest step of `make check`. Ruff and mypy are already clean. Two newly-added tests in `tests/adapters/test_subprocess_git.py` fail on the GitHub Actions Ubuntu runner while passing locally:\n\n- `test_is_ancestor_returns_false_when_not_ancestor` (line 202)\n- `test_diff_summary_returns_changeset_digest` (line 301)\n\n## Root cause — clue by clue\n\n1. The async `git_repo` fixture (`tests/adapters/test_subprocess_git.py:11-19`) creates a tmp repo via `await _run_git([\"git\", \"init\"], cwd=repo)` at line 15 with NO initial-branch flag. The fixture commits a `README.md` to lock in HEAD but never pins the initial branch name.\n2. Per the `git-init` documentation, without `-b/--initial-branch` git falls back to `init.defaultBranch`; if that is unset, git falls back to its compiled-in default, which is currently `master` (the docs note this only changes to `main` in Git 3.0). Source: https://git-scm.com/docs/git-init.\n3. The developer's machine has `init.defaultBranch=main` in user-level git config, so the fixture's initial branch is `main` locally — the two tests' hardcoded `\"main\"` ref resolves and they pass.\n4. The `actions/runner-images` ubuntu-24.04 image ships git 2.54.0 with NO global `init.defaultBranch` set — the runner's initial branch is therefore `master`. The literal `\"main\"` does not name any local ref on CI. Source: https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md.\n5. `git merge-base --is-ancestor main HEAD` exits 128 with `fatal: Not a valid object name: 'main'`, and `git diff --name-only main..feat-x` exits 128 with `fatal: ambiguous argument 'main..feat-x'`. The production adapter at `src/kodezart/adapters/subprocess_git_service.py` (`is_ancestor` via `_run_with_exit_codes` allowing only `{0,1}`; `diff_summary` via `_run_output` which raises on any non-zero exit) correctly re-raises these as `RuntimeError`. pytest records the unhandled `RuntimeError` as test failure.\n6. The contract that unknown refs surface as `RuntimeError` is pinned by `test_is_ancestor_raises_on_unknown_ref` (`tests/adapters/test_subprocess_git.py:227`). Watson's instinct — \"make the adapter tolerate unknown refs\" — would silently break that contract and is explicitly forbidden by the deliverable. The adapter is correct; the **test fixture is the only thing host-coupled**.\n\n## Why other tests in the same file don't fail on CI\n\nThe other `\"main\"` references in the file fall into two protocol categories that do not consult the local refs database:\n\n- **Push refspecs `HEAD:refs/heads/main`** (lines 242, 293). In a refspec `<src>:<dst>`, the source side is the local ref to push (here `HEAD`, a built-in symbolic ref that always exists) and the destination side is the ref to *create* on the remote. The destination `refs/heads/main` is materialized on the remote by the push itself — no local `main` ref is required for the operation to succeed.\n- **`git ls-remote --heads origin …`** (lines 245, 257, 297, via `remote_branch_sha`). `ls-remote` speaks the git wire protocol to the remote and enumerates *the remote's* refs; it never reads the local repository's refs database. Whether the local initial branch is `master` or `main` is irrelevant.\n\nBoth categories continue to pass on CI; leave them as is.\n\n## Why this exact mechanism, not alternatives\n\n- `git init -b main` (equivalent to the long form `--initial-branch=main`) has been supported since **git 2.28** per https://git-scm.com/docs/git-init, and the ubuntu-24.04 runner ships **git 2.54.0** per the runner-images Readme — the flag is universally available.\n- The short form `-b` is the **established convention in this repo** (see precedents below). Matching it minimizes review surface and lint diff.\n- A per-repo `git config init.defaultBranch main` issued AFTER `git init` is a no-op for the already-initialized repo (anti-pattern explicitly forbidden in the deliverable).\n- Mutating `--global` git config from the test suite would leak across the host and is explicitly forbidden.\n- A `git branch -m master main` rename works but is more code, drops fixture locality, and silently no-ops on hosts where the initial branch is already `main`.\n\n## Runtime/complexity cost — KISS / YAGNI posture\n\nThe fix is **a single token added to an existing argv list** (two if you count `-b` and `main` separately): no new helper function, no new fixture, no new parameter, no new conftest entry, no new conditional, no new abstraction. The implementing engineer should resist any expansion (e.g., a \"make_test_repo\" utility, a parametrised branch-name fixture, or asession-scoped `init.defaultBranch` env var) — none of those is justified by the failure mode being fixed.\n\n## Cross-codebase consistency check (precedents confirm the short form)\n\nA repository-wide search confirms `tests/adapters/test_subprocess_git.py:15` is the ONLY non-`--bare` `git init` call in the suite whose initial branch name is left to the runner's `init.defaultBranch`. Every other test that needs `main` to exist as a local ref already pins it with the **short form `-b main`**:\n\n- `tests/adapters/test_git_branch_merger.py:50` → `await _git([\"git\", \"init\", \"-b\", \"main\"], cwd=repo)`\n- `tests/adapters/test_git_worktree_provider.py:195` → `await _run_git([\"git\", \"init\", \"-b\", \"main\"], cwd=upstream)`\n- `tests/integration/test_workflow_e2e.py:60` → `await _git([\"git\", \"init\", \"-b\", \"main\"], cwd=repo)`\n\n`tests/conftest.py:15-25` defines an autouse session-scoped `_git_test_identity` fixture that only sets `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars — unrelated to branch defaults and must be preserved.\n\n## Documentation consulted\n\n- `git-init` man page — flag semantics and version introduction (Git 2.28); long and short forms are equivalent: https://git-scm.com/docs/git-init\n- `actions/runner-images` ubuntu-24.04 image — confirms `git 2.54.0` preinstalled, no global `init.defaultBranch`: https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md\n- pytest-asyncio async-fixture concept (confirms current fixture shape is idiomatic; only the subprocess argv changes): https://pytest-asyncio.readthedocs.io/en/latest/concepts.html\n\n## Lint / type framework compliance\n\n- Ruff (`pyproject.toml:51-71`): `target-version = \"py312\"`, `line-length = 88`, select `E,W,F,I,B,C4,UP,N,ANN,S,A,ARG,RUF`, with `tests/**/*.py` per-file ignores `S101, ARG001, ARG002, ANN, S108`. Adding `\"-b\"` and `\"main\"` as string elements to an existing list triggers no new lint findings; the added inline comment is well under the 88-column limit.\n- Mypy (`pyproject.toml:35-49`): `strict`, `disallow_any_explicit`, `plugins = [\"pydantic.mypy\"]`. Production code is untouched. The fixture's signature, types, and `_run_git` call shape are unchanged — no type-checker impact.\n- Anti-patterns honored: no skip marker, no assertion weakening, no `try/except RuntimeError` wrapping, no production-side tolerance of unknown refs, no global git-config mutation, no post-`git init` `git config init.defaultBranch`, no rename, no compensating new test.",
   "references": [
     {
-      "location": "src/kodezart/chains/ralph_loop.py:138-175",
-      "note": "`_execute_node` currently returns `{'iteration': ..., 'last_commit_sha': commit_sha}` unconditionally (root of #5 Bug A). After fix: always returns `{'iteration': ..., 'iteration_commit_sha': commit_sha}` — `iteration_commit_sha` is NotRequired[str | None] per PEP 655 and carries the per-iter semantic (None on no-change iter). NO cumulative `last_commit_sha`."
+      "location": "tests/adapters/test_subprocess_git.py:11-19",
+      "note": "The async `git_repo` fixture. Line 15 is the offending `await _run_git([\"git\", \"init\"], cwd=repo)` call that omits the initial-branch flag and inherits the runner's `init.defaultBranch` (which on ubuntu-24.04 is unset → falls back to `master`). The fix lives entirely on this line."
     },
     {
-      "location": "src/kodezart/chains/ralph_loop.py:177-226",
-      "note": "`_evaluate_node` currently emits `WorkflowIterationEvent(commit_sha=state['last_commit_sha'])` — clobbered to None on no-change iters. After fix: emits `commit_sha=state.get('iteration_commit_sha')` (per-iter semantic preserved) AND pre-computes `changeset = await self._git.diff_summary(cwd, base_ref=ctx.base_branch, head_ref=ctx.ralph_branch)` and passes `changeset` to `evaluation.build_prompt` (closes #12 inside the loop). Reviewer concern Q is addressed: the event field doesn't silently shift to 'latest known'."
+      "location": "tests/adapters/test_subprocess_git.py:202-224",
+      "note": "`test_is_ancestor_returns_false_when_not_ancestor` — line 224 passes the literal `\"main\"` to `git_service.is_ancestor`. Fails on CI because `main` is not a local ref when the fixture's initial branch is `master`. Must pass after the fix without assertion change."
     },
     {
-      "location": "src/kodezart/chains/ralph_loop.py:96",
-      "note": "`initial_state` in RalphLoop.run() — drop `last_commit_sha`; do NOT seed `iteration_commit_sha` (it's NotRequired, written by _execute_node every iter)."
+      "location": "tests/adapters/test_subprocess_git.py:301-315",
+      "note": "`test_diff_summary_returns_changeset_digest` — line 312 passes `\"main\"` as `base_ref` to `git_service.diff_summary`. Same root cause; same expectation post-fix."
     },
     {
-      "location": "src/kodezart/chains/ralph_workflow.py:415-454",
-      "note": "`_run_ralph_loop_node` — return `{'accepted': ..., 'total_iterations': ..., 'feature_tip_sha': None}`. Do NOT query the canonical ralph tip here; `consolidate` queries it internally via `remote_branch_sha`. The outer engine does the bookkeeping (reviewer concern, sanity-1)."
+      "location": "tests/adapters/test_subprocess_git.py:227-231",
+      "note": "`test_is_ancestor_raises_on_unknown_ref` — the contract test that pins the adapter's `RuntimeError` behavior on truly unknown refs. MUST continue to pass; the fix must not weaken this contract."
     },
     {
-      "location": "src/kodezart/chains/ralph_workflow.py:496-532",
-      "note": "`_merge_to_feature_node` — drop the `state['accepted'] and state['last_commit_sha'] is not None` guard AND the `try/except Exception` around `merge_and_push`. Replace with: if not accepted return early; else `outcome = await self._merger.consolidate(...)` and route on `outcome.status`. Emit `WorkflowConsolidationEvent` regardless. SOURCE_MISSING raises (programming error). DIVERGENT returns `merged=False, merge_error=...` (routes to `complete` via existing `_route_after_merge`). FAST_FORWARDED/ALREADY_INTEGRATED resolve `review_base_sha=remote_branch_sha(origin, base_branch)` and `review_head_sha=outcome.feature_tip_sha`."
+      "location": "src/kodezart/adapters/subprocess_git_service.py:201-288",
+      "note": "`SubprocessGitService.is_ancestor` and `SubprocessGitService.diff_summary` (plus their helpers `_run_with_exit_codes` and `_run_output`). Correctly raise `RuntimeError` on the `fatal: Not a valid object name` / `fatal: ambiguous argument` exit-128 path. NO change required — referenced here as the load-bearing link between the failure path observed in CI and the contract that must be preserved."
     },
     {
-      "location": "src/kodezart/chains/ralph_workflow.py:534-538",
-      "note": "`_route_after_merge` — unchanged in shape: routes to `review_against_ticket` on `merged`, `complete` otherwise. DIVERGENT now flows through with `merge_error` populated in state for `WorkflowCompleteEvent.error`."
+      "location": "tests/conftest.py:15-25",
+      "note": "`_git_test_identity` autouse session fixture — sets `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars only. Unrelated to branch defaults; must be preserved (do not weaken or remove)."
     },
     {
-      "location": "src/kodezart/chains/ralph_workflow.py:540-590",
-      "note": "`_review_against_ticket_node` — currently calls `evaluation_prompt.build_prompt(state['acceptance_criteria'])` (positional, no changeset — root of #12). After fix: assert `state['review_base_sha']` and `state['review_head_sha']` are not None, compute `changeset = await self._git.diff_summary(cwd, base_ref=state['review_base_sha'], head_ref=state['review_head_sha'])`, call `evaluation_prompt.build_prompt(criteria=state['acceptance_criteria'], changeset=changeset)`."
+      "location": "tests/adapters/test_git_branch_merger.py:50",
+      "note": "Precedent for the short-form pin: `await _git([\"git\", \"init\", \"-b\", \"main\"], cwd=repo)`. Match this convention."
     },
     {
-      "location": "src/kodezart/chains/ralph_workflow.py:616-676",
-      "note": "`_fix_code_node` — currently calls `merger.merge_and_push(base_branch=ctx.base_branch, source_branch=fix_branch)` (root of #5 Mode 3 — worktree acquired on `ctx.base_branch`='main' while `fix_branch` is descended from `feature_branch`). After fix: `outcome = await self._merger.consolidate(base_branch=state['feature_branch'], feature_branch=state['feature_branch'], source_branch=fix_branch, ...)`; emit `WorkflowConsolidationEvent` (no phase field). DIVERGENT/SOURCE_MISSING populate `merge_error` and route via the new conditional edge. ALREADY_INTEGRATED is legal (no exception). NO try/except."
+      "location": "tests/adapters/test_git_worktree_provider.py:195",
+      "note": "Second short-form precedent: `await _run_git([\"git\", \"init\", \"-b\", \"main\"], cwd=upstream)`."
     },
     {
-      "location": "src/kodezart/chains/ralph_workflow.py:277",
-      "note": "Currently `graph.add_edge('fix_code', 'review_against_ticket')` (unconditional). Change to `graph.add_conditional_edges('fix_code', self._route_after_fix, {'review_against_ticket': ..., 'comment_failure': ..., 'complete': ...})`. New router `_route_after_fix` returns `review_against_ticket` when `merge_error is None`, `comment_failure` when `pr_url` set AND `_pr_creator is not None`, else `complete`. Reviewer concern P."
+      "location": "tests/integration/test_workflow_e2e.py:60",
+      "note": "Third short-form precedent: `await _git([\"git\", \"init\", \"-b\", \"main\"], cwd=repo)`. Confirmed path — the file lives under `tests/integration/`, not `tests/workflow/`."
     },
     {
-      "location": "src/kodezart/chains/ralph_workflow.py:878",
-      "note": "`_complete_node` — `final_commit_sha=state['feature_tip_sha']` (renamed source field; wire-format field name `final_commit_sha` / `finalCommitSha` is unchanged so existing consumers continue to read it)."
+      "location": ".github/workflows/check.yml:17",
+      "note": "CI runs on `ubuntu-latest` (currently ubuntu-24.04), which has no global `init.defaultBranch` — the host-config divergence that exposes the bug."
     },
     {
-      "location": "src/kodezart/adapters/git_change_persister.py:42",
-      "note": "`persist` short-circuits on `has_changes` only (root of #5 Bug B). After fix: clean-tree path queries `remote_branch_sha` + `current_sha`; if equal → None; if HEAD descends from remote tip → push + return `PersistResult(source=AGENT_DIRECT_COMMIT, message=<real HEAD message from git log -1 --format=%B HEAD>)`; else raise `RuntimeError` describing divergence."
+      "location": "Makefile:23",
+      "note": "`check: lint type-check test` — the make target that fails on CI. After the fix, all three sub-targets must exit 0."
     },
     {
-      "location": "src/kodezart/adapters/git_worktree_provider.py:102-142",
-      "note": "`_backup_if_needed` — DELETE this method entirely. Its caller at line 98 (`release()`) replaces the call with `_log_release_state(workspace_path, info)` which only logs `workspace_release_unclean` on dirty release; does NOT push to any backup branch. Closes #13 at the source."
-    },
-    {
-      "location": "src/kodezart/adapters/subprocess_git_service.py:216-235",
-      "note": "`_run` raises on any non-zero exit. New sibling `_run_with_exit_codes(cmd, cwd, allowed: frozenset[int], env=None) -> tuple[int, str]` tolerates declared exit codes (1 for is-ancestor, 2 for ls-remote --exit-code) and returns (exit_code, stdout); raises on anything else. The existing `_run` and `_run_output` are unchanged."
-    },
-    {
-      "location": "src/kodezart/adapters/git_branch_merger.py:23-78",
-      "note": "`merge_and_push` and public `cleanup_source` are REMOVED. `consolidate` is implemented with the four-status decision tree. Private `_cleanup_source_internal` (body of the old public `cleanup_source`) is invoked only on FAST_FORWARDED. `cleanup_backup_branches` is unchanged."
-    },
-    {
-      "location": "src/kodezart/core/protocols.py:21-82",
-      "note": "`GitService` — add `is_ancestor`, `remote_branch_sha`, `diff_summary`. NO `rev_list_count`, NO `diff_name_only` (YAGNI per reviewer concerns sanity-2, sanity-3)."
-    },
-    {
-      "location": "src/kodezart/core/protocols.py:152-189",
-      "note": "`BranchMerger` — remove `merge_and_push` and `cleanup_source`; add `consolidate(...) -> ConsolidationOutcome`; keep `cleanup_backup_branches`. `consolidate` never raises on DIVERGENT/SOURCE_MISSING — total function over the four statuses."
-    },
-    {
-      "location": "src/kodezart/services/agent_service.py:167-179",
-      "note": "Only call site of `_persister.persist(...)`. Reads `persist_result.commit_sha` and `persist_result.branch` — additive `PersistResult.source` field is consumer-transparent."
-    },
-    {
-      "location": "src/kodezart/types/domain/agent.py:299-308",
-      "note": "`WorkflowIterationEvent.commit_sha` field — semantic preserved as 'this iter's commit' by sourcing from `RalphLoopState.iteration_commit_sha` (NotRequired, per-iter) rather than from a cumulative state field. NO `ralph_tip_sha` field is added."
-    },
-    {
-      "location": "src/kodezart/types/domain/persist.py",
-      "note": "`PersistResult` — add required `source: PersistSource` field (no default). Add `PersistSource(StrEnum)` with members `WORKING_TREE_COMMIT`, `AGENT_DIRECT_COMMIT`. NO `<agent-direct>` sentinel string anywhere."
-    },
-    {
-      "location": "src/kodezart/types/domain/workflow.py:85-92",
-      "note": "`RalphLoopState` — drop `last_commit_sha`; add `iteration_commit_sha: NotRequired[str | None]` from `typing`."
-    },
-    {
-      "location": "src/kodezart/types/domain/workflow.py:94-114",
-      "note": "`WorkflowState` — rename `last_commit_sha` → `feature_tip_sha`; add `review_base_sha: str | None`, `review_head_sha: str | None`. NO `last_consolidation`, NO `ralph_tip_sha`."
-    },
-    {
-      "location": "src/kodezart/prompts/evaluation.py:172-182",
-      "note": "`build_prompt` — keyword-only `(*, criteria, changeset)`. Inlines `ChangesetDigest` data verbatim (file paths, commit subjects, count). Empty-changeset case rendered as explicit escape clause. NO shell command strings in the prompt body."
-    },
-    {
-      "location": "tests/prompts/test_prompt_wiring.py:15",
-      "note": "Positional caller of `evaluation_prompt(['Tests pass'])` — migrate to keyword-only call with a `ChangesetDigest`. Extend this file with the three new tests; do NOT create `test_evaluation.py` (DRY per reviewer concern T)."
-    },
-    {
-      "location": "tests/chains/test_ralph_loop.py:413-431",
-      "note": "Positional `build_prompt` spy — migrate signature to `def spy(*, criteria, changeset)`. Add per-iter regression tests covering `iteration_commit_sha`."
-    },
-    {
-      "location": "tests/chains/test_ralph_workflow.py:194-202",
-      "note": "`assert len(merger.calls) == 3` → `assert len(merger.calls) == 2` (consolidate + cleanup_backup_branches). Update kwargs access on `merger.calls[0]`."
-    },
-    {
-      "location": "tests/chains/test_ralph_workflow.py:205-232",
-      "note": "`test_workflow_merge_failure_reports_error` — reshape from `FakeBranchMerger(fail=RuntimeError(...))` to `FakeBranchMerger(consolidation_outcomes=[ConsolidationOutcome(status=DIVERGENT, feature_tip_sha='0'*40)])`. Same assertion surface preserved: `'diverged' in complete_events[0].error`."
-    },
-    {
-      "location": "tests/chains/test_ralph_workflow.py:2026-2028",
-      "note": "P2-AC14: keep comment; update filter to `[c for c in merger.calls if c.get('method') == 'consolidate']`; assert count == 3 (1 initial + 2 fixes)."
-    },
-    {
-      "location": "tests/chains/test_shorthand_url_resolution.py:87-89",
-      "note": "Same migration pattern as test_ralph_workflow.py:194-202; count 3 → 2; read `merger.calls[0]['repo_url']` on consolidate call."
-    },
-    {
-      "location": "tests/adapters/test_git_branch_merger.py:79-102",
-      "note": "Rename `test_merge_and_push_creates_feature_branch` → `test_consolidate_fast_forwarded_creates_feature_branch`. Add the three sibling status tests."
-    },
-    {
-      "location": "tests/api/v1/test_agent.py:177",
-      "note": "`FakeBranchMerger()` default-construct — verify new default outcome queue produces FAST_FORWARDED so existing API-layer `merged=True` assertions still pass."
-    },
-    {
-      "location": "tests/integration/test_workflow_e2e.py",
-      "note": "Grep for `merge_and_push`, `cleanup_source`, `last_commit_sha`, `fail=`, positional `build_prompt`; migrate each in lockstep."
-    },
-    {
-      "location": "tests/adapters/test_git_worktree_provider.py",
-      "note": "Existing backup-on-dirty-release test must be inverted: assert `workspace_release_unclean` warning AND assert `git.push` is NOT called with any backup-branch name. Add `test_backup_if_needed_method_is_gone` (introspection guard)."
-    },
-    {
-      "location": "src/kodezart/main.py:85-113",
-      "note": "Composition root — add `git=git, cache=cache` kwargs to both `RalphLoop(...)` (line 85) and `RalphWorkflowEngine(...)` (line 100) constructor calls. Both already in scope."
-    },
-    {
-      "location": "https://docs.langchain.com/oss/python/langgraph/use-graph-api",
-      "note": "LangGraph TypedDict default-overwrite reducer; nodes omit unwritten keys to skip update."
-    },
-    {
-      "location": "https://peps.python.org/pep-0655/",
-      "note": "`NotRequired[T]` semantics — key may be absent at runtime; in `typing` since Python 3.11 (project targets 3.12)."
-    },
-    {
-      "location": "https://docs.python.org/3/library/enum.html",
-      "note": "`StrEnum` is Python 3.11+ idiomatic replacement for `class Foo(str, Enum)`; serializes naturally with Pydantic v2."
-    },
-    {
-      "location": "https://git-scm.com/docs/git-merge-base",
-      "note": "`--is-ancestor` exits 0 iff ancestor (ff possible), 1 iff not, else error."
-    },
-    {
-      "location": "https://git-scm.com/docs/git-ls-remote.html",
-      "note": "`--exit-code` flag exits 2 when no matching refs; without it, exits 0 silently. Adapter MUST use `--exit-code`. NO `git fetch` required — ls-remote queries the remote directly."
-    },
-    {
-      "location": "https://git-scm.com/docs/git-diff",
-      "note": "`--name-only base..head` lists changed files; combined with `git log --no-merges --format=%s base..head` for `ChangesetDigest`."
-    },
-    {
-      "location": "https://docs.pydantic.dev/latest/concepts/unions/",
-      "note": "Adding a new `Literal['workflow_consolidation']` variant to `AgentEvent` is NOT automatically backwards-compatible for SSE consumers parsing against a closed Pydantic-like discriminated union with `extra='forbid'`. Snapshot test of the camelCase wire shape is the explicit coordination artifact."
+      "location": "pyproject.toml:35-71",
+      "note": "Mypy strict / disallow_any_explicit and Ruff selections with the `tests/**/*.py` per-file ignores already cover the added literals and the inline comment; no rule disabled, no new lint."
     }
   ],
   "requiredChanges": [
     {
-      "filePath": "src/kodezart/types/domain/consolidation.py",
-      "changeType": "create",
-      "description": "New module. Defines `ConsolidationStatus(StrEnum)` with members ALREADY_INTEGRATED, FAST_FORWARDED, DIVERGENT, SOURCE_MISSING. Defines `ConsolidationOutcome(CamelCaseModel)` frozen with only `status: ConsolidationStatus` and `feature_tip_sha: str` (40-char Field). Defines `ChangesetDigest(CamelCaseModel)` frozen with `file_paths: list[str]`, `commit_subjects: list[str]`, `commit_count: int (>=0)`, and an `is_empty` property. Uses `model_config = ConfigDict(frozen=True)` which Pydantic v2 merges with the parent `CamelCaseModel` config (alias_generator=to_camel, populate_by_name=True, extra=forbid). Same inheritance pattern as `WorkflowContext` at `types/domain/workflow.py:30`.",
-      "rationale": "Single new types module for the consolidation primitive. `StrEnum` is the Python 3.11+ idiomatic replacement for `class Foo(str, Enum)` (reviewer concern L). Four-status partition eliminates the SOURCE_MISSING-vs-DIVERGENT overload the reviewer flagged (concern C). Only two fields on `ConsolidationOutcome` — `ahead_count`/`behind_count`/`source_tip_sha` are dropped as YAGNI per reviewer concern D. `ChangesetDigest` is the typed data object the engine pre-computes and the prompt inlines (reviewer concern B: no shell strings in prompt body)."
-    },
-    {
-      "filePath": "src/kodezart/types/domain/persist.py",
-      "changeType": "modify",
-      "description": "Add `PersistSource(StrEnum)` with `WORKING_TREE_COMMIT = 'working_tree_commit'` and `AGENT_DIRECT_COMMIT = 'agent_direct_commit'`. Extend `PersistResult` (the existing `@dataclass(frozen=True, slots=True)`) with a required `source: PersistSource` field (no default — every construction must specify the source).",
-      "rationale": "Replaces the `<agent-direct>` sentinel commit-message string (reviewer concern E: string-literal cross-component contracts are forbidden). The typed `source` field distinguishes the two persister paths externally without overloading the human-readable `message` field. The only existing consumer (agent_service.py:167-179) reads only `commit_sha` and `branch`, so the field is additive at the consumer side; only the persister's construction sites must pass `source=`."
-    },
-    {
-      "filePath": "src/kodezart/types/domain/agent.py",
-      "changeType": "modify",
-      "description": "Add `WorkflowConsolidationEvent(AgentEvent)` with `type: Literal['workflow_consolidation']`, `status: ConsolidationStatus`, `feature_branch: str (min_length=1)`, `source_branch: str (min_length=1)`, `feature_tip_sha: str (min_length=40, max_length=40)`. NO `phase` field. NO change to `WorkflowIterationEvent`/`WorkflowReviewEvent`/`WorkflowPREvent`/`WorkflowCIEvent`/`WorkflowCompleteEvent` shapes. Import `ConsolidationStatus` from `kodezart.types.domain.consolidation`.",
-      "rationale": "Drops the `phase: Literal['post_loop', 'post_fix']` field — it was a renamed `fix_rounds_used == 0` vs `> 0` boolean discriminant (reviewer concern A: forbidden anti-pattern). Both emission sites differ by event ordering relative to `WorkflowReviewEvent` (existing convention). `WorkflowIterationEvent.commit_sha` keeps its per-iter semantic — no rename — because the per-iter value is sourced from the new `RalphLoopState.iteration_commit_sha` rather than from a cumulative state field (reviewer concern Q)."
-    },
-    {
-      "filePath": "src/kodezart/types/domain/workflow.py",
-      "changeType": "modify",
-      "description": "`RalphLoopState`: REMOVE `last_commit_sha`. ADD `iteration_commit_sha: NotRequired[str | None]` (PEP 655 — `from typing import NotRequired`). `WorkflowState`: RENAME `last_commit_sha` → `feature_tip_sha: str | None`. ADD `review_base_sha: str | None` and `review_head_sha: str | None`. No `last_consolidation`. No `ralph_tip_sha`. No `ahead_count`/`behind_count`/`source_tip_sha`.",
-      "rationale": "`iteration_commit_sha: NotRequired[...]` preserves the per-iter `WorkflowIterationEvent.commit_sha` semantic without forcing a wire-shape rename (reviewer concern Q). The outer engine does NOT maintain a cumulative SHA — it queries `remote_branch_sha` once via `consolidate` (reviewer concern H). `feature_tip_sha` REPLACES `last_commit_sha` (not coexists — reviewer concern G). `review_base_sha`/`review_head_sha` are both 40-char SHAs only (not branch names) so the prompt receives canonical, unambiguous refs (reviewer concern F: no SHA-or-branch-name overload). `last_consolidation` field is dropped — only `status` was routed on, and the YAGNI fields would invite desync (reviewer concern D)."
-    },
-    {
-      "filePath": "src/kodezart/core/protocols.py",
-      "changeType": "modify",
-      "description": "On `GitService`: add three read-only async methods — `is_ancestor(cwd, ancestor_ref, descendant_ref) -> bool`, `remote_branch_sha(cwd, remote, branch) -> str | None` (NEVER raises on absent ref — returns None), `diff_summary(cwd, base_ref, head_ref) -> ChangesetDigest`. Do NOT add `rev_list_count` or `diff_name_only`. On `BranchMerger`: REMOVE `merge_and_push` and `cleanup_source`. ADD `consolidate(*, repo_path, repo_url, base_branch, feature_branch, source_branch, cache_key=None) -> ConsolidationOutcome` (NEVER raises on DIVERGENT/SOURCE_MISSING — total function). KEEP `cleanup_backup_branches`.",
-      "rationale": "`rev_list_count` is dropped — two `is_ancestor` calls partition all four statuses (reviewer concern, sanity-2). `diff_name_only` is dropped in favor of the higher-level `diff_summary` (reviewer concern, sanity-3). `cleanup_source` is removed from the protocol — it becomes a private adapter detail invoked only on FAST_FORWARDED, so the merger's decision tree no longer leaks into consumer nodes (reviewer concern, architecture-3: callers must NOT `match outcome.status` to decide whether to call cleanup_source). `consolidate` is single-responsibility (classify-and-merge); it's a total function over the four statuses."
-    },
-    {
-      "filePath": "src/kodezart/adapters/subprocess_git_service.py",
-      "changeType": "modify",
-      "description": "Add a private helper `_run_with_exit_codes(cmd, cwd, allowed: frozenset[int], env=None) -> tuple[int, str]` — runs the command, raises RuntimeError if exit not in `allowed`, returns `(exit_code, stdout)` otherwise. Implement: `is_ancestor` via `git merge-base --is-ancestor <a> <b>` with `allowed={0, 1}` (returns `exit_code == 0`); `remote_branch_sha` via `git ls-remote --exit-code --heads <remote> refs/heads/<branch>` with `allowed={0, 2}` (exit 2 → None; exit 0 → parse `<sha>\\t<ref>` line and return SHA; NO `git fetch` before); `diff_summary` via parallel calls to `git diff --name-only <base>..<head>` and `git log --no-merges --format=%s <base>..<head>`, returns `ChangesetDigest(file_paths=..., commit_subjects=..., commit_count=len(subjects))`. Document the exit-code map in each method's docstring (especially `--exit-code` for ls-remote: 0=found, 2=no-match, else raise).",
-      "rationale": "Pure subprocess wrappers; no business logic. The new helper preserves the loud-failure invariant for unexpected exits (reviewer concern J: explicit empty-output → None mapping via `--exit-code`). NO `git fetch` before `remote_branch_sha` — official ls-remote docs confirm it queries the remote directly (reviewer concern I)."
-    },
-    {
-      "filePath": "src/kodezart/adapters/git_branch_merger.py",
-      "changeType": "modify",
-      "description": "REMOVE `merge_and_push` and `cleanup_source` (public). ADD private `_cleanup_source_internal` (body of old `cleanup_source`, never raises). Implement `consolidate` with this decision tree: (1) resolve bare-repo cwd; (2) query `source_tip = remote_branch_sha(cwd, origin, source_branch)` BEFORE acquiring a worktree — if None, resolve `feature_tip = remote_branch_sha(origin, feature_branch) or remote_branch_sha(origin, base_branch)` (raise if base_branch also missing on origin), return `SOURCE_MISSING`; (3) acquire worktree on `feature_branch` (creating from `base_branch` if absent); (4) `git fetch` (needed for in-worktree `is_ancestor` against local origin/* refs); (5) if `is_ancestor(workspace, source_tip, HEAD)` → ALREADY_INTEGRATED; (6) if `is_ancestor(workspace, HEAD, source_tip)` → `merge_branch(origin/<source_branch>)`, push, `_cleanup_source_internal`, return FAST_FORWARDED; (7) else DIVERGENT. NEVER raises on DIVERGENT/SOURCE_MISSING.",
-      "rationale": "Single source of truth for the consolidation decision tree (DRY). The SOURCE_MISSING path avoids acquiring a worktree to save round-trips (reviewer concern J + verified ls-remote behavior). `cleanup_source` is invoked internally only on FAST_FORWARDED — callers never need to know about it (reviewer concern, architecture-3). `git fetch` is needed here (before `is_ancestor`) but NOT before `remote_branch_sha` (reviewer concern I)."
-    },
-    {
-      "filePath": "src/kodezart/adapters/git_change_persister.py",
-      "changeType": "modify",
-      "description": "Keep existing `has_changes` path; add a clean-tree branch. New flow: if `has_changes(workspace)` → existing path, return `PersistResult(..., source=PersistSource.WORKING_TREE_COMMIT)`. Else query `head_sha = current_sha(workspace)` and `remote_tip = remote_branch_sha(workspace, origin, branch)`; if equal → log `persist_no_changes`, return None; if `remote_tip is None or is_ancestor(workspace, remote_tip, head_sha)` → push, fetch real HEAD message via `git log -1 --format=%B HEAD`, return `PersistResult(commit_sha=head_sha, branch=branch, message=<head message>, source=PersistSource.AGENT_DIRECT_COMMIT)`; else raise `RuntimeError` describing the HEAD-vs-remote divergence. Expand the method docstring to describe the new conceptual scope ('ensure canonical ref equals workspace HEAD'). NO `<agent-direct>` sentinel.",
-      "rationale": "Closes #5 Bug B without relaxing `has_changes` semantics. The agent-direct path uses committed-history primitives only (no `git status --porcelain` reliance — anti-pattern honored). Divergence raises loudly. The real HEAD commit message is fetched via git — no sentinel strings (reviewer concern E + U). Reviewer accepted the option of keeping ONE `persist` method with documented expanded scope rather than splitting into `persist_changes` + `rescue_unpushed_commits`."
-    },
-    {
-      "filePath": "src/kodezart/adapters/git_worktree_provider.py",
-      "changeType": "modify",
-      "description": "DELETE the `_backup_if_needed` method (current lines 102-142). REMOVE its call from `release()` (line 98). ADD `_log_release_state(workspace_path, info)` which calls `has_changes` and emits `await self._log.awarning('workspace_release_unclean', ...)` when dirty, but does NOT push to any backup branch. Update the class docstring to document explicitly: 'Recovery-via-backup-branch is intentionally disabled; re-introducing it must be via the typed state contract — see the consolidation plan\\'s out-of-scope note.'",
-      "rationale": "Closes #13 at the source — the silent backup-branch creator is gone (reviewer concern R + brief anti-pattern: 'No new -backup-<hex> branch lifecycle introduced without a corresponding WorkflowState field and SSE event'). The new persister contract ensures the canonical ref equals HEAD before release, so dirty state at release is a programming error elsewhere. Loud-via-warning surfaces the bug rather than masking it with a silent backup push. The class docstring records the deliberate trade-off so any future re-introduction is gated through a typed contract design."
-    },
-    {
-      "filePath": "src/kodezart/prompts/evaluation.py",
-      "changeType": "modify",
-      "description": "Change `build_prompt` signature to `(*, criteria: list[str], changeset: ChangesetDigest) -> str` (keyword-only). Inline a `── CHANGESET TO EVALUATE ──` block that renders `changeset.file_paths` as a numbered list and `changeset.commit_subjects` as a numbered list, plus `changeset.commit_count`. When `changeset.is_empty` is True, render an explicit empty-changeset note ('No commits between the base and head refs; the previous verdict\\'s failures persist unchanged.') as the entire block. NO shell command strings in the prompt body. Keep the `_EVALUATION_PRELUDE` Watson sections otherwise unchanged.",
-      "rationale": "Closes #12. The prompt receives DATA (typed `ChangesetDigest`), not shell commands the agent must execute (reviewer concern B: 'data not commands'). Keyword-only enforces the contract at type-check time. The empty-changeset case is rendered explicitly so the reviewer cannot silently 'Cannot verify'."
-    },
-    {
-      "filePath": "src/kodezart/chains/ralph_loop.py",
-      "changeType": "modify",
-      "description": "Add `git: GitService` and `cache: RepoCache` parameters to `__init__` (documented as single-purpose: `_evaluate_node` pre-computes `ChangesetDigest` for the evaluator prompt; the loop does NOT do canonical-tip bookkeeping). In `_execute_node`, always return `{'iteration': iteration, 'iteration_commit_sha': commit_sha}` — `commit_sha` is None on no-change iters. NO `last_commit_sha`. NO `ralph_tip_sha` resolution. In `_evaluate_node`, resolve `cwd = ctx.repo_path or await self._cache.ensure_available(ctx.repo_url, ctx.cache_key)`, call `changeset = await self._git.diff_summary(cwd=cwd, base_ref=ctx.base_branch, head_ref=ctx.ralph_branch)`, call `evaluation.build_prompt(criteria=ctx.acceptance_criteria, changeset=changeset)`, emit `WorkflowIterationEvent(commit_sha=state.get('iteration_commit_sha'), ...)` (per-iter semantic — may be None). In `run()`, the initial state drops `last_commit_sha` entirely (`iteration_commit_sha` is NotRequired and not seeded).",
-      "rationale": "Closes #5 Bug A — `iteration_commit_sha` is always written by `_execute_node` with the correct per-iter semantic (None when no commit, SHA otherwise); `_evaluate_node` reads it for the event field. The per-iter `WorkflowIterationEvent.commit_sha` does NOT silently shift to 'latest known' (reviewer concern Q). The loop does NOT take on canonical-tip bookkeeping — the outer engine does that via `consolidate`'s internal `remote_branch_sha` query (reviewer concern, sanity-1). `GitService`/`RepoCache` injection is the minimal widening needed solely for `diff_summary` in `_evaluate_node` (no shell commands in the loop's evaluator prompt either)."
-    },
-    {
-      "filePath": "src/kodezart/chains/ralph_workflow.py",
-      "changeType": "modify",
-      "description": "Add `git: GitService` and `cache: RepoCache` parameters to `__init__`. Update `run()`'s `initial_state` to use `feature_tip_sha`, `review_base_sha`, `review_head_sha` (all None) — no `last_commit_sha`. In `_run_ralph_loop_node`, return `{'accepted': ..., 'total_iterations': ..., 'feature_tip_sha': None}` — do NOT query the canonical ralph tip here (the merger does that internally). In `_merge_to_feature_node`, drop the `try/except` around the merger call; call `outcome = await self._merger.consolidate(...)`; emit `WorkflowConsolidationEvent(status=outcome.status, feature_branch=..., source_branch=state['ralph_branch'], feature_tip_sha=outcome.feature_tip_sha)`; map status: SOURCE_MISSING → raise RuntimeError (programming error: loop ran but never pushed); DIVERGENT → `{'merged': False, 'merge_error': 'ralph diverged from feature: ...', 'feature_tip_sha': outcome.feature_tip_sha}`; FAST_FORWARDED or ALREADY_INTEGRATED → resolve `base_tip = await self._git.remote_branch_sha(cwd, 'origin', ctx.base_branch)` (raise if None), return `{'merged': True, 'merge_error': None, 'feature_tip_sha': outcome.feature_tip_sha, 'review_base_sha': base_tip, 'review_head_sha': outcome.feature_tip_sha}`. In `_review_against_ticket_node`, raise if `review_base_sha`/`review_head_sha` are None, call `changeset = await self._git.diff_summary(cwd, base_ref=state['review_base_sha'], head_ref=state['review_head_sha'])`, then `evaluation_prompt.build_prompt(criteria=..., changeset=changeset)`. In `_fix_code_node`, capture `pre_fix_head_sha = state['feature_tip_sha']` (raise if None); call `outcome = await self._merger.consolidate(base_branch=state['feature_branch'], feature_branch=state['feature_branch'], source_branch=fix_branch, ...)`; emit `WorkflowConsolidationEvent` (no phase field); on DIVERGENT/SOURCE_MISSING return state with `merge_error` populated, `feature_tip_sha=pre_fix_head_sha`, `merged=False`, `review_base_sha=None`, `review_head_sha=None`, `fix_rounds_used+1`; on FAST_FORWARDED/ALREADY_INTEGRATED return state with `feature_tip_sha=outcome.feature_tip_sha`, `review_base_sha=pre_fix_head_sha`, `review_head_sha=outcome.feature_tip_sha`, `fix_rounds_used+1`. Replace the unconditional `add_edge('fix_code', 'review_against_ticket')` with a conditional `add_conditional_edges('fix_code', self._route_after_fix, {...})` whose router is `def _route_after_fix(self, state): return 'review_against_ticket' if state['merge_error'] is None else ('comment_failure' if state['pr_url'] is not None and self._pr_creator is not None else 'complete')`. In `_complete_node`, source `final_commit_sha=state['feature_tip_sha']`. NO `try/except` anywhere around merger calls.",
-      "rationale": "Replaces the silent-skip + exception-bubble routing with a typed four-way switch on `ConsolidationOutcome.status`. The fix node uses `feature_branch` as `base_branch` for `consolidate` because the worktree must be acquired atop the current feature tip — the prior bug acquired atop `ctx.base_branch` (closing #5 Mode 3). Plumbing pre-fix tip into `review_base_sha` (40-char SHA) and post-consolidation tip into `review_head_sha` closes #12 deterministically for fix rounds. ALREADY_INTEGRATED on fix is legal — review re-runs against empty changeset and the empty-changeset escape clause fires (reviewer concern O: explicit mapping). DIVERGENT routing splits on `pr_url` between `comment_failure` and `complete` (reviewer concern P). NO phase field on the event (reviewer concern A)."
-    },
-    {
-      "filePath": "src/kodezart/main.py",
-      "changeType": "modify",
-      "description": "At line 85-91, add `git=git, cache=cache` to `RalphLoop(...)` constructor call. At line 100-113, add `git=git, cache=cache` to `RalphWorkflowEngine(...)` constructor call. Both `git` and `cache` are already in scope (line 54: `git = SubprocessGitService(auth=auth)`; line 56: `cache = ...`).",
-      "rationale": "Composition-root wiring for the new GitService and RepoCache dependencies. Mechanical — both are already constructed."
-    },
-    {
-      "filePath": "tests/fakes.py",
-      "changeType": "modify",
-      "description": "Extend `FakeGitService.__init__` with keyword-only optional params: `remote_branch_shas: dict[str, str | None] | None = None`, `ancestor_pairs: set[tuple[str, str]] | None = None`, `diff_digests: dict[tuple[str, str], ChangesetDigest] | None = None`. Implement the three new async methods (`is_ancestor`, `remote_branch_sha`, `diff_summary`) recording `.calls`. Defaults preserve existing test behavior. Full rewrite of `FakeBranchMerger`: REMOVE the `fail` ctor param; REMOVE `merge_and_push`; REMOVE the public `cleanup_source` method; ADD `consolidate(*, ...) -> ConsolidationOutcome` that pops from a configurable `consolidation_outcomes: list[ConsolidationOutcome]` queue (default: one FAST_FORWARDED outcome with deterministic SHA); KEEP `cleanup_backup_branches`. Calls are recorded with `method='consolidate'` or `method='cleanup_backup_branches'`. Extend `FakeChangePersister` to include a `PersistSource` in its configurable result (default `WORKING_TREE_COMMIT`).",
-      "rationale": "Hand-rolled fakes recording `.calls` is the project convention (no mocking libs). Removing `fail` and `merge_and_push` from `FakeBranchMerger` (matching the protocol change) catches every stale test call site at import-time. All ctor params keyword-only with defaults so existing tests are not broken."
-    },
-    {
-      "filePath": "tests/prompts/test_prompt_wiring.py",
-      "changeType": "modify",
-      "description": "Migrate the positional call at line 15 to keyword-only: `evaluation_prompt(criteria=['Tests pass'], changeset=ChangesetDigest(file_paths=[], commit_subjects=[], commit_count=0))`. Add three new tests in the same file: `test_evaluation_prompt_inlines_changeset_digest` (assert commit subjects and file paths appear verbatim in the rendered prompt body), `test_evaluation_prompt_handles_empty_changeset` (assert empty-changeset escape clause text appears when `is_empty=True`), `test_evaluation_prompt_rejects_positional_args` (`with pytest.raises(TypeError): build_prompt(['c'], digest)`).",
-      "rationale": "Reviewer concern T: do NOT create `tests/prompts/test_evaluation.py` (would duplicate `test_prompt_wiring.py`). Extend the existing file (DRY). Reviewer concern N: keyword-only is a hard break — migrate this caller in the same change."
-    },
-    {
-      "filePath": "tests/chains/test_ralph_loop.py",
-      "changeType": "modify",
-      "description": "Update the spy at lines 424-430: change `def spy(criteria: list[str]) -> str:` to `def spy(*, criteria: list[str], changeset: ChangesetDigest) -> str:` and `return original(criteria=criteria, changeset=changeset)`. Add new tests: `test_execute_node_writes_iteration_commit_sha_none_on_no_change_iter` (service emits `ResultEvent(commit_sha=None)`; assert returned state delta is `{'iteration': N, 'iteration_commit_sha': None}`), `test_execute_node_with_commit_returns_iteration_commit_sha_set`, `test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha` (drive iter 1 with SHA, iter 2 with None; assert event 2's `commit_sha is None`, NOT iter 1's value), `test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch` (FakeGitService spy), `test_evaluate_node_passes_changeset_to_build_prompt` (monkeypatch capture).",
-      "rationale": "Reviewer concerns N (positional spy migration), Q (per-iter semantic preserved), B (changeset is data, not shell). The two-iter no-change-iter test is the canonical regression for #5 Bug A and verifies the WorkflowIterationEvent doesn't silently report 'latest known'."
-    },
-    {
-      "filePath": "tests/chains/test_ralph_workflow.py",
-      "changeType": "modify",
-      "description": "Line 194-202: change `assert len(merger.calls) == 3` → `assert len(merger.calls) == 2` (consolidate + cleanup_backup_branches; cleanup_source is internal). Update `merger.calls[0]` key access to match the consolidate kwargs (`repo_path`, `repo_url`, `base_branch`, `feature_branch`, `source_branch`, `cache_key`). Lines 205-232 (`test_workflow_merge_failure_reports_error`): reshape to `merger = FakeBranchMerger(consolidation_outcomes=[ConsolidationOutcome(status=ConsolidationStatus.DIVERGENT, feature_tip_sha='0'*40)])`. Update assertion: `assert 'diverged' in complete_events[0].error`. Lines 2026-2028: keep the `P2-AC14` comment; update filter to `[c for c in merger.calls if c.get('method') == 'consolidate']`; assert count == 3 (1 initial + 2 fixes). Add new tests: `test_workflow_consolidation_event_emitted_post_loop` (camelCase wire-shape SNAPSHOT — coordination artifact for SSE consumers; expected shape includes type='workflow_consolidation', status='fast_forwarded', featureBranch, sourceBranch, featureTipSha), `test_review_against_ticket_passes_changeset_digest_to_build_prompt` (monkeypatch capture, assert kwargs match), `test_merge_to_feature_divergent_routes_to_complete_with_merge_error`, `test_merge_to_feature_source_missing_raises`, `test_merge_to_feature_already_integrated_proceeds_to_review`, `test_fix_code_node_divergent_routes_to_comment_failure_when_pr_url_set`, `test_fix_code_node_divergent_routes_to_complete_when_no_pr_url`, `test_fix_code_node_already_integrated_does_not_raise_advances_fix_round`, `test_fix_code_node_source_missing_routes_terminally`, `test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs`, `test_complete_event_final_commit_sha_sources_from_feature_tip_sha`.",
-      "rationale": "Migration of every reviewer-cited test reference plus comprehensive new coverage for the four-status decision tree and the fix-node routing fork (reviewer concerns O, P, S). The snapshot test is the SSE-consumer coordination artifact (reviewer concern K: pin the wire shape)."
-    },
-    {
-      "filePath": "tests/chains/test_shorthand_url_resolution.py",
-      "changeType": "modify",
-      "description": "Lines 87-89: change `assert len(merger.calls) == 3` → `assert len(merger.calls) == 2`. Read `merger.calls[0]['repo_url']` from the consolidate call (filter by `method == 'consolidate'` if needed).",
-      "rationale": "Same merger-call-count migration as test_ralph_workflow.py:194 — explicit per the reviewer's exhaustive enumeration (concern S)."
-    },
-    {
-      "filePath": "tests/adapters/test_git_branch_merger.py",
-      "changeType": "modify",
-      "description": "Rename `test_merge_and_push_creates_feature_branch` (lines 79-102) to `test_consolidate_fast_forwarded_creates_feature_branch`; call `outcome = await merger.consolidate(...)`; assert `outcome.status == ConsolidationStatus.FAST_FORWARDED` and `outcome.feature_tip_sha` is 40 hex chars. Add: `test_consolidate_already_integrated_returns_no_push` (FakeGitService injecting ancestor_pairs that make source an ancestor of HEAD; assert no `push` or `merge_branch` call recorded), `test_consolidate_divergent_does_not_raise` (FakeGitService injecting no ancestor relation; assert `outcome.status == DIVERGENT`, no exception), `test_consolidate_source_missing_returns_status_without_acquiring_worktree` (FakeGitService injecting `remote_branch_shas = {source_branch: None, feature_branch: 'aaa...', base_branch: 'bbb...'}`; assert `outcome.status == SOURCE_MISSING`, no `_workspace.acquire` recorded).",
-      "rationale": "Adapter-level regression net for every branch of the `consolidate` decision tree. The SOURCE_MISSING-without-worktree test verifies the round-trip optimization."
-    },
-    {
-      "filePath": "tests/adapters/test_git_change_persister.py",
-      "changeType": "modify",
-      "description": "Add: `test_persist_returns_working_tree_commit_source` (existing dirty-tree path still works, returned `PersistResult.source == PersistSource.WORKING_TREE_COMMIT`), `test_persist_returns_agent_direct_commit_source_with_real_head_message` (clean tree, HEAD ahead of remote tip, ancestor; assert `source == AGENT_DIRECT_COMMIT` and `message` is the real HEAD commit message from `git log -1 --format=%B HEAD`, NOT '<agent-direct>'), `test_persist_raises_on_diverged_head` (`pytest.raises(RuntimeError, match='diverged')` — loud failure), `test_persist_returns_none_when_remote_in_sync` (clean tree, HEAD equals remote tip, returns None; `persist_no_changes` log emitted).",
-      "rationale": "Adapter-level regression for #5 Bug B + reviewer concern E (no sentinel string) + reviewer concern U (test the divergence-raises path explicitly with `pytest.raises`)."
-    },
-    {
-      "filePath": "tests/adapters/test_git_worktree_provider.py",
-      "changeType": "modify",
-      "description": "Update any existing test asserting that `_backup_if_needed` pushes a backup branch on dirty release — rewrite to assert: (a) the `workspace_release_unclean` warning IS emitted via the structured logger, (b) `git.push` is NOT called with any backup-branch name (assertable via FakeGitService recorded calls). Add: `test_backup_if_needed_method_is_gone` (assert `not hasattr(GitWorktreeProvider, '_backup_if_needed')` — introspection guard against accidental reintroduction).",
-      "rationale": "Closes #13 at the test layer (reviewer concern R). The introspection assertion is a deliberate guard against future regressions."
-    },
-    {
       "filePath": "tests/adapters/test_subprocess_git.py",
       "changeType": "modify",
-      "description": "Add real-git-in-`tmp_path` tests: `test_is_ancestor_returns_true_when_descendant`, `test_is_ancestor_returns_false_when_not_ancestor`, `test_is_ancestor_raises_on_unknown_ref`, `test_remote_branch_sha_returns_sha_when_present`, `test_remote_branch_sha_returns_none_when_absent` (exit code 2 path), `test_remote_branch_sha_raises_on_unexpected_exit`, `test_remote_branch_sha_does_not_invoke_fetch` (assert no fetch on the underlying subprocess call sequence; can be done via a spy or by asserting on the actual sequence of `git` invocations), `test_diff_summary_returns_changeset_digest`, `test_diff_summary_empty_when_refs_equal`.",
-      "rationale": "Adapter-level regression for the four new GitService primitives. The `does_not_invoke_fetch` test pins the `ls-remote` behavior verified in the official docs."
-    },
-    {
-      "filePath": "tests/api/v1/test_agent.py",
-      "changeType": "modify",
-      "description": "Line 177 (`FakeBranchMerger()` default-construct): verify the new fake's default outcome queue produces FAST_FORWARDED so existing API-layer assertions on `merged=True` still pass. No further changes required if the rest of the test does not introspect `merger.calls`.",
-      "rationale": "Confirm the default-construct path of the rewritten FakeBranchMerger preserves the API-layer test's expectations (reviewer concern S explicit enumeration)."
-    },
-    {
-      "filePath": "tests/integration/test_workflow_e2e.py",
-      "changeType": "modify",
-      "description": "Grep for `merge_and_push`, `cleanup_source`, `last_commit_sha`, `'fail='` (in `FakeBranchMerger` ctor), positional `build_prompt`; migrate every reference: `merge_and_push` → `consolidate`; `cleanup_source` → internal (drop direct assertion); `last_commit_sha` → `feature_tip_sha`; `fail=RuntimeError(...)` → `consolidation_outcomes=[ConsolidationOutcome(status=DIVERGENT, ...)]`; positional `build_prompt` → keyword-only with `ChangesetDigest`.",
-      "rationale": "Reviewer concern S: 'no test be disabled, skipped, or weakened'. End-to-end coverage migrates in lockstep."
+      "description": "In the `git_repo` async fixture (lines 11-19), change line 15 from `await _run_git([\"git\", \"init\"], cwd=repo)` to `await _run_git([\"git\", \"init\", \"-b\", \"main\"], cwd=repo)`. Use the short form `-b main` to match the established repo convention (precedents at `tests/adapters/test_git_branch_merger.py:50`, `tests/adapters/test_git_worktree_provider.py:195`, `tests/integration/test_workflow_e2e.py:60`). Immediately above that line, add a one-line inline comment so future readers don't wonder why the flag is there: `# pin initial branch so 'main' is a valid local ref independent of host gitconfig`. No other line in the file is modified. Specifically: do NOT rename the fixture or the two failing tests; do NOT touch the assertions in `test_is_ancestor_returns_false_when_not_ancestor` (line 224 `is False`) or `test_diff_summary_returns_changeset_digest` (lines 313-315 membership checks); do NOT add `pytest.mark.skip`/`skipif`; do NOT wrap calls in `try`/`except RuntimeError`; do NOT issue a separate `git config init.defaultBranch` after `git init` (no-op anti-pattern); do NOT touch the bare-repo `git init --bare` calls at lines 88, 95, 141, 239, 255, 290 or the non-bare `git init` at line 267 (used by `test_remote_branch_sha_raises_on_unexpected_exit`, which intentionally does not depend on local `main`).",
+      "rationale": "Pins the fixture's initial branch to `main` for every test that uses it so the literal ref `\"main\"` resolves to a valid local ref on any runner regardless of the host's `init.defaultBranch`. The `-b` flag is supported since git 2.28 (https://git-scm.com/docs/git-init); the ubuntu-24.04 runner ships git 2.54.0 (https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md), so the flag is universally available. Short form `-b` matches the three precedents in this repo, so the diff is conventional. The fix is fully on the test side; production code in `src/kodezart/adapters/subprocess_git_service.py` is correct and continues to raise `RuntimeError` on truly unknown refs, preserving the contract pinned by `test_is_ancestor_raises_on_unknown_ref` at line 227."
     }
   ],
   "outOfScope": [
-    "Re-introducing recovery-via-backup-branch under a typed contract. This ticket removes the silent creator (`GitWorktreeProvider._backup_if_needed`). If a future need re-emerges, the design must surface backup creation through the workflow's typed state (`WorkflowState.last_backup_branch: BackupBranchName | None`) and SSE event (`WorkflowBackupBranchEvent`), and is filed as a separate ticket.",
-    "Checkpoint resume of the renamed/new `WorkflowState` fields (`feature_tip_sha`, `review_base_sha`, `review_head_sha`). Existing TODO-block in `ralph_workflow.py:116-131` is unchanged. Resuming a workflow checkpointed pre-rename would require a one-time migration shim — explicitly deferred since E2E resume is not yet shipped.",
-    "Renaming `WorkflowCompleteEvent.final_commit_sha` (wire-format field name preserved for backward compatibility; only the internal state source `state['last_commit_sha']` → `state['feature_tip_sha']` changes).",
-    "Front-end consumer-schema migrations. The new `workflow_consolidation` SSE event type is added on the producer side; downstream consumer schemas (if any parse against a closed union) MUST update their schema. The snapshot test in `test_ralph_workflow.py` is the coordination artifact; explicit consumer-side migration is tracked separately."
+    "Any change to production code in `src/kodezart/` — the adapter is correct and the `RuntimeError`-on-unknown-ref contract must not regress.",
+    "Renaming, skipping, or re-asserting the two currently-failing tests.",
+    "Adding new tests to 'compensate' for the failure — the two existing tests must pass on their own once the fixture is fixed.",
+    "Modifying `tests/conftest.py` `_git_test_identity` autouse fixture (unrelated to branch defaults; preserve as is).",
+    "Modifying the `git_repo` fixtures in `tests/adapters/test_git_change_persister.py:26-37` or `tests/adapters/test_git_worktree_provider.py:26-35` (both fixtures are literally named `git_repo` — verified) or any other tmp-repo-initializing fixture in those files. They are not failing on CI and are outside the scope of this ticket.",
+    "Mutating the developer's or runner's user-level / global git config from inside the test suite (no `git config --global …`).",
+    "Issuing `git config init.defaultBranch main` AFTER `git init` — no-op for the already-initialized repo.",
+    "Introducing any new helper, parametrised fixture, conftest entry, or repo-creation utility — the failure mode is fixed by adding `-b main` to one existing argv list.",
+    "Bumping the runner image, pinning git version, or changing `.github/workflows/check.yml`."
   ],
-  "openQuestions": [
-    "Should the new `_log_release_state` warning trigger a structured SSE event in addition to the structured log, so the workflow-layer caller can observe dirty release? Recommendation: no — the warning log is sufficient for the bug-class fix; an SSE event would require a `WorkspaceReleaseAnomaly` event type and `WorkspaceProvider` access to the LangGraph stream writer (which it currently does not have). File separately if observability needs grow.",
-    "If `_review_against_ticket_node` is reached with `review_base_sha == review_head_sha` (ALREADY_INTEGRATED fix path), the digest is empty and the prompt's escape clause fires. The reviewer always returns `passed=False` in that case (no changes to evaluate) — which advances `fix_rounds_used` again. With `max_fix_rounds=2` the loop terminates correctly at `comment_failure` or `complete`. Is this the desired UX, or should `_route_after_fix` detect the empty-changeset case and route directly to `comment_failure` to skip the empty-review round? Recommendation: keep the current path — the empty review is a deliberate truth-telling step and lets the operator see in the SSE stream that the fix was a no-op.",
-    "The `_run_with_exit_codes` helper duplicates much of `_run`'s subprocess scaffolding. Should it be factored as a `_run_core(...) -> (exit, stdout, stderr)` with `_run` and `_run_output` as thin wrappers? Recommendation: yes — DRY win, but mechanical; can be done in the same change without expanding scope."
-  ]
+  "openQuestions": []
 }
