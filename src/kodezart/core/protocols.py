@@ -68,6 +68,14 @@ class GitService(Protocol):
 
     async def current_sha(self, cwd: str) -> str: ...
 
+    async def head_commit_message(self, cwd: str) -> str:
+        """Full commit message of HEAD.
+
+        Maps to ``git log -1 --format=%B HEAD`` with the trailing
+        newline stripped.
+        """
+        ...
+
     async def delete_remote_branch(
         self,
         cwd: str,

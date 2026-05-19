@@ -79,7 +79,7 @@ async def git_env(tmp_path: Path) -> tuple[Path, Path]:
 async def test_workflow_e2e_creates_branch_and_pushes(
     git_env: tuple[Path, Path],
     tmp_path: Path,
-):
+) -> None:
     repo, bare = git_env
 
     git = SubprocessGitService()
@@ -171,7 +171,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
 async def test_workflow_e2e_exhausts_iterations(
     git_env: tuple[Path, Path],
     tmp_path: Path,
-):
+) -> None:
     repo, _bare = git_env
 
     git = SubprocessGitService()

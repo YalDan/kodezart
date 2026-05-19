@@ -1,19 +1,24 @@
 """Tests for RalphLoop (inner quality-gating loop) with fakes."""
 
+from collections.abc import AsyncGenerator
+from typing import TypedDict
+
 import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.ralph_loop import RalphLoop
+from kodezart.core.protocols import AgentExecutor
 from kodezart.prompts import evaluation
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
+    AgentEvent,
     AssistantTextEvent,
     ResultEvent,
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.persist import PersistResult, PersistSource
 from tests.fakes import (
     FakeAgentExecutor,
     FakeChangePersister,
@@ -25,7 +30,7 @@ from tests.fakes import (
 
 def _make_loop(
     *,
-    executor: FakeAgentExecutor,
+    executor: AgentExecutor,
     persister: FakeChangePersister | None = None,
     workspace: FakeWorkspaceProvider | None = None,
     max_iterations: int = 3,
@@ -45,25 +50,38 @@ def _make_loop(
     )
 
 
+class _RunKwargs(TypedDict):
+    prompt: str
+    repo_path: str | None
+    repo_url: str | None
+    feature_branch: str
+    ralph_branch: str
+    base_branch: str
+    permission_mode: str
+    allowed_tools: list[str]
+    acceptance_criteria: list[str]
+    cache_key: str
+
+
 def _run_kwargs(
     *,
     acceptance_criteria: list[str] | None = None,
-) -> dict[str, object]:
-    return {
-        "prompt": "fix it",
-        "repo_path": "/tmp/fake",
-        "repo_url": None,
-        "feature_branch": "kodezart/test-12345678",
-        "ralph_branch": "kodezart/test-12345678-ralph-abcdef01",
-        "base_branch": "main",
-        "permission_mode": "bypassPermissions",
-        "allowed_tools": ["Bash"],
-        "acceptance_criteria": acceptance_criteria or ["Tests pass"],
-        "cache_key": "test-cache-key",
-    }
+) -> _RunKwargs:
+    return _RunKwargs(
+        prompt="fix it",
+        repo_path="/tmp/fake",
+        repo_url=None,
+        feature_branch="kodezart/test-12345678",
+        ralph_branch="kodezart/test-12345678-ralph-abcdef01",
+        base_branch="main",
+        permission_mode="bypassPermissions",
+        allowed_tools=["Bash"],
+        acceptance_criteria=acceptance_criteria or ["Tests pass"],
+        cache_key="test-cache-key",
+    )
 
 
-async def test_loop_single_iteration_accepted():
+async def test_loop_single_iteration_accepted() -> None:
     """Agent succeeds on first try — all criteria pass."""
     executor = FakeAgentExecutor(
         events=[
@@ -91,6 +109,8 @@ async def test_loop_single_iteration_accepted():
         result=PersistResult(
             commit_sha="a" * 40,
             branch="test",
+            message="feat: scripted commit",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -107,7 +127,7 @@ async def test_loop_single_iteration_accepted():
     assert all(r.reasoning for r in last_iter.evaluation.criteria_results)
 
 
-async def test_loop_max_iterations_exhausted():
+async def test_loop_max_iterations_exhausted() -> None:
     """Agent never passes — loops until max_iterations."""
     executor = FakeAgentExecutor(
         events=[
@@ -134,6 +154,8 @@ async def test_loop_max_iterations_exhausted():
         result=PersistResult(
             commit_sha="b" * 40,
             branch="test",
+            message="feat: scripted commit",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister, max_iterations=2)
@@ -147,7 +169,7 @@ async def test_loop_max_iterations_exhausted():
     assert any(not r.passed for r in last_iter.evaluation.criteria_results)
 
 
-async def test_loop_second_iteration_succeeds():
+async def test_loop_second_iteration_succeeds() -> None:
     """Agent fails first iteration, succeeds on second."""
 
     class TwoPhaseExecutor:
@@ -166,7 +188,7 @@ async def test_loop_second_iteration_succeeds():
             allowed_tools: list[str],
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
-        ):
+        ) -> AsyncGenerator[AgentEvent, None]:
             self.calls.append({"prompt": prompt, "output_format": output_format})
             if output_format is not None:
                 schema = output_format.get("schema")
@@ -226,6 +248,8 @@ async def test_loop_second_iteration_succeeds():
         result=PersistResult(
             commit_sha="c" * 40,
             branch="test",
+            message="feat: scripted commit",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     service = AgentService(
@@ -248,7 +272,7 @@ async def test_loop_second_iteration_succeeds():
     assert last_iter.iteration == 2
 
 
-async def test_loop_streams_events_per_node():
+async def test_loop_streams_events_per_node() -> None:
     """Events stream incrementally from the loop."""
     executor = FakeAgentExecutor(
         events=[
@@ -276,6 +300,8 @@ async def test_loop_streams_events_per_node():
         result=PersistResult(
             commit_sha="c" * 40,
             branch="test",
+            message="feat: scripted commit",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -288,7 +314,7 @@ async def test_loop_streams_events_per_node():
     assert has_iteration
 
 
-async def test_loop_does_not_emit_complete_event():
+async def test_loop_does_not_emit_complete_event() -> None:
     """The loop never emits WorkflowCompleteEvent — that's the outer pipeline's job."""
     executor = FakeAgentExecutor(
         events=[
@@ -315,6 +341,8 @@ async def test_loop_does_not_emit_complete_event():
         result=PersistResult(
             commit_sha="a" * 40,
             branch="test",
+            message="feat: scripted commit",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -325,7 +353,7 @@ async def test_loop_does_not_emit_complete_event():
     assert len(complete_events) == 0
 
 
-async def test_loop_exactly_one_iteration_event_per_cycle():
+async def test_loop_exactly_one_iteration_event_per_cycle() -> None:
     """Einstein experiment: each execute→evaluate cycle must produce
     exactly 1 WorkflowIterationEvent (from evaluate), not 2.
 
@@ -359,6 +387,8 @@ async def test_loop_exactly_one_iteration_event_per_cycle():
         result=PersistResult(
             commit_sha="a" * 40,
             branch="test",
+            message="feat: scripted commit",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -377,7 +407,7 @@ async def test_loop_exactly_one_iteration_event_per_cycle():
     assert iteration_events[0].iteration == 1
 
 
-async def test_loop_workspace_error_yields_error_event():
+async def test_loop_workspace_error_yields_error_event() -> None:
     """Workspace acquisition failure emits ErrorEvent before the loop raises.
 
     Under the no-fallback contract, an evaluator that produces no structured
@@ -455,7 +485,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             allowed_tools: list[str],
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
-        ):
+        ) -> AsyncGenerator[AgentEvent, None]:
             self.calls.append({"prompt": prompt, "output_format": output_format})
             if output_format is not None:
                 schema = output_format.get("schema")
@@ -535,6 +565,8 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
         result=PersistResult(
             commit_sha="a" * 40,
             branch="test",
+            message="feat: scripted commit",
+            source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
     loop = _make_loop(executor=executor, persister=persister)
@@ -589,7 +621,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             allowed_tools: list[str],
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
-        ):
+        ) -> AsyncGenerator[AgentEvent, None]:
             if output_format is not None:
                 schema = output_format.get("schema")
                 if isinstance(schema, dict):
@@ -658,7 +690,9 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
     assert iteration_events[1].commit_sha is None
 
 
-async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch():
+async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch() -> (
+    None
+):
     """_evaluate_node must call diff_summary(base_branch, ralph_branch)."""
     git = FakeGitService()
     executor = FakeAgentExecutor(

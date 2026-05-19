@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
+from kodezart.core.protocols import AgentExecutor, TicketGenerator
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -59,7 +60,7 @@ def _make_engine(
     quality_gate: FakeQualityGate | None = None,
     executor: FakeAgentExecutor | None = None,
     merger: FakeBranchMerger | None = None,
-    ticket_generator: FakeTicketGenerator | None = None,
+    ticket_generator: TicketGenerator | None = None,
     pr_creator: FakePRCreator | None = None,
     ci_monitor: FakeCIMonitor | None = None,
     max_fix_rounds: int = 2,
@@ -93,7 +94,7 @@ def _make_engine(
     )
 
 
-async def test_workflow_single_iteration_accepted():
+async def test_workflow_single_iteration_accepted() -> None:
     """Agent succeeds on first try — all criteria pass."""
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
@@ -121,7 +122,7 @@ async def test_workflow_single_iteration_accepted():
     assert complete_events[0].total_iterations == 1
 
 
-async def test_workflow_max_iterations_exhausted():
+async def test_workflow_max_iterations_exhausted() -> None:
     """Agent never passes — loops until max_iterations."""
     gate = FakeQualityGate(
         events=[],
@@ -149,7 +150,7 @@ async def test_workflow_max_iterations_exhausted():
     assert complete_events[0].total_iterations == 2
 
 
-async def test_workflow_streams_events_per_node():
+async def test_workflow_streams_events_per_node() -> None:
     """Events stream incrementally, not batched at the end."""
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="working", model="m")],
@@ -327,7 +328,7 @@ def test_make_checkpointer_memory_returns_saver() -> None:
     assert isinstance(result, InMemorySaver)
 
 
-async def test_concurrent_workflow_runs_isolated():
+async def test_concurrent_workflow_runs_isolated() -> None:
     """Two concurrent workflows complete independently."""
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
@@ -1838,7 +1839,9 @@ async def test_workflow_success_cleans_backup_branches() -> None:
     ]
     assert len(cleanup_calls) == 1
     # prefix is the feature_branch (starts with "kodezart/")
-    assert cleanup_calls[0]["prefix"].startswith("kodezart/")
+    cleanup_prefix = cleanup_calls[0]["prefix"]
+    assert isinstance(cleanup_prefix, str)
+    assert cleanup_prefix.startswith("kodezart/")
 
 
 async def test_workflow_rejected_skips_backup_cleanup() -> None:
@@ -2345,7 +2348,7 @@ async def test_review_against_ticket_passes_changeset_digest_to_build_prompt(
 
 def _make_engine_with_executor(
     *,
-    executor: object,
+    executor: AgentExecutor,
     merger: FakeBranchMerger,
     pr_creator: FakePRCreator | None = None,
     ci_monitor: FakeCIMonitor | None = None,

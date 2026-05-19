@@ -18,7 +18,7 @@ from kodezart.types.domain.agent import (
     CommitMessageOutput,
     ResultEvent,
 )
-from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.persist import PersistResult, PersistSource
 
 _REMOTE = "origin"
 
@@ -86,13 +86,19 @@ class GitChangePersister:
             )
             raise RuntimeError(msg)
 
+        head_message = await self._git.head_commit_message(workspace_path)
         await self._git.push(workspace_path, branch)
         await self._log.ainfo(
             "agent_direct_commit_pushed",
             commit_sha=head_sha,
             branch=branch,
         )
-        return PersistResult(commit_sha=head_sha, branch=branch)
+        return PersistResult(
+            commit_sha=head_sha,
+            branch=branch,
+            message=head_message,
+            source=PersistSource.AGENT_DIRECT_COMMIT,
+        )
 
     async def _persist_dirty(
         self,
@@ -114,7 +120,12 @@ class GitChangePersister:
         )
         await self._git.push(workspace_path, branch)
         await self._log.ainfo("changes_persisted", commit_sha=sha, branch=branch)
-        return PersistResult(commit_sha=sha, branch=branch)
+        return PersistResult(
+            commit_sha=sha,
+            branch=branch,
+            message=full_message,
+            source=PersistSource.WORKING_TREE_COMMIT,
+        )
 
     async def _generate_commit_message(
         self,

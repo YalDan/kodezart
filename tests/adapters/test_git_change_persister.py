@@ -9,6 +9,7 @@ from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.core.protocols import ChangePersister, GitService
 from kodezart.types.domain.agent import ResultEvent
+from kodezart.types.domain.persist import PersistSource
 from tests.fakes import FakeAgentExecutor, FakeGitService
 
 
@@ -45,20 +46,15 @@ def persister() -> GitChangePersister:
     )
 
 
-async def test_persist_no_changes(persister, git_repo):
-    """Clean tree and HEAD == remote tip → None."""
-    executor = FakeAgentExecutor(events=[])
-    result = await persister.persist(
-        workspace_path=str(git_repo),
-        branch="main",
-        executor=executor,
-    )
-    assert result is None
+async def test_persist_returns_working_tree_commit_source(
+    persister: GitChangePersister, git_repo: Path
+) -> None:
+    """Dirty-tree path returns PersistResult with source=WORKING_TREE_COMMIT.
 
-
-async def test_persist_with_changes(persister, git_repo):
-    # Create and checkout the branch that persist() will push
-    await _run_git(["git", "checkout", "-b", "test-branch"], cwd=git_repo)
+    Asserts the typed `source` enum, the committed branch, a 40-char SHA, and
+    that `message` carries the generated commit title (NOT a sentinel string).
+    """
+    await _run_git(["git", "checkout", "-b", "wt-branch"], cwd=git_repo)
     (git_repo / "new.txt").write_text("content")
     executor = FakeAgentExecutor(
         events=[
@@ -78,46 +74,27 @@ async def test_persist_with_changes(persister, git_repo):
     )
     result = await persister.persist(
         workspace_path=str(git_repo),
-        branch="test-branch",
-        executor=executor,
-    )
-    assert result is not None
-    assert len(result.commit_sha) == 40
-    assert result.branch == "test-branch"
-
-
-async def test_persist_dirty_tree_returns_result(persister, git_repo):
-    """Dirty-tree path returns a PersistResult with the new commit SHA."""
-    await _run_git(["git", "checkout", "-b", "wt-branch"], cwd=git_repo)
-    (git_repo / "new.txt").write_text("content")
-    executor = FakeAgentExecutor(
-        events=[
-            ResultEvent(
-                subtype="result",
-                duration_ms=10,
-                duration_api_ms=5,
-                is_error=False,
-                num_turns=1,
-                session_id="s1",
-                structured_output={
-                    "title": "feat: add new file",
-                    "body": "",
-                },
-            ),
-        ]
-    )
-    result = await persister.persist(
-        workspace_path=str(git_repo),
         branch="wt-branch",
         executor=executor,
     )
     assert result is not None
+    assert result.source is PersistSource.WORKING_TREE_COMMIT
     assert result.branch == "wt-branch"
     assert len(result.commit_sha) == 40
+    # Generated message is the title (and body, joined) — no sentinel string.
+    assert result.message.startswith("feat: add new file")
+    assert "Adds functionality." in result.message
 
 
-async def test_persist_agent_direct_commit_pushes_existing_head(persister, git_repo):
-    """Clean-tree-HEAD-ahead-of-remote path pushes HEAD and returns its SHA."""
+async def test_persist_returns_agent_direct_commit_source_with_real_head_message(
+    persister: GitChangePersister, git_repo: Path
+) -> None:
+    """Clean-tree-HEAD-ahead-of-remote path returns AGENT_DIRECT_COMMIT.
+
+    Asserts the typed `source` enum AND that `message` equals the actual
+    HEAD commit message produced by `git log -1 --format=%B HEAD` (NOT a
+    sentinel string like ``<agent-direct>``).
+    """
     # New branch with a real commit; not yet pushed.
     await _run_git(["git", "checkout", "-b", "direct-branch"], cwd=git_repo)
     (git_repo / "direct.txt").write_text("agent-authored")
@@ -134,6 +111,20 @@ async def test_persist_agent_direct_commit_pushes_existing_head(persister, git_r
         cwd=git_repo,
     )
 
+    # Capture the canonical HEAD message via the same command the persister uses.
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "log",
+        "-1",
+        "--format=%B",
+        "HEAD",
+        cwd=str(git_repo),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    head_message_stdout, _ = await proc.communicate()
+    expected_head_message = head_message_stdout.decode().strip()
+
     executor = FakeAgentExecutor(events=[])
     result = await persister.persist(
         workspace_path=str(git_repo),
@@ -141,11 +132,15 @@ async def test_persist_agent_direct_commit_pushes_existing_head(persister, git_r
         executor=executor,
     )
     assert result is not None
+    assert result.source is PersistSource.AGENT_DIRECT_COMMIT
     assert result.branch == "direct-branch"
     assert len(result.commit_sha) == 40
+    # Message MUST equal the real HEAD output, NOT a sentinel like "<agent-direct>".
+    assert result.message == expected_head_message
+    assert result.message == "feat: agent direct work"
 
 
-async def test_persist_raises_on_diverged_head(git_repo):
+async def test_persist_raises_on_diverged_head(git_repo: Path) -> None:
     """Diverged HEAD raises RuntimeError matching /diverged/.
 
     Uses an injected GitService fake to drive the divergence detection
@@ -175,7 +170,9 @@ async def test_persist_raises_on_diverged_head(git_repo):
         )
 
 
-async def test_persist_returns_none_when_remote_in_sync(persister, git_repo):
+async def test_persist_returns_none_when_remote_in_sync(
+    persister: GitChangePersister, git_repo: Path
+) -> None:
     """Clean tree and HEAD == remote tip → returns None."""
     # main is pushed; HEAD equals origin/main.
     executor = FakeAgentExecutor(events=[])
@@ -187,5 +184,5 @@ async def test_persist_returns_none_when_remote_in_sync(persister, git_repo):
     assert result is None
 
 
-def test_isinstance_change_persister(persister):
+def test_isinstance_change_persister(persister: GitChangePersister) -> None:
     assert isinstance(persister, ChangePersister)

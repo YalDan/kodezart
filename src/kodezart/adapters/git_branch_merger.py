@@ -114,7 +114,7 @@ class GitBranchMerger:
                 await self._git.merge_branch(workspace_path, origin_source)
                 await self._git.push(workspace_path, feature_branch)
                 new_head = await self._git.current_sha(workspace_path)
-                await self._delete_remote_branch_quietly(
+                await self._cleanup_source_internal(
                     workspace_path=workspace_path,
                     branch=source_branch,
                 )
@@ -256,7 +256,7 @@ class GitBranchMerger:
         finally:
             await self._workspace.release(workspace_path)
 
-    async def _delete_remote_branch_quietly(
+    async def _cleanup_source_internal(
         self,
         *,
         workspace_path: str,

@@ -91,7 +91,7 @@ async def test_merger_receives_resolved_url_not_shorthand() -> None:
     # consolidate + cleanup_backup_branches (source-branch deletion is internal)
     assert len(merger.calls) == 2
     merger_url = merger.calls[0]["repo_url"]
-    assert merger_url is not None
+    assert isinstance(merger_url, str)
     assert merger_url.startswith("https://"), (
         f"Merger received unresolved shorthand: {merger_url!r}. "
         "Expected resolved URL starting with https://"
@@ -123,7 +123,7 @@ async def test_full_url_passes_through_unchanged() -> None:
     # consolidate + cleanup_backup_branches (source-branch deletion is internal)
     assert len(merger.calls) == 2
     merger_url = merger.calls[0]["repo_url"]
-    assert merger_url is not None
+    assert isinstance(merger_url, str)
     assert merger_url.startswith("https://"), (
         f"Merger received unnormalized URL: {merger_url!r}"
     )

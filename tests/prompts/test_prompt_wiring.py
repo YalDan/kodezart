@@ -82,7 +82,6 @@ def test_evaluation_prompt_rejects_positional_args() -> None:
     sig = inspect.signature(evaluation_prompt)
     for param in sig.parameters.values():
         assert param.kind is inspect.Parameter.KEYWORD_ONLY, (
-            f"Parameter {param.name!r} is {param.kind.name}, "
-            "expected KEYWORD_ONLY"
+            f"Parameter {param.name!r} is {param.kind.name}, expected KEYWORD_ONLY"
         )
     assert set(sig.parameters) == {"criteria", "changeset"}

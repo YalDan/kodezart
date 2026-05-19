@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncGenerator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.main import create_app
@@ -28,15 +28,15 @@ from tests.fakes import (
 )
 
 
-async def _collect_sse_events(response) -> list[dict]:
-    events = []
+async def _collect_sse_events(response: Response) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
     async for line in response.aiter_lines():
         if line.startswith("data: "):
             events.append(json.loads(line[6:]))
     return events
 
 
-async def test_stream_query_returns_events(agent_client: AsyncClient):
+async def test_stream_query_returns_events(agent_client: AsyncClient) -> None:
     async with agent_client.stream(
         "POST",
         "/api/v1/agent/query",
@@ -56,7 +56,7 @@ async def test_stream_query_returns_events(agent_client: AsyncClient):
     assert result_event.session_id == "test-session"
 
 
-async def test_stream_query_workspace_failure():
+async def test_stream_query_workspace_failure() -> None:
     app = create_app()
     app.state.agent_service = AgentService(
         executor=FakeAgentExecutor(events=[]),
@@ -78,7 +78,7 @@ async def test_stream_query_workspace_failure():
     assert "Not a git repository" in error_event.error
 
 
-async def test_stream_query_validates_request_body(agent_client: AsyncClient):
+async def test_stream_query_validates_request_body(agent_client: AsyncClient) -> None:
     response = await agent_client.post(
         "/api/v1/agent/query",
         json={"prompt": "", "repoPath": "/tmp/fake"},
@@ -250,8 +250,12 @@ async def test_workflow_streams_criteria_event_via_sse(
     )
 
     criteria_event = events[criteria_idx]
-    assert len(criteria_event["criteria"]) > 0
-    assert len(criteria_event["reasoning"]) > 0
+    criteria_field = criteria_event["criteria"]
+    reasoning_field = criteria_event["reasoning"]
+    assert isinstance(criteria_field, list)
+    assert isinstance(reasoning_field, str)
+    assert len(criteria_field) > 0
+    assert len(reasoning_field) > 0
 
 
 async def test_workflow_rejects_acceptance_criteria_in_body(
@@ -269,7 +273,7 @@ async def test_workflow_rejects_acceptance_criteria_in_body(
     assert response.status_code == 422
 
 
-async def test_stream_query_handler_catches_executor_error():
+async def test_stream_query_handler_catches_executor_error() -> None:
     app = create_app()
     app.state.agent_service = AgentService(
         executor=FakeRaisingExecutor(RuntimeError("transient failure")),

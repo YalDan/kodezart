@@ -152,6 +152,13 @@ class SubprocessGitService:
         """Return the current HEAD SHA."""
         return await self._run_output(["git", "rev-parse", "HEAD"], cwd=cwd)
 
+    async def head_commit_message(self, cwd: str) -> str:
+        """Return the full HEAD commit message (no trailing newline)."""
+        return await self._run_output(
+            ["git", "log", "-1", "--format=%B", "HEAD"],
+            cwd=cwd,
+        )
+
     async def delete_remote_branch(
         self,
         cwd: str,

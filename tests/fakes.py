@@ -21,7 +21,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
-from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.persist import PersistResult, PersistSource
 
 
 class FakeGitService:
@@ -105,6 +105,10 @@ class FakeGitService:
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
         return "a" * 40
+
+    async def head_commit_message(self, cwd: str) -> str:
+        self.calls.append(("head_commit_message", cwd))
+        return "fake: HEAD commit message"
 
     async def delete_remote_branch(
         self,
