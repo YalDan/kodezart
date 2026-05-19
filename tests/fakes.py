@@ -21,7 +21,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
-from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.persist import PersistResult
 
 
 class FakeGitService:
