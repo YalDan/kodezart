@@ -100,7 +100,7 @@ async def test_process_error_round_trips_exit_code_and_stderr_on_re_raise() -> N
     assert err.exit_code == 137
     assert err.stderr_tail is not None
     assert "<known-tail>" in err.stderr_tail
-    # _STDERR_TAIL_BYTES = 4096 — verified at module level.
+    # STDERR_TAIL_BYTES = 4096 — verified at module level.
     assert len(err.stderr_tail) <= 4096
 
 
