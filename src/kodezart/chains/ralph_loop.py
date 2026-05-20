@@ -12,7 +12,7 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, GitService, RepoCache
 from kodezart.core.retry import should_retry
-from kodezart.core.soft_failure import SoftFailureError, drain
+from kodezart.core.soft_failure import NoStructuredOutputError, drain
 from kodezart.prompts import evaluation, iteration_feedback
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
@@ -225,7 +225,7 @@ class RalphLoop:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Evaluator produced no structured output."
-            raise SoftFailureError(
+            raise NoStructuredOutputError(
                 msg,
                 raise_site="ralph_evaluator",
                 result_event=result_event,

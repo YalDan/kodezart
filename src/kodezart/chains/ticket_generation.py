@@ -13,7 +13,7 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, WorkspaceProvider
 from kodezart.core.retry import should_retry
-from kodezart.core.soft_failure import SoftFailureError, build_error_event, drain
+from kodezart.core.soft_failure import NoStructuredOutputError, build_error_event, drain
 from kodezart.domain.errors import WorkspaceError
 from kodezart.prompts.ticket_generation import (
     build_create_prompt,
@@ -210,7 +210,7 @@ class TicketGenerationLoop:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Creator produced no structured output."
-            raise SoftFailureError(
+            raise NoStructuredOutputError(
                 msg,
                 raise_site="ticket_creator",
                 result_event=result_event,
@@ -265,7 +265,7 @@ class TicketGenerationLoop:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Reviewer produced no structured output."
-            raise SoftFailureError(
+            raise NoStructuredOutputError(
                 msg,
                 raise_site="ticket_reviewer",
                 result_event=result_event,

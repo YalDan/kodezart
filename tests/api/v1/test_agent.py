@@ -329,12 +329,12 @@ async def test_error_event_carries_exception_class_on_runtime_path() -> None:
     assert '\n  File "' not in error_event.error
 
 
-async def test_error_event_carries_soft_failure_payload() -> None:
-    """SoftFailureError surfaces with raise_site and rate_limit_rejected populated."""
-    from kodezart.core.soft_failure import SoftFailureError
+async def test_error_event_carries_no_structured_output_payload() -> None:
+    """NoStructuredOutputError surfaces raise_site/rate_limit_rejected populated."""
+    from kodezart.core.soft_failure import NoStructuredOutputError
 
     app = create_app()
-    soft_failure = SoftFailureError(
+    soft_failure = NoStructuredOutputError(
         "Creator produced no structured output.",
         raise_site="ticket_creator",
         result_event=None,
@@ -357,6 +357,6 @@ async def test_error_event_carries_soft_failure_payload() -> None:
 
     assert len(events) == 1
     error_event = ErrorEvent.model_validate(events[0])
-    assert error_event.error_kind == "SoftFailureError"
+    assert error_event.error_kind == "NoStructuredOutputError"
     assert error_event.raise_site == "ticket_creator"
     assert error_event.rate_limit_rejected is False

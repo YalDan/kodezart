@@ -19,7 +19,7 @@ from kodezart.types.domain.consolidation import ConsolidationStatus
 #
 # ``RaiseSite`` is defined here — the upstream end of the dependency
 # chain — so that both ``types/domain/agent.ErrorEvent`` and
-# ``core/soft_failure.SoftFailureError`` can refer to the SAME typed
+# ``core/soft_failure.NoStructuredOutputError`` can refer to the SAME typed
 # alias.  ``core/soft_failure.py`` imports ``RaiseSite`` from this
 # module; ``ErrorEvent.raise_site`` references it directly.  Drift
 # between two parallel ``Literal`` lists is structurally impossible.

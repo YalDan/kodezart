@@ -491,7 +491,7 @@ async def test_workflow_criteria_event_before_iteration_event() -> None:
 
 
 async def test_workflow_criteria_generation_failure_raises() -> None:
-    """SoftFailureError raised when the criteria agent returns no structured output."""
+    """NoStructuredOutputError raised when the criteria agent returns no output."""
 
     class FailingCriteriaExecutor:
         """Executor that returns None structured_output for criteria schema."""
@@ -585,9 +585,9 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         artifact_persister=None,
     )
 
-    from kodezart.core.soft_failure import SoftFailureError
+    from kodezart.core.soft_failure import NoStructuredOutputError
 
-    with pytest.raises(SoftFailureError, match="acceptance criteria") as excinfo:
+    with pytest.raises(NoStructuredOutputError, match="acceptance criteria") as excinfo:
         _ = [
             e
             async for e in engine.run(
@@ -2733,9 +2733,11 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_branch_name_generation_failure_raises_soft_failure() -> None:
-    """SoftFailureError(raise_site="branch_name") when branch agent returns None."""
-    from kodezart.core.soft_failure import SoftFailureError
+async def test_branch_name_generation_failure_raises_no_structured_output_error() -> (
+    None
+):
+    """NoStructuredOutputError(raise_site="branch_name") on missing branch output."""
+    from kodezart.core.soft_failure import NoStructuredOutputError
 
     class NullBranchNameExecutor:
         """Returns ResultEvent(structured_output=None) for branch-name schema."""
@@ -2804,7 +2806,7 @@ async def test_branch_name_generation_failure_raises_soft_failure() -> None:
         artifact_persister=None,
     )
 
-    with pytest.raises(SoftFailureError, match="branch name") as excinfo:
+    with pytest.raises(NoStructuredOutputError, match="branch name") as excinfo:
         _ = [
             e
             async for e in engine.run(

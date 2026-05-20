@@ -80,7 +80,7 @@ async def _init_repo_with_remote(
 
     await _git(["git", "init", "-b", "main"], cwd=repo)
     await _git(["git", "config", "commit.gpgsign", "false"], cwd=repo)
-    await _git(["git", "init", "--bare"], cwd=bare)
+    await _git(["git", "init", "--bare", "-b", "main"], cwd=bare)
     await _git(["git", "remote", "add", remote_name, str(bare)], cwd=repo)
     return repo, bare
 

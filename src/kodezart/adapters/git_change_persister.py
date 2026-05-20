@@ -12,7 +12,7 @@ divergence is forbidden.
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, GitService
-from kodezart.core.soft_failure import SoftFailureError, drain
+from kodezart.core.soft_failure import NoStructuredOutputError, drain
 from kodezart.prompts import commit_message
 from kodezart.types.domain.agent import (
     COMMIT_MESSAGE_SCHEMA,
@@ -150,7 +150,7 @@ class GitChangePersister:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for commit message"
-            raise SoftFailureError(
+            raise NoStructuredOutputError(
                 msg,
                 raise_site="commit_message",
                 result_event=result_event,
