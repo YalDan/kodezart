@@ -200,10 +200,50 @@ class StreamDataEvent(AgentEvent):
 
 
 class ErrorEvent(AgentEvent):
-    """Error event emitted on agent or workspace failure."""
+    """Error event emitted on agent or workspace failure.
+
+    Wire shape locked with ``extra="forbid"`` — a future field-name
+    typo on the producer side raises at validation time rather than
+    silently breaking downstream SSE consumers.
+
+    The seven typed optional fields below promote the genuinely
+    consumed observability slots to top-level named attributes,
+    replacing the previous draft's ``details: dict[str, object]`` bag.
+    Each is independently type-checkable by downstream consumers.
+
+    The ``raise_site`` field's inline ``Literal[...]`` is structurally
+    identical to ``kodezart.core.soft_failure.RaiseSite``; the
+    duplication is the deliberate price of breaking the circular
+    import (``core/`` imports from ``types/domain/`` to read
+    ``ResultEvent``/``RateLimitWarningEvent`` in ``drain``).  Any drift
+    between the two literal lists is caught by mypy at every
+    construction site that passes a ``RaiseSite`` literal into the
+    ``raise_site`` field.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     type: Literal["error"] = "error"
     error: str
+    error_kind: str | None = None
+    cause_class: str | None = None
+    stop_reason: str | None = None
+    raise_site: (
+        Literal[
+            "ticket_creator",
+            "ticket_reviewer",
+            "branch_name",
+            "acceptance_criteria",
+            "ralph_evaluator",
+            "post_merge_review",
+            "pr_description",
+            "commit_message",
+        ]
+        | None
+    ) = None
+    rate_limit_rejected: bool | None = None
+    exit_code: int | None = None
+    stderr_tail: str | None = None
 
 
 class RateLimitWarningEvent(AgentEvent):

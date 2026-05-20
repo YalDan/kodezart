@@ -54,9 +54,23 @@ class SubprocessGitService:
         )
 
     async def fetch(self, repo_path: str) -> None:
-        """Fetch latest from all remotes."""
+        """Fetch latest from the configured remote, populating remote-tracking refs.
+
+        Bare clones created with ``git clone --bare`` do NOT configure
+        ``remote.<name>.fetch`` or create the ``refs/remotes/<name>/*``
+        namespace (per git-clone docs); a bare ``git fetch <remote>``
+        therefore leaves ``<remote>/<branch>`` unresolvable downstream
+        (e.g. by ``git merge-base --is-ancestor``).  Passing the
+        canonical refspec explicitly forces the remote-tracking refs
+        to be populated regardless of clone-time configuration.
+        """
         await self._run(
-            ["git", "fetch", self._remote],
+            [
+                "git",
+                "fetch",
+                self._remote,
+                f"+refs/heads/*:refs/remotes/{self._remote}/*",
+            ],
             cwd=repo_path,
             env=self._auth.subprocess_env() if self._auth else None,
         )

@@ -6,6 +6,8 @@ from collections.abc import AsyncGenerator
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from kodezart.adapters.git_branch_merger import GitBranchMerger
+from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
@@ -46,6 +48,37 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
+
+
+@pytest.fixture
+def subprocess_git_service() -> SubprocessGitService:
+    """Shared SubprocessGitService configured with the default ``origin`` remote.
+
+    Absorbs the explicit ``remote="origin"`` kwarg sites the inherited
+    19aca0d sprinkled across the adapter test files; collapses the
+    repeat-construction pattern.  Tests that need a non-default remote
+    still construct directly with a different remote name.
+    """
+    return SubprocessGitService(remote="origin")
+
+
+@pytest.fixture
+def git_branch_merger(
+    subprocess_git_service: SubprocessGitService,
+) -> GitBranchMerger:
+    """Shared GitBranchMerger constructed atop the shared git fixture.
+
+    Uses ``FakeWorkspaceProvider`` so the fixture is usable from tests
+    that exercise the four-status decision tree against fakes without
+    spinning up real bare clones.  Tests that need a real workspace
+    provider (e.g. the new REAL-bare-clone integration test) construct
+    a ``GitBranchMerger`` directly.
+    """
+    return GitBranchMerger(
+        git=subprocess_git_service,
+        workspace=FakeWorkspaceProvider(),
+        remote="origin",
+    )
 
 
 @pytest.fixture

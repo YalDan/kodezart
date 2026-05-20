@@ -352,3 +352,61 @@ async def test_consolidate_divergent_does_not_raise() -> None:
     method_names = [c[0] for c in fake_git.calls]
     assert "merge_branch" not in method_names
     assert "push" not in method_names
+
+
+async def test_consolidate_against_real_bare_clone_resolves_is_ancestor(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """consolidate against a real bare clone must NOT raise the exit-128 string.
+
+    Specifically, no ``RuntimeError`` matching
+    ``"Not a valid object name origin/..."`` may surface; consolidate
+    is a total function over the four ConsolidationStatus values.
+
+    The previous PR's reproduction (PR #15) showed that ``git clone --bare``
+    leaves ``refs/remotes/origin/*`` empty by default, so the downstream
+    ``git merge-base --is-ancestor origin/<branch> HEAD`` in
+    ``GitBranchMerger.consolidate`` exited 128 with that exact error
+    string.  Facet ANC's explicit refspec on ``fetch`` populates the
+    namespace; this test is the regression guard.
+
+    Distinct from ``test_consolidate_fast_forwarded_creates_feature_branch``
+    because that test exercises the end-to-end happy path; this one
+    asserts the specific error string never surfaces.
+    """
+    from kodezart.types.domain.consolidation import ConsolidationStatus
+
+    repo, bare = git_env
+    _ = bare
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache-real"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="test@test.dev",
+    )
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
+
+    # No RuntimeError matching "Not a valid object name origin/..." may
+    # surface; consolidate is a total function over the four statuses.
+    try:
+        outcome = await merger.consolidate(
+            repo_path=str(repo),
+            repo_url=None,
+            base_branch="main",
+            feature_branch="feat/anc-regress-guard",
+            source_branch="ralph-source",
+        )
+    except RuntimeError as exc:
+        # Belt-and-braces — explicitly disprove the documented failure
+        # mode rather than letting it slip through as test failure.
+        assert "Not a valid object name origin/" not in str(exc)
+        raise
+
+    assert outcome.status in {
+        ConsolidationStatus.FAST_FORWARDED,
+        ConsolidationStatus.ALREADY_INTEGRATED,
+    }

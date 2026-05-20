@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.core.soft_failure import SoftFailureError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -456,8 +457,14 @@ async def test_no_structured_output_from_creator_raises() -> None:
     executor = NullCreatorExecutor()
     loop = _make_loop(executor=executor)
 
-    with pytest.raises(RuntimeError, match="no structured output"):
+    with pytest.raises(SoftFailureError, match="no structured output") as excinfo:
         _ = [e async for e in loop.run(**_run_kwargs())]
+    assert excinfo.value.raise_site == "ticket_creator"
+    # ``result_event`` is the ``structured_output=None`` ResultEvent the
+    # NullCreatorExecutor emitted — primitives must be snapshotted.
+    assert excinfo.value.result_event_observed is True
+    assert excinfo.value.session_id == "fake"
+    assert excinfo.value.rate_limit_rejected is False
 
 
 # ---------------------------------------------------------------------------
@@ -565,8 +572,11 @@ async def test_no_structured_output_from_reviewer_raises() -> None:
     executor = NullReviewerExecutor()
     loop = _make_loop(executor=executor)
 
-    with pytest.raises(RuntimeError, match="no structured output"):
+    with pytest.raises(SoftFailureError, match="no structured output") as excinfo:
         _ = [e async for e in loop.run(**_run_kwargs())]
+    assert excinfo.value.raise_site == "ticket_reviewer"
+    assert excinfo.value.result_event_observed is True
+    assert excinfo.value.rate_limit_rejected is False
 
 
 # ---------------------------------------------------------------------------

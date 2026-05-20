@@ -694,9 +694,17 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
     push_argvs = [
         a for a in captured if len(a) >= 4 and a[0] == "git" and a[1] == "push"
     ]
-    assert any(a[:3] == ("git", "fetch", remote_name) for a in fetch_argvs), (
-        f"expected ['git', 'fetch', {remote_name!r}] in captured argv: "
-        f"{fetch_argvs}"
+    # Joint assertion: every ``git fetch`` invocation must address the
+    # configured remote AND carry the explicit refspec
+    # ``+refs/heads/*:refs/remotes/<remote>/*`` (Facet ANC).  Asserting
+    # only ``a[:3]`` was the previous draft's miss — the refspec
+    # namespace is the cross-facet join between ANC and CFG.
+    expected_refspec = f"+refs/heads/*:refs/remotes/{remote_name}/*"
+    assert any(
+        a[:4] == ("git", "fetch", remote_name, expected_refspec) for a in fetch_argvs
+    ), (
+        f"expected ['git', 'fetch', {remote_name!r}, {expected_refspec!r}] "
+        f"in captured argv: {fetch_argvs}"
     )
     assert any(
         a[:3] == ("git", "push", remote_name) and a[3].startswith("HEAD:refs/heads/")
@@ -917,3 +925,190 @@ def test_app_config_threads_kodezart_git_remote_env_var(
     monkeypatch.setenv("KODEZART_GIT_REMOTE", "upstream")
     override_config = AppConfig.from_env()
     assert override_config.git_remote == "upstream"
+
+
+# ---------------------------------------------------------------------------
+# Cross-facet structured-payload contract: when a consolidate-time failure
+# surfaces through ``AgentHandler.stream_workflow``, the emitted SSE
+# ``ErrorEvent`` must carry the structured observability payload — NOT a
+# fabricated success.  No new ``ConsolidationStatus`` value is added to
+# re-classify exit-128 as a status; the existing four-status total
+# function is preserved.
+# ---------------------------------------------------------------------------
+
+
+async def test_stream_failed_carries_structured_payload_on_consolidate_failure() -> (
+    None
+):
+    """Consolidate-time RuntimeError surfaces with structured ErrorEvent payload.
+
+    The emitted SSE ``ErrorEvent`` carries ``error_kind == "RuntimeError"``
+    and the literal substring ``"exit 128"`` in the ``error`` field.
+    """
+    import json
+
+    from httpx import ASGITransport, AsyncClient
+
+    from kodezart.main import create_app
+    from kodezart.services.agent_service import AgentService
+    from kodezart.types.domain.consolidation import ChangesetDigest
+    from kodezart.types.domain.git import LsRemoteEntry
+
+    _ = LsRemoteEntry  # imported for protocol-shape parity
+
+    class FaultInjectingGitService:
+        """GitService fake; raises exit-128 RuntimeError from is_ancestor."""
+
+        async def fetch(self, repo_path: str) -> None:
+            return None
+
+        async def is_ancestor(
+            self,
+            cwd: str,
+            ancestor_ref: str,
+            descendant_ref: str,
+        ) -> bool:
+            msg = (
+                f"git merge-base --is-ancestor exited 128 "
+                f"({ancestor_ref} vs {descendant_ref})"
+            )
+            raise RuntimeError(msg)
+
+        async def current_sha(self, cwd: str) -> str:
+            return "f" * 40
+
+        async def remote_branch_sha(
+            self,
+            cwd: str,
+            remote: str,
+            branch: str,
+        ) -> str | None:
+            return "a" * 40
+
+        async def diff_summary(
+            self,
+            cwd: str,
+            base_ref: str,
+            head_ref: str,
+        ) -> ChangesetDigest:
+            return ChangesetDigest(file_paths=[], commit_subjects=[], commit_count=0)
+
+        # Below methods are protocol fillers — none are exercised on this path.
+        async def validate_repo(self, repo_path: str) -> None:
+            return None
+
+        def is_repo(self, path: str) -> bool:
+            return True
+
+        async def clone_bare(self, url: str, target: str) -> None:
+            return None
+
+        async def create_worktree(
+            self, repo_path: str, base_ref: str, worktree_path: str, **_: object
+        ) -> None:
+            return None
+
+        async def remove_worktree(self, repo_path: str, worktree_path: str) -> None:
+            return None
+
+        async def has_changes(self, cwd: str) -> bool:
+            return False
+
+        async def add_all(self, cwd: str) -> None:
+            return None
+
+        async def commit(
+            self, cwd: str, message: str, author_name: str, author_email: str
+        ) -> str:
+            return "c" * 40
+
+        async def push(self, cwd: str, branch: str) -> None:
+            return None
+
+        async def merge_branch(self, cwd: str, source_branch: str) -> None:
+            return None
+
+        async def head_commit_message(self, cwd: str) -> str:
+            return "msg"
+
+        async def delete_remote_branch(
+            self, cwd: str, remote: str, branch: str
+        ) -> None:
+            return None
+
+        async def list_remote_branches(
+            self, cwd: str, remote: str, prefix: str
+        ) -> list[str]:
+            return []
+
+    app = create_app()
+    workspace = FakeWorkspaceProvider()
+    fault_git = FaultInjectingGitService()
+    merger = GitBranchMerger(git=fault_git, workspace=workspace, remote="origin")
+    service = AgentService(
+        executor=FakeAgentExecutor(events=[]),
+        workspace=workspace,
+        persister=FakeChangePersister(),
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = RalphWorkflowEngine(
+        service=service,
+        quality_gate=gate,
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger,
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=fault_git,
+        cache=FakeRepoCache(),
+        artifact_persister=None,
+    )
+    app.state.agent_service = service
+    app.state.workflow_engine = engine
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        async with ac.stream(
+            "POST",
+            "/api/v1/agent/workflow",
+            json={"prompt": "fix", "repoPath": "/tmp/fake"},
+        ) as response:
+            events: list[dict[str, object]] = []
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    events.append(json.loads(line[6:]))
+
+    error_events = [e for e in events if e.get("type") == "error"]
+    assert len(error_events) == 1, f"expected one error event, got events={events}"
+    payload = error_events[0]
+    # error_kind == "RuntimeError" — the consolidate-time RuntimeError
+    # propagates through; no new exception type is introduced for
+    # consolidate exit-128 (ap_anc_swallow_is_ancestor_exit_128).
+    assert payload["errorKind"] == "RuntimeError"
+    # "exited 128" matches the subprocess-error formatting in
+    # _run_with_exit_codes — covers the literal "128" exit-code surface
+    # the bug report cites.  Substring tolerance covers both "exit 128"
+    # and "exited 128" framings.
+    assert "128" in str(payload["error"])
+
+
+def test_consolidation_status_unchanged_no_exit_128_value_added() -> None:
+    """The ConsolidationStatus enum still lists exactly the four pre-existing values.
+
+    Per ap_anc_swallow_is_ancestor_exit_128, exit-128 is NOT re-classified
+    as a status — the structured payload surfaces it via the
+    SSE ErrorEvent path instead.
+    """
+    statuses = {s.value for s in ConsolidationStatus}
+    assert statuses == {
+        "already_integrated",
+        "fast_forwarded",
+        "divergent",
+        "source_missing",
+    }

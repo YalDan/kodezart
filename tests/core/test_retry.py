@@ -3,6 +3,7 @@
 import httpx
 
 from kodezart.core.retry import should_retry
+from kodezart.core.soft_failure import SoftFailureError
 from kodezart.domain.errors import RateLimitError, TransientAPIError
 
 
@@ -53,3 +54,19 @@ def test_runtime_error_not_retryable() -> None:
 def test_value_error_not_retryable() -> None:
     """ValueError falls through to False."""
     assert should_retry(ValueError("bad input")) is False
+
+
+def test_soft_failure_error_does_not_satisfy_should_retry() -> None:
+    """SoftFailureError is a peer of AgentSDKError — NOT retry-eligible.
+
+    Locks in the peer-not-subclass relationship with the transient
+    exception hierarchy.  If a future refactor accidentally re-parents
+    ``SoftFailureError`` under ``TransientAPIError``, this test fails
+    loudly and prevents silent retry storms on deterministic failures.
+    """
+    exc = SoftFailureError(
+        "no structured output",
+        raise_site="ticket_creator",
+        result_event=None,
+    )
+    assert should_retry(exc) is False

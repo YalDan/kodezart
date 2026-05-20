@@ -28,6 +28,7 @@ from kodezart.core.protocols import (
     TicketGenerator,
 )
 from kodezart.core.retry import should_retry
+from kodezart.core.soft_failure import SoftFailureError, drain
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.ticket import format_ticket_as_task
@@ -43,7 +44,6 @@ from kodezart.types.domain.agent import (
     BranchNameOutput,
     GeneratedCriteriaOutput,
     PRDescriptionOutput,
-    ResultEvent,
     TicketDraftOutput,
     WorkflowCIEvent,
     WorkflowCompleteEvent,
@@ -329,25 +329,29 @@ class RalphWorkflowEngine:
         from kodezart.prompts import branch_name as branch_name_prompt
 
         ctx = ExecutionContext.from_configurable(config)
-        result_event: ResultEvent | None = None
-        async for event in self._service.stream(
-            prompt=f"{branch_name_prompt.PROMPT}\n\nTask: {ctx.prompt}",
-            repo_path=ctx.repo_path,
-            repo_url=ctx.repo_url,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=[],
-            output_format={
-                "type": "json_schema",
-                "schema": BRANCH_NAME_SCHEMA,
-            },
-            cache_key=ctx.cache_key,
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream(
+                prompt=f"{branch_name_prompt.PROMPT}\n\nTask: {ctx.prompt}",
+                repo_path=ctx.repo_path,
+                repo_url=ctx.repo_url,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=[],
+                output_format={
+                    "type": "json_schema",
+                    "schema": BRANCH_NAME_SCHEMA,
+                },
+                cache_key=ctx.cache_key,
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for branch name"
-            raise RuntimeError(msg)
+            raise SoftFailureError(
+                msg,
+                raise_site="branch_name",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         output = BranchNameOutput.model_validate(result_event.structured_output)
         feature_branch = f"kodezart/{output.slug}-{uuid.uuid4().hex[:8]}"
@@ -402,26 +406,30 @@ class RalphWorkflowEngine:
             task_description=format_ticket_as_task(ticket),
         )
 
-        result_event: ResultEvent | None = None
-        async for event in self._service.stream(
-            prompt=prompt,
-            repo_path=ctx.repo_path,
-            repo_url=ctx.repo_url,
-            branch=ctx.base_branch,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=EVAL_TOOLS_WITH_AGENT,
-            output_format={
-                "type": "json_schema",
-                "schema": GENERATED_CRITERIA_SCHEMA,
-            },
-            cache_key=ctx.cache_key,
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream(
+                prompt=prompt,
+                repo_path=ctx.repo_path,
+                repo_url=ctx.repo_url,
+                branch=ctx.base_branch,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=EVAL_TOOLS_WITH_AGENT,
+                output_format={
+                    "type": "json_schema",
+                    "schema": GENERATED_CRITERIA_SCHEMA,
+                },
+                cache_key=ctx.cache_key,
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for acceptance criteria"
-            raise RuntimeError(msg)
+            raise SoftFailureError(
+                msg,
+                raise_site="acceptance_criteria",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         output = GeneratedCriteriaOutput.model_validate(
             result_event.structured_output,
@@ -647,26 +655,30 @@ class RalphWorkflowEngine:
             changeset=changeset,
         )
 
-        result_event: ResultEvent | None = None
-        async for event in self._service.stream(
-            prompt=prompt,
-            repo_path=ctx.repo_path,
-            repo_url=ctx.repo_url,
-            branch=state["feature_branch"],
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=EVAL_TOOLS,
-            output_format={
-                "type": "json_schema",
-                "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-            },
-            cache_key=ctx.cache_key,
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream(
+                prompt=prompt,
+                repo_path=ctx.repo_path,
+                repo_url=ctx.repo_url,
+                branch=state["feature_branch"],
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=EVAL_TOOLS,
+                output_format={
+                    "type": "json_schema",
+                    "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                },
+                cache_key=ctx.cache_key,
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for review"
-            raise RuntimeError(msg)
+            raise SoftFailureError(
+                msg,
+                raise_site="post_merge_review",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         output = AcceptanceCriteriaOutput.model_validate(
             result_event.structured_output,
@@ -867,25 +879,29 @@ class RalphWorkflowEngine:
             acceptance_criteria=state["acceptance_criteria"],
             total_iterations=state["total_iterations"],
         )
-        result_event: ResultEvent | None = None
-        async for event in self._service.stream(
-            prompt=prompt,
-            repo_path=ctx.repo_path,
-            repo_url=ctx.repo_url,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=[],
-            output_format={
-                "type": "json_schema",
-                "schema": PR_DESCRIPTION_SCHEMA,
-            },
-            cache_key=ctx.cache_key,
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream(
+                prompt=prompt,
+                repo_path=ctx.repo_path,
+                repo_url=ctx.repo_url,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=[],
+                output_format={
+                    "type": "json_schema",
+                    "schema": PR_DESCRIPTION_SCHEMA,
+                },
+                cache_key=ctx.cache_key,
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for PR description"
-            raise RuntimeError(msg)
+            raise SoftFailureError(
+                msg,
+                raise_site="pr_description",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         pr_output = PRDescriptionOutput.model_validate(
             result_event.structured_output,

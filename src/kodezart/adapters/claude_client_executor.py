@@ -2,6 +2,8 @@
 
 from collections.abc import AsyncGenerator
 
+# Claude Agent SDK API surface verified against claude-agent-sdk ~=0.1.69
+# (ProcessError.exit_code: int | None; ProcessError.stderr: str | None).
 from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
@@ -15,6 +17,13 @@ from kodezart.adapters._sdk_mapping import map_message
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
+
+# Bounded to keep SSE event payload within ~8KB upstream framing limits
+# (Cloudflare, nginx default proxy_buffer_size); leaves headroom for the
+# rest of ErrorEvent's serialized form.  This is a wire-shape invariant
+# tied to the upstream proxy framing limits — NOT a deployment-environment
+# tunable, so it lives next to the slice site rather than in AppConfig.
+_STDERR_TAIL_BYTES: int = 4096
 
 
 class ClaudeClientExecutor:
@@ -73,9 +82,17 @@ class ClaudeClientExecutor:
                 exit_code=exc.exit_code,
                 stderr=exc.stderr,
             )
+            # ``exc.stderr`` is typed ``str | None`` per the verified
+            # SDK signature; None-safe slice avoids ``TypeError`` when
+            # the SDK emits a ProcessError with no captured stderr.
+            stderr_tail: str | None = (
+                exc.stderr[:_STDERR_TAIL_BYTES] if exc.stderr is not None else None
+            )
             raise AgentSDKError(
                 str(exc),
                 error_kind="ProcessError",
+                exit_code=exc.exit_code,
+                stderr_tail=stderr_tail,
             ) from exc
         except CLIConnectionError as exc:
             await self._log.awarning(

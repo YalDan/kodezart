@@ -324,3 +324,49 @@ async def test_diff_summary_empty_when_refs_equal(
     assert digest.file_paths == []
     assert digest.commit_subjects == []
     assert digest.is_empty is True
+
+
+async def test_fetch_populates_remote_tracking_refs(
+    git_service: SubprocessGitService, tmp_path: Path
+) -> None:
+    """`git clone --bare` does NOT create refs/remotes/origin/* (per git-clone docs);
+    the explicit refspec on `fetch` forces it to populate the namespace.
+
+    This is the unit-level gate for Facet ANC: without the refspec
+    extension, the subsequent ``git merge-base --is-ancestor origin/<branch> HEAD``
+    in ``GitBranchMerger`` crashes with ``Not a valid object name``.
+    """
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    await _run_git(["git", "init", "-b", "main"], cwd=upstream)
+    (upstream / "f").write_text("hello")
+    await _run_git(["git", "add", "."], cwd=upstream)
+    await _run_git(["git", "commit", "-m", "init"], cwd=upstream)
+
+    bare = tmp_path / "bare.git"
+    await git_service.clone_bare(str(upstream), str(bare))
+
+    # Pre-condition: a fresh bare clone has no refs/remotes/origin/*.
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "for-each-ref",
+        "refs/remotes/origin/",
+        cwd=str(bare),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    pre_out, _ = await proc.communicate()
+    assert pre_out.decode().strip() == ""
+
+    # After fetch with the explicit refspec, refs/remotes/origin/* exists.
+    await git_service.fetch(str(bare))
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "for-each-ref",
+        "refs/remotes/origin/",
+        cwd=str(bare),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    post_out, _ = await proc.communicate()
+    assert "refs/remotes/origin/main" in post_out.decode()

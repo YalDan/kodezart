@@ -53,6 +53,14 @@ class ClaudeAgentExecutor:
             resume=session_id,
             output_format=output_format,
         )
+        # TODO: symmetric ProcessError/CLIConnectionError/ClaudeSDKError
+        # detail preservation (exit_code, stderr_tail) matching
+        # ClaudeClientExecutor when this executor is wired into
+        # main.py.lifespan().  Currently unwired in the default
+        # composition root (see docs/architecture.md — ClaudeAgentExecutor
+        # is the one-shot alternative; ClaudeClientExecutor is the
+        # default).  Adding the parallel change here costs CI time on a
+        # code path no production deployment exercises.
         try:
             async for message in query(prompt=prompt, options=options):
                 for event in map_message(message):

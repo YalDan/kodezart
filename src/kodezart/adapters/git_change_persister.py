@@ -12,11 +12,11 @@ divergence is forbidden.
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, GitService
+from kodezart.core.soft_failure import SoftFailureError, drain
 from kodezart.prompts import commit_message
 from kodezart.types.domain.agent import (
     COMMIT_MESSAGE_SCHEMA,
     CommitMessageOutput,
-    ResultEvent,
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 
@@ -137,20 +137,24 @@ class GitChangePersister:
             "type": "json_schema",
             "schema": COMMIT_MESSAGE_SCHEMA,
         }
-        result_event: ResultEvent | None = None
 
-        async for event in executor.stream(
-            prompt=commit_message.PROMPT,
-            cwd=cwd,
-            permission_mode="plan",
-            allowed_tools=["Read", "Glob", "Grep", "Bash"],
-            output_format=output_format,
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            executor.stream(
+                prompt=commit_message.PROMPT,
+                cwd=cwd,
+                permission_mode="plan",
+                allowed_tools=["Read", "Glob", "Grep", "Bash"],
+                output_format=output_format,
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for commit message"
-            raise RuntimeError(msg)
+            raise SoftFailureError(
+                msg,
+                raise_site="commit_message",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         return CommitMessageOutput.model_validate(result_event.structured_output)

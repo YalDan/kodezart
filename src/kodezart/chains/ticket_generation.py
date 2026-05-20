@@ -12,6 +12,7 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, WorkspaceProvider
 from kodezart.core.retry import should_retry
+from kodezart.core.soft_failure import SoftFailureError, drain
 from kodezart.domain.errors import WorkspaceError
 from kodezart.prompts.ticket_generation import (
     build_create_prompt,
@@ -23,7 +24,6 @@ from kodezart.types.domain.agent import (
     TICKET_REVIEW_SCHEMA,
     AgentEvent,
     ErrorEvent,
-    ResultEvent,
     TicketDraftOutput,
     TicketReviewOutput,
     WorkflowTicketDraftEvent,
@@ -183,24 +183,28 @@ class TicketGenerationLoop:
             msg = "workspace_path must be set before entering create node"
             raise RuntimeError(msg)
 
-        result_event: ResultEvent | None = None
-        async for event in self._service.stream_in_workspace(
-            prompt=body,
-            workspace_path=ctx.workspace_path,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=TICKET_TOOLS,
-            output_format={
-                "type": "json_schema",
-                "schema": TICKET_DRAFT_SCHEMA,
-            },
-            session_id=state["creator_session_id"],
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream_in_workspace(
+                prompt=body,
+                workspace_path=ctx.workspace_path,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=TICKET_TOOLS,
+                output_format={
+                    "type": "json_schema",
+                    "schema": TICKET_DRAFT_SCHEMA,
+                },
+                session_id=state["creator_session_id"],
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Creator produced no structured output."
-            raise RuntimeError(msg)
+            raise SoftFailureError(
+                msg,
+                raise_site="ticket_creator",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         draft = TicketDraftOutput.model_validate(
             result_event.structured_output,
@@ -234,24 +238,28 @@ class TicketGenerationLoop:
             msg = "workspace_path must be set before entering review node"
             raise RuntimeError(msg)
 
-        result_event: ResultEvent | None = None
-        async for event in self._service.stream_in_workspace(
-            prompt=body,
-            workspace_path=ctx.workspace_path,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=TICKET_TOOLS,
-            output_format={
-                "type": "json_schema",
-                "schema": TICKET_REVIEW_SCHEMA,
-            },
-            session_id=state["reviewer_session_id"],
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream_in_workspace(
+                prompt=body,
+                workspace_path=ctx.workspace_path,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=TICKET_TOOLS,
+                output_format={
+                    "type": "json_schema",
+                    "schema": TICKET_REVIEW_SCHEMA,
+                },
+                session_id=state["reviewer_session_id"],
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Reviewer produced no structured output."
-            raise RuntimeError(msg)
+            raise SoftFailureError(
+                msg,
+                raise_site="ticket_reviewer",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         output = TicketReviewOutput.model_validate(
             result_event.structured_output,
