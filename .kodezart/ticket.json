@@ -1,0 +1,370 @@
+{
+  "title": "fix(pipeline): widen stream_failed observability + fix consolidate is_ancestor refspec atop inherited CFG",
+  "summary": "Stack three sequenced changes on PR #15 in a SINGLE PR (no intermediate merge). **STEP 1 (OBS) — observability widening**: route all EIGHT soft-failure raise sites (the user-task's 7 plus `chains/ralph_loop.py:226-228` evaluator site, confirmed by Watson and `git show`) through a new `core/soft_failure.py` module that defines a `RaiseSite = Literal[...]` typed alias, a `SoftFailureError` peer exception (storing PRIMITIVE scalars snapshotted from any observed `ResultEvent`), and a single `async def drain(stream) -> tuple[ResultEvent | None, bool]` two-call helper (NOT an async-generator passthrough — that signature is structurally impossible). Widen `ErrorEvent` with top-level typed optional fields — `error_kind`, `error_class`, `cause_class`, `stop_reason`, `raise_site`, `rate_limit_rejected`, `exit_code`, `stderr_tail` — locked with `model_config = ConfigDict(extra=\"forbid\")`. NO `details: dict[str, object]` dict bag. Preserve `ProcessError.exit_code` / `stderr` (None-safe, capped to 4096 bytes) on the re-raised `AgentSDKError` in `claude_client_executor.py` ONLY (drop the parallel `claude_agent_executor.py` change — unwired in default composition root). **STEP 2 (CFG) — INHERIT, do not rewrite**: commits `19aca0d` (extracts `KODEZART_GIT_REMOTE`, adds `verify-no-origin-literal` Makefile guard, threads `*, remote: str` keyword-only kwarg through all 4 adapters/engine) and `2e7cfa8` (e2e tests for `KODEZART_GIT_REMOTE=upstream` threading) on branch `kodezart/extract-git-remote-to-config-04317d19-ralph-56a0c08e` already implement Facet CFG IN FULL. This PR REBASES that work in and verifies, rather than reimplementing. **STEP 3 (ANC) — `is_ancestor` correctness**: extend `SubprocessGitService.fetch` argv from `[\"git\", \"fetch\", self._remote]` to `[\"git\", \"fetch\", self._remote, f\"+refs/heads/*:refs/remotes/{self._remote}/*\"]` (Facet CFG's `self._remote` instance attribute is in scope from inherited 19aca0d). Single-body-line change; populates the `refs/remotes/<remote>/*` namespace that `git clone --bare` leaves empty by default, fixing the deterministic `Not a valid object name <remote>/<branch>` crash at `git_branch_merger.py:99-103`.",
+  "context": "## Why this change\n\nThree independent diagnoses against the kodezart pipeline land together in a single PR stacked on PR #15. Combining them avoids re-traversing the same `git_branch_merger` / `agent_handler` / `subprocess_git_service` three separate times and keeps the cross-facet test surface coherent. This ticket supersedes the previous draft; every blocker the reviewer raised has been investigated and resolved with direct evidence below.\n\n## Reviewer blockers — investigated and resolved\n\n### Blocker 1 (layering / signature contradiction) — RESOLVED\nThe previous draft's `chains/_soft_failure.py` consumed by `adapters/git_change_persister.py` violates the hexagonal layout (`docs/architecture.md`) — adapters do not import from `chains/`. AND the drafted signature `async def stream_capture_or_raise(...) -> ResultEvent` while \"yielding events back as a passthrough\" is impossible: a `yield` inside an `async def` makes it an async generator (return type `AsyncIterator`), not a coroutine returning a non-iterator. Resolution: relocate to `core/soft_failure.py` (peer of `core/retry.py`, `core/logging.py` — both adapter and chain layers can legally import from `core/`) and commit to the **two-call shape** `async def drain(stream: AsyncIterator[AgentEvent]) -> tuple[ResultEvent | None, bool]`. Each site does `result_event, rate_limit_rejected = await drain(stream)` and explicitly raises `SoftFailureError` on its own line — no implicit control flow.\n\n### Blocker 2 (8th raise site) — CONFIRMED via direct evidence\n`git show origin/kodezart/fix-ralph-post-merge-consolidation-b4caf4dd-ralph-7c0974a9:src/kodezart/chains/ralph_loop.py | sed -n '226,228p'` returns:\n```\n        if result_event is None or result_event.structured_output is None:\n            msg = \"Evaluator produced no structured output.\"\n            raise RuntimeError(msg)\n```\nThis is the Ralph **evaluator** node — the inner loop that decides `accepted=true`. The previous draft missed it. There are EIGHT soft-failure sites, not seven. Added: `raise_site=\"ralph_evaluator\"`.\n\n### Blocker 3 (typing) — RESOLVED\n`pyproject.toml` enables `disallow_any_explicit = true` (with `core/config.py` as the only override). Strictly `dict[str, object]` is permitted (it's not `Any`), BUT the reviewer's broader point — that downstream SSE consumers can't type-check a free-form `details` dict, and Pydantic v2 idiom favors named typed fields — is sound. Resolution: drop `details: dict[str, object] | None`; promote the genuinely-consumed slots to top-level optionals on `ErrorEvent`: `error_kind: str | None = None`, `error_class: str | None = None`, `cause_class: str | None = None`, `stop_reason: str | None = None`, `raise_site: RaiseSite | None = None`, `rate_limit_rejected: bool | None = None`, `exit_code: int | None = None`, `stderr_tail: str | None = None`. Lock the wire shape with `model_config = ConfigDict(extra=\"forbid\")` so a future Ralph iteration can't accidentally introduce a field-name typo that breaks external consumers.\n\n## Reviewer correctable cluster — all adopted\n\n- **SoftFailureError YAGNI**: trim to `raise_site: RaiseSite`, `rate_limit_rejected: bool = False`, snapshot primitives (`stop_reason`, `is_error`, `session_id`, `total_cost_usd`, `result_event_observed: bool`) from the observed `ResultEvent | None`. Drop `error_kind` instance attribute (handler builds `error_kind=type(exc).__name__` directly).\n- **Avoid `domain/errors.py → types/domain/agent.py` import**: SoftFailureError lives in `core/soft_failure.py` (co-located with the `drain` helper that already needs `ResultEvent`). Not in `domain/errors.py` — keeps that module pure.\n- **`RaiseSite` typed alias**: `RaiseSite = Literal[\"ticket_creator\", \"ticket_reviewer\", \"branch_name\", \"acceptance_criteria\", \"ralph_evaluator\", \"post_merge_review\", \"pr_description\", \"commit_message\"]` — eight literals, defined adjacent to `SoftFailureError` in `core/soft_failure.py`. Compile-time-checked at every call site; typos rot loud.\n- **Drop `claude_agent_executor.py` parallel change** — unwired in default composition root per `docs/architecture.md`. Leave a TODO comment.\n- **Defensive `exc_info=sys.exc_info()`**: even though structlog 25.5 source DOES auto-set `kw[\"exc_info\"] = sys.exc_info()` when `kw.get(\"exc_info\", True) is True and kw.get(\"exception\") is None` (verified at https://www.structlog.org/en/stable/_modules/structlog/stdlib.html), pass it explicitly in the handler to harden against async-executor context loss (hynek/structlog#488 class).\n- **None-safe stderr slice**: `stderr_tail = exc.stderr[:_STDERR_TAIL_BYTES] if exc.stderr is not None else None` (per `claude_agent_sdk.ProcessError(message: str, exit_code: int | None = None, stderr: str | None = None)` — both nullable, verified via `python3 -c \"import claude_agent_sdk; help(claude_agent_sdk.ProcessError)\"`).\n- **No `getattr(exc, \"stop_reason\", None)`**: returns `Any`, propagates into Pydantic, violates posture. Use explicit isinstance branches with full typing.\n- **`stderr_tail` cap justified**: hardcoded `_STDERR_TAIL_BYTES = 4096` module constant in `claude_client_executor.py` with comment: \"Bounded to keep SSE event payload within ~8KB upstream framing limits (Cloudflare, nginx default proxy_buffer_size); leaves headroom for the rest of ErrorEvent's serialized form.\" NOT an `AppConfig` knob — this is a wire-shape invariant, not a deployment-environment tunable.\n- **PR #15 stacking strategy**: this PR is staged on PR #15's HEAD (`bccab99`). PR #15 is labeled \"DO NOT MERGE\" until upstream review concludes. CI gate: this PR blocks merge until PR #15 base is mergeable (added as a required check). Option (a) from reviewer feedback — fold ANC into PR #15 as a fixup — is rejected because the task's `ap_split_into_separate_prs` requires all three facets in a single PR, and folding ANC into PR #15 would force OBS+CFG into a separate PR.\n- **Facet CFG reconciliation**: commits `19aca0d` (\"refactor: extract git remote name to KODEZART_GIT_REMOTE config\") and `2e7cfa8` (\"test(e2e): cover git_remote threading in workflow argv and errors\") on branch `kodezart/extract-git-remote-to-config-04317d19-ralph-56a0c08e` already implement Facet CFG IN FULL: AppConfig field, `*, remote: str` keyword-only kwarg on all three adapters, `git_remote=` on `RalphWorkflowEngine`, `main.py` threading, error-message interpolation, `verify-no-origin-literal` Makefile target wired into `check`, doc row, plus `KODEZART_GIT_REMOTE=upstream` e2e test. This PR **INHERITS that work wholesale by rebasing** rather than re-implementing — eliminates duplicate work the reviewer flagged. The new ANC fix references `self._remote` from the inherited refactor.\n- **conftest fixtures**: add shared `subprocess_git_service` and `git_branch_merger` fixtures in `tests/conftest.py` that construct with `remote=\"origin\"`, absorbing the ~25 explicit-kwarg sites the inherited 19aca0d sprinkled across five test files and avoiding a forced edit cycle on the next constructor-signature evolution.\n- **Refspec namespace assertion**: the cross-facet integration test asserts BOTH the remote-name slot (`\"upstream\"`) AND the refspec namespace (`\"+refs/heads/*:refs/remotes/upstream/*\"`) appear together in the `fetch` argv. The previous draft asserted only the former.\n- **Pin Claude SDK**: tighten `claude-agent-sdk>=0.1.69` to `claude-agent-sdk~=0.1.69` in `pyproject.toml` (compatible-release operator: `>=0.1.69,<0.2.0`) and add a 1-line comment in `claude_client_executor.py` citing the SDK version that `ProcessError.exit_code`/`.stderr` was verified against. Loud break on minor-version reshuffle.\n\n## Documentation consulted (verbatim)\n\n- **git-clone refspec semantics**: https://git-scm.com/docs/git-clone — \"[`--bare`] When given, the branch heads at the remote are copied directly to corresponding local branch heads, **without mapping them to refs/remotes/origin/**. When this option is used, neither remote-tracking branches nor the related configuration variables are created.\" This is the documented root cause for Facet ANC.\n- **git-fetch refspec syntax**: https://git-scm.com/docs/git-fetch and https://git-scm.com/book/en/v2/Git-Internals-The-Refspec — confirms `+refs/heads/*:refs/remotes/<remote>/*` is the canonical refspec form for populating remote-tracking refs.\n- **structlog `aexception` auto-attach**: https://www.structlog.org/en/stable/_modules/structlog/stdlib.html — verified source: `if kw.get(\"exc_info\", True) is True and kw.get(\"exception\") is None: kw[\"exc_info\"] = sys.exc_info()`. Auto-attach DOES work in the simple case; defensive explicit passing remains best practice for async executors.\n- **structlog async API**: https://www.structlog.org/en/stable/api.html — `aexception` added in structlog 23.1.0.\n- **pydantic-settings env_prefix**: https://docs.pydantic.dev/latest/concepts/pydantic_settings/ — `env_prefix=\"KODEZART_\"` auto-binds `KODEZART_GIT_REMOTE`; case-insensitive by default.\n- **Pydantic v2 Literal fields**: https://docs.pydantic.dev/latest/concepts/fields/ — `Literal[...]` is a first-class field type that enforces value-set at validation.\n- **Pydantic v2 `extra=\"forbid\"`**: https://docs.pydantic.dev/latest/api/config/#pydantic.config.ConfigDict.extra — locks model shape so unknown fields raise.\n- **claude-agent-sdk `ProcessError` signature**: verified at runtime via `python3 -c \"import claude_agent_sdk; help(claude_agent_sdk.ProcessError)\"` → `ProcessError(message: str, exit_code: int | None = None, stderr: str | None = None)`. Both `exit_code` and `stderr` nullable — None-safety required at slice site.\n- **PR #15 bug report**: https://github.com/YalDan/kodezart/pull/15#issuecomment-4496221486 — verbatim live evidence, source-anchor at `git_branch_merger.py:99-103`, clone-layout / fetch-refspec hypothesis.\n\n## Architecture notes\n\nHexagonal layout (`docs/architecture.md`): protocols in `core/protocols.py`; adapters in `adapters/` (can import from `core/`, `domain/`, `types/`); chains in `chains/` (same legal imports); handlers in `handlers/`; composition root in `main.py.lifespan()`. Strict mypy `disallow_any_explicit = true` (only `core/config.py` excepted). Ruff selects `E, W, F, I, B, C4, UP, N, ANN, S, A, ARG, RUF` — `ANN` (all-typed annotations) and `RUF` (Ruff-specific lints) are the load-bearing ones for this change. Shared logger primitive: `structlog.stdlib.BoundLogger` from `core/logging.py`. Shared retry predicate: `core/retry.py:should_retry` — True only for `TransientAPIError`, `ConnectionError`, `httpx.HTTPStatusError(429|5xx)`. `core/` is the explicit home for cross-cutting primitives (`retry.py`, `logging.py`, `checkpointer.py`, `constants.py`); `soft_failure.py` slots in naturally as a sibling.",
+  "references": [
+    {
+      "location": "src/kodezart/types/domain/agent.py:201-205",
+      "note": "`ErrorEvent` current shape — `type: Literal[\"error\"] = \"error\"; error: str`. Widened with EIGHT top-level optional fields (not a `details` dict). `extra=\"forbid\"` on the model config locks the wire shape."
+    },
+    {
+      "location": "src/kodezart/types/domain/agent.py:174-190",
+      "note": "`ResultEvent` — `stop_reason: str | None`, `is_error: bool`, `session_id: str`, `total_cost_usd: float | None`, `usage: dict[str, object] | None`, `structured_output: dict[str, object] | None`. `SoftFailureError` snapshots the primitive scalars into instance state in its constructor; the helper `drain` returns `(ResultEvent | None, bool)`."
+    },
+    {
+      "location": "src/kodezart/types/domain/agent.py:208-215",
+      "note": "`RateLimitWarningEvent` — `status: Literal[\"allowed_warning\", \"rejected\"]`. `drain` sets `rate_limit_rejected=True` if any event with `status == \"rejected\"` is observed during the stream."
+    },
+    {
+      "location": "src/kodezart/handlers/agent_handler.py:53-58",
+      "note": "`stream_query` exception path — widened to use explicit isinstance branches against SoftFailureError and AgentSDKError; defensive `exc_info=sys.exc_info()` passed to `aexception`."
+    },
+    {
+      "location": "src/kodezart/handlers/agent_handler.py:79-84",
+      "note": "`stream_workflow` exception path — same treatment as stream_query."
+    },
+    {
+      "location": "src/kodezart/adapters/claude_client_executor.py:70-97",
+      "note": "Three-arm exception re-raise. ProcessError branch now preserves `exit_code: int | None` and `stderr_tail: str | None` (None-safe slice with `_STDERR_TAIL_BYTES = 4096` cap)."
+    },
+    {
+      "location": "src/kodezart/adapters/claude_agent_executor.py:60-87",
+      "note": "Parallel change DROPPED — only a TODO comment added. Unwired in default composition root per `docs/architecture.md`."
+    },
+    {
+      "location": "src/kodezart/domain/errors.py:32-37",
+      "note": "`AgentSDKError.__init__` extended to accept optional `exit_code: int | None`, `stderr_tail: str | None`. Stores as instance attributes. `SoftFailureError` is NOT added here — it lives in `core/soft_failure.py` to avoid the `domain/errors.py → types/domain/agent.py` import."
+    },
+    {
+      "location": "src/kodezart/core/soft_failure.py",
+      "note": "NEW MODULE. Defines `RaiseSite = Literal[...]` (8 literals), `SoftFailureError(Exception)` (peer of AgentSDKError, snapshots primitives), and `async def drain(stream) -> tuple[ResultEvent | None, bool]` (two-call helper). Adapter `git_change_persister.py` legally imports from here — `core/` is the cross-cutting-primitives layer."
+    },
+    {
+      "location": "src/kodezart/core/retry.py:8-23",
+      "note": "`should_retry(exc)` returns True ONLY for `TransientAPIError`, `ConnectionError`, `httpx.HTTPStatusError(429|5xx)`. `SoftFailureError` falls through to False — verified by `tests/core/test_retry.py`."
+    },
+    {
+      "location": "src/kodezart/core/logging.py:62-68",
+      "note": "`get_logger -> structlog.stdlib.BoundLogger`. `aexception` auto-attaches `exc_info` per source verification, but handler passes `exc_info=sys.exc_info()` explicitly per defensive recommendation."
+    },
+    {
+      "location": "src/kodezart/chains/ralph_loop.py:223-228",
+      "note": "**8TH RAISE SITE (Blocker 2)** — evaluator node. Pattern: `if result_event is None or result_event.structured_output is None: msg = \"Evaluator produced no structured output.\"; raise RuntimeError(msg)`. Route through `drain` + `SoftFailureError(raise_site=\"ralph_evaluator\")`. The L176 `event.commit_sha` capture is a DIFFERENT accumulator — leave it untouched."
+    },
+    {
+      "location": "src/kodezart/chains/ticket_generation.py:187-209",
+      "note": "Raise site 1 (creator) — raise_site=\"ticket_creator\"."
+    },
+    {
+      "location": "src/kodezart/chains/ticket_generation.py:238-254",
+      "note": "Raise site 2 (reviewer) — raise_site=\"ticket_reviewer\"."
+    },
+    {
+      "location": "src/kodezart/chains/ralph_workflow.py:324-326",
+      "note": "Raise site 3 (branch_name) — raise_site=\"branch_name\". Line numbers may shift after inherited 19aca0d rebase."
+    },
+    {
+      "location": "src/kodezart/chains/ralph_workflow.py:398-400",
+      "note": "Raise site 4 (acceptance_criteria) — raise_site=\"acceptance_criteria\"."
+    },
+    {
+      "location": "src/kodezart/chains/ralph_workflow.py:568-570",
+      "note": "Raise site 5 (post_merge_review) — raise_site=\"post_merge_review\"."
+    },
+    {
+      "location": "src/kodezart/chains/ralph_workflow.py:738-740",
+      "note": "Raise site 6 (pr_description) — raise_site=\"pr_description\"."
+    },
+    {
+      "location": "src/kodezart/adapters/git_change_persister.py:86-88",
+      "note": "Raise site 7 (commit_message) — raise_site=\"commit_message\". Import `SoftFailureError`, `drain` from `kodezart.core.soft_failure` (NOT `kodezart.chains._soft_failure` — the previous draft's hexagonal inversion)."
+    },
+    {
+      "location": "src/kodezart/adapters/subprocess_git_service.py:52-58",
+      "note": "**Facet ANC — single body-line change.** Extend fetch argv from `[\"git\", \"fetch\", self._remote]` to `[\"git\", \"fetch\", self._remote, f\"+refs/heads/*:refs/remotes/{self._remote}/*\"]`. `self._remote` is inherited from 19aca0d."
+    },
+    {
+      "location": "src/kodezart/adapters/subprocess_git_service.py:46-50",
+      "note": "`clone_bare` left untouched. Per git-clone docs, --bare clones do not configure `remote.<name>.fetch` or create `refs/remotes/<name>/*`."
+    },
+    {
+      "location": "src/kodezart/adapters/git_branch_merger.py:99-103",
+      "note": "First `is_ancestor` call — the production crash site. After 19aca0d the call reads `origin_source = f\"{self._remote}/{source_branch}\"`. After ANC's refspec fix in fetch, the dereference resolves. NO change needed to this file in THIS PR's diff."
+    },
+    {
+      "location": "src/kodezart/adapters/git_branch_merger.py:48-58",
+      "note": "`ConsolidationStatus` enum + four-way decision tree docstring. PRESERVED unchanged — the four-status total function must continue to refuse to lie about ref state."
+    },
+    {
+      "location": "Commit 19aca0d on branch kodezart/extract-git-remote-to-config-04317d19-ralph-56a0c08e",
+      "note": "Already implements Facet CFG IN FULL: AppConfig.git_remote field, `*, remote: str` keyword-only kwarg on the three adapters, `git_remote=` on RalphWorkflowEngine, main.py threading, three error-message interpolations, `verify-no-origin-literal` Makefile target wired into `check`, docs/configuration.md row, plus test-fixture updates across 5 test files. INHERIT via rebase — do NOT reimplement."
+    },
+    {
+      "location": "Commit 2e7cfa8 on branch kodezart/extract-git-remote-to-config-04317d19-ralph-56a0c08e",
+      "note": "Adds e2e test for `KODEZART_GIT_REMOTE=upstream` argv threading. INHERIT via rebase; EXTEND to also assert the refspec namespace (`+refs/heads/*:refs/remotes/upstream/*`) per reviewer's sherlock recommendation."
+    },
+    {
+      "location": "Makefile (post-rebase from 19aca0d)",
+      "note": "`verify-no-origin-literal` target wired into `check`. Greps `src/kodezart` for `\"origin/\"` or `\"origin\"` outside `core/config.py`; fails the build if any reappears. The new Facet ANC fetch refspec MUST use `self._remote` and `f\"+refs/heads/*:refs/remotes/{self._remote}/*\"` — never literal `\"origin\"` — to pass this guard."
+    },
+    {
+      "location": "https://git-scm.com/docs/git-clone",
+      "note": "'[--bare] When given, the branch heads at the remote are copied directly to corresponding local branch heads, without mapping them to refs/remotes/origin/. When this option is used, neither remote-tracking branches nor the related configuration variables are created.' Documented root cause for Facet ANC."
+    },
+    {
+      "location": "https://git-scm.com/docs/git-fetch",
+      "note": "Refspec syntax — `+refs/heads/*:refs/remotes/<remote>/*` is the canonical form for populating remote-tracking refs in a clone that lacks the default config."
+    },
+    {
+      "location": "https://www.structlog.org/en/stable/_modules/structlog/stdlib.html",
+      "note": "Verified source of `BoundLogger.aexception`: `if kw.get(\"exc_info\", True) is True and kw.get(\"exception\") is None: kw[\"exc_info\"] = sys.exc_info()`. Auto-attach works in the simple case; defensive explicit `exc_info=sys.exc_info()` still recommended for async executors (hynek/structlog#488 class)."
+    },
+    {
+      "location": "https://docs.pydantic.dev/latest/api/config/#pydantic.config.ConfigDict.extra",
+      "note": "`model_config = ConfigDict(extra=\"forbid\")` locks the model shape; unknown fields raise. Producer-side guard against field-name typos in future ErrorEvent evolution."
+    },
+    {
+      "location": "https://docs.pydantic.dev/latest/concepts/fields/",
+      "note": "Pydantic v2 supports `Literal[...]` as a first-class field type. `RaiseSite = Literal[...]` field on `ErrorEvent.raise_site` enforces the value-set at validation time."
+    },
+    {
+      "location": "claude_agent_sdk.ProcessError (runtime-verified)",
+      "note": "Signature: `ProcessError(message: str, exit_code: int | None = None, stderr: str | None = None)`. Both `exit_code` and `stderr` are nullable — None-safety required at the slice site in `claude_client_executor.py`."
+    },
+    {
+      "location": "https://github.com/YalDan/kodezart/pull/15",
+      "note": "PR #15 — parent stack. Currently labeled 'DO NOT MERGE'. CI gate added in `.github/workflows/ci.yml` blocks merge of THIS PR until PR #15 is mergeable."
+    },
+    {
+      "location": "https://github.com/YalDan/kodezart/pull/15#issuecomment-4496221486",
+      "note": "Verbatim live evidence for Facet ANC — two reproductions, source-anchor at `git_branch_merger.py:99-103`, clone-layout / fetch-refspec hypothesis confirmed via git-clone docs."
+    },
+    {
+      "location": "https://github.com/hynek/structlog/issues/488",
+      "note": "Reviewer-cited known issue class of `aexception` losing exception context in async executors. Defensive `exc_info=sys.exc_info()` adopted."
+    }
+  ],
+  "requiredChanges": [
+    {
+      "filePath": "INHERIT_COMMITS",
+      "changeType": "modify",
+      "description": "INHERITANCE GATE — NOT A LITERAL FILE. Before any other change in this PR, rebase / cherry-pick BOTH commits 19aca0d ('refactor: extract git remote name to KODEZART_GIT_REMOTE config') and 2e7cfa8 ('test(e2e): cover git_remote threading in workflow argv and errors') from branch `kodezart/extract-git-remote-to-config-04317d19-ralph-56a0c08e` into this PR's history. These two commits collectively implement Facet CFG IN FULL: AppConfig.git_remote field with description, `*, remote: str` keyword-only kwarg on `SubprocessGitService` / `GitBranchMerger` / `GitChangePersister`, `git_remote: str` on `RalphWorkflowEngine`, main.py threading, error-message interpolation at all three sites (`git_branch_merger.py:253`, `git_change_persister.py:85`, `ralph_workflow.py:591`), the `verify-no-origin-literal` Makefile target wired into `check`, docs/configuration.md row, AND e2e integration tests for `KODEZART_GIT_REMOTE=upstream` argv assertion. After rebase, every CFG criterion is already satisfied; this PR's net diff is OBS + ANC only. DO NOT re-implement Facet CFG. If the rebase produces conflicts they are limited to import-order and adjacent-line changes — resolve mechanically.",
+      "rationale": "Resolves Watson 2's duplicate-work conflict (`criterion_cfg_*` all already green on the sibling branch). Eliminates ~25 lines of redundant CFG-implementation work and lets reviewers focus on the genuinely-new OBS + ANC surface."
+    },
+    {
+      "filePath": "src/kodezart/core/soft_failure.py",
+      "changeType": "create",
+      "description": "New module — peer of `core/retry.py`, `core/logging.py`. Cross-cutting soft-failure primitive shared between chains and one adapter (`git_change_persister.py`). Defines three exports: (1) `RaiseSite = Literal[\"ticket_creator\", \"ticket_reviewer\", \"branch_name\", \"acceptance_criteria\", \"ralph_evaluator\", \"post_merge_review\", \"pr_description\", \"commit_message\"]` — EIGHT literals (note `ralph_evaluator` for the 8th site at `chains/ralph_loop.py:226-228`). (2) `class SoftFailureError(Exception)` — peer of `AgentSDKError` (NOT a subclass of `TransientAPIError`/`RateLimitError`/`AgentSDKError`). Constructor `def __init__(self, message: str, *, raise_site: RaiseSite, result_event: ResultEvent | None, rate_limit_rejected: bool = False) -> None`. Stores: `self.raise_site: RaiseSite = raise_site`, `self.rate_limit_rejected: bool = rate_limit_rejected`, `self.result_event_observed: bool = result_event is not None`, AND PRIMITIVE SCALAR SNAPSHOTS from `result_event` (mirrors `RateLimitError` carrying primitives): `self.stop_reason: str | None = result_event.stop_reason if result_event else None`, `self.is_error: bool | None = result_event.is_error if result_event else None`, `self.session_id: str | None = result_event.session_id if result_event else None`, `self.total_cost_usd: float | None = result_event.total_cost_usd if result_event else None`. The `ResultEvent` parameter type is allowed because `core/` legally imports from `types/domain/`; locating the exception here (instead of `domain/errors.py`) keeps `domain/errors.py` free of the cross-layer dependency. (3) `async def drain(stream: AsyncIterator[AgentEvent]) -> tuple[ResultEvent | None, bool]` — two-call helper. Consumes the stream, retains the LAST `ResultEvent` observed and sets `rate_limit_rejected = True` if ANY `RateLimitWarningEvent` with `status == \"rejected\"` is observed. Returns `(last_result_event, rate_limit_rejected)`. NOT an async generator; NO `yield` inside the body.",
+      "rationale": "Resolves Blocker 1 (hexagonal layering + impossible signature). Resolves Watson 2's `result_event` cross-layer concern by co-locating with the helper that legally holds the import. `RaiseSite = Literal[...]` resolves Watson 3's implicit-string-contract concern. Two-call shape resolves the async-generator-vs-coroutine contradiction. SoftFailureError carries only primitives + the original `result_event` reference held for one tick during construction is discarded — mirrors `RateLimitError`'s primitive-only shape."
+    },
+    {
+      "filePath": "src/kodezart/types/domain/agent.py",
+      "changeType": "modify",
+      "description": "Widen `ErrorEvent` (currently L201-205: `type: Literal[\"error\"] = \"error\"; error: str`). Import `RaiseSite` from `kodezart.core.soft_failure`. Add EIGHT new top-level optional fields, each `T | None = None` per Pydantic v2 explicit-default semantics: `error_kind: str | None = None` (exception type name, e.g. `\"SoftFailureError\"`, `\"AgentSDKError\"`, `\"RuntimeError\"`); `error_class: str | None = None` (alias-or-duplicate of `error_kind` carrying `type(exc).__name__` if a future widening distinguishes; if not needed, omit — keep ONLY `error_kind`. Default: KEEP only `error_kind`, drop `error_class`); `cause_class: str | None = None` (`type(exc.__cause__).__name__` if a chained exception is present); `stop_reason: str | None = None`; `raise_site: RaiseSite | None = None` (typed via Literal alias); `rate_limit_rejected: bool | None = None`; `exit_code: int | None = None`; `stderr_tail: str | None = None`. Lock model shape with `model_config = ConfigDict(extra=\"forbid\")` so a future field-name typo raises. Preserve `error: str` unchanged (name, type, required-ness). NO `details: dict[str, object] | None` field — reviewer explicitly rejected the dict bag in favor of named typed fields.",
+      "rationale": "Resolves Blocker 3. Each top-level field is independently type-checkable by downstream SSE consumers. `extra=\"forbid\"` is reviewer's sherlock recommendation — producer-side guard against accidental field drift. `RaiseSite` typed alias means `mypy --strict` rejects mis-spelled raise-site values at the Pydantic construction site."
+    },
+    {
+      "filePath": "src/kodezart/handlers/agent_handler.py",
+      "changeType": "modify",
+      "description": "In BOTH `stream_query` (L53-58) and `stream_workflow` (L79-84) exception handlers, replace the current pair `await self._log.aerror(\"stream_failed\", error=str(exc)); yield ErrorEvent(error=str(exc)).model_dump(...)` with: (1) `await self._log.aexception(\"stream_failed\", error=str(exc), error_kind=type(exc).__name__, cause=type(exc.__cause__).__name__ if exc.__cause__ else None, exc_info=sys.exc_info())` — PASS `exc_info` EXPLICITLY (defensive against hynek/structlog#488-class async-executor context loss). (2) Build the ErrorEvent via explicit isinstance branches with full typing — NO `getattr(exc, \"stop_reason\", None)` (returns `Any` and propagates to Pydantic). Pseudocode: `error_kind = type(exc).__name__; cause_class = type(exc.__cause__).__name__ if exc.__cause__ is not None else None; stop_reason: str | None = None; raise_site: RaiseSite | None = None; rate_limit_rejected: bool | None = None; exit_code: int | None = None; stderr_tail: str | None = None; if isinstance(exc, SoftFailureError): raise_site = exc.raise_site; stop_reason = exc.stop_reason; rate_limit_rejected = exc.rate_limit_rejected; elif isinstance(exc, AgentSDKError): exit_code = exc.exit_code; stderr_tail = exc.stderr_tail; yield ErrorEvent(error=str(exc), error_kind=error_kind, cause_class=cause_class, stop_reason=stop_reason, raise_site=raise_site, rate_limit_rejected=rate_limit_rejected, exit_code=exit_code, stderr_tail=stderr_tail).model_dump(by_alias=True, exclude_none=True)`. DO NOT dump a traceback into `error` (operator-facing; tracebacks belong in `exc_info` on the log record).",
+      "rationale": "criterion_obs_handler_carries_exception_class. Explicit isinstance branches keep mypy strict-clean (no `Any` propagation). Defensive `exc_info=sys.exc_info()` per reviewer documentation concern."
+    },
+    {
+      "filePath": "src/kodezart/domain/errors.py",
+      "changeType": "modify",
+      "description": "Extend `AgentSDKError.__init__` to carry optional structured attributes: `def __init__(self, message: str, *, error_kind: str, exit_code: int | None = None, stderr_tail: str | None = None) -> None`. Store `self.error_kind: str = error_kind`, `self.exit_code: int | None = exit_code`, `self.stderr_tail: str | None = stderr_tail`. DO NOT add `SoftFailureError` here — it lives in `core/soft_failure.py` to avoid a `domain/errors.py → types/domain/agent.py` import that no other exception in this module has (Watson 4 concern). The existing `WorkspaceError`, `TransientAPIError`, `RateLimitError` are untouched.",
+      "rationale": "criterion_obs_adapter_preserves_process_error_detail. Reviewer's primitive-only-storage pattern (mirrors `RateLimitError`). Exception detail survives the re-raise without inflating the exception hierarchy with event-type imports."
+    },
+    {
+      "filePath": "src/kodezart/adapters/claude_client_executor.py",
+      "changeType": "modify",
+      "description": "Add module-level constant `_STDERR_TAIL_BYTES: int = 4096  # Bounded to keep SSE event payload within ~8KB upstream framing limits (Cloudflare, nginx default proxy_buffer_size); leaves headroom for the rest of ErrorEvent's serialized form.` Add a 1-line comment above the SDK imports citing the version this code was verified against: `# Claude Agent SDK API surface verified against claude-agent-sdk ~=0.1.69 (ProcessError.exit_code: int | None; ProcessError.stderr: str | None).` In the L70-97 except block: on `except ProcessError as exc:` (L70-79) compute `stderr_tail = exc.stderr[:_STDERR_TAIL_BYTES] if exc.stderr is not None else None` (None-safe), then `raise AgentSDKError(str(exc), error_kind=\"ProcessError\", exit_code=exc.exit_code, stderr_tail=stderr_tail) from exc`. On `except CLIConnectionError` (L80-88) and `except ClaudeSDKError` (L89-97) branches, preserve `error_kind=type(exc).__name__` (existing behavior) and `from exc` chaining (existing); `exit_code` / `stderr_tail` stay None at those branches. DO NOT swallow any branch silently. Existing `awarning(...)` log calls at L71-74, L81-83, L90-92 stay unchanged.",
+      "rationale": "criterion_obs_adapter_preserves_process_error_detail + Watson 4 None-safety. The `_STDERR_TAIL_BYTES` constant and the SDK-version comment together resolve the reviewer's 'justify the cap' and 'pin the SDK' concerns at a single location."
+    },
+    {
+      "filePath": "src/kodezart/adapters/claude_agent_executor.py",
+      "changeType": "modify",
+      "description": "Add ONLY a TODO comment above the L60-87 except block: `# TODO: symmetric ProcessError/CLIConnectionError/ClaudeSDKError detail preservation matching ClaudeClientExecutor when this executor is wired in main.py.lifespan(). Currently unwired (see docs/architecture.md — ClaudeAgentExecutor is the one-shot alternative; ClaudeClientExecutor is the default).` DO NOT change the except-block behavior. YAGNI: the parallel change costs test time on a code path no production deployment exercises (reviewer-adopted).",
+      "rationale": "Drops the parallel change per reviewer feedback. Leaves a discoverable marker so the symmetry can be added when/if the executor is wired."
+    },
+    {
+      "filePath": "src/kodezart/chains/ralph_loop.py",
+      "changeType": "modify",
+      "description": "8TH RAISE SITE (Watson-confirmed via direct `git show`). At L223-228 the evaluator node holds the same pattern as the other seven — `if result_event is None or result_event.structured_output is None: msg = \"Evaluator produced no structured output.\"; raise RuntimeError(msg)`. Refactor through `core/soft_failure.drain` with `raise_site=\"ralph_evaluator\"`. The surrounding `async for event in self._service.stream(...): if isinstance(event, ResultEvent): result_event = event` accumulator (L209-224) is replaced by `result_event, rate_limit_rejected = await drain(self._service.stream(...))` — single line, no manual accumulator. Then `if result_event is None or result_event.structured_output is None: raise SoftFailureError(\"Evaluator produced no structured output.\", raise_site=\"ralph_evaluator\", result_event=result_event, rate_limit_rejected=rate_limit_rejected)`. Note: the existing `if isinstance(event, ResultEvent) and event.commit_sha:` capture at L176 is a DIFFERENT accumulator (workflow execute node tracking commit SHA, NOT a soft-failure raise) — leave it untouched.",
+      "rationale": "Resolves Blocker 2 — 8th raise site. Without this, the OBS facet leaks one bare `RuntimeError` from the very loop that decides `accepted=true`, which is precisely the loop the bug-report runs reached before the consolidation crash. Missing it would be a critical observability gap."
+    },
+    {
+      "filePath": "src/kodezart/chains/ticket_generation.py",
+      "changeType": "modify",
+      "description": "Route the two raise sites (L201-203 creator, L252-254 reviewer) through `core/soft_failure.drain`. Replace the manual `result_event: ResultEvent | None = None` accumulator + `async for event in self._service.stream_in_workspace(...): if isinstance(event, ResultEvent): result_event = event` (L192-205, L238-250) with `result_event, rate_limit_rejected = await drain(self._service.stream_in_workspace(...))`. Replace each `raise RuntimeError(msg)` with `raise SoftFailureError(msg, raise_site=\"ticket_creator\", result_event=result_event, rate_limit_rejected=rate_limit_rejected)` (resp. `\"ticket_reviewer\"`).",
+      "rationale": "criterion_obs_chain_raise_sites_capture_terminal_state — sites 1 and 2 of 8."
+    },
+    {
+      "filePath": "src/kodezart/chains/ralph_workflow.py",
+      "changeType": "modify",
+      "description": "Route the FOUR raise sites — L324-326 `branch_name`, L398-400 `acceptance_criteria`, L568-570 `post_merge_review`, L738-740 `pr_description` (line numbers per PR #15 tree; account for any shift introduced by inherited 19aca0d's edits to this file) — through `core/soft_failure.drain` and `SoftFailureError`. Each site collapses the manual accumulator into `result_event, rate_limit_rejected = await drain(self._service.stream(...))` and raises with the matching `raise_site` literal (`\"branch_name\"`, `\"acceptance_criteria\"`, `\"post_merge_review\"`, `\"pr_description\"` respectively). Facet CFG's `_REMOTE` removal at L60 and `self._remote` propagation at L586 / L591 are INHERITED from commit 19aca0d — do NOT re-apply in this PR's diff.",
+      "rationale": "criterion_obs_chain_raise_sites_capture_terminal_state — sites 3-6 of 8. Inheritance gate prevents duplicate CFG work."
+    },
+    {
+      "filePath": "src/kodezart/adapters/git_change_persister.py",
+      "changeType": "modify",
+      "description": "Route the commit-message raise site (L86-88 per PR #15 tree) through `core/soft_failure.drain` and `SoftFailureError` with `raise_site=\"commit_message\"`. Replace the manual accumulator + `raise RuntimeError(\"Agent did not produce structured output for commit message\")` pair with the two-call shape. Import path is `from kodezart.core.soft_failure import SoftFailureError, drain` — legal because adapters can import from `core/` (the previous draft's `chains/_soft_failure.py` was a hexagonal inversion; this resolves it). Facet CFG's `_REMOTE` removal at L23, `*, remote: str` keyword-only addition to `__init__`, `self._remote` propagation at L70, and error-message interpolation at L85 are INHERITED from commit 19aca0d — do NOT re-apply.",
+      "rationale": "criterion_obs_chain_raise_sites_capture_terminal_state — site 7 of 8. Layering fix per Blocker 1."
+    },
+    {
+      "filePath": "src/kodezart/adapters/subprocess_git_service.py",
+      "changeType": "modify",
+      "description": "FACET ANC — single body-line change. The constructor signature `def __init__(self, *, remote: str, auth: GitAuth | None = None) -> None` and `self._remote = remote` attribute are INHERITED from commit 19aca0d. The fetch method body at L52-58 (per PR #15 tree) currently reads `await self._run([\"git\", \"fetch\", self._remote], cwd=repo_path, env=...)` (after 19aca0d). Extend the argv to pass an explicit refspec: `await self._run([\"git\", \"fetch\", self._remote, f\"+refs/heads/*:refs/remotes/{self._remote}/*\"], cwd=repo_path, env=...)`. Leave `clone_bare` at L46-50 untouched. NO literal `\"origin\"` anywhere in the new fetch argv (Facet CFG's `verify-no-origin-literal` Makefile guard inherited from 19aca0d enforces this). NO change to `push` at L142 (already uses `self._remote`).",
+      "rationale": "criterion_anc_fetch_populates_remote_refs + criterion_anc_is_ancestor_resolves. Per git-clone documentation, `git clone --bare` does NOT create `refs/remotes/<name>/*` or configure `remote.<name>.fetch`. The explicit refspec on `fetch` populates `refs/remotes/<self._remote>/*` so the downstream `is_ancestor` dereference at `git_branch_merger.py:99-103` resolves. Fix-shape (b) chosen for smallest blast radius (per ap_anc_change_clone_layout_silently): single body-line; clone-bare untouched; no race window."
+    },
+    {
+      "filePath": "src/kodezart/adapters/git_branch_merger.py",
+      "changeType": "modify",
+      "description": "NO production changes needed in this PR. Facet CFG (`_REMOTE` removal at L15, `*, remote: str` keyword-only kwarg on `__init__`, `self._remote` propagation at L96/L157/L173/L214/L239/L246/L274, error-message interpolation at L253) is INHERITED from commit 19aca0d. Facet ANC fixes the `is_ancestor` failure UPSTREAM in `SubprocessGitService.fetch`; the `consolidate()` body at L94-107 needs no edit beyond what 19aca0d already applied. The `ConsolidationStatus` enum and four-way decision tree at L48-58 are preserved unchanged (criterion_anc_four_status_preserved + ap_anc_swallow_is_ancestor_exit_128).",
+      "rationale": "Documentation-only entry confirming this file is touched by inherited 19aca0d but needs no NEW edits in this PR. Important to call out explicitly so the reviewer can verify the inheritance plan covers it."
+    },
+    {
+      "filePath": "src/kodezart/main.py",
+      "changeType": "modify",
+      "description": "NO production changes needed in this PR. The four constructor sites (`SubprocessGitService(remote=config.git_remote, ...)`, `GitChangePersister(..., remote=config.git_remote)`, `GitBranchMerger(..., remote=config.git_remote)`, `RalphWorkflowEngine(..., git_remote=config.git_remote, ...)`) are INHERITED from commit 19aca0d. Confirm via post-rebase grep that all four threading sites are present.",
+      "rationale": "Documentation-only entry. Inheritance gate."
+    },
+    {
+      "filePath": "src/kodezart/core/config.py",
+      "changeType": "modify",
+      "description": "NO production changes needed in this PR. The `git_remote: str = Field(default=\"origin\", description=\"Git remote name for fetch/push operations and remote-ref probes.\")` field is INHERITED from commit 19aca0d.",
+      "rationale": "Documentation-only entry. Inheritance gate."
+    },
+    {
+      "filePath": "Makefile",
+      "changeType": "modify",
+      "description": "NO new production changes — the `verify-no-origin-literal` target (greps `src/kodezart` for any `\"origin/\"` or `\"origin\"` literal outside `core/config.py` and fails the build if one reappears) wired into `check` is INHERITED from commit 19aca0d. THIS PR confirms post-rebase that running `make check` enforces the guard; if Facet ANC's new refspec accidentally introduces a literal `\"origin\"` (it must not — use `self._remote` and `f\"+refs/heads/*:refs/remotes/{self._remote}/*\"`), the guard catches it at CI time.",
+      "rationale": "Documentation-only entry. The reviewer's 'reconcile Makefile guard' concern is resolved by inheriting the existing guard verbatim."
+    },
+    {
+      "filePath": "pyproject.toml",
+      "changeType": "modify",
+      "description": "Tighten the `claude-agent-sdk>=0.1.69` floor pin to `claude-agent-sdk~=0.1.69` (PEP 440 compatible-release operator equivalent to `>=0.1.69,<0.2.0`). This prevents a 0.2.0 release from silently breaking the `ProcessError(message, exit_code, stderr)` constructor shape the new `claude_client_executor.py` depends on.",
+      "rationale": "Reviewer documentation concern — ProcessError API not in formal SDK reference. Combined with the SDK-version comment in `claude_client_executor.py`, a minor-version reshuffle now produces a loud lockfile/install break rather than a silent runtime regression."
+    },
+    {
+      "filePath": "tests/conftest.py",
+      "changeType": "modify",
+      "description": "Add shared `pytest.fixture` definitions to absorb the ~25 explicit `remote=\"origin\"` kwarg sites the inherited 19aca0d sprinkled across five test files. Fixtures: `@pytest.fixture def subprocess_git_service() -> SubprocessGitService: return SubprocessGitService(remote=\"origin\")` and `@pytest.fixture def git_branch_merger(subprocess_git_service: SubprocessGitService, fake_workspace_provider: FakeWorkspaceProvider) -> GitBranchMerger: return GitBranchMerger(git=subprocess_git_service, workspace=fake_workspace_provider, remote=\"origin\")`. Tests that need a non-default remote still construct directly. Existing per-file fixtures inherited from 19aca0d should be removed in favor of the shared one in the SAME PR diff so the inherited explicit-kwarg cruft is collapsed.",
+      "rationale": "Reviewer's sherlock recommendation. Reduces edit blast radius on next constructor-signature evolution."
+    },
+    {
+      "filePath": "tests/adapters/test_subprocess_git.py",
+      "changeType": "modify",
+      "description": "Two changes: (a) Remove the file-local `git_service` fixture inherited from 19aca0d that constructs `SubprocessGitService(remote=\"origin\")` — fixtures collapse into `tests/conftest.py`'s `subprocess_git_service` shared fixture. Tests that reference `git_service` rename to `subprocess_git_service` (or alias via a 1-line redirect in this module if the rename is too churn-heavy). (b) Add new test `async def test_fetch_populates_remote_tracking_refs(subprocess_git_service, tmp_path)`: create a small upstream repo with one branch via shell, clone it via `subprocess_git_service.clone_bare(...)`, call `subprocess_git_service.fetch(repo_path)`, then assert `git for-each-ref refs/remotes/origin/` returns at least one ref — directly verifies the refspec change populates the namespace.",
+      "rationale": "criterion_anc_fetch_populates_remote_refs. The new test is the unit-level gate for Facet ANC."
+    },
+    {
+      "filePath": "tests/adapters/test_git_branch_merger.py",
+      "changeType": "modify",
+      "description": "Three changes: (a) Remove file-local `GitBranchMerger(...)` constructor calls and switch to the conftest-shared `git_branch_merger` fixture where the test doesn't need to vary the workspace. (b) For tests that DO need a specific workspace (fake-based decision-tree tests), continue to construct directly with `remote=\"origin\"` explicit. (c) Add a new test against a REAL bare clone (NOT fakes): create bare upstream repo, push source branch with a divergent commit, call `consolidate(...)` against the configured remote, assert the outcome is `ConsolidationStatus.FAST_FORWARDED` or `ConsolidationStatus.ALREADY_INTEGRATED` and NOT a `RuntimeError` matching `Not a valid object name origin/`. Without this test the explicit-refspec fix could silently regress on the next refactor.",
+      "rationale": "criterion_anc_is_ancestor_resolves + criterion_anc_four_status_preserved + criterion_cfg_existing_tests_pass."
+    },
+    {
+      "filePath": "tests/adapters/test_git_change_persister.py",
+      "changeType": "modify",
+      "description": "Update the `persister` fixture to depend on the conftest-shared `subprocess_git_service` fixture, collapsing the file-local `SubprocessGitService(remote=\"origin\")` and `GitChangePersister(..., remote=\"origin\")` constructions inherited from 19aca0d.",
+      "rationale": "criterion_cfg_existing_tests_pass + conftest consolidation."
+    },
+    {
+      "filePath": "tests/adapters/test_git_worktree_provider.py",
+      "changeType": "modify",
+      "description": "Update to depend on the conftest-shared `subprocess_git_service` fixture. `GitWorktreeProvider` itself does NOT take `remote=` — leave its construction unchanged.",
+      "rationale": "criterion_cfg_existing_tests_pass + conftest consolidation."
+    },
+    {
+      "filePath": "tests/adapters/test_git_artifact_persister.py",
+      "changeType": "modify",
+      "description": "Update to depend on the conftest-shared `subprocess_git_service` fixture. `GitArtifactPersister` itself does NOT take `remote=` — leave its construction unchanged.",
+      "rationale": "criterion_cfg_existing_tests_pass + conftest consolidation."
+    },
+    {
+      "filePath": "tests/adapters/test_claude_executors.py",
+      "changeType": "modify",
+      "description": "Add `async def test_process_error_round_trips_exit_code_and_stderr_on_re_raise(...)` for `ClaudeClientExecutor` ONLY (NOT for `ClaudeAgentExecutor` — that change is dropped per reviewer YAGNI): fault-inject `ProcessError(\"boom\", exit_code=137, stderr=\"<known-tail>\")` via the SDK boundary, drive the executor, capture the re-raised `AgentSDKError`, assert `exc.error_kind == \"ProcessError\"`, `exc.exit_code == 137`, `\"<known-tail>\"` in `exc.stderr_tail`, AND `exc.stderr_tail is not None and len(exc.stderr_tail) <= 4096`. Add a sibling test `async def test_process_error_with_none_stderr_does_not_crash(...)` that injects `ProcessError(\"boom\", exit_code=137, stderr=None)` and asserts `exc.stderr_tail is None` (Watson 4 None-safety regression guard). Existing `test_agent_sdk_error_preserves_kind` continues to pass.",
+      "rationale": "criterion_obs_adapter_preserves_process_error_detail + Watson 4 None-safety. ClaudeAgentExecutor coverage dropped per reviewer."
+    },
+    {
+      "filePath": "tests/api/v1/test_agent.py",
+      "changeType": "modify",
+      "description": "Two new tests: (a) `async def test_error_event_carries_exception_class_on_runtime_path(...)` — drive the handler past the L53-58 exception path (fault-inject a `RuntimeError(\"x\")` inside `self._service.stream(...)`), capture the emitted `ErrorEvent`, assert `error == \"x\"`, `error_kind == \"RuntimeError\"`, `cause_class is None`, `raise_site is None`, `exit_code is None`, `stderr_tail is None`. (b) `async def test_error_event_carries_soft_failure_payload(...)` — drive a chain that yields a stream with no `ResultEvent.structured_output` (so the chain raises `SoftFailureError` with `raise_site=\"ticket_creator\"`), capture the SSE `ErrorEvent`, assert `error_kind == \"SoftFailureError\"`, `raise_site == \"ticket_creator\"`, and `rate_limit_rejected is False`. NOTE: existing tests inherited from 19aca0d may already assert `error_kind` once 19aca0d's diff to this file is rebased — confirm post-rebase and dedupe.",
+      "rationale": "criterion_obs_handler_carries_exception_class. Verifies the wire-shape promise."
+    },
+    {
+      "filePath": "tests/core/test_retry.py",
+      "changeType": "modify",
+      "description": "Add `def test_soft_failure_error_does_not_satisfy_should_retry()`: instantiate `SoftFailureError(\"x\", raise_site=\"ticket_creator\", result_event=None)`, assert `should_retry(exc) is False`. Locks in the peer-not-subclass-of-TransientAPIError semantic.",
+      "rationale": "criterion_obs_no_new_transient_subclass + ap_obs_subclass_transient_api_error."
+    },
+    {
+      "filePath": "tests/chains/test_ticket_generation.py",
+      "changeType": "modify",
+      "description": "Update existing `test_no_structured_output_from_creator_raises` and `test_no_structured_output_from_reviewer_raises` to expect `SoftFailureError` (NOT `RuntimeError`) with the matching `raise_site` literal. Cover BOTH branches of `result_event is None or result_event.structured_output is None`: one parameterization with `result_event=None`, one with `result_event=ResultEvent(..., structured_output=None)`. In the second branch, additionally assert `exc.stop_reason == result_event.stop_reason` (primitive snapshot worked).",
+      "rationale": "criterion_obs_chain_raise_sites_capture_terminal_state — explicit per-branch coverage."
+    },
+    {
+      "filePath": "tests/chains/test_ralph_workflow.py",
+      "changeType": "modify",
+      "description": "Two changes: (a) Inherit 19aca0d's `_make_engine` helper update that passes `git_remote=\"origin\"` (already on the sibling branch). (b) Add coverage for each of the four ralph_workflow raise sites (`branch_name`, `acceptance_criteria`, `post_merge_review`, `pr_description`): drive each node with a stream that produces NO `ResultEvent`, assert `SoftFailureError` with the matching `raise_site` literal.",
+      "rationale": "criterion_obs_chain_raise_sites_capture_terminal_state — sites 3-6 coverage."
+    },
+    {
+      "filePath": "tests/chains/test_ralph_loop.py",
+      "changeType": "modify",
+      "description": "Add `async def test_evaluator_no_structured_output_raises_soft_failure_with_ralph_evaluator_raise_site(...)` — drive the evaluator node with a stream containing no `ResultEvent`, assert `SoftFailureError` with `exc.raise_site == \"ralph_evaluator\"`. This is the test for the 8TH raise site (Watson 2).",
+      "rationale": "Resolves Blocker 2's test gate. Without this test, the 8th raise site could silently regress to bare RuntimeError."
+    },
+    {
+      "filePath": "tests/integration/test_workflow_e2e.py",
+      "changeType": "modify",
+      "description": "Three changes: (a) Inherit 19aca0d / 2e7cfa8's existing construction-site updates and the `KODEZART_GIT_REMOTE=upstream` argv-threading test. (b) Add `async def test_stream_failed_carries_structured_payload_on_consolidate_failure(...)`: wire a `FaultInjectingGitService` that raises a known `RuntimeError(\"git merge-base --is-ancestor exited 128 ...\")` on the `is_ancestor` invocation, drive the workflow to consolidation, capture the SSE `ErrorEvent`, assert it carries `error_kind == \"RuntimeError\"` AND the literal `\"exit 128\"` substring (consolidation-step identifier surfaces via the propagated subprocess error string — NO new ConsolidationError type per ap_anc_swallow_is_ancestor_exit_128). (c) EXTEND the inherited `KODEZART_GIT_REMOTE=upstream` test to assert BOTH the remote-name slot AND the refspec namespace in the fetch argv: `assert [\"git\", \"fetch\", \"upstream\", \"+refs/heads/*:refs/remotes/upstream/*\"] in captured_argvs` (NOT just `\"upstream\" in argv`). Reviewer's sherlock recommendation.",
+      "rationale": "criterion_xfacet_obs_structured_payload_contract + criterion_xfacet_consolidation_surfaces_structured + criterion_xfacet_remote_name_threading + criterion_xfacet_refspec_respects_configured_remote. The refspec-namespace assertion is the explicit cross-facet join between ANC and CFG."
+    },
+    {
+      "filePath": "tests/fakes.py",
+      "changeType": "modify",
+      "description": "Inherit 19aca0d's `FakeGitService` updates if any (the sibling branch's `ancestor_pairs` keys may already be remote-parameterized). Verify post-rebase that `FakeGitService` supports both `\"origin/...\"` and `\"upstream/...\"` ancestor pair keys for the `KODEZART_GIT_REMOTE=upstream` e2e test.",
+      "rationale": "criterion_cfg_existing_tests_pass + cross-facet test correctness."
+    },
+    {
+      "filePath": "docs/configuration.md",
+      "changeType": "modify",
+      "description": "NO new production changes — the `KODEZART_GIT_REMOTE` row in the settings reference table is INHERITED from commit 19aca0d.",
+      "rationale": "Documentation-only entry. Inheritance gate."
+    },
+    {
+      "filePath": ".github/workflows/ci.yml",
+      "changeType": "modify",
+      "description": "Add a required check that blocks merge of THIS PR until PR #15 (parent stack) is mergeable. Concretely: add a `verify-parent-pr` job that runs `gh pr view 15 --json mergeable -q .mergeable` and fails the check if the result is not `MERGEABLE`. This implements the reviewer-required CI gate against the 'DO NOT MERGE'-labeled parent stack. If the repo's CI definition lives at a different path (`.github/workflows/check.yml` or similar), apply there.",
+      "rationale": "Reviewer sanity item — PR #15 is currently OPEN with a 'DO NOT MERGE' label. Without this gate the three-facet PR could be merged into a base whose parent is still under review."
+    }
+  ],
+  "outOfScope": [
+    "Re-implementing Facet CFG. Commits 19aca0d + 2e7cfa8 on branch `kodezart/extract-git-remote-to-config-04317d19-ralph-56a0c08e` already implement the AppConfig field, all four `_REMOTE` removals, `*, remote: str` keyword-only kwarg threading, error-message interpolation at three sites, the `verify-no-origin-literal` Makefile guard, docs row, and `KODEZART_GIT_REMOTE=upstream` e2e test. THIS PR inherits via rebase — it does not reimplement.",
+    "Switching `clone_bare` to `git clone --mirror` or restructuring the bare-repo cache layout (ap_anc_change_clone_layout_silently). Fix-shape (b) — explicit refspec on `fetch` — is the single body-line change.",
+    "Adding a `GitRemote` value object, enum, or helper module (ap_cfg_embedded_anti_patterns). `AppConfig.git_remote` is a plain `str`.",
+    "Parallel definition of the remote name in `core/constants.py` (ap_cfg_embedded_anti_patterns).",
+    "Docstring updates inside `GitBranchMerger.consolidate` that mention `origin/*` to describe git semantics — those describe protocol contract, not runtime strings.",
+    "Migrating LangGraph `config[\"configurable\"]` dicts to `context_schema` — future-work flag in `docs/architecture.md`.",
+    "Introducing a new logging library (ap_obs_new_logging_library). structlog is the established primitive.",
+    "Adding new `ConsolidationStatus` values to capture exit-128 as a status (ap_anc_swallow_is_ancestor_exit_128).",
+    "Splitting the three facets into multiple PRs (ap_split_into_separate_prs). PR #15 is the parent stack; this is one PR atop it.",
+    "Adding `KODEZART_GIT_REMOTE` to `.env.example` (intentionally scoped to 7 most-customized vars per docs/configuration.md).",
+    "Changing the `AgentEvent` discriminated-union mechanism or any other event type — only `ErrorEvent` is widened.",
+    "Updating `ClaudeAgentExecutor` (one-shot alternative; unwired in default composition root). TODO comment only.",
+    "Lifting `_STDERR_TAIL_BYTES` to `AppConfig.error_stderr_tail_bytes` — this is a wire-shape invariant tied to upstream SSE framing limits, not a deployment-environment tunable. Hardcoded constant with justifying comment is the chosen resolution.",
+    "Holding the `ResultEvent` object on `SoftFailureError` (introduces a cross-layer concern; reviewer Watson 4 concern). Primitive scalar snapshot is the chosen pattern, mirroring `RateLimitError`.",
+    "A `details: dict[str, object] | None` field on `ErrorEvent`. Replaced by top-level named typed fields. Future structured payload extensions add another named optional, not another bag.",
+    "Reviewer's option (a) for PR #15 stacking: folding Facet ANC into PR #15 as a fixup commit. Rejected because it would force OBS and CFG into a separate PR, violating ap_split_into_separate_prs. Adopted option (b): stacked + CI gate against PR #15 mergeability."
+  ],
+  "openQuestions": [
+    "Inheritance mechanics: prefer `git rebase --onto` from PR #15's HEAD onto sibling branch `kodezart/extract-git-remote-to-config-04317d19-ralph-56a0c08e`, OR `git cherry-pick 19aca0d 2e7cfa8` directly onto this PR's branch? The rebase approach preserves authorship and gets two commits 'for free'; cherry-pick risks losing context if upstream amends. Recommended: `git rebase --onto $(git merge-base PR15 SIBLING) PR15 SIBLING` then merge SIBLING into this PR's branch. Confirm with the engineering lead before executing.",
+    "If PR #15 is closed/superseded before this PR is reviewed, the inheritance gate file (INHERIT_COMMITS) and the .github/workflows/ci.yml gate both need to update: re-target the parent-PR check to whatever PR supersedes PR #15. Document the supersession path in the PR description.",
+    "Whether `error_class` is needed on ErrorEvent in addition to `error_kind` — the previous draft proposed both. Current decision: KEEP ONLY `error_kind`. If a future widening needs to distinguish between exception-class-as-categorical-label vs exception-class-as-Python-type-name, add `error_class` then. KISS for now."
+  ]
+}
