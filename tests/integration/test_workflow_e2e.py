@@ -14,9 +14,25 @@ from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.core.config import AppConfig
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
-from tests.fakes import ScriptedFakeExecutor
+from kodezart.types.domain.consolidation import (
+    ConsolidationOutcome,
+    ConsolidationStatus,
+)
+from tests.fakes import (
+    FakeAgentExecutor,
+    FakeBranchMerger,
+    FakeChangePersister,
+    FakeGitService,
+    FakeQualityGate,
+    FakeRepoCache,
+    FakeTicketGenerator,
+    FakeWorkspaceProvider,
+    ScriptedFakeExecutor,
+    make_passing_evaluation,
+)
 
 
 async def _git(cmd: list[str], cwd: Path) -> None:
@@ -46,21 +62,26 @@ async def _git_output(cmd: list[str], cwd: Path) -> str:
     return stdout.decode().strip()
 
 
-async def _init_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
-    """Create repo + bare remote + cache dir; init repo on `main`, wire origin.
+async def _init_repo_with_remote(
+    tmp_path: Path,
+    remote_name: str = "origin",
+) -> tuple[Path, Path]:
+    """Create repo + bare remote + cache dir; init repo on `main`, wire remote.
 
-    Caller adds commits, branches, and push refs.
+    ``remote_name`` is the name the working repo uses to reference the bare
+    remote (default ``"origin"``).  Caller adds commits, branches, and push
+    refs.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
-    bare = tmp_path / "remote.git"
+    bare = tmp_path / f"{remote_name}.git"
     bare.mkdir()
     (tmp_path / "cache").mkdir()
 
     await _git(["git", "init", "-b", "main"], cwd=repo)
     await _git(["git", "config", "commit.gpgsign", "false"], cwd=repo)
     await _git(["git", "init", "--bare"], cwd=bare)
-    await _git(["git", "remote", "add", "origin", str(bare)], cwd=repo)
+    await _git(["git", "remote", "add", remote_name, str(bare)], cwd=repo)
     return repo, bare
 
 
@@ -410,3 +431,489 @@ async def test_workflow_e2e_divergent_base_branch(
         "ticket workspace must reflect base_branch=develop, got "
         f"{ticket_draft_snapshots}"
     )
+
+
+# ---------------------------------------------------------------------------
+# AppConfig.git_remote threading — end-to-end verification
+#
+# The two tests below cover the failed criteria from the refactor that
+# extracted ``_REMOTE = "origin"`` to ``AppConfig.git_remote``:
+#
+#   1. Default-parity: WITHOUT ``KODEZART_GIT_REMOTE`` set, every git
+#      subprocess and remote-ref probe addresses ``origin/*`` (byte-identical
+#      to the pre-refactor literal).
+#   2. Override path: WITH ``KODEZART_GIT_REMOTE=upstream`` (or, equivalently,
+#      ``remote="upstream"`` threaded through constructors), every git
+#      subprocess addresses ``upstream/*`` and the three rewritten error
+#      messages contain ``upstream`` rather than ``origin``.
+#
+# The Makefile ``verify-no-origin-literal`` guard catches reintroduced
+# ``_REMOTE = "origin"`` literals at build time, but it cannot detect
+# error-message regressions like ``f"... on origin"`` that the regex does
+# not match — these runtime tests close that gap.
+# ---------------------------------------------------------------------------
+
+
+async def _init_repo_with_named_remote(
+    tmp_path: Path,
+    remote_name: str,
+) -> tuple[Path, Path]:
+    """Alias for ``_init_repo_with_remote`` with an explicit *remote_name*.
+
+    Kept as a separate helper so call sites that parametrize over the remote
+    name read self-documentingly.
+    """
+    return await _init_repo_with_remote(tmp_path, remote_name=remote_name)
+
+
+def _spy_create_subprocess_exec(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, ...]]:
+    """Monkeypatch ``asyncio.create_subprocess_exec`` to capture argv.
+
+    Returns a growing list of captured-argv tuples.  Apply this from the
+    test body (NOT a fixture) so only subprocess calls invoked after the
+    spy is installed are recorded — fixture-side repo setup is excluded
+    automatically.
+    """
+    captured: list[tuple[str, ...]] = []
+    real = asyncio.create_subprocess_exec
+
+    async def spy(
+        program: str | bytes,
+        *args: str | bytes,
+        cwd: str | None = None,
+        stdin: int | None = None,
+        stdout: int | None = None,
+        stderr: int | None = None,
+        env: dict[str, str] | None = None,
+    ) -> asyncio.subprocess.Process:
+        captured.append(
+            (
+                program.decode() if isinstance(program, bytes) else program,
+                *(a.decode() if isinstance(a, bytes) else a for a in args),
+            )
+        )
+        return await real(
+            program,
+            *args,
+            cwd=cwd,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            env=env,
+        )
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spy)
+    return captured
+
+
+def _extract_remote_args(captured: list[tuple[str, ...]]) -> list[tuple[str, str]]:
+    """Pull the (subcommand, remote-name) pair from every remote-touching argv.
+
+    Maps to the three SubprocessGitService methods whose argv carries the
+    configured remote name positionally:
+
+      * ``["git", "fetch", <remote>]`` — ``fetch()``
+      * ``["git", "push", <remote>, ...]`` — ``push()`` and
+        ``delete_remote_branch()``
+      * ``["git", "ls-remote", *flags, <remote>, ...]`` — ``list_remote_branches()``
+        and ``remote_branch_sha()``
+
+    Returns ``(subcommand, remote_name)`` pairs in invocation order.  Argv
+    that does not match a remote-touching shape is silently skipped.
+    """
+    remote_args: list[tuple[str, str]] = []
+    for argv in captured:
+        if len(argv) < 3 or argv[0] != "git":
+            continue
+        sub = argv[1]
+        if sub in ("fetch", "push"):
+            remote_args.append((sub, argv[2]))
+        elif sub == "ls-remote":
+            for tok in argv[2:]:
+                if not tok.startswith("-"):
+                    remote_args.append((sub, tok))
+                    break
+    return remote_args
+
+
+@pytest.fixture(params=["origin", "upstream"])
+async def named_remote_env(
+    request: pytest.FixtureRequest,
+    tmp_path: Path,
+) -> tuple[str, Path, Path]:
+    """Real repo + bare remote parametrized over ``"origin"`` and ``"upstream"``.
+
+    Both variants are exercised by the same test body — that's the byte-
+    identical default-parity guarantee in test form.
+    """
+    remote_name = str(request.param)
+    repo, bare = await _init_repo_with_named_remote(tmp_path, remote_name)
+    await _git(["git", "commit", "--allow-empty", "-m", "init"], cwd=repo)
+    await _git(
+        ["git", "push", "-u", remote_name, "HEAD:refs/heads/main"],
+        cwd=repo,
+    )
+    return remote_name, repo, bare
+
+
+async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
+    named_remote_env: tuple[str, Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every git remote-touching subprocess argv carries the configured remote.
+
+    Covers both failed criteria:
+      * Default (remote="origin"): captured argv contain ``git fetch origin``,
+        ``git push origin HEAD:refs/heads/<branch>``, and
+        ``git ls-remote ... origin ...``.  No argv has ``"upstream"`` in the
+        remote-positional slot.
+      * Override (remote="upstream"): captured argv contain
+        ``git fetch upstream``, ``git push upstream HEAD:refs/heads/<branch>``,
+        and ``git ls-remote ... upstream ...``.  No argv has ``"origin"`` in
+        the remote-positional slot.
+
+    Argv capture is installed AFTER the fixture so only engine-driven
+    subprocess calls are recorded.
+    """
+    remote_name, repo, _bare = named_remote_env
+    other = "upstream" if remote_name == "origin" else "origin"
+
+    captured = _spy_create_subprocess_exec(monkeypatch)
+
+    git = SubprocessGitService(remote=remote_name)
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    persister = GitChangePersister(
+        git=git,
+        committer_name="test",
+        committer_email="t@t.dev",
+        remote=remote_name,
+    )
+    executor = ScriptedFakeExecutor(
+        eval_results=[
+            {
+                "criteriaResults": [
+                    {
+                        "criterion": "Tests pass",
+                        "passed": True,
+                        "reasoning": "All good.",
+                    },
+                ],
+            },
+            {
+                "criteriaResults": [
+                    {
+                        "criterion": "Tests pass",
+                        "passed": True,
+                        "reasoning": "Post-merge review passed.",
+                    },
+                ],
+            },
+        ]
+    )
+    merger = GitBranchMerger(git=git, workspace=workspace, remote=remote_name)
+    service = AgentService(
+        executor=executor,
+        workspace=workspace,
+        persister=persister,
+    )
+    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
+    ticket_generator = TicketGenerationLoop(
+        service=service,
+        workspace=workspace,
+        max_reviews=2,
+    )
+    engine = RalphWorkflowEngine(
+        service=service,
+        quality_gate=ralph_loop,
+        ticket_generator=ticket_generator,
+        merger=merger,
+        git_base_url="https://github.com",
+        git_remote=remote_name,
+        git=git,
+        cache=cache,
+        artifact_persister=None,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix",
+            repo_path=str(repo),
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete) == 1
+    assert complete[0].accepted is True
+    assert complete[0].merged is True
+
+    remote_args = _extract_remote_args(captured)
+    assert remote_args, (
+        "expected at least one git remote-touching subprocess invocation; "
+        f"captured argv: {captured}"
+    )
+
+    # Every remote-touching invocation uses the configured remote.
+    assert all(arg == remote_name for _sub, arg in remote_args), (
+        f"every remote arg must equal {remote_name!r}, got {remote_args}"
+    )
+
+    # The other remote name never appears in a remote-positional slot.
+    assert all(arg != other for _sub, arg in remote_args), (
+        f"no remote arg may equal {other!r}, got {remote_args}"
+    )
+
+    # Each of the three remote-touching subcommands is actually exercised
+    # by the full workflow.  This pins criterion-mandated argv shapes:
+    #   ['git', 'fetch', <remote>], ['git', 'push', <remote>, ...],
+    #   ['git', 'ls-remote', ..., <remote>, ...].
+    subcommands = {sub for sub, _arg in remote_args}
+    assert "fetch" in subcommands, f"expected git fetch invocation, got {captured}"
+    assert "push" in subcommands, f"expected git push invocation, got {captured}"
+    assert "ls-remote" in subcommands, (
+        f"expected git ls-remote invocation, got {captured}"
+    )
+
+    # Spot-check the canonical argv shapes the failed criterion enumerates.
+    fetch_argvs = [
+        a for a in captured if len(a) >= 3 and a[0] == "git" and a[1] == "fetch"
+    ]
+    push_argvs = [
+        a for a in captured if len(a) >= 4 and a[0] == "git" and a[1] == "push"
+    ]
+    assert any(a[:3] == ("git", "fetch", remote_name) for a in fetch_argvs), (
+        f"expected ['git', 'fetch', {remote_name!r}] in captured argv: "
+        f"{fetch_argvs}"
+    )
+    assert any(
+        a[:3] == ("git", "push", remote_name) and a[3].startswith("HEAD:refs/heads/")
+        for a in push_argvs
+    ), (
+        f"expected ['git', 'push', {remote_name!r}, 'HEAD:refs/heads/...'] in "
+        f"captured argv: {push_argvs}"
+    )
+
+
+@pytest.mark.parametrize("remote_name", ["origin", "upstream"])
+async def test_git_change_persister_divergence_error_references_configured_remote(
+    remote_name: str,
+    tmp_path: Path,
+) -> None:
+    """``GitChangePersister`` divergence error interpolates the configured remote.
+
+    Forces a true divergence (workspace HEAD on commit B, remote tip on
+    commit C, both descending from A but neither from the other) and
+    asserts the raised ``RuntimeError`` substring tracks the configured
+    remote.  In the default ``"origin"`` case the message stays
+    ``"diverged from origin/main (...)"``; in the override case it
+    becomes ``"diverged from upstream/main (...)"``.
+    """
+    # --- Setup: shared remote + working repo, both on commit A ------------
+    repo, bare = await _init_repo_with_named_remote(tmp_path, remote_name)
+    await _git(["git", "config", "user.email", "t@t.dev"], cwd=repo)
+    await _git(["git", "config", "user.name", "test"], cwd=repo)
+    (repo / "a.txt").write_text("A\n")
+    await _git(["git", "add", "."], cwd=repo)
+    await _git(["git", "commit", "-m", "A"], cwd=repo)
+    await _git(["git", "push", "-u", remote_name, "main"], cwd=repo)
+
+    # --- Diverge: workspace adds B (unpushed), remote receives C ----------
+    (repo / "b.txt").write_text("B\n")
+    await _git(["git", "add", "."], cwd=repo)
+    await _git(["git", "commit", "-m", "B"], cwd=repo)
+
+    # Second clone pushes C to the same bare remote.  C and B both descend
+    # from A but neither is an ancestor of the other → true divergence.
+    clone_root = tmp_path / "clone2"
+    clone_root.mkdir()
+    await _git(["git", "clone", str(bare), str(clone_root / "repo")], cwd=clone_root)
+    clone_repo = clone_root / "repo"
+    await _git(["git", "config", "user.email", "t@t.dev"], cwd=clone_repo)
+    await _git(["git", "config", "user.name", "test"], cwd=clone_repo)
+    (clone_repo / "c.txt").write_text("C\n")
+    await _git(["git", "add", "."], cwd=clone_repo)
+    await _git(["git", "commit", "-m", "C"], cwd=clone_repo)
+    await _git(["git", "push", "origin", "main"], cwd=clone_repo)
+
+    # Pull C's object into the working repo so ``is_ancestor`` can resolve
+    # it locally (ls-remote still reports the remote tip = C).
+    await _git(["git", "fetch", remote_name], cwd=repo)
+
+    # --- Provoke: persist() on a clean tree HEAD that diverges from remote
+    git = SubprocessGitService(remote=remote_name)
+    persister = GitChangePersister(
+        git=git,
+        committer_name="test",
+        committer_email="t@t.dev",
+        remote=remote_name,
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await persister.persist(
+            workspace_path=str(repo),
+            branch="main",
+            executor=ScriptedFakeExecutor(eval_results=[]),
+        )
+
+    message = str(excinfo.value)
+    assert f"{remote_name}/main" in message, (
+        f"divergence error must reference {remote_name}/main, got: {message}"
+    )
+    other = "upstream" if remote_name == "origin" else "origin"
+    assert f"{other}/main" not in message, (
+        f"divergence error must not reference {other}/main when remote is "
+        f"{remote_name}, got: {message}"
+    )
+
+
+@pytest.mark.parametrize("remote_name", ["origin", "upstream"])
+async def test_git_branch_merger_source_missing_error_references_configured_remote(
+    remote_name: str,
+    tmp_path: Path,
+) -> None:
+    """``GitBranchMerger`` SOURCE_MISSING fallback error interpolates the remote.
+
+    Calls ``consolidate`` with three branch names that exist on neither
+    the workspace nor the remote.  The merger probes ``source_branch``,
+    falls into ``_resolve_feature_tip_or_raise``, probes
+    ``feature_branch`` and ``base_branch`` (both ``None``), and raises
+    with a message that must interpolate the configured remote name.
+    """
+    repo, _bare = await _init_repo_with_named_remote(tmp_path, remote_name)
+    await _git(["git", "config", "user.email", "t@t.dev"], cwd=repo)
+    await _git(["git", "config", "user.name", "test"], cwd=repo)
+    await _git(["git", "commit", "--allow-empty", "-m", "init"], cwd=repo)
+    await _git(
+        ["git", "push", "-u", remote_name, "HEAD:refs/heads/main"],
+        cwd=repo,
+    )
+
+    git = SubprocessGitService(remote=remote_name)
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    merger = GitBranchMerger(git=git, workspace=workspace, remote=remote_name)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await merger.consolidate(
+            repo_path=str(repo),
+            repo_url=None,
+            base_branch="missing-base",
+            feature_branch="missing-feature",
+            source_branch="missing-source",
+            cache_key="test-key",
+        )
+
+    message = str(excinfo.value)
+    assert f"present on {remote_name}" in message, (
+        f"SOURCE_MISSING error must reference 'present on {remote_name}', "
+        f"got: {message}"
+    )
+    other = "upstream" if remote_name == "origin" else "origin"
+    assert f"present on {other}" not in message, (
+        f"SOURCE_MISSING error must not reference 'present on {other}' "
+        f"when remote is {remote_name}, got: {message}"
+    )
+
+
+@pytest.mark.parametrize("remote_name", ["origin", "upstream"])
+async def test_ralph_workflow_base_branch_not_found_error_references_configured_remote(
+    remote_name: str,
+) -> None:
+    """``RalphWorkflowEngine`` base-not-found error interpolates ``git_remote``.
+
+    Drives the workflow through a successful consolidation (FakeBranchMerger
+    returns ``FAST_FORWARDED``) and a FakeGitService whose
+    ``remote_branch_shas={"main": None}`` makes the post-consolidation
+    base-branch probe return ``None`` — the exact condition that fires
+    ``ralph_workflow.py:590-594``.  The raised ``RuntimeError`` substring
+    must track the configured remote.
+    """
+    engine = RalphWorkflowEngine(
+        service=AgentService(
+            executor=FakeAgentExecutor(events=[]),
+            workspace=FakeWorkspaceProvider(),
+            persister=FakeChangePersister(),
+        ),
+        quality_gate=FakeQualityGate(
+            events=[],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha="a" * 40,
+        ),
+        ticket_generator=FakeTicketGenerator(),
+        merger=FakeBranchMerger(
+            consolidation_outcomes=[
+                ConsolidationOutcome(
+                    status=ConsolidationStatus.FAST_FORWARDED,
+                    feature_tip_sha="a" * 40,
+                ),
+            ],
+        ),
+        git_base_url="https://github.com",
+        git_remote=remote_name,
+        git=FakeGitService(remote_branch_shas={"main": None}),
+        cache=FakeRepoCache(),
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        _ = [
+            e
+            async for e in engine.run(
+                prompt="fix",
+                repo_path="/tmp/fake",
+                repo_url=None,
+                base_branch="main",
+                permission_mode="bypassPermissions",
+                allowed_tools=["Bash"],
+            )
+        ]
+
+    message = str(excinfo.value)
+    assert f"not found on {remote_name}" in message, (
+        f"base-not-found error must reference 'not found on {remote_name}', "
+        f"got: {message}"
+    )
+    other = "upstream" if remote_name == "origin" else "origin"
+    assert f"not found on {other}" not in message, (
+        f"base-not-found error must not reference 'not found on {other}' "
+        f"when remote is {remote_name}, got: {message}"
+    )
+
+
+def test_app_config_threads_kodezart_git_remote_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``KODEZART_GIT_REMOTE`` env var lands on ``AppConfig.git_remote``.
+
+    Closes the env-var → config → constructor-kwarg loop end-to-end at the
+    config layer.  Without the env var, the default is ``"origin"`` (byte-
+    identical to the pre-refactor literal).  With it set, the override
+    value flows through unchanged, ready to be passed as the ``remote=`` /
+    ``git_remote=`` kwarg to the four touched classes by the lifespan.
+    """
+    # Drop any inherited override so the default path is honestly tested.
+    monkeypatch.delenv("KODEZART_GIT_REMOTE", raising=False)
+    default_config = AppConfig.from_env()
+    assert default_config.git_remote == "origin"
+
+    monkeypatch.setenv("KODEZART_GIT_REMOTE", "upstream")
+    override_config = AppConfig.from_env()
+    assert override_config.git_remote == "upstream"
