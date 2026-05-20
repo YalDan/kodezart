@@ -785,9 +785,7 @@ async def test_evaluate_node_passes_changeset_to_build_prompt(
 # ---------------------------------------------------------------------------
 
 
-async def test_evaluator_no_structured_output_raises_no_structured_output_error_with_ralph_evaluator_raise_site() -> (  # noqa: E501
-    None
-):
+async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> None:
     """Evaluator without structured output raises NoStructuredOutputError(evaluator)."""
     from kodezart.core.soft_failure import NoStructuredOutputError
 
