@@ -14,6 +14,28 @@ from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.consolidation import ConsolidationStatus
 
 # ---------------------------------------------------------------------------
+# Soft-failure raise-site identifier (typed alias)
+# ---------------------------------------------------------------------------
+#
+# ``RaiseSite`` is defined here — the upstream end of the dependency
+# chain — so that both ``types/domain/agent.ErrorEvent`` and
+# ``core/soft_failure.SoftFailureError`` can refer to the SAME typed
+# alias.  ``core/soft_failure.py`` imports ``RaiseSite`` from this
+# module; ``ErrorEvent.raise_site`` references it directly.  Drift
+# between two parallel ``Literal`` lists is structurally impossible.
+
+RaiseSite = Literal[
+    "ticket_creator",
+    "ticket_reviewer",
+    "branch_name",
+    "acceptance_criteria",
+    "ralph_evaluator",
+    "post_merge_review",
+    "pr_description",
+    "commit_message",
+]
+
+# ---------------------------------------------------------------------------
 # Ticket-generation structured outputs
 # ---------------------------------------------------------------------------
 
@@ -206,19 +228,16 @@ class ErrorEvent(AgentEvent):
     typo on the producer side raises at validation time rather than
     silently breaking downstream SSE consumers.
 
-    The seven typed optional fields below promote the genuinely
-    consumed observability slots to top-level named attributes,
-    replacing the previous draft's ``details: dict[str, object]`` bag.
-    Each is independently type-checkable by downstream consumers.
+    The typed optional fields below promote the genuinely consumed
+    observability slots to top-level named attributes, replacing the
+    previous draft's ``details: dict[str, object]`` bag.  Each is
+    independently type-checkable by downstream consumers.
 
-    The ``raise_site`` field's inline ``Literal[...]`` is structurally
-    identical to ``kodezart.core.soft_failure.RaiseSite``; the
-    duplication is the deliberate price of breaking the circular
-    import (``core/`` imports from ``types/domain/`` to read
-    ``ResultEvent``/``RateLimitWarningEvent`` in ``drain``).  Any drift
-    between the two literal lists is caught by mypy at every
-    construction site that passes a ``RaiseSite`` literal into the
-    ``raise_site`` field.
+    The ``raise_site`` field references the ``RaiseSite`` typed alias
+    defined above in this module.  ``core/soft_failure.py`` imports
+    the SAME alias, so the eight-literal enumeration has exactly one
+    authoritative definition and any future addition is enforced
+    everywhere by ``mypy``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -228,19 +247,7 @@ class ErrorEvent(AgentEvent):
     error_kind: str | None = None
     cause_class: str | None = None
     stop_reason: str | None = None
-    raise_site: (
-        Literal[
-            "ticket_creator",
-            "ticket_reviewer",
-            "branch_name",
-            "acceptance_criteria",
-            "ralph_evaluator",
-            "post_merge_review",
-            "pr_description",
-            "commit_message",
-        ]
-        | None
-    ) = None
+    raise_site: RaiseSite | None = None
     rate_limit_rejected: bool | None = None
     exit_code: int | None = None
     stderr_tail: str | None = None

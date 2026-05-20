@@ -1,10 +1,14 @@
 """Soft-failure primitives — shared between chains and one adapter.
 
-Houses the ``SoftFailureError`` peer exception, the ``RaiseSite`` typed
-alias enumerating the eight production raise sites, and the
-``drain`` two-call helper that collapses the manual ``async for /
-isinstance(event, ResultEvent)`` accumulator pattern duplicated at the
-eight sites into a single line.
+Houses the ``SoftFailureError`` peer exception, the ``drain`` two-call
+helper, and the ``build_error_event`` exception→``ErrorEvent`` mapper
+that handlers, chains, and services use to populate the typed
+``ErrorEvent`` wire shape.
+
+The ``RaiseSite`` typed alias is imported from
+``kodezart.types.domain.agent`` — defined there to keep a single
+authoritative literal-list and avoid the cross-module-drift hazard
+that a duplicated inline ``Literal`` would introduce.
 
 Lives in ``core/`` (peer of ``retry.py``, ``logging.py``,
 ``checkpointer.py``, ``constants.py``) so that BOTH chains and adapters
@@ -25,23 +29,26 @@ Design notes:
 - ``drain`` is a coroutine returning a tuple, NOT an async generator.
   A ``yield`` inside ``async def`` would make it an
   ``AsyncIterator[...]`` — the wrong shape.
+- ``build_error_event`` lives here (not in ``handlers/``) so that
+  chains (``ticket_generation.py``) and services (``agent_service.py``)
+  can reuse the same typed exception→event mapping without violating
+  the hexagonal rule (chains MUST NOT import from ``handlers/``).
 """
 
 from collections.abc import AsyncIterator
-from typing import Literal
 
-from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
-
-RaiseSite = Literal[
-    "ticket_creator",
-    "ticket_reviewer",
-    "branch_name",
-    "acceptance_criteria",
-    "ralph_evaluator",
-    "post_merge_review",
-    "pr_description",
-    "commit_message",
-]
+# Re-exported so existing consumers (``handlers/agent_handler.py``) can
+# continue to import ``RaiseSite`` from ``kodezart.core.soft_failure``.
+# Explicit ``as RaiseSite`` is required because mypy strict mode sets
+# ``no_implicit_reexport=True``.
+from kodezart.domain.errors import AgentSDKError
+from kodezart.types.domain.agent import (
+    AgentEvent,
+    ErrorEvent,
+    RateLimitWarningEvent,
+    ResultEvent,
+)
+from kodezart.types.domain.agent import RaiseSite as RaiseSite
 
 
 class SoftFailureError(Exception):
@@ -109,3 +116,43 @@ async def drain(
         elif isinstance(event, RateLimitWarningEvent) and event.status == "rejected":
             rate_limit_rejected = True
     return last_result_event, rate_limit_rejected
+
+
+def build_error_event(exc: Exception) -> ErrorEvent:
+    """Build a typed ``ErrorEvent`` from an exception.
+
+    Uses explicit ``isinstance`` branches against ``SoftFailureError``
+    and ``AgentSDKError`` — NO ``getattr(exc, ...)`` introspection
+    (which returns ``Any`` and propagates into Pydantic validation,
+    violating ``disallow_any_explicit``).
+
+    Lives in ``core/`` so chains and services can reuse the same typed
+    mapping without importing from ``handlers/``.
+    """
+    cause = exc.__cause__
+    error_kind: str = type(exc).__name__
+    cause_class: str | None = type(cause).__name__ if cause is not None else None
+    stop_reason: str | None = None
+    raise_site: RaiseSite | None = None
+    rate_limit_rejected: bool | None = None
+    exit_code: int | None = None
+    stderr_tail: str | None = None
+
+    if isinstance(exc, SoftFailureError):
+        raise_site = exc.raise_site
+        stop_reason = exc.stop_reason
+        rate_limit_rejected = exc.rate_limit_rejected
+    elif isinstance(exc, AgentSDKError):
+        exit_code = exc.exit_code
+        stderr_tail = exc.stderr_tail
+
+    return ErrorEvent(
+        error=str(exc),
+        error_kind=error_kind,
+        cause_class=cause_class,
+        stop_reason=stop_reason,
+        raise_site=raise_site,
+        rate_limit_rejected=rate_limit_rejected,
+        exit_code=exit_code,
+        stderr_tail=stderr_tail,
+    )

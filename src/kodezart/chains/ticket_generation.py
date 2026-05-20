@@ -1,5 +1,6 @@
 """Ticket generation loop — draft + review until approved or exhausted."""
 
+import sys
 from collections.abc import AsyncIterator
 
 from langchain_core.runnables import RunnableConfig
@@ -12,7 +13,7 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, WorkspaceProvider
 from kodezart.core.retry import should_retry
-from kodezart.core.soft_failure import SoftFailureError, drain
+from kodezart.core.soft_failure import SoftFailureError, build_error_event, drain
 from kodezart.domain.errors import WorkspaceError
 from kodezart.prompts.ticket_generation import (
     build_create_prompt,
@@ -23,7 +24,6 @@ from kodezart.types.domain.agent import (
     TICKET_DRAFT_SCHEMA,
     TICKET_REVIEW_SCHEMA,
     AgentEvent,
-    ErrorEvent,
     TicketDraftOutput,
     TicketReviewOutput,
     WorkflowTicketDraftEvent,
@@ -100,7 +100,18 @@ class TicketGenerationLoop:
                 cache_key=cache_key,
             )
         except WorkspaceError as exc:
-            yield ErrorEvent(error=str(exc))
+            # ``exc_info=sys.exc_info()`` is passed explicitly to harden
+            # against async-executor context loss (hynek/structlog#488
+            # class).  Logging at exception level — never silently
+            # downgrade a failed workspace acquire to a bare yielded
+            # ``ErrorEvent`` with no log line.
+            await self._log.aexception(
+                "ticket_loop_workspace_acquire_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+                exc_info=sys.exc_info(),
+            )
+            yield build_error_event(exc)
             return
 
         try:

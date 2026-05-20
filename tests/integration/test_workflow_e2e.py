@@ -969,7 +969,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
             descendant_ref: str,
         ) -> bool:
             msg = (
-                f"git merge-base --is-ancestor exited 128 "
+                f"git merge-base --is-ancestor exit 128 "
                 f"({ancestor_ref} vs {descendant_ref})"
             )
             raise RuntimeError(msg)
@@ -1091,11 +1091,12 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
     # propagates through; no new exception type is introduced for
     # consolidate exit-128 (ap_anc_swallow_is_ancestor_exit_128).
     assert payload["errorKind"] == "RuntimeError"
-    # "exited 128" matches the subprocess-error formatting in
-    # _run_with_exit_codes — covers the literal "128" exit-code surface
-    # the bug report cites.  Substring tolerance covers both "exit 128"
-    # and "exited 128" framings.
-    assert "128" in str(payload["error"])
+    # Assert the literal substring ``"exit 128"`` — tighter than a
+    # bare ``"128"`` match (which would accept any string containing
+    # the three digits anywhere).  The fault-injected message above
+    # emits ``"git merge-base --is-ancestor exit 128 ..."`` so the
+    # substring is present verbatim on the wire.
+    assert "exit 128" in str(payload["error"])
 
 
 def test_consolidation_status_unchanged_no_exit_128_value_added() -> None:
