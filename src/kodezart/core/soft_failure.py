@@ -32,16 +32,22 @@ Design notes:
 
 import re
 from collections.abc import AsyncIterator
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import (
     AgentEvent,
     ErrorEvent,
-    RaiseSite,
     RateLimitWarningEvent,
     ResultEvent,
 )
+
+if TYPE_CHECKING:
+    # Type-only import — keeps RaiseSite out of this module's runtime namespace
+    # so consumers cannot import it from here.  RaiseSite has a single
+    # authoritative home in ``kodezart.types.domain.agent`` and downstream
+    # code must import it from there.
+    from kodezart.types.domain.agent import RaiseSite
 
 
 class NoStructuredOutputError(Exception):
@@ -62,7 +68,7 @@ class NoStructuredOutputError(Exception):
         self,
         message: str,
         *,
-        raise_site: RaiseSite,
+        raise_site: "RaiseSite",
         result_event: ResultEvent | None,
         rate_limit_rejected: bool = False,
     ) -> None:
