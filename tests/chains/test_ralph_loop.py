@@ -412,15 +412,15 @@ async def test_loop_workspace_error_yields_error_event() -> None:
 
     Under the no-fallback contract, an evaluator that produces no structured
     output (e.g., because the workspace acquire failed) causes _evaluate_node
-    to raise ``SoftFailureError``. The ErrorEvent must still be emitted on
+    to raise ``NoStructuredOutputError``. The ErrorEvent must still be emitted on
     the stream BEFORE the raise so that observers see the root cause.
 
     Updated for Facet OBS: the bare ``RuntimeError`` at the evaluator
-    raise site (ralph_loop.py:226-228) is now ``SoftFailureError`` —
+    raise site (ralph_loop.py:226-228) is now ``NoStructuredOutputError`` —
     the test expectation is updated to the new exception type but the
     "no structured output" message string is preserved verbatim.
     """
-    from kodezart.core.soft_failure import SoftFailureError
+    from kodezart.core.soft_failure import NoStructuredOutputError
     from kodezart.types.domain.agent import ErrorEvent
 
     executor = FakeAgentExecutor(events=[])
@@ -433,7 +433,9 @@ async def test_loop_workspace_error_yields_error_event() -> None:
     )
 
     events: list[object] = []
-    with pytest.raises(SoftFailureError, match="no structured output") as excinfo:
+    with pytest.raises(
+        NoStructuredOutputError, match="no structured output"
+    ) as excinfo:
         async for e in loop.run(**_run_kwargs()):
             events.append(e)
     assert excinfo.value.raise_site == "ralph_evaluator"
@@ -783,11 +785,11 @@ async def test_evaluate_node_passes_changeset_to_build_prompt(
 # ---------------------------------------------------------------------------
 
 
-async def test_evaluator_no_structured_output_raises_soft_failure_with_ralph_evaluator_raise_site() -> (  # noqa: E501
+async def test_evaluator_no_structured_output_raises_no_structured_output_error_with_ralph_evaluator_raise_site() -> (  # noqa: E501
     None
 ):
-    """Evaluator with no structured output raises SoftFailure(ralph_evaluator)."""
-    from kodezart.core.soft_failure import SoftFailureError
+    """Evaluator without structured output raises NoStructuredOutputError(evaluator)."""
+    from kodezart.core.soft_failure import NoStructuredOutputError
 
     class NullEvaluatorExecutor:
         """Drives execute-then-evaluate; evaluator yields structured_output=None."""
@@ -821,7 +823,9 @@ async def test_evaluator_no_structured_output_raises_soft_failure_with_ralph_eva
 
     executor = NullEvaluatorExecutor()
     loop = _make_loop(executor=executor)
-    with pytest.raises(SoftFailureError, match="Evaluator produced no") as excinfo:
+    with pytest.raises(
+        NoStructuredOutputError, match="Evaluator produced no"
+    ) as excinfo:
         _ = [e async for e in loop.run(**_run_kwargs())]
     assert excinfo.value.raise_site == "ralph_evaluator"
     assert excinfo.value.result_event_observed is True

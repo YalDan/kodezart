@@ -28,7 +28,7 @@ from kodezart.core.protocols import (
     TicketGenerator,
 )
 from kodezart.core.retry import should_retry
-from kodezart.core.soft_failure import SoftFailureError, drain
+from kodezart.core.soft_failure import NoStructuredOutputError, drain
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.ticket import format_ticket_as_task
@@ -346,7 +346,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for branch name"
-            raise SoftFailureError(
+            raise NoStructuredOutputError(
                 msg,
                 raise_site="branch_name",
                 result_event=result_event,
@@ -424,7 +424,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for acceptance criteria"
-            raise SoftFailureError(
+            raise NoStructuredOutputError(
                 msg,
                 raise_site="acceptance_criteria",
                 result_event=result_event,
@@ -673,7 +673,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for review"
-            raise SoftFailureError(
+            raise NoStructuredOutputError(
                 msg,
                 raise_site="post_merge_review",
                 result_event=result_event,
@@ -896,7 +896,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for PR description"
-            raise SoftFailureError(
+            raise NoStructuredOutputError(
                 msg,
                 raise_site="pr_description",
                 result_event=result_event,
@@ -1041,6 +1041,10 @@ class RalphWorkflowEngine:
                 total_iterations=state["total_iterations"],
                 accepted=state["accepted"],
                 merged=state["merged"],
+                # TODO: add a `reason` field on WorkflowCompleteEvent so consumers can
+                # distinguish "acceptance criteria did not pass" from "ran but could
+                # not merge" without inferring it from the absence of a consolidation
+                # event.
                 final_commit_sha=state["feature_tip_sha"],
                 error=state["merge_error"],
                 pr_url=state["pr_url"],

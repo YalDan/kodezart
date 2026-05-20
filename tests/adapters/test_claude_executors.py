@@ -1,14 +1,16 @@
 """Tests for ClaudeAgentExecutor and ClaudeClientExecutor SDK exception wrapping."""
 
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Final
 from unittest.mock import patch
 
 import pytest
+import structlog
 from claude_agent_sdk import ProcessError
 
 from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+from kodezart.core.soft_failure import _REDACTION_SENTINEL
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 
@@ -123,3 +125,73 @@ async def test_process_error_with_none_stderr_does_not_crash() -> None:
     assert err.error_kind == "ProcessError"
     assert err.exit_code == 137
     assert err.stderr_tail is None
+
+
+# ---------------------------------------------------------------------------
+# Credential redaction — ensures the tokenized URL in ``ProcessError.stderr``
+# does not leak through either the structured warning log or the
+# ``AgentSDKError.stderr_tail`` field.  Token-named locals are avoided to
+# dodge ruff S105 (active in tests).
+# ---------------------------------------------------------------------------
+
+_FAKE_GHP_BODY: Final[str] = "A" * 40
+_FAKE_URL: Final[str] = (
+    f"https://x-access-token:ghp_{_FAKE_GHP_BODY}@github.com/o/r.git"
+)
+
+
+async def test_process_error_redacts_token_in_warning_log() -> None:
+    """``claude_sdk_process_error`` log scrubs the credential URL in stderr."""
+    stderr_payload = f"git fetch failed: {_FAKE_URL} permission denied"
+    boom = ProcessError("git fetch failed", exit_code=128, stderr=stderr_payload)
+    executor = ClaudeClientExecutor()
+    with patch(
+        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        lambda **_: _FakeSDKClient(boom),
+    ):
+        with structlog.testing.capture_logs() as captured:
+            with pytest.raises(AgentSDKError):
+                await _drain(
+                    executor.stream(
+                        prompt="x",
+                        cwd="/tmp",
+                        permission_mode="default",
+                        allowed_tools=[],
+                    )
+                )
+    process_error_records = [
+        rec for rec in captured if rec.get("event") == "claude_sdk_process_error"
+    ]
+    assert process_error_records, "expected a claude_sdk_process_error log record"
+    record = process_error_records[0]
+    assert "stderr" in record
+    stderr_logged = record["stderr"]
+    assert stderr_logged is not None
+    assert _FAKE_GHP_BODY not in stderr_logged
+    assert _REDACTION_SENTINEL in stderr_logged
+    # Defense-in-depth: the secret body must not survive in ANY captured
+    # record's serialized form.
+    for rec in captured:
+        assert _FAKE_GHP_BODY not in repr(rec)
+
+
+async def test_process_error_stderr_tail_on_agent_sdk_error_is_redacted() -> None:
+    """``AgentSDKError.stderr_tail`` is redact-before-slice; secret cannot leak."""
+    boom = ProcessError("git fetch failed", exit_code=128, stderr=_FAKE_URL)
+    executor = ClaudeClientExecutor()
+    with patch(
+        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        lambda **_: _FakeSDKClient(boom),
+    ):
+        with pytest.raises(AgentSDKError) as excinfo:
+            await _drain(
+                executor.stream(
+                    prompt="x",
+                    cwd="/tmp",
+                    permission_mode="default",
+                    allowed_tools=[],
+                )
+            )
+    assert excinfo.value.stderr_tail is not None
+    assert _FAKE_GHP_BODY not in excinfo.value.stderr_tail
+    assert _REDACTION_SENTINEL in excinfo.value.stderr_tail

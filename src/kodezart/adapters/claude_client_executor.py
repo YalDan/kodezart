@@ -14,16 +14,11 @@ from claude_agent_sdk import (
 
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
+from kodezart.core.constants import STDERR_TAIL_BYTES
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.soft_failure import _redact_credentials
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
-
-# Bounded to keep SSE event payload within ~8KB upstream framing limits
-# (Cloudflare, nginx default proxy_buffer_size); leaves headroom for the
-# rest of ErrorEvent's serialized form.  This is a wire-shape invariant
-# tied to the upstream proxy framing limits — NOT a deployment-environment
-# tunable, so it lives next to the slice site rather than in AppConfig.
-_STDERR_TAIL_BYTES: int = 4096
 
 
 class ClaudeClientExecutor:
@@ -77,16 +72,23 @@ class ClaudeClientExecutor:
                     for event in map_message(message):
                         yield event
         except ProcessError as exc:
+            # Redact ONCE into a local so the awarning kwarg and the
+            # AgentSDKError.stderr_tail slice are byte-identical with
+            # respect to redaction.  Redact-before-slice prevents a
+            # token straddling the STDERR_TAIL_BYTES boundary from
+            # surviving partially exposed in stderr_tail.
+            stderr_redacted: str | None = (
+                _redact_credentials(exc.stderr) if exc.stderr is not None else None
+            )
             await self._log.awarning(
                 "claude_sdk_process_error",
                 exit_code=exc.exit_code,
-                stderr=exc.stderr,
+                stderr=stderr_redacted,
             )
-            # ``exc.stderr`` is typed ``str | None`` per the verified
-            # SDK signature; None-safe slice avoids ``TypeError`` when
-            # the SDK emits a ProcessError with no captured stderr.
             stderr_tail: str | None = (
-                exc.stderr[:_STDERR_TAIL_BYTES] if exc.stderr is not None else None
+                stderr_redacted[:STDERR_TAIL_BYTES]
+                if stderr_redacted is not None
+                else None
             )
             raise AgentSDKError(
                 str(exc),
