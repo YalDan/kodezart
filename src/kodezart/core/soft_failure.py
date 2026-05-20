@@ -141,6 +141,22 @@ def _redact_credentials(s: str) -> str:
     are tightly scoped to the credential URL form and the five published
     GitHub token prefixes — wider matches risk scrubbing non-secret
     operator text, which the ticket explicitly forbids.
+
+    LEAK ORIGIN vs. egress redaction: the upstream LEAK ORIGIN is
+    ``adapters/subprocess_git_service.py`` — specifically ``_run``,
+    ``_run_output``, and ``_run_with_exit_codes``, each of which embeds
+    raw ``stderr.decode().strip()`` into a ``RuntimeError`` message via
+    ``f"{cmd_repr} failed: {stderr_text}"``.  On ``git fetch`` /
+    ``git push`` / ``git clone`` failure that stderr typically echoes
+    the tokenized remote URL (``https://x-access-token:<token>@...``)
+    constructed by ``adapters/github_token_auth.py``.  This helper
+    redacts at the egress / convergence point — ``build_error_event``
+    below plus the two structured-warning log sites in the Claude SDK
+    adapters — rather than at the source.  Redacting at the convergence
+    point means every ``Exception`` flowing into ``build_error_event``
+    is scrubbed exactly once, regardless of which adapter raised it; a
+    future hardening pass MAY scrub at the source as defense-in-depth
+    but is not required for the wire-visible fields to be safe.
     """
     s = _CREDENTIAL_URL_PATTERN.sub(rf"\1{_REDACTION_SENTINEL}\2", s)
     s = _GH_TOKEN_PATTERN.sub(_REDACTION_SENTINEL, s)
