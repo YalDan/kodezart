@@ -57,8 +57,6 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 
-_REMOTE = "origin"
-
 _CRITERIA_TA: TypeAdapter[list[str]] = TypeAdapter(list[str])
 
 
@@ -76,6 +74,8 @@ class RalphWorkflowEngine:
         ticket_generator: TicketGenerator,
         merger: BranchMerger,
         git_base_url: str,
+        *,
+        git_remote: str,
         git: GitService,
         cache: RepoCache,
         checkpointer: BaseCheckpointSaver[str] | None = None,
@@ -91,6 +91,7 @@ class RalphWorkflowEngine:
         self._ticket_generator: TicketGenerator = ticket_generator
         self._merger: BranchMerger = merger
         self._git_base_url: str = git_base_url
+        self._git_remote: str = git_remote
         # git/cache are injected so _review_against_ticket_node and the
         # consolidation nodes can pre-compute ChangesetDigest /
         # query canonical SHAs without leaking shell into the workflow body.
@@ -583,12 +584,12 @@ class RalphWorkflowEngine:
         cwd = await self._resolve_cwd(ctx)
         base_tip = await self._git.remote_branch_sha(
             cwd,
-            _REMOTE,
+            self._git_remote,
             ctx.base_branch,
         )
         if base_tip is None:
             msg = (
-                f"Base branch {ctx.base_branch!r} not found on origin "
+                f"Base branch {ctx.base_branch!r} not found on {self._git_remote} "
                 "after successful consolidation"
             )
             raise RuntimeError(msg)

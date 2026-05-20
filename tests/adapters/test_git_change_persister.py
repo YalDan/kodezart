@@ -40,9 +40,10 @@ async def git_repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def persister() -> GitChangePersister:
     return GitChangePersister(
-        git=SubprocessGitService(),
+        git=SubprocessGitService(remote="origin"),
         committer_name="kodezart-test",
         committer_email="test@kodezart.dev",
+        remote="origin",
     )
 
 
@@ -160,6 +161,7 @@ async def test_persist_raises_on_diverged_head(git_repo: Path) -> None:
         git=fake_git,
         committer_name="t",
         committer_email="t@t.dev",
+        remote="origin",
     )
     executor = FakeAgentExecutor(events=[])
     with pytest.raises(RuntimeError, match="diverged"):

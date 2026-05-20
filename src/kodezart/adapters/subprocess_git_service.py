@@ -11,8 +11,6 @@ from kodezart.core.protocols import GitAuth
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
 
-_REMOTE = "origin"
-
 
 class SubprocessGitService:
     """Git operations adapter using asyncio subprocess calls to the git CLI.
@@ -21,7 +19,13 @@ class SubprocessGitService:
     protocol.
     """
 
-    def __init__(self, auth: GitAuth | None = None) -> None:
+    def __init__(self, *, remote: str, auth: GitAuth | None = None) -> None:
+        # `self._remote` is the canonical remote used by `fetch()` and `push()`
+        # (the two GitService methods whose protocol surface takes no per-call
+        # `remote` arg). `delete_remote_branch`, `list_remote_branches`, and
+        # `remote_branch_sha` continue to accept `remote: str` as a per-call
+        # parameter for caller flexibility.
+        self._remote = remote
         self._auth = auth
 
     async def validate_repo(self, repo_path: str) -> None:
@@ -52,7 +56,7 @@ class SubprocessGitService:
     async def fetch(self, repo_path: str) -> None:
         """Fetch latest from all remotes."""
         await self._run(
-            ["git", "fetch", _REMOTE],
+            ["git", "fetch", self._remote],
             cwd=repo_path,
             env=self._auth.subprocess_env() if self._auth else None,
         )
@@ -139,7 +143,7 @@ class SubprocessGitService:
         a bare branch name for portable worktree push behavior.
         """
         await self._run(
-            ["git", "push", _REMOTE, f"HEAD:refs/heads/{branch}"],
+            ["git", "push", self._remote, f"HEAD:refs/heads/{branch}"],
             cwd=cwd,
             env=self._auth.subprocess_env() if self._auth else None,
         )

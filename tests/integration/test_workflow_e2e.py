@@ -82,7 +82,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
 ) -> None:
     repo, bare = git_env
 
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,
@@ -94,6 +94,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         git=git,
         committer_name="test",
         committer_email="t@t.dev",
+        remote="origin",
     )
     executor = ScriptedFakeExecutor(
         eval_results=[
@@ -117,7 +118,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
             },
         ]
     )
-    merger = GitBranchMerger(git=git, workspace=workspace)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
         executor=executor,
         workspace=workspace,
@@ -135,6 +136,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         ticket_generator=ticket_generator,
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=git,
         cache=cache,
         artifact_persister=None,
@@ -174,7 +176,7 @@ async def test_workflow_e2e_exhausts_iterations(
 ) -> None:
     repo, _bare = git_env
 
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,
@@ -186,6 +188,7 @@ async def test_workflow_e2e_exhausts_iterations(
         git=git,
         committer_name="test",
         committer_email="t@t.dev",
+        remote="origin",
     )
     executor = ScriptedFakeExecutor(
         eval_results=[
@@ -209,7 +212,7 @@ async def test_workflow_e2e_exhausts_iterations(
             },
         ]
     )
-    merger = GitBranchMerger(git=git, workspace=workspace)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
         executor=executor,
         workspace=workspace,
@@ -227,6 +230,7 @@ async def test_workflow_e2e_exhausts_iterations(
         ticket_generator=ticket_generator,
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=git,
         cache=cache,
         artifact_persister=None,
@@ -314,7 +318,7 @@ async def test_workflow_e2e_divergent_base_branch(
     ticket-draft schema call holds 'on-develop'."""
     repo, _bare = git_env_with_develop
 
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,
@@ -326,6 +330,7 @@ async def test_workflow_e2e_divergent_base_branch(
         git=git,
         committer_name="test",
         committer_email="t@t.dev",
+        remote="origin",
     )
     inner = ScriptedFakeExecutor(
         eval_results=[
@@ -350,7 +355,7 @@ async def test_workflow_e2e_divergent_base_branch(
         ]
     )
     executor = _MarkerCapturingExecutor(inner)
-    merger = GitBranchMerger(git=git, workspace=workspace)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
         executor=executor,
         workspace=workspace,
@@ -368,6 +373,7 @@ async def test_workflow_e2e_divergent_base_branch(
         ticket_generator=ticket_generator,
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=git,
         cache=cache,
         artifact_persister=None,

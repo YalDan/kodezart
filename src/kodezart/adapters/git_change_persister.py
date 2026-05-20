@@ -20,8 +20,6 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 
-_REMOTE = "origin"
-
 
 class GitChangePersister:
     """Ensure the canonical ref equals workspace HEAD.
@@ -34,10 +32,13 @@ class GitChangePersister:
         git: GitService,
         committer_name: str,
         committer_email: str,
+        *,
+        remote: str,
     ) -> None:
         self._git = git
         self._committer_name = committer_name
         self._committer_email = committer_email
+        self._remote = remote
         self._log: BoundLogger = get_logger(__name__)
 
     async def persist(
@@ -67,7 +68,7 @@ class GitChangePersister:
         head_sha = await self._git.current_sha(workspace_path)
         remote_tip = await self._git.remote_branch_sha(
             workspace_path,
-            _REMOTE,
+            self._remote,
             branch,
         )
         if remote_tip is not None and remote_tip == head_sha:
@@ -82,7 +83,7 @@ class GitChangePersister:
         if not head_descends_from_remote:
             msg = (
                 f"Workspace HEAD ({head_sha}) has diverged from "
-                f"origin/{branch} ({remote_tip})"
+                f"{self._remote}/{branch} ({remote_tip})"
             )
             raise RuntimeError(msg)
 

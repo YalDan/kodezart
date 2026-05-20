@@ -191,6 +191,7 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(),
         cache=FakeRepoCache(),
         artifact_persister=None,

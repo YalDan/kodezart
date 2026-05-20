@@ -82,7 +82,7 @@ async def test_consolidate_fast_forwarded_creates_feature_branch(
 ) -> None:
     repo, bare = git_env
 
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,
@@ -90,7 +90,7 @@ async def test_consolidate_fast_forwarded_creates_feature_branch(
         committer_name="test",
         committer_email="test@test.dev",
     )
-    merger = GitBranchMerger(git=git, workspace=workspace)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
 
     outcome = await merger.consolidate(
         repo_path=str(repo),
@@ -139,7 +139,7 @@ async def test_cleanup_backup_branches_discovers_and_deletes() -> None:
         ],
     )
     fake_workspace = FakeWorkspaceProvider()
-    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
 
     await merger.cleanup_backup_branches(
         repo_path="/tmp/repo",
@@ -186,7 +186,7 @@ async def test_cleanup_backup_branches_filters_with_is_backup() -> None:
         ],
     )
     fake_workspace = FakeWorkspaceProvider()
-    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
 
     await merger.cleanup_backup_branches(
         repo_path="/tmp/repo",
@@ -205,7 +205,7 @@ async def test_cleanup_backup_branches_empty_list_still_releases() -> None:
 
     fake_git = FakeGitService(remote_branches=[])
     fake_workspace = FakeWorkspaceProvider()
-    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
 
     await merger.cleanup_backup_branches(
         repo_path="/tmp/repo",
@@ -239,7 +239,7 @@ async def test_consolidate_fast_forwarded_deletes_source_internally(
     )
     assert "ralph-source" in branches_before
 
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,
@@ -247,7 +247,7 @@ async def test_consolidate_fast_forwarded_deletes_source_internally(
         committer_name="test",
         committer_email="test@test.dev",
     )
-    merger = GitBranchMerger(git=git, workspace=workspace)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
 
     await merger.consolidate(
         repo_path=str(repo),
@@ -278,7 +278,7 @@ async def test_consolidate_source_missing_returns_status_without_acquiring_workt
         },
     )
     fake_workspace = FakeWorkspaceProvider()
-    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
 
     outcome = await merger.consolidate(
         repo_path="/tmp/repo",
@@ -308,7 +308,7 @@ async def test_consolidate_already_integrated_returns_no_push() -> None:
         ancestor_pairs={("origin/ralph-source", "HEAD")},
     )
     fake_workspace = FakeWorkspaceProvider()
-    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
 
     outcome = await merger.consolidate(
         repo_path="/tmp/repo",
@@ -336,7 +336,7 @@ async def test_consolidate_divergent_does_not_raise() -> None:
         # ancestor_pairs is empty — no ancestor relation either way.
     )
     fake_workspace = FakeWorkspaceProvider()
-    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace)
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
 
     outcome = await merger.consolidate(
         repo_path="/tmp/repo",

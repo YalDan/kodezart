@@ -32,7 +32,7 @@ async def _run_git(cmd: list[str], cwd: Path) -> None:
 
 @pytest.fixture
 def git_service() -> SubprocessGitService:
-    return SubprocessGitService()
+    return SubprocessGitService(remote="origin")
 
 
 async def test_validate_repo_valid(
