@@ -141,12 +141,7 @@ class SubprocessGitService:
         await self._run(
             ["git", "commit", "-m", message],
             cwd=cwd,
-            env={
-                "GIT_AUTHOR_NAME": author_name,
-                "GIT_COMMITTER_NAME": author_name,
-                "GIT_AUTHOR_EMAIL": author_email,
-                "GIT_COMMITTER_EMAIL": author_email,
-            },
+            env=self._author_env(author_name, author_email),
         )
         return await self._run_output(["git", "rev-parse", "HEAD"], cwd=cwd)
 
@@ -305,6 +300,43 @@ class SubprocessGitService:
             commit_count=len(commit_subjects),
         )
 
+    async def reset_hard(self, cwd: str, ref: str) -> None:
+        """Hard-reset working tree + index + HEAD to *ref*."""
+        await self._run(["git", "reset", "--hard", ref], cwd=cwd)
+
+    async def tree_of(self, cwd: str, ref: str) -> str:
+        """Tree SHA reachable from *ref*."""
+        return await self._run_output(
+            ["git", "rev-parse", f"{ref}^{{tree}}"],
+            cwd=cwd,
+        )
+
+    async def commit_tree(
+        self,
+        cwd: str,
+        tree: str,
+        parent: str,
+        message: str,
+        author_name: str,
+        author_email: str,
+    ) -> str:
+        """Create a commit object referencing *tree* with one *parent* and *message*."""
+        return await self._run_output(
+            ["git", "commit-tree", tree, "-p", parent, "-m", message],
+            cwd=cwd,
+            env=self._author_env(author_name, author_email),
+        )
+
+    @staticmethod
+    def _author_env(name: str, email: str) -> dict[str, str]:
+        """Build the GIT_{AUTHOR,COMMITTER}_{NAME,EMAIL} env dict for git."""
+        return {
+            "GIT_AUTHOR_NAME": name,
+            "GIT_COMMITTER_NAME": name,
+            "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_EMAIL": email,
+        }
+
     async def _branch_exists(self, repo_path: str, branch_name: str) -> bool:
         try:
             await self._run_output(
@@ -315,12 +347,21 @@ class SubprocessGitService:
         except RuntimeError:
             return False
 
-    async def _run_output(self, cmd: list[str], cwd: str) -> str:
+    async def _run_output(
+        self,
+        cmd: list[str],
+        cwd: str,
+        env: dict[str, str] | None = None,
+    ) -> str:
+        process_env: dict[str, str] | None = None
+        if env is not None:
+            process_env = {**os.environ, **env}
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=process_env,
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:

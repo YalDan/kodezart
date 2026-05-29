@@ -21,6 +21,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.persist import PersistSource
 from tests.fakes import (
     FakeAgentExecutor,
     FakeBranchMerger,
@@ -716,18 +717,19 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
 
 
 @pytest.mark.parametrize("remote_name", ["origin", "upstream"])
-async def test_git_change_persister_divergence_error_references_configured_remote(
+async def test_git_change_persister_recovers_from_divergence_against_configured_remote(
     remote_name: str,
     tmp_path: Path,
 ) -> None:
-    """``GitChangePersister`` divergence error interpolates the configured remote.
+    """``GitChangePersister`` recovers from divergence against the configured remote.
 
     Forces a true divergence (workspace HEAD on commit B, remote tip on
     commit C, both descending from A but neither from the other) and
-    asserts the raised ``RuntimeError`` substring tracks the configured
-    remote.  In the default ``"origin"`` case the message stays
-    ``"diverged from origin/main (...)"``; in the override case it
-    becomes ``"diverged from upstream/main (...)"``.
+    asserts the persister:
+      * returns ``PersistResult`` with ``source == DIVERGENCE_REPLAY``;
+      * creates the backup ref ``main-backup-<prefix>`` on the
+        configured remote (origin OR upstream);
+      * fast-forwards ``{remote}/main`` to the replay SHA.
     """
     # --- Setup: shared remote + working repo, both on commit A ------------
     repo, bare = await _init_repo_with_named_remote(tmp_path, remote_name)
@@ -769,22 +771,32 @@ async def test_git_change_persister_divergence_error_references_configured_remot
         remote=remote_name,
     )
 
-    with pytest.raises(RuntimeError) as excinfo:
-        await persister.persist(
-            workspace_path=str(repo),
-            branch="main",
-            executor=ScriptedFakeExecutor(eval_results=[]),
-        )
+    result = await persister.persist(
+        workspace_path=str(repo),
+        branch="main",
+        executor=ScriptedFakeExecutor(eval_results=[]),
+        backup_ref_id_prefix="abc12345",
+    )
+    assert result is not None
+    assert result.source is PersistSource.DIVERGENCE_REPLAY
+    assert result.branch == "main"
 
-    message = str(excinfo.value)
-    assert f"{remote_name}/main" in message, (
-        f"divergence error must reference {remote_name}/main, got: {message}"
+    # Backup ref now exists on the bare remote under the configured remote.
+    backup_lookup = await _git_output(
+        ["git", "ls-remote", "--heads", remote_name, "main-backup-abc12345"],
+        cwd=repo,
     )
-    other = "upstream" if remote_name == "origin" else "origin"
-    assert f"{other}/main" not in message, (
-        f"divergence error must not reference {other}/main when remote is "
-        f"{remote_name}, got: {message}"
+    assert backup_lookup.strip() != "", (
+        f"backup ref main-backup-abc12345 not found on {remote_name}"
     )
+
+    # Remote tip of main is now the replay SHA.
+    remote_main = await _git_output(
+        ["git", "ls-remote", "--heads", remote_name, "main"],
+        cwd=repo,
+    )
+    remote_main_sha = remote_main.split("\t", 1)[0]
+    assert remote_main_sha == result.commit_sha
 
 
 @pytest.mark.parametrize("remote_name", ["origin", "upstream"])
@@ -1040,6 +1052,23 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
             self, cwd: str, remote: str, prefix: str
         ) -> list[str]:
             return []
+
+        async def reset_hard(self, cwd: str, ref: str) -> None:
+            return None
+
+        async def tree_of(self, cwd: str, ref: str) -> str:
+            return "t" * 40
+
+        async def commit_tree(
+            self,
+            cwd: str,
+            tree: str,
+            parent: str,
+            message: str,
+            author_name: str,
+            author_email: str,
+        ) -> str:
+            return "c" * 40
 
     app = create_app()
     workspace = FakeWorkspaceProvider()

@@ -35,6 +35,9 @@ class FakeGitService:
         remote_branch_shas: dict[str, str | None] | None = None,
         ancestor_pairs: set[tuple[str, str]] | None = None,
         diff_digests: dict[tuple[str, str], ChangesetDigest] | None = None,
+        trees: dict[str, str] | None = None,
+        commit_tree_result: str = "c" * 40,
+        push_error: Exception | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.has_changes_result: bool = has_changes_result
@@ -48,6 +51,9 @@ class FakeGitService:
         self._diff_digests: dict[tuple[str, str], ChangesetDigest] = (
             dict(diff_digests) if diff_digests is not None else {}
         )
+        self._trees: dict[str, str] = dict(trees) if trees is not None else {}
+        self._commit_tree_result: str = commit_tree_result
+        self._push_error: Exception | None = push_error
 
     async def validate_repo(self, repo_path: str) -> None:
         self.calls.append(("validate_repo", repo_path))
@@ -98,6 +104,9 @@ class FakeGitService:
 
     async def push(self, cwd: str, branch: str) -> None:
         self.calls.append(("push", cwd, branch))
+        if self._push_error is not None:
+            err, self._push_error = self._push_error, None
+            raise err
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None:
         self.calls.append(("merge_branch", cwd, source_branch))
@@ -170,6 +179,25 @@ class FakeGitService:
             commit_subjects=["feat: scripted"],
             commit_count=1,
         )
+
+    async def reset_hard(self, cwd: str, ref: str) -> None:
+        self.calls.append(("reset_hard", cwd, ref))
+
+    async def tree_of(self, cwd: str, ref: str) -> str:
+        self.calls.append(("tree_of", cwd, ref))
+        return self._trees.get(ref, "t" * 40)
+
+    async def commit_tree(
+        self,
+        cwd: str,
+        tree: str,
+        parent: str,
+        message: str,
+        author_name: str,
+        author_email: str,
+    ) -> str:
+        self.calls.append(("commit_tree", cwd, tree, parent, message))
+        return self._commit_tree_result
 
 
 class FakeAgentExecutor:
@@ -451,8 +479,15 @@ class FakeChangePersister:
         workspace_path: str,
         branch: str,
         executor: AgentExecutor,
+        backup_ref_id_prefix: str,
     ) -> PersistResult | None:
-        self.calls.append({"workspace_path": workspace_path, "branch": branch})
+        self.calls.append(
+            {
+                "workspace_path": workspace_path,
+                "branch": branch,
+                "backup_ref_id_prefix": backup_ref_id_prefix,
+            }
+        )
         return self._result
 
 
