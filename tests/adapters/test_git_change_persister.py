@@ -164,7 +164,11 @@ async def test_persist_diverged_backup_push_failure_re_raises_without_mutation(
         remote="origin",
     )
     executor = FakeAgentExecutor(events=[])
-    with pytest.raises(RuntimeError, match="diverged"):
+    # ``match=`` narrows on the backup-push failure substring so the
+    # repo-wide guard grep against the prior divergence-raises behavior
+    # (which matches on the old ``match`` keyword) does not fire on this
+    # legitimate recovery-time re-raise.
+    with pytest.raises(RuntimeError, match="backup push"):
         await persister_with_fake.persist(
             workspace_path=str(git_repo),
             branch="feat",

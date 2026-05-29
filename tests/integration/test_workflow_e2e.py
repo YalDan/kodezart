@@ -963,16 +963,18 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
 
     from kodezart.main import create_app
     from kodezart.services.agent_service import AgentService
-    from kodezart.types.domain.consolidation import ChangesetDigest
     from kodezart.types.domain.git import LsRemoteEntry
 
     _ = LsRemoteEntry  # imported for protocol-shape parity
 
-    class FaultInjectingGitService:
-        """GitService fake; raises exit-128 RuntimeError from is_ancestor."""
+    class FaultInjectingGitService(FakeGitService):
+        """FakeGitService subclass; raises exit-128 RuntimeError from is_ancestor.
 
-        async def fetch(self, repo_path: str) -> None:
-            return None
+        Inherits every other GitService method (including the new
+        ``reset_hard`` / ``tree_of`` / ``commit_tree``) from ``FakeGitService``
+        so this stays a subclass per the project's GitService-impl enumeration
+        rule (alongside ``_HasChangesRaisingGitService``).
+        """
 
         async def is_ancestor(
             self,
@@ -985,90 +987,6 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
                 f"({ancestor_ref} vs {descendant_ref})"
             )
             raise RuntimeError(msg)
-
-        async def current_sha(self, cwd: str) -> str:
-            return "f" * 40
-
-        async def remote_branch_sha(
-            self,
-            cwd: str,
-            remote: str,
-            branch: str,
-        ) -> str | None:
-            return "a" * 40
-
-        async def diff_summary(
-            self,
-            cwd: str,
-            base_ref: str,
-            head_ref: str,
-        ) -> ChangesetDigest:
-            return ChangesetDigest(file_paths=[], commit_subjects=[], commit_count=0)
-
-        # Below methods are protocol fillers — none are exercised on this path.
-        async def validate_repo(self, repo_path: str) -> None:
-            return None
-
-        def is_repo(self, path: str) -> bool:
-            return True
-
-        async def clone_bare(self, url: str, target: str) -> None:
-            return None
-
-        async def create_worktree(
-            self, repo_path: str, base_ref: str, worktree_path: str, **_: object
-        ) -> None:
-            return None
-
-        async def remove_worktree(self, repo_path: str, worktree_path: str) -> None:
-            return None
-
-        async def has_changes(self, cwd: str) -> bool:
-            return False
-
-        async def add_all(self, cwd: str) -> None:
-            return None
-
-        async def commit(
-            self, cwd: str, message: str, author_name: str, author_email: str
-        ) -> str:
-            return "c" * 40
-
-        async def push(self, cwd: str, branch: str) -> None:
-            return None
-
-        async def merge_branch(self, cwd: str, source_branch: str) -> None:
-            return None
-
-        async def head_commit_message(self, cwd: str) -> str:
-            return "msg"
-
-        async def delete_remote_branch(
-            self, cwd: str, remote: str, branch: str
-        ) -> None:
-            return None
-
-        async def list_remote_branches(
-            self, cwd: str, remote: str, prefix: str
-        ) -> list[str]:
-            return []
-
-        async def reset_hard(self, cwd: str, ref: str) -> None:
-            return None
-
-        async def tree_of(self, cwd: str, ref: str) -> str:
-            return "t" * 40
-
-        async def commit_tree(
-            self,
-            cwd: str,
-            tree: str,
-            parent: str,
-            message: str,
-            author_name: str,
-            author_email: str,
-        ) -> str:
-            return "c" * 40
 
     app = create_app()
     workspace = FakeWorkspaceProvider()
