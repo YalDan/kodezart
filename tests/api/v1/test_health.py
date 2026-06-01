@@ -1,5 +1,7 @@
 """Integration tests for GET /api/v1/health."""
 
+from importlib.metadata import version as pkg_version
+
 from httpx import AsyncClient
 
 
@@ -20,7 +22,7 @@ async def test_health_data_fields(client: AsyncClient) -> None:
     response = await client.get("/api/v1/health")
     data = response.json().get("data", {})
     assert data.get("healthy") is True
-    assert data.get("version") == "0.1.0"
+    assert data.get("version") == pkg_version("kodezart")
     assert data.get("service") == "kodezart"
 
 
@@ -40,6 +42,6 @@ async def test_health_returns_valid_status(client: AsyncClient) -> None:
     assert body["error"] is None
     assert body["data"] == {
         "healthy": True,
-        "version": "0.1.0",
+        "version": pkg_version("kodezart"),
         "service": "kodezart",
     }
