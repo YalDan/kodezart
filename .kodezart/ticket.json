@@ -1,0 +1,244 @@
+{
+  "title": "Decompose core/soft_failure.py into core/errors.py + core/stream_drain.py + core/error_egress.py",
+  "summary": "Behavior-preserving decomposition of the grab-bag `src/kodezart/core/soft_failure.py` into three single-purpose siblings at the same hexagonal layer (`core/errors.py`, `core/stream_drain.py`, `core/error_egress.py`), deletion of the original, and import-path updates at every src/ and tests/ call site. No public symbol's runtime semantics change — `NoStructuredOutputError`, `drain()`, `_redact_credentials()` (with `_REDACTION_SENTINEL` + three `re.Pattern` constants), and `build_error_event()` all move byte-identical. Only import paths change. Motivation: commit `6a0c804` renamed `SoftFailureError` → `NoStructuredOutputError` but the file kept the original name; the module name today points at a concept that no longer exists inside it. Verification gate: `make check` exits 0 and `git grep -E 'kodezart\\\\.core\\\\.soft_failure|core/soft_failure\\\\.py' src/ tests/` returns empty.",
+  "context": "## Why this change\n\n`src/kodezart/core/soft_failure.py` is the only multi-purpose module under `src/kodezart/core/` (directory listing confirmed: the other seven modules — `checkpointer.py`, `config.py`, `constants.py`, `logging.py`, `protocols.py`, `retry.py`, `__init__.py` — are each single-purpose). It houses four unrelated concerns whose only commonality is \"things touched by the soft-failure path\":\n\n1. **Exception taxonomy** — `NoStructuredOutputError`, peer of `kodezart.domain.errors.AgentSDKError` (NOT a subclass). Primitive-scalar attributes only (`raise_site`, `rate_limit_rejected`, `result_event_observed`, `stop_reason`, `is_error`, `session_id`, `total_cost_usd`). `core.retry.should_retry` returns `False` for it (`src/kodezart/core/retry.py:13-22`).\n2. **Stream draining** — `async def drain(stream) -> tuple[ResultEvent | None, bool]`. Coroutine (NOT an async generator). Collapses the manual result-event accumulation pattern duplicated at every soft-failure raise site; observes `RateLimitWarningEvent.status == \"rejected\"`.\n3. **Credential redaction** — `_REDACTION_SENTINEL: Final[str]`, `_CREDENTIAL_URL_PATTERN`, `_GH_TOKEN_PATTERN` (`gh[posu]_` prefixes), `_GH_FINEGRAINED_PAT_PATTERN` (`github_pat_`), `_redact_credentials(s)`.\n4. **Error egress mapping** — `build_error_event(exc) -> ErrorEvent`. `isinstance` against `NoStructuredOutputError` and `AgentSDKError` (no `getattr(exc, ...)` introspection — that would return `Any` and violate `[tool.mypy] disallow_any_explicit = true`).\n\nCommit `6a0c804` renamed the original `SoftFailureError` class to `NoStructuredOutputError` but the file kept the original name.\n\n## Architectural placement (resolved upstream by user)\n\n`NoStructuredOutputError` lives in NEW `src/kodezart/core/errors.py`, NOT in `src/kodezart/domain/errors.py`. Evidence:\n\n- `src/kodezart/domain/errors.py` today has ZERO `kodezart.*` imports (verified by reading the full file: only stdlib `Exception` is used). Its documented posture (\"Domain exceptions — no I/O, no infrastructure concerns\") is preserved by NOT widening it.\n- `NoStructuredOutputError`'s constructor reads `result_event.stop_reason`/`.is_error`/`.session_id`/`.total_cost_usd` from a `ResultEvent` parameter, requiring a runtime `kodezart.types.domain.agent.ResultEvent` import. Placing the class in `domain/errors.py` would force a `types/` import on the dependency-free module.\n- The hexagonal direction `adapters → core → domain` is verified at `src/kodezart/core/retry.py:5` (`from kodezart.domain.errors import RateLimitError, TransientAPIError`). `core → domain` is permitted; `domain → core` is forbidden.\n\n## RaiseSite stays TYPE_CHECKING-only in BOTH new modules (reviewer correction v1→v2)\n\nThe v1 draft promoted `RaiseSite` to a runtime import in `core/error_egress.py`. That decision was wrong on the merits and is reversed here. Three lines of evidence converge:\n\n1. **The original module docstring is load-bearing.** `src/kodezart/core/soft_failure.py:45-50` reads: \"Type-only import — keeps RaiseSite out of this module's runtime namespace so consumers cannot import it from here. RaiseSite has a single authoritative home in `kodezart.types.domain.agent` and downstream code must import it from there.\" This is a deliberate architectural invariant. Both new modules MUST preserve it.\n\n2. **PEP 526 confirms the annotations are not runtime-evaluated.** Quote: \"Annotations for local variables will not be evaluated.\" This applies to BOTH (a) `self.raise_site: RaiseSite = raise_site` inside `__init__` (instance-attribute annotation inside a function body — the LHS `self.raise_site` is evaluated as an assignment target; the annotation expression `RaiseSite` is not), and (b) `raise_site: RaiseSite | None = None` inside `build_error_event` (local variable annotation — not evaluated).\n\n3. **The current `soft_failure.py` empirically proves it.** `RaiseSite` is imported only under `if TYPE_CHECKING:` and the file passes `make check` (= `make lint && make type-check && make test`, with `mypy --strict` + `disallow_any_explicit = true`) at HEAD. Splitting the file into two modules preserves the exact annotation contexts; `mypy --strict` resolves `RaiseSite` via the TYPE_CHECKING block in both. There is no mypy benefit to runtime promotion.\n\nTherefore: both `core/errors.py` and `core/error_egress.py` import `RaiseSite` under `if TYPE_CHECKING:` only. The single-authoritative-home invariant is preserved.\n\n## No test body changes (reviewer correction v1→v2)\n\nThe v1 draft proposed renaming the local Python variable `soft_failure` to `no_structured_output_error` at `tests/api/v1/test_agent.py:337,344` to satisfy a bare-word `git grep \"soft_failure\"` hygiene check. That rename directly violates the user's explicit out-of-scope rule (\"Do NOT modify any test body. Tests get import-statement updates only\"). The fix is to tighten the hygiene grep to the module-path pattern, not to edit the test binding:\n\n```\ngit grep -E 'kodezart\\.core\\.soft_failure|core/soft_failure\\.py' src/ tests/\n```\n\nThis grep catches every import path and every prose-comment file-reference, returns empty post-refactor, and leaves the unrelated local binding alone. The bare-word `soft_failure` grep is the user's TEST of hygiene, not an immutable contract; tightening it preserves the explicit no-test-body-edit rule the user actually wrote.\n\n## Naming concerns surfaced but not gating\n\nThe user's resolved direction names the new modules `core/errors.py`, `core/stream_drain.py`, `core/error_egress.py`. Two engineer-visible concerns the user can revisit on review (this ticket follows the resolved direction):\n\n- `core/errors.py` is one character off from `domain/errors.py`; new contributors must learn the placement rule (peer of `AgentSDKError` with `types/` runtime dep → `core/`; pure stdlib → `domain/`).\n- `stream_drain.py` and `error_egress.py` are two-word filenames in a directory where the other seven modules are single-word. If the user wants the convention preserved, `drain.py` and `egress.py` are drop-in alternatives — mechanically equivalent change set.\n\nThese are notes; do not re-litigate without explicit user direction.\n\n## Three-way split exceeds the minimum\n\nThe stated user motivation is \"stale filename from commit `6a0c804`\". A minimum fix is `git mv core/soft_failure.py core/error_egress.py` (rename only, no split). The user's resolved direction is the three-way split because the four concerns inside the grab-bag are architecturally independent. Following the resolved direction; transparency note for the engineer.\n\n## Pre-existing follow-up flag\n\n`_redact_credentials` and `_REDACTION_SENTINEL` carry leading underscores but are imported across module boundaries by `adapters/claude_agent_executor.py:16`, `adapters/claude_client_executor.py:19`, and `tests/adapters/test_claude_executors.py:13`. The leading underscore is a pre-existing lie about privacy. Out-of-scope for this behavior-preserving refactor; flagged so the next maintainer who touches the module can rename to `redact_credentials` / `REDACTION_SENTINEL`.\n\n## Documentation consulted (2026-06-01)\n\n- PEP 526 (Syntax for Variable Annotations) — \"Annotations for local variables will not be evaluated.\" Confirms `self.x: T = ...` and `x: T | None = None` inside a function body do not evaluate the annotation expression `T` at runtime. https://peps.python.org/pep-0526/\n- Ruff settings — `lint.isort.known-first-party` sorts first-party imports alphabetically within their section; the project config has `known-first-party = [\"kodezart\"]`. `make format` (= `ruff format src/ tests/ && ruff check --select I --fix src/ tests/`) normalizes ordering. https://docs.astral.sh/ruff/settings/\n- mypy runtime troubles — TYPE_CHECKING is the canonical pattern for resolving import cycles and for type-only imports that should not enter the module's runtime namespace. https://mypy.readthedocs.io/en/stable/runtime_troubles.html\n\n(The v1 draft cited Pydantic V2 mypy plugin and an alleged TYPE_CHECKING placement convention; those claims were not verified against first-party sources and have been dropped. Only PEP 526 and the ruff/mypy doc pages above are presented as documented behavior.)\n\n## Repository-state facts verified at HEAD\n\n- `CHANGELOG.md` does not exist.\n- `docs/` contains `api.md`, `architecture.md`, `configuration.md` — verified zero `soft_failure` references.\n- `README.md` exists — verified zero `soft_failure` references.\n- Therefore the hygiene grep is bounded to `src/` and `tests/`; no docs/README updates needed.\n\n## Build gate (verification of record)\n\n- `make check` = `make verify-no-origin-literal && make lint && make type-check && make test`\n- `make lint` = `uv run ruff check src/ tests/` (rules `E,W,F,I,B,C4,UP,N,ANN,S,A,ARG,RUF`)\n- `make type-check` = `uv run mypy src/` (`python_version = \"3.12\"`, `strict = true`, `disallow_any_explicit = true`, `plugins = [\"pydantic.mypy\"]`)\n- `make test` = `uv run pytest` (`asyncio_mode = \"auto\"`)\n- CI runs `make install && make check` at `.github/workflows/check.yml`.\n\n## Post-`make format` isort ordering (engineer reference)\n\nWithin the `kodezart.core.*` section, underscore `_` (ASCII 95) precedes alphabetic chars (s = 115), so:\n\n1. `from kodezart.core.error_egress import ...`\n2. `from kodezart.core.errors import ...`\n3. `from kodezart.core.stream_drain import ...`\n\nThis is the order the engineer should expect after running `make format` on every file that imports more than one of the new modules (`chains/ticket_generation.py`, `tests/core/test_error_egress.py`). Files importing only two of the three new modules (`adapters/git_change_persister.py`, `chains/ralph_loop.py`, `chains/ralph_workflow.py`) will show `errors` then `stream_drain` in that order.",
+  "references": [
+    {
+      "location": "src/kodezart/core/soft_failure.py:45-50",
+      "note": "Load-bearing TYPE_CHECKING invariant docstring (verbatim): 'Type-only import — keeps RaiseSite out of this module's runtime namespace so consumers cannot import it from here. RaiseSite has a single authoritative home in kodezart.types.domain.agent and downstream code must import it from there.' This invariant MUST be preserved in BOTH `core/errors.py` and `core/error_egress.py`. The v1 draft's runtime promotion in `error_egress.py` is reversed."
+    },
+    {
+      "location": "src/kodezart/core/soft_failure.py",
+      "note": "Grab-bag module being decomposed. Contains all four concerns. Move every symbol verbatim; only the home module changes."
+    },
+    {
+      "location": "src/kodezart/domain/errors.py",
+      "note": "Dependency-free posture witness. Exports `WorkspaceError`, `TransientAPIError`, `RateLimitError`, `AgentSDKError` with ZERO `kodezart.*` imports. MUST NOT be modified by this refactor."
+    },
+    {
+      "location": "src/kodezart/core/retry.py:5",
+      "note": "Architectural-direction witness: `from kodezart.domain.errors import RateLimitError, TransientAPIError`. Confirms `core → domain` is permitted; `domain → core` is forbidden. Justifies placing `NoStructuredOutputError` in `core/errors.py`."
+    },
+    {
+      "location": "src/kodezart/core/retry.py:1",
+      "note": "Single-line docstring convention witness: `\"\"\"Shared retry predicate for all LangGraph RetryPolicy instances.\"\"\"`. The three new modules follow this one-line shape — no architectural rationale in source docstrings."
+    },
+    {
+      "location": "src/kodezart/core/__init__.py:1",
+      "note": "Package-level docstring convention witness: `\"\"\"Core infrastructure: config, logging, protocols.\"\"\"` (single line)."
+    },
+    {
+      "location": "src/kodezart/types/domain/agent.py:20-25",
+      "note": "`RaiseSite` invariant prose comment. Updates from `core/soft_failure.NoStructuredOutputError`/`core/soft_failure.py` to `core/errors.NoStructuredOutputError`/`core/errors.py`. Invariant meaning preserved: `RaiseSite` lives here; downstream code must import it from this module."
+    },
+    {
+      "location": "src/kodezart/types/domain/agent.py:27-36",
+      "note": "`RaiseSite = Literal[...]` definition (eight literals). Untouched. Single authoritative home; both new modules TYPE_CHECKING-import from here."
+    },
+    {
+      "location": "src/kodezart/types/domain/agent.py:224-254",
+      "note": "`ErrorEvent` Pydantic class (`extra='forbid'`). Untouched. Return type of `build_error_event`."
+    },
+    {
+      "location": "src/kodezart/types/domain/agent.py:237",
+      "note": "Prose comment referencing `core/soft_failure.py`. Updates to `core/errors.py`."
+    },
+    {
+      "location": "tests/api/v1/test_agent.py:334",
+      "note": "Line 334 import updates from `kodezart.core.soft_failure` to `kodezart.core.errors`. Lines 337 and 344 (local variable `soft_failure = NoStructuredOutputError(...)` and consumer `FakeRaisingExecutor(soft_failure)`) are TEST BODY — do NOT touch. The hygiene grep is tightened to the module-path pattern."
+    },
+    {
+      "location": "tests/core/test_soft_failure.py:1",
+      "note": "Module docstring updates from `core/soft_failure.py` to `core/error_egress.py` when the file is renamed. Docstring update is a direct consequence of the file rename, not a test-body edit."
+    },
+    {
+      "location": "tests/core/test_soft_failure.py:22-25",
+      "note": "Fixture-construction comment about ruff S105/S106 avoidance. Preserve verbatim in the renamed file — documents why fixtures use string concatenation."
+    },
+    {
+      "location": "tests/core/test_soft_failure.py:14-19",
+      "note": "Import block to rewrite in the renamed file. Post-`make format` order: `from kodezart.core.error_egress import (_REDACTION_SENTINEL, _redact_credentials, build_error_event,)` FIRST, then `from kodezart.core.errors import NoStructuredOutputError` SECOND."
+    },
+    {
+      "location": "pyproject.toml [tool.ruff.lint]",
+      "note": "Active rule set `E,W,F,I,B,C4,UP,N,ANN,S,A,ARG,RUF`. Per-file ignores for `tests/**` cover `S101,ARG001,ARG002,ANN,S108`. No new `# noqa` / `# type: ignore` may be added."
+    },
+    {
+      "location": "pyproject.toml [tool.mypy]",
+      "note": "`python_version = '3.12'`, `strict = true`, `disallow_any_explicit = true`, `plugins = ['pydantic.mypy']`."
+    },
+    {
+      "location": "Makefile",
+      "note": "`make check` = `verify-no-origin-literal && lint && type-check && test`. `make format` = `ruff format && ruff check --select I --fix`. Run `make format` before `make check`."
+    },
+    {
+      "location": ".github/workflows/check.yml",
+      "note": "CI runs `make install && make check`."
+    },
+    {
+      "location": "docs/",
+      "note": "Verified clean of `soft_failure` references (`api.md`, `architecture.md`, `configuration.md`). No docs updates needed."
+    },
+    {
+      "location": "README.md",
+      "note": "Verified clean of `soft_failure` references. No README update needed."
+    },
+    {
+      "location": "CHANGELOG.md",
+      "note": "Verified DOES NOT EXIST. No CHANGELOG update needed; out-of-scope clause about CHANGELOG removed from this v2 ticket."
+    }
+  ],
+  "requiredChanges": [
+    {
+      "filePath": "src/kodezart/core/errors.py",
+      "changeType": "create",
+      "description": "New module. Move `NoStructuredOutputError` verbatim from `src/kodezart/core/soft_failure.py` (class body, class docstring, `__init__` signature, attribute assignments — byte-identical). Imports: `from typing import TYPE_CHECKING` + `from kodezart.types.domain.agent import ResultEvent` (runtime — the constructor reads `result_event.stop_reason`/`.is_error`/`.session_id`/`.total_cost_usd`) + `if TYPE_CHECKING: from kodezart.types.domain.agent import RaiseSite` (preserves the load-bearing single-authoritative-home invariant for `RaiseSite`). Add a single-line module docstring matching the `core/*.py` convention (compare `core/retry.py:1`, `core/logging.py:1`): `\"\"\"Core-layer exception classes that carry a runtime `types/` dependency.\"\"\"`. Do NOT include placement rationale in the docstring — it belongs in this ticket, not the source file. Do NOT add `from __future__ import annotations`.",
+      "rationale": "Single-purpose home for the `NoStructuredOutputError` exception class. Cannot live in `domain/errors.py` without breaking that module's zero-`kodezart.*`-imports posture. `core/` is the next-ring-out home; the `core → domain` direction is already established at `core/retry.py:5`."
+    },
+    {
+      "filePath": "src/kodezart/core/stream_drain.py",
+      "changeType": "create",
+      "description": "New module. Move `async def drain(stream: AsyncIterator[AgentEvent]) -> tuple[ResultEvent | None, bool]` verbatim from `src/kodezart/core/soft_failure.py` (body byte-identical: `last_result_event` accumulation, `rate_limit_rejected` flag on `RateLimitWarningEvent.status == \"rejected\"`, tuple return). Imports: `from collections.abc import AsyncIterator` + `from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent`. Preserve the coroutine's docstring verbatim (it documents the coroutine-vs-async-generator distinction). Add a single-line module docstring: `\"\"\"Async-stream draining helper used by soft-failure raise sites.\"\"\"`.",
+      "rationale": "Single-purpose home for the `drain` coroutine. Unrelated to exception taxonomy and unrelated to credential redaction — deserves its own module."
+    },
+    {
+      "filePath": "src/kodezart/core/error_egress.py",
+      "changeType": "create",
+      "description": "New module. Move verbatim from `src/kodezart/core/soft_failure.py`: `_REDACTION_SENTINEL: Final[str]`, `_CREDENTIAL_URL_PATTERN`, `_GH_TOKEN_PATTERN`, `_GH_FINEGRAINED_PAT_PATTERN`, `_redact_credentials(s)`, and `build_error_event(exc)`. The three `re.Pattern` regex bodies, the three `re.sub` call order inside `_redact_credentials`, the `isinstance` branch order in `build_error_event` (`NoStructuredOutputError` first, `AgentSDKError` second), and the `ErrorEvent(...)` constructor call are all byte-identical. Imports: `import re` + `from typing import TYPE_CHECKING, Final` + `from kodezart.domain.errors import AgentSDKError` + `from kodezart.types.domain.agent import ErrorEvent` (runtime — the `build_error_event` return statement constructs an `ErrorEvent`) + `from kodezart.core.errors import NoStructuredOutputError` (runtime — the `isinstance` branch site) + `if TYPE_CHECKING: from kodezart.types.domain.agent import RaiseSite`. **CRITICAL CORRECTION FROM v1 DRAFT:** `RaiseSite` is imported ONLY under `if TYPE_CHECKING:` here — NOT runtime. Per PEP 526 the local-variable annotation `raise_site: RaiseSite | None = None` inside `build_error_event` is not runtime-evaluated; the current `soft_failure.py` uses TYPE_CHECKING-only and passes `make check`; splitting the file preserves the exact annotation context. The original module's load-bearing invariant (`soft_failure.py:46-49`: \"Type-only import — keeps RaiseSite out of this module's runtime namespace so consumers cannot import it from here\") MUST be preserved here. Preserve every function and pattern docstring verbatim (the `_redact_credentials` docstring carries the LEAK ORIGIN documentation; `build_error_event`'s docstring carries the `isinstance`-vs-`getattr` rationale). Add a single-line module docstring: `\"\"\"Exception-to-ErrorEvent mapping and credential redaction applied at wire egress.\"\"\"`. Do NOT add `from __future__ import annotations`.",
+      "rationale": "Single-purpose home for the egress-time concerns. `_redact_credentials` and `build_error_event` share the egress-time invariant (every `Exception` flowing into `build_error_event` is scrubbed exactly once at the convergence point) and belong in the same module. The TYPE_CHECKING-only `RaiseSite` shape is mandatory for v2 — it preserves the original module's documented type-only-namespace invariant and is supported by PEP 526."
+    },
+    {
+      "filePath": "src/kodezart/core/soft_failure.py",
+      "changeType": "delete",
+      "description": "Delete the file. No backwards-compatibility re-export shim.",
+      "rationale": "Decomposition contract: the grab-bag module is gone. A re-export shim would defeat the hygiene goal of removing the stale `soft_failure` name."
+    },
+    {
+      "filePath": "src/kodezart/adapters/claude_agent_executor.py",
+      "changeType": "modify",
+      "description": "Replace line 16 (`from kodezart.core.soft_failure import _redact_credentials`) with `from kodezart.core.error_egress import _redact_credentials`. No other changes. `make format` normalizes the isort position.",
+      "rationale": "`_redact_credentials` now lives in `core/error_egress.py`."
+    },
+    {
+      "filePath": "src/kodezart/adapters/claude_client_executor.py",
+      "changeType": "modify",
+      "description": "Replace line 19 (`from kodezart.core.soft_failure import _redact_credentials`) with `from kodezart.core.error_egress import _redact_credentials`. No other changes.",
+      "rationale": "Same as `claude_agent_executor.py` — the second Claude SDK adapter that imports the redaction helper."
+    },
+    {
+      "filePath": "src/kodezart/adapters/git_change_persister.py",
+      "changeType": "modify",
+      "description": "Replace line 15 (`from kodezart.core.soft_failure import NoStructuredOutputError, drain`) with two lines, in `make format`-canonical alphabetical order: `from kodezart.core.errors import NoStructuredOutputError` and `from kodezart.core.stream_drain import drain`. (`errors` < `stream_drain`.) No other changes.",
+      "rationale": "Splits the two-symbol import across the two new single-purpose modules."
+    },
+    {
+      "filePath": "src/kodezart/chains/ralph_loop.py",
+      "changeType": "modify",
+      "description": "Replace line 15 (`from kodezart.core.soft_failure import NoStructuredOutputError, drain`) with `from kodezart.core.errors import NoStructuredOutputError` and `from kodezart.core.stream_drain import drain` (alphabetical post-`make format`). No other changes.",
+      "rationale": "Same shape as `git_change_persister.py`."
+    },
+    {
+      "filePath": "src/kodezart/chains/ralph_workflow.py",
+      "changeType": "modify",
+      "description": "Replace line 31 (`from kodezart.core.soft_failure import NoStructuredOutputError, drain`) with `from kodezart.core.errors import NoStructuredOutputError` and `from kodezart.core.stream_drain import drain`. No other changes.",
+      "rationale": "Same shape as the other two-symbol chains importers."
+    },
+    {
+      "filePath": "src/kodezart/chains/ticket_generation.py",
+      "changeType": "modify",
+      "description": "Replace line 16 (`from kodezart.core.soft_failure import NoStructuredOutputError, build_error_event, drain`) with three lines in `make format`-canonical alphabetical order: `from kodezart.core.error_egress import build_error_event`, then `from kodezart.core.errors import NoStructuredOutputError`, then `from kodezart.core.stream_drain import drain`. (Underscore ASCII 95 precedes `s` 115, so `error_egress` < `errors` < `stream_drain`.) No other changes.",
+      "rationale": "Three-symbol importer touching all three new modules — the only src/ file importing the full triplet. Documenting the post-format order so reviewers can match diff to expectation."
+    },
+    {
+      "filePath": "src/kodezart/handlers/agent_handler.py",
+      "changeType": "modify",
+      "description": "Replace line 9 (`from kodezart.core.soft_failure import build_error_event`) with `from kodezart.core.error_egress import build_error_event`. No other changes.",
+      "rationale": "Single-symbol importer; the mapper now lives in `core/error_egress.py`."
+    },
+    {
+      "filePath": "src/kodezart/services/agent_service.py",
+      "changeType": "modify",
+      "description": "Replace line 8 (`from kodezart.core.soft_failure import build_error_event`) with `from kodezart.core.error_egress import build_error_event`. No other changes.",
+      "rationale": "Same as `handlers/agent_handler.py` — services and handlers both consume `build_error_event` from its new home."
+    },
+    {
+      "filePath": "src/kodezart/types/domain/agent.py",
+      "changeType": "modify",
+      "description": "Three prose-only comment edits (NO type/class definition changes): (a) line 22 — replace `core/soft_failure.NoStructuredOutputError` with `core/errors.NoStructuredOutputError`; (b) line 23 — replace `core/soft_failure.py` with `core/errors.py`; (c) line 237 — replace `core/soft_failure.py` with `core/errors.py`. The invariant statement still reads: 'RaiseSite has a single authoritative home in kodezart.types.domain.agent and downstream code must import it from there' — the downstream consumer name updates to `core/errors.py` (where `NoStructuredOutputError` now lives and TYPE_CHECKING-imports `RaiseSite`). The `RaiseSite = Literal[...]` definition at lines 27-36 and the `ErrorEvent` class at lines 224-254 stay untouched.",
+      "rationale": "Comment-hygiene update. The documented invariant about `RaiseSite`'s single authoritative home is preserved; the prose just points at the new downstream module name. Both `core/errors.py` and `core/error_egress.py` continue to import `RaiseSite` under TYPE_CHECKING from `kodezart.types.domain.agent`, so the structural meaning of the invariant is preserved verbatim."
+    },
+    {
+      "filePath": "tests/adapters/test_claude_executors.py",
+      "changeType": "modify",
+      "description": "Replace line 13 (`from kodezart.core.soft_failure import _REDACTION_SENTINEL`) with `from kodezart.core.error_egress import _REDACTION_SENTINEL`. No test body changes.",
+      "rationale": "The test imports the redaction sentinel for assertion comparison; the constant moves with `_redact_credentials` to `core/error_egress.py`."
+    },
+    {
+      "filePath": "tests/api/v1/test_agent.py",
+      "changeType": "modify",
+      "description": "Single edit: line 334 — replace `from kodezart.core.soft_failure import NoStructuredOutputError` with `from kodezart.core.errors import NoStructuredOutputError`. **DO NOT** rename the local binding `soft_failure` at lines 337 and 344. The variable name is a test-body identifier and falls under the user's explicit out-of-scope rule ('Do NOT modify any test body. Tests get import-statement updates only.'). The hygiene check is the tightened grep `git grep -E 'kodezart\\.core\\.soft_failure|core/soft_failure\\.py' src/ tests/` returning empty — which is satisfied by the import-path change alone.",
+      "rationale": "Reverses the v1 draft's binding-name rename, which violated the explicit no-test-body-edit rule. The local variable `soft_failure = NoStructuredOutputError(...)` is unrelated to the module-path hygiene and stays as-is."
+    },
+    {
+      "filePath": "tests/chains/test_ralph_loop.py",
+      "changeType": "modify",
+      "description": "Replace BOTH function-local imports: line 423 and line 790 (both are `from kodezart.core.soft_failure import NoStructuredOutputError`) with `from kodezart.core.errors import NoStructuredOutputError`. No test body changes.",
+      "rationale": "Two function-local imports inside two separate test functions, both single-symbol. Target moves to `core/errors.py`."
+    },
+    {
+      "filePath": "tests/chains/test_ralph_workflow.py",
+      "changeType": "modify",
+      "description": "Replace BOTH function-local imports: line 588 and line 2740 (both are `from kodezart.core.soft_failure import NoStructuredOutputError`) with `from kodezart.core.errors import NoStructuredOutputError`. No test body changes.",
+      "rationale": "Same shape as `test_ralph_loop.py`."
+    },
+    {
+      "filePath": "tests/chains/test_ticket_generation.py",
+      "changeType": "modify",
+      "description": "Replace line 9 (`from kodezart.core.soft_failure import NoStructuredOutputError`)with `from kodezart.core.errors import NoStructuredOutputError`. No test body changes.",
+      "rationale": "Module-level single-symbol import."
+    },
+    {
+      "filePath": "tests/core/test_retry.py",
+      "changeType": "modify",
+      "description": "Replace line 6 (`from kodezart.core.soft_failure import NoStructuredOutputError`) with `from kodezart.core.errors import NoStructuredOutputError`. No test body changes.",
+      "rationale": "The retry-policy test imports `NoStructuredOutputError` to verify `should_retry` returns `False` for it."
+    },
+    {
+      "filePath": "tests/core/test_soft_failure.py",
+      "changeType": "delete",
+      "description": "Delete the file. Its replacement (`tests/core/test_error_egress.py`) is created in the next entry with byte-identical test bodies and updated imports + updated module docstring (the docstring update is a direct consequence of the file rename, not a test-body edit).",
+      "rationale": "Rename via delete+create so git records the rename cleanly. The bulk of the nine test functions target `_redact_credentials` and `build_error_event` — both now in `core/error_egress.py`. The two `NoStructuredOutputError`-related assertions are co-located with `build_error_event`'s primitive-pickup tests per the user's resolved direction (rename-single, not two-file split)."
+    },
+    {
+      "filePath": "tests/core/test_error_egress.py",
+      "changeType": "create",
+      "description": "New file with byte-identical test bodies from the deleted `tests/core/test_soft_failure.py`. Two non-body edits: (a) line 1 module docstring `\"\"\"Tests for ``core/soft_failure.py``.\"\"\"` becomes `\"\"\"Tests for ``core/error_egress.py``.\"\"\"` (direct consequence of the file rename); (b) the import block at lines 14-19 changes from `from kodezart.core.soft_failure import (_REDACTION_SENTINEL, NoStructuredOutputError, _redact_credentials, build_error_event,)` to TWO lines in `make format`-canonical alphabetical order: `from kodezart.core.error_egress import (_REDACTION_SENTINEL, _redact_credentials, build_error_event,)` FIRST, then `from kodezart.core.errors import NoStructuredOutputError` SECOND. (`error_egress` < `errors` because underscore precedes `s` in ASCII.) All nine test function bodies (`test_redact_credentials_redacts_embedded_url_token`, `test_redact_credentials_redacts_bare_classic_tokens`, `test_redact_credentials_redacts_fine_grained_pat`, `test_redact_credentials_preserves_non_secret_text`, `test_redact_credentials_is_idempotent`, `test_build_error_event_redacts_token_in_error_field`, `test_build_error_event_redacts_token_in_stderr_tail_field`, `test_build_error_event_no_structured_output_carries_raise_site`, `test_build_error_event_preserves_non_secret_message`) and the `_FAKE_GHP_BODY`/`_FAKE_PAT_BODY`/`_FAKE_URL` module-level fixtures stay byte-identical. The fixture-construction comment at lines 22-25 (about ruff S105/S106 avoidance) stays verbatim.",
+      "rationale": "The renamed test module's coverage matches its new name. The import order is corrected from the v1 draft to match `ruff check --select I --fix` output (`error_egress` before `errors`)."
+    }
+  ],
+  "outOfScope": [
+    "Modifying `src/kodezart/domain/errors.py` in any way. Its zero-`kodezart.*`-imports posture is load-bearing.",
+    "Modifying the moved symbols' bodies, signatures, return shapes, attribute sets, or docstrings beyond cosmetic isort/ruff-format normalization. The decomposition is byte-identical for every moved symbol.",
+    "Promoting `RaiseSite` to a runtime import in either `core/errors.py` or `core/error_egress.py`. BOTH new modules keep `RaiseSite` under `if TYPE_CHECKING:` only — preserves the load-bearing single-authoritative-home invariant.",
+    "Adding new exception classes to `core/errors.py` beyond `NoStructuredOutputError`. The new module ships with exactly one class.",
+    "Adding new functions to `core/stream_drain.py` beyond `drain()`. The new module ships with exactly one coroutine.",
+    "Splitting `_redact_credentials` and `build_error_event` across separate files. They share the egress-time invariant and stay co-located in `core/error_egress.py`.",
+    "Adding a backwards-compatibility re-export shim at `src/kodezart/core/soft_failure.py`. The deletion is unconditional.",
+    "Modifying `src/kodezart/core/retry.py`, `src/kodezart/core/protocols.py`, `src/kodezart/core/logging.py`, `src/kodezart/core/checkpointer.py`, `src/kodezart/core/config.py`, `src/kodezart/core/constants.py`, `src/kodezart/core/__init__.py`. None need edits.",
+    "Modifying any file under `adapters/`, `chains/`, `handlers/`, `services/`, `api/` beyond the import-statement updates enumerated. No body changes.",
+    "Modifying any type or class definition in `src/kodezart/types/domain/agent.py`. Only three prose-only comment lines (22, 23, 237) get a name-reference update.",
+    "Modifying any test body. Tests get import-statement updates only. Includes a hard prohibition on renaming the local variable `soft_failure` at `tests/api/v1/test_agent.py:337,344` — the hygiene check is the tightened grep, not a bare-word grep.",
+    "Renaming `_redact_credentials` or `_REDACTION_SENTINEL` to drop the misleading underscore prefix. The symbols move byte-identical; the underscore-prefix lie is a pre-existing follow-up flagged separately.",
+    "Renaming the new module files (`errors.py`, `stream_drain.py`, `error_egress.py`) to alternative shapes (`no_structured_output.py`, `drain.py`, `egress.py`). The user's resolved direction is the names as given; deviate only with explicit user approval.",
+    "Modifying `Makefile`, `pyproject.toml`, `.github/workflows/check.yml`, or any other build/CI configuration.",
+    "Adding new dependencies to `pyproject.toml`. Zero new packages.",
+    "Adding `# noqa`, `# type: ignore`, `# ruff: noqa`, or any other rule-suppression comment.",
+    "Adding `from __future__ import annotations` to any of the new modules. The current `soft_failure.py` does not use it; preserve that shape.",
+    "Touching `.kodezart/ticket.json` / `.kodezart/criteria.json` workflow artifacts. The hygiene grep is bounded to `src/` and `tests/`.",
+    "Introducing an `__init__.py` re-export pattern that bundles symbols from the three new modules under a single import path."
+  ],
+  "openQuestions": [
+    "Pre-existing follow-up flag (out-of-scope for this fire): `_redact_credentials` and `_REDACTION_SENTINEL` carry leading underscores but are imported across module boundaries by `adapters/claude_agent_executor.py:16`, `adapters/claude_client_executor.py:19`, and `tests/adapters/test_claude_executors.py:13`. The leading underscore is a pre-existing lie about privacy. A follow-up ticket should rename to `redact_credentials` / `REDACTION_SENTINEL`. Do NOT rename in this fire — behavior preservation requires the symbol names move byte-identical.",
+    "Engineer-visible naming concerns (the user's resolved direction stands; do NOT change without explicit user approval): (a) `core/errors.py` is one character off from `domain/errors.py` and contributors must learn the placement rule (peer of `AgentSDKError` with `types/` runtime dep → `core/errors.py`; pure stdlib → `domain/errors.py`); (b) `stream_drain.py` and `error_egress.py` are two-word filenames in a directory where the other seven modules are single-word — if the user wants the convention preserved, `drain.py` and `egress.py` are drop-in alternatives. These are notes, not gating questions."
+  ]
+}
