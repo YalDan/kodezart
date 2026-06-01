@@ -10,10 +10,12 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
+from kodezart.core.error_egress import build_error_event
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, WorkspaceProvider
 from kodezart.core.retry import should_retry
-from kodezart.core.soft_failure import NoStructuredOutputError, build_error_event, drain
+from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WorkspaceError
 from kodezart.prompts.ticket_generation import (
     build_create_prompt,

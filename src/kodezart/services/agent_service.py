@@ -3,9 +3,9 @@
 import sys
 from collections.abc import AsyncGenerator
 
+from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, ChangePersister, WorkspaceProvider
-from kodezart.core.soft_failure import build_error_event
 from kodezart.domain.agent import generate_job_id
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url

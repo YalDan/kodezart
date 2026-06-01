@@ -1,4 +1,4 @@
-"""Tests for ``core/soft_failure.py``.
+"""Tests for ``core/error_egress.py``.
 
 Covers:
 - the credential-redaction helper (``_redact_credentials``)
@@ -11,12 +11,12 @@ from typing import Final
 
 import pytest
 
-from kodezart.core.soft_failure import (
+from kodezart.core.error_egress import (
     _REDACTION_SENTINEL,
-    NoStructuredOutputError,
     _redact_credentials,
     build_error_event,
 )
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import AgentSDKError
 
 # Construct token-like fixtures via concatenation; binding a "ghp_..."
