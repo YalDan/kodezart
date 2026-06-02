@@ -9,10 +9,11 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, GitService, RepoCache
 from kodezart.core.retry import should_retry
-from kodezart.core.soft_failure import NoStructuredOutputError, drain
+from kodezart.core.stream_drain import drain
 from kodezart.prompts import evaluation, iteration_feedback
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,

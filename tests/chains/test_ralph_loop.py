@@ -420,7 +420,7 @@ async def test_loop_workspace_error_yields_error_event() -> None:
     the test expectation is updated to the new exception type but the
     "no structured output" message string is preserved verbatim.
     """
-    from kodezart.core.soft_failure import NoStructuredOutputError
+    from kodezart.core.errors import NoStructuredOutputError
     from kodezart.types.domain.agent import ErrorEvent
 
     executor = FakeAgentExecutor(events=[])
@@ -787,7 +787,7 @@ async def test_evaluate_node_passes_changeset_to_build_prompt(
 
 async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> None:
     """Evaluator without structured output raises NoStructuredOutputError(evaluator)."""
-    from kodezart.core.soft_failure import NoStructuredOutputError
+    from kodezart.core.errors import NoStructuredOutputError
 
     class NullEvaluatorExecutor:
         """Drives execute-then-evaluate; evaluator yields structured_output=None."""

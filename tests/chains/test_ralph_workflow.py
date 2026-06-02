@@ -585,7 +585,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         artifact_persister=None,
     )
 
-    from kodezart.core.soft_failure import NoStructuredOutputError
+    from kodezart.core.errors import NoStructuredOutputError
 
     with pytest.raises(NoStructuredOutputError, match="acceptance criteria") as excinfo:
         _ = [
@@ -2737,7 +2737,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
     None
 ):
     """NoStructuredOutputError(raise_site="branch_name") on missing branch output."""
-    from kodezart.core.soft_failure import NoStructuredOutputError
+    from kodezart.core.errors import NoStructuredOutputError
 
     class NullBranchNameExecutor:
         """Returns ResultEvent(structured_output=None) for branch-name schema."""

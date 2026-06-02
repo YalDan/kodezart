@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.ticket_generation import TicketGenerationLoop
-from kodezart.core.soft_failure import NoStructuredOutputError
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,

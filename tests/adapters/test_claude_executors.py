@@ -10,7 +10,7 @@ from claude_agent_sdk import ProcessError
 
 from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
-from kodezart.core.soft_failure import _REDACTION_SENTINEL
+from kodezart.core.error_egress import _REDACTION_SENTINEL
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 

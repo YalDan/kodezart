@@ -15,6 +15,7 @@ from kodezart.core.constants import (
     EVAL_TOOLS,
     EVAL_TOOLS_WITH_AGENT,
 )
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
@@ -28,7 +29,7 @@ from kodezart.core.protocols import (
     TicketGenerator,
 )
 from kodezart.core.retry import should_retry
-from kodezart.core.soft_failure import NoStructuredOutputError, drain
+from kodezart.core.stream_drain import drain
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.ticket import format_ticket_as_task

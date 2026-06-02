@@ -17,9 +17,10 @@ divergence-recovery path fails — in that case no state has been
 mutated (no reset, no commit-tree, no follow-up push).
 """
 
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, GitService
-from kodezart.core.soft_failure import NoStructuredOutputError, drain
+from kodezart.core.stream_drain import drain
 from kodezart.prompts import commit_message
 from kodezart.types.domain.agent import (
     COMMIT_MESSAGE_SCHEMA,
