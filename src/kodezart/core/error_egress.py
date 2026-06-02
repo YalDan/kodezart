@@ -31,7 +31,7 @@ _GH_FINEGRAINED_PAT_PATTERN: re.Pattern[str] = re.compile(
 )
 
 
-def _redact_credentials(s: str) -> str:
+def redact_credentials(s: str) -> str:
     """Replace GitHub credential patterns with the redaction sentinel.
 
     Applied at the two ErrorEvent egress fields below and at both
@@ -91,7 +91,7 @@ def build_error_event(exc: Exception) -> ErrorEvent:
         stderr_tail = exc.stderr_tail
 
     return ErrorEvent(
-        error=_redact_credentials(str(exc)),
+        error=redact_credentials(str(exc)),
         error_kind=error_kind,
         cause_class=cause_class,
         stop_reason=stop_reason,
@@ -99,6 +99,6 @@ def build_error_event(exc: Exception) -> ErrorEvent:
         rate_limit_rejected=rate_limit_rejected,
         exit_code=exit_code,
         stderr_tail=(
-            _redact_credentials(stderr_tail) if stderr_tail is not None else None
+            redact_credentials(stderr_tail) if stderr_tail is not None else None
         ),
     )

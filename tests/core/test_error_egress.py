@@ -1,7 +1,7 @@
 """Tests for ``core/error_egress.py``.
 
 Covers:
-- the credential-redaction helper (``_redact_credentials``)
+- the credential-redaction helper (``redact_credentials``)
 - ``build_error_event`` applies the helper to both leak-carrying fields
 - ``build_error_event`` carries primitives from ``NoStructuredOutputError``
 - ``build_error_event`` preserves non-secret message text verbatim
@@ -13,8 +13,8 @@ import pytest
 
 from kodezart.core.error_egress import (
     _REDACTION_SENTINEL,
-    _redact_credentials,
     build_error_event,
+    redact_credentials,
 )
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import AgentSDKError
@@ -32,7 +32,7 @@ _FAKE_URL: Final[str] = (
 
 def test_redact_credentials_redacts_embedded_url_token() -> None:
     """The ``x-access-token:<token>@`` URL form is scrubbed in place."""
-    redacted = _redact_credentials(_FAKE_URL)
+    redacted = redact_credentials(_FAKE_URL)
     assert _FAKE_GHP_BODY not in redacted
     # Scheme + host + path survive — only the secret body is replaced.
     assert "https://x-access-token:" in redacted
@@ -45,7 +45,7 @@ def test_redact_credentials_redacts_bare_classic_tokens(prefix: str) -> None:
     """Each classic GitHub token prefix is scrubbed; surrounding text survives."""
     body = "A" * 40
     src = f"prefix line: {prefix}{body} trailing"
-    redacted = _redact_credentials(src)
+    redacted = redact_credentials(src)
     assert body not in redacted
     assert _REDACTION_SENTINEL in redacted
     assert "prefix line:" in redacted
@@ -55,7 +55,7 @@ def test_redact_credentials_redacts_bare_classic_tokens(prefix: str) -> None:
 def test_redact_credentials_redacts_fine_grained_pat() -> None:
     """``github_pat_`` fine-grained PAT is scrubbed in full."""
     src = f"github_pat_{_FAKE_PAT_BODY}"
-    redacted = _redact_credentials(src)
+    redacted = redact_credentials(src)
     assert _FAKE_PAT_BODY not in redacted
     assert _REDACTION_SENTINEL in redacted
 
@@ -70,13 +70,13 @@ def test_redact_credentials_redacts_fine_grained_pat() -> None:
 )
 def test_redact_credentials_preserves_non_secret_text(src: str) -> None:
     """Non-secret prose, branch names, and short suffixes are untouched."""
-    assert _redact_credentials(src) == src
+    assert redact_credentials(src) == src
 
 
 def test_redact_credentials_is_idempotent() -> None:
     """Re-applying redaction to already-redacted text is a no-op."""
-    once = _redact_credentials(_FAKE_URL)
-    twice = _redact_credentials(once)
+    once = redact_credentials(_FAKE_URL)
+    twice = redact_credentials(once)
     assert once == twice
 
 
