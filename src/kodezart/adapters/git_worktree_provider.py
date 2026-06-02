@@ -1,4 +1,11 @@
-"""Git worktree workspace provider — local + remote repo support."""
+"""Git worktree workspace provider — local + remote repo support.
+
+Recovery-via-backup-branch is intentionally disabled; re-introducing it
+must be via the typed state contract (a ``WorkflowState`` field plus an
+SSE event) — see the consolidation plan's out-of-scope note.  Until
+then, a dirty release surfaces as a structured ``workspace_release_unclean``
+warning rather than a silent ``-backup-<hex>`` push.
+"""
 
 import tempfile
 from dataclasses import dataclass
@@ -7,7 +14,6 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService, RepoCache
 from kodezart.domain.agent import generate_job_id
 from kodezart.domain.errors import WorkspaceError
-from kodezart.types.domain.branch import BackupBranchName
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +31,11 @@ class GitWorktreeProvider:
     """Disposable Git worktrees in ``/tmp`` for agent execution.
 
     Implements the ``WorkspaceProvider`` protocol.
+
+    Recovery-via-backup-branch is intentionally disabled; re-introducing
+    it must be via the typed state contract — see the consolidation
+    plan's out-of-scope note.  Dirty release emits a structured warning
+    and removes the worktree; it does NOT push to any backup ref.
     """
 
     def __init__(
@@ -87,7 +98,13 @@ class GitWorktreeProvider:
             raise WorkspaceError(str(exc)) from exc
 
     async def release(self, workspace_path: str) -> None:
-        """Remove a tracked worktree and clean up its directory."""
+        """Remove a tracked worktree and clean up its directory.
+
+        Dirty release emits a ``workspace_release_unclean`` warning but
+        does NOT push to any backup branch.  Persister failures upstream
+        should surface as their own loud errors rather than be masked
+        here.
+        """
         info = self._workspaces.pop(workspace_path, None)
         if info is None:
             await self._log.awarning(
@@ -95,50 +112,38 @@ class GitWorktreeProvider:
                 path=workspace_path,
             )
             return
-        await self._backup_if_needed(workspace_path, info)
+        await self._log_release_state(workspace_path, info)
         await self._git.remove_worktree(info.repo_path, workspace_path)
         await self._log.ainfo("workspace_released", job_id=info.job_id)
 
-    async def _backup_if_needed(
+    async def _log_release_state(
         self,
         workspace_path: str,
         info: _WorkspaceInfo,
     ) -> None:
-        """Commit uncommitted changes and push to a backup branch before deletion.
+        """Emit a structured warning when releasing a dirty workspace.
 
-        This lives here (not in a decorator) because _WorkspaceInfo already
-        tracks per-workspace state, mypy strict blocks ``**kwargs`` pass-through
-        on the 6-param ``acquire()`` signature, and backup on clean worktrees is
-        a no-op (one git-status call), so selective wiring adds complexity
-        with zero behavioral difference.
+        No backup-branch push, no commit, no recovery.  Dirty state at
+        release is a programming error elsewhere; surfacing it loudly is
+        the new contract.
         """
-        if info.branch_name is None:
-            return
+        # TODO(resume): re-entering a checkpointed run from this worktree is
+        # not yet wired — see the time-travel TODOs in ralph_loop / ralph_workflow.
         try:
-            if await self._git.has_changes(workspace_path):
-                await self._git.add_all(workspace_path)
-                await self._git.commit(
-                    cwd=workspace_path,
-                    message="kodezart: emergency backup of in-progress work",
-                    author_name=self._committer_name,
-                    author_email=self._committer_email,
-                )
-            backup = BackupBranchName(
-                source_branch=info.branch_name,
-                job_id_prefix=info.job_id[:8],
-            )
-            backup_branch = str(backup)
-            await self._git.push(workspace_path, backup_branch)
-            await self._log.ainfo(
-                "workspace_backed_up",
-                backup_branch=backup_branch,
-                job_id=info.job_id,
-            )
+            dirty = await self._git.has_changes(workspace_path)
         except Exception as exc:
             await self._log.awarning(
-                "workspace_backup_failed",
+                "workspace_release_status_unknown",
                 error=str(exc),
                 job_id=info.job_id,
+            )
+            return
+        if dirty:
+            await self._log.awarning(
+                "workspace_release_unclean",
+                job_id=info.job_id,
+                branch_name=info.branch_name,
+                path=workspace_path,
             )
 
     async def _resolve(

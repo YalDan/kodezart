@@ -1,6 +1,6 @@
 """Workflow state definitions for the ralph loop and outer pipeline."""
 
-from typing import Self, TypedDict
+from typing import NotRequired, Self, TypedDict
 
 from langchain_core.runnables import RunnableConfig
 from pydantic import ConfigDict, Field
@@ -83,16 +83,31 @@ class TicketGenerationState(TypedDict):
 
 
 class RalphLoopState(TypedDict):
-    """State for the quality gating loop (execute -> evaluate -> iterate)."""
+    """State for the quality gating loop (execute -> evaluate -> iterate).
+
+    ``iteration_commit_sha`` is NotRequired (PEP 655): on iter 1 it
+    starts absent, then is written by ``_execute_node`` every iteration
+    with the per-iter commit SHA (or ``None`` on no-change iters).
+    ``_evaluate_node`` reads it via ``state.get(...)``.  There is no
+    cumulative iteration SHA field — that would clobber the per-iter
+    semantic of the SSE event.
+    """
 
     iteration: int
     accepted: bool
     pending_failures: list[CriterionResult]
-    last_commit_sha: str | None
+    iteration_commit_sha: NotRequired[str | None]
 
 
 class WorkflowState(TypedDict):
-    """State for the outer workflow pipeline."""
+    """State for the outer workflow pipeline.
+
+    ``feature_tip_sha`` is the canonical feature-branch tip SHA after the
+    last successful consolidation; ``None`` until ``_merge_to_feature_node``
+    runs.  ``review_base_sha`` / ``review_head_sha`` are the exact 40-char
+    SHAs the evaluator's ``ChangesetDigest`` is computed between — set by
+    consolidation nodes, read by ``_review_against_ticket_node``.
+    """
 
     feature_branch: str
     ralph_branch: str
@@ -100,7 +115,9 @@ class WorkflowState(TypedDict):
     acceptance_criteria: list[str]
     accepted: bool
     total_iterations: int
-    last_commit_sha: str | None
+    feature_tip_sha: str | None
+    review_base_sha: str | None
+    review_head_sha: str | None
     merged: bool
     merge_error: str | None
     review_passed: bool

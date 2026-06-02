@@ -1,12 +1,15 @@
 """Agent service — orchestrates agent execution as SSE event streams."""
 
+import sys
 from collections.abc import AsyncGenerator
 
+from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, ChangePersister, WorkspaceProvider
+from kodezart.domain.agent import generate_job_id
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
-from kodezart.types.domain.agent import AgentEvent, ErrorEvent, ResultEvent
+from kodezart.types.domain.agent import AgentEvent, ResultEvent
 
 
 class AgentService:
@@ -146,7 +149,20 @@ class AgentService:
                 cache_key=cache_key,
             )
         except WorkspaceError as exc:
-            yield ErrorEvent(error=str(exc))
+            # Log at exception level BEFORE yielding the typed
+            # ``ErrorEvent``.  Never silently downgrade a failed
+            # workspace acquire to a bare yielded event with no log
+            # line — that masks the failure in production observability.
+            # ``exc_info=sys.exc_info()`` is passed explicitly to harden
+            # against async-executor context loss
+            # (hynek/structlog#488 class).
+            await self._log.aexception(
+                "agent_service_workspace_acquire_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+                exc_info=sys.exc_info(),
+            )
+            yield build_error_event(exc)
             return
 
         try:
@@ -165,10 +181,12 @@ class AgentService:
                     yield event
 
             if persist_branch and self._persister and buffered_result:
+                backup_ref_id_prefix = (session_id or generate_job_id())[:8]
                 persist_result = await self._persister.persist(
                     workspace_path=workspace_path,
                     branch=persist_branch,
                     executor=self._executor,
+                    backup_ref_id_prefix=backup_ref_id_prefix,
                 )
                 if persist_result:
                     buffered_result = buffered_result.model_copy(

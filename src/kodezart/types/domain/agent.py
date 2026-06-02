@@ -11,6 +11,29 @@ from pydantic import (
 )
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.consolidation import ConsolidationStatus
+
+# ---------------------------------------------------------------------------
+# Soft-failure raise-site identifier (typed alias)
+# ---------------------------------------------------------------------------
+#
+# ``RaiseSite`` is defined here — the upstream end of the dependency
+# chain — so that both ``types/domain/agent.ErrorEvent`` and
+# ``core/errors.NoStructuredOutputError`` can refer to the SAME typed
+# alias.  ``core/errors.py`` imports ``RaiseSite`` from this
+# module; ``ErrorEvent.raise_site`` references it directly.  Drift
+# between two parallel ``Literal`` lists is structurally impossible.
+
+RaiseSite = Literal[
+    "ticket_creator",
+    "ticket_reviewer",
+    "branch_name",
+    "acceptance_criteria",
+    "ralph_evaluator",
+    "post_merge_review",
+    "pr_description",
+    "commit_message",
+]
 
 # ---------------------------------------------------------------------------
 # Ticket-generation structured outputs
@@ -199,10 +222,35 @@ class StreamDataEvent(AgentEvent):
 
 
 class ErrorEvent(AgentEvent):
-    """Error event emitted on agent or workspace failure."""
+    """Error event emitted on agent or workspace failure.
+
+    Wire shape locked with ``extra="forbid"`` — a future field-name
+    typo on the producer side raises at validation time rather than
+    silently breaking downstream SSE consumers.
+
+    The typed optional fields below promote the genuinely consumed
+    observability slots to top-level named attributes, replacing the
+    previous draft's ``details: dict[str, object]`` bag.  Each is
+    independently type-checkable by downstream consumers.
+
+    The ``raise_site`` field references the ``RaiseSite`` typed alias
+    defined above in this module.  ``core/errors.py`` imports
+    the SAME alias, so the eight-literal enumeration has exactly one
+    authoritative definition and any future addition is enforced
+    everywhere by ``mypy``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     type: Literal["error"] = "error"
     error: str
+    error_kind: str | None = None
+    cause_class: str | None = None
+    stop_reason: str | None = None
+    raise_site: RaiseSite | None = None
+    rate_limit_rejected: bool | None = None
+    exit_code: int | None = None
+    stderr_tail: str | None = None
 
 
 class RateLimitWarningEvent(AgentEvent):
@@ -305,6 +353,24 @@ class WorkflowIterationEvent(AgentEvent):
     commit_sha: str | None = None
     accepted: bool
     evaluation: AcceptanceCriteriaOutput
+
+
+class WorkflowConsolidationEvent(AgentEvent):
+    """Emitted after every `BranchMerger.consolidate(...)` call.
+
+    Reports the four-way outcome (``ALREADY_INTEGRATED``,
+    ``FAST_FORWARDED``, ``DIVERGENT``, ``SOURCE_MISSING``) without
+    routing semantics — routing lives in the workflow graph's
+    conditional edges, not on this event.  No ``phase`` field: both
+    emission sites (post-loop and post-fix) are distinguished by
+    event ordering relative to ``WorkflowReviewEvent``.
+    """
+
+    type: Literal["workflow_consolidation"] = "workflow_consolidation"
+    status: ConsolidationStatus
+    feature_branch: str = Field(min_length=1)
+    source_branch: str = Field(min_length=1)
+    feature_tip_sha: str = Field(min_length=40, max_length=40)
 
 
 class WorkflowCompleteEvent(AgentEvent):

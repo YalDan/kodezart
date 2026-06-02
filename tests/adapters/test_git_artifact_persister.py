@@ -47,7 +47,7 @@ async def test_persist_creates_kodezart_files_and_pushes(
     tmp_path: Path,
 ) -> None:
     repo, bare = git_env
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,
@@ -88,7 +88,7 @@ async def test_clean_removes_kodezart_directory(
     tmp_path: Path,
 ) -> None:
     repo, bare = git_env
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,
@@ -131,7 +131,7 @@ async def test_clean_noop_when_no_artifacts(
     tmp_path: Path,
 ) -> None:
     repo, _bare = git_env
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,

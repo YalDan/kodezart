@@ -9,9 +9,11 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner
+from kodezart.core.protocols import AgentRunner, GitService, RepoCache
 from kodezart.core.retry import should_retry
+from kodezart.core.stream_drain import drain
 from kodezart.prompts import evaluation, iteration_feedback
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
@@ -35,12 +37,20 @@ class RalphLoop:
         service: AgentRunner,
         *,
         max_iterations: int,
+        git: GitService,
+        cache: RepoCache,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
     ) -> None:
         self._service = service
         self._max_iterations = max_iterations
+        # git/cache are injected solely so _evaluate_node can pre-compute
+        # the ChangesetDigest passed to evaluation.build_prompt — the loop
+        # does NOT take on canonical-tip bookkeeping (the outer engine's
+        # merger does that internally).
+        self._git: GitService = git
+        self._cache: RepoCache = cache
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
             initial_interval=retry_initial_interval,
@@ -93,7 +103,6 @@ class RalphLoop:
             "iteration": 0,
             "accepted": False,
             "pending_failures": [],
-            "last_commit_sha": None,
         }
 
         # TODO(time-travel): For E2E checkpoint resume, two changes needed:
@@ -171,7 +180,7 @@ class RalphLoop:
 
         return {
             "iteration": iteration,
-            "last_commit_sha": commit_sha,
+            "iteration_commit_sha": commit_sha,
         }
 
     async def _evaluate_node(
@@ -181,28 +190,48 @@ class RalphLoop:
     ) -> dict[str, object]:
         ctx = RalphLoopContext.from_configurable(config)
         writer = get_stream_writer()
-        eval_prompt = evaluation.build_prompt(ctx.acceptance_criteria)
-        result_event: ResultEvent | None = None
+        cwd = (
+            ctx.repo_path
+            if ctx.repo_path is not None
+            else await self._cache.ensure_available(
+                ctx.repo_url or "",
+                ctx.cache_key,
+            )
+        )
+        changeset = await self._git.diff_summary(
+            cwd=cwd,
+            base_ref=ctx.base_branch,
+            head_ref=ctx.ralph_branch,
+        )
+        eval_prompt = evaluation.build_prompt(
+            criteria=ctx.acceptance_criteria,
+            changeset=changeset,
+        )
 
-        async for event in self._service.stream(
-            prompt=eval_prompt,
-            repo_path=ctx.repo_path,
-            repo_url=ctx.repo_url,
-            branch=ctx.ralph_branch,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=EVAL_TOOLS,
-            output_format={
-                "type": "json_schema",
-                "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-            },
-            cache_key=ctx.cache_key,
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream(
+                prompt=eval_prompt,
+                repo_path=ctx.repo_path,
+                repo_url=ctx.repo_url,
+                branch=ctx.ralph_branch,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=EVAL_TOOLS,
+                output_format={
+                    "type": "json_schema",
+                    "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                },
+                cache_key=ctx.cache_key,
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Evaluator produced no structured output."
-            raise RuntimeError(msg)
+            raise NoStructuredOutputError(
+                msg,
+                raise_site="ralph_evaluator",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         output = AcceptanceCriteriaOutput.model_validate(
             result_event.structured_output,
@@ -215,7 +244,7 @@ class RalphLoop:
             WorkflowIterationEvent(
                 iteration=state["iteration"],
                 branch=ctx.ralph_branch,
-                commit_sha=state["last_commit_sha"],
+                commit_sha=state.get("iteration_commit_sha"),
                 accepted=accepted,
                 evaluation=output,
             )

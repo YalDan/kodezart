@@ -16,6 +16,11 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowTicketEvent,
 )
+from kodezart.types.domain.consolidation import (
+    ChangesetDigest,
+    ConsolidationOutcome,
+    ConsolidationStatus,
+)
 from kodezart.types.domain.persist import PersistResult
 
 
@@ -26,10 +31,29 @@ class FakeGitService:
         self,
         has_changes_result: bool = False,
         remote_branches: list[str] | None = None,
+        *,
+        remote_branch_shas: dict[str, str | None] | None = None,
+        ancestor_pairs: set[tuple[str, str]] | None = None,
+        diff_digests: dict[tuple[str, str], ChangesetDigest] | None = None,
+        trees: dict[str, str] | None = None,
+        commit_tree_result: str = "c" * 40,
+        push_error: Exception | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.has_changes_result: bool = has_changes_result
         self._remote_branches: list[str] = remote_branches or []
+        self._remote_branch_shas: dict[str, str | None] = (
+            dict(remote_branch_shas) if remote_branch_shas is not None else {}
+        )
+        self._ancestor_pairs: set[tuple[str, str]] = (
+            set(ancestor_pairs) if ancestor_pairs is not None else set()
+        )
+        self._diff_digests: dict[tuple[str, str], ChangesetDigest] = (
+            dict(diff_digests) if diff_digests is not None else {}
+        )
+        self._trees: dict[str, str] = dict(trees) if trees is not None else {}
+        self._commit_tree_result: str = commit_tree_result
+        self._push_error: Exception | None = push_error
 
     async def validate_repo(self, repo_path: str) -> None:
         self.calls.append(("validate_repo", repo_path))
@@ -80,6 +104,9 @@ class FakeGitService:
 
     async def push(self, cwd: str, branch: str) -> None:
         self.calls.append(("push", cwd, branch))
+        if self._push_error is not None:
+            err, self._push_error = self._push_error, None
+            raise err
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None:
         self.calls.append(("merge_branch", cwd, source_branch))
@@ -87,6 +114,10 @@ class FakeGitService:
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
         return "a" * 40
+
+    async def head_commit_message(self, cwd: str) -> str:
+        self.calls.append(("head_commit_message", cwd))
+        return "fake: HEAD commit message"
 
     async def delete_remote_branch(
         self,
@@ -104,6 +135,69 @@ class FakeGitService:
     ) -> list[str]:
         self.calls.append(("list_remote_branches", cwd, remote, prefix))
         return [b for b in self._remote_branches if b.startswith(prefix)]
+
+    async def is_ancestor(
+        self,
+        cwd: str,
+        ancestor_ref: str,
+        descendant_ref: str,
+    ) -> bool:
+        self.calls.append(("is_ancestor", cwd, ancestor_ref, descendant_ref))
+        return (ancestor_ref, descendant_ref) in self._ancestor_pairs
+
+    async def remote_branch_sha(
+        self,
+        cwd: str,
+        remote: str,
+        branch: str,
+    ) -> str | None:
+        self.calls.append(("remote_branch_sha", cwd, remote, branch))
+        if branch in self._remote_branch_shas:
+            return self._remote_branch_shas[branch]
+        # Defaults: treat all branches as present at a deterministic SHA
+        # so existing tests are not forced to opt into a remote-shas dict.
+        # Tests that need to assert SOURCE_MISSING set the entry to None.
+        return "f" * 40
+
+    async def diff_summary(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+    ) -> ChangesetDigest:
+        self.calls.append(("diff_summary", cwd, base_ref, head_ref))
+        if (base_ref, head_ref) in self._diff_digests:
+            return self._diff_digests[(base_ref, head_ref)]
+        if base_ref == head_ref:
+            return ChangesetDigest(
+                file_paths=[],
+                commit_subjects=[],
+                commit_count=0,
+            )
+        return ChangesetDigest(
+            file_paths=["fake.py"],
+            commit_subjects=["feat: scripted"],
+            commit_count=1,
+        )
+
+    async def reset_hard(self, cwd: str, ref: str) -> None:
+        self.calls.append(("reset_hard", cwd, ref))
+
+    async def tree_of(self, cwd: str, ref: str) -> str:
+        self.calls.append(("tree_of", cwd, ref))
+        return self._trees.get(ref, "t" * 40)
+
+    async def commit_tree(
+        self,
+        cwd: str,
+        tree: str,
+        parent: str,
+        message: str,
+        author_name: str,
+        author_email: str,
+    ) -> str:
+        self.calls.append(("commit_tree", cwd, tree, parent, message))
+        return self._commit_tree_result
 
 
 class FakeAgentExecutor:
@@ -385,25 +479,47 @@ class FakeChangePersister:
         workspace_path: str,
         branch: str,
         executor: AgentExecutor,
+        backup_ref_id_prefix: str,
     ) -> PersistResult | None:
-        self.calls.append({"workspace_path": workspace_path, "branch": branch})
+        self.calls.append(
+            {
+                "workspace_path": workspace_path,
+                "branch": branch,
+                "backup_ref_id_prefix": backup_ref_id_prefix,
+            }
+        )
         return self._result
 
 
 class FakeBranchMerger:
+    """Fake BranchMerger that scripts ConsolidationOutcomes.
+
+    Default queue (empty/absent) yields ``FAST_FORWARDED`` with a
+    deterministic 40-char SHA so existing default-construct call sites
+    continue to pass.
+    """
+
     def __init__(
         self,
         *,
         merge_sha: str = "m" * 40,
-        fail: Exception | None = None,
-        fail_cleanup: Exception | None = None,
+        consolidation_outcomes: list[ConsolidationOutcome] | None = None,
     ) -> None:
         self._merge_sha = merge_sha
-        self._fail = fail
-        self._fail_cleanup = fail_cleanup
-        self.calls: list[dict[str, str | None]] = []
+        self._outcomes: list[ConsolidationOutcome] = (
+            list(consolidation_outcomes) if consolidation_outcomes is not None else []
+        )
+        self.calls: list[dict[str, object]] = []
 
-    async def merge_and_push(
+    def _next_outcome(self) -> ConsolidationOutcome:
+        if self._outcomes:
+            return self._outcomes.pop(0)
+        return ConsolidationOutcome(
+            status=ConsolidationStatus.FAST_FORWARDED,
+            feature_tip_sha=self._merge_sha,
+        )
+
+    async def consolidate(
         self,
         *,
         repo_path: str | None,
@@ -412,34 +528,22 @@ class FakeBranchMerger:
         feature_branch: str,
         source_branch: str,
         cache_key: str | None = None,
-    ) -> str:
+    ) -> ConsolidationOutcome:
+        outcome = self._next_outcome()
         self.calls.append(
             {
+                "method": "consolidate",
                 "repo_path": repo_path,
                 "repo_url": repo_url,
                 "base_branch": base_branch,
                 "feature_branch": feature_branch,
                 "source_branch": source_branch,
+                "cache_key": cache_key,
+                "status": outcome.status,
+                "feature_tip_sha": outcome.feature_tip_sha,
             }
         )
-        if self._fail is not None:
-            raise self._fail
-        return self._merge_sha
-
-    async def cleanup_source(
-        self,
-        *,
-        repo_path: str | None,
-        repo_url: str | None,
-        source_branch: str,
-        cache_key: str | None = None,
-    ) -> None:
-        self.calls.append(
-            {
-                "method": "cleanup_source",
-                "source_branch": source_branch,
-            }
-        )
+        return outcome
 
     async def cleanup_backup_branches(
         self,

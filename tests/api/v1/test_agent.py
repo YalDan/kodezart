@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncGenerator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.main import create_app
@@ -18,23 +18,25 @@ from tests.fakes import (
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
+    FakeGitService,
     FakeQualityGate,
     FakeRaisingExecutor,
+    FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     make_passing_evaluation,
 )
 
 
-async def _collect_sse_events(response) -> list[dict]:
-    events = []
+async def _collect_sse_events(response: Response) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
     async for line in response.aiter_lines():
         if line.startswith("data: "):
             events.append(json.loads(line[6:]))
     return events
 
 
-async def test_stream_query_returns_events(agent_client: AsyncClient):
+async def test_stream_query_returns_events(agent_client: AsyncClient) -> None:
     async with agent_client.stream(
         "POST",
         "/api/v1/agent/query",
@@ -54,7 +56,7 @@ async def test_stream_query_returns_events(agent_client: AsyncClient):
     assert result_event.session_id == "test-session"
 
 
-async def test_stream_query_workspace_failure():
+async def test_stream_query_workspace_failure() -> None:
     app = create_app()
     app.state.agent_service = AgentService(
         executor=FakeAgentExecutor(events=[]),
@@ -76,7 +78,7 @@ async def test_stream_query_workspace_failure():
     assert "Not a git repository" in error_event.error
 
 
-async def test_stream_query_validates_request_body(agent_client: AsyncClient):
+async def test_stream_query_validates_request_body(agent_client: AsyncClient) -> None:
     response = await agent_client.post(
         "/api/v1/agent/query",
         json={"prompt": "", "repoPath": "/tmp/fake"},
@@ -189,6 +191,9 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
         artifact_persister=None,
     )
     app.state.agent_service = service
@@ -246,8 +251,12 @@ async def test_workflow_streams_criteria_event_via_sse(
     )
 
     criteria_event = events[criteria_idx]
-    assert len(criteria_event["criteria"]) > 0
-    assert len(criteria_event["reasoning"]) > 0
+    criteria_field = criteria_event["criteria"]
+    reasoning_field = criteria_event["reasoning"]
+    assert isinstance(criteria_field, list)
+    assert isinstance(reasoning_field, str)
+    assert len(criteria_field) > 0
+    assert len(reasoning_field) > 0
 
 
 async def test_workflow_rejects_acceptance_criteria_in_body(
@@ -265,7 +274,7 @@ async def test_workflow_rejects_acceptance_criteria_in_body(
     assert response.status_code == 422
 
 
-async def test_stream_query_handler_catches_executor_error():
+async def test_stream_query_handler_catches_executor_error() -> None:
     app = create_app()
     app.state.agent_service = AgentService(
         executor=FakeRaisingExecutor(RuntimeError("transient failure")),
@@ -285,3 +294,69 @@ async def test_stream_query_handler_catches_executor_error():
     assert len(events) == 1
     error_event = ErrorEvent.model_validate(events[0])
     assert "transient failure" in error_event.error
+
+
+async def test_error_event_carries_exception_class_on_runtime_path() -> None:
+    """Bare RuntimeError surfaces as ErrorEvent(error_kind='RuntimeError')."""
+    app = create_app()
+    app.state.agent_service = AgentService(
+        executor=FakeRaisingExecutor(RuntimeError("x")),
+        workspace=FakeWorkspaceProvider(),
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        async with ac.stream(
+            "POST",
+            "/api/v1/agent/query",
+            json={"prompt": "analyze", "repoPath": "/tmp/fake"},
+        ) as response:
+            events = await _collect_sse_events(response)
+
+    assert len(events) == 1
+    payload = events[0]
+    error_event = ErrorEvent.model_validate(payload)
+    assert error_event.error == "x"
+    assert error_event.error_kind == "RuntimeError"
+    assert error_event.cause_class is None
+    assert error_event.raise_site is None
+    assert error_event.exit_code is None
+    assert error_event.stderr_tail is None
+    # Tracebacks NEVER appear on the wire — they go on the log record
+    # via exc_info, not on ErrorEvent.error.
+    assert "Traceback (most recent call last)" not in error_event.error
+    assert '\n  File "' not in error_event.error
+
+
+async def test_error_event_carries_no_structured_output_payload() -> None:
+    """NoStructuredOutputError surfaces raise_site/rate_limit_rejected populated."""
+    from kodezart.core.errors import NoStructuredOutputError
+
+    app = create_app()
+    soft_failure = NoStructuredOutputError(
+        "Creator produced no structured output.",
+        raise_site="ticket_creator",
+        result_event=None,
+        rate_limit_rejected=False,
+    )
+    app.state.agent_service = AgentService(
+        executor=FakeRaisingExecutor(soft_failure),
+        workspace=FakeWorkspaceProvider(),
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        async with ac.stream(
+            "POST",
+            "/api/v1/agent/query",
+            json={"prompt": "analyze", "repoPath": "/tmp/fake"},
+        ) as response:
+            events = await _collect_sse_events(response)
+
+    assert len(events) == 1
+    error_event = ErrorEvent.model_validate(events[0])
+    assert error_event.error_kind == "NoStructuredOutputError"
+    assert error_event.raise_site == "ticket_creator"
+    assert error_event.rate_limit_rejected is False

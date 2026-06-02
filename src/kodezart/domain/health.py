@@ -1,8 +1,10 @@
 """Pure domain logic for health checks — no I/O, no side effects."""
 
+from importlib.metadata import version
+
 from kodezart.types.domain.health import HealthStatus
 
-_APP_VERSION = "0.1.0"
+_APP_VERSION = version("kodezart")
 
 
 def check_health() -> HealthStatus:

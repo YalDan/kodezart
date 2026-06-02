@@ -4,6 +4,10 @@ from collections.abc import AsyncIterator, Mapping
 from typing import Protocol, runtime_checkable
 
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.consolidation import (
+    ChangesetDigest,
+    ConsolidationOutcome,
+)
 from kodezart.types.domain.persist import PersistResult
 
 
@@ -64,6 +68,14 @@ class GitService(Protocol):
 
     async def current_sha(self, cwd: str) -> str: ...
 
+    async def head_commit_message(self, cwd: str) -> str:
+        """Full commit message of HEAD.
+
+        Maps to ``git log -1 --format=%B HEAD`` with the trailing
+        newline stripped.
+        """
+        ...
+
     async def delete_remote_branch(
         self,
         cwd: str,
@@ -78,6 +90,75 @@ class GitService(Protocol):
         prefix: str,
     ) -> list[str]:
         """List remote branch names starting with *prefix*."""
+        ...
+
+    async def is_ancestor(
+        self,
+        cwd: str,
+        ancestor_ref: str,
+        descendant_ref: str,
+    ) -> bool:
+        """True iff *ancestor_ref* is reachable from *descendant_ref*.
+
+        Maps to ``git merge-base --is-ancestor`` (exit 0 → True,
+        exit 1 → False, any other exit raises).
+        """
+        ...
+
+    async def remote_branch_sha(
+        self,
+        cwd: str,
+        remote: str,
+        branch: str,
+    ) -> str | None:
+        """Tip SHA of *branch* on *remote*, or ``None`` when absent.
+
+        Maps to ``git ls-remote --exit-code --heads <remote> refs/heads/<branch>``
+        (exit 0 → SHA, exit 2 → None, any other exit raises).  Does NOT
+        invoke ``git fetch`` — ls-remote queries the remote directly.
+        """
+        ...
+
+    async def diff_summary(
+        self,
+        cwd: str,
+        base_ref: str,
+        head_ref: str,
+    ) -> ChangesetDigest:
+        """File paths and commit subjects for ``base_ref..head_ref``.
+
+        Empty digest when refs are equal.
+        """
+        ...
+
+    async def reset_hard(self, cwd: str, ref: str) -> None:
+        """Hard-reset working tree + index + HEAD to *ref*.
+
+        Maps to ``git reset --hard <ref>``.
+        """
+        ...
+
+    async def tree_of(self, cwd: str, ref: str) -> str:
+        """Tree SHA reachable from *ref*.
+
+        Maps to ``git rev-parse <ref>^{tree}``.
+        """
+        ...
+
+    async def commit_tree(
+        self,
+        cwd: str,
+        tree: str,
+        parent: str,
+        message: str,
+        author_name: str,
+        author_email: str,
+    ) -> str:
+        """Create a commit object referencing *tree* with one *parent* and *message*.
+
+        Maps to ``git commit-tree <tree> -p <parent> -m <message>``. Returns
+        the new commit SHA.
+        """
         ...
 
 
@@ -144,16 +225,29 @@ class ChangePersister(Protocol):
         workspace_path: str,
         branch: str,
         executor: AgentExecutor,
+        backup_ref_id_prefix: str,
     ) -> PersistResult | None:
-        """Commit and push changes. ``None`` if clean."""
+        """Commit and push changes. ``None`` if clean.
+
+        ``backup_ref_id_prefix`` is an exactly-8-char identifier used to
+        name a backup ref ``{branch}-backup-{prefix}`` if the persister
+        needs to preserve a divergent local line during recovery.
+        """
         ...
 
 
 @runtime_checkable
 class BranchMerger(Protocol):
-    """Merges a source branch into a feature branch and pushes."""
+    """Consolidates a source branch into a feature branch.
 
-    async def merge_and_push(
+    `consolidate` is a total function over the four
+    `ConsolidationStatus` values — it never raises on ``DIVERGENT`` or
+    ``SOURCE_MISSING``.  Callers route on ``outcome.status``.  Source-
+    branch deletion is an internal implementation detail of the
+    FAST_FORWARDED branch and is never exposed on this protocol.
+    """
+
+    async def consolidate(
         self,
         *,
         repo_path: str | None,
@@ -162,19 +256,14 @@ class BranchMerger(Protocol):
         feature_branch: str,
         source_branch: str,
         cache_key: str | None = None,
-    ) -> str:
-        """FF-merge source into feature, push. Returns SHA."""
-        ...
+    ) -> ConsolidationOutcome:
+        """Classify and (if FAST_FORWARDED) merge source into feature.
 
-    async def cleanup_source(
-        self,
-        *,
-        repo_path: str | None,
-        repo_url: str | None,
-        source_branch: str,
-        cache_key: str | None = None,
-    ) -> None:
-        """Delete source_branch from the remote. Must not raise."""
+        Never raises on ``DIVERGENT`` or ``SOURCE_MISSING``.  Returns
+        a ``ConsolidationOutcome`` whose ``feature_tip_sha`` is the
+        post-consolidation tip (or current tip on ALREADY_INTEGRATED
+        and SOURCE_MISSING).
+        """
         ...
 
     async def cleanup_backup_branches(
