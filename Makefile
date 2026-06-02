@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := check
-.PHONY: install format lint lint-fix type-check test check clean
+.PHONY: install format lint lint-fix type-check test check clean verify-no-origin-literal
 
 install:
 	uv sync --all-groups
@@ -20,7 +20,13 @@ type-check:
 test:
 	uv run pytest
 
-check: lint type-check test
+verify-no-origin-literal:
+	@if grep -rnE '"origin[/"]' src/kodezart --include='*.py' | grep -v 'core/config.py' ; then \
+		echo 'ERROR: literal "origin" found in src/kodezart outside core/config.py' ; \
+		exit 1 ; \
+	fi
+
+check: verify-no-origin-literal lint type-check test
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +

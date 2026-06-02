@@ -57,6 +57,7 @@ def _make_engine(
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,

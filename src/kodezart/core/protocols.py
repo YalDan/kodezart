@@ -131,6 +131,36 @@ class GitService(Protocol):
         """
         ...
 
+    async def reset_hard(self, cwd: str, ref: str) -> None:
+        """Hard-reset working tree + index + HEAD to *ref*.
+
+        Maps to ``git reset --hard <ref>``.
+        """
+        ...
+
+    async def tree_of(self, cwd: str, ref: str) -> str:
+        """Tree SHA reachable from *ref*.
+
+        Maps to ``git rev-parse <ref>^{tree}``.
+        """
+        ...
+
+    async def commit_tree(
+        self,
+        cwd: str,
+        tree: str,
+        parent: str,
+        message: str,
+        author_name: str,
+        author_email: str,
+    ) -> str:
+        """Create a commit object referencing *tree* with one *parent* and *message*.
+
+        Maps to ``git commit-tree <tree> -p <parent> -m <message>``. Returns
+        the new commit SHA.
+        """
+        ...
+
 
 @runtime_checkable
 class RepoCache(Protocol):
@@ -195,8 +225,14 @@ class ChangePersister(Protocol):
         workspace_path: str,
         branch: str,
         executor: AgentExecutor,
+        backup_ref_id_prefix: str,
     ) -> PersistResult | None:
-        """Commit and push changes. ``None`` if clean."""
+        """Commit and push changes. ``None`` if clean.
+
+        ``backup_ref_id_prefix`` is an exactly-8-char identifier used to
+        name a backup ref ``{branch}-backup-{prefix}`` if the persister
+        needs to preserve a divergent local line during recovery.
+        """
         ...
 
 

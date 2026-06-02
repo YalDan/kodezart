@@ -2,6 +2,7 @@
 
 import httpx
 
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.retry import should_retry
 from kodezart.domain.errors import RateLimitError, TransientAPIError
 
@@ -53,3 +54,19 @@ def test_runtime_error_not_retryable() -> None:
 def test_value_error_not_retryable() -> None:
     """ValueError falls through to False."""
     assert should_retry(ValueError("bad input")) is False
+
+
+def test_no_structured_output_error_does_not_satisfy_should_retry() -> None:
+    """NoStructuredOutputError is a peer of AgentSDKError — NOT retry-eligible.
+
+    Locks in the peer-not-subclass relationship with the transient
+    exception hierarchy.  If a future refactor accidentally re-parents
+    ``NoStructuredOutputError`` under ``TransientAPIError``, this test fails
+    loudly and prevents silent retry storms on deterministic failures.
+    """
+    exc = NoStructuredOutputError(
+        "no structured output",
+        raise_site="ticket_creator",
+        result_event=None,
+    )
+    assert should_retry(exc) is False

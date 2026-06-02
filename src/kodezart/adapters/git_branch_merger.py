@@ -12,8 +12,6 @@ from kodezart.types.domain.consolidation import (
     ConsolidationStatus,
 )
 
-_REMOTE = "origin"
-
 
 class GitBranchMerger:
     """Consolidates a source branch into a feature branch.
@@ -29,9 +27,12 @@ class GitBranchMerger:
         self,
         git: GitService,
         workspace: WorkspaceProvider,
+        *,
+        remote: str,
     ) -> None:
         self._git = git
         self._workspace = workspace
+        self._remote = remote
         self._log: BoundLogger = get_logger(__name__)
 
     async def consolidate(
@@ -93,7 +94,7 @@ class GitBranchMerger:
         )
         try:
             await self._git.fetch(workspace_path)
-            origin_source = f"{_REMOTE}/{source_branch}"
+            origin_source = f"{self._remote}/{source_branch}"
             head_sha = await self._git.current_sha(workspace_path)
 
             if await self._git.is_ancestor(
@@ -154,7 +155,7 @@ class GitBranchMerger:
             try:
                 all_branches = await self._git.list_remote_branches(
                     cwd=workspace_path,
-                    remote=_REMOTE,
+                    remote=self._remote,
                     prefix=prefix,
                 )
                 backup_branches = [
@@ -170,7 +171,7 @@ class GitBranchMerger:
                 for branch in backup_branches:
                     await self._git.delete_remote_branch(
                         workspace_path,
-                        _REMOTE,
+                        self._remote,
                         branch,
                     )
                     await self._log.ainfo(
@@ -211,7 +212,7 @@ class GitBranchMerger:
         try:
             return await self._git.remote_branch_sha(
                 workspace_path,
-                _REMOTE,
+                self._remote,
                 branch,
             )
         finally:
@@ -236,21 +237,21 @@ class GitBranchMerger:
         try:
             feature_tip = await self._git.remote_branch_sha(
                 workspace_path,
-                _REMOTE,
+                self._remote,
                 feature_branch,
             )
             if feature_tip is not None:
                 return feature_tip
             base_tip = await self._git.remote_branch_sha(
                 workspace_path,
-                _REMOTE,
+                self._remote,
                 base_branch,
             )
             if base_tip is not None:
                 return base_tip
             msg = (
                 f"SOURCE_MISSING fallback failed: neither "
-                f"{feature_branch!r} nor {base_branch!r} present on origin"
+                f"{feature_branch!r} nor {base_branch!r} present on {self._remote}"
             )
             raise RuntimeError(msg)
         finally:
@@ -271,7 +272,7 @@ class GitBranchMerger:
         try:
             await self._git.delete_remote_branch(
                 workspace_path,
-                _REMOTE,
+                self._remote,
                 branch,
             )
         except Exception as exc:

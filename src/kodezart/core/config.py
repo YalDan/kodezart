@@ -53,6 +53,10 @@ class AppConfig(BaseSettings):
         default="https://github.com",
         description="Base URL for resolving owner/repo shorthand.",
     )
+    git_remote: str = Field(
+        default="origin",
+        description="Git remote name for fetch/push operations and remote-ref probes.",
+    )
     git_committer_name: str = Field(
         default="kodezart",
         description="Git committer name for auto-generated commits.",

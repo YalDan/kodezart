@@ -12,6 +12,7 @@ from claude_agent_sdk import (
 
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
+from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
@@ -53,6 +54,14 @@ class ClaudeAgentExecutor:
             resume=session_id,
             output_format=output_format,
         )
+        # TODO: symmetric ProcessError/CLIConnectionError/ClaudeSDKError
+        # detail preservation (exit_code, stderr_tail) matching
+        # ClaudeClientExecutor when this executor is wired into
+        # main.py.lifespan().  Currently unwired in the default
+        # composition root (see docs/architecture.md — ClaudeAgentExecutor
+        # is the one-shot alternative; ClaudeClientExecutor is the
+        # default).  Adding the parallel change here costs CI time on a
+        # code path no production deployment exercises.
         try:
             async for message in query(prompt=prompt, options=options):
                 for event in map_message(message):
@@ -61,7 +70,9 @@ class ClaudeAgentExecutor:
             await self._log.awarning(
                 "claude_sdk_process_error",
                 exit_code=exc.exit_code,
-                stderr=exc.stderr,
+                stderr=(
+                    redact_credentials(exc.stderr) if exc.stderr is not None else None
+                ),
             )
             raise AgentSDKError(
                 str(exc),

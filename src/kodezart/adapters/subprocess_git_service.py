@@ -11,8 +11,6 @@ from kodezart.core.protocols import GitAuth
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
 
-_REMOTE = "origin"
-
 
 class SubprocessGitService:
     """Git operations adapter using asyncio subprocess calls to the git CLI.
@@ -21,7 +19,13 @@ class SubprocessGitService:
     protocol.
     """
 
-    def __init__(self, auth: GitAuth | None = None) -> None:
+    def __init__(self, *, remote: str, auth: GitAuth | None = None) -> None:
+        # `self._remote` is the canonical remote used by `fetch()` and `push()`
+        # (the two GitService methods whose protocol surface takes no per-call
+        # `remote` arg). `delete_remote_branch`, `list_remote_branches`, and
+        # `remote_branch_sha` continue to accept `remote: str` as a per-call
+        # parameter for caller flexibility.
+        self._remote = remote
         self._auth = auth
 
     async def validate_repo(self, repo_path: str) -> None:
@@ -50,9 +54,23 @@ class SubprocessGitService:
         )
 
     async def fetch(self, repo_path: str) -> None:
-        """Fetch latest from all remotes."""
+        """Fetch latest from the configured remote, populating remote-tracking refs.
+
+        Bare clones created with ``git clone --bare`` do NOT configure
+        ``remote.<name>.fetch`` or create the ``refs/remotes/<name>/*``
+        namespace (per git-clone docs); a bare ``git fetch <remote>``
+        therefore leaves ``<remote>/<branch>`` unresolvable downstream
+        (e.g. by ``git merge-base --is-ancestor``).  Passing the
+        canonical refspec explicitly forces the remote-tracking refs
+        to be populated regardless of clone-time configuration.
+        """
         await self._run(
-            ["git", "fetch", _REMOTE],
+            [
+                "git",
+                "fetch",
+                self._remote,
+                f"+refs/heads/*:refs/remotes/{self._remote}/*",
+            ],
             cwd=repo_path,
             env=self._auth.subprocess_env() if self._auth else None,
         )
@@ -123,12 +141,7 @@ class SubprocessGitService:
         await self._run(
             ["git", "commit", "-m", message],
             cwd=cwd,
-            env={
-                "GIT_AUTHOR_NAME": author_name,
-                "GIT_COMMITTER_NAME": author_name,
-                "GIT_AUTHOR_EMAIL": author_email,
-                "GIT_COMMITTER_EMAIL": author_email,
-            },
+            env=self._author_env(author_name, author_email),
         )
         return await self._run_output(["git", "rev-parse", "HEAD"], cwd=cwd)
 
@@ -139,7 +152,7 @@ class SubprocessGitService:
         a bare branch name for portable worktree push behavior.
         """
         await self._run(
-            ["git", "push", _REMOTE, f"HEAD:refs/heads/{branch}"],
+            ["git", "push", self._remote, f"HEAD:refs/heads/{branch}"],
             cwd=cwd,
             env=self._auth.subprocess_env() if self._auth else None,
         )
@@ -287,6 +300,43 @@ class SubprocessGitService:
             commit_count=len(commit_subjects),
         )
 
+    async def reset_hard(self, cwd: str, ref: str) -> None:
+        """Hard-reset working tree + index + HEAD to *ref*."""
+        await self._run(["git", "reset", "--hard", ref], cwd=cwd)
+
+    async def tree_of(self, cwd: str, ref: str) -> str:
+        """Tree SHA reachable from *ref*."""
+        return await self._run_output(
+            ["git", "rev-parse", f"{ref}^{{tree}}"],
+            cwd=cwd,
+        )
+
+    async def commit_tree(
+        self,
+        cwd: str,
+        tree: str,
+        parent: str,
+        message: str,
+        author_name: str,
+        author_email: str,
+    ) -> str:
+        """Create a commit object referencing *tree* with one *parent* and *message*."""
+        return await self._run_output(
+            ["git", "commit-tree", tree, "-p", parent, "-m", message],
+            cwd=cwd,
+            env=self._author_env(author_name, author_email),
+        )
+
+    @staticmethod
+    def _author_env(name: str, email: str) -> dict[str, str]:
+        """Build the GIT_{AUTHOR,COMMITTER}_{NAME,EMAIL} env dict for git."""
+        return {
+            "GIT_AUTHOR_NAME": name,
+            "GIT_COMMITTER_NAME": name,
+            "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_EMAIL": email,
+        }
+
     async def _branch_exists(self, repo_path: str, branch_name: str) -> bool:
         try:
             await self._run_output(
@@ -297,12 +347,21 @@ class SubprocessGitService:
         except RuntimeError:
             return False
 
-    async def _run_output(self, cmd: list[str], cwd: str) -> str:
+    async def _run_output(
+        self,
+        cmd: list[str],
+        cwd: str,
+        env: dict[str, str] | None = None,
+    ) -> str:
+        process_env: dict[str, str] | None = None
+        if env is not None:
+            process_env = {**os.environ, **env}
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=process_env,
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:

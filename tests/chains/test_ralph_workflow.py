@@ -85,6 +85,7 @@ def _make_engine(
         ticket_generator=ticket_generator or FakeTicketGenerator(),
         merger=merger or FakeBranchMerger(),
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
@@ -490,7 +491,7 @@ async def test_workflow_criteria_event_before_iteration_event() -> None:
 
 
 async def test_workflow_criteria_generation_failure_raises() -> None:
-    """RuntimeError is raised when the criteria agent returns structured_output=None."""
+    """NoStructuredOutputError raised when the criteria agent returns no output."""
 
     class FailingCriteriaExecutor:
         """Executor that returns None structured_output for criteria schema."""
@@ -578,12 +579,15 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
     )
 
-    with pytest.raises(RuntimeError, match="acceptance criteria"):
+    from kodezart.core.errors import NoStructuredOutputError
+
+    with pytest.raises(NoStructuredOutputError, match="acceptance criteria") as excinfo:
         _ = [
             e
             async for e in engine.run(
@@ -595,6 +599,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
                 allowed_tools=["Bash"],
             )
         ]
+    assert excinfo.value.raise_site == "acceptance_criteria"
 
 
 async def test_workflow_quality_gate_never_receives_empty_criteria() -> None:
@@ -800,6 +805,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
@@ -1109,6 +1115,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
@@ -1387,6 +1394,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=None,
@@ -1511,6 +1519,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
@@ -1950,6 +1959,7 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
@@ -2047,6 +2057,7 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
@@ -2372,6 +2383,7 @@ def _make_engine_with_executor(
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
@@ -2636,6 +2648,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         ticket_generator=FakeTicketGenerator(),
         merger=merger,
         git_base_url="https://github.com",
+        git_remote="origin",
         git=git,
         cache=FakeRepoCache(),
         artifact_persister=None,
@@ -2710,3 +2723,100 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
     }
     with pytest.raises(RuntimeError, match="review_base_sha"):
         await engine._review_against_ticket_node(state, config)
+
+
+# ---------------------------------------------------------------------------
+# Soft-failure raise-site coverage for the four ralph_workflow sites:
+# ``branch_name``, ``post_merge_review``, ``pr_description``.  The
+# ``acceptance_criteria`` site is already exercised by
+# ``test_workflow_criteria_generation_failure_raises`` above.
+# ---------------------------------------------------------------------------
+
+
+async def test_branch_name_generation_failure_raises_no_structured_output_error() -> (
+    None
+):
+    """NoStructuredOutputError(raise_site="branch_name") on missing branch output."""
+    from kodezart.core.errors import NoStructuredOutputError
+
+    class NullBranchNameExecutor:
+        """Returns ResultEvent(structured_output=None) for branch-name schema."""
+
+        def _is_branch_name_schema(
+            self, output_format: dict[str, object] | None
+        ) -> bool:
+            if output_format is None:
+                return False
+            schema = output_format.get("schema")
+            if not isinstance(schema, dict):
+                return False
+            props = schema.get("properties", {})
+            return isinstance(props, dict) and "slug" in props
+
+        async def stream(
+            self,
+            *,
+            prompt: str,
+            cwd: str,
+            permission_mode: str,
+            allowed_tools: list[str],
+            session_id: str | None = None,
+            output_format: dict[str, object] | None = None,
+        ) -> AsyncGenerator[AgentEvent, None]:
+            if self._is_branch_name_schema(output_format):
+                yield ResultEvent(
+                    subtype="result",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="fake",
+                    structured_output=None,
+                )
+                return
+            yield ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="fake",
+            )
+
+    executor = NullBranchNameExecutor()
+    service = AgentService(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    engine = RalphWorkflowEngine(
+        service=service,
+        quality_gate=FakeQualityGate(
+            events=[],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha="a" * 40,
+        ),
+        ticket_generator=FakeTicketGenerator(),
+        merger=FakeBranchMerger(),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        artifact_persister=None,
+    )
+
+    with pytest.raises(NoStructuredOutputError, match="branch name") as excinfo:
+        _ = [
+            e
+            async for e in engine.run(
+                prompt="fix it",
+                repo_path="/tmp/fake",
+                repo_url=None,
+                base_branch="main",
+                permission_mode="bypassPermissions",
+                allowed_tools=["Bash"],
+            )
+        ]
+    assert excinfo.value.raise_site == "branch_name"
+    assert excinfo.value.rate_limit_rejected is False

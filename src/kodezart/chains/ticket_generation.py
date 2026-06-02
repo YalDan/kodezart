@@ -1,5 +1,6 @@
 """Ticket generation loop — draft + review until approved or exhausted."""
 
+import sys
 from collections.abc import AsyncIterator
 
 from langchain_core.runnables import RunnableConfig
@@ -9,9 +10,12 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
+from kodezart.core.error_egress import build_error_event
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, WorkspaceProvider
 from kodezart.core.retry import should_retry
+from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WorkspaceError
 from kodezart.prompts.ticket_generation import (
     build_create_prompt,
@@ -22,8 +26,6 @@ from kodezart.types.domain.agent import (
     TICKET_DRAFT_SCHEMA,
     TICKET_REVIEW_SCHEMA,
     AgentEvent,
-    ErrorEvent,
-    ResultEvent,
     TicketDraftOutput,
     TicketReviewOutput,
     WorkflowTicketDraftEvent,
@@ -100,7 +102,18 @@ class TicketGenerationLoop:
                 cache_key=cache_key,
             )
         except WorkspaceError as exc:
-            yield ErrorEvent(error=str(exc))
+            # ``exc_info=sys.exc_info()`` is passed explicitly to harden
+            # against async-executor context loss (hynek/structlog#488
+            # class).  Logging at exception level — never silently
+            # downgrade a failed workspace acquire to a bare yielded
+            # ``ErrorEvent`` with no log line.
+            await self._log.aexception(
+                "ticket_loop_workspace_acquire_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+                exc_info=sys.exc_info(),
+            )
+            yield build_error_event(exc)
             return
 
         try:
@@ -183,24 +196,28 @@ class TicketGenerationLoop:
             msg = "workspace_path must be set before entering create node"
             raise RuntimeError(msg)
 
-        result_event: ResultEvent | None = None
-        async for event in self._service.stream_in_workspace(
-            prompt=body,
-            workspace_path=ctx.workspace_path,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=TICKET_TOOLS,
-            output_format={
-                "type": "json_schema",
-                "schema": TICKET_DRAFT_SCHEMA,
-            },
-            session_id=state["creator_session_id"],
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream_in_workspace(
+                prompt=body,
+                workspace_path=ctx.workspace_path,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=TICKET_TOOLS,
+                output_format={
+                    "type": "json_schema",
+                    "schema": TICKET_DRAFT_SCHEMA,
+                },
+                session_id=state["creator_session_id"],
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Creator produced no structured output."
-            raise RuntimeError(msg)
+            raise NoStructuredOutputError(
+                msg,
+                raise_site="ticket_creator",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         draft = TicketDraftOutput.model_validate(
             result_event.structured_output,
@@ -234,24 +251,28 @@ class TicketGenerationLoop:
             msg = "workspace_path must be set before entering review node"
             raise RuntimeError(msg)
 
-        result_event: ResultEvent | None = None
-        async for event in self._service.stream_in_workspace(
-            prompt=body,
-            workspace_path=ctx.workspace_path,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=TICKET_TOOLS,
-            output_format={
-                "type": "json_schema",
-                "schema": TICKET_REVIEW_SCHEMA,
-            },
-            session_id=state["reviewer_session_id"],
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream_in_workspace(
+                prompt=body,
+                workspace_path=ctx.workspace_path,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=TICKET_TOOLS,
+                output_format={
+                    "type": "json_schema",
+                    "schema": TICKET_REVIEW_SCHEMA,
+                },
+                session_id=state["reviewer_session_id"],
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Reviewer produced no structured output."
-            raise RuntimeError(msg)
+            raise NoStructuredOutputError(
+                msg,
+                raise_site="ticket_reviewer",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         output = TicketReviewOutput.model_validate(
             result_event.structured_output,

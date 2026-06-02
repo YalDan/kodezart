@@ -412,9 +412,15 @@ async def test_loop_workspace_error_yields_error_event() -> None:
 
     Under the no-fallback contract, an evaluator that produces no structured
     output (e.g., because the workspace acquire failed) causes _evaluate_node
-    to raise RuntimeError. The ErrorEvent must still be emitted on the
-    stream BEFORE the raise so that observers see the root cause.
+    to raise ``NoStructuredOutputError``. The ErrorEvent must still be emitted on
+    the stream BEFORE the raise so that observers see the root cause.
+
+    Updated for Facet OBS: the bare ``RuntimeError`` at the evaluator
+    raise site (ralph_loop.py:226-228) is now ``NoStructuredOutputError`` —
+    the test expectation is updated to the new exception type but the
+    "no structured output" message string is preserved verbatim.
     """
+    from kodezart.core.errors import NoStructuredOutputError
     from kodezart.types.domain.agent import ErrorEvent
 
     executor = FakeAgentExecutor(events=[])
@@ -427,9 +433,12 @@ async def test_loop_workspace_error_yields_error_event() -> None:
     )
 
     events: list[object] = []
-    with pytest.raises(RuntimeError, match="no structured output"):
+    with pytest.raises(
+        NoStructuredOutputError, match="no structured output"
+    ) as excinfo:
         async for e in loop.run(**_run_kwargs()):
             events.append(e)
+    assert excinfo.value.raise_site == "ralph_evaluator"
 
     error_events = [e for e in events if isinstance(e, ErrorEvent)]
     assert len(error_events) >= 1
@@ -765,3 +774,58 @@ async def test_evaluate_node_passes_changeset_to_build_prompt(
     _ = [e async for e in loop.run(**_run_kwargs())]
     assert len(captured) >= 1
     assert isinstance(captured[0], ChangesetDigest)
+
+
+# ---------------------------------------------------------------------------
+# Evaluator-node soft-failure: the 8th raise site (Sherlock-confirmed by
+# direct ``git show`` of the previous PR's ralph_loop.py:226-228).  Without
+# this test, a regression to bare ``RuntimeError`` at the evaluator node —
+# the loop that decides ``accepted=true`` — would silently break the OBS
+# wire contract for the most observability-critical failure mode.
+# ---------------------------------------------------------------------------
+
+
+async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> None:
+    """Evaluator without structured output raises NoStructuredOutputError(evaluator)."""
+    from kodezart.core.errors import NoStructuredOutputError
+
+    class NullEvaluatorExecutor:
+        """Drives execute-then-evaluate; evaluator yields structured_output=None."""
+
+        def __init__(self) -> None:
+            self._calls = 0
+
+        async def stream(
+            self,
+            *,
+            prompt: str,
+            cwd: str,
+            permission_mode: str,
+            allowed_tools: list[str],
+            session_id: str | None = None,
+            output_format: dict[str, object] | None = None,
+        ) -> AsyncGenerator[AgentEvent, None]:
+            self._calls += 1
+            # Both execute and evaluate emit a ResultEvent; the evaluator
+            # call has ``structured_output=None`` so the soft-failure
+            # precondition fires at the evaluator node.
+            yield ResultEvent(
+                subtype="result",
+                duration_ms=10,
+                duration_api_ms=5,
+                is_error=False,
+                num_turns=1,
+                session_id="eval-session",
+                structured_output=None,
+            )
+
+    executor = NullEvaluatorExecutor()
+    loop = _make_loop(executor=executor)
+    with pytest.raises(
+        NoStructuredOutputError, match="Evaluator produced no"
+    ) as excinfo:
+        _ = [e async for e in loop.run(**_run_kwargs())]
+    assert excinfo.value.raise_site == "ralph_evaluator"
+    assert excinfo.value.result_event_observed is True
+    assert excinfo.value.session_id == "eval-session"
+    assert excinfo.value.rate_limit_rejected is False

@@ -37,7 +37,7 @@ async def git_repo(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def provider(tmp_path: Path) -> GitWorktreeProvider:
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     return GitWorktreeProvider(
         git=git,
@@ -205,7 +205,7 @@ async def test_acquire_with_explicit_ref_uses_branch_content(
     await _run_git(["git", "commit", "-am", "develop content"], cwd=upstream)
     await _run_git(["git", "checkout", "main"], cwd=upstream)
 
-    git = SubprocessGitService()
+    git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     p = GitWorktreeProvider(
         git=git,

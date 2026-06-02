@@ -22,6 +22,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   |             | GitHub PAT for cloning private repositories              |
 | `KODEZART_CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
 | `KODEZART_GIT_BASE_URL`           | `str`        | `https://github.com`     |             | Base URL for resolving `owner/repo` shorthand            |
+| `KODEZART_GIT_REMOTE`             | `str`        | `origin`                 |             | Git remote name for fetch/push operations and remote-ref probes |
 | `KODEZART_GIT_COMMITTER_NAME`     | `str`        | `kodezart`               |             | Git committer name for auto-generated commits            |
 | `KODEZART_GIT_COMMITTER_EMAIL`    | `str`        | `kodezart@noreply.dev`   |             | Git committer email for auto-generated commits           |
 | `KODEZART_MAX_ITERATIONS`         | `int`        | `5`                      | 1-20        | Maximum Ralph loop iterations before stopping            |
@@ -32,8 +33,9 @@ for configuration. All settings are loaded from environment variables with the
 
 ## .env.example
 
-The `.env.example` file intentionally includes only the 7 most commonly
-customized variables. This table above is the authoritative full reference.
+The `.env.example` file intentionally includes only a curated subset of the
+most commonly customized variables. This table above is the authoritative
+full reference.
 
 ```bash
 KODEZART_PROJECT_NAME=kodezart

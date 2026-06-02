@@ -1305,7 +1305,7 @@ wheels = [
 
 [[package]]
 name = "kodezart"
-version = "0.1.0"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },
@@ -1331,7 +1331,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "claude-agent-sdk", specifier = ">=0.1.69" },
+    { name = "claude-agent-sdk", specifier = "~=0.1.69" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "langchain", specifier = ">=0.3.0" },

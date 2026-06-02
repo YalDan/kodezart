@@ -32,7 +32,7 @@ async def _run_git(cmd: list[str], cwd: Path) -> None:
 
 @pytest.fixture
 def git_service() -> SubprocessGitService:
-    return SubprocessGitService()
+    return SubprocessGitService(remote="origin")
 
 
 async def test_validate_repo_valid(
@@ -324,3 +324,132 @@ async def test_diff_summary_empty_when_refs_equal(
     assert digest.file_paths == []
     assert digest.commit_subjects == []
     assert digest.is_empty is True
+
+
+async def test_fetch_populates_remote_tracking_refs(
+    git_service: SubprocessGitService, tmp_path: Path
+) -> None:
+    """`git clone --bare` does NOT create refs/remotes/origin/* (per git-clone docs);
+    the explicit refspec on `fetch` forces it to populate the namespace.
+
+    This is the unit-level gate for Facet ANC: without the refspec
+    extension, the subsequent ``git merge-base --is-ancestor origin/<branch> HEAD``
+    in ``GitBranchMerger`` crashes with ``Not a valid object name``.
+    """
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    await _run_git(["git", "init", "-b", "main"], cwd=upstream)
+    (upstream / "f").write_text("hello")
+    await _run_git(["git", "add", "."], cwd=upstream)
+    await _run_git(["git", "commit", "-m", "init"], cwd=upstream)
+
+    bare = tmp_path / "bare.git"
+    await git_service.clone_bare(str(upstream), str(bare))
+
+    # Pre-condition: a fresh bare clone has no refs/remotes/origin/*.
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "for-each-ref",
+        "refs/remotes/origin/",
+        cwd=str(bare),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    pre_out, _ = await proc.communicate()
+    assert pre_out.decode().strip() == ""
+
+    # After fetch with the explicit refspec, refs/remotes/origin/* exists.
+    await git_service.fetch(str(bare))
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "for-each-ref",
+        "refs/remotes/origin/",
+        cwd=str(bare),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    post_out, _ = await proc.communicate()
+    assert "refs/remotes/origin/main" in post_out.decode()
+
+
+async def _run_git_output(cmd: list[str], cwd: Path) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=str(cwd),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
+
+
+async def test_reset_hard_moves_head_to_ref(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """``reset_hard`` moves HEAD to the named ref and clears the working tree."""
+    # Capture the initial commit SHA before adding a second commit.
+    (git_repo / "second.txt").write_text("second")
+    await _run_git(["git", "add", "."], cwd=git_repo)
+    await _run_git(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "second"],
+        cwd=git_repo,
+    )
+    first_sha = await _run_git_output(["git", "rev-parse", "HEAD~"], cwd=git_repo)
+    assert len(first_sha) == 40
+
+    await git_service.reset_hard(str(git_repo), first_sha)
+    assert await git_service.current_sha(str(git_repo)) == first_sha
+    assert await git_service.has_changes(str(git_repo)) is False
+
+
+async def test_tree_of_returns_tree_sha_for_head_and_full_sha(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """``tree_of`` returns the same tree SHA whether given HEAD or a full SHA."""
+    expected_tree = await _run_git_output(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=git_repo,
+    )
+    head_sha = await git_service.current_sha(str(git_repo))
+
+    assert await git_service.tree_of(str(git_repo), "HEAD") == expected_tree
+    assert await git_service.tree_of(str(git_repo), head_sha) == expected_tree
+
+
+async def test_commit_tree_creates_commit_with_parent_author_and_message(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """commit_tree creates a commit with the requested parent, author, message."""
+    head_sha = await git_service.current_sha(str(git_repo))
+    tree_sha = await git_service.tree_of(str(git_repo), "HEAD")
+
+    commit_sha = await git_service.commit_tree(
+        cwd=str(git_repo),
+        tree=tree_sha,
+        parent=head_sha,
+        message="replay",
+        author_name="A",
+        author_email="a@a",
+    )
+    assert len(commit_sha) == 40
+
+    parent = await _run_git_output(
+        ["git", "log", "-1", "--format=%P", commit_sha],
+        cwd=git_repo,
+    )
+    subject = await _run_git_output(
+        ["git", "log", "-1", "--format=%s", commit_sha],
+        cwd=git_repo,
+    )
+    author_name = await _run_git_output(
+        ["git", "log", "-1", "--format=%an", commit_sha],
+        cwd=git_repo,
+    )
+    author_email = await _run_git_output(
+        ["git", "log", "-1", "--format=%ae", commit_sha],
+        cwd=git_repo,
+    )
+    assert parent == head_sha
+    assert subject == "replay"
+    assert author_name == "A"
+    assert author_email == "a@a"

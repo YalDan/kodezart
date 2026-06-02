@@ -2,6 +2,8 @@
 
 from collections.abc import AsyncGenerator
 
+# Claude Agent SDK API surface verified against claude-agent-sdk ~=0.1.69
+# (ProcessError.exit_code: int | None; ProcessError.stderr: str | None).
 from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
@@ -12,6 +14,8 @@ from claude_agent_sdk import (
 
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
+from kodezart.core.constants import STDERR_TAIL_BYTES
+from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
@@ -68,14 +72,29 @@ class ClaudeClientExecutor:
                     for event in map_message(message):
                         yield event
         except ProcessError as exc:
+            # Redact ONCE into a local so the awarning kwarg and the
+            # AgentSDKError.stderr_tail slice are byte-identical with
+            # respect to redaction.  Redact-before-slice prevents a
+            # token straddling the STDERR_TAIL_BYTES boundary from
+            # surviving partially exposed in stderr_tail.
+            stderr_redacted: str | None = (
+                redact_credentials(exc.stderr) if exc.stderr is not None else None
+            )
             await self._log.awarning(
                 "claude_sdk_process_error",
                 exit_code=exc.exit_code,
-                stderr=exc.stderr,
+                stderr=stderr_redacted,
+            )
+            stderr_tail: str | None = (
+                stderr_redacted[:STDERR_TAIL_BYTES]
+                if stderr_redacted is not None
+                else None
             )
             raise AgentSDKError(
                 str(exc),
                 error_kind="ProcessError",
+                exit_code=exc.exit_code,
+                stderr_tail=stderr_tail,
             ) from exc
         except CLIConnectionError as exc:
             await self._log.awarning(

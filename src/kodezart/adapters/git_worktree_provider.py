@@ -127,6 +127,8 @@ class GitWorktreeProvider:
         release is a programming error elsewhere; surfacing it loudly is
         the new contract.
         """
+        # TODO(resume): re-entering a checkpointed run from this worktree is
+        # not yet wired — see the time-travel TODOs in ralph_loop / ralph_workflow.
         try:
             dirty = await self._git.has_changes(workspace_path)
         except Exception as exc:

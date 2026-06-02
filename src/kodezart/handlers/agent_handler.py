@@ -1,11 +1,12 @@
 """Agent handler — unpacks request models, delegates to service."""
 
+import sys
 import uuid
 from collections.abc import AsyncGenerator
 
+from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, WorkflowEngine
-from kodezart.types.domain.agent import ErrorEvent
 from kodezart.types.requests.agent import QueryRequest, WorkflowRequest
 
 
@@ -51,8 +52,21 @@ class AgentHandler:
             ):
                 yield event.model_dump(by_alias=True, exclude_none=True)
         except Exception as exc:
-            await self._log.aerror("stream_failed", error=str(exc))
-            yield ErrorEvent(error=str(exc)).model_dump(
+            cause = exc.__cause__
+            # ``exc_info=sys.exc_info()`` is passed explicitly to harden
+            # against async-executor context loss (hynek/structlog#488
+            # class).  Structlog's ``aexception`` auto-attaches
+            # ``exc_info`` in the simple case, but defensive explicit
+            # plumbing matters here because the LangGraph executor may
+            # consume the exception context before the log call runs.
+            await self._log.aexception(
+                "stream_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+                cause=type(cause).__name__ if cause is not None else None,
+                exc_info=sys.exc_info(),
+            )
+            yield build_error_event(exc).model_dump(
                 by_alias=True,
                 exclude_none=True,
             )
@@ -77,8 +91,15 @@ class AgentHandler:
             ):
                 yield event.model_dump(by_alias=True, exclude_none=True)
         except Exception as exc:
-            await self._log.aerror("stream_failed", error=str(exc))
-            yield ErrorEvent(error=str(exc)).model_dump(
+            cause = exc.__cause__
+            await self._log.aexception(
+                "stream_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+                cause=type(cause).__name__ if cause is not None else None,
+                exc_info=sys.exc_info(),
+            )
+            yield build_error_event(exc).model_dump(
                 by_alias=True,
                 exclude_none=True,
             )

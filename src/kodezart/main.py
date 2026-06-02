@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if config.github_token is not None
         else None
     )
-    git = SubprocessGitService(auth=auth)
+    git = SubprocessGitService(remote=config.git_remote, auth=auth)
     executor = ClaudeClientExecutor(model=config.model)
     cache = LocalBareRepoCache(git=git, base_dir=config.clone_cache_dir)
     workspace = GitWorktreeProvider(
@@ -64,8 +64,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         git=git,
         committer_name=config.git_committer_name,
         committer_email=config.git_committer_email,
+        remote=config.git_remote,
     )
-    merger = GitBranchMerger(git=git, workspace=workspace)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote=config.git_remote)
     artifact_persister = GitArtifactPersister(
         git=git,
         workspace=workspace,
@@ -105,6 +106,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ticket_generator=ticket_generator,
         merger=merger,
         git_base_url=config.git_base_url,
+        git_remote=config.git_remote,
         git=git,
         cache=cache,
         checkpointer=checkpointer,

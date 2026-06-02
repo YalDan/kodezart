@@ -9,9 +9,11 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, GitService, RepoCache
 from kodezart.core.retry import should_retry
+from kodezart.core.stream_drain import drain
 from kodezart.prompts import evaluation, iteration_feedback
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
@@ -205,27 +207,31 @@ class RalphLoop:
             criteria=ctx.acceptance_criteria,
             changeset=changeset,
         )
-        result_event: ResultEvent | None = None
 
-        async for event in self._service.stream(
-            prompt=eval_prompt,
-            repo_path=ctx.repo_path,
-            repo_url=ctx.repo_url,
-            branch=ctx.ralph_branch,
-            permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=EVAL_TOOLS,
-            output_format={
-                "type": "json_schema",
-                "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-            },
-            cache_key=ctx.cache_key,
-        ):
-            if isinstance(event, ResultEvent):
-                result_event = event
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream(
+                prompt=eval_prompt,
+                repo_path=ctx.repo_path,
+                repo_url=ctx.repo_url,
+                branch=ctx.ralph_branch,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=EVAL_TOOLS,
+                output_format={
+                    "type": "json_schema",
+                    "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                },
+                cache_key=ctx.cache_key,
+            )
+        )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Evaluator produced no structured output."
-            raise RuntimeError(msg)
+            raise NoStructuredOutputError(
+                msg,
+                raise_site="ralph_evaluator",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
 
         output = AcceptanceCriteriaOutput.model_validate(
             result_event.structured_output,

@@ -108,7 +108,14 @@ class GitArtifactPersister:
             finally:
                 await self._workspace.release(workspace_path)
         except Exception as exc:
-            await self._log.awarning(
+            # The ``clean`` docstring promises "Must not raise" — this
+            # is housekeeping that runs immediately before opening a PR
+            # and must never abort the PR-open path.  But the failure is
+            # operator-relevant (the merged PR diff will still contain
+            # the .kodezart/ artifacts), so log at ``aerror`` (NOT
+            # ``awarning``) to surface it on the standard error stream
+            # alongside other operational failures.
+            await self._log.aerror(
                 "artifact_cleanup_failed",
                 branch=branch,
                 error=str(exc),
