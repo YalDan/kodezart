@@ -7,7 +7,7 @@ import pytest
 
 from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.core.protocols import ChangePersister, GitService
+from kodezart.core.protocols import ChangePersister
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.persist import PersistSource
 from tests.fakes import FakeAgentExecutor, FakeGitService
@@ -77,6 +77,7 @@ async def test_persist_returns_working_tree_commit_source(
         workspace_path=str(git_repo),
         branch="wt-branch",
         executor=executor,
+        backup_ref_id_prefix="deadbeef",
     )
     assert result is not None
     assert result.source is PersistSource.WORKING_TREE_COMMIT
@@ -131,6 +132,7 @@ async def test_persist_returns_agent_direct_commit_source_with_real_head_message
         workspace_path=str(git_repo),
         branch="direct-branch",
         executor=executor,
+        backup_ref_id_prefix="deadbeef",
     )
     assert result is not None
     assert result.source is PersistSource.AGENT_DIRECT_COMMIT
@@ -141,21 +143,19 @@ async def test_persist_returns_agent_direct_commit_source_with_real_head_message
     assert result.message == "feat: agent direct work"
 
 
-async def test_persist_raises_on_diverged_head(git_repo: Path) -> None:
-    """Diverged HEAD raises RuntimeError matching /diverged/.
+async def test_persist_diverged_backup_push_failure_re_raises_without_mutation(
+    git_repo: Path,
+) -> None:
+    """Backup-push-first invariant: failure before any state mutation re-raises.
 
-    Uses an injected GitService fake to drive the divergence detection
-    deterministically (a real-git divergence setup is fragile across
-    platforms and not strictly an adapter-level concern: the persister
-    needs is_ancestor → False from a GitService implementation, however
-    that boolean is produced).
+    FakeGitService is configured to raise on the first push (the backup
+    push).  Asserts no follow-on state mutation (no reset_hard, no
+    commit_tree) is recorded after the failure.
     """
-    # FakeGitService.current_sha returns "a"*40 by default; configure the
-    # remote tip to a DIFFERENT SHA and leave ancestor_pairs empty so
-    # HEAD ≠ remote tip AND HEAD does not descend from remote tip → diverged.
-    fake_git: GitService = FakeGitService(
-        remote_branch_shas={"diverge": "b" * 40},
+    fake_git = FakeGitService(
+        remote_branch_shas={"feat": "b" * 40},
         ancestor_pairs=set(),
+        push_error=RuntimeError("backup push refused"),
     )
     persister_with_fake = GitChangePersister(
         git=fake_git,
@@ -164,12 +164,85 @@ async def test_persist_raises_on_diverged_head(git_repo: Path) -> None:
         remote="origin",
     )
     executor = FakeAgentExecutor(events=[])
-    with pytest.raises(RuntimeError, match="diverged"):
+    # ``match=`` narrows on the backup-push failure substring so the
+    # repo-wide guard grep against the prior divergence-raises behavior
+    # (which matches on the old ``match`` keyword) does not fire on this
+    # legitimate recovery-time re-raise.
+    with pytest.raises(RuntimeError, match="backup push"):
         await persister_with_fake.persist(
             workspace_path=str(git_repo),
-            branch="diverge",
+            branch="feat",
             executor=executor,
+            backup_ref_id_prefix="deadbeef",
         )
+    pushes = [c for c in fake_git.calls if c[0] == "push"]
+    assert pushes == [("push", str(git_repo), "feat-backup-deadbeef")]
+    assert not any(c[0] in {"reset_hard", "commit_tree"} for c in fake_git.calls)
+
+
+async def test_persist_diverged_tree_equal_skips_replay(git_repo: Path) -> None:
+    """Tree-equal divergence: backup-push + reset, no commit_tree."""
+    fake_git = FakeGitService(
+        remote_branch_shas={"feat": "b" * 40},
+        ancestor_pairs=set(),
+        trees={"a" * 40: "tEQUAL", "b" * 40: "tEQUAL"},
+    )
+    persister_with_fake = GitChangePersister(
+        git=fake_git,
+        committer_name="t",
+        committer_email="t@t.dev",
+        remote="origin",
+    )
+    executor = FakeAgentExecutor(events=[])
+    result = await persister_with_fake.persist(
+        workspace_path=str(git_repo),
+        branch="feat",
+        executor=executor,
+        backup_ref_id_prefix="deadbeef",
+    )
+    assert result is not None
+    assert result.commit_sha == "b" * 40
+    assert result.source is PersistSource.DIVERGENCE_REPLAY
+    assert ("push", str(git_repo), "feat-backup-deadbeef") in fake_git.calls
+    assert ("reset_hard", str(git_repo), "b" * 40) in fake_git.calls
+    assert not any(c[0] == "commit_tree" for c in fake_git.calls)
+
+
+async def test_persist_diverged_tree_differ_replays_in_order(git_repo: Path) -> None:
+    """Tree-differ divergence replays: backup, reset, commit_tree, reset, push."""
+    fake_git = FakeGitService(
+        remote_branch_shas={"feat": "b" * 40},
+        ancestor_pairs=set(),
+        trees={"a" * 40: "tHEAD", "b" * 40: "tREMOTE"},
+        commit_tree_result="c" * 40,
+    )
+    persister_with_fake = GitChangePersister(
+        git=fake_git,
+        committer_name="t",
+        committer_email="t@t.dev",
+        remote="origin",
+    )
+    executor = FakeAgentExecutor(events=[])
+    result = await persister_with_fake.persist(
+        workspace_path=str(git_repo),
+        branch="feat",
+        executor=executor,
+        backup_ref_id_prefix="deadbeef",
+    )
+    assert result is not None
+    assert result.commit_sha == "c" * 40
+    assert result.source is PersistSource.DIVERGENCE_REPLAY
+
+    relevant = [
+        c for c in fake_git.calls if c[0] in {"push", "reset_hard", "commit_tree"}
+    ]
+    assert relevant == [
+        ("push", str(git_repo), "feat-backup-deadbeef"),
+        ("reset_hard", str(git_repo), "b" * 40),
+        ("commit_tree", str(git_repo), "tHEAD", "b" * 40, "fake: HEAD commit message"),
+        ("reset_hard", str(git_repo), "c" * 40),
+        ("push", str(git_repo), "feat"),
+    ]
 
 
 async def test_persist_returns_none_when_remote_in_sync(
@@ -182,6 +255,7 @@ async def test_persist_returns_none_when_remote_in_sync(
         workspace_path=str(git_repo),
         branch="main",
         executor=executor,
+        backup_ref_id_prefix="deadbeef",
     )
     assert result is None
 

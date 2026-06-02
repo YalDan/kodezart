@@ -4,9 +4,9 @@ import sys
 import uuid
 from collections.abc import AsyncGenerator
 
+from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, WorkflowEngine
-from kodezart.core.soft_failure import build_error_event
 from kodezart.types.requests.agent import QueryRequest, WorkflowRequest
 
 

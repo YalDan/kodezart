@@ -15,8 +15,8 @@ from claude_agent_sdk import (
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
 from kodezart.core.constants import STDERR_TAIL_BYTES
+from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.soft_failure import _redact_credentials
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 
@@ -78,7 +78,7 @@ class ClaudeClientExecutor:
             # token straddling the STDERR_TAIL_BYTES boundary from
             # surviving partially exposed in stderr_tail.
             stderr_redacted: str | None = (
-                _redact_credentials(exc.stderr) if exc.stderr is not None else None
+                redact_credentials(exc.stderr) if exc.stderr is not None else None
             )
             await self._log.awarning(
                 "claude_sdk_process_error",

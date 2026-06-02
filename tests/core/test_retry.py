@@ -2,8 +2,8 @@
 
 import httpx
 
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.retry import should_retry
-from kodezart.core.soft_failure import NoStructuredOutputError
 from kodezart.domain.errors import RateLimitError, TransientAPIError
 
 

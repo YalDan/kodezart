@@ -18,6 +18,12 @@ cp .env.example .env
 make check
 ```
 
+- Running `pytest` directly bypasses `uv`'s auto-sync.  Always use
+  `uv run pytest` (or `make test`); `uv run` auto-installs the project
+  as editable in the venv before invocation, which is required for
+  `importlib.metadata.version("kodezart")` in
+  `src/kodezart/domain/health.py` to resolve.
+
 ## Project Structure
 
 | Directory                     | Responsibility                                   |

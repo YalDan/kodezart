@@ -331,7 +331,7 @@ async def test_error_event_carries_exception_class_on_runtime_path() -> None:
 
 async def test_error_event_carries_no_structured_output_payload() -> None:
     """NoStructuredOutputError surfaces raise_site/rate_limit_rejected populated."""
-    from kodezart.core.soft_failure import NoStructuredOutputError
+    from kodezart.core.errors import NoStructuredOutputError
 
     app = create_app()
     soft_failure = NoStructuredOutputError(

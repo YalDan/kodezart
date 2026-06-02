@@ -1,6 +1,6 @@
 [project]
 name = "kodezart"
-version = "0.1.0"
+version = "0.1.2"
 description = "kodezart — music-inspired AI assistant"
 readme = "README.md"
 requires-python = ">=3.12"
