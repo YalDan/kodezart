@@ -34,9 +34,6 @@ coverage.xml
 # Claude Code local session data
 .claude/
 
-# kodezart workflow artifacts (regenerable runtime output)
-.kodezart/
-
 # Environment
 .env
 .env.local
