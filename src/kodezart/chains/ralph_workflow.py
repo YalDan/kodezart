@@ -793,19 +793,18 @@ class RalphWorkflowEngine:
             fix_prompt_parts.append(f"\n\n## CI Failures\n{state['ci_summary']}")
         fix_prompt = "".join(fix_prompt_parts)
 
-        async for _event in self._service.stream_workflow(
+        await self._run_quality_gate(
             prompt=fix_prompt,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
-            base_branch=state["feature_branch"],
-            branch_name=state["feature_branch"],
+            feature_branch=state["feature_branch"],
             ralph_branch=fix_branch,
+            base_branch=state["feature_branch"],
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            create_branch=True,
+            acceptance_criteria=state["acceptance_criteria"],
             cache_key=ctx.cache_key,
-        ):
-            pass  # consume stream
+        )
 
         outcome = await self._merger.consolidate(
             repo_path=ctx.repo_path,
