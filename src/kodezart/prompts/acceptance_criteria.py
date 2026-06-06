@@ -84,12 +84,13 @@ changed lines; \
 at system boundaries — no raw dictionaries or untyped payloads cross \
 adapter edges. \
 The linter is NEVER allowed to be disabled or suppressed — this policy \
-remains in force; asks (a) through (c) verify it by grepping the diff \
-for the introductions enumerated above rather than by claiming the tool \
-exits 0. This is a DELIBERATE trade of grading strength for grading \
-determinism: positive runtime claims of the form `<tool> exits 0` \
-require execution, which the user judges stochastic in practice; the \
-negative-shape proxy is falsifiable by grepping the diff.
+remains in force, and asks (a) through (c) are the NEGATIVE-SHAPE proxy \
+through which it is verified in-loop. Positive runtime claims of the \
+form `<tool> exits 0` require execution, which the user judges \
+stochastic in practice; grepping the diff for newly introduced \
+suppressions is deterministic. The evaluator prompt mirrors this same \
+proxy on the grading side so drafter and evaluator vocabulary cannot \
+drift.
 
 ── WATSON 4: ANTI-PATTERN (subagent_type=Explore) ──
 Ultrathink. Be extremely thorough. Generate criteria that specifically \

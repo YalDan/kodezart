@@ -84,10 +84,15 @@ to search for is: \
 (9) removed `assert ` lines on changed lines; \
 (10) any Pydantic `model_config` whose `extra` value is flipped from \
 `forbid` or `ignore` to `allow` on changed lines. \
-The linter is NEVER allowed to be disabled or suppressed — no inline noqa \
-comments, no per-file ignores added for convenience, no rule removals. If \
-a change would trigger a violation, report the exact rule and the \
-offending line. Report findings as a list of concrete rule violations.
+The linter is NEVER allowed to be disabled or suppressed — this policy \
+remains in force, and the suppression-token grep above is the \
+NEGATIVE-SHAPE proxy through which it is verified in-loop. Positive \
+runtime claims of the form `<tool> exits 0` require execution, which is \
+stochastic in practice; grepping the diff is deterministic. The drafter \
+prompt names this same proxy on the criteria-generation side so drafter \
+and evaluator vocabulary cannot drift. If a change would trigger a \
+violation, report the exact rule and the offending line. Report \
+findings as a list of concrete rule violations.
 
 ── WATSON 4: OFFICIAL DOCS (subagent_type=Explore) ──
 Ultrathink. Be extremely thorough. Use WebSearch and WebFetch to verify \
