@@ -2746,19 +2746,28 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     # (a) Exactly two gate invocations: one pre-merge, one fix-path.
     assert len(gate.calls) == 2
 
-    # (b) Fix-path kwargs: base_branch equals feature_branch (so the inner
-    # evaluator diffs against the merged feature tip, not main); acceptance
-    # criteria forwarded; ralph_branch is a fresh kodezart/...-ralph-...
-    # branch off the feature branch.
+    # (b) Differential bases: pre-merge gate uses ctx.base_branch ("main"),
+    # fix-path gate uses state["feature_branch"] (so the inner evaluator
+    # diffs against the merged feature tip, not main). Asserting BOTH
+    # bases proves the two call sites pass different bases — a future
+    # refactor that accidentally forwarded feature_branch to BOTH calls
+    # would otherwise slip through.
+    assert gate.calls[0]["base_branch"] == "main"
     fix_call = gate.calls[1]
     assert fix_call["base_branch"] == fix_call["feature_branch"]
     assert isinstance(fix_call["base_branch"], str)
     assert fix_call["base_branch"].startswith("kodezart/")
+    # Fix-path kwargs: acceptance criteria forwarded; ralph_branch is a
+    # fresh kodezart/...-ralph-... branch off the feature branch; the
+    # fix prompt carries the review-failure body so the routed-through-
+    # gate path preserves the fix-prompt assembly (incl. the
+    # "## Review Failures" header from _fix_code_node).
     assert fix_call["acceptance_criteria"] == ["Tests pass", "No lint errors"]
     assert isinstance(fix_call["ralph_branch"], str)
     assert isinstance(fix_call["feature_branch"], str)
     assert fix_call["ralph_branch"].startswith(fix_call["feature_branch"])
     assert "-ralph-" in fix_call["ralph_branch"]
+    assert "## Review Failures" in str(fix_call["prompt"])
 
     # (c) Terminal accepted reflects the PRE-MERGE verdict. Fix gate
     # returned accepted=False but the post-merge reviewer passed; the
