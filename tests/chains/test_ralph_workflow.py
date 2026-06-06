@@ -2777,6 +2777,16 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     assert len(complete_events) == 1
     assert complete_events[0].accepted is True
 
+    # (d) Downstream SSE consumers receive at least one
+    # ``WorkflowIterationEvent`` per fix round in addition to the
+    # pre-merge round, because ``_run_quality_gate`` calls
+    # ``writer(event)`` on every inner event. A regression that
+    # dropped the writer propagation (or that reverted the fix path
+    # to the event-discarding ``stream_workflow`` consumer) would
+    # otherwise slip through unnoticed.
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iteration_events) >= 2
+
 
 async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs() -> (
     None
