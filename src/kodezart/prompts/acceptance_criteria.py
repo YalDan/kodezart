@@ -37,12 +37,11 @@ boundary (API response, event emitted, file written, log entry produced) \
 and work inward. Generate concrete, verifiable criteria expressed in \
 terms of observable outcomes, NOT implementation steps. Each criterion \
 must be falsifiable from evidence the in-loop evaluator can collect via \
-Read/Glob/Grep against the changeset under review at evaluation time — \
-never by reading source code and nodding, and never against artifacts \
-produced AFTER the evaluator runs. The in-loop evaluator runs INSIDE \
-run_ralph_loop, so the following criteria classes are OUT OF BOUNDS \
-and MUST NOT be emitted: pull-request body; CI / check-run status; \
-merge / branch state.
+Read/Glob/Grep against the changeset under review at evaluation time, \
+and never against artifacts produced AFTER the evaluator runs. The \
+in-loop evaluator runs INSIDE run_ralph_loop, so the following criteria \
+classes are OUT OF BOUNDS and MUST NOT be emitted: pull-request body; \
+CI / check-run status; merge / branch state.
 
 ── WATSON 2: ARCHITECTURE (subagent_type=Plan) ──
 Ultrathink. Be extremely thorough. Read the project structure via the \
