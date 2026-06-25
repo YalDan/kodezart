@@ -68,12 +68,31 @@ findings as a list of concrete violations.
 ── WATSON 3: LINT & TYPE SAFETY (subagent_type=Explore) ──
 Ultrathink. Be extremely thorough. Read the project's build configuration \
 to identify the project's linter and type checker and their exact settings. \
-For each changed file, reason about whether the changes pass both the \
-linter and the type checker with zero violations. The linter is NEVER \
-allowed to be disabled or suppressed — no inline noqa comments, no \
-per-file ignores added for convenience, no rule removals. If a change \
-would trigger a violation, report the exact rule and the offending line. \
-Report findings as a list of concrete rule violations.
+For each changed file in the changeset under review, grep the diff for \
+newly introduced suppression tokens on changed lines and report any \
+match as a finding with the exact suppression token, the file path, and \
+the changed-line evidence (line numbers from the diff). The token set \
+to search for is: \
+(1) `# type: ignore` and `# type: ignore[<code>]`; \
+(2) `# noqa` and `# noqa: <code>`; \
+(3) `# ruff: noqa` and `# ruff: noqa: <code>`; \
+(4) `pytest.mark.skip`; \
+(5) `pytest.mark.skipif`; \
+(6) `pytest.skip(...)` function-call form; \
+(7) `pytest.importorskip(...)`; \
+(8) removed `def test_` declarations on changed lines; \
+(9) removed `assert ` lines on changed lines; \
+(10) any Pydantic `model_config` whose `extra` value is flipped from \
+`forbid` or `ignore` to `allow` on changed lines. \
+The linter is NEVER allowed to be disabled or suppressed — this policy \
+remains in force, and the suppression-token grep above is the \
+NEGATIVE-SHAPE proxy through which it is verified in-loop. Positive \
+runtime claims of the form `<tool> exits 0` require execution, which is \
+stochastic in practice; grepping the diff is deterministic. The drafter \
+prompt names this same proxy on the criteria-generation side so drafter \
+and evaluator vocabulary cannot drift. If a change would trigger a \
+violation, report the exact rule and the offending line. Report \
+findings as a list of concrete rule violations.
 
 ── WATSON 4: OFFICIAL DOCS (subagent_type=Explore) ──
 Ultrathink. Be extremely thorough. Use WebSearch and WebFetch to verify \
