@@ -36,8 +36,12 @@ fix is in place? Think hexagonally — outside-in: start from the system \
 boundary (API response, event emitted, file written, log entry produced) \
 and work inward. Generate concrete, verifiable criteria expressed in \
 terms of observable outcomes, NOT implementation steps. Each criterion \
-must be testable by running a command or inspecting output — never by \
-reading source code and nodding.
+must be falsifiable from evidence the in-loop evaluator can collect via \
+Read/Glob/Grep against the changeset under review at evaluation time, \
+and never against artifacts produced AFTER the evaluator runs. The \
+in-loop evaluator runs INSIDE run_ralph_loop, so the following criteria \
+classes are OUT OF BOUNDS and MUST NOT be emitted: pull-request body; \
+CI / check-run status; merge / branch state.
 
 ── WATSON 2: ARCHITECTURE (subagent_type=Plan) ──
 Ultrathink. Be extremely thorough. Read the project structure via the \
@@ -63,14 +67,30 @@ about layer placement and dependency direction.
 Ultrathink. Be extremely thorough. Read the project's build \
 configuration files to discover the type checker, linter, test runner, \
 and their strictness settings. Generate criteria that require: \
-(a) the type checker passes in its strictest configured mode with zero \
-errors on all changed files; \
-(b) the linter reports zero violations on all changed files — the \
-linter is NEVER allowed to be disabled or suppressed; \
-(c) all existing and new tests pass; \
+(a) the diff introduces no new type-checker suppression on changed \
+lines — no new `# type: ignore` and no new `# type: ignore[<code>]` \
+bracketed-code form; \
+(b) the diff introduces no new linter suppression on changed lines — \
+no new `# noqa`, no new `# noqa: <code>`, no new `# ruff: noqa`, and \
+no new `# ruff: noqa: <code>` directive; \
+(c) the diff weakens no test surface on changed lines — no new \
+`pytest.mark.skip`, no new `pytest.mark.skipif`, no new \
+`pytest.skip(...)` function-call, no new `pytest.importorskip(...)`, \
+no removed `def test_` declaration on changed lines, no removed \
+`assert ` line on changed lines, and no Pydantic `model_config` whose \
+`extra` value is flipped from `forbid` or `ignore` to `allow` on \
+changed lines; \
 (d) external data entering the system is validated through typed models \
 at system boundaries — no raw dictionaries or untyped payloads cross \
-adapter edges.
+adapter edges. \
+The linter is NEVER allowed to be disabled or suppressed — this policy \
+remains in force, and asks (a) through (c) are the NEGATIVE-SHAPE proxy \
+through which it is verified in-loop. Positive runtime claims of the \
+form `<tool> exits 0` require execution, which the user judges \
+stochastic in practice; grepping the diff for newly introduced \
+suppressions is deterministic. The evaluator prompt mirrors this same \
+proxy on the grading side so drafter and evaluator vocabulary cannot \
+drift.
 
 ── WATSON 4: ANTI-PATTERN (subagent_type=Explore) ──
 Ultrathink. Be extremely thorough. Generate criteria that specifically \
@@ -103,7 +123,11 @@ the existing architecture. Visualize how the proposed changes fit into \
 what already exists. Generate criteria for: \
 (a) no layer violations — the change does not introduce imports that \
 break existing dependency direction; \
-(b) all existing tests still pass after the change — no regressions; \
+(b) no test file is weakened, skipped, or deleted on changed lines — \
+the diff introduces no new occurrence of `pytest.mark.skip`, \
+`pytest.mark.skipif`, `pytest.skip(...)`, or `pytest.importorskip(...)`, \
+and removes no existing `def test_` declaration or `assert ` line on \
+changed lines; \
 (c) the change follows existing patterns already established in the \
 codebase (naming conventions, module structure, error handling style); \
 (d) re-exports are not introduced as backwards-compat shims — if a \
@@ -129,6 +153,37 @@ that emerges from combining their reports. Add it yourself, attributed \
   - Concrete and verifiable (not vague like "code quality is good")
   - Scoped to the specific task (not generic boilerplate)
   - Testable by running a command or inspecting a file
+
+4. INVARIANT. Every emitted criterion must be falsifiable from in-loop \
+evidence collectable via Read/Glob/Grep against the changeset under \
+review at evaluation time, AND the criterion set must be JOINTLY \
+SATISFIABLE by at least one implementation given that the harness \
+auto-injects persistence commits — its own `.kodezart/ticket.json` and \
+`.kodezart/criteria.json` — between the base ref and the head ref.
+
+5. FORBIDDEN CRITERIA CLASSES. Do NOT emit any criterion that falls \
+into one of these classes: \
+(a) criteria depending on the pull-request body; \
+(b) criteria depending on CI / check-run status; \
+(c) criteria depending on merge / branch state; \
+(d) criteria requiring command execution to grade; \
+(e) criteria pinning LITERAL COUNTS of internal symbols on the agent's \
+diff — file count, export count, import count, grep hit count, and the \
+phrase `exactly N files modified`; \
+(f) criteria pinned to transient pipeline state the harness mutates \
+between base and head.
+
+6. MUTUAL-SATISFIABILITY SELF-CHECK. Before emitting the criteria \
+array, answer the literal question: "is there an implementation that \
+satisfies every criterion simultaneously, under the harness's \
+persistence-commit injection between base and head?" If the answer is \
+NO, route the conjunction-failure back through one additional drafter \
+pass with the unsatisfiable conjunction inlined as feedback to the \
+relevant Watson(s). This self-check is in-prompt best-effort, not a \
+hard guard — it does not introduce a new graph node, a new round-trip, \
+a new schema field, or a new state field; if an unsatisfiable \
+conjunction slips through, it surfaces as an iteration failure \
+downstream.
 
 Do NOT short-circuit. Even if one Watson flags a fatal gap, still wait \
 for all five so the final criteria list covers every dimension — and so \
