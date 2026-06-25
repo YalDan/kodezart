@@ -445,6 +445,45 @@ class RalphWorkflowEngine:
 
         return {"acceptance_criteria": output.criteria}
 
+    async def _run_quality_gate(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        feature_branch: str,
+        ralph_branch: str,
+        base_branch: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        acceptance_criteria: list[str],
+        cache_key: str,
+    ) -> WorkflowIterationEvent:
+        """Delegate to the quality gate for iterative execution."""
+        writer = get_stream_writer()
+        last_iteration_event: WorkflowIterationEvent | None = None
+        async for event in self._quality_gate.run(
+            prompt=prompt,
+            repo_path=repo_path,
+            repo_url=repo_url,
+            feature_branch=feature_branch,
+            ralph_branch=ralph_branch,
+            base_branch=base_branch,
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
+            acceptance_criteria=acceptance_criteria,
+            cache_key=cache_key,
+        ):
+            writer(event)
+            if isinstance(event, WorkflowIterationEvent):
+                last_iteration_event = event
+
+        if last_iteration_event is None:
+            msg = "Ralph loop completed without emitting an iteration event."
+            raise RuntimeError(msg)
+
+        return last_iteration_event
+
     async def _run_ralph_loop_node(
         self,
         state: WorkflowState,
@@ -452,15 +491,13 @@ class RalphWorkflowEngine:
     ) -> dict[str, object]:
         """Delegate to the quality gate for iterative execution."""
         ctx = ExecutionContext.from_configurable(config)
-        writer = get_stream_writer()
 
         ticket = state["ticket"]
         if ticket is None:
             msg = "run_ralph_loop requires a ticket but state['ticket'] is None."
             raise RuntimeError(msg)
 
-        last_iteration_event: WorkflowIterationEvent | None = None
-        async for event in self._quality_gate.run(
+        last_iteration_event = await self._run_quality_gate(
             prompt=format_ticket_as_task(ticket),
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
@@ -471,14 +508,7 @@ class RalphWorkflowEngine:
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=state["acceptance_criteria"],
             cache_key=ctx.cache_key,
-        ):
-            writer(event)
-            if isinstance(event, WorkflowIterationEvent):
-                last_iteration_event = event
-
-        if last_iteration_event is None:
-            msg = "Ralph loop completed without emitting an iteration event."
-            raise RuntimeError(msg)
+        )
 
         # feature_tip_sha is left None here; _merge_to_feature_node sets it
         # from the merger's outcome.feature_tip_sha (canonical, post-push).
@@ -763,19 +793,18 @@ class RalphWorkflowEngine:
             fix_prompt_parts.append(f"\n\n## CI Failures\n{state['ci_summary']}")
         fix_prompt = "".join(fix_prompt_parts)
 
-        async for _event in self._service.stream_workflow(
+        await self._run_quality_gate(
             prompt=fix_prompt,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
-            base_branch=state["feature_branch"],
-            branch_name=state["feature_branch"],
+            feature_branch=state["feature_branch"],
             ralph_branch=fix_branch,
+            base_branch=state["feature_branch"],
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            create_branch=True,
+            acceptance_criteria=state["acceptance_criteria"],
             cache_key=ctx.cache_key,
-        ):
-            pass  # consume stream
+        )
 
         outcome = await self._merger.consolidate(
             repo_path=ctx.repo_path,

@@ -12,6 +12,7 @@ from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
+    AcceptanceCriteriaOutput,
     AgentEvent,
     AssistantTextEvent,
     ResultEvent,
@@ -2009,10 +2010,11 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
     comment_calls = [c for c in pr_creator.calls if c.get("method") == "comment_on_pr"]
     assert len(comment_calls) == 0
 
-    # P2-AC09: Fix prompt includes CI summary
-    fix_calls = [c for c in executor.calls if c.get("output_format") is None]
-    assert len(fix_calls) >= 1
-    fix_prompt = str(fix_calls[0].get("prompt", ""))
+    # P2-AC09: Fix prompt includes CI summary. The fix path now routes
+    # through _run_quality_gate (gate.calls[1] is the fix invocation;
+    # gate.calls[0] is the pre-merge ralph-loop invocation).
+    assert len(gate.calls) == 2
+    fix_prompt = str(gate.calls[1].get("prompt", ""))
     assert "## CI Failures\nCI failed: lint" in fix_prompt
 
 
@@ -2609,6 +2611,181 @@ async def test_fix_code_node_source_missing_routes_terminally() -> None:
     # Only one review (the first); no re-review after the failed fix consolidation.
     review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
     assert len(review_events) == 1
+
+
+class _SequentialQualityGate:
+    """QualityGate that scripts evaluations across calls.
+
+    Mirrors the in-tree ``_SequentialReviewExecutor`` precedent: stateful
+    list of scripted ``AcceptanceCriteriaOutput`` results plus a ``.calls``
+    recorder. One ``WorkflowIterationEvent`` is yielded per ``run`` call,
+    letting tests distinguish the pre-merge gate invocation from the
+    fix-path gate invocation.
+    """
+
+    def __init__(
+        self,
+        evaluations: list[AcceptanceCriteriaOutput],
+        last_commit_sha: str = "a" * 40,
+    ) -> None:
+        self._evaluations = list(evaluations)
+        self._last_commit_sha = last_commit_sha
+        self.calls: list[dict[str, object]] = []
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        feature_branch: str,
+        ralph_branch: str,
+        base_branch: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        acceptance_criteria: list[str],
+        cache_key: str,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "repo_path": repo_path,
+                "repo_url": repo_url,
+                "feature_branch": feature_branch,
+                "ralph_branch": ralph_branch,
+                "base_branch": base_branch,
+                "permission_mode": permission_mode,
+                "allowed_tools": allowed_tools,
+                "acceptance_criteria": acceptance_criteria,
+                "cache_key": cache_key,
+            }
+        )
+        evaluation = self._evaluations.pop(0)
+        yield WorkflowIterationEvent(
+            iteration=1,
+            branch=ralph_branch,
+            commit_sha=self._last_commit_sha,
+            accepted=all(r.passed for r in evaluation.criteria_results),
+            evaluation=evaluation,
+        )
+
+
+async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> None:
+    """fix_code routes through _run_quality_gate without overwriting state['accepted'].
+
+    Asserts (a) exactly two gate invocations across the workflow,
+    (b) the fix-path call's ``base_branch`` equals ``feature_branch`` and
+    ``acceptance_criteria`` is forwarded, and (c) the terminal
+    ``WorkflowCompleteEvent.accepted`` reflects the PRE-MERGE gate verdict
+    even when the fix gate returns ``accepted=False`` — proving the fix
+    gate does not overwrite the outer ``state['accepted']`` signal.
+    """
+    failing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+        ],
+    }
+    passing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass now."},
+        ],
+    }
+    executor = _SequentialReviewExecutor(
+        review_results=[failing_review, passing_review],
+    )
+    # Pre-merge gate returns accepted=True → merge proceeds.
+    # Fix-path gate returns accepted=False → would-be regression case if
+    # _fix_code_node propagated it into state['accepted'].
+    gate = _SequentialQualityGate(
+        evaluations=[make_passing_evaluation(), make_failing_evaluation()],
+    )
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),  # post-loop merge
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="c" * 40,
+            ),  # fix consolidation
+        ],
+    )
+    service = AgentService(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    engine = RalphWorkflowEngine(
+        service=service,
+        quality_gate=gate,
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger,
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        pr_creator=FakePRCreator(),
+        ci_monitor=FakeCIMonitor(passed=True),
+        max_fix_rounds=2,
+        artifact_persister=None,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url="https://github.com/owner/repo",
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    # (a) Exactly two gate invocations: one pre-merge, one fix-path.
+    assert len(gate.calls) == 2
+
+    # (b) Differential bases: pre-merge gate uses ctx.base_branch ("main"),
+    # fix-path gate uses state["feature_branch"] (so the inner evaluator
+    # diffs against the merged feature tip, not main). Asserting BOTH
+    # bases proves the two call sites pass different bases — a future
+    # refactor that accidentally forwarded feature_branch to BOTH calls
+    # would otherwise slip through.
+    assert gate.calls[0]["base_branch"] == "main"
+    fix_call = gate.calls[1]
+    assert fix_call["base_branch"] == fix_call["feature_branch"]
+    assert isinstance(fix_call["base_branch"], str)
+    assert fix_call["base_branch"].startswith("kodezart/")
+    # Fix-path kwargs: acceptance criteria forwarded; ralph_branch is a
+    # fresh kodezart/...-ralph-... branch off the feature branch; the
+    # fix prompt carries the review-failure body so the routed-through-
+    # gate path preserves the fix-prompt assembly (incl. the
+    # "## Review Failures" header from _fix_code_node).
+    assert fix_call["acceptance_criteria"] == ["Tests pass", "No lint errors"]
+    assert isinstance(fix_call["ralph_branch"], str)
+    assert isinstance(fix_call["feature_branch"], str)
+    assert fix_call["ralph_branch"].startswith(fix_call["feature_branch"])
+    assert "-ralph-" in fix_call["ralph_branch"]
+    assert "## Review Failures" in str(fix_call["prompt"])
+
+    # (c) Terminal accepted reflects the PRE-MERGE verdict. Fix gate
+    # returned accepted=False but the post-merge reviewer passed; the
+    # outer state['accepted'] must remain True so WorkflowCompleteEvent
+    # and the backup-branch cleanup gate stay correct.
+    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete_events) == 1
+    assert complete_events[0].accepted is True
+
+    # (d) Downstream SSE consumers receive at least one
+    # ``WorkflowIterationEvent`` per fix round in addition to the
+    # pre-merge round, because ``_run_quality_gate`` calls
+    # ``writer(event)`` on every inner event. A regression that
+    # dropped the writer propagation (or that reverted the fix path
+    # to the event-discarding ``stream_workflow`` consumer) would
+    # otherwise slip through unnoticed.
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iteration_events) >= 2
 
 
 async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs() -> (
