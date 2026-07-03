@@ -12,11 +12,13 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "pydantic-ai>=0.0.14",
-    # Compatible-release operator: >=0.1.69, <0.2.0.  Pins the SDK's
-    # ProcessError(message, exit_code, stderr) constructor shape that
-    # adapters/claude_client_executor.py depends on.  A 0.2.x release
-    # is allowed to reshuffle that surface, so cap the upper bound.
-    "claude-agent-sdk~=0.1.69",
+    # Compatible-release operator: >=0.2.110, <0.3.0.  Reverses the prior
+    # <0.2.0 cap: at the v0.2.110 tag the consumed surfaces are intact —
+    # ProcessError(message, exit_code, stderr) with .exit_code:int|None and
+    # .stderr:str|None (_errors.py), ClaudeAgentOptions still exposes
+    # cwd/permission_mode/allowed_tools/resume/output_format/model (types.py),
+    # and RateLimitEvent/StreamEvent are in claude_agent_sdk.__all__.
+    "claude-agent-sdk~=0.2.110",
     "langchain>=0.3.0",
     "langgraph>=0.2.0",
     "structlog>=24.4.0",
