@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncGenerator
 
-# Claude Agent SDK API surface verified against claude-agent-sdk ~=0.1.69
+# Claude Agent SDK API surface verified against claude-agent-sdk ~=0.2.128
 # (ProcessError.exit_code: int | None; ProcessError.stderr: str | None).
 from claude_agent_sdk import (
     ClaudeAgentOptions,
