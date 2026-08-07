@@ -1,6 +1,6 @@
 """Protocol definitions — composition without inheritance."""
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
@@ -11,6 +11,7 @@ from kodezart.types.domain.consolidation import (
 )
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 
 
 @runtime_checkable
@@ -188,6 +189,7 @@ class AgentExecutor(Protocol):
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -228,6 +230,7 @@ class ChangePersister(Protocol):
         branch: str,
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
+        skills: SkillsSelection,
     ) -> PersistResult | None:
         """Commit and push changes. ``None`` if clean.
 
@@ -363,6 +366,7 @@ class AgentRunner(Protocol):
         branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -381,6 +385,7 @@ class AgentRunner(Protocol):
         ralph_branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -394,6 +399,7 @@ class AgentRunner(Protocol):
         workspace_path: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -486,4 +492,17 @@ class PromptProvider(Protocol):
 
     def resolution_table(self) -> Mapping[PromptKey, str]:
         """Effective ``key -> set/source`` mapping over every key."""
+        ...
+
+    def declared_skills(self, key: PromptKey) -> Sequence[str]:
+        """Skill names the resolved set declares for *key*. Empty is legal."""
+        ...
+
+
+@runtime_checkable
+class SkillInventory(Protocol):
+    """The skill names the host exposes at user scope."""
+
+    def available(self) -> frozenset[str]:
+        """Every resolvable skill name, including plugin-qualified ones."""
         ...

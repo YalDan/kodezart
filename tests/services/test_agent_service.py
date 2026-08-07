@@ -6,6 +6,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeChangePersister,
     FakeRaisingExecutor,
@@ -42,6 +43,7 @@ async def test_stream_workflow_persists_changes() -> None:
     collected = [
         e
         async for e in service.stream_workflow(
+            skills=SUPPRESS_ALL_SKILLS,
             prompt="fix it",
             repo_path="/tmp/fake",
             branch_name="kodezart/test-branch-abc12345",
@@ -79,6 +81,7 @@ async def test_stream_passes_output_format() -> None:
     [
         e
         async for e in service.stream(
+            skills=SUPPRESS_ALL_SKILLS,
             prompt="x",
             repo_path="/tmp/fake",
             permission_mode="plan",
@@ -98,6 +101,7 @@ async def test_stream_propagates_executor_error() -> None:
         [
             e
             async for e in service.stream(
+                skills=SUPPRESS_ALL_SKILLS,
                 prompt="x",
                 repo_path="/tmp/fake",
                 permission_mode="plan",

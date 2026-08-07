@@ -33,3 +33,27 @@ def test_readme_points_at_the_relocated_prompt_layout() -> None:
     """Both prompt-path references were updated to the sets layout."""
     assert "src/kodezart/prompts/sets/" in README
     assert "`src/kodezart/prompts/`" not in README
+
+
+def test_env_example_documents_every_skills_knob() -> None:
+    """AC-4: both fields, the setting-sources field, and the host home dir."""
+    for name in (
+        "KODEZART_SKILLS_MODE",
+        "KODEZART_SKILLS_ALLOWLIST",
+        "KODEZART_SETTING_SOURCES",
+        "KODEZART_CLAUDE_HOME_DIR",
+    ):
+        assert name in ENV_EXAMPLE
+
+
+def test_readme_documents_the_skills_model() -> None:
+    """AC-4: three-state semantics, the suppress-all default and its rationale."""
+    for name in (
+        "KODEZART_SKILLS_MODE",
+        "KODEZART_SKILLS_ALLOWLIST",
+        "KODEZART_SETTING_SOURCES",
+    ):
+        assert name in README
+    assert "Shipped default" in README
+    assert "host-provisioned at user scope" in README
+    assert "target repository's own `.claude/`" in README

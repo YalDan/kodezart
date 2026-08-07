@@ -21,6 +21,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
 )
 from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
@@ -53,6 +54,7 @@ def _make_engine(
         git_base_url="https://github.com",
     )
     return RalphWorkflowEngine(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=quality_gate,

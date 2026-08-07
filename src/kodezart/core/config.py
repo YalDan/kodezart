@@ -2,8 +2,10 @@
 
 from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 
 
 class AppConfig(BaseSettings):
@@ -169,6 +171,60 @@ class AppConfig(BaseSettings):
             "a template file. Highest precedence layer."
         ),
     )
+
+    skills_mode: SkillsMode = Field(
+        default=SkillsMode.NONE,
+        description=(
+            "Three-state skill selection: NONE suppresses every skill, ALL "
+            "loads every discovered skill, EXPLICIT loads the allowlist."
+        ),
+    )
+    skills_allowlist: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Skill names loaded under EXPLICIT mode. Must be empty in every "
+            "other mode. Names are host-provisioned at user scope."
+        ),
+    )
+    setting_sources: list[SettingSource] = Field(
+        default_factory=lambda: [
+            SettingSource.USER,
+            SettingSource.PROJECT,
+            SettingSource.LOCAL,
+        ],
+        description=(
+            "Settings sources passed explicitly to agent sessions so enabling "
+            "the skills knob never silently narrows loaded settings."
+        ),
+    )
+    claude_home_dir: str = Field(
+        default="~/.claude",
+        description="Host directory holding user-scope skills and plugins.",
+    )
+
+    @model_validator(mode="after")
+    def _check_skills_configuration(self) -> Self:
+        """Reject the two contradictory skill configurations at load time."""
+        if self.skills_mode is SkillsMode.EXPLICIT and not self.skills_allowlist:
+            msg = (
+                "KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty "
+                "KODEZART_SKILLS_ALLOWLIST"
+            )
+            raise ValueError(msg)
+        if self.skills_mode is not SkillsMode.EXPLICIT and self.skills_allowlist:
+            msg = (
+                f"KODEZART_SKILLS_ALLOWLIST must be empty when "
+                f"KODEZART_SKILLS_MODE={self.skills_mode.value}"
+            )
+            raise ValueError(msg)
+        return self
+
+    def skills_selection(self) -> SkillsSelection:
+        """The typed three-state selection threaded to executor sessions."""
+        return SkillsSelection(
+            mode=self.skills_mode,
+            allowlist=tuple(self.skills_allowlist),
+        )
 
     @classmethod
     def from_env(cls) -> Self:

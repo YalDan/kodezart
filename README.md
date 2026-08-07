@@ -134,6 +134,43 @@ reads the model knob. When the running engine is not among the set's declared
 `engines`, boot emits an informational `prompt_set_engine_mismatch` note and
 proceeds unchanged.
 
+### Skills
+
+Skills are **host-provisioned at user scope** — kodezart neither vendors nor
+installs them. It only selects among what the host already provides under
+`KODEZART_CLAUDE_HOME_DIR` (`~/.claude/skills` plus plugin bundles).
+
+`KODEZART_SKILLS_MODE` is three-state, with no "unset" inhabitant:
+
+| Mode | Effect |
+| --- | --- |
+| `none` | Suppress every skill. **Shipped default.** |
+| `all` | Load every discovered skill. |
+| `explicit` | Load exactly `KODEZART_SKILLS_ALLOWLIST`. |
+
+The default is suppress-all for two reasons. First, leaving the knob unset
+would hand the SDK its own defaults rather than a decision kodezart made.
+Second, the SDK resolves the *project* settings source relative to the target
+worktree — so a target repository's own `.claude/` is reachable input to a
+run. Suppressing by default means a repository kodezart is asked to work on
+cannot introduce skills into the session without an explicit operator choice.
+
+Two configurations are rejected at load time: `explicit` with an empty
+allowlist, and any other mode with a non-empty one. Under `explicit` every
+configured name is pre-flighted against the host inventory before the app
+serves traffic; any unresolvable name aborts startup and the error lists all
+of them at once. The SDK gives no session-time availability signal — unknown
+names are forwarded verbatim and silently filtered — so boot is the only place
+the gap can surface.
+
+`KODEZART_SETTING_SOURCES` is passed explicitly on every session (default:
+all three of `user`, `project`, `local`), so turning the skills knob on never
+silently narrows which settings get loaded.
+
+Which skills a given pipeline step should reach for is **data**, declared per
+function key in the prompt set's `[skills]` section and rendered into that
+step's prompt. A step with an empty loadout renders no skills reference at all.
+
 ## Development
 
 ```bash

@@ -574,7 +574,8 @@ def test_prompt_provider_exposes_no_augment_specific_method() -> None:
         for name, _ in inspect.getmembers(PromptProvider, inspect.isfunction)
         if not name.startswith("_")
     }
-    assert methods == {"template_for", "resolution_table"}
+    assert methods == {"template_for", "resolution_table", "declared_skills"}
+    assert not any("augment" in name for name in methods)
 
 
 def test_set_metadata_rejects_an_unknown_section(tmp_path: Path) -> None:

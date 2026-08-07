@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, WorkflowEngine
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.requests.agent import QueryRequest, WorkflowRequest
 
 
@@ -20,9 +21,11 @@ class AgentHandler:
     def __init__(
         self,
         service: AgentRunner,
+        skills: SkillsSelection,
         workflow_engine: WorkflowEngine | None = None,
     ) -> None:
         self._service = service
+        self._skills: SkillsSelection = skills
         self._workflow_engine = workflow_engine
         self._log: BoundLogger = get_logger(__name__)
 
@@ -46,6 +49,7 @@ class AgentHandler:
                 branch=request.branch,
                 permission_mode=request.permission_mode,
                 allowed_tools=request.allowed_tools,
+                skills=self._skills,
                 session_id=request.session_id,
                 output_format=output_format,
                 cache_key=cache_key,

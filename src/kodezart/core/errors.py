@@ -90,3 +90,28 @@ class PromptRenderError(Exception):
     def __init__(self, message: str, *, missing: Sequence[str] = ()) -> None:
         super().__init__(message)
         self.missing: tuple[str, ...] = tuple(missing)
+
+
+class SkillPreflightError(Exception):
+    """Raised at boot when a configured skill name is not host-provisioned.
+
+    Names EVERY unresolvable skill at once.  Skills are host-provided at user
+    scope; a name that resolves to nothing would otherwise be forwarded
+    verbatim to the SDK and silently filtered, so the check has to happen
+    here — the SDK offers no session-time availability signal.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        unresolvable: Sequence[str],
+        available: Sequence[str],
+    ) -> None:
+        detail = (
+            f"{message} (unresolvable: {', '.join(unresolvable)}; "
+            f"host inventory: {', '.join(available) or 'empty'})"
+        )
+        super().__init__(detail)
+        self.unresolvable: tuple[str, ...] = tuple(unresolvable)
+        self.available: tuple[str, ...] = tuple(available)

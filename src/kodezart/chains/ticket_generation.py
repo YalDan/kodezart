@@ -29,6 +29,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketReviewEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import TicketGenerationState, WorkflowContext
 
 
@@ -44,6 +45,7 @@ class TicketGenerationLoop:
         workspace: WorkspaceProvider,
         *,
         prompts: PromptProvider,
+        skills: SkillsSelection,
         max_reviews: int = 2,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
@@ -52,6 +54,7 @@ class TicketGenerationLoop:
         self._service = service
         self._workspace = workspace
         self._prompts: PromptProvider = prompts
+        self._skills: SkillsSelection = skills
         self._max_reviews = max_reviews
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
@@ -209,6 +212,7 @@ class TicketGenerationLoop:
                 workspace_path=ctx.workspace_path,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=TICKET_TOOLS,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_DRAFT_SCHEMA,
@@ -269,6 +273,7 @@ class TicketGenerationLoop:
                 workspace_path=ctx.workspace_path,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=TICKET_TOOLS,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_REVIEW_SCHEMA,

@@ -29,6 +29,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
 
 
@@ -46,6 +47,7 @@ class RalphLoop:
         git: GitService,
         cache: RepoCache,
         prompts: PromptProvider,
+        skills: SkillsSelection,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
@@ -59,6 +61,7 @@ class RalphLoop:
         self._git: GitService = git
         self._cache: RepoCache = cache
         self._prompts: PromptProvider = prompts
+        self._skills: SkillsSelection = skills
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
             initial_interval=retry_initial_interval,
@@ -181,6 +184,7 @@ class RalphLoop:
             ralph_branch=ctx.ralph_branch,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
+            skills=self._skills,
             create_branch=is_first,
             cache_key=ctx.cache_key,
         ):
@@ -228,6 +232,7 @@ class RalphLoop:
                 branch=ctx.ralph_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,

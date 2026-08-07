@@ -10,7 +10,12 @@ from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.core.protocols import ChangePersister
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.persist import PersistSource
-from tests.fakes import FakeAgentExecutor, FakeGitService, make_prompt_provider
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeAgentExecutor,
+    FakeGitService,
+    make_prompt_provider,
+)
 
 
 async def _run_git(cmd: list[str], cwd: Path) -> None:
@@ -75,6 +80,7 @@ async def test_persist_returns_working_tree_commit_source(
         ]
     )
     result = await persister.persist(
+        skills=SUPPRESS_ALL_SKILLS,
         workspace_path=str(git_repo),
         branch="wt-branch",
         executor=executor,
@@ -130,6 +136,7 @@ async def test_persist_returns_agent_direct_commit_source_with_real_head_message
 
     executor = FakeAgentExecutor(events=[])
     result = await persister.persist(
+        skills=SUPPRESS_ALL_SKILLS,
         workspace_path=str(git_repo),
         branch="direct-branch",
         executor=executor,
@@ -172,6 +179,7 @@ async def test_persist_diverged_backup_push_failure_re_raises_without_mutation(
     # legitimate recovery-time re-raise.
     with pytest.raises(RuntimeError, match="backup push"):
         await persister_with_fake.persist(
+            skills=SUPPRESS_ALL_SKILLS,
             workspace_path=str(git_repo),
             branch="feat",
             executor=executor,
@@ -198,6 +206,7 @@ async def test_persist_diverged_tree_equal_skips_replay(git_repo: Path) -> None:
     )
     executor = FakeAgentExecutor(events=[])
     result = await persister_with_fake.persist(
+        skills=SUPPRESS_ALL_SKILLS,
         workspace_path=str(git_repo),
         branch="feat",
         executor=executor,
@@ -228,6 +237,7 @@ async def test_persist_diverged_tree_differ_replays_in_order(git_repo: Path) -> 
     )
     executor = FakeAgentExecutor(events=[])
     result = await persister_with_fake.persist(
+        skills=SUPPRESS_ALL_SKILLS,
         workspace_path=str(git_repo),
         branch="feat",
         executor=executor,
@@ -256,6 +266,7 @@ async def test_persist_returns_none_when_remote_in_sync(
     # main is pushed; HEAD equals origin/main.
     executor = FakeAgentExecutor(events=[])
     result = await persister.persist(
+        skills=SUPPRESS_ALL_SKILLS,
         workspace_path=str(git_repo),
         branch="main",
         executor=executor,

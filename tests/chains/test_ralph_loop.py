@@ -19,7 +19,9 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeChangePersister,
     FakeGitService,
@@ -46,6 +48,7 @@ def _make_loop(
         persister=persister,
     )
     return RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
         service=service,
         max_iterations=max_iterations,
@@ -190,6 +193,7 @@ async def test_loop_second_iteration_succeeds() -> None:
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -262,6 +266,7 @@ async def test_loop_second_iteration_succeeds() -> None:
         persister=persister,
     )
     loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
@@ -488,6 +493,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -628,6 +634,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -686,6 +693,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
         persister=FakeChangePersister(),
     )
     loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
@@ -795,6 +803,7 @@ async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> 
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:

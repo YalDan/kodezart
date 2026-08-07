@@ -22,7 +22,9 @@ from kodezart.types.domain.consolidation import (
     ConsolidationStatus,
 )
 from kodezart.types.domain.persist import PersistSource
+from kodezart.types.domain.skills import SkillsSelection
 from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
@@ -149,6 +151,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         persister=persister,
     )
     ralph_loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
@@ -156,12 +159,14 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         cache=cache,
     )
     ticket_generator = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=ralph_loop,
@@ -252,6 +257,7 @@ async def test_workflow_e2e_exhausts_iterations(
         persister=persister,
     )
     ralph_loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=2,
@@ -259,12 +265,14 @@ async def test_workflow_e2e_exhausts_iterations(
         cache=cache,
     )
     ticket_generator = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=ralph_loop,
@@ -333,6 +341,7 @@ class _MarkerCapturingExecutor:
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -340,6 +349,7 @@ class _MarkerCapturingExecutor:
         snapshot = marker.read_text() if marker.exists() else ""
         self.marker_snapshots.append((output_format, snapshot))
         async for event in self._inner.stream(
+            skills=SUPPRESS_ALL_SKILLS,
             prompt=prompt,
             cwd=cwd,
             permission_mode=permission_mode,
@@ -404,6 +414,7 @@ async def test_workflow_e2e_divergent_base_branch(
         persister=persister,
     )
     ralph_loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
@@ -411,12 +422,14 @@ async def test_workflow_e2e_divergent_base_branch(
         cache=cache,
     )
     ticket_generator = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=ralph_loop,
@@ -656,6 +669,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         persister=persister,
     )
     ralph_loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
@@ -663,12 +677,14 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         cache=cache,
     )
     ticket_generator = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=ralph_loop,
@@ -810,6 +826,7 @@ async def test_git_change_persister_recovers_from_divergence_against_configured_
     )
 
     result = await persister.persist(
+        skills=SUPPRESS_ALL_SKILLS,
         workspace_path=str(repo),
         branch="main",
         executor=ScriptedFakeExecutor(eval_results=[]),
@@ -905,6 +922,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
     must track the configured remote.
     """
     engine = RalphWorkflowEngine(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=AgentService(
             executor=FakeAgentExecutor(events=[]),
@@ -1043,6 +1061,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
@@ -1054,6 +1073,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         cache=FakeRepoCache(),
         artifact_persister=None,
     )
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service
     app.state.workflow_engine = engine
 

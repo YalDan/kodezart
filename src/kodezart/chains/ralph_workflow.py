@@ -57,6 +57,7 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 
 _CRITERIA_TA: TypeAdapter[list[str]] = TypeAdapter(list[str])
@@ -81,6 +82,7 @@ class RalphWorkflowEngine:
         git: GitService,
         cache: RepoCache,
         prompts: PromptProvider,
+        skills: SkillsSelection,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
@@ -101,6 +103,7 @@ class RalphWorkflowEngine:
         self._git: GitService = git
         self._cache: RepoCache = cache
         self._prompts: PromptProvider = prompts
+        self._skills: SkillsSelection = skills
         self._pr_creator: PRCreator | None = pr_creator
         self._ci_monitor: CIMonitor | None = ci_monitor
         self._max_fix_rounds: int = max_fix_rounds
@@ -341,6 +344,7 @@ class RalphWorkflowEngine:
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": BRANCH_NAME_SCHEMA,
@@ -417,6 +421,7 @@ class RalphWorkflowEngine:
                 branch=ctx.base_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": GENERATED_CRITERIA_SCHEMA,
@@ -702,6 +707,7 @@ class RalphWorkflowEngine:
                 branch=state["feature_branch"],
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,
@@ -924,6 +930,7 @@ class RalphWorkflowEngine:
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": PR_DESCRIPTION_SCHEMA,

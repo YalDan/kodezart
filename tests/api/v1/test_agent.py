@@ -15,6 +15,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
 )
 from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
@@ -59,6 +60,7 @@ async def test_stream_query_returns_events(agent_client: AsyncClient) -> None:
 
 async def test_stream_query_workspace_failure() -> None:
     app = create_app()
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(fail_acquire="Not a git repository: /bad/path"),
@@ -187,6 +189,7 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
@@ -198,6 +201,7 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
         cache=FakeRepoCache(),
         artifact_persister=None,
     )
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service
     app.state.workflow_engine = engine
     async with AsyncClient(
@@ -278,6 +282,7 @@ async def test_workflow_rejects_acceptance_criteria_in_body(
 
 async def test_stream_query_handler_catches_executor_error() -> None:
     app = create_app()
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
         executor=FakeRaisingExecutor(RuntimeError("transient failure")),
         workspace=FakeWorkspaceProvider(),
@@ -301,6 +306,7 @@ async def test_stream_query_handler_catches_executor_error() -> None:
 async def test_error_event_carries_exception_class_on_runtime_path() -> None:
     """Bare RuntimeError surfaces as ErrorEvent(error_kind='RuntimeError')."""
     app = create_app()
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
         executor=FakeRaisingExecutor(RuntimeError("x")),
         workspace=FakeWorkspaceProvider(),
@@ -342,6 +348,7 @@ async def test_error_event_carries_no_structured_output_payload() -> None:
         result_event=None,
         rate_limit_rejected=False,
     )
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
         executor=FakeRaisingExecutor(soft_failure),
         workspace=FakeWorkspaceProvider(),

@@ -1,0 +1,24 @@
+── SKILLS AVAILABLE FOR THIS ROLE ──
+Load each skill below when its subject matter is in play; ignore the ones that do not apply.
+- code-review
+
+Fix the following issues in the code:
+
+# Golden ticket
+
+## Summary
+Golden summary
+
+## Context
+Golden context
+
+## Required Changes
+### modify: src/example.py
+golden description
+golden rationale
+
+## Review Failures
+golden review feedback
+
+## CI Failures
+golden ci summary

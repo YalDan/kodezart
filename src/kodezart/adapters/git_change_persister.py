@@ -28,6 +28,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import BackupBranchName
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 
 
 class GitChangePersister:
@@ -59,6 +60,7 @@ class GitChangePersister:
         branch: str,
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
+        skills: SkillsSelection,
     ) -> PersistResult | None:
         """Ensure ``<remote>/<branch>`` equals workspace HEAD.
 
@@ -78,6 +80,7 @@ class GitChangePersister:
                 workspace_path=workspace_path,
                 branch=branch,
                 executor=executor,
+                skills=skills,
             )
 
         head_sha = await self._git.current_sha(workspace_path)
@@ -130,8 +133,13 @@ class GitChangePersister:
         workspace_path: str,
         branch: str,
         executor: AgentExecutor,
+        skills: SkillsSelection,
     ) -> PersistResult:
-        commit_msg = await self._generate_commit_message(executor, workspace_path)
+        commit_msg = await self._generate_commit_message(
+            executor,
+            workspace_path,
+            skills,
+        )
         await self._git.add_all(workspace_path)
         full_message = commit_msg.title
         if commit_msg.body:
@@ -241,6 +249,7 @@ class GitChangePersister:
         self,
         executor: AgentExecutor,
         cwd: str,
+        skills: SkillsSelection,
     ) -> CommitMessageOutput:
         output_format: dict[str, object] = {
             "type": "json_schema",
@@ -253,6 +262,7 @@ class GitChangePersister:
                 cwd=cwd,
                 permission_mode="plan",
                 allowed_tools=["Read", "Glob", "Grep", "Bash"],
+                skills=skills,
                 output_format=output_format,
             )
         )
