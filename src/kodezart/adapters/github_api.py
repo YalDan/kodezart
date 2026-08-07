@@ -2,6 +2,7 @@
 
 import asyncio
 import secrets
+from enum import StrEnum
 
 import httpx
 
@@ -10,17 +11,30 @@ from kodezart.domain.errors import RateLimitError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.github import (
     CheckRunsResponse,
-    CheckSuitesResponse,
     PullRequestResponse,
+    WorkflowsResponse,
 )
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
+
+
+class WorkflowsProbeResult(StrEnum):
+    """Classification of a repository's GitHub Actions workflow listing.
+
+    Selects which grace window an empty check-runs streak is measured
+    against.  Internal to the adapter — never crosses the CIMonitor port.
+    """
+
+    ACTIVE = "active"
+    NONE_ACTIVE = "none_active"
+    INDETERMINATE = "indeterminate"
 
 
 class GitHubAPIClient:
     """Single adapter satisfying both PRCreator and CIMonitor protocols.
 
     Uses httpx.AsyncClient for async HTTP. API responses are validated
-    via frozen Pydantic models (``CheckRunsResponse``, ``PullRequestResponse``).
+    via frozen Pydantic models (``CheckRunsResponse``, ``PullRequestResponse``,
+    ``WorkflowsResponse``).
     """
 
     _FAILURE_CONCLUSIONS = frozenset(
@@ -32,6 +46,10 @@ class GitHubAPIClient:
         }
     )
     _OK_CONCLUSIONS = frozenset({"success", "neutral", "skipped"})
+    _ACTIVE_WORKFLOW_STATE = "active"
+    _NO_WORKFLOWS_SUMMARY = (
+        "No CI checks configured: repository has no active workflows."
+    )
 
     def __init__(
         self,
@@ -41,6 +59,8 @@ class GitHubAPIClient:
         ci_poll_interval_seconds: float,
         ci_poll_max_attempts: int,
         ci_no_checks_grace_polls: int,
+        ci_no_workflows_grace_polls: int,
+        ci_grace_poll_interval_seconds: float,
         timeout_seconds: float,
         max_retries: int,
         retry_backoff_factor: float,
@@ -49,6 +69,8 @@ class GitHubAPIClient:
         self._ci_poll_interval: float = ci_poll_interval_seconds
         self._ci_poll_max_attempts: int = ci_poll_max_attempts
         self._ci_no_checks_grace_polls: int = ci_no_checks_grace_polls
+        self._ci_no_workflows_grace_polls: int = ci_no_workflows_grace_polls
+        self._ci_grace_poll_interval: float = ci_grace_poll_interval_seconds
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._rng: secrets.SystemRandom = secrets.SystemRandom()
@@ -212,36 +234,82 @@ class GitHubAPIClient:
 
     # -- CIMonitor -----------------------------------------------------------
 
-    async def _detect_ci(
+    def _grace_polls_for(self, probe: WorkflowsProbeResult) -> int:
+        """Grace window an empty check-runs streak is measured against."""
+        if probe is WorkflowsProbeResult.NONE_ACTIVE:
+            return self._ci_no_workflows_grace_polls
+        return self._ci_no_checks_grace_polls
+
+    def _no_checks_summary(
+        self,
+        probe: WorkflowsProbeResult,
+        grace_polls: int,
+    ) -> str:
+        """Terminal no-CI summary for the selected grace window."""
+        if probe is WorkflowsProbeResult.NONE_ACTIVE:
+            return self._NO_WORKFLOWS_SUMMARY
+        return f"No CI checks appeared for this ref after {grace_polls} polls."
+
+    def _verdict(self, page: CheckRunsResponse) -> tuple[bool, str] | None:
+        """Terminal pass/fail verdict for a page, or None while pending."""
+        if page.total_count == 0:
+            return None
+        if any(run.status != "completed" for run in page.check_runs):
+            return None
+        failed_names = [
+            run.name
+            for run in page.check_runs
+            if run.conclusion in self._FAILURE_CONCLUSIONS
+        ]
+        if failed_names:
+            return (False, f"CI failed: {', '.join(failed_names)}")
+        if all(run.conclusion in self._OK_CONCLUSIONS for run in page.check_runs):
+            return (True, "All CI checks passed.")
+        return None
+
+    async def _probe_workflows(
         self,
         owner: str,
         repo: str,
-        ref: str,
-    ) -> bool:
-        """Probe Check Suites API to see if CI is configured."""
-        probe_interval = min(self._ci_poll_interval, 10.0)
-        for attempt in range(self._ci_no_checks_grace_polls):
+    ) -> WorkflowsProbeResult:
+        """Classify the repository's Actions workflows.
+
+        A listing carrying more workflows than the page returned errs
+        toward ``ACTIVE`` — the longer grace window.
+        """
+        try:
             response = await self._request_with_retry(
                 "GET",
-                f"/repos/{owner}/{repo}/commits/{ref}/check-suites",
+                f"/repos/{owner}/{repo}/actions/workflows",
+                params={"per_page": 100},
             )
-            result = CheckSuitesResponse.model_validate(
-                response.json(),
+        except (httpx.HTTPStatusError, TransientAPIError) as exc:
+            await self._log.awarning(
+                "ci_workflows_probe_failed",
+                error=str(exc),
+                grace_polls=self._ci_no_checks_grace_polls,
             )
-            if result.total_count > 0:
-                await self._log.ainfo(
-                    "ci_suites_detected",
-                    count=result.total_count,
-                    attempt=attempt + 1,
-                )
-                return True
-            await asyncio.sleep(probe_interval)
+            return WorkflowsProbeResult.INDETERMINATE
 
-        await self._log.ainfo(
-            "ci_no_suites_found",
-            grace_polls=self._ci_no_checks_grace_polls,
+        result = WorkflowsResponse.model_validate(
+            response.json(),
         )
-        return False
+        has_active = any(
+            workflow.state == self._ACTIVE_WORKFLOW_STATE
+            for workflow in result.workflows
+        )
+        probe = (
+            WorkflowsProbeResult.ACTIVE
+            if has_active or result.total_count > len(result.workflows)
+            else WorkflowsProbeResult.NONE_ACTIVE
+        )
+        await self._log.ainfo(
+            "ci_workflows_probed",
+            result=probe,
+            total_count=result.total_count,
+            grace_polls=self._grace_polls_for(probe),
+        )
+        return probe
 
     async def wait_for_checks(
         self,
@@ -251,58 +319,69 @@ class GitHubAPIClient:
     ) -> tuple[bool | None, str]:
         """Poll Check Runs API until all checks complete or timeout.
 
-        Phase 1: detect CI via Check Suites.
-        Phase 2: poll Check Runs until completion.
+        Single loop.  While no check run has ever been observed, poll at
+        the grace cadence and count consecutive empty pages; the streak
+        reaching the grace window selected by a lazy, call-local
+        workflows probe concludes no CI.  Once any run is observed, poll
+        at the standard cadence and evaluate until the poll budget is
+        exhausted — an empty page after observation is pending, never
+        no-CI.  Sleeps occur strictly between polls.
 
         Returns ``(True, ...)`` when all checks pass, ``(False, ...)``
-        on failure or timeout, ``(None, ...)`` when no CI configured.
+        on failure or timeout, ``(None, ...)`` when no CI ran.
         """
         owner, repo = extract_owner_repo(repo_url)
+        grace_interval = min(self._ci_poll_interval, self._ci_grace_poll_interval)
 
-        # Phase 1 — CI detection
-        if not await self._detect_ci(owner, repo, ref):
-            return (
-                None,
-                "No CI checks configured for this ref.",
-            )
+        probe: WorkflowsProbeResult | None = None
+        grace_polls: int = self._ci_no_checks_grace_polls
+        runs_observed = False
+        empty_polls = 0
+        polls_used = 0
 
-        # Phase 2 — poll Check Runs
-        for _ in range(self._ci_poll_max_attempts):
+        while True:
             response = await self._request_with_retry(
                 "GET",
                 f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
                 params={"per_page": 100},
             )
-            result = CheckRunsResponse.model_validate(
+            page = CheckRunsResponse.model_validate(
                 response.json(),
             )
 
-            if result.total_count == 0:
-                await asyncio.sleep(self._ci_poll_interval)
+            if not runs_observed and page.total_count == 0:
+                empty_polls += 1
+                if probe is None:
+                    probe = await self._probe_workflows(owner, repo)
+                    grace_polls = self._grace_polls_for(probe)
+                if empty_polls >= grace_polls:
+                    await self._log.ainfo(
+                        "ci_no_checks_concluded",
+                        ref=ref,
+                        result=probe,
+                        grace_polls=grace_polls,
+                    )
+                    return (None, self._no_checks_summary(probe, grace_polls))
+                await asyncio.sleep(grace_interval)
                 continue
 
-            if any(run.status != "completed" for run in result.check_runs):
-                await asyncio.sleep(self._ci_poll_interval)
-                continue
+            if not runs_observed:
+                runs_observed = True
+                await self._log.ainfo(
+                    "ci_runs_observed",
+                    ref=ref,
+                    count=page.total_count,
+                )
 
-            failed_names = [
-                run.name
-                for run in result.check_runs
-                if run.conclusion in self._FAILURE_CONCLUSIONS
-            ]
-            if failed_names:
-                msg = f"CI failed: {', '.join(failed_names)}"
-                return (False, msg)
+            polls_used += 1
+            verdict = self._verdict(page)
+            if verdict is not None:
+                return verdict
 
-            if all(run.conclusion in self._OK_CONCLUSIONS for run in result.check_runs):
-                return (True, "All CI checks passed.")
-
+            if polls_used >= self._ci_poll_max_attempts:
+                attempts = self._ci_poll_max_attempts
+                return (False, f"CI checks still running after {attempts} polls.")
             await asyncio.sleep(self._ci_poll_interval)
-
-        return (
-            False,
-            f"CI checks still running after {self._ci_poll_max_attempts} polls.",
-        )
 
     # -- Lifecycle -----------------------------------------------------------
 

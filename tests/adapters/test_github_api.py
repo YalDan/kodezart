@@ -1,5 +1,7 @@
 """Tests for GitHubAPIClient using httpx.MockTransport."""
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -20,6 +22,8 @@ def _make_client(
     ci_poll_interval_seconds: float = 0.0,
     ci_poll_max_attempts: int = 10,
     ci_no_checks_grace_polls: int = 3,
+    ci_no_workflows_grace_polls: int = 3,
+    ci_grace_poll_interval_seconds: float = 10.0,
     timeout_seconds: float = 5.0,
     max_retries: int = 1,
     retry_backoff_factor: float = 0.01,
@@ -35,11 +39,78 @@ def _make_client(
         ci_poll_interval_seconds=ci_poll_interval_seconds,
         ci_poll_max_attempts=ci_poll_max_attempts,
         ci_no_checks_grace_polls=ci_no_checks_grace_polls,
+        ci_no_workflows_grace_polls=ci_no_workflows_grace_polls,
+        ci_grace_poll_interval_seconds=ci_grace_poll_interval_seconds,
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
         retry_backoff_factor=retry_backoff_factor,
         client=mock_http,
     )
+
+
+def _workflows(*, active: bool) -> httpx.Response:
+    """Actions-workflows listing with (or without) one active workflow."""
+    if active:
+        return httpx.Response(
+            200,
+            json={"total_count": 1, "workflows": [{"state": "active"}]},
+        )
+    return httpx.Response(200, json={"total_count": 0, "workflows": []})
+
+
+def _empty_runs() -> httpx.Response:
+    """Check-runs page carrying no runs at all."""
+    return httpx.Response(200, json={"total_count": 0, "check_runs": []})
+
+
+def _completed_run(conclusion: str = "success") -> httpx.Response:
+    """Check-runs page with a single completed run."""
+    return httpx.Response(
+        200,
+        json={
+            "total_count": 1,
+            "check_runs": [
+                {
+                    "id": 1,
+                    "name": "ci/test",
+                    "status": "completed",
+                    "conclusion": conclusion,
+                },
+            ],
+        },
+    )
+
+
+def _in_progress_run() -> httpx.Response:
+    """Check-runs page with a single still-running run."""
+    return httpx.Response(
+        200,
+        json={
+            "total_count": 1,
+            "check_runs": [
+                {
+                    "id": 1,
+                    "name": "ci/test",
+                    "status": "in_progress",
+                    "conclusion": None,
+                },
+            ],
+        },
+    )
+
+
+@pytest.fixture
+def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record every ``asyncio.sleep`` delay awaited during the test."""
+    recorded: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def _record(delay, result=None):
+        recorded.append(delay)
+        return await real_sleep(0, result)
+
+    monkeypatch.setattr(asyncio, "sleep", _record)
+    return recorded
 
 
 # -- PRCreator tests ---------------------------------------------------------
@@ -232,87 +303,21 @@ async def test_non_retryable_422_propagates_immediately() -> None:
     await client.close()
 
 
-# -- CI detection tests ------------------------------------------------------
+# -- CIMonitor tests ---------------------------------------------------------
 
 
-async def test_detect_ci_returns_true_when_suites_present() -> None:
-    """_detect_ci finds check suites on first poll."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "check-suites" in str(request.url):
-            return httpx.Response(200, json={"total_count": 1})
-        # check-runs endpoint
-        return httpx.Response(
-            200,
-            json={
-                "total_count": 1,
-                "check_runs": [
-                    {
-                        "id": 1,
-                        "name": "ci/test",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                ],
-            },
-        )
-
-    client = _make_client(handler)
-    passed, summary = await client.wait_for_checks(
-        repo_url="https://github.com/owner/repo", ref="abc123"
-    )
-    assert passed is True
-    assert "passed" in summary.lower()
-    await client.close()
-
-
-async def test_detect_ci_returns_false_after_grace_polls() -> None:
-    """_detect_ci returns False when suites never appear."""
-    suites_call_count = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal suites_call_count
-        if "check-suites" in str(request.url):
-            suites_call_count += 1
-            return httpx.Response(200, json={"total_count": 0})
-        return httpx.Response(200, json={"total_count": 0, "check_runs": []})
-
-    client = _make_client(handler, ci_no_checks_grace_polls=2)
-    passed, summary = await client.wait_for_checks(
-        repo_url="https://github.com/owner/repo", ref="abc123"
-    )
-    assert passed is None
-    assert "no ci checks" in summary.lower()
-    assert suites_call_count == 2
-    await client.close()
-
-
-async def test_wait_for_checks_suites_exist_runs_delayed() -> None:
-    """wait_for_checks waits for runs when suites confirm CI exists."""
+async def test_wait_for_checks_workflows_active_runs_delayed() -> None:
+    """wait_for_checks waits for runs when the repository has workflows."""
     runs_call_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal runs_call_count
-        if "check-suites" in str(request.url):
-            return httpx.Response(200, json={"total_count": 1})
-        # check-runs endpoint
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
         runs_call_count += 1
         if runs_call_count == 1:
-            return httpx.Response(200, json={"total_count": 0, "check_runs": []})
-        return httpx.Response(
-            200,
-            json={
-                "total_count": 1,
-                "check_runs": [
-                    {
-                        "id": 1,
-                        "name": "ci/test",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                ],
-            },
-        )
+            return _empty_runs()
+        return _completed_run()
 
     client = _make_client(handler)
     passed, _summary = await client.wait_for_checks(
@@ -323,15 +328,12 @@ async def test_wait_for_checks_suites_exist_runs_delayed() -> None:
     await client.close()
 
 
-# -- CIMonitor tests (existing) ---------------------------------------------
-
-
 async def test_wait_for_checks_all_success() -> None:
     """wait_for_checks returns (True, ...) when all checks pass."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if "check-suites" in str(request.url):
-            return httpx.Response(200, json={"total_count": 1})
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
         return httpx.Response(
             200,
             json={
@@ -366,8 +368,8 @@ async def test_wait_for_checks_failure() -> None:
     """wait_for_checks returns (False, ...) with failed check names."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if "check-suites" in str(request.url):
-            return httpx.Response(200, json={"total_count": 1})
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
         return httpx.Response(
             200,
             json={
@@ -399,43 +401,17 @@ async def test_wait_for_checks_failure() -> None:
 
 
 async def test_wait_for_checks_in_progress_then_success() -> None:
-    """wait_for_checks polls in-progress then returns success."""
+    """Runs present but not completed are awaited, then resolve to pass."""
     call_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal call_count
-        if "check-suites" in str(request.url):
-            return httpx.Response(200, json={"total_count": 1})
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
         call_count += 1
         if call_count == 1:
-            return httpx.Response(
-                200,
-                json={
-                    "total_count": 1,
-                    "check_runs": [
-                        {
-                            "id": 1,
-                            "name": "ci/test",
-                            "status": "in_progress",
-                            "conclusion": None,
-                        },
-                    ],
-                },
-            )
-        return httpx.Response(
-            200,
-            json={
-                "total_count": 1,
-                "check_runs": [
-                    {
-                        "id": 1,
-                        "name": "ci/test",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                ],
-            },
-        )
+            return _in_progress_run()
+        return _completed_run()
 
     client = _make_client(handler)
     passed, _summary = await client.wait_for_checks(
@@ -450,22 +426,9 @@ async def test_wait_for_checks_timeout() -> None:
     """wait_for_checks returns (False, ...) when max attempts exhausted."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if "check-suites" in str(request.url):
-            return httpx.Response(200, json={"total_count": 1})
-        return httpx.Response(
-            200,
-            json={
-                "total_count": 1,
-                "check_runs": [
-                    {
-                        "id": 1,
-                        "name": "ci/test",
-                        "status": "in_progress",
-                        "conclusion": None,
-                    },
-                ],
-            },
-        )
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        return _in_progress_run()
 
     client = _make_client(
         handler,
@@ -475,27 +438,32 @@ async def test_wait_for_checks_timeout() -> None:
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
     assert passed is False
-    assert "still running" in summary.lower()
+    assert summary == "CI checks still running after 2 polls."
     await client.close()
 
 
 async def test_wait_for_checks_no_checks_configured() -> None:
-    """wait_for_checks returns (None, ...) when no checks exist after grace polls."""
+    """Zero runs throughout with no workflows terminates as no-CI."""
+    runs_calls = 0
+    workflows_calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if "check-suites" in str(request.url):
-            return httpx.Response(200, json={"total_count": 0})
-        return httpx.Response(
-            200,
-            json={"total_count": 0, "check_runs": []},
-        )
+        nonlocal runs_calls, workflows_calls
+        if "actions/workflows" in str(request.url):
+            workflows_calls += 1
+            return _workflows(active=False)
+        runs_calls += 1
+        return _empty_runs()
 
-    client = _make_client(handler, ci_no_checks_grace_polls=2)
+    client = _make_client(handler, ci_no_workflows_grace_polls=2)
     passed, summary = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
     assert passed is None
     assert "no ci checks" in summary.lower()
+    assert summary == "No CI checks configured: repository has no active workflows."
+    assert workflows_calls == 1
+    assert runs_calls == 2
     await client.close()
 
 
@@ -503,8 +471,8 @@ async def test_wait_for_checks_neutral_and_skipped() -> None:
     """wait_for_checks treats neutral and skipped conclusions as passing."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if "check-suites" in str(request.url):
-            return httpx.Response(200, json={"total_count": 1})
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
         return httpx.Response(
             200,
             json={
@@ -532,4 +500,254 @@ async def test_wait_for_checks_neutral_and_skipped() -> None:
     )
     assert passed is True
     assert "passed" in summary.lower()
+    await client.close()
+
+
+# -- Workflows probe / grace selection ---------------------------------------
+
+
+async def test_no_active_workflows_concludes_on_first_empty_poll() -> None:
+    """With ci_no_workflows_grace_polls=1 the very first empty poll is terminal."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=False)
+        runs_calls += 1
+        return _empty_runs()
+
+    client = _make_client(handler, ci_no_workflows_grace_polls=1)
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert summary == "No CI checks configured: repository has no active workflows."
+    assert runs_calls == 1
+    await client.close()
+
+
+async def test_active_workflows_use_the_standard_grace_window() -> None:
+    """ACTIVE probe measures the empty streak against ci_no_checks_grace_polls."""
+    runs_calls = 0
+    workflows_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls, workflows_calls
+        if "actions/workflows" in str(request.url):
+            workflows_calls += 1
+            return _workflows(active=True)
+        runs_calls += 1
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_no_checks_grace_polls=4,
+        ci_no_workflows_grace_polls=1,
+    )
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert summary == "No CI checks appeared for this ref after 4 polls."
+    assert runs_calls == 4
+    assert workflows_calls == 1
+    await client.close()
+
+
+async def test_grace_sleeps_strictly_between_polls(sleeps: list[float]) -> None:
+    """N grace polls cost N-1 sleeps — the terminal poll takes no trailing sleep."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_poll_interval_seconds=30.0,
+        ci_grace_poll_interval_seconds=10.0,
+        ci_no_checks_grace_polls=4,
+    )
+    passed, _summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert sleeps == [10.0, 10.0, 10.0]
+    await client.close()
+
+
+async def test_probe_failure_403_falls_back_to_standard_grace() -> None:
+    """A 403 on the workflows probe degrades to the longer grace, never raises."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return httpx.Response(403, json={"message": "Forbidden"})
+        runs_calls += 1
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_no_checks_grace_polls=3,
+        ci_no_workflows_grace_polls=1,
+    )
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert summary == "No CI checks appeared for this ref after 3 polls."
+    assert runs_calls == 3
+    await client.close()
+
+
+async def test_probe_failure_5xx_falls_back_to_standard_grace() -> None:
+    """A retry-exhausted 5xx probe degrades to the longer grace, never raises."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return httpx.Response(502, json={"message": "Bad Gateway"})
+        runs_calls += 1
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_no_checks_grace_polls=3,
+        ci_no_workflows_grace_polls=1,
+    )
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert summary == "No CI checks appeared for this ref after 3 polls."
+    assert runs_calls == 3
+    await client.close()
+
+
+async def test_runs_appearing_during_grace_are_evaluated_normally() -> None:
+    """A NONE_ACTIVE probe never suppresses runs that show up during the grace."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=False)
+        runs_calls += 1
+        if runs_calls == 1:
+            return _empty_runs()
+        return _completed_run()
+
+    client = _make_client(handler, ci_no_workflows_grace_polls=3)
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is True
+    assert summary == "All CI checks passed."
+    assert runs_calls == 2
+    await client.close()
+
+
+async def test_probe_never_fires_when_first_poll_observes_a_run() -> None:
+    """The probe is lazy: a first poll carrying runs issues zero workflows calls."""
+    workflows_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal workflows_calls
+        if "actions/workflows" in str(request.url):
+            workflows_calls += 1
+            return _workflows(active=True)
+        return _completed_run()
+
+    client = _make_client(handler)
+    passed, _summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is True
+    assert workflows_calls == 0
+    await client.close()
+
+
+async def test_probe_total_count_beyond_page_classifies_as_active() -> None:
+    """total_count > len(workflows) errs toward the longer grace window."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "total_count": 101,
+                    "workflows": [{"state": "disabled_manually"}],
+                },
+            )
+        runs_calls += 1
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_no_checks_grace_polls=2,
+        ci_no_workflows_grace_polls=1,
+    )
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert summary == "No CI checks appeared for this ref after 2 polls."
+    assert runs_calls == 2
+    await client.close()
+
+
+async def test_empty_page_after_runs_observed_is_pending_not_no_ci() -> None:
+    """Once a run is observed an empty page is pending and never yields no-CI."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        if runs_calls == 1:
+            return _in_progress_run()
+        if runs_calls == 2:
+            return _empty_runs()
+        return _completed_run()
+
+    client = _make_client(handler, ci_no_checks_grace_polls=1)
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is True
+    assert summary == "All CI checks passed."
+    assert runs_calls == 3
+    await client.close()
+
+
+async def test_grace_polls_do_not_consume_the_poll_budget() -> None:
+    """Empty grace polls are free; the budget starts at the first observation."""
+
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        if runs_calls <= 2:
+            return _empty_runs()
+        return _in_progress_run()
+
+    client = _make_client(
+        handler,
+        ci_no_checks_grace_polls=3,
+        ci_poll_max_attempts=1,
+    )
+    result = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert result == (False, "CI checks still running after 1 polls.")
+    assert runs_calls == 3
     await client.close()
