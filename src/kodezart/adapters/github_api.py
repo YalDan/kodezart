@@ -10,6 +10,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import RateLimitError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.github import (
+    CheckRun,
     CheckRunsResponse,
     PullRequestResponse,
     WorkflowsResponse,
@@ -48,6 +49,7 @@ class GitHubAPIClient:
     _OK_CONCLUSIONS = frozenset({"success", "neutral", "skipped"})
     _ACTIVE_WORKFLOW_STATE = "active"
     _NOT_FOUND_STATUS = 404
+    _PAGE_SIZE = 100
     _NO_WORKFLOWS_SUMMARY = (
         "No CI checks configured: repository has no active workflows."
     )
@@ -254,8 +256,16 @@ class GitHubAPIClient:
         return f"No CI checks appeared for this ref after {grace_polls} polls."
 
     def _verdict(self, page: CheckRunsResponse) -> tuple[bool, str] | None:
-        """Terminal pass/fail verdict for a page, or None while pending."""
+        """Terminal pass/fail verdict for a page, or None while pending.
+
+        A run set shorter than ``total_count`` is never terminal: the
+        listing is incomplete (runs were added while paginating, or the
+        API reported a count it did not enumerate), and a verdict drawn
+        from it would report a pass this adapter did not verify.
+        """
         if page.total_count == 0:
+            return None
+        if len(page.check_runs) != page.total_count:
             return None
         if any(run.status != "completed" for run in page.check_runs):
             return None
@@ -276,25 +286,41 @@ class GitHubAPIClient:
         repo: str,
         ref: str,
     ) -> CheckRunsResponse | None:
-        """Fetch one check-runs page, or ``None`` when the ref 404s.
+        """Fetch every check-runs page for *ref*, or ``None`` when it 404s.
+
+        Pages until the collected runs reach the reported ``total_count``
+        so the verdict is drawn from the whole run set, not the first
+        page.  A page carrying no runs ends the walk — the count is then
+        larger than what the API enumerated and ``_verdict`` treats the
+        result as pending.
 
         A 404 means the ref is not yet visible to the checks API — a
         transient condition on a freshly pushed commit.  Every other
         status error propagates.
         """
-        try:
-            response = await self._request_with_retry(
-                "GET",
-                f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
-                params={"per_page": 100},
+        collected: list[CheckRun] = []
+        page_number = 1
+        while True:
+            try:
+                response = await self._request_with_retry(
+                    "GET",
+                    f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
+                    params={"per_page": self._PAGE_SIZE, "page": page_number},
+                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == self._NOT_FOUND_STATUS:
+                    return None
+                raise
+            page = CheckRunsResponse.model_validate(
+                response.json(),
             )
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == self._NOT_FOUND_STATUS:
-                return None
-            raise
-        return CheckRunsResponse.model_validate(
-            response.json(),
-        )
+            collected.extend(page.check_runs)
+            if not page.check_runs or len(collected) >= page.total_count:
+                return CheckRunsResponse(
+                    total_count=page.total_count,
+                    check_runs=collected,
+                )
+            page_number += 1
 
     async def _probe_workflows(
         self,
@@ -305,13 +331,21 @@ class GitHubAPIClient:
 
         A listing carrying more workflows than the page returned errs
         toward ``ACTIVE`` — the longer grace window.
+
+        A retry-exhausted rate limit propagates: it says nothing about
+        the repository's workflows, and the caller's ``RetryPolicy``
+        needs the ``retry_after``/``resets_at`` metadata.  Only failures
+        that are genuinely about classification degrade to
+        ``INDETERMINATE``.
         """
         try:
             response = await self._request_with_retry(
                 "GET",
                 f"/repos/{owner}/{repo}/actions/workflows",
-                params={"per_page": 100},
+                params={"per_page": self._PAGE_SIZE},
             )
+        except RateLimitError:
+            raise
         except (httpx.HTTPStatusError, TransientAPIError) as exc:
             await self._log.awarning(
                 "ci_workflows_probe_failed",
@@ -340,6 +374,30 @@ class GitHubAPIClient:
         )
         return probe
 
+    async def _confirm_no_workflows(
+        self,
+        owner: str,
+        repo: str,
+        ref: str,
+    ) -> WorkflowsProbeResult:
+        """Re-probe on the poll that would conclude ``NONE_ACTIVE``.
+
+        ``GET /actions/workflows`` is repository-scoped and reports what
+        Actions has indexed, not what will run for *ref*: a ref that adds
+        its own workflow file, or a repository where Actions has not yet
+        registered one, classifies ``NONE_ACTIVE`` on the first poll.
+        The second probe decides — a workflow that appeared during the
+        window returns the ref to the long grace window.
+        """
+        confirmation = await self._probe_workflows(owner, repo)
+        await self._log.ainfo(
+            "ci_no_workflows_confirmation",
+            ref=ref,
+            result=confirmation,
+            confirmed=confirmation is WorkflowsProbeResult.NONE_ACTIVE,
+        )
+        return confirmation
+
     async def wait_for_checks(
         self,
         *,
@@ -356,6 +414,11 @@ class GitHubAPIClient:
         exhausted — an empty page after observation is pending, never
         no-CI.  Sleeps occur strictly between polls.
 
+        A ``NONE_ACTIVE`` probe shortens the window, so it is confirmed
+        by a second probe on the poll that would conclude; a workflow
+        registered mid-window flips the verdict to the long window
+        instead of ending the call.
+
         A 404 on the check-runs page advances neither counter and is
         tolerated up to ``ci_ref_not_found_grace_polls`` consecutive
         occurrences; beyond that the call raises ``TransientAPIError``.
@@ -364,7 +427,7 @@ class GitHubAPIClient:
         on failure or timeout, ``(None, ...)`` when no CI ran.
         """
         owner, repo = extract_owner_repo(repo_url)
-        grace_interval = min(self._ci_poll_interval, self._ci_grace_poll_interval)
+        grace_interval = self._ci_grace_poll_interval
 
         probe: WorkflowsProbeResult | None = None
         grace_polls: int = self._ci_no_checks_grace_polls
@@ -400,6 +463,13 @@ class GitHubAPIClient:
                 empty_polls += 1
                 if probe is None:
                     probe = await self._probe_workflows(owner, repo)
+                    grace_polls = self._grace_polls_for(probe)
+                needs_confirmation = (
+                    empty_polls >= grace_polls
+                    and probe is WorkflowsProbeResult.NONE_ACTIVE
+                )
+                if needs_confirmation:
+                    probe = await self._confirm_no_workflows(owner, repo, ref)
                     grace_polls = self._grace_polls_for(probe)
                 if empty_polls >= grace_polls:
                     await self._log.ainfo(

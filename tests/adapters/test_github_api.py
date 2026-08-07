@@ -24,7 +24,7 @@ def _make_client(
     ci_poll_max_attempts: int = 10,
     ci_no_checks_grace_polls: int = 3,
     ci_no_workflows_grace_polls: int = 3,
-    ci_grace_poll_interval_seconds: float = 10.0,
+    ci_grace_poll_interval_seconds: float = 0.0,
     ci_ref_not_found_grace_polls: int = 3,
     timeout_seconds: float = 5.0,
     max_retries: int = 1,
@@ -64,6 +64,19 @@ def _workflows(*, active: bool) -> httpx.Response:
 def _empty_runs() -> httpx.Response:
     """Check-runs page carrying no runs at all."""
     return httpx.Response(200, json={"total_count": 0, "check_runs": []})
+
+
+def _green_runs(count: int, *, first_id: int = 1) -> list[dict[str, object]]:
+    """*count* completed, successful check runs with distinct ids and names."""
+    return [
+        {
+            "id": first_id + offset,
+            "name": f"ci/check-{first_id + offset}",
+            "status": "completed",
+            "conclusion": "success",
+        }
+        for offset in range(count)
+    ]
 
 
 def _completed_run(conclusion: str = "success") -> httpx.Response:
@@ -446,7 +459,11 @@ async def test_wait_for_checks_timeout() -> None:
 
 
 async def test_wait_for_checks_no_checks_configured() -> None:
-    """Zero runs throughout with no workflows terminates as no-CI."""
+    """Zero runs throughout with no workflows terminates as no-CI.
+
+    Two workflows calls: the lazy probe on the first empty poll and the
+    confirmation on the poll that concludes.
+    """
     runs_calls = 0
     workflows_calls = 0
 
@@ -465,7 +482,7 @@ async def test_wait_for_checks_no_checks_configured() -> None:
     assert passed is None
     assert "no ci checks" in summary.lower()
     assert summary == "No CI checks configured: repository has no active workflows."
-    assert workflows_calls == 1
+    assert workflows_calls == 2
     assert runs_calls == 2
     await client.close()
 
@@ -580,6 +597,88 @@ async def test_grace_sleeps_strictly_between_polls(sleeps: list[float]) -> None:
     await client.close()
 
 
+async def test_grace_interval_is_used_verbatim_when_longer_than_poll_interval(
+    sleeps: list[float],
+) -> None:
+    """ci_grace_poll_interval_seconds is never clamped to the poll interval."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_poll_interval_seconds=15.0,
+        ci_grace_poll_interval_seconds=30.0,
+        ci_no_checks_grace_polls=3,
+    )
+    passed, _summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert sleeps == [30.0, 30.0]
+    await client.close()
+
+
+async def test_none_active_probe_is_confirmed_before_the_short_window_concludes() -> (
+    None
+):
+    """A workflow registered mid-window returns the ref to the long window."""
+    runs_calls = 0
+    workflows_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls, workflows_calls
+        if "actions/workflows" in str(request.url):
+            workflows_calls += 1
+            return _workflows(active=workflows_calls > 1)
+        runs_calls += 1
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_no_checks_grace_polls=4,
+        ci_no_workflows_grace_polls=1,
+    )
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert summary == "No CI checks appeared for this ref after 4 polls."
+    assert runs_calls == 4
+    assert workflows_calls == 2
+    await client.close()
+
+
+async def test_confirmed_none_active_still_concludes_on_the_short_window() -> None:
+    """When the second probe agrees, the short window stays in force."""
+    runs_calls = 0
+    workflows_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls, workflows_calls
+        if "actions/workflows" in str(request.url):
+            workflows_calls += 1
+            return _workflows(active=False)
+        runs_calls += 1
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_no_checks_grace_polls=10,
+        ci_no_workflows_grace_polls=2,
+    )
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is None
+    assert summary == "No CI checks configured: repository has no active workflows."
+    assert runs_calls == 2
+    assert workflows_calls == 2
+    await client.close()
+
+
 async def test_probe_failure_403_falls_back_to_standard_grace() -> None:
     """A 403 on the workflows probe degrades to the longer grace, never raises."""
     runs_calls = 0
@@ -602,6 +701,54 @@ async def test_probe_failure_403_falls_back_to_standard_grace() -> None:
     assert passed is None
     assert summary == "No CI checks appeared for this ref after 3 polls."
     assert runs_calls == 3
+    await client.close()
+
+
+async def test_probe_rate_limit_propagates_instead_of_degrading() -> None:
+    """A retry-exhausted 429 on the workflows probe raises, never INDETERMINATE."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return httpx.Response(429, json={"message": "rate limited"})
+        runs_calls += 1
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_no_checks_grace_polls=3,
+        ci_no_workflows_grace_polls=1,
+        max_retries=1,
+        retry_backoff_factor=0.01,
+    )
+    with pytest.raises(RateLimitError):
+        await client.wait_for_checks(
+            repo_url="https://github.com/owner/repo", ref="abc123"
+        )
+    assert runs_calls == 1
+    await client.close()
+
+
+async def test_probe_rate_limit_carries_retry_metadata() -> None:
+    """The propagated RateLimitError keeps the headers the caller needs."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return httpx.Response(
+                429,
+                headers={"retry-after": "0.01", "x-ratelimit-reset": "1700000000"},
+                json={"message": "rate limited"},
+            )
+        return _empty_runs()
+
+    client = _make_client(handler, max_retries=1, retry_backoff_factor=0.01)
+    with pytest.raises(RateLimitError) as exc_info:
+        await client.wait_for_checks(
+            repo_url="https://github.com/owner/repo", ref="abc123"
+        )
+    assert exc_info.value.retry_after == 0.01
+    assert exc_info.value.resets_at == 1700000000
     await client.close()
 
 
@@ -753,6 +900,108 @@ async def test_grace_polls_do_not_consume_the_poll_budget() -> None:
     )
     assert result == (False, "CI checks still running after 1 polls.")
     assert runs_calls == 3
+    await client.close()
+
+
+# -- Check-runs pagination ----------------------------------------------------
+
+
+async def test_partial_check_runs_listing_never_reports_a_pass() -> None:
+    """A run set shorter than total_count is pending, never a green verdict."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        if request.url.params.get("page") == "1":
+            return httpx.Response(
+                200,
+                json={"total_count": 101, "check_runs": _green_runs(100)},
+            )
+        return httpx.Response(200, json={"total_count": 101, "check_runs": []})
+
+    client = _make_client(handler, ci_poll_max_attempts=2)
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is not True
+    assert passed is False
+    assert summary == "CI checks still running after 2 polls."
+    await client.close()
+
+
+async def test_degenerate_count_without_runs_never_reports_a_pass() -> None:
+    """total_count > 0 with an empty run list is pending, not a vacuous pass."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        return httpx.Response(200, json={"total_count": 3, "check_runs": []})
+
+    client = _make_client(handler, ci_poll_max_attempts=2)
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is False
+    assert summary == "CI checks still running after 2 polls."
+    await client.close()
+
+
+async def test_pagination_evaluates_runs_beyond_the_first_page() -> None:
+    """A failure on page 2 is seen; the first page alone is not the verdict."""
+    pages_requested: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        page = request.url.params.get("page")
+        pages_requested.append(page)
+        if page == "1":
+            return httpx.Response(
+                200,
+                json={"total_count": 101, "check_runs": _green_runs(100)},
+            )
+        return httpx.Response(
+            200,
+            json={
+                "total_count": 101,
+                "check_runs": [
+                    {
+                        "id": 101,
+                        "name": "ci/slow",
+                        "status": "completed",
+                        "conclusion": "failure",
+                    },
+                ],
+            },
+        )
+
+    client = _make_client(handler)
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is False
+    assert summary == "CI failed: ci/slow"
+    assert pages_requested == ["1", "2"]
+    await client.close()
+
+
+async def test_single_page_listing_issues_one_request() -> None:
+    """A complete first page ends the walk without a second request."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        return _completed_run()
+
+    client = _make_client(handler)
+    passed, _summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is True
+    assert runs_calls == 1
     await client.close()
 
 
