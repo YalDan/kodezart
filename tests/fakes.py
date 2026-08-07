@@ -1,9 +1,15 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
 from collections.abc import AsyncGenerator, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from kodezart.core.protocols import AgentExecutor
+from kodezart.adapters.in_repo_prompt_registry import (
+    InRepoPromptRegistry,
+    default_sets_root,
+)
+from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.core.protocols import AgentExecutor, PromptProvider
 from kodezart.domain.errors import WorkspaceError
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
@@ -22,6 +28,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationStatus,
 )
 from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.prompts import PromptKey
 
 
 class FakeGitService:
@@ -1070,3 +1077,53 @@ class FakeArtifactPersister:
         cache_key: str | None = None,
     ) -> None:
         self.clean_calls.append((repo_path, repo_url, branch))
+
+
+DEFAULT_PROMPT_SET = "claude-opus"
+
+
+def make_prompt_provider() -> InRepoPromptRegistry:
+    """The real in-repo registry addressed by set name — prompts are data."""
+    return InRepoPromptRegistry.load(
+        sets_root=default_sets_root(),
+        default_set=DEFAULT_PROMPT_SET,
+        set_overrides={},
+        template_overrides={},
+        bindings={},
+    )
+
+
+@dataclass(frozen=True)
+class _RecordingTemplate(PromptTemplate):
+    """Template that appends every render call to a shared recorder."""
+
+    recorder: list[tuple[PromptKey, dict[str, object]]] = field(default_factory=list)
+
+    def render(self, variables: Mapping[str, object]) -> str:
+        self.recorder.append((self.key, dict(variables)))
+        return super().render(variables)
+
+
+class RecordingPromptProvider:
+    """PromptProvider that records the key and variables of every render."""
+
+    def __init__(self, inner: PromptProvider) -> None:
+        self._inner = inner
+        self.renders: list[tuple[PromptKey, dict[str, object]]] = []
+
+    def template_for(self, key: PromptKey) -> PromptTemplate:
+        inner = self._inner.template_for(key)
+        return _RecordingTemplate(
+            key=inner.key,
+            source=inner.source,
+            body=inner.body,
+            bindings=inner.bindings,
+            recorder=self.renders,
+        )
+
+    def resolution_table(self) -> Mapping[PromptKey, str]:
+        return self._inner.resolution_table()
+
+    def variables_for(self, key: PromptKey) -> list[dict[str, object]]:
+        """Every recorded variable mapping rendered under *key*."""
+        return [variables for recorded, variables in self.renders if recorded is key]

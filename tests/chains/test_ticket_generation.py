@@ -15,7 +15,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
     WorkflowTicketReviewEvent,
 )
-from tests.fakes import FakeAgentExecutor, FakeWorkspaceProvider
+from tests.fakes import FakeAgentExecutor, FakeWorkspaceProvider, make_prompt_provider
 
 
 def _make_loop(
@@ -29,6 +29,7 @@ def _make_loop(
         persister=None,
     )
     return TicketGenerationLoop(
+        prompts=make_prompt_provider(),
         service=service,
         workspace=FakeWorkspaceProvider(),
         max_reviews=max_reviews,
@@ -600,6 +601,7 @@ def _make_loop_with_workspace(
         persister=None,
     )
     return TicketGenerationLoop(
+        prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=max_reviews,

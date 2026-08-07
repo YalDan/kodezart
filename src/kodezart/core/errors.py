@@ -1,5 +1,6 @@
 """Core-layer exception classes that carry a runtime ``types/`` dependency."""
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from kodezart.types.domain.agent import ResultEvent
@@ -51,3 +52,41 @@ class NoStructuredOutputError(Exception):
         self.total_cost_usd: float | None = (
             result_event.total_cost_usd if result_event is not None else None
         )
+
+
+class PromptResolutionError(Exception):
+    """Raised at boot when prompt resolution cannot produce one template per key.
+
+    Carries EVERY failing function key plus the sets the registry found, so a
+    single boot failure names the whole gap instead of one entry at a time.
+    No code path substitutes the default set for a configured override — a
+    broken override is this error, never a silent downgrade.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failing_keys: Sequence[str],
+        available_sets: Sequence[str],
+    ) -> None:
+        detail = (
+            f"{message} (failing keys: {', '.join(failing_keys) or 'none'}; "
+            f"available sets: {', '.join(available_sets) or 'none'})"
+        )
+        super().__init__(detail)
+        self.failing_keys: tuple[str, ...] = tuple(failing_keys)
+        self.available_sets: tuple[str, ...] = tuple(available_sets)
+
+
+class PromptRenderError(Exception):
+    """Raised when a template cannot be rendered.
+
+    ``missing`` lists every UNCONDITIONAL placeholder that had no binding,
+    collected in one pass.  A placeholder referenced only inside a false
+    ``{{#if}}`` block is a legal runtime state and never appears here.
+    """
+
+    def __init__(self, message: str, *, missing: Sequence[str] = ()) -> None:
+        super().__init__(message)
+        self.missing: tuple[str, ...] = tuple(missing)

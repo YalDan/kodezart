@@ -13,15 +13,11 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, WorkspaceProvider
+from kodezart.core.protocols import AgentRunner, PromptProvider, WorkspaceProvider
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WorkspaceError
-from kodezart.prompts.ticket_generation import (
-    build_create_prompt,
-    build_review_prompt,
-    build_revision_prompt,
-)
+from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.types.domain.agent import (
     TICKET_DRAFT_SCHEMA,
     TICKET_REVIEW_SCHEMA,
@@ -32,6 +28,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
     WorkflowTicketReviewEvent,
 )
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.workflow import TicketGenerationState, WorkflowContext
 
 
@@ -46,6 +43,7 @@ class TicketGenerationLoop:
         service: AgentRunner,
         workspace: WorkspaceProvider,
         *,
+        prompts: PromptProvider,
         max_reviews: int = 2,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
@@ -53,6 +51,7 @@ class TicketGenerationLoop:
     ) -> None:
         self._service = service
         self._workspace = workspace
+        self._prompts: PromptProvider = prompts
         self._max_reviews = max_reviews
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
@@ -178,18 +177,26 @@ class TicketGenerationLoop:
         iteration = state["draft_iteration"] + 1
 
         if iteration == 1:
-            body = build_create_prompt(task=ctx.prompt)
+            body = self._prompts.template_for(PromptKey.TICKET_CREATE).render(
+                {"task": ctx.prompt},
+            )
         else:
             current_draft = state["current_draft"]
             review_feedback = state["review_feedback"]
             if current_draft is None or review_feedback is None:
                 msg = "Revision requires a previous draft and review feedback."
                 raise RuntimeError(msg)
-            body = build_revision_prompt(
-                task=ctx.prompt,
-                previous_draft=current_draft,
-                reviewer_feedback=review_feedback,
-                reviewer_suggestions=state["review_suggestions"],
+            suggestions = state["review_suggestions"]
+            revision_variables: dict[str, object] = {
+                "task": ctx.prompt,
+                "previous_draft_md": format_ticket_as_task(current_draft),
+                "reviewer_feedback": review_feedback,
+                "reviewer_suggestions": suggestions,
+            }
+            if not suggestions:
+                revision_variables["reviewer_suggestions_absent"] = True
+            body = self._prompts.template_for(PromptKey.TICKET_REVISION).render(
+                revision_variables,
             )
 
         if ctx.workspace_path is None:
@@ -245,7 +252,12 @@ class TicketGenerationLoop:
             msg = "Review requires a draft."
             raise RuntimeError(msg)
 
-        body = build_review_prompt(task=ctx.prompt, draft=current_draft)
+        body = self._prompts.template_for(PromptKey.TICKET_REVIEW).render(
+            {
+                "task": ctx.prompt,
+                "draft_md": format_ticket_as_task(current_draft),
+            },
+        )
 
         if ctx.workspace_path is None:
             msg = "workspace_path must be set before entering review node"

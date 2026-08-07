@@ -3,12 +3,14 @@
 from collections.abc import AsyncIterator, Mapping
 from typing import Protocol, runtime_checkable
 
+from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
 from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.prompts import PromptKey
 
 
 @runtime_checkable
@@ -466,4 +468,22 @@ class WorkflowEngine(Protocol):
         allowed_tools: list[str],
     ) -> AsyncIterator[AgentEvent]:
         """Full pipeline: branch → ticket → criteria → loop → merge."""
+        ...
+
+
+@runtime_checkable
+class PromptProvider(Protocol):
+    """Serves UNRENDERED prompt templates by function key.
+
+    Consumers never import prompt modules — there are none.  Rendering is
+    orthogonal: the provider returns a template, the single rendering path
+    substitutes.  ``InRepoPromptRegistry`` is the first adapter.
+    """
+
+    def template_for(self, key: PromptKey) -> PromptTemplate:
+        """Return the template registered for *key*."""
+        ...
+
+    def resolution_table(self) -> Mapping[PromptKey, str]:
+        """Effective ``key -> set/source`` mapping over every key."""
         ...

@@ -24,6 +24,7 @@ from kodezart.core.protocols import (
     CIMonitor,
     GitService,
     PRCreator,
+    PromptProvider,
     QualityGate,
     RepoCache,
     TicketGenerator,
@@ -32,9 +33,8 @@ from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.git_url import resolve_repo_url
+from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.ticket import format_ticket_as_task
-from kodezart.prompts import evaluation as evaluation_prompt
-from kodezart.prompts import pr_description as pr_description_prompt
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     BRANCH_NAME_SCHEMA,
@@ -56,6 +56,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
 )
 from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 
 _CRITERIA_TA: TypeAdapter[list[str]] = TypeAdapter(list[str])
@@ -79,6 +80,7 @@ class RalphWorkflowEngine:
         git_remote: str,
         git: GitService,
         cache: RepoCache,
+        prompts: PromptProvider,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
@@ -98,6 +100,7 @@ class RalphWorkflowEngine:
         # query canonical SHAs without leaking shell into the workflow body.
         self._git: GitService = git
         self._cache: RepoCache = cache
+        self._prompts: PromptProvider = prompts
         self._pr_creator: PRCreator | None = pr_creator
         self._ci_monitor: CIMonitor | None = ci_monitor
         self._max_fix_rounds: int = max_fix_rounds
@@ -327,12 +330,13 @@ class RalphWorkflowEngine:
     ) -> dict[str, object]:
         """Ask the agent to generate a descriptive branch name."""
         _ = state  # required by LangGraph but unused in this node
-        from kodezart.prompts import branch_name as branch_name_prompt
-
         ctx = ExecutionContext.from_configurable(config)
+        branch_prompt = self._prompts.template_for(PromptKey.BRANCH_NAME).render(
+            {"task": ctx.prompt},
+        )
         result_event, rate_limit_rejected = await drain(
             self._service.stream(
-                prompt=f"{branch_name_prompt.PROMPT}\n\nTask: {ctx.prompt}",
+                prompt=branch_prompt,
                 repo_path=ctx.repo_path,
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
@@ -393,8 +397,6 @@ class RalphWorkflowEngine:
         config: RunnableConfig,
     ) -> dict[str, object]:
         """Ask the agent to analyze the codebase and generate acceptance criteria."""
-        from kodezart.prompts import acceptance_criteria as criteria_prompt
-
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
@@ -403,8 +405,8 @@ class RalphWorkflowEngine:
             msg = "generate_criteria requires a ticket but state['ticket'] is None."
             raise RuntimeError(msg)
 
-        prompt = criteria_prompt.build_prompt(
-            task_description=format_ticket_as_task(ticket),
+        prompt = self._prompts.template_for(PromptKey.ACCEPTANCE_CRITERIA).render(
+            {"task_description": format_ticket_as_task(ticket)},
         )
 
         result_event, rate_limit_rejected = await drain(
@@ -497,8 +499,12 @@ class RalphWorkflowEngine:
             msg = "run_ralph_loop requires a ticket but state['ticket'] is None."
             raise RuntimeError(msg)
 
+        implementation_prompt = self._prompts.template_for(
+            PromptKey.IMPLEMENTATION,
+        ).render({"task_md": format_ticket_as_task(ticket)})
+
         last_iteration_event = await self._run_quality_gate(
-            prompt=format_ticket_as_task(ticket),
+            prompt=implementation_prompt,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             feature_branch=state["feature_branch"],
@@ -681,9 +687,11 @@ class RalphWorkflowEngine:
             base_ref=review_base_sha,
             head_ref=review_head_sha,
         )
-        prompt = evaluation_prompt.build_prompt(
-            criteria=state["acceptance_criteria"],
-            changeset=changeset,
+        prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(
+            {
+                "criteria": state["acceptance_criteria"],
+                **changeset_variables(changeset),
+            },
         )
 
         result_event, rate_limit_rejected = await drain(
@@ -783,15 +791,13 @@ class RalphWorkflowEngine:
             msg = "fix_code requires feature_tip_sha to be set."
             raise RuntimeError(msg)
 
-        task_md = format_ticket_as_task(ticket)
-        fix_prompt_parts = [f"Fix the following issues in the code:\n\n{task_md}"]
-        if state["review_feedback"] is not None:
-            fix_prompt_parts.append(
-                f"\n\n## Review Failures\n{state['review_feedback']}"
-            )
-        if state["ci_summary"] is not None:
-            fix_prompt_parts.append(f"\n\n## CI Failures\n{state['ci_summary']}")
-        fix_prompt = "".join(fix_prompt_parts)
+        fix_prompt = self._prompts.template_for(PromptKey.FIX).render(
+            {
+                "task_md": format_ticket_as_task(ticket),
+                "review_feedback": state["review_feedback"],
+                "ci_summary": state["ci_summary"],
+            },
+        )
 
         await self._run_quality_gate(
             prompt=fix_prompt,
@@ -904,10 +910,12 @@ class RalphWorkflowEngine:
             )
 
         # Generate PR description via agent
-        prompt = pr_description_prompt.build_prompt(
-            ticket=ticket,
-            acceptance_criteria=state["acceptance_criteria"],
-            total_iterations=state["total_iterations"],
+        prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+            {
+                "task_md": format_ticket_as_task(ticket),
+                "acceptance_criteria": state["acceptance_criteria"],
+                "total_iterations": state["total_iterations"],
+            },
         )
         result_event, rate_limit_rejected = await drain(
             self._service.stream(

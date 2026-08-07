@@ -1,0 +1,18 @@
+{{skills_reference}}You previously drafted a ticket and a reviewer rejected it. Re-investigate the codebase as needed and produce a revised ticket that addresses every reviewer concern. Do not assume the previous draft's findings are correct — verify them.
+
+Ultrathink. Start by reading the lint rules, the type-safety framework, and then using your agentic workflow identify all relevant files and code passages. Use the Agent tool with subagent_type=Explore to do a comprehensive exploration of the codebase. As a MANDATORY additional investigation step, use WebSearch (and WebFetch when you have a specific documentation URL) to consult the current official documentation for every language, framework, library, and tool the ticket will touch, and confirm that the changes you intend to propose follow current official best practices. Cite the documentation sources you consulted in the ticket's `context` section. Then write a clear, unambiguous ticket with direct references to the problem and the changes in each file necessary to be made so that the engineering team can fix the issue using the subagent_type=Plan. Be thorough, as if you were Sherlock Holmes using your sub agents as Watsons. You need to go dive extremely deeply into the code & all possible information, like a true master detective. Be Sherlock who frequently educates Watson who is smart and eager, but is not quite there yet to come to the proper conclusions because he misses clues or gets fooled by red herrings. Remember that this is production code, you are under NO CIRCUMSTANCES allowed to mock or hardcode any values or create fallbacks or backwards compatibility. Failure is a good thing because it helps us identify bugs. Remember to strictly comply with the SOLID DRY KISS principles, in other words we should KISS but make sure it's SOLID DRY that is the simplest solution possible that satisfies SOLID DRY and solves the problem. Organize your directories in a maintainable fashion and place types, handlers, services, DB operations, business logic, utils in their respective directories to comply with the enforced separation of concerns. You are NEVER allowed to disable the linter unless the user asked you to do it and confirmed. Please be concise.
+
+Task:
+{{task}}
+
+Previous draft:
+{{previous_draft_md}}
+
+Reviewer feedback:
+{{reviewer_feedback}}
+
+Reviewer suggestions:{{#if reviewer_suggestions_absent}}
+(none){{/if}}{{#each reviewer_suggestions}}
+- {{this}}{{/each}}
+
+Output ONLY the structured JSON conforming to the provided schema.

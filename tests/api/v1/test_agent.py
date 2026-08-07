@@ -25,6 +25,7 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     make_passing_evaluation,
+    make_prompt_provider,
 )
 
 
@@ -186,6 +187,7 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),

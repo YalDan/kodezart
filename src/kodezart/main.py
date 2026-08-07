@@ -12,6 +12,10 @@ from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.adapters.github_token_auth import GitHubTokenAuth
+from kodezart.adapters.in_repo_prompt_registry import (
+    InRepoPromptRegistry,
+    default_sets_root,
+)
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.api.v1.router import v1_router
@@ -51,6 +55,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if config.github_token is not None
         else None
     )
+    prompts = InRepoPromptRegistry.load(
+        sets_root=default_sets_root(),
+        default_set=config.prompt_set,
+        set_overrides=config.prompt_set_overrides,
+        template_overrides=config.prompt_template_overrides,
+        bindings={},
+    )
+    await log.ainfo(
+        "prompt_resolution_table",
+        table={key.value: source for key, source in prompts.resolution_table().items()},
+    )
+    declared_engines = prompts.declared_engines()
+    if config.model not in declared_engines:
+        await log.ainfo(
+            "prompt_set_engine_mismatch",
+            prompt_set=config.prompt_set,
+            declared_engines=list(declared_engines),
+            model=config.model,
+        )
+
     git = SubprocessGitService(remote=config.git_remote, auth=auth)
     executor = ClaudeClientExecutor(model=config.model)
     cache = LocalBareRepoCache(git=git, base_dir=config.clone_cache_dir)
@@ -65,6 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         committer_name=config.git_committer_name,
         committer_email=config.git_committer_email,
         remote=config.git_remote,
+        prompts=prompts,
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote=config.git_remote)
     artifact_persister = GitArtifactPersister(
@@ -88,6 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         max_iterations=config.max_iterations,
         git=git,
         cache=cache,
+        prompts=prompts,
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,
@@ -95,6 +121,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ticket_generator = TicketGenerationLoop(
         service=agent_service,
         workspace=workspace,
+        prompts=prompts,
         max_reviews=config.max_reviews,
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
@@ -109,6 +136,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         git_remote=config.git_remote,
         git=git,
         cache=cache,
+        prompts=prompts,
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,

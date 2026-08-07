@@ -8,7 +8,6 @@ from pydantic import ValidationError
 
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import AgentExecutor
-from kodezart.prompts import evaluation
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
@@ -19,12 +18,15 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.prompts import PromptKey
 from tests.fakes import (
     FakeAgentExecutor,
     FakeChangePersister,
     FakeGitService,
     FakeRepoCache,
     FakeWorkspaceProvider,
+    RecordingPromptProvider,
+    make_prompt_provider,
 )
 
 
@@ -36,6 +38,7 @@ def _make_loop(
     max_iterations: int = 3,
     git: FakeGitService | None = None,
     cache: FakeRepoCache | None = None,
+    prompts: RecordingPromptProvider | None = None,
 ) -> RalphLoop:
     service = AgentService(
         executor=executor,
@@ -43,6 +46,7 @@ def _make_loop(
         persister=persister,
     )
     return RalphLoop(
+        prompts=prompts if prompts is not None else make_prompt_provider(),
         service=service,
         max_iterations=max_iterations,
         git=git or FakeGitService(),
@@ -258,6 +262,7 @@ async def test_loop_second_iteration_succeeds() -> None:
         persister=persister,
     )
     loop = RalphLoop(
+        prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
         git=FakeGitService(),
@@ -467,16 +472,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
     class of bug where a fix passes previously-failing criteria but
     regresses a previously-passing one.
     """
-    from kodezart.types.domain.consolidation import ChangesetDigest
-
-    captured: list[list[str]] = []
-    original = evaluation.build_prompt
-
-    def spy(*, criteria: list[str], changeset: ChangesetDigest) -> str:
-        captured.append(list(criteria))
-        return original(criteria=criteria, changeset=changeset)
-
-    monkeypatch.setattr(evaluation, "build_prompt", spy)
+    prompts = RecordingPromptProvider(make_prompt_provider())
 
     class ThreeCriterionTwoPhaseExecutor:
         """Executor with 3 criteria: iter 1 fails one, iter 2 passes all."""
@@ -578,7 +574,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             source=PersistSource.WORKING_TREE_COMMIT,
         ),
     )
-    loop = _make_loop(executor=executor, persister=persister)
+    loop = _make_loop(executor=executor, persister=persister, prompts=prompts)
 
     criteria = ["Tests pass", "No lint errors", "Docs updated"]
     events = [
@@ -595,6 +591,10 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
     # Under the old code (pre-fix behaviour), iter 2 would have received
     # only ["No lint errors"] — the previously-failing subset. With the fix,
     # iter 2 must receive all three criteria verbatim.
+    captured = [
+        variables["criteria"]
+        for variables in prompts.variables_for(PromptKey.EVALUATION)
+    ]
     assert len(captured) == 2, f"Expected 2 eval prompt calls, got {len(captured)}"
     assert captured[0] == criteria
     assert captured[1] == criteria, (
@@ -686,6 +686,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
         persister=FakeChangePersister(),
     )
     loop = RalphLoop(
+        prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
         git=FakeGitService(),
@@ -734,20 +735,9 @@ async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch()
     assert diff_calls[0][3] == "kodezart/test-12345678-ralph-abcdef01"
 
 
-async def test_evaluate_node_passes_changeset_to_build_prompt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """build_prompt receives a ChangesetDigest, not raw shell commands."""
-    from kodezart.types.domain.consolidation import ChangesetDigest
-
-    captured: list[ChangesetDigest] = []
-    original = evaluation.build_prompt
-
-    def spy(*, criteria: list[str], changeset: ChangesetDigest) -> str:
-        captured.append(changeset)
-        return original(criteria=criteria, changeset=changeset)
-
-    monkeypatch.setattr(evaluation, "build_prompt", spy)
+async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> None:
+    """The evaluation render receives digest DATA, not raw shell commands."""
+    prompts = RecordingPromptProvider(make_prompt_provider())
 
     executor = FakeAgentExecutor(
         events=[
@@ -770,10 +760,13 @@ async def test_evaluate_node_passes_changeset_to_build_prompt(
             ),
         ]
     )
-    loop = _make_loop(executor=executor)
+    loop = _make_loop(executor=executor, prompts=prompts)
     _ = [e async for e in loop.run(**_run_kwargs())]
+    captured = prompts.variables_for(PromptKey.EVALUATION)
     assert len(captured) >= 1
-    assert isinstance(captured[0], ChangesetDigest)
+    assert "file_paths" in captured[0]
+    assert "commit_subjects" in captured[0]
+    assert "commit_count" in captured[0]
 
 
 # ---------------------------------------------------------------------------

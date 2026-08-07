@@ -19,15 +19,15 @@ mutated (no reset, no commit-tree, no follow-up push).
 
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentExecutor, GitService
+from kodezart.core.protocols import AgentExecutor, GitService, PromptProvider
 from kodezart.core.stream_drain import drain
-from kodezart.prompts import commit_message
 from kodezart.types.domain.agent import (
     COMMIT_MESSAGE_SCHEMA,
     CommitMessageOutput,
 )
 from kodezart.types.domain.branch import BackupBranchName
 from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.prompts import PromptKey
 
 
 class GitChangePersister:
@@ -43,11 +43,13 @@ class GitChangePersister:
         committer_email: str,
         *,
         remote: str,
+        prompts: PromptProvider,
     ) -> None:
         self._git = git
         self._committer_name = committer_name
         self._committer_email = committer_email
         self._remote = remote
+        self._prompts: PromptProvider = prompts
         self._log: BoundLogger = get_logger(__name__)
 
     async def persist(
@@ -247,7 +249,7 @@ class GitChangePersister:
 
         result_event, rate_limit_rejected = await drain(
             executor.stream(
-                prompt=commit_message.PROMPT,
+                prompt=self._prompts.template_for(PromptKey.COMMIT_MESSAGE).render({}),
                 cwd=cwd,
                 permission_mode="plan",
                 allowed_tools=["Read", "Glob", "Grep", "Bash"],

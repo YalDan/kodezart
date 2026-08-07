@@ -11,10 +11,15 @@ from langgraph.types import RetryPolicy
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, GitService, RepoCache
+from kodezart.core.protocols import (
+    AgentRunner,
+    GitService,
+    PromptProvider,
+    RepoCache,
+)
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
-from kodezart.prompts import evaluation, iteration_feedback
+from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
@@ -23,6 +28,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
 
 
@@ -39,6 +45,7 @@ class RalphLoop:
         max_iterations: int,
         git: GitService,
         cache: RepoCache,
+        prompts: PromptProvider,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
@@ -51,6 +58,7 @@ class RalphLoop:
         # merger does that internally).
         self._git: GitService = git
         self._cache: RepoCache = cache
+        self._prompts: PromptProvider = prompts
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
             initial_interval=retry_initial_interval,
@@ -156,9 +164,11 @@ class RalphLoop:
 
         prompt = ctx.prompt
         if not is_first:
-            prompt = iteration_feedback.augment_prompt(
-                prompt,
-                state["pending_failures"],
+            prompt = self._prompts.template_for(PromptKey.ITERATION_FEEDBACK).render(
+                {
+                    "prior_prompt": prompt,
+                    "pending_failures": state["pending_failures"],
+                },
             )
 
         commit_sha: str | None = None
@@ -203,9 +213,11 @@ class RalphLoop:
             base_ref=ctx.base_branch,
             head_ref=ctx.ralph_branch,
         )
-        eval_prompt = evaluation.build_prompt(
-            criteria=ctx.acceptance_criteria,
-            changeset=changeset,
+        eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
+            {
+                "criteria": ctx.acceptance_criteria,
+                **changeset_variables(changeset),
+            },
         )
 
         result_event, rate_limit_rejected = await drain(

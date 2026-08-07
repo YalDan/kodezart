@@ -10,7 +10,7 @@ from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.core.protocols import ChangePersister
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.persist import PersistSource
-from tests.fakes import FakeAgentExecutor, FakeGitService
+from tests.fakes import FakeAgentExecutor, FakeGitService, make_prompt_provider
 
 
 async def _run_git(cmd: list[str], cwd: Path) -> None:
@@ -40,6 +40,7 @@ async def git_repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def persister() -> GitChangePersister:
     return GitChangePersister(
+        prompts=make_prompt_provider(),
         git=SubprocessGitService(remote="origin"),
         committer_name="kodezart-test",
         committer_email="test@kodezart.dev",
@@ -158,6 +159,7 @@ async def test_persist_diverged_backup_push_failure_re_raises_without_mutation(
         push_error=RuntimeError("backup push refused"),
     )
     persister_with_fake = GitChangePersister(
+        prompts=make_prompt_provider(),
         git=fake_git,
         committer_name="t",
         committer_email="t@t.dev",
@@ -188,6 +190,7 @@ async def test_persist_diverged_tree_equal_skips_replay(git_repo: Path) -> None:
         trees={"a" * 40: "tEQUAL", "b" * 40: "tEQUAL"},
     )
     persister_with_fake = GitChangePersister(
+        prompts=make_prompt_provider(),
         git=fake_git,
         committer_name="t",
         committer_email="t@t.dev",
@@ -217,6 +220,7 @@ async def test_persist_diverged_tree_differ_replays_in_order(git_repo: Path) -> 
         commit_tree_result="c" * 40,
     )
     persister_with_fake = GitChangePersister(
+        prompts=make_prompt_provider(),
         git=fake_git,
         committer_name="t",
         committer_email="t@t.dev",

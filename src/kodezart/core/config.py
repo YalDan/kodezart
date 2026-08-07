@@ -148,6 +148,27 @@ class AppConfig(BaseSettings):
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
     )
+    prompt_set: str = Field(
+        default="claude-opus",
+        description=(
+            "Default prompt set name (a directory under prompts/sets/). "
+            "Deliberately independent of the model knob."
+        ),
+    )
+    prompt_set_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "JSON object mapping a prompt function key to the set that serves "
+            "it, overriding the default set for that key only."
+        ),
+    )
+    prompt_template_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "JSON object mapping a prompt function key to a filesystem path of "
+            "a template file. Highest precedence layer."
+        ),
+    )
 
     @classmethod
     def from_env(cls) -> Self:

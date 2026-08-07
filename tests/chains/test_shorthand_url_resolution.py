@@ -30,6 +30,7 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     make_passing_evaluation,
+    make_prompt_provider,
 )
 
 
@@ -52,6 +53,7 @@ def _make_engine(
         git_base_url="https://github.com",
     )
     return RalphWorkflowEngine(
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=quality_gate,
         ticket_generator=FakeTicketGenerator(),
