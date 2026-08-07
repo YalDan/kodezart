@@ -350,21 +350,28 @@ async def test_fire_then_status_resolves_the_same_job_id(job_app: _JobApp) -> No
 
 
 async def test_same_lane_fires_run_sequentially_in_arrival_order() -> None:
-    """Default concurrency of 1 serializes a lane in arrival order."""
+    """Two back-to-back fires at default config serialize in arrival order."""
     engine = GatedWorkflowEngine()
-    queue = _make_queue(engine)
-    await queue.start()
-    try:
-        first = await queue.submit(lane=DEFAULT_LANE, request=_request("first"))
-        assert first.queue_position == 1
-        await _until(lambda: engine.started == ["first"])
+    async for wired in _build_app(engine):
+        first = await wired.client.post(
+            "/api/v1/agent/fire",
+            json={"prompt": "first", "repoPath": "/tmp/fake"},
+        )
+        second = await wired.client.post(
+            "/api/v1/agent/fire",
+            json={"prompt": "second", "repoPath": "/tmp/fake"},
+        )
+        third = await wired.client.post(
+            "/api/v1/agent/fire",
+            json={"prompt": "third", "repoPath": "/tmp/fake"},
+        )
+        assert first.json()["queuePosition"] == 1
+        # "first" already occupies the single worker, so the next two wait
+        # in arrival order at 1-based positions 1 and 2.
+        assert second.json()["queuePosition"] == 1
+        assert third.json()["queuePosition"] == 2
 
-        # With "first" occupying the single worker, the next two wait in
-        # arrival order at 1-based positions 1 and 2.
-        second = await queue.submit(lane=DEFAULT_LANE, request=_request("second"))
-        third = await queue.submit(lane=DEFAULT_LANE, request=_request("third"))
-        assert second.queue_position == 1
-        assert third.queue_position == 2
+        await _until(lambda: engine.started == ["first"])
         assert engine.started == ["first"], "no second run while the lane is busy"
 
         engine.release("first")
@@ -373,11 +380,7 @@ async def test_same_lane_fires_run_sequentially_in_arrival_order() -> None:
         engine.release("second")
         await _until(lambda: engine.started == ["first", "second", "third"])
         engine.release("third")
-        await _until(
-            lambda: engine.finished == ["first", "second", "third"],
-        )
-    finally:
-        await queue.stop()
+        await _until(lambda: engine.finished == ["first", "second", "third"])
 
 
 async def test_distinct_lanes_do_not_block_each_other() -> None:
