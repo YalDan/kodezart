@@ -11,6 +11,8 @@ from kodezart.core.protocols import GitAuth
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
 
+_UNKNOWN_EXIT_CODE = -1
+
 
 class SubprocessGitService:
     """Git operations adapter using asyncio subprocess calls to the git CLI.
@@ -328,6 +330,21 @@ class SubprocessGitService:
         )
 
     @staticmethod
+    def _failure_detail(
+        stdout: bytes,
+        stderr: bytes,
+        returncode: int | None,
+    ) -> str:
+        """Best available failure text for a non-zero git exit.
+
+        Git writes diagnostics to stderr for most failures but to stdout
+        for others (``git commit`` on a clean tree), and to neither when
+        ``--quiet`` is in effect.
+        """
+        code = returncode if returncode is not None else _UNKNOWN_EXIT_CODE
+        return stderr.decode().strip() or stdout.decode().strip() or f"exit code {code}"
+
+    @staticmethod
     def _author_env(name: str, email: str) -> dict[str, str]:
         """Build the GIT_{AUTHOR,COMMITTER}_{NAME,EMAIL} env dict for git."""
         return {
@@ -365,11 +382,7 @@ class SubprocessGitService:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            detail = (
-                stderr.decode().strip()
-                or stdout.decode().strip()
-                or f"exit code {proc.returncode}"
-            )
+            detail = self._failure_detail(stdout, stderr, proc.returncode)
             msg = f"{' '.join(cmd[:3])} failed: {detail}"
             raise RuntimeError(msg)
         return stdout.decode().strip()
@@ -392,11 +405,7 @@ class SubprocessGitService:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            detail = (
-                stderr.decode().strip()
-                or stdout.decode().strip()
-                or f"exit code {proc.returncode}"
-            )
+            detail = self._failure_detail(stdout, stderr, proc.returncode)
             msg = f"{' '.join(cmd[:3])} failed: {detail}"
             raise RuntimeError(msg)
 
@@ -425,11 +434,14 @@ class SubprocessGitService:
             env=process_env,
         )
         stdout, stderr = await proc.communicate()
-        returncode = proc.returncode if proc.returncode is not None else -1
+        returncode = (
+            proc.returncode if proc.returncode is not None else _UNKNOWN_EXIT_CODE
+        )
         if returncode not in allowed:
+            detail = self._failure_detail(stdout, stderr, returncode)
             msg = (
                 f"{' '.join(cmd[:3])} exited {returncode} "
-                f"(allowed {sorted(allowed)}): {stderr.decode().strip()}"
+                f"(allowed {sorted(allowed)}): {detail}"
             )
             raise RuntimeError(msg)
         return returncode, stdout.decode().strip()

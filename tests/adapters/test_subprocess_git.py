@@ -507,3 +507,33 @@ async def test_run_output_failure_with_both_streams_empty_reports_exit_code(
             cwd=str(git_repo),
         )
     assert str(exc_info.value) == "git grep --quiet failed: exit code 1"
+
+
+async def test_run_with_exit_codes_disallowed_exit_with_empty_streams(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """_run_with_exit_codes: an empty stderr never yields a detail-less message."""
+    with pytest.raises(RuntimeError) as exc_info:
+        await git_service._run_with_exit_codes(
+            ["git", "grep", "--quiet", "zzz-no-such-pattern-zzz"],
+            cwd=str(git_repo),
+            allowed=frozenset({0}),
+        )
+    message = str(exc_info.value)
+    assert message == "git grep --quiet exited 1 (allowed [0]): exit code 1"
+    assert not message.endswith(": ")
+
+
+async def test_run_with_exit_codes_disallowed_exit_reports_stdout(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """_run_with_exit_codes: stdout carries the detail when stderr is empty."""
+    with pytest.raises(RuntimeError) as exc_info:
+        await git_service._run_with_exit_codes(
+            ["git", "commit", "-m", "empty"],
+            cwd=str(git_repo),
+            allowed=frozenset({0}),
+        )
+    message = str(exc_info.value)
+    assert "working tree clean" in message
+    assert not message.endswith(": ")
