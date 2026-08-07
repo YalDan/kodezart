@@ -323,14 +323,14 @@ async def test_workflow_rejected_does_not_merge() -> None:
     assert len(merger.calls) == 0
 
 
-def test_make_checkpointer_none_returns_none() -> None:
-    result = make_checkpointer(None)
-    assert result is None
+async def test_make_checkpointer_none_returns_none() -> None:
+    async with make_checkpointer(None) as result:
+        assert result is None
 
 
-def test_make_checkpointer_memory_returns_saver() -> None:
-    result = make_checkpointer(":memory:")
-    assert isinstance(result, InMemorySaver)
+async def test_make_checkpointer_memory_returns_saver() -> None:
+    async with make_checkpointer(":memory:") as result:
+        assert isinstance(result, InMemorySaver)
 
 
 async def test_concurrent_workflow_runs_isolated() -> None:

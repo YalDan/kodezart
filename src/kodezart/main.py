@@ -82,52 +82,54 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     app.state.agent_service = agent_service
 
-    checkpointer = make_checkpointer(config.checkpoint_url)
-    ralph_loop = RalphLoop(
-        service=agent_service,
-        max_iterations=config.max_iterations,
-        plateau_window=config.loop_plateau_window,
-        git=git,
-        cache=cache,
-        checkpointer=checkpointer,
-        retry_max_attempts=config.retry_max_attempts,
-        retry_initial_interval=config.retry_initial_interval,
-    )
-    ticket_generator = TicketGenerationLoop(
-        service=agent_service,
-        workspace=workspace,
-        max_reviews=config.max_reviews,
-        checkpointer=checkpointer,
-        retry_max_attempts=config.retry_max_attempts,
-        retry_initial_interval=config.retry_initial_interval,
-    )
-    app.state.workflow_engine = RalphWorkflowEngine(
-        service=agent_service,
-        quality_gate=ralph_loop,
-        ticket_generator=ticket_generator,
-        merger=merger,
-        git_base_url=config.git_base_url,
-        git_remote=config.git_remote,
-        git=git,
-        cache=cache,
-        checkpointer=checkpointer,
-        retry_max_attempts=config.retry_max_attempts,
-        retry_initial_interval=config.retry_initial_interval,
-        pr_creator=github_api,
-        ci_monitor=github_api,
-        max_fix_rounds=config.max_fix_rounds,
-        artifact_persister=artifact_persister,
-    )
+    async with make_checkpointer(config.checkpoint_url) as checkpointer:
+        app.state.checkpointer = checkpointer
+        ralph_loop = RalphLoop(
+            service=agent_service,
+            max_iterations=config.max_iterations,
+            plateau_window=config.loop_plateau_window,
+            git=git,
+            cache=cache,
+            checkpointer=checkpointer,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+        )
+        ticket_generator = TicketGenerationLoop(
+            service=agent_service,
+            workspace=workspace,
+            max_reviews=config.max_reviews,
+            checkpointer=checkpointer,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+        )
+        workflow_engine = RalphWorkflowEngine(
+            service=agent_service,
+            quality_gate=ralph_loop,
+            ticket_generator=ticket_generator,
+            merger=merger,
+            git_base_url=config.git_base_url,
+            git_remote=config.git_remote,
+            git=git,
+            cache=cache,
+            checkpointer=checkpointer,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+            pr_creator=github_api,
+            ci_monitor=github_api,
+            max_fix_rounds=config.max_fix_rounds,
+            artifact_persister=artifact_persister,
+        )
+        app.state.workflow_engine = workflow_engine
 
-    await log.ainfo(
-        "application_starting",
-        project=config.project_name,
-        debug=config.debug,
-    )
-    yield
-    if github_api is not None:
-        await github_api.close()
-    await log.ainfo("application_shutdown")
+        await log.ainfo(
+            "application_starting",
+            project=config.project_name,
+            debug=config.debug,
+        )
+        yield
+        if github_api is not None:
+            await github_api.close()
+        await log.ainfo("application_shutdown")
 
 
 def create_app() -> FastAPI:
