@@ -143,11 +143,16 @@ class AsyncioJobQueue:
             worker.cancel()
         for eviction in self._evictions:
             eviction.cancel()
-        for worker in workers:
-            try:
-                await worker
-            except asyncio.CancelledError:
-                pass
+        for outcome in await asyncio.gather(*workers, return_exceptions=True):
+            if isinstance(outcome, BaseException) and not isinstance(
+                outcome,
+                asyncio.CancelledError,
+            ):
+                await self._log.aerror(
+                    "job_queue_worker_failed",
+                    error=str(outcome),
+                    error_kind=type(outcome).__name__,
+                )
         self._evictions.clear()
         for lane in self._lanes.values():
             lane.workers.clear()

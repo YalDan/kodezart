@@ -15,6 +15,7 @@ from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.constants import DEFAULT_LANE
+from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.domain.errors import QueueFullError
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
@@ -778,3 +779,61 @@ async def test_status_of_an_unknown_job_is_404_with_a_typed_body(
     payload = response.json()
     assert payload["success"] is False
     assert payload["error"] == "job not found: missing-id"
+
+
+async def test_one_adapter_satisfies_both_ports() -> None:
+    """JobQueue and JobRegistry are ISP-split but share one implementation."""
+    queue = _make_queue(ChattyWorkflowEngine([]))
+    assert isinstance(queue, JobQueue)
+    assert isinstance(queue, JobRegistry)
+
+
+async def test_attach_yields_domain_events_never_serialized_dicts() -> None:
+    """The port's contract is AgentEvent; serialization happens in the handler."""
+    engine = ChattyWorkflowEngine(
+        [
+            AssistantTextEvent(text="hello", model="m"),
+            _complete_event(WorkflowOutcome.ci_passed),
+        ],
+    )
+    queue = _make_queue(engine)
+    await queue.start()
+    try:
+        record = await queue.submit(lane=DEFAULT_LANE, request=_request("fix"))
+        events = await _drain(queue, record.job_id)
+        assert [type(event) for event in events] == [
+            AssistantTextEvent,
+            WorkflowCompleteEvent,
+        ]
+    finally:
+        await queue.stop()
+
+
+async def test_truncation_flag_reaches_the_status_payload() -> None:
+    """A truncated replay buffer is visible on the job status response."""
+    engine = ChattyWorkflowEngine(
+        [AssistantTextEvent(text=f"line {index}", model="m") for index in range(4)],
+    )
+    app = create_app()
+    app.state.agent_service = AgentService(
+        executor=FakeAgentExecutor(events=[]),
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    app.state.workflow_engine = engine
+    queue = _make_queue(engine, event_buffer_capacity=1)
+    app.state.job_queue = queue
+    await queue.start()
+    app.state.job_service = JobService(registry=queue, run_state_reader=None)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            fired = await client.post("/api/v1/agent/fire", json=_BODY)
+            job_id = fired.json()["jobId"]
+            await _wait_terminal(queue, job_id)
+            payload = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+            assert payload["truncated"] is True
+    finally:
+        await queue.stop()
