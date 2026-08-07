@@ -234,6 +234,13 @@ class AppConfig(BaseSettings):
             "in that category yields. A payload takes the max severity."
         ),
     )
+    operation_config: str | None = Field(
+        default=None,
+        description=(
+            "Filesystem path to the operation config TOML. None means no "
+            "operation config is loaded and its binding namespace is empty."
+        ),
+    )
     claude_home_dir: str = Field(
         default="~/.claude",
         description="Host directory holding user-scope skills and plugins.",

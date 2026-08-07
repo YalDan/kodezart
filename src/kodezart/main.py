@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -21,6 +22,7 @@ from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
@@ -29,6 +31,7 @@ from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import SkillPreflightError
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
+from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import PromptProvider, SkillInventory
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.prompts import PromptKey
@@ -115,13 +118,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if config.github_token is not None
         else None
     )
+    operation = (
+        load_operation_config(Path(config.operation_config))
+        if config.operation_config is not None
+        else None
+    )
     prompts = InRepoPromptRegistry.load(
         sets_root=default_sets_root(),
         default_set=config.prompt_set,
         set_overrides=config.prompt_set_overrides,
         template_overrides=config.prompt_template_overrides,
-        bindings={},
+        bindings=bindings_for(operation),
     )
+    app.state.operation_config = operation
     await log.ainfo(
         "prompt_resolution_table",
         table={key.value: source for key, source in prompts.resolution_table().items()},

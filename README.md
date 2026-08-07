@@ -205,6 +205,38 @@ Pattern sets ship **empty except the credential category**, so an unconfigured
 deployment behaves exactly as it did before the gate existed, apart from the
 two new events.
 
+### Operation config
+
+`KODEZART_OPERATION_CONFIG` points at a TOML file (parsed with stdlib
+`tomllib` — no new dependency) holding the **org-shaped** runtime
+configuration: principals and their roles, agent identities, teams, queue and
+lifecycle state mappings, repositories and their check commands, a read-side
+document registry, reference knowledge, named infrastructure endpoints, and
+initiatives.
+
+The split is deliberate. Deployment and infrastructure knobs plus every secret
+stay in `AppConfig` (env). Cadence lives exclusively in scheduler
+configuration — prompt templates carry no frequency words. Per-fire parameters
+are request fields. Nothing org-shaped hides in code, prompts, or per-request
+defaults.
+
+Authority binds to a **role**, never to a name: exactly one principal carries
+the approver role, validated at load. Queue states are an open mapping — the
+members code addresses by name are required present, and any additional member
+is a pure configuration entry addressable from templates with no type or
+consumer change. Secrets are excluded structurally: the model is
+`extra="forbid"`, so a stray token key fails the load.
+
+Structural validation collects **every** failure into one typed error. It is
+structural only — resolving principals, teams and state mappings against the
+live workspace belongs to the tracker adapter, not to config load.
+
+- [`docs/operation.example.toml`](docs/operation.example.toml) — a fully
+  annotated example covering every field.
+- [`docs/cutover_mapping.md`](docs/cutover_mapping.md) — which routine behavior
+  maps to which kodezart component, plus the behavior-parity dimension and
+  placeholder mapping tables.
+
 ## Development
 
 ```bash

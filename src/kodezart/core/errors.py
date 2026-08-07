@@ -115,3 +115,23 @@ class SkillPreflightError(Exception):
         super().__init__(detail)
         self.unresolvable: tuple[str, ...] = tuple(unresolvable)
         self.available: tuple[str, ...] = tuple(available)
+
+
+class OperationConfigError(Exception):
+    """Raised when the operation config cannot be loaded or is structurally bad.
+
+    Carries EVERY failure at once.  Structural only: live-workspace existence
+    resolution belongs to the tracker adapter, not to this lane.
+    """
+
+    def __init__(self, message: str, *, failures: Sequence[str]) -> None:
+        super().__init__(f"{message} ({'; '.join(failures)})")
+        self.failures: tuple[str, ...] = tuple(failures)
+
+
+class PromptNamespaceCollisionError(Exception):
+    """Raised at boot when the three binding namespaces are not disjoint."""
+
+    def __init__(self, message: str, *, colliding: Sequence[str]) -> None:
+        super().__init__(f"{message} ({', '.join(colliding)})")
+        self.colliding: tuple[str, ...] = tuple(colliding)

@@ -30,6 +30,8 @@ class PromptKey(StrEnum):
     FIX = "fix"
     COMMIT_MESSAGE = "commit_message"
     PR_DESCRIPTION = "pr_description"
+    FIRE_PREP_PASS = "fire_prep_pass"
+    GROOMING_PASS = "grooming_pass"
 
 
 class PromptSetFragments(BaseModel):

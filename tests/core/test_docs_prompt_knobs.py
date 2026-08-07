@@ -71,3 +71,8 @@ def test_readme_documents_the_three_verdicts_and_fail_closed_rule() -> None:
         assert token in README
     assert "fail-closed with no exemption" in README
     assert "OutboundContentBlockedError" in README
+
+
+def test_env_example_documents_the_operation_config_pointer() -> None:
+    """D-2: exactly one pointer, documented alongside the rest."""
+    assert "KODEZART_OPERATION_CONFIG" in ENV_EXAMPLE

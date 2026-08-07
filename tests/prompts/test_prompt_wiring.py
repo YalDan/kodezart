@@ -214,10 +214,18 @@ def test_claude_opus_render_is_byte_identical_to_baseline(golden_name: str) -> N
     assert rendered == expected
 
 
-def test_golden_suite_covers_every_function_key() -> None:
-    """No key escapes the byte-identity guarantee."""
+# The two pass keys are net-new content with no 92597c0 baseline to be
+# byte-identical to; every RELOCATED key is covered by the goldens.
+RELOCATED_KEYS = frozenset(PromptKey) - {
+    PromptKey.FIRE_PREP_PASS,
+    PromptKey.GROOMING_PASS,
+}
+
+
+def test_golden_suite_covers_every_relocated_function_key() -> None:
+    """No relocated key escapes the byte-identity guarantee."""
     covered = {key for key, _ in GOLDEN_CASES.values()}
-    assert covered == set(PromptKey)
+    assert covered == RELOCATED_KEYS
 
 
 def test_golden_test_does_not_read_the_prompt_set_env_var(
