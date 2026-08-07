@@ -4,9 +4,10 @@ import asyncio
 
 import httpx
 import pytest
+import structlog
 
 from kodezart.adapters.github_api import GitHubAPIClient
-from kodezart.domain.errors import RateLimitError
+from kodezart.domain.errors import RateLimitError, TransientAPIError
 
 _FAKE_PAT = "test-token"
 
@@ -24,6 +25,7 @@ def _make_client(
     ci_no_checks_grace_polls: int = 3,
     ci_no_workflows_grace_polls: int = 3,
     ci_grace_poll_interval_seconds: float = 10.0,
+    ci_ref_not_found_grace_polls: int = 3,
     timeout_seconds: float = 5.0,
     max_retries: int = 1,
     retry_backoff_factor: float = 0.01,
@@ -41,6 +43,7 @@ def _make_client(
         ci_no_checks_grace_polls=ci_no_checks_grace_polls,
         ci_no_workflows_grace_polls=ci_no_workflows_grace_polls,
         ci_grace_poll_interval_seconds=ci_grace_poll_interval_seconds,
+        ci_ref_not_found_grace_polls=ci_ref_not_found_grace_polls,
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
         retry_backoff_factor=retry_backoff_factor,
@@ -750,4 +753,175 @@ async def test_grace_polls_do_not_consume_the_poll_budget() -> None:
     )
     assert result == (False, "CI checks still running after 1 polls.")
     assert runs_calls == 3
+    await client.close()
+
+
+# -- Ref-not-found (404) tolerance -------------------------------------------
+
+
+async def test_single_404_is_tolerated_and_polling_continues() -> None:
+    """A first-poll 404 does not raise; the call reaches a terminal outcome."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        if runs_calls == 1:
+            return httpx.Response(404, json={"message": "Not Found"})
+        if runs_calls == 2:
+            return _in_progress_run()
+        return _completed_run()
+
+    client = _make_client(handler)
+    with structlog.testing.capture_logs() as logs:
+        passed, summary = await client.wait_for_checks(
+            repo_url="https://github.com/owner/repo", ref="abc123"
+        )
+    assert passed is True
+    assert summary == "All CI checks passed."
+    assert runs_calls == 3
+    tolerated = [e for e in logs if e["event"] == "ci_ref_not_found_tolerated"]
+    assert len(tolerated) == 1
+    assert tolerated[0]["ref"] == "abc123"
+    await client.close()
+
+
+async def test_404s_beyond_grace_raise_transient_api_error() -> None:
+    """Consecutive 404s past the grace raise rather than returning a tuple."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    client = _make_client(handler, ci_ref_not_found_grace_polls=3)
+    with pytest.raises(TransientAPIError):
+        await client.wait_for_checks(
+            repo_url="https://github.com/owner/repo", ref="abc123"
+        )
+    assert runs_calls == 4
+    await client.close()
+
+
+async def test_404s_never_surface_as_false_or_none() -> None:
+    """The exhausted-404 condition is an exception, not a CI verdict."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    client = _make_client(handler, ci_ref_not_found_grace_polls=1)
+    result: object = None
+    try:
+        result = await client.wait_for_checks(
+            repo_url="https://github.com/owner/repo", ref="abc123"
+        )
+    except TransientAPIError:
+        result = "raised"
+    assert result == "raised"
+    assert result != (False, "CI checks still running after 10 polls.")
+    assert result != (None, "No CI checks appeared for this ref after 3 polls.")
+    await client.close()
+
+
+async def test_404s_interleaved_with_empty_pages_still_terminate() -> None:
+    """404s neither advance nor reset the empty-poll streak — the loop ends."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        if runs_calls % 2 == 1:
+            return httpx.Response(404, json={"message": "Not Found"})
+        return _empty_runs()
+
+    client = _make_client(
+        handler,
+        ci_ref_not_found_grace_polls=3,
+        ci_no_checks_grace_polls=3,
+    )
+    result = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert result == (None, "No CI checks appeared for this ref after 3 polls.")
+    assert runs_calls == 6
+    await client.close()
+
+
+async def test_404_consumes_no_poll_budget() -> None:
+    """A tolerated 404 does not spend ci_poll_max_attempts."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        if runs_calls == 1:
+            return httpx.Response(404, json={"message": "Not Found"})
+        return _completed_run()
+
+    client = _make_client(
+        handler,
+        ci_ref_not_found_grace_polls=3,
+        ci_poll_max_attempts=1,
+    )
+    passed, summary = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert passed is True
+    assert summary == "All CI checks passed."
+    assert runs_calls == 2
+    await client.close()
+
+
+async def test_404_sleeps_at_the_grace_cadence_and_raise_takes_none(
+    sleeps: list[float],
+) -> None:
+    """404s are paced like empty pages; the terminal raise takes no sleep."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    client = _make_client(
+        handler,
+        ci_poll_interval_seconds=30.0,
+        ci_grace_poll_interval_seconds=10.0,
+        ci_ref_not_found_grace_polls=3,
+    )
+    with pytest.raises(TransientAPIError):
+        await client.wait_for_checks(
+            repo_url="https://github.com/owner/repo", ref="abc123"
+        )
+    assert sleeps == [10.0, 10.0, 10.0]
+    await client.close()
+
+
+async def test_non_404_status_error_propagates_from_wait_for_checks() -> None:
+    """A 403 on check-runs propagates exactly as before — no 404 tolerance."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        return httpx.Response(403, json={"message": "Forbidden"})
+
+    client = _make_client(handler)
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.wait_for_checks(
+            repo_url="https://github.com/owner/repo", ref="abc123"
+        )
+    assert runs_calls == 1
     await client.close()

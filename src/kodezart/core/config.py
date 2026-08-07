@@ -136,6 +136,15 @@ class AppConfig(BaseSettings):
             "Seconds between check-runs polls while no check run has been observed yet."
         ),
     )
+    ci_ref_not_found_grace_polls: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description=(
+            "Consecutive check-runs 404s tolerated before the ref is treated as "
+            "a transient API failure."
+        ),
+    )
     forge_api_timeout_seconds: float = Field(
         default=30.0,
         ge=5.0,

@@ -47,6 +47,7 @@ class GitHubAPIClient:
     )
     _OK_CONCLUSIONS = frozenset({"success", "neutral", "skipped"})
     _ACTIVE_WORKFLOW_STATE = "active"
+    _NOT_FOUND_STATUS = 404
     _NO_WORKFLOWS_SUMMARY = (
         "No CI checks configured: repository has no active workflows."
     )
@@ -61,6 +62,7 @@ class GitHubAPIClient:
         ci_no_checks_grace_polls: int,
         ci_no_workflows_grace_polls: int,
         ci_grace_poll_interval_seconds: float,
+        ci_ref_not_found_grace_polls: int,
         timeout_seconds: float,
         max_retries: int,
         retry_backoff_factor: float,
@@ -71,6 +73,7 @@ class GitHubAPIClient:
         self._ci_no_checks_grace_polls: int = ci_no_checks_grace_polls
         self._ci_no_workflows_grace_polls: int = ci_no_workflows_grace_polls
         self._ci_grace_poll_interval: float = ci_grace_poll_interval_seconds
+        self._ci_ref_not_found_grace_polls: int = ci_ref_not_found_grace_polls
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._rng: secrets.SystemRandom = secrets.SystemRandom()
@@ -267,6 +270,32 @@ class GitHubAPIClient:
             return (True, "All CI checks passed.")
         return None
 
+    async def _fetch_check_runs(
+        self,
+        owner: str,
+        repo: str,
+        ref: str,
+    ) -> CheckRunsResponse | None:
+        """Fetch one check-runs page, or ``None`` when the ref 404s.
+
+        A 404 means the ref is not yet visible to the checks API — a
+        transient condition on a freshly pushed commit.  Every other
+        status error propagates.
+        """
+        try:
+            response = await self._request_with_retry(
+                "GET",
+                f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
+                params={"per_page": 100},
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == self._NOT_FOUND_STATUS:
+                return None
+            raise
+        return CheckRunsResponse.model_validate(
+            response.json(),
+        )
+
     async def _probe_workflows(
         self,
         owner: str,
@@ -327,6 +356,10 @@ class GitHubAPIClient:
         exhausted — an empty page after observation is pending, never
         no-CI.  Sleeps occur strictly between polls.
 
+        A 404 on the check-runs page advances neither counter and is
+        tolerated up to ``ci_ref_not_found_grace_polls`` consecutive
+        occurrences; beyond that the call raises ``TransientAPIError``.
+
         Returns ``(True, ...)`` when all checks pass, ``(False, ...)``
         on failure or timeout, ``(None, ...)`` when no CI ran.
         """
@@ -337,17 +370,31 @@ class GitHubAPIClient:
         grace_polls: int = self._ci_no_checks_grace_polls
         runs_observed = False
         empty_polls = 0
+        not_found_polls = 0
         polls_used = 0
 
         while True:
-            response = await self._request_with_retry(
-                "GET",
-                f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
-                params={"per_page": 100},
-            )
-            page = CheckRunsResponse.model_validate(
-                response.json(),
-            )
+            page = await self._fetch_check_runs(owner, repo, ref)
+
+            if page is None:
+                not_found_polls += 1
+                if not_found_polls > self._ci_ref_not_found_grace_polls:
+                    msg = (
+                        f"Check runs for {ref} not found after "
+                        f"{not_found_polls} consecutive polls."
+                    )
+                    raise TransientAPIError(msg)
+                await self._log.awarning(
+                    "ci_ref_not_found_tolerated",
+                    ref=ref,
+                    consecutive=not_found_polls,
+                )
+                await asyncio.sleep(
+                    self._ci_poll_interval if runs_observed else grace_interval
+                )
+                continue
+
+            not_found_polls = 0
 
             if not runs_observed and page.total_count == 0:
                 empty_polls += 1
