@@ -27,6 +27,13 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.gating import (
+    GateDecision,
+    GateVerdict,
+    RepoVisibility,
+    ScanHit,
+    WriterShape,
+)
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
@@ -499,6 +506,7 @@ class FakeChangePersister:
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> PersistResult | None:
         self.calls.append(
             {
@@ -612,11 +620,17 @@ class FakeAgentRunner:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
-            {"method": "stream_workflow", "prompt": prompt, "skills": skills},
+            {
+                "method": "stream_workflow",
+                "prompt": prompt,
+                "skills": skills,
+                "visibility": visibility,
+            },
         )
         for event in self._events:
             yield event
@@ -873,9 +887,11 @@ class FakeQualityGate:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
+                "repo_visibility": repo_visibility,
                 "prompt": prompt,
                 "repo_path": repo_path,
                 "repo_url": repo_url,
@@ -1149,3 +1165,52 @@ class RecordingPromptProvider:
     def variables_for(self, key: PromptKey) -> list[dict[str, object]]:
         """Every recorded variable mapping rendered under *key*."""
         return [variables for recorded, variables in self.renders if recorded is key]
+
+
+class PassThroughGate:
+    """OutboundContentGate that records calls and passes everything CLEAN."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, RepoVisibility, WriterShape]] = []
+
+    def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+    ) -> GateDecision:
+        self.calls.append((content, visibility, shape))
+        return GateDecision(verdict=GateVerdict.CLEAN, content=content)
+
+
+class FakeVisibilityResolver:
+    """RepoVisibilityResolver that scripts one visibility per run."""
+
+    def __init__(
+        self,
+        visibility: RepoVisibility = RepoVisibility.PUBLIC,
+        *,
+        fail: Exception | None = None,
+    ) -> None:
+        self._visibility = visibility
+        self._fail = fail
+        self.calls: list[str] = []
+
+    async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
+        self.calls.append(repo_url)
+        if self._fail is not None:
+            raise self._fail
+        return self._visibility
+
+
+class FakeContentScanner:
+    """ContentScanner that reports scripted hits, for scanner-ordering tests."""
+
+    def __init__(self, hits: list[ScanHit]) -> None:
+        self._hits = hits
+        self.calls: list[str] = []
+
+    def scan(self, content: str) -> list[ScanHit]:
+        self.calls.append(content)
+        return list(self._hits)

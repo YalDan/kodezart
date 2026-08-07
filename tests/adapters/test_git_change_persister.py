@@ -6,14 +6,20 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.git_change_persister import GitChangePersister
+from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
+from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.core.config import AppConfig
 from kodezart.core.protocols import ChangePersister
+from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.agent import ResultEvent
+from kodezart.types.domain.gating import RedactionCategory, RepoVisibility, WriterShape
 from kodezart.types.domain.persist import PersistSource
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeGitService,
+    PassThroughGate,
     make_prompt_provider,
 )
 
@@ -45,6 +51,7 @@ async def git_repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def persister() -> GitChangePersister:
     return GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=SubprocessGitService(remote="origin"),
         committer_name="kodezart-test",
@@ -84,6 +91,7 @@ async def test_persist_returns_working_tree_commit_source(
         workspace_path=str(git_repo),
         branch="wt-branch",
         executor=executor,
+        visibility=RepoVisibility.UNKNOWN,
         backup_ref_id_prefix="deadbeef",
     )
     assert result is not None
@@ -140,6 +148,7 @@ async def test_persist_returns_agent_direct_commit_source_with_real_head_message
         workspace_path=str(git_repo),
         branch="direct-branch",
         executor=executor,
+        visibility=RepoVisibility.UNKNOWN,
         backup_ref_id_prefix="deadbeef",
     )
     assert result is not None
@@ -166,6 +175,7 @@ async def test_persist_diverged_backup_push_failure_re_raises_without_mutation(
         push_error=RuntimeError("backup push refused"),
     )
     persister_with_fake = GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=fake_git,
         committer_name="t",
@@ -183,6 +193,7 @@ async def test_persist_diverged_backup_push_failure_re_raises_without_mutation(
             workspace_path=str(git_repo),
             branch="feat",
             executor=executor,
+            visibility=RepoVisibility.UNKNOWN,
             backup_ref_id_prefix="deadbeef",
         )
     pushes = [c for c in fake_git.calls if c[0] == "push"]
@@ -198,6 +209,7 @@ async def test_persist_diverged_tree_equal_skips_replay(git_repo: Path) -> None:
         trees={"a" * 40: "tEQUAL", "b" * 40: "tEQUAL"},
     )
     persister_with_fake = GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=fake_git,
         committer_name="t",
@@ -210,6 +222,7 @@ async def test_persist_diverged_tree_equal_skips_replay(git_repo: Path) -> None:
         workspace_path=str(git_repo),
         branch="feat",
         executor=executor,
+        visibility=RepoVisibility.UNKNOWN,
         backup_ref_id_prefix="deadbeef",
     )
     assert result is not None
@@ -229,6 +242,7 @@ async def test_persist_diverged_tree_differ_replays_in_order(git_repo: Path) -> 
         commit_tree_result="c" * 40,
     )
     persister_with_fake = GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=fake_git,
         committer_name="t",
@@ -241,6 +255,7 @@ async def test_persist_diverged_tree_differ_replays_in_order(git_repo: Path) -> 
         workspace_path=str(git_repo),
         branch="feat",
         executor=executor,
+        visibility=RepoVisibility.UNKNOWN,
         backup_ref_id_prefix="deadbeef",
     )
     assert result is not None
@@ -270,6 +285,7 @@ async def test_persist_returns_none_when_remote_in_sync(
         workspace_path=str(git_repo),
         branch="main",
         executor=executor,
+        visibility=RepoVisibility.UNKNOWN,
         backup_ref_id_prefix="deadbeef",
     )
     assert result is None
@@ -277,3 +293,122 @@ async def test_persist_returns_none_when_remote_in_sync(
 
 def test_isinstance_change_persister(persister: GitChangePersister) -> None:
     assert isinstance(persister, ChangePersister)
+
+
+# ---------------------------------------------------------------------------
+# KOD-47/AC-2 — the commit-message writer, including divergence replay
+# ---------------------------------------------------------------------------
+
+
+async def test_commit_message_routes_through_the_gate() -> None:
+    """The dirty-tree commit message is a gated writer."""
+    recording_gate = PassThroughGate()
+    git = FakeGitService(has_changes_result=True)
+    persister = GitChangePersister(
+        git=git,
+        committer_name="test",
+        committer_email="t@t.dev",
+        remote="origin",
+        prompts=make_prompt_provider(),
+        gate=recording_gate,
+    )
+    executor = FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="s",
+                structured_output={"title": "feat: x", "body": "because"},
+            ),
+        ],
+    )
+    await persister.persist(
+        workspace_path="/tmp/ws",
+        branch="kodezart/b",
+        executor=executor,
+        backup_ref_id_prefix="abcd1234",
+        skills=SUPPRESS_ALL_SKILLS,
+        visibility=RepoVisibility.PUBLIC,
+    )
+    assert recording_gate.calls
+    assert recording_gate.calls[0][0] == "feat: x\n\nbecause"
+    assert recording_gate.calls[0][1] is RepoVisibility.PUBLIC
+    assert recording_gate.calls[0][2] is WriterShape.PROSE
+
+
+async def test_blocked_commit_message_raises_before_committing() -> None:
+    """A blocked commit message fails the write loudly; nothing is committed."""
+    gate = PatternOutboundContentGate(
+        scanners=[
+            RegexContentScanner(
+                patterns={RedactionCategory.INFRA_ENDPOINTS: [r"because"]},
+            )
+        ],
+        verdicts=AppConfig().deny_pattern_verdicts,
+    )
+    git = FakeGitService(has_changes_result=True)
+    persister = GitChangePersister(
+        git=git,
+        committer_name="test",
+        committer_email="t@t.dev",
+        remote="origin",
+        prompts=make_prompt_provider(),
+        gate=gate,
+    )
+    executor = FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="s",
+                structured_output={"title": "feat: x", "body": "because"},
+            ),
+        ],
+    )
+    with pytest.raises(OutboundContentBlockedError) as excinfo:
+        await persister.persist(
+            workspace_path="/tmp/ws",
+            branch="kodezart/b",
+            executor=executor,
+            backup_ref_id_prefix="abcd1234",
+            skills=SUPPRESS_ALL_SKILLS,
+            visibility=RepoVisibility.PUBLIC,
+        )
+    assert excinfo.value.writer == "commit_message"
+    assert not any(call[0] == "commit" for call in git.calls)
+
+
+async def test_divergence_replay_message_routes_through_the_gate() -> None:
+    """The replay path's message is gated too — the corrected inventory."""
+    recording_gate = PassThroughGate()
+    git = FakeGitService(
+        has_changes_result=False,
+        remote_branch_shas={"kodezart/b": "r" * 40},
+        ancestor_pairs=set(),
+        trees={"r" * 40: "t1", "a" * 40: "t2"},
+    )
+    persister = GitChangePersister(
+        git=git,
+        committer_name="test",
+        committer_email="t@t.dev",
+        remote="origin",
+        prompts=make_prompt_provider(),
+        gate=recording_gate,
+    )
+    result = await persister.persist(
+        workspace_path="/tmp/ws",
+        branch="kodezart/b",
+        executor=FakeAgentExecutor(events=[]),
+        backup_ref_id_prefix="abcd1234",
+        skills=SUPPRESS_ALL_SKILLS,
+        visibility=RepoVisibility.PUBLIC,
+    )
+    assert result is not None
+    assert recording_gate.calls
+    assert recording_gate.calls[0][0] == "fake: HEAD commit message"

@@ -17,6 +17,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
@@ -68,6 +69,7 @@ class _RunKwargs(TypedDict):
     allowed_tools: list[str]
     acceptance_criteria: list[str]
     cache_key: str
+    repo_visibility: RepoVisibility
 
 
 def _run_kwargs(
@@ -85,6 +87,7 @@ def _run_kwargs(
         allowed_tools=["Bash"],
         acceptance_criteria=acceptance_criteria or ["Tests pass"],
         cache_key="test-cache-key",
+        repo_visibility=RepoVisibility.UNKNOWN,
     )
 
 

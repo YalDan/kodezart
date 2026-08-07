@@ -25,6 +25,7 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
 )
@@ -189,6 +190,7 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,

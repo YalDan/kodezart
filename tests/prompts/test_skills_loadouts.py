@@ -10,6 +10,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, SkillPreflightError
 from kodezart.main import preflight_prompt_skill_loadouts, preflight_skills
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from tests.fakes import (
@@ -22,6 +23,7 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
 )
@@ -223,6 +225,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         persister=FakeChangePersister(),
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
@@ -281,6 +284,7 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
                 allowed_tools=["Bash"],
                 acceptance_criteria=["Tests pass"],
                 cache_key="k",
+                repo_visibility=RepoVisibility.UNKNOWN,
             )
         ]
     assert any(call.get("skills") == selection for call in runner.calls)

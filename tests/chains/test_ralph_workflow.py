@@ -28,6 +28,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import WorkflowState
@@ -44,6 +45,7 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    PassThroughGate,
     RecordingPromptProvider,
     SequentialCIMonitor,
     make_failing_evaluation,
@@ -87,6 +89,7 @@ def _make_engine(
         persister=FakeChangePersister(),
     )
     return RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
         service=service,
@@ -584,6 +587,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -812,6 +816,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -1125,6 +1130,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -1406,6 +1412,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -1533,6 +1540,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -1975,6 +1983,7 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -2076,6 +2085,7 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -2396,6 +2406,7 @@ def _make_engine_with_executor(
         last_commit_sha="a" * 40,
     )
     return RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
         service=service,
@@ -2663,6 +2674,7 @@ class _SequentialQualityGate:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
@@ -2735,6 +2747,7 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
         persister=FakeChangePersister(),
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -2840,6 +2853,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         last_commit_sha=feature_tip,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -2990,6 +3004,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         persister=FakeChangePersister(),
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,

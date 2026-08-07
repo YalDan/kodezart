@@ -5,6 +5,7 @@ import pytest
 
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.domain.errors import RateLimitError
+from kodezart.types.domain.gating import RepoVisibility
 
 _FAKE_PAT = "test-token"
 
@@ -533,3 +534,52 @@ async def test_wait_for_checks_neutral_and_skipped() -> None:
     assert passed is True
     assert "passed" in summary.lower()
     await client.close()
+
+
+# ---------------------------------------------------------------------------
+# KOD-47/AC-1, AC-8 — repository visibility resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("private", "expected"),
+    [(True, RepoVisibility.PRIVATE), (False, RepoVisibility.PUBLIC)],
+)
+async def test_resolve_visibility_maps_the_repos_endpoint(
+    private: bool,
+    expected: RepoVisibility,
+) -> None:
+    """GET /repos/{owner}/{repo} decides PRIVATE vs PUBLIC."""
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(200, json={"private": private})
+
+    client = _make_client(handler)
+    try:
+        visibility = await client.resolve_visibility(
+            repo_url="https://github.com/owner/repo",
+        )
+    finally:
+        await client.close()
+
+    assert visibility is expected
+    assert seen == ["/repos/owner/repo"]
+
+
+async def test_resolve_visibility_fails_closed_to_unknown() -> None:
+    """AC-8: a resolution failure is UNKNOWN — never a raise, never a skip."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    client = _make_client(handler)
+    try:
+        visibility = await client.resolve_visibility(
+            repo_url="https://github.com/owner/repo",
+        )
+    finally:
+        await client.close()
+
+    assert visibility is RepoVisibility.UNKNOWN

@@ -5,7 +5,18 @@ from typing import Self
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from kodezart.types.domain.gating import GateVerdict, RedactionCategory
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+
+# Credential shapes are the one category that ships populated: a credential
+# leaving the process is never acceptable regardless of deployment. Every
+# other category ships empty so an unconfigured deployment behaves exactly as
+# it did before the gate existed.
+_SHIPPED_CREDENTIAL_PATTERNS: list[str] = [
+    r"https?://x-access-token:[^@\s/]+@",
+    r"\bgh[posu]_[A-Za-z0-9]{36,}",
+    r"\bgithub_pat_[A-Za-z0-9_]{20,}",
+]
 
 
 class AppConfig(BaseSettings):
@@ -195,6 +206,32 @@ class AppConfig(BaseSettings):
         description=(
             "Settings sources passed explicitly to agent sessions so enabling "
             "the skills knob never silently narrows loaded settings."
+        ),
+    )
+    deny_patterns: dict[RedactionCategory, list[str]] = Field(
+        default_factory=lambda: {
+            RedactionCategory.CROSS_REPO_NAMES: [],
+            RedactionCategory.TRACKER_URLS: [],
+            RedactionCategory.EMAIL_HANDLES: [],
+            RedactionCategory.INFRA_ENDPOINTS: [],
+            RedactionCategory.CREDENTIALS: list(_SHIPPED_CREDENTIAL_PATTERNS),
+        },
+        description=(
+            "JSON object mapping a redaction category to its regex pattern "
+            "list. Ships empty except the credential category."
+        ),
+    )
+    deny_pattern_verdicts: dict[RedactionCategory, GateVerdict] = Field(
+        default_factory=lambda: {
+            RedactionCategory.CROSS_REPO_NAMES: GateVerdict.REDACTED,
+            RedactionCategory.TRACKER_URLS: GateVerdict.REDACTED,
+            RedactionCategory.EMAIL_HANDLES: GateVerdict.REDACTED,
+            RedactionCategory.INFRA_ENDPOINTS: GateVerdict.BLOCKED,
+            RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED,
+        },
+        description=(
+            "JSON object mapping a redaction category to the verdict a hit "
+            "in that category yields. A payload takes the max severity."
         ),
     )
     claude_home_dir: str = Field(

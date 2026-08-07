@@ -57,3 +57,17 @@ def test_readme_documents_the_skills_model() -> None:
     assert "Shipped default" in README
     assert "host-provisioned at user scope" in README
     assert "target repository's own `.claude/`" in README
+
+
+def test_env_example_documents_the_gate_knobs() -> None:
+    """AC-9: every pattern set and verdict mapping originates in AppConfig."""
+    assert "KODEZART_DENY_PATTERNS" in ENV_EXAMPLE
+    assert "KODEZART_DENY_PATTERN_VERDICTS" in ENV_EXAMPLE
+
+
+def test_readme_documents_the_three_verdicts_and_fail_closed_rule() -> None:
+    """AC-7/AC-8: the verdicts and the no-exemption rule are documented."""
+    for token in ("`clean`", "`redacted`", "`blocked`"):
+        assert token in README
+    assert "fail-closed with no exemption" in README
+    assert "OutboundContentBlockedError" in README

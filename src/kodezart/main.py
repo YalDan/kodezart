@@ -18,6 +18,8 @@ from kodezart.adapters.in_repo_prompt_registry import (
     default_sets_root,
 )
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
+from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.api.v1.router import v1_router
 from kodezart.chains.ralph_loop import RalphLoop
@@ -144,6 +146,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         setting_sources=config.setting_sources,
     )
 
+    gate = PatternOutboundContentGate(
+        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
+        verdicts=config.deny_pattern_verdicts,
+    )
+
     git = SubprocessGitService(remote=config.git_remote, auth=auth)
     executor = ClaudeClientExecutor(
         model=config.model,
@@ -162,6 +169,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         committer_email=config.git_committer_email,
         remote=config.git_remote,
         prompts=prompts,
+        gate=gate,
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote=config.git_remote)
     artifact_persister = GitArtifactPersister(
@@ -212,6 +220,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         cache=cache,
         prompts=prompts,
         skills=skills,
+        gate=gate,
+        visibility_resolver=github_api,
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,

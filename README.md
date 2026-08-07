@@ -171,6 +171,40 @@ Which skills a given pipeline step should reach for is **data**, declared per
 function key in the prompt set's `[skills]` section and rendered into that
 step's prompt. A step with an empty loadout renders no skills reference at all.
 
+### Outbound content gate
+
+Repository visibility is resolved once per run, in the first node of the
+workflow graph — before branch-name generation, which is itself a gated
+writer. It is a three-state value: `private`, `public`, or `unknown`.
+
+Resolution is **fail-closed with no exemption**: a failed lookup, a
+deployment with no forge token, and a purely local run all resolve to
+`unknown`, take the public path, and keep the gate engaged. Both the
+resolution and every gate decision are observable — `repo_visibility_resolved`
+and `outbound_content_gated`.
+
+When the target is `public` or `unknown`, every outbound write is scanned:
+PR title and body, PR comments, commit messages (including the
+divergence-replay path), branch names, and both `.kodezart/` artifacts.
+Each write gets an explicit verdict — content is never silently dropped and
+never silently posted:
+
+| Verdict | Meaning |
+| --- | --- |
+| `clean` | No deny-pattern hit. Written as-is. |
+| `redacted` | Each matched span replaced by `[REDACTED:<category>]`. |
+| `blocked` | The write fails loudly with `OutboundContentBlockedError`. Nothing is posted. |
+
+`KODEZART_DENY_PATTERNS` maps a category to its regex list;
+`KODEZART_DENY_PATTERN_VERDICTS` maps a category to the verdict a hit yields.
+A payload takes the **maximum** severity over all its hits. Identifier-shaped
+writers (a git ref cannot carry a placeholder) block on any hit regardless of
+the category's declared verdict.
+
+Pattern sets ship **empty except the credential category**, so an unconfigured
+deployment behaves exactly as it did before the gate existed, apart from the
+two new events.
+
 ## Development
 
 ```bash

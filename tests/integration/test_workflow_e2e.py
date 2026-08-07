@@ -21,6 +21,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistSource
 from kodezart.types.domain.skills import SkillsSelection
 from tests.fakes import (
@@ -33,6 +34,7 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    PassThroughGate,
     ScriptedFakeExecutor,
     make_passing_evaluation,
     make_prompt_provider,
@@ -116,6 +118,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         committer_email="t@t.dev",
     )
     persister = GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
@@ -166,6 +169,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -222,6 +226,7 @@ async def test_workflow_e2e_exhausts_iterations(
         committer_email="t@t.dev",
     )
     persister = GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
@@ -272,6 +277,7 @@ async def test_workflow_e2e_exhausts_iterations(
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -378,6 +384,7 @@ async def test_workflow_e2e_divergent_base_branch(
         committer_email="t@t.dev",
     )
     persister = GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
@@ -429,6 +436,7 @@ async def test_workflow_e2e_divergent_base_branch(
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -634,6 +642,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         committer_email="t@t.dev",
     )
     persister = GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
@@ -684,6 +693,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
@@ -818,6 +828,7 @@ async def test_git_change_persister_recovers_from_divergence_against_configured_
     # --- Provoke: persist() on a clean tree HEAD that diverges from remote
     git = SubprocessGitService(remote=remote_name)
     persister = GitChangePersister(
+        gate=PassThroughGate(),
         prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
@@ -830,6 +841,7 @@ async def test_git_change_persister_recovers_from_divergence_against_configured_
         workspace_path=str(repo),
         branch="main",
         executor=ScriptedFakeExecutor(eval_results=[]),
+        visibility=RepoVisibility.UNKNOWN,
         backup_ref_id_prefix="abc12345",
     )
     assert result is not None
@@ -922,6 +934,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
     must track the configured remote.
     """
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=AgentService(
@@ -1061,6 +1074,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,

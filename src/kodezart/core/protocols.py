@@ -9,6 +9,12 @@ from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
+from kodezart.types.domain.gating import (
+    GateDecision,
+    RepoVisibility,
+    ScanHit,
+    WriterShape,
+)
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
@@ -231,6 +237,7 @@ class ChangePersister(Protocol):
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
         skills: SkillsSelection,
+        visibility: RepoVisibility,
     ) -> PersistResult | None:
         """Commit and push changes. ``None`` if clean.
 
@@ -386,6 +393,7 @@ class AgentRunner(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        visibility: RepoVisibility,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -437,6 +445,7 @@ class QualityGate(Protocol):
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Iterate execute/evaluate until pass or max."""
         ...
@@ -505,4 +514,37 @@ class SkillInventory(Protocol):
 
     def available(self) -> frozenset[str]:
         """Every resolvable skill name, including plugin-qualified ones."""
+        ...
+
+
+@runtime_checkable
+class RepoVisibilityResolver(Protocol):
+    """Resolves a repository's visibility once per run."""
+
+    async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
+        """Return PRIVATE / PUBLIC, or UNKNOWN when resolution fails."""
+        ...
+
+
+@runtime_checkable
+class ContentScanner(Protocol):
+    """Finds deny-pattern matches in an outbound payload."""
+
+    def scan(self, content: str) -> Sequence[ScanHit]:
+        """Every match, with its category and span."""
+        ...
+
+
+@runtime_checkable
+class OutboundContentGate(Protocol):
+    """Assigns an explicit, observable verdict to every outbound payload."""
+
+    def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+    ) -> GateDecision:
+        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted."""
         ...

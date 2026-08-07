@@ -1,5 +1,7 @@
 """Domain exceptions — no I/O, no infrastructure concerns."""
 
+from collections.abc import Sequence
+
 
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
@@ -53,3 +55,23 @@ class AgentSDKError(Exception):
         self.error_kind: str = error_kind
         self.exit_code: int | None = exit_code
         self.stderr_tail: str | None = stderr_tail
+
+
+class OutboundContentBlockedError(Exception):
+    """Raised when the outbound gate blocks a write. Nothing is posted.
+
+    Carries the categories that triggered the block and the writer that was
+    about to run, so the workflow can surface both in its event stream.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        writer: str,
+        categories: Sequence[str],
+    ) -> None:
+        detail = f"{message} (writer: {writer}; categories: {', '.join(categories)})"
+        super().__init__(detail)
+        self.writer: str = writer
+        self.categories: tuple[str, ...] = tuple(categories)

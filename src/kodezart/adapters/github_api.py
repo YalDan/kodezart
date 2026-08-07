@@ -8,10 +8,12 @@ import httpx
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import RateLimitError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.github import (
     CheckRunsResponse,
     CheckSuitesResponse,
     PullRequestResponse,
+    RepositoryResponse,
 )
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
 
@@ -166,6 +168,30 @@ class GitHubAPIClient:
         raise TransientAPIError(
             f"Request failed after retries: {url}",
         )
+
+    # -- RepoVisibilityResolver ---------------------------------------------
+
+    async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
+        """Resolve visibility via ``GET /repos/{owner}/{repo}``.
+
+        Fail-closed: any failure yields ``UNKNOWN``, which takes the public
+        path with the gate engaged.  Never raises, never skips.
+        """
+        try:
+            owner, repo = extract_owner_repo(repo_url)
+            response = await self._request_with_retry(
+                "GET",
+                f"/repos/{owner}/{repo}",
+            )
+            result = RepositoryResponse.model_validate(response.json())
+        except Exception as exc:
+            await self._log.awarning(
+                "repo_visibility_resolution_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+            )
+            return RepoVisibility.UNKNOWN
+        return RepoVisibility.PRIVATE if result.private else RepoVisibility.PUBLIC
 
     # -- PRCreator -----------------------------------------------------------
 

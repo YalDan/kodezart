@@ -4,6 +4,7 @@ import pytest
 
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -50,6 +51,7 @@ async def test_stream_workflow_persists_changes() -> None:
             ralph_branch="kodezart/test-branch-abc12345-ralph-def67890",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            visibility=RepoVisibility.UNKNOWN,
         )
     ]
     assert len(persister.calls) == 1

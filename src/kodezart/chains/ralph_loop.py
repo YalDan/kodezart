@@ -28,6 +28,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
@@ -86,6 +87,7 @@ class RalphLoop:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the quality-gating loop.
 
@@ -103,6 +105,7 @@ class RalphLoop:
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
             acceptance_criteria=acceptance_criteria,
+            repo_visibility=repo_visibility,
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self._checkpointer is not None:
@@ -185,6 +188,7 @@ class RalphLoop:
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             skills=self._skills,
+            visibility=ctx.repo_visibility,
             create_branch=is_first,
             cache_key=ctx.cache_key,
         ):

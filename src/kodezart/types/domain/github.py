@@ -32,6 +32,14 @@ class PullRequestResponse(BaseModel):
     number: int
 
 
+class RepositoryResponse(BaseModel):
+    """Wrapper for the GitHub repository metadata response."""
+
+    model_config = ConfigDict(frozen=True)
+
+    private: bool
+
+
 class CheckSuitesResponse(BaseModel):
     """Wrapper for the GitHub Check Suites API response."""
 
