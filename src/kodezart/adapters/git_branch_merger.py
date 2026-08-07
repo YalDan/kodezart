@@ -57,7 +57,8 @@ class GitBranchMerger:
              origin/* refs needed by ``is_ancestor``.
           3. If origin/source is an ancestor of HEAD → ALREADY_INTEGRATED.
           4. If HEAD is an ancestor of origin/source → ff-merge, push,
-             delete source from remote → FAST_FORWARDED.
+             delete source from remote when its tip still matches the
+             commit that was merged → FAST_FORWARDED.
           5. Otherwise → DIVERGENT.
         """
         source_tip = await self._workspace_remote_branch_sha(
@@ -118,6 +119,7 @@ class GitBranchMerger:
                 await self._cleanup_source_internal(
                     workspace_path=workspace_path,
                     branch=source_branch,
+                    merged_sha=new_head,
                 )
                 return ConsolidationOutcome(
                     status=ConsolidationStatus.FAST_FORWARDED,
@@ -262,6 +264,7 @@ class GitBranchMerger:
         *,
         workspace_path: str,
         branch: str,
+        merged_sha: str,
     ) -> None:
         """Delete *branch* from the remote.  Logs but does not raise.
 
@@ -269,20 +272,36 @@ class GitBranchMerger:
         Callers MUST NOT depend on this side effect — it's an internal
         housekeeping action tied to a successful integration.
 
-        The existence re-probe narrows the staleness window between the
-        SOURCE_MISSING gate and the delete to a single round-trip; it
-        does not close it, so the try/except stays.
+        The merge integrated the locally fetched ``<remote>/<branch>``,
+        so ``merged_sha`` (the post-merge HEAD of a fast-forward) is the
+        source tip that was integrated.  The re-probe deletes only when
+        the remote still points at exactly that commit: a source branch
+        that advanced between the ``fetch`` and here carries commits the
+        feature branch does not, and deleting it would destroy them.
+
+        The re-probe narrows the staleness window to a single round-trip;
+        it does not close it, so the try/except stays.
         """
         try:
-            still_present = await self._git.remote_branch_sha(
+            remote_sha = await self._git.remote_branch_sha(
                 workspace_path,
                 self._remote,
                 branch,
             )
-            if still_present is None:
+            if remote_sha is None:
                 await self._log.adebug(
                     "branch_cleanup_skipped",
                     branch=branch,
+                    reason="absent",
+                )
+                return
+            if remote_sha != merged_sha:
+                await self._log.awarning(
+                    "branch_cleanup_skipped",
+                    branch=branch,
+                    reason="advanced",
+                    merged_sha=merged_sha,
+                    remote_sha=remote_sha,
                 )
                 return
             await self._git.delete_remote_branch(

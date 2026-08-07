@@ -439,7 +439,42 @@ async def test_fast_forward_skips_cleanup_when_source_vanished_after_the_gate() 
     skipped = [e for e in logs if e["event"] == "branch_cleanup_skipped"]
     assert len(skipped) == 1
     assert skipped[0]["branch"] == "ralph-source"
+    assert skipped[0]["reason"] == "absent"
     assert skipped[0]["log_level"] == "debug"
+    assert [e for e in logs if e["event"] == "branch_cleanup_failed"] == []
+
+
+async def test_fast_forward_skips_cleanup_when_source_advanced_after_the_merge() -> (
+    None
+):
+    """A source branch that gained commits after the fetch is never deleted."""
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
+
+    fake_git = FakeGitService(
+        remote_branch_sha_sequences={"ralph-source": ["a" * 40, "b" * 40]},
+        ancestor_pairs={("HEAD", "origin/ralph-source")},
+    )
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await merger.consolidate(
+            repo_path="/tmp/repo",
+            repo_url=None,
+            base_branch="main",
+            feature_branch="feat/x",
+            source_branch="ralph-source",
+        )
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    assert [c for c in fake_git.calls if c[0] == "delete_remote_branch"] == []
+    skipped = [e for e in logs if e["event"] == "branch_cleanup_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["branch"] == "ralph-source"
+    assert skipped[0]["reason"] == "advanced"
+    assert skipped[0]["merged_sha"] == "a" * 40
+    assert skipped[0]["remote_sha"] == "b" * 40
+    assert skipped[0]["log_level"] == "warning"
     assert [e for e in logs if e["event"] == "branch_cleanup_failed"] == []
 
 
