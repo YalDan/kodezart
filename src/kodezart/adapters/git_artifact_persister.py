@@ -55,6 +55,12 @@ class GitArtifactPersister:
             for name, content in artifacts.items():
                 (artifact_dir / name).write_text(content)
             await self._git.add_all(workspace_path)
+            if not await self._git.has_changes(workspace_path):
+                await self._log.ainfo(
+                    "artifacts_persist_skipped",
+                    branch=branch,
+                )
+                return
             await self._git.commit(
                 cwd=workspace_path,
                 message="kodezart: persist workflow artifacts",

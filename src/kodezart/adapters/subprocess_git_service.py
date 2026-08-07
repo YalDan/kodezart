@@ -365,7 +365,12 @@ class SubprocessGitService:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            msg = f"{' '.join(cmd[:3])} failed: {stderr.decode().strip()}"
+            detail = (
+                stderr.decode().strip()
+                or stdout.decode().strip()
+                or f"exit code {proc.returncode}"
+            )
+            msg = f"{' '.join(cmd[:3])} failed: {detail}"
             raise RuntimeError(msg)
         return stdout.decode().strip()
 
@@ -385,9 +390,14 @@ class SubprocessGitService:
             stderr=asyncio.subprocess.PIPE,
             env=process_env,
         )
-        _, stderr = await proc.communicate()
+        stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            msg = f"{' '.join(cmd[:3])} failed: {stderr.decode().strip()}"
+            detail = (
+                stderr.decode().strip()
+                or stdout.decode().strip()
+                or f"exit code {proc.returncode}"
+            )
+            msg = f"{' '.join(cmd[:3])} failed: {detail}"
             raise RuntimeError(msg)
 
     async def _run_with_exit_codes(
