@@ -13,6 +13,7 @@ from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.adapters.github_token_auth import GitHubTokenAuth
+from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.api.v1.router import v1_router
@@ -23,6 +24,7 @@ from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
 from kodezart.services.agent_service import AgentService
+from kodezart.services.job_service import JobService
 
 
 @asynccontextmanager
@@ -131,6 +133,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         app.state.job_queue = job_queue
         await job_queue.start()
+
+        run_state_reader = (
+            LangGraphRunStateReader(checkpointer=checkpointer)
+            if checkpointer is not None
+            else None
+        )
+        app.state.job_service = JobService(
+            registry=job_queue,
+            run_state_reader=run_state_reader,
+        )
 
         await log.ainfo(
             "application_starting",

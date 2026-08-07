@@ -8,6 +8,7 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.handlers.agent_handler import AgentHandler
+from kodezart.handlers.job_handler import JobHandler
 from kodezart.types.responses.common import BaseResponse
 from kodezart.utils.sse import format_sse
 
@@ -22,6 +23,20 @@ def _not_found(job_id: str) -> JSONResponse:
             success=False,
             error=f"job not found: {job_id}",
         ).model_dump(by_alias=True, mode="json"),
+    )
+
+
+@router.get("/{job_id}", summary="Job status")
+async def get_job_status(job_id: str, request: Request) -> Response:
+    """``GET /api/v1/jobs/{job_id}``. Registry facts plus checkpointed run state."""
+    await _log.adebug("job_status_endpoint", job_id=job_id)
+    handler = JobHandler(service=request.app.state.job_service)
+    status = await handler.get_status(job_id=job_id)
+    if status is None:
+        return _not_found(job_id)
+    return JSONResponse(
+        status_code=200,
+        content=status.model_dump(by_alias=True, mode="json"),
     )
 
 
