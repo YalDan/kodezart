@@ -12,6 +12,7 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.persist import ArtifactPersistStatus
 
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)
@@ -371,6 +372,19 @@ class WorkflowConsolidationEvent(AgentEvent):
     feature_branch: str = Field(min_length=1)
     source_branch: str = Field(min_length=1)
     feature_tip_sha: str = Field(min_length=40, max_length=40)
+
+
+class WorkflowArtifactsEvent(AgentEvent):
+    """Emitted after workflow artifacts are written to the ralph branch.
+
+    ``IGNORED_BY_TARGET`` is not a variant of success: the target
+    repository's ignore rules match the artifact directory, so no run
+    will ever land artifacts there until they change.
+    """
+
+    type: Literal["workflow_artifacts"] = "workflow_artifacts"
+    status: ArtifactPersistStatus
+    branch: str = Field(min_length=1)
 
 
 class WorkflowCompleteEvent(AgentEvent):
