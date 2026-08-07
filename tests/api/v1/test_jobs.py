@@ -632,7 +632,9 @@ async def test_workflow_leads_with_a_job_accepted_frame(job_app: _JobApp) -> Non
     assert first["streamUrl"] == f"/api/v1/jobs/{job_id}/stream"
     # Everything after the leading frame is the run's own output.
     assert [e["type"] for e in events[1:]].count("job_accepted") == 0
-    assert "workflow_complete" in [e["type"] for e in events]
+    terminal = next(e for e in events if e["type"] == "workflow_complete")
+    # `outcome` is required and non-nullable, so it survives exclude_none.
+    assert terminal["outcome"] == WorkflowOutcome.review_passed_no_pr_adapter.value
 
 
 async def test_jobs_stream_replays_the_buffer_then_goes_live() -> None:
