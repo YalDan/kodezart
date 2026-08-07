@@ -157,6 +157,30 @@ class AppConfig(BaseSettings):
             "loop is considered plateaued and stops."
         ),
     )
+    queue_max_concurrent_runs_per_lane: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        description="Dispatcher worker tasks per lane. 1 makes runs serial.",
+    )
+    queue_max_depth_per_lane: int = Field(
+        default=64,
+        ge=1,
+        le=1024,
+        description="Queued submissions a lane accepts before rejecting.",
+    )
+    queue_terminal_retention_seconds: float = Field(
+        default=3600.0,
+        ge=1.0,
+        le=86400.0,
+        description="Seconds a terminal job record is retained in the registry.",
+    )
+    queue_event_buffer_capacity: int = Field(
+        default=512,
+        ge=1,
+        le=10000,
+        description="Events retained per job for replay on attach.",
+    )
 
     @classmethod
     def from_env(cls) -> Self:

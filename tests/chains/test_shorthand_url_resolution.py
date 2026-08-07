@@ -14,6 +14,8 @@ Experiment: Run a workflow with shorthand repo_url and verify the merger
   receives a fully-resolved HTTPS URL, not the raw shorthand.
 """
 
+import uuid
+
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -80,6 +82,7 @@ async def test_merger_receives_resolved_url_not_shorthand() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -114,6 +117,7 @@ async def test_full_url_passes_through_unchanged() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -147,6 +151,7 @@ async def test_local_repo_path_not_affected() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 

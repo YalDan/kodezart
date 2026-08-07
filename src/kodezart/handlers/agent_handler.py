@@ -6,24 +6,27 @@ from collections.abc import AsyncGenerator
 
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, WorkflowEngine
-from kodezart.types.requests.agent import QueryRequest, WorkflowRequest
+from kodezart.core.protocols import AgentRunner, JobQueue
+from kodezart.types.domain.agent import JobAcceptedEvent
+from kodezart.types.domain.job import JobRecord
+from kodezart.types.requests.agent import QueryRequest
 
 
 class AgentHandler:
     """Request handler for agent endpoints.
 
-    Unpacks request models, delegates to ``AgentRunner``/``WorkflowEngine``,
-    and serializes events for SSE streaming.
+    Unpacks request models, delegates to ``AgentRunner``/``JobQueue``,
+    and serializes events for SSE streaming.  Serialization of agent
+    events happens here and nowhere else.
     """
 
     def __init__(
         self,
         service: AgentRunner,
-        workflow_engine: WorkflowEngine | None = None,
+        queue: JobQueue | None = None,
     ) -> None:
         self._service = service
-        self._workflow_engine = workflow_engine
+        self._queue = queue
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream_query(
@@ -71,24 +74,18 @@ class AgentHandler:
                 exclude_none=True,
             )
 
-    async def stream_workflow(
+    async def attach_job(
         self,
-        request: WorkflowRequest,
+        *,
+        job_id: str,
     ) -> AsyncGenerator[dict[str, object], None]:
-        """Handle ``POST /api/v1/agent/workflow`` by delegating to WorkflowEngine."""
-        await self._log.adebug("agent_workflow_requested")
+        """Stream an already-queued job's events as serialized dicts."""
+        await self._log.adebug("agent_job_attach_requested", job_id=job_id)
         try:
-            if self._workflow_engine is None:
-                msg = "Workflow engine not configured"
+            if self._queue is None:
+                msg = "Job queue not configured"
                 raise RuntimeError(msg)
-            async for event in self._workflow_engine.run(
-                prompt=request.prompt,
-                repo_path=request.repo_path,
-                repo_url=request.repo_url,
-                base_branch=request.base_branch,
-                permission_mode=request.permission_mode,
-                allowed_tools=request.allowed_tools,
-            ):
+            async for event in self._queue.attach(job_id=job_id):
                 yield event.model_dump(by_alias=True, exclude_none=True)
         except Exception as exc:
             cause = exc.__cause__
@@ -103,3 +100,25 @@ class AgentHandler:
                 by_alias=True,
                 exclude_none=True,
             )
+
+    async def stream_workflow(
+        self,
+        *,
+        record: JobRecord,
+        status_url: str,
+        stream_url: str,
+    ) -> AsyncGenerator[dict[str, object], None]:
+        """Emit the ``job_accepted`` frame, then attach to the queued run."""
+        queue_position = record.queue_position
+        if queue_position is None:
+            msg = f"accepted job {record.job_id} carries no queue position"
+            raise RuntimeError(msg)
+        yield JobAcceptedEvent(
+            job_id=record.job_id,
+            lane=record.lane,
+            queue_position=queue_position,
+            status_url=status_url,
+            stream_url=stream_url,
+        ).model_dump(by_alias=True, exclude_none=True)
+        async for payload in self.attach_job(job_id=record.job_id):
+            yield payload

@@ -4,6 +4,7 @@ import json
 from collections.abc import AsyncGenerator
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient, Response
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
@@ -24,6 +25,7 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    attached_job_queue,
     make_passing_evaluation,
 )
 
@@ -144,7 +146,10 @@ async def test_stream_query_missing_repo_source(agent_client: AsyncClient) -> No
     assert response.status_code == 422
 
 
-@pytest.fixture
+# loop_scope="function" pins the fixture to the test's event loop so the
+# dispatcher's worker tasks run while the request is in flight; the
+# project default fixture loop scope is "session".
+@pytest_asyncio.fixture(loop_scope="function")
 async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
     executor = FakeAgentExecutor(
@@ -198,11 +203,12 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
     )
     app.state.agent_service = service
     app.state.workflow_engine = engine
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test",
-    ) as ac:
-        yield ac
+    async with attached_job_queue(app, engine):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            yield ac
 
 
 async def test_stream_workflow_sse(

@@ -11,3 +11,7 @@ TICKET_TOOLS: list[str] = [*EVAL_TOOLS, "Agent", "WebSearch", "WebFetch"]
 # tied to the upstream proxy framing limits — NOT a deployment-environment
 # tunable, so it lives next to the slice site rather than in AppConfig.
 STDERR_TAIL_BYTES: int = 4096
+
+# The one lane that ships.  Lanes are open strings, never an enum — a
+# later producer declares its own lane without a code change here.
+DEFAULT_LANE: str = "workflow"

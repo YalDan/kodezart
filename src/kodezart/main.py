@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.git_artifact_persister import GitArtifactPersister
 from kodezart.adapters.git_branch_merger import GitBranchMerger
@@ -121,12 +122,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         app.state.workflow_engine = workflow_engine
 
+        job_queue = AsyncioJobQueue(
+            engine=workflow_engine,
+            max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
+            max_depth_per_lane=config.queue_max_depth_per_lane,
+            terminal_retention_seconds=config.queue_terminal_retention_seconds,
+            event_buffer_capacity=config.queue_event_buffer_capacity,
+        )
+        app.state.job_queue = job_queue
+        await job_queue.start()
+
         await log.ainfo(
             "application_starting",
             project=config.project_name,
             debug=config.debug,
         )
         yield
+        await job_queue.stop()
         if github_api is not None:
             await github_api.close()
         await log.ainfo("application_shutdown")

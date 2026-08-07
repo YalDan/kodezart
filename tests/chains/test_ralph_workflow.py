@@ -1,6 +1,7 @@
 """Tests for RalphWorkflowEngine (outer pipeline) with fakes."""
 
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -118,6 +119,7 @@ async def test_workflow_single_iteration_accepted() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -146,6 +148,7 @@ async def test_workflow_max_iterations_exhausted() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -174,6 +177,7 @@ async def test_workflow_streams_events_per_node() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -205,6 +209,7 @@ async def test_workflow_accepted_calls_merger() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -254,6 +259,7 @@ async def test_workflow_merge_failure_reports_error() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -284,6 +290,7 @@ async def test_workflow_merge_success_has_no_error() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -313,6 +320,7 @@ async def test_workflow_rejected_does_not_merge() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -353,6 +361,7 @@ async def test_concurrent_workflow_runs_isolated() -> None:
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
             )
         ]
 
@@ -383,6 +392,7 @@ async def test_quality_gate_receives_correct_params() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -416,6 +426,7 @@ async def test_workflow_run_rejects_acceptance_criteria_kwarg() -> None:
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
                 **extra_kwargs,
             )
         ]
@@ -440,6 +451,7 @@ async def test_workflow_generates_criteria_before_loop() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -460,6 +472,7 @@ async def test_workflow_streams_criteria_event() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -482,6 +495,7 @@ async def test_workflow_criteria_event_before_iteration_event() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -601,6 +615,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
             )
         ]
     assert excinfo.value.raise_site == "acceptance_criteria"
@@ -625,6 +640,7 @@ async def test_workflow_quality_gate_never_receives_empty_criteria() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -654,6 +670,7 @@ async def test_workflow_accepted_cleans_up_ralph_branch() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -683,6 +700,7 @@ async def test_workflow_rejected_does_not_clean_up() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -723,6 +741,7 @@ async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -753,6 +772,7 @@ async def test_generate_ticket_runs_in_order() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -781,6 +801,7 @@ async def test_generate_ticket_node_forwards_base_branch() -> None:
             base_branch="develop",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -824,6 +845,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -873,6 +895,7 @@ async def test_quality_gate_receives_formatted_ticket() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -894,6 +917,7 @@ async def test_workflow_ticket_event_yielded() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -943,6 +967,7 @@ async def test_no_ticket_event_raises() -> None:
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
             )
         ]
 
@@ -1068,6 +1093,7 @@ async def test_workflow_review_passes_opens_pr() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1137,6 +1163,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1176,6 +1203,7 @@ async def test_workflow_ci_passes_completes() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1210,6 +1238,7 @@ async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1245,6 +1274,7 @@ async def test_workflow_no_pr_creator_skips_pr() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1281,6 +1311,7 @@ async def test_workflow_no_ci_monitor_skips_ci() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1317,6 +1348,7 @@ async def test_workflow_rejected_skips_review_and_pr() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1357,6 +1389,7 @@ async def test_workflow_complete_event_includes_pr_fields() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1416,6 +1449,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1462,6 +1496,7 @@ async def test_workflow_ci_fails_budget_remaining_triggers_fix() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1541,6 +1576,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1589,6 +1625,7 @@ async def test_workflow_repo_url_none_with_protocols_skips_pr() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1629,6 +1666,7 @@ async def test_route_after_review_no_pr_creator_routes_complete() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1663,6 +1701,7 @@ async def test_route_after_review_no_repo_url_routes_complete() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1729,6 +1768,7 @@ async def test_route_after_ci_budget_remaining_routes_fix() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1756,6 +1796,7 @@ async def test_workflow_persists_artifacts_after_criteria() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1786,6 +1827,7 @@ async def test_workflow_cleans_artifacts_before_pr() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1811,6 +1853,7 @@ async def test_workflow_without_artifact_persister() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1844,6 +1887,7 @@ async def test_workflow_success_cleans_backup_branches() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1877,6 +1921,7 @@ async def test_workflow_rejected_skips_backup_cleanup() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1909,6 +1954,7 @@ async def test_backup_cleanup_failure_does_not_block_complete() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -1981,6 +2027,7 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -2080,6 +2127,7 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -2151,6 +2199,7 @@ async def test_workflow_consolidation_event_emitted_post_loop() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -2202,6 +2251,7 @@ async def test_complete_event_final_commit_sha_sources_from_feature_tip_sha() ->
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
@@ -2236,6 +2286,7 @@ async def test_merge_to_feature_already_integrated_proceeds_to_review() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
@@ -2272,6 +2323,7 @@ async def test_merge_to_feature_divergent_routes_to_complete_with_merge_error() 
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
@@ -2308,6 +2360,7 @@ async def test_merge_to_feature_source_missing_raises() -> None:
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
             )
         ]
 
@@ -2352,6 +2405,7 @@ async def test_review_against_ticket_passes_changeset_digest_to_build_prompt(
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
     assert any(isinstance(c, ChangesetDigest) for c in captured)
@@ -2450,6 +2504,7 @@ async def test_fix_code_node_divergent_routes_to_comment_failure_when_pr_url_set
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -2495,6 +2550,7 @@ async def test_fix_code_node_divergent_routes_to_complete_when_no_pr_url() -> No
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -2551,6 +2607,7 @@ async def test_fix_code_node_already_integrated_does_not_raise_advances_fix_roun
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -2605,6 +2662,7 @@ async def test_fix_code_node_source_missing_routes_terminally() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -2759,6 +2817,7 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -2860,6 +2919,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3013,6 +3073,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
             )
         ]
     assert excinfo.value.raise_site == "branch_name"
@@ -3067,6 +3128,7 @@ async def test_terminal_event_always_carries_an_outcome() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3097,6 +3159,7 @@ async def test_terminal_outcome_merge_divergent_on_diverged_consolidation() -> N
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3120,6 +3183,7 @@ async def test_terminal_outcome_ci_passed_on_green_ci() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3143,6 +3207,7 @@ async def test_terminal_outcome_ci_not_configured_when_ci_reports_none() -> None
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3169,6 +3234,7 @@ async def test_terminal_outcome_loop_not_accepted_when_gate_rejects() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3198,6 +3264,7 @@ async def test_plateaued_run_reports_loop_plateaued_with_actionable_payload() ->
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3242,6 +3309,7 @@ async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3304,6 +3372,7 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3366,6 +3435,7 @@ async def test_fix_round_divergent_still_sets_ci_passed_false() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -3429,6 +3499,7 @@ async def test_terminal_totals_are_cumulative_and_last_round_wins() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 

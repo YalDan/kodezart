@@ -1,9 +1,13 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
 from collections.abc import AsyncGenerator, Mapping
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from kodezart.core.protocols import AgentExecutor
+from fastapi import FastAPI
+
+from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.core.protocols import AgentExecutor, WorkflowEngine
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
@@ -1089,3 +1093,34 @@ class FakeArtifactPersister:
         cache_key: str | None = None,
     ) -> None:
         self.clean_calls.append((repo_path, repo_url, branch))
+
+
+@asynccontextmanager
+async def attached_job_queue(
+    app: FastAPI,
+    engine: WorkflowEngine,
+    *,
+    max_concurrent_runs_per_lane: int = 1,
+    max_depth_per_lane: int = 64,
+    terminal_retention_seconds: float = 3600.0,
+    event_buffer_capacity: int = 512,
+) -> AsyncGenerator[AsyncioJobQueue, None]:
+    """Attach a started AsyncioJobQueue to *app*, stopping it on exit.
+
+    The httpx ASGITransport does not run lifespan events, so tests that
+    exercise queued endpoints wire the dispatcher the way the lifespan
+    does and stop it the same way.
+    """
+    queue = AsyncioJobQueue(
+        engine=engine,
+        max_concurrent_runs_per_lane=max_concurrent_runs_per_lane,
+        max_depth_per_lane=max_depth_per_lane,
+        terminal_retention_seconds=terminal_retention_seconds,
+        event_buffer_capacity=event_buffer_capacity,
+    )
+    app.state.job_queue = queue
+    await queue.start()
+    try:
+        yield queue
+    finally:
+        await queue.stop()

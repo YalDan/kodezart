@@ -416,6 +416,21 @@ class WorkflowCompleteEvent(AgentEvent):
         return result
 
 
+class JobAcceptedEvent(AgentEvent):
+    """Leading frame of an attached run — carries the reconnect handle.
+
+    A client that drops mid-run reconnects at ``stream_url`` with this
+    ``job_id`` instead of losing the run.
+    """
+
+    type: Literal["job_accepted"] = "job_accepted"
+    job_id: str
+    lane: str
+    queue_position: int
+    status_url: str
+    stream_url: str
+
+
 class WorkflowCriteriaEvent(AgentEvent):
     """Emitted after acceptance criteria are generated from ticket analysis."""
 

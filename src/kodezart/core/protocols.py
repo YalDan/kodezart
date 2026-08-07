@@ -8,7 +8,9 @@ from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
+from kodezart.types.domain.job import JobRecord, RunState
 from kodezart.types.domain.persist import PersistResult
+from kodezart.types.requests.agent import WorkflowRequest
 
 
 @runtime_checkable
@@ -464,6 +466,49 @@ class WorkflowEngine(Protocol):
         base_branch: str,
         permission_mode: str,
         allowed_tools: list[str],
+        cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
-        """Full pipeline: branch → ticket → criteria → loop → merge."""
+        """Full pipeline: branch → ticket → criteria → loop → merge.
+
+        ``cache_key`` IS the LangGraph thread id, so the caller's job id
+        addresses the run's checkpoints.
+        """
+        ...
+
+
+@runtime_checkable
+class JobQueue(Protocol):
+    """Accepts workflow submissions and streams the resulting run.
+
+    NOT PERSISTENT.  The queue lives in the serving process: a restart
+    drops every job still waiting and terminates every job in flight.
+    An HTTP-submitted fire lost to a restart is re-submitted by its
+    caller — this is documented behavior, not a silent one, and no
+    persistence machinery stands behind it.
+    """
+
+    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+        """Enqueue *request* on *lane*. Raises ``QueueFullError`` at capacity."""
+        ...
+
+    def attach(self, *, job_id: str) -> AsyncIterator[AgentEvent]:
+        """Replay the job's bounded event buffer, then stream live events."""
+        ...
+
+
+@runtime_checkable
+class JobRegistry(Protocol):
+    """Reads the lifecycle record of a submitted job."""
+
+    async def get(self, *, job_id: str) -> JobRecord | None:
+        """The job's current record, or ``None`` when unknown or evicted."""
+        ...
+
+
+@runtime_checkable
+class RunStateReader(Protocol):
+    """Reads a run's checkpointed state — the only seam onto LangGraph."""
+
+    async def read(self, *, job_id: str) -> RunState | None:
+        """Checkpointed state for *job_id*, or ``None`` when none exists."""
         ...

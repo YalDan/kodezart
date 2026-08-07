@@ -53,3 +53,7 @@ class AgentSDKError(Exception):
         self.error_kind: str = error_kind
         self.exit_code: int | None = exit_code
         self.stderr_tail: str | None = stderr_tail
+
+
+class QueueFullError(Exception):
+    """Raised when a lane's queue is at capacity and cannot accept a submission."""

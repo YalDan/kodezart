@@ -123,30 +123,23 @@ class RalphWorkflowEngine:
         base_branch: str,
         permission_mode: str,
         allowed_tools: list[str],
+        cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the full workflow pipeline.
 
-        Generate cache_key, resolve repo URL, build execution context, and
-        stream events from the compiled LangGraph graph.
+        ``cache_key`` IS the LangGraph thread id: the caller's job id
+        addresses this run's checkpoints.
         """
-        # TODO(time-travel): E2E checkpoint resume requires changes here
-        # — this is the root of the resume chain (HTTP → handler →
-        # protocol → here → sub-graphs).
-        # 1. Accept optional thread_id param; reuse it as cache_key
-        #    for resume instead of generating a fresh uuid.
+        # TODO(time-travel): E2E checkpoint resume still requires:
         # 2. On resume: pass None (not initial_state) to astream()
         #    so LangGraph loads from the outer checkpoint.
-        # 3. Emit cache_key in the first SSE event so callers can
-        #    store it for future resume requests.
         # 4. Sub-graphs are called imperatively (not LangGraph
         #    subgraphs), so each has isolated checkpoints. On outer
         #    resume the sub-graph nodes re-enter; inner loops must
         #    also accept a resume signal (see ralph_loop.py and
         #    ticket_generation.py TODOs).
-        # 5. WorkflowEngine protocol, WorkflowRequest, and handler
-        #    all need a thread_id param to plumb resume from HTTP.
-        cache_key = uuid.uuid4().hex
-
+        # 5. WorkflowRequest and the handler need a resume signal to
+        #    plumb an existing job id back in from HTTP.
         resolved_url = (
             resolve_repo_url(repo_url, self._git_base_url)
             if repo_url is not None
