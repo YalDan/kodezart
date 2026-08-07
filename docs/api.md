@@ -133,7 +133,7 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `result`              | `subtype`, `durationMs`, `durationApiMs`, `isError`, `numTurns`, `sessionId`, `stopReason`, `totalCostUsd`, `usage`, `result`, `branch`, `commitSha`, `structuredOutput` |
 | `stream_event`        | `sessionId`, `event`                                        |
 
-### Workflow Events (6)
+### Workflow Events (11)
 
 | Event Type                | Key Fields                                      |
 | ------------------------- | ----------------------------------------------- |
@@ -141,8 +141,13 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `workflow_ticket_review`  | `iteration`, `approved`, `feedback`, `suggestions` |
 | `workflow_ticket`         | `ticket`, `reviewRounds`, `approved`            |
 | `workflow_criteria`       | `criteria`, `reasoning`                         |
+| `workflow_artifacts`      | `status` (`persisted` / `unchanged` / `ignored_by_target`), `branch` |
 | `workflow_iteration`      | `iteration`, `branch`, `commitSha`, `accepted`, `evaluation` |
-| `workflow_complete`       | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `merged`, `finalCommitSha`, `error` |
+| `workflow_consolidation`  | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
+| `workflow_review`         | `passed`, `evaluation`, `fixRound`              |
+| `workflow_pr`             | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
+| `workflow_ci`             | `passed` (`null` when no CI ran), `summary`, `ref` |
+| `workflow_complete`       | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `merged`, `finalCommitSha`, `error`, `prUrl`, `prNumber`, `ciPassed` |
 
 ### Error Events (1)
 
