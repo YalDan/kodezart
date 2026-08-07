@@ -12,19 +12,19 @@ from dataclasses import dataclass
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService, RepoCache
-from kodezart.domain.agent import generate_job_id
+from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.errors import WorkspaceError
 
 
 @dataclass(frozen=True, slots=True)
 class _WorkspaceInfo:
     repo_path: str
-    job_id: str
+    workspace_id: str
     branch_name: str | None = None
 
 
-def _worktree_path(job_id: str) -> str:
-    return f"{tempfile.gettempdir()}/kodezart-{job_id}"
+def _worktree_path(workspace_id: str) -> str:
+    return f"{tempfile.gettempdir()}/kodezart-{workspace_id}"
 
 
 class GitWorktreeProvider:
@@ -71,8 +71,8 @@ class GitWorktreeProvider:
             )
             await self._git.validate_repo(resolved)
 
-            job_id = generate_job_id()
-            wt_path = _worktree_path(job_id)
+            workspace_id = generate_workspace_id()
+            wt_path = _worktree_path(workspace_id)
             await self._git.create_worktree(
                 resolved,
                 ref,
@@ -83,12 +83,12 @@ class GitWorktreeProvider:
 
             self._workspaces[wt_path] = _WorkspaceInfo(
                 repo_path=resolved,
-                job_id=job_id,
+                workspace_id=workspace_id,
                 branch_name=branch_name,
             )
             await self._log.ainfo(
                 "workspace_acquired",
-                job_id=job_id,
+                workspace_id=workspace_id,
                 path=wt_path,
             )
             return wt_path
@@ -114,7 +114,7 @@ class GitWorktreeProvider:
             return
         await self._log_release_state(workspace_path, info)
         await self._git.remove_worktree(info.repo_path, workspace_path)
-        await self._log.ainfo("workspace_released", job_id=info.job_id)
+        await self._log.ainfo("workspace_released", workspace_id=info.workspace_id)
 
     async def _log_release_state(
         self,
@@ -135,13 +135,13 @@ class GitWorktreeProvider:
             await self._log.awarning(
                 "workspace_release_status_unknown",
                 error=str(exc),
-                job_id=info.job_id,
+                workspace_id=info.workspace_id,
             )
             return
         if dirty:
             await self._log.awarning(
                 "workspace_release_unclean",
-                job_id=info.job_id,
+                workspace_id=info.workspace_id,
                 branch_name=info.branch_name,
                 path=workspace_path,
             )
