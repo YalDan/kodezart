@@ -10,6 +10,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
+from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
@@ -28,6 +29,8 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
 from tests.fakes import (
     FakeAgentExecutor,
@@ -2627,9 +2630,11 @@ class _SequentialQualityGate:
         self,
         evaluations: list[AcceptanceCriteriaOutput],
         last_commit_sha: str = "a" * 40,
+        iterations: list[int] | None = None,
     ) -> None:
         self._evaluations = list(evaluations)
         self._last_commit_sha = last_commit_sha
+        self._iterations = list(iterations) if iterations is not None else []
         self.calls: list[dict[str, object]] = []
 
     async def run(
@@ -2661,12 +2666,27 @@ class _SequentialQualityGate:
             }
         )
         evaluation = self._evaluations.pop(0)
+        results = evaluation.criteria_results
+        iteration = self._iterations.pop(0) if self._iterations else 1
         yield WorkflowIterationEvent(
-            iteration=1,
+            iteration=iteration,
             branch=ralph_branch,
             commit_sha=self._last_commit_sha,
-            accepted=all(r.passed for r in evaluation.criteria_results),
+            accepted=all(r.passed for r in results),
             evaluation=evaluation,
+            trajectory=fold_trajectory(
+                [
+                    IterationRecord(
+                        iteration=iteration,
+                        passed_count=sum(1 for r in results if r.passed),
+                        failing_criterion_ids=[
+                            r.criterion for r in results if not r.passed
+                        ],
+                        commit_sha=self._last_commit_sha,
+                    ),
+                ],
+                plateau_window=2,
+            ),
         )
 
 
@@ -2676,9 +2696,8 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     Asserts (a) exactly two gate invocations across the workflow,
     (b) the fix-path call's ``base_branch`` equals ``feature_branch`` and
     ``acceptance_criteria`` is forwarded, and (c) the terminal
-    ``WorkflowCompleteEvent.accepted`` reflects the PRE-MERGE gate verdict
-    even when the fix gate returns ``accepted=False`` — proving the fix
-    gate does not overwrite the outer ``state['accepted']`` signal.
+    ``WorkflowCompleteEvent.accepted`` is LAST ROUND WINS — the fix
+    round's gate verdict, never the pre-merge round's.
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
@@ -2769,13 +2788,14 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     assert "-ralph-" in fix_call["ralph_branch"]
     assert "## Review Failures" in str(fix_call["prompt"])
 
-    # (c) Terminal accepted reflects the PRE-MERGE verdict. Fix gate
-    # returned accepted=False but the post-merge reviewer passed; the
-    # outer state['accepted'] must remain True so WorkflowCompleteEvent
-    # and the backup-branch cleanup gate stay correct.
+    # (c) Terminal accepted is LAST ROUND WINS: the fix gate returned
+    # accepted=False, so the terminal event reports False even though the
+    # pre-merge round accepted. total_iterations is the SUM over both
+    # rounds, not round zero's number.
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
-    assert complete_events[0].accepted is True
+    assert complete_events[0].accepted is False
+    assert complete_events[0].total_iterations == 2
 
     # (d) Downstream SSE consumers receive at least one
     # ``WorkflowIterationEvent`` per fix round in addition to the
@@ -2997,3 +3017,425 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         ]
     assert excinfo.value.raise_site == "branch_name"
     assert excinfo.value.rate_limit_rejected is False
+
+
+# ---------------------------------------------------------------------------
+# KOD-30 / KOD-41: terminal outcome discriminator and trajectory payload
+# ---------------------------------------------------------------------------
+
+
+def _plateaued_trajectory() -> LoopTrajectory:
+    return LoopTrajectory(
+        records=[
+            IterationRecord(
+                iteration=1,
+                passed_count=2,
+                failing_criterion_ids=["No lint errors"],
+                commit_sha="1" * 40,
+            ),
+            IterationRecord(
+                iteration=2,
+                passed_count=1,
+                failing_criterion_ids=["Tests pass", "No lint errors"],
+                commit_sha="2" * 40,
+            ),
+            IterationRecord(
+                iteration=3,
+                passed_count=2,
+                failing_criterion_ids=["No lint errors"],
+                commit_sha="3" * 40,
+            ),
+        ],
+        never_passed_ids=["No lint errors"],
+        best_passed_count=2,
+        best_iteration=1,
+        best_commit_sha="1" * 40,
+        plateaued=True,
+    )
+
+
+async def test_terminal_event_always_carries_an_outcome() -> None:
+    """`outcome` is required and non-nullable — it can never be dropped."""
+    engine = _make_engine()
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.review_passed_no_pr_adapter
+    payload = complete.model_dump(by_alias=True, exclude_none=True)
+    assert payload["outcome"] == "review_passed_no_pr_adapter"
+
+
+async def test_terminal_outcome_merge_divergent_on_diverged_consolidation() -> None:
+    """A DIVERGENT post-loop consolidation classifies as merge_divergent."""
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT,
+                feature_tip_sha="0" * 40,
+            ),
+        ],
+    )
+    engine = _make_engine(merger=merger)
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.merge_divergent
+
+
+async def test_terminal_outcome_ci_passed_on_green_ci() -> None:
+    """PR opened and CI green classifies as ci_passed."""
+    engine = _make_engine(
+        pr_creator=FakePRCreator(),
+        ci_monitor=FakeCIMonitor(passed=True),
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url="https://github.com/owner/repo",
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.ci_passed
+
+
+async def test_terminal_outcome_ci_not_configured_when_ci_reports_none() -> None:
+    """A three-state CI result of None with a summary is ci_not_configured."""
+    engine = _make_engine(
+        pr_creator=FakePRCreator(),
+        ci_monitor=FakeCIMonitor(passed=None, summary="No CI checks configured."),
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url="https://github.com/owner/repo",
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.ci_not_configured
+
+
+async def test_terminal_outcome_loop_not_accepted_when_gate_rejects() -> None:
+    """A rejected loop with a non-plateaued trajectory is loop_not_accepted."""
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_failing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="b" * 40,
+    )
+    engine = _make_engine(quality_gate=gate)
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.loop_not_accepted
+    assert complete.trajectory is not None
+    assert complete.trajectory.plateaued is False
+
+
+async def test_plateaued_run_reports_loop_plateaued_with_actionable_payload() -> None:
+    """A plateaued terminal is distinguishable from an ordinary rejection."""
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_failing_evaluation(criterion="No lint errors"),
+        total_iterations=3,
+        last_commit_sha="3" * 40,
+        trajectory=_plateaued_trajectory(),
+    )
+    engine = _make_engine(quality_gate=gate)
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.loop_plateaued
+    trajectory = complete.trajectory
+    assert trajectory is not None
+    # (1) plateaued rather than fell short
+    assert trajectory.plateaued is True
+    # (2) the criteria that never passed, as typed data — not a message
+    assert trajectory.never_passed_ids == ["No lint errors"]
+    assert isinstance(trajectory.never_passed_ids, list)
+    assert all(isinstance(item, str) for item in trajectory.never_passed_ids)
+    # (3) the best score and its iteration
+    assert trajectory.best_passed_count == 2
+    assert trajectory.best_iteration == 1
+    # (4) where the best work lives
+    assert trajectory.best_commit_sha == "1" * 40
+    assert "-ralph-" in complete.ralph_branch
+    # No second discriminator: the never-passing criteria are not folded
+    # into the free-text error field.
+    assert complete.error is None
+
+
+async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
+    """Both projection sites write WorkflowState['trajectory']."""
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=2,
+        last_commit_sha="a" * 40,
+        trajectory=_plateaued_trajectory(),
+    )
+    engine = _make_engine(quality_gate=gate)
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert iteration_events[-1].trajectory == _plateaued_trajectory()
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.trajectory == _plateaued_trajectory()
+
+
+async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
+    """FAST_FORWARDED / ALREADY_INTEGRATED no longer stamp ci_passed False.
+
+    The fix round is reached from a review failure, so monitor_ci never
+    ran and the three-state value must still be None at complete.
+    """
+    failing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+        ],
+    }
+    passing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": True, "reasoning": "Fixed."},
+        ],
+    }
+    executor = _SequentialReviewExecutor(
+        review_results=[failing_review, passing_review],
+    )
+    service = AgentService(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    engine = RalphWorkflowEngine(
+        service=service,
+        quality_gate=FakeQualityGate(
+            events=[],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha="a" * 40,
+        ),
+        ticket_generator=FakeTicketGenerator(),
+        merger=FakeBranchMerger(),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        pr_creator=None,
+        ci_monitor=None,
+        max_fix_rounds=2,
+        artifact_persister=None,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.ci_passed is None
+    assert complete.outcome is WorkflowOutcome.review_passed_no_pr_adapter
+
+
+async def test_fix_round_divergent_still_sets_ci_passed_false() -> None:
+    """The DIVERGENT / SOURCE_MISSING failure write is unchanged."""
+    failing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+        ],
+    }
+    executor = _SequentialReviewExecutor(review_results=[failing_review])
+    service = AgentService(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha="a" * 40,
+            ),
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT,
+                feature_tip_sha="d" * 40,
+            ),
+        ],
+    )
+    engine = RalphWorkflowEngine(
+        service=service,
+        quality_gate=FakeQualityGate(
+            events=[],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha="a" * 40,
+        ),
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger,
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        pr_creator=None,
+        ci_monitor=None,
+        max_fix_rounds=2,
+        artifact_persister=None,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.ci_passed is False
+    assert complete.error is not None
+    assert complete.outcome is WorkflowOutcome.fix_consolidation_failed
+
+
+async def test_terminal_totals_are_cumulative_and_last_round_wins() -> None:
+    """total_iterations sums both rounds; accepted is the fix round's verdict.
+
+    A run whose fix round succeeds must also reach the backup-cleanup
+    gate at _complete_node.
+    """
+    failing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+        ],
+    }
+    passing_review: dict[str, object] = {
+        "criteriaResults": [
+            {"criterion": "Tests pass", "passed": True, "reasoning": "Fixed."},
+        ],
+    }
+    executor = _SequentialReviewExecutor(
+        review_results=[failing_review, passing_review],
+    )
+    service = AgentService(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    # Pre-merge round runs 2 iterations; the fix round runs 3 more.
+    gate = _SequentialQualityGate(
+        evaluations=[make_passing_evaluation(), make_passing_evaluation()],
+        iterations=[2, 3],
+    )
+    merger = FakeBranchMerger()
+    engine = RalphWorkflowEngine(
+        service=service,
+        quality_gate=gate,
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger,
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        pr_creator=None,
+        ci_monitor=None,
+        max_fix_rounds=2,
+        artifact_persister=None,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_branch="main",
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.total_iterations == 5
+    assert complete.accepted is True
+    cleanup_calls = [
+        c for c in merger.calls if c.get("method") == "cleanup_backup_branches"
+    ]
+    assert len(cleanup_calls) == 1

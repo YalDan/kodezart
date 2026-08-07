@@ -5,6 +5,7 @@ from pathlib import Path
 
 from kodezart.core.protocols import AgentExecutor
 from kodezart.domain.errors import WorkspaceError
+from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -22,6 +23,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationStatus,
 )
 from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 
 
 class FakeGitService:
@@ -827,11 +829,13 @@ class FakeQualityGate:
         evaluation: AcceptanceCriteriaOutput,
         total_iterations: int = 1,
         last_commit_sha: str | None = None,
+        trajectory: LoopTrajectory | None = None,
     ) -> None:
         self._events = events
         self._evaluation = evaluation
         self._total_iterations = total_iterations
         self._last_commit_sha = last_commit_sha
+        self._trajectory = trajectory
         self.calls: list[dict[str, object]] = []
 
     async def run(
@@ -864,12 +868,27 @@ class FakeQualityGate:
         )
         for event in self._events:
             yield event
+        results = self._evaluation.criteria_results
         yield WorkflowIterationEvent(
             iteration=self._total_iterations,
             branch=ralph_branch,
             commit_sha=self._last_commit_sha,
-            accepted=all(r.passed for r in self._evaluation.criteria_results),
+            accepted=all(r.passed for r in results),
             evaluation=self._evaluation,
+            trajectory=self._trajectory
+            or fold_trajectory(
+                [
+                    IterationRecord(
+                        iteration=self._total_iterations,
+                        passed_count=sum(1 for r in results if r.passed),
+                        failing_criterion_ids=[
+                            r.criterion for r in results if not r.passed
+                        ],
+                        commit_sha=self._last_commit_sha,
+                    ),
+                ],
+                plateau_window=2,
+            ),
         )
 
 

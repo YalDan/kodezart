@@ -146,7 +146,13 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
+    ralph_loop = RalphLoop(
+        service=service,
+        max_iterations=3,
+        plateau_window=2,
+        git=git,
+        cache=cache,
+    )
     ticket_generator = TicketGenerationLoop(
         service=service,
         workspace=workspace,
@@ -240,7 +246,13 @@ async def test_workflow_e2e_exhausts_iterations(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=2, git=git, cache=cache)
+    ralph_loop = RalphLoop(
+        service=service,
+        max_iterations=2,
+        plateau_window=2,
+        git=git,
+        cache=cache,
+    )
     ticket_generator = TicketGenerationLoop(
         service=service,
         workspace=workspace,
@@ -383,7 +395,13 @@ async def test_workflow_e2e_divergent_base_branch(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
+    ralph_loop = RalphLoop(
+        service=service,
+        max_iterations=3,
+        plateau_window=2,
+        git=git,
+        cache=cache,
+    )
     ticket_generator = TicketGenerationLoop(
         service=service,
         workspace=workspace,
@@ -626,7 +644,13 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
+    ralph_loop = RalphLoop(
+        service=service,
+        max_iterations=3,
+        plateau_window=2,
+        git=git,
+        cache=cache,
+    )
     ticket_generator = TicketGenerationLoop(
         service=service,
         workspace=workspace,

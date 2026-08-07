@@ -12,6 +12,8 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.trajectory import LoopTrajectory
 
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)
@@ -345,7 +347,12 @@ class WorkflowCIEvent(AgentEvent):
 
 
 class WorkflowIterationEvent(AgentEvent):
-    """Emitted after each ralph loop iteration."""
+    """Emitted after each ralph loop iteration.
+
+    ``trajectory`` is the loop's progress memory folded over every
+    iteration so far.  It is required — the loop→workflow seam carries
+    it on this existing channel rather than on a second event type.
+    """
 
     type: Literal["workflow_iteration"] = "workflow_iteration"
     iteration: int
@@ -353,6 +360,7 @@ class WorkflowIterationEvent(AgentEvent):
     commit_sha: str | None = None
     accepted: bool
     evaluation: AcceptanceCriteriaOutput
+    trajectory: LoopTrajectory
 
 
 class WorkflowConsolidationEvent(AgentEvent):
@@ -374,19 +382,26 @@ class WorkflowConsolidationEvent(AgentEvent):
 
 
 class WorkflowCompleteEvent(AgentEvent):
-    """Emitted when the ralph loop finishes."""
+    """Emitted when the ralph loop finishes.
+
+    ``outcome`` is the sole terminal discriminator — required and
+    non-nullable, so ``exclude_none=True`` can never drop it and no
+    serializer hack is needed to force it onto the wire.
+    """
 
     type: Literal["workflow_complete"] = "workflow_complete"
     feature_branch: str
     ralph_branch: str
     total_iterations: int
     accepted: bool
+    outcome: WorkflowOutcome
     merged: bool = False
     final_commit_sha: str | None = None
     error: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None
     ci_passed: bool | None = None
+    trajectory: LoopTrajectory | None = None
 
     @model_serializer(mode="wrap")
     def _force_ci_field(

@@ -32,6 +32,7 @@ from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.git_url import resolve_repo_url
+from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.prompts import evaluation as evaluation_prompt
 from kodezart.prompts import pr_description as pr_description_prompt
@@ -187,6 +188,7 @@ class RalphWorkflowEngine:
             "ci_passed": None,
             "ci_summary": None,
             "repo_url": resolved_url,
+            "trajectory": None,
         }
 
         async for event in self._compiled.astream(
@@ -516,6 +518,7 @@ class RalphWorkflowEngine:
             "accepted": last_iteration_event.accepted,
             "total_iterations": last_iteration_event.iteration,
             "feature_tip_sha": None,
+            "trajectory": last_iteration_event.trajectory,
         }
 
     async def _persist_artifacts_node(
@@ -793,7 +796,7 @@ class RalphWorkflowEngine:
             fix_prompt_parts.append(f"\n\n## CI Failures\n{state['ci_summary']}")
         fix_prompt = "".join(fix_prompt_parts)
 
-        await self._run_quality_gate(
+        gate_event = await self._run_quality_gate(
             prompt=fix_prompt,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
@@ -823,12 +826,22 @@ class RalphWorkflowEngine:
             )
         )
 
+        # Terminal totals are cumulative across rounds: total_iterations is a
+        # SUM, accepted is last-round-wins, trajectory is the most recent gate
+        # invocation's.
+        cumulative: dict[str, object] = {
+            "fix_rounds_used": state["fix_rounds_used"] + 1,
+            "accepted": gate_event.accepted,
+            "total_iterations": state["total_iterations"] + gate_event.iteration,
+            "trajectory": gate_event.trajectory,
+        }
+
         if outcome.status in (
             ConsolidationStatus.DIVERGENT,
             ConsolidationStatus.SOURCE_MISSING,
         ):
             return {
-                "fix_rounds_used": state["fix_rounds_used"] + 1,
+                **cumulative,
                 "feature_tip_sha": pre_fix_head_sha,
                 "merged": False,
                 "merge_error": (
@@ -843,13 +856,12 @@ class RalphWorkflowEngine:
         # FAST_FORWARDED or ALREADY_INTEGRATED — both yield a fresh
         # tip the reviewer can evaluate against the pre-fix tip.
         return {
-            "fix_rounds_used": state["fix_rounds_used"] + 1,
+            **cumulative,
             "feature_tip_sha": outcome.feature_tip_sha,
             "merged": True,
             "merge_error": None,
             "review_base_sha": pre_fix_head_sha,
             "review_head_sha": outcome.feature_tip_sha,
-            "ci_passed": False,
             "ci_summary": None,
         }
 
@@ -1070,16 +1082,14 @@ class RalphWorkflowEngine:
                 ralph_branch=state["ralph_branch"],
                 total_iterations=state["total_iterations"],
                 accepted=state["accepted"],
+                outcome=classify_outcome(state),
                 merged=state["merged"],
-                # TODO: add a `reason` field on WorkflowCompleteEvent so consumers can
-                # distinguish "acceptance criteria did not pass" from "ran but could
-                # not merge" without inferring it from the absence of a consolidation
-                # event.
                 final_commit_sha=state["feature_tip_sha"],
                 error=state["merge_error"],
                 pr_url=state["pr_url"],
                 pr_number=state["pr_number"],
                 ci_passed=state["ci_passed"],
+                trajectory=state["trajectory"],
             )
         )
 

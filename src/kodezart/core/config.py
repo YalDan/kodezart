@@ -148,6 +148,15 @@ class AppConfig(BaseSettings):
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
     )
+    loop_plateau_window: int = Field(
+        default=2,
+        ge=2,
+        le=10,
+        description=(
+            "Iterations without a new best passed-count before the Ralph "
+            "loop is considered plateaued and stops."
+        ),
+    )
 
     @classmethod
     def from_env(cls) -> Self:

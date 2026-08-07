@@ -86,6 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ralph_loop = RalphLoop(
         service=agent_service,
         max_iterations=config.max_iterations,
+        plateau_window=config.loop_plateau_window,
         git=git,
         cache=cache,
         checkpointer=checkpointer,

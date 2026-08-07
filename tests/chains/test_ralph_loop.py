@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import AgentExecutor
+from kodezart.domain.trajectory import fold_trajectory
 from kodezart.prompts import evaluation
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -19,6 +20,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.trajectory import IterationRecord
 from tests.fakes import (
     FakeAgentExecutor,
     FakeChangePersister,
@@ -34,6 +36,7 @@ def _make_loop(
     persister: FakeChangePersister | None = None,
     workspace: FakeWorkspaceProvider | None = None,
     max_iterations: int = 3,
+    plateau_window: int = 2,
     git: FakeGitService | None = None,
     cache: FakeRepoCache | None = None,
 ) -> RalphLoop:
@@ -45,6 +48,7 @@ def _make_loop(
     return RalphLoop(
         service=service,
         max_iterations=max_iterations,
+        plateau_window=plateau_window,
         git=git or FakeGitService(),
         cache=cache or FakeRepoCache(),
     )
@@ -260,6 +264,7 @@ async def test_loop_second_iteration_succeeds() -> None:
     loop = RalphLoop(
         service=service,
         max_iterations=3,
+        plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
     )
@@ -688,6 +693,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
     loop = RalphLoop(
         service=service,
         max_iterations=3,
+        plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
     )
@@ -829,3 +835,250 @@ async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> 
     assert excinfo.value.result_event_observed is True
     assert excinfo.value.session_id == "eval-session"
     assert excinfo.value.rate_limit_rejected is False
+
+
+# ---------------------------------------------------------------------------
+# KOD-41: loop trajectory, plateau recognition, plateau stop
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedLoopExecutor:
+    """Scripts one evaluation per iteration plus a per-iteration commit SHA.
+
+    ``pass_masks[i]`` is the per-criterion pass/fail vector for iteration
+    ``i + 1``.  Each execute call yields a ``ResultEvent`` whose
+    ``commit_sha`` is unique to that iteration, so a clobbered
+    ``IterationRecord.commit_sha`` is observable.
+    """
+
+    def __init__(self, criteria: list[str], pass_masks: list[list[bool]]) -> None:
+        self._criteria = criteria
+        self._pass_masks = list(pass_masks)
+        self._eval_count = 0
+        self._exec_count = 0
+
+    def commit_sha_for(self, iteration: int) -> str:
+        return f"{iteration:x}" * 40
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            schema = output_format.get("schema")
+            if isinstance(schema, dict):
+                props = schema.get("properties", {})
+                if isinstance(props, dict) and "criteriaResults" in props:
+                    mask = self._pass_masks[self._eval_count]
+                    self._eval_count += 1
+                    yield ResultEvent(
+                        subtype="result",
+                        duration_ms=1,
+                        duration_api_ms=1,
+                        is_error=False,
+                        num_turns=1,
+                        session_id="scripted",
+                        structured_output={
+                            "criteriaResults": [
+                                {
+                                    "criterion": criterion,
+                                    "passed": passed,
+                                    "reasoning": "scripted",
+                                }
+                                for criterion, passed in zip(
+                                    self._criteria, mask, strict=True
+                                )
+                            ],
+                        },
+                    )
+                    return
+        self._exec_count += 1
+        yield AssistantTextEvent(text=f"iter {self._exec_count}", model="m")
+        yield ResultEvent(
+            subtype="result",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="scripted",
+            commit_sha=self.commit_sha_for(self._exec_count),
+        )
+
+
+_THREE_CRITERIA = ["Criterion A", "Criterion B", "Criterion C"]
+# passed counts 2, 1, 2 — no new best in the last two iterations.
+_PLATEAU_MASKS = [
+    [True, True, False],
+    [True, False, False],
+    [True, True, False],
+]
+_FIVE_CRITERIA = [f"Criterion {letter}" for letter in "ABCDE"]
+# passed counts 1, 2, 3, 4 — a new best every iteration, never all five.
+_IMPROVING_MASKS = [
+    [True, False, False, False, False],
+    [True, True, False, False, False],
+    [True, True, True, False, False],
+    [True, True, True, True, False],
+]
+
+
+def _record(
+    iteration: int,
+    passed_count: int,
+    *,
+    failing: list[str] | None = None,
+    commit_sha: str | None = None,
+) -> IterationRecord:
+    return IterationRecord(
+        iteration=iteration,
+        passed_count=passed_count,
+        failing_criterion_ids=failing if failing is not None else [],
+        commit_sha=commit_sha,
+    )
+
+
+def test_fold_trajectory_oscillating_is_plateaued() -> None:
+    """67-66-67-66-67 with a rotating failing set classifies as plateaued."""
+    records = [
+        _record(1, 67, failing=["a"]),
+        _record(2, 66, failing=["b"]),
+        _record(3, 67, failing=["c"]),
+        _record(4, 66, failing=["d"]),
+        _record(5, 67, failing=["e"]),
+    ]
+    trajectory = fold_trajectory(records, plateau_window=2)
+    assert trajectory.plateaued is True
+
+
+def test_fold_trajectory_improving_is_not_plateaued() -> None:
+    """60-62-64-66-68 keeps setting a new best, so it never plateaus."""
+    records = [
+        _record(1, 60),
+        _record(2, 62),
+        _record(3, 64),
+        _record(4, 66),
+        _record(5, 68),
+    ]
+    trajectory = fold_trajectory(records, plateau_window=2)
+    assert trajectory.plateaued is False
+
+
+def test_fold_trajectory_single_flat_iteration_is_not_a_plateau() -> None:
+    """60-60-62: one non-improving iteration followed by an improvement."""
+    records = [_record(1, 60), _record(2, 60), _record(3, 62)]
+    trajectory = fold_trajectory(records, plateau_window=2)
+    assert trajectory.plateaued is False
+
+
+def test_fold_trajectory_never_passed_ids_are_criterion_text() -> None:
+    """never_passed_ids carries the criteria that passed in no iteration."""
+    records = [
+        _record(1, 2, failing=["Criterion C"]),
+        _record(2, 1, failing=["Criterion B", "Criterion C"]),
+        _record(3, 2, failing=["Criterion C"]),
+    ]
+    trajectory = fold_trajectory(records, plateau_window=2)
+    assert trajectory.never_passed_ids == ["Criterion C"]
+
+
+def test_fold_trajectory_reports_best_score_iteration_and_commit() -> None:
+    """best_passed_count / best_iteration / best_commit_sha point at the best run."""
+    records = [
+        _record(1, 1, commit_sha="1" * 40),
+        _record(2, 3, commit_sha="2" * 40),
+        _record(3, 2, commit_sha="3" * 40),
+    ]
+    trajectory = fold_trajectory(records, plateau_window=2)
+    assert trajectory.best_passed_count == 3
+    assert trajectory.best_iteration == 2
+    assert trajectory.best_commit_sha == "2" * 40
+
+
+def test_fold_trajectory_is_pure_over_empty_records() -> None:
+    """An empty trajectory has no best and has not plateaued."""
+    trajectory = fold_trajectory([], plateau_window=2)
+    assert trajectory.records == []
+    assert trajectory.never_passed_ids == []
+    assert trajectory.best_passed_count == 0
+    assert trajectory.best_iteration == 0
+    assert trajectory.best_commit_sha is None
+    assert trajectory.plateaued is False
+
+
+async def test_loop_retains_one_record_per_iteration_with_own_commit_sha() -> None:
+    """N iterations leave N records, each keeping its own commit SHA."""
+    executor = _ScriptedLoopExecutor(_FIVE_CRITERIA, _IMPROVING_MASKS)
+    loop = _make_loop(executor=executor, max_iterations=4)
+
+    events = [
+        e async for e in loop.run(**_run_kwargs(acceptance_criteria=_FIVE_CRITERIA))
+    ]
+
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iteration_events) == 4
+    records = iteration_events[-1].trajectory.records
+    assert [r.iteration for r in records] == [1, 2, 3, 4]
+    assert [r.commit_sha for r in records] == [
+        executor.commit_sha_for(i) for i in (1, 2, 3, 4)
+    ]
+    # iteration_commit_sha keeps its per-iteration semantic on the event.
+    assert [e.commit_sha for e in iteration_events] == [
+        executor.commit_sha_for(i) for i in (1, 2, 3, 4)
+    ]
+
+
+async def test_loop_stops_on_plateau_before_budget_is_exhausted() -> None:
+    """A plateaued run ends early and says so on the last iteration event."""
+    executor = _ScriptedLoopExecutor(_THREE_CRITERIA, _PLATEAU_MASKS)
+    loop = _make_loop(executor=executor, max_iterations=5)
+
+    events = [
+        e async for e in loop.run(**_run_kwargs(acceptance_criteria=_THREE_CRITERIA))
+    ]
+
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iteration_events) == 3
+    last = iteration_events[-1]
+    assert last.accepted is False
+    assert last.trajectory.plateaued is True
+    # Budget is NOT silently swallowed: the run stopped with iterations left.
+    assert last.iteration < 5
+    assert last.trajectory.never_passed_ids == ["Criterion C"]
+
+
+async def test_loop_still_improving_runs_its_full_budget() -> None:
+    """A run that keeps setting a new best is never cut short as a plateau."""
+    executor = _ScriptedLoopExecutor(_FIVE_CRITERIA, _IMPROVING_MASKS)
+    loop = _make_loop(executor=executor, max_iterations=4)
+
+    events = [
+        e async for e in loop.run(**_run_kwargs(acceptance_criteria=_FIVE_CRITERIA))
+    ]
+
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iteration_events) == 4
+    assert iteration_events[-1].iteration == 4
+    assert iteration_events[-1].trajectory.plateaued is False
+
+
+async def test_loop_plateau_window_is_configurable_not_hardcoded() -> None:
+    """A wider window keeps the same run going where window=2 would stop it."""
+    executor = _ScriptedLoopExecutor(
+        _THREE_CRITERIA, [*_PLATEAU_MASKS, *_PLATEAU_MASKS]
+    )
+    loop = _make_loop(executor=executor, max_iterations=4, plateau_window=4)
+
+    events = [
+        e async for e in loop.run(**_run_kwargs(acceptance_criteria=_THREE_CRITERIA))
+    ]
+
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    # With plateau_window=2 this same script stops after three iterations.
+    assert len(iteration_events) == 4
+    assert iteration_events[2].trajectory.plateaued is False
