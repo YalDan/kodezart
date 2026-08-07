@@ -4,11 +4,13 @@ import asyncio
 from pathlib import Path
 
 import pytest
+import structlog
 
 from kodezart.adapters.git_branch_merger import GitBranchMerger
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.types.domain.consolidation import ConsolidationStatus
 
 
 async def _git(cmd: list[str], cwd: Path) -> None:
@@ -410,3 +412,88 @@ async def test_consolidate_against_real_bare_clone_resolves_is_ancestor(
         ConsolidationStatus.FAST_FORWARDED,
         ConsolidationStatus.ALREADY_INTEGRATED,
     }
+
+
+async def test_fast_forward_skips_cleanup_when_source_vanished_after_the_gate() -> None:
+    """A source branch deleted between the gate and the delete is skipped."""
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
+
+    fake_git = FakeGitService(
+        remote_branch_sha_sequences={"ralph-source": ["a" * 40, None]},
+        ancestor_pairs={("HEAD", "origin/ralph-source")},
+    )
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await merger.consolidate(
+            repo_path="/tmp/repo",
+            repo_url=None,
+            base_branch="main",
+            feature_branch="feat/x",
+            source_branch="ralph-source",
+        )
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    assert [c for c in fake_git.calls if c[0] == "delete_remote_branch"] == []
+    skipped = [e for e in logs if e["event"] == "branch_cleanup_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["branch"] == "ralph-source"
+    assert skipped[0]["log_level"] == "debug"
+    assert [e for e in logs if e["event"] == "branch_cleanup_failed"] == []
+
+
+async def test_fast_forward_deletes_source_when_still_present() -> None:
+    """Both probes see the branch, so the delete is attempted exactly once."""
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
+
+    fake_git = FakeGitService(
+        remote_branch_shas={"ralph-source": "a" * 40},
+        ancestor_pairs={("HEAD", "origin/ralph-source")},
+    )
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await merger.consolidate(
+            repo_path="/tmp/repo",
+            repo_url=None,
+            base_branch="main",
+            feature_branch="feat/x",
+            source_branch="ralph-source",
+        )
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    deletes = [c for c in fake_git.calls if c[0] == "delete_remote_branch"]
+    assert deletes == [
+        ("delete_remote_branch", "/tmp/fake-workspace", "origin", "ralph-source")
+    ]
+    assert [e for e in logs if e["event"] == "branch_cleanup_skipped"] == []
+
+
+async def test_fast_forward_delete_failure_logs_error_without_raising() -> None:
+    """A real delete failure still logs branch_cleanup_failed and never raises."""
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
+
+    fake_git = FakeGitService(
+        remote_branch_shas={"ralph-source": "a" * 40},
+        delete_remote_branch_error=RuntimeError("git push --delete failed: protected"),
+        ancestor_pairs={("HEAD", "origin/ralph-source")},
+    )
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await merger.consolidate(
+            repo_path="/tmp/repo",
+            repo_url=None,
+            base_branch="main",
+            feature_branch="feat/x",
+            source_branch="ralph-source",
+        )
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    failures = [e for e in logs if e["event"] == "branch_cleanup_failed"]
+    assert len(failures) == 1
+    assert failures[0]["branch"] == "ralph-source"
+    assert failures[0]["log_level"] == "error"
