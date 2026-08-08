@@ -117,6 +117,22 @@ class SkillPreflightError(Exception):
         self.available: tuple[str, ...] = tuple(available)
 
 
+class SkillInventoryError(Exception):
+    """Raised when the host's installed-plugins manifest cannot be read.
+
+    Carries EVERY problem at once.  The manifest is the authority on which
+    plugins are installed and where, so a manifest that exists but cannot be
+    read as that shape has to say so: reporting an empty plugin set instead
+    would reach the operator as "your skill is not provisioned" for skills
+    that are provisioned.
+    """
+
+    def __init__(self, message: str, *, problems: Sequence[str]) -> None:
+        detail = f"{message} ({'; '.join(problems)})"
+        super().__init__(detail)
+        self.problems: tuple[str, ...] = tuple(problems)
+
+
 class OperationConfigError(Exception):
     """Raised when the operation config cannot be loaded or is structurally bad.
 
