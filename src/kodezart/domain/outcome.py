@@ -31,6 +31,9 @@ def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
     ci_summary = state["ci_summary"]
     trajectory = state["trajectory"]
 
+    if state["criteria_infeasible"]:
+        return WorkflowOutcome.criteria_infeasible
+
     merge_failed = merged is False and merge_error is not None
     loop_exit = accepted is False and merged is False and merge_error is None
 

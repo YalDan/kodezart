@@ -24,6 +24,7 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
+    make_criteria,
     make_passing_evaluation,
     make_prompt_provider,
 )
@@ -286,7 +287,7 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
-                acceptance_criteria=["Tests pass"],
+                acceptance_criteria=make_criteria("Tests pass"),
                 cache_key="k",
                 repo_visibility=RepoVisibility.UNKNOWN,
             )

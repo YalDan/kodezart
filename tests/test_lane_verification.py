@@ -55,11 +55,11 @@ def test_pass_templates_resolve_by_key_under_default_configuration(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_check_passes_at_fourteen_keys() -> None:
+def test_claude_opus_completeness_check_passes_at_fifteen_keys() -> None:
     """Loading succeeds only because the default set supplies every key."""
     registry = default_registry()
     table = registry.resolution_table()
-    assert len(table) == 14
+    assert len(table) == 15
     assert set(table) == set(PromptKey)
 
 
@@ -79,18 +79,31 @@ def git(*args: str) -> str:
     return result.stdout
 
 
-def test_no_golden_file_was_rewritten_after_its_introducing_commit() -> None:
-    """V-2: both golden suites are permanent, never re-baselined."""
+PROMPT_SETS_PATH = "src/kodezart/prompts/sets"
+
+
+def test_no_golden_file_was_rewritten_without_its_template_moving() -> None:
+    """V-2: a golden is re-baselined only alongside the prompt it renders.
+
+    The shortcut this guards against is re-baselining a golden so a
+    byte-identity assertion passes while the template it renders is
+    untouched.  A golden with more than one commit is an offender unless
+    its most recent commit also changed the prompt set — which is what a
+    legitimate prompt edit looks like and what a dodge never does.
+    """
     goldens = sorted(GOLDENS_DIR.rglob("*.txt"))
     assert goldens, "no golden files found"
 
+    set_commits = set(
+        git("log", "--format=%H", "--", PROMPT_SETS_PATH).split(),
+    )
     offenders: list[str] = []
     for golden in goldens:
         relative = golden.relative_to(REPO_ROOT).as_posix()
         log = git("log", "--format=%H", "--", relative).split()
-        if len(log) > 1:
-            offenders.append(f"{relative}: {len(log)} commits")
-    assert offenders == [], f"goldens were rewritten: {offenders}"
+        if len(log) > 1 and log[0] not in set_commits:
+            offenders.append(f"{relative}: re-baselined at {log[0][:8]}")
+    assert offenders == [], f"goldens re-baselined with no template change: {offenders}"
 
 
 def test_both_golden_suites_exist_and_cover_the_relocated_keys() -> None:

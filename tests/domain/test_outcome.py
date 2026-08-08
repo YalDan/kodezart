@@ -6,6 +6,7 @@ from kodezart.domain.outcome import classify_outcome
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
+from tests.fakes import make_criteria
 
 
 def _state(
@@ -20,13 +21,17 @@ def _state(
     ci_passed: bool | None = None,
     ci_summary: str | None = None,
     trajectory: LoopTrajectory | None = None,
+    criteria_infeasible: bool = False,
 ) -> WorkflowState:
     """A neutral terminal state; each test sets only its predicate's fields."""
     return WorkflowState(
         feature_branch="kodezart/x-12345678",
         ralph_branch="kodezart/x-12345678-ralph-abcdef01",
         ticket=None,
-        acceptance_criteria=["Tests pass"],
+        acceptance_criteria=make_criteria("Tests pass"),
+        criteria_validation=None,
+        criteria_regeneration_rounds=0,
+        criteria_infeasible=criteria_infeasible,
         accepted=accepted,
         total_iterations=1,
         feature_tip_sha=None,
@@ -67,6 +72,7 @@ def _trajectory(*, plateaued: bool) -> LoopTrajectory:
 def test_wire_values_are_pinned_verbatim() -> None:
     """The ten values are a wire contract — a re-point must break the build."""
     assert [member.value for member in WorkflowOutcome] == [
+        "criteria_infeasible",
         "merge_divergent",
         "fix_consolidation_failed",
         "loop_plateaued",

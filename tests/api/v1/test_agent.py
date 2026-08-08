@@ -168,7 +168,14 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
                 structured_output={
                     "criteriaResults": [
                         {
-                            "criterion": "All changes compile.",
+                            "criterionId": "AC-1",
+                            "criterion": "Tests pass",
+                            "passed": True,
+                            "reasoning": "Everything passes.",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "criterion": "No lint errors",
                             "passed": True,
                             "reasoning": "Everything passes.",
                         },

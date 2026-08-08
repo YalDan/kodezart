@@ -6,7 +6,12 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.agent import CriterionResult, TicketDraftOutput
+from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.criteria import (
+    AcceptanceCriterion,
+    CriteriaValidation,
+    CriterionFailure,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
@@ -64,7 +69,7 @@ class RalphLoopContext(ExecutionContext):
 
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
-    acceptance_criteria: list[str] = Field(min_length=1)
+    acceptance_criteria: list[AcceptanceCriterion] = Field(min_length=1)
     repo_visibility: RepoVisibility
 
 
@@ -99,7 +104,7 @@ class RalphLoopState(TypedDict):
 
     iteration: int
     accepted: bool
-    pending_failures: list[CriterionResult]
+    pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
     iteration_commit_sha: NotRequired[str | None]
 
@@ -121,7 +126,10 @@ class WorkflowState(TypedDict):
     feature_branch: str
     ralph_branch: str
     ticket: TicketDraftOutput | None
-    acceptance_criteria: list[str]
+    acceptance_criteria: list[AcceptanceCriterion]
+    criteria_validation: CriteriaValidation | None
+    criteria_regeneration_rounds: int
+    criteria_infeasible: bool
     accepted: bool
     total_iterations: int
     feature_tip_sha: str | None

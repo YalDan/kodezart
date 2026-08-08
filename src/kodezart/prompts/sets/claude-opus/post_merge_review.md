@@ -70,7 +70,7 @@ If you catch yourself writing "deferred to follow-up" without having applied the
 
 ── ACCEPTANCE CRITERIA TO EVALUATE ──
 {{#each criteria}}
-{{@index1}}. {{this}}{{/each}}
+{{this.id}} [{{this.classification}}] {{this.text}}{{/each}}
 
 ── CHANGESET TO EVALUATE ──
 
@@ -83,4 +83,4 @@ Files changed:{{#if file_paths_absent}}
 Commit subjects:{{#each commit_subjects}}
 {{@index1}}. {{this}}{{/each}}{{/if}}
 
-For each criterion, return a result with: the verbatim criterion text (do not rephrase or correct it), whether it passes, and a brief evidence-based reasoning citing specific tool output (e.g., test file names and line numbers, lint rule IDs).
+For each criterion, return a result with: its `criterionId` copied EXACTLY as given above (the id is the identity — grading is keyed by it and an id you invent or omit fails the run closed), the verbatim criterion text (do not rephrase or correct it), whether it passes, and a brief evidence-based reasoning citing specific tool output (e.g., test file names and line numbers, lint rule IDs). Return exactly one result per id listed above — no more, no fewer.

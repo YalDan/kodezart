@@ -214,3 +214,19 @@ class CriteriaArtifact(CamelCaseModel):
 
     criteria: list[ValidatedCriterion] = Field(min_length=1)
     conjunction: ConjunctionVerdict
+
+
+class CriterionFailure(CamelCaseModel):
+    """A failed criterion as the HARNESS records it.
+
+    ``text`` is the harness's own stored criterion text looked up by id —
+    never the evaluator's echo.  Re-injecting the echo is what let a
+    whitespace-normalised or backslash-mangled criterion drift between
+    iterations while the loop believed it was re-asking the same question.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    criterion_id: str = Field(pattern=CRITERION_ID_PATTERN)
+    text: str = Field(min_length=1)
+    reasoning: str = Field(min_length=1)

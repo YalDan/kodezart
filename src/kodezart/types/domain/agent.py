@@ -12,6 +12,13 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.criteria import (
+    CRITERION_ID_PATTERN,
+    AcceptanceCriterion,
+    CriteriaValidation,
+    CriteriaValidationOutput,
+    DraftedCriterion,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import LoopTrajectory
@@ -32,6 +39,7 @@ RaiseSite = Literal[
     "ticket_reviewer",
     "branch_name",
     "acceptance_criteria",
+    "criteria_validation",
     "ralph_evaluator",
     "post_merge_review",
     "pr_description",
@@ -274,10 +282,17 @@ class CommitMessageOutput(CamelCaseModel):
 
 
 class CriterionResult(CamelCaseModel):
-    """Per-criterion evaluation result with evaluator reasoning."""
+    """Per-criterion evaluation result, keyed by the harness's stable id.
+
+    ``criterion`` is the evaluator's ECHO of the criterion text and is
+    carried only so a reader can see what the model believed it was
+    grading.  Nothing keys off it: identity is ``criterion_id``, and the
+    text the harness re-injects is its own, looked up by that id.
+    """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
+    criterion_id: str = Field(pattern=CRITERION_ID_PATTERN)
     criterion: str = Field(min_length=1)
     passed: bool
     reasoning: str = Field(min_length=1)
@@ -296,9 +311,14 @@ class BranchNameOutput(CamelCaseModel):
 
 
 class GeneratedCriteriaOutput(CamelCaseModel):
-    """Agent-generated acceptance criteria from ticket + codebase analysis."""
+    """Agent-generated acceptance criteria from ticket + codebase analysis.
 
-    criteria: list[str] = Field(min_length=1)
+    Identity is NOT part of this shape — ``AC-n`` ids are minted
+    harness-side from emission order, so a regeneration round cannot
+    renumber a criterion by echoing a different id.
+    """
+
+    criteria: list[DraftedCriterion] = Field(min_length=1)
     reasoning: str = Field(min_length=1)
 
 
@@ -403,6 +423,7 @@ class WorkflowCompleteEvent(AgentEvent):
     pr_number: int | None = None
     ci_passed: bool | None = None
     trajectory: LoopTrajectory | None = None
+    criteria_validation: CriteriaValidation | None = None
 
     @model_serializer(mode="wrap")
     def _force_ci_field(
@@ -444,8 +465,17 @@ class WorkflowCriteriaEvent(AgentEvent):
     """Emitted after acceptance criteria are generated from ticket analysis."""
 
     type: Literal["workflow_criteria"] = "workflow_criteria"
-    criteria: list[str]
+    criteria: list[AcceptanceCriterion]
     reasoning: str
+
+
+class WorkflowCriteriaValidationEvent(AgentEvent):
+    """Emitted after every feasibility sweep over a generated criteria set."""
+
+    type: Literal["workflow_criteria_validation"] = "workflow_criteria_validation"
+    regeneration_round: int
+    validation: CriteriaValidation
+    regeneration_targets: list[str]
 
 
 class WorkflowTicketDraftEvent(AgentEvent):
@@ -486,6 +516,10 @@ BRANCH_NAME_SCHEMA: dict[str, object] = BranchNameOutput.model_json_schema()
 # Schema for agent-generated acceptance criteria from ticket analysis
 GENERATED_CRITERIA_SCHEMA: dict[str, object] = (
     GeneratedCriteriaOutput.model_json_schema()
+)
+# Schema for the feasibility sweep's per-criterion findings
+CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
+    CriteriaValidationOutput.model_json_schema()
 )
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()

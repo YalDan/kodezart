@@ -70,8 +70,8 @@ If you catch yourself writing "deferred to follow-up" without having applied the
 
 ── ACCEPTANCE CRITERIA TO EVALUATE ──
 
-1. First criterion
-2. Second criterion
+AC-1 [hard_gate] First criterion
+AC-2 [soft_signal] Second criterion
 
 ── CHANGESET TO EVALUATE ──
 
@@ -85,4 +85,4 @@ Commit subjects:
 1. feat: add foo
 2. test: cover foo
 
-For each criterion, return a result with: the verbatim criterion text (do not rephrase or correct it), whether it passes, and a brief evidence-based reasoning citing specific tool output (e.g., test file names and line numbers, lint rule IDs).
+For each criterion, return a result with: its `criterionId` copied EXACTLY as given above (the id is the identity — grading is keyed by it and an id you invent or omit fails the run closed), the verbatim criterion text (do not rephrase or correct it), whether it passes, and a brief evidence-based reasoning citing specific tool output (e.g., test file names and line numbers, lint rule IDs). Return exactly one result per id listed above — no more, no fewer.

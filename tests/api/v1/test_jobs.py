@@ -316,7 +316,20 @@ def _mid_run_engine(
                 {
                     "criteriaResults": [
                         {
-                            "criterion": "Tests pass",
+                            "criterionId": "AC-1",
+                            "criterion": "The fix compiles without errors",
+                            "passed": False,
+                            "reasoning": "Review found a gap.",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "criterion": "All existing tests pass",
+                            "passed": False,
+                            "reasoning": "Review found a gap.",
+                        },
+                        {
+                            "criterionId": "AC-3",
+                            "criterion": "Linting passes with no new warnings",
                             "passed": False,
                             "reasoning": "Review found a gap.",
                         },
@@ -325,7 +338,20 @@ def _mid_run_engine(
                 {
                     "criteriaResults": [
                         {
-                            "criterion": "Tests pass",
+                            "criterionId": "AC-1",
+                            "criterion": "The fix compiles without errors",
+                            "passed": True,
+                            "reasoning": "Fixed.",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "criterion": "All existing tests pass",
+                            "passed": True,
+                            "reasoning": "Fixed.",
+                        },
+                        {
+                            "criterionId": "AC-3",
+                            "criterion": "Linting passes with no new warnings",
                             "passed": True,
                             "reasoning": "Fixed.",
                         },

@@ -52,5 +52,5 @@ another, raise the conflict explicitly — do not silently skip it.
 
 ── FAILED CRITERIA FROM PREVIOUS ITERATION ──
 
-- First criterion: not done
-- Second criterion: missing
+- AC-1 First criterion: not done
+- AC-2 Second criterion: missing

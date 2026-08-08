@@ -19,6 +19,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
+from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
@@ -26,10 +27,10 @@ from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
     AgentEvent,
-    CriterionResult,
     ResultEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.criteria import AcceptanceCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
@@ -90,7 +91,7 @@ class RalphLoop:
         base_branch: str,
         permission_mode: str,
         allowed_tools: list[str],
-        acceptance_criteria: list[str],
+        acceptance_criteria: list[AcceptanceCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
@@ -263,16 +264,25 @@ class RalphLoop:
         output = AcceptanceCriteriaOutput.model_validate(
             result_event.structured_output,
         )
-        accepted = all(r.passed for r in output.criteria_results)
-        pending_failures: list[CriterionResult] = [
-            r for r in output.criteria_results if not r.passed
-        ]
+        grade = grade_iteration(ctx.acceptance_criteria, output)
+        if grade.missing_ids or grade.unknown_ids or grade.duplicate_ids:
+            await self._log.awarning(
+                "evaluator_result_reconciliation",
+                iteration=state["iteration"],
+                dispatched_count=grade.dispatched_count,
+                missing_ids=grade.missing_ids,
+                unknown_ids=grade.unknown_ids,
+                duplicate_ids=grade.duplicate_ids,
+            )
+        accepted = grade.accepted
+        pending_failures = grade.failures
+        reconciled = AcceptanceCriteriaOutput(criteria_results=grade.results)
         records = [
             *state["iteration_records"],
             IterationRecord(
                 iteration=state["iteration"],
-                passed_count=sum(1 for r in output.criteria_results if r.passed),
-                failing_criterion_ids=[r.criterion for r in pending_failures],
+                passed_count=grade.passed_count,
+                failing_criterion_ids=[f.criterion_id for f in pending_failures],
                 commit_sha=state.get("iteration_commit_sha"),
             ),
         ]
@@ -283,7 +293,7 @@ class RalphLoop:
                 branch=ctx.ralph_branch,
                 commit_sha=state.get("iteration_commit_sha"),
                 accepted=accepted,
-                evaluation=output,
+                evaluation=reconciled,
                 trajectory=trajectory,
             )
         )

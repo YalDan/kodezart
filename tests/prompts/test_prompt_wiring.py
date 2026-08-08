@@ -25,10 +25,23 @@ from kodezart.core.prompt_rendering import (
     render_template,
 )
 from kodezart.core.protocols import PromptProvider
-from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.criteria import mint_criteria
+from kodezart.domain.prompt_variables import (
+    changeset_variables,
+    render_validation_findings,
+)
 from kodezart.domain.ticket import format_ticket_as_task
-from kodezart.types.domain.agent import CriterionResult, FileChange, TicketDraftOutput
+from kodezart.types.domain.agent import FileChange, TicketDraftOutput
 from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.criteria import (
+    ConjunctionVerdict,
+    CriteriaValidation,
+    CriterionClassification,
+    CriterionFailure,
+    CriterionFeasibility,
+    DraftedCriterion,
+    FeasibilityVerdict,
+)
 from kodezart.types.domain.prompts import (
     PromptKey,
     PromptSetFragments,
@@ -57,7 +70,51 @@ TICKET = TicketDraftOutput(
 )
 TASK = "Golden task description"
 TASK_MD = format_ticket_as_task(TICKET)
-CRITERIA = ["First criterion", "Second criterion"]
+CRITERIA = list(
+    mint_criteria(
+        [
+            DraftedCriterion(
+                text="First criterion",
+                classification=CriterionClassification.hard_gate,
+            ),
+            DraftedCriterion(
+                text="Second criterion",
+                classification=CriterionClassification.soft_signal,
+            ),
+        ]
+    )
+)
+
+
+def make_criteria(*texts: str) -> list:
+    """Mint AC-n identities for inline template fixtures."""
+    return list(
+        mint_criteria(
+            [
+                DraftedCriterion(
+                    text=text,
+                    classification=CriterionClassification.hard_gate,
+                )
+                for text in texts
+            ]
+        )
+    )
+
+
+VALIDATION = CriteriaValidation(
+    verdicts=[
+        CriterionFeasibility(
+            criterion_id="AC-1",
+            verdict=FeasibilityVerdict.infeasible,
+            refutation="golden refutation",
+        ),
+        CriterionFeasibility(
+            criterion_id="AC-2",
+            verdict=FeasibilityVerdict.feasible,
+        ),
+    ],
+    conjunction=ConjunctionVerdict(satisfiable=True),
+)
 DIGEST = ChangesetDigest(
     file_paths=["src/foo.py", "tests/test_foo.py"],
     commit_subjects=["feat: add foo", "test: cover foo"],
@@ -70,8 +127,16 @@ NO_FILES_DIGEST = ChangesetDigest(
     commit_count=1,
 )
 FAILURES = [
-    CriterionResult(criterion="First criterion", passed=False, reasoning="not done"),
-    CriterionResult(criterion="Second criterion", passed=False, reasoning="missing"),
+    CriterionFailure(
+        criterion_id="AC-1",
+        text="First criterion",
+        reasoning="not done",
+    ),
+    CriterionFailure(
+        criterion_id="AC-2",
+        text="Second criterion",
+        reasoning="missing",
+    ),
 ]
 
 # golden name -> (key, per-call variables). The skills fragment is bound EMPTY
@@ -81,7 +146,22 @@ GOLDEN_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "commit_message": (PromptKey.COMMIT_MESSAGE, {}),
     "acceptance_criteria": (
         PromptKey.ACCEPTANCE_CRITERIA,
-        {"task_description": TASK_MD},
+        {"task_description": TASK_MD, "validation_findings": None},
+    ),
+    "acceptance_criteria__regeneration_round": (
+        PromptKey.ACCEPTANCE_CRITERIA,
+        {
+            "task_description": TASK_MD,
+            "validation_findings": render_validation_findings(CRITERIA, VALIDATION),
+        },
+    ),
+    "criteria_validation": (
+        PromptKey.CRITERIA_VALIDATION,
+        {
+            "task_description": TASK_MD,
+            "acceptance_criteria": CRITERIA,
+            "base_ref": "main",
+        },
     ),
     "implementation": (PromptKey.IMPLEMENTATION, {"task_md": TASK_MD}),
     "evaluation": (
@@ -329,7 +409,7 @@ def test_renderer_iterates_and_exposes_one_based_index() -> None:
 def test_renderer_iterates_over_model_fields() -> None:
     """Item fields resolve inside the block scope."""
     rendered = render_template(
-        "{{#each rows}}- {{criterion}}: {{reasoning}}{{/each}}",
+        "{{#each rows}}- {{text}}: {{reasoning}}{{/each}}",
         {"rows": FAILURES},
     )
     assert rendered == "- First criterion: not done- Second criterion: missing"
@@ -729,7 +809,7 @@ def test_evaluation_set_content_contains_watson_dispatch() -> None:
     """The evaluation member still carries the Sherlock/Watson dispatch."""
     registry = load_registry()
     output = registry.template_for(PromptKey.EVALUATION).render(
-        {"criteria": ["Tests pass"], **changeset_variables(EMPTY_DIGEST)},
+        {"criteria": make_criteria("Tests pass"), **changeset_variables(EMPTY_DIGEST)},
     )
     assert "WATSON 1" in output
     assert "graceful degradation" in output
@@ -763,7 +843,7 @@ def test_evaluation_inlines_the_changeset_digest_as_data() -> None:
     """Commit subjects and file paths appear verbatim; no shell commands."""
     registry = load_registry()
     rendered = registry.template_for(PromptKey.EVALUATION).render(
-        {"criteria": ["Tests pass"], **changeset_variables(DIGEST)},
+        {"criteria": make_criteria("Tests pass"), **changeset_variables(DIGEST)},
     )
     assert "src/foo.py" in rendered
     assert "feat: add foo" in rendered
@@ -775,7 +855,7 @@ def test_evaluation_handles_an_empty_changeset() -> None:
     """Empty digest renders the deterministic escape clause."""
     registry = load_registry()
     rendered = registry.template_for(PromptKey.EVALUATION).render(
-        {"criteria": ["Tests pass"], **changeset_variables(EMPTY_DIGEST)},
+        {"criteria": make_criteria("Tests pass"), **changeset_variables(EMPTY_DIGEST)},
     )
     assert (
         "No commits between the base and head refs; the previous "

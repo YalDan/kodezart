@@ -210,7 +210,7 @@ async def test_every_workflow_writer_routes_through_the_gate() -> None:
     joined = "\n".join(seen)
     assert "test-branch" in joined or "scripted-branch" in joined
     assert any('"title"' in payload for payload in seen)
-    assert any(payload.startswith("[") for payload in seen)
+    assert any('"conjunction"' in payload for payload in seen)
     assert any("kodezart: automated fix budget exhausted" in p for p in seen)
 
 

@@ -52,4 +52,4 @@ another, raise the conflict explicitly — do not silently skip it.
 
 ── FAILED CRITERIA FROM PREVIOUS ITERATION ──
 {{#each pending_failures}}
-- {{criterion}}: {{reasoning}}{{/each}}
+- {{this.criterion_id}} {{this.text}}: {{this.reasoning}}{{/each}}

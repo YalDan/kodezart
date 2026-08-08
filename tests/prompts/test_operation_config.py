@@ -391,9 +391,9 @@ def test_pass_templates_resolve_through_the_port_and_render(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_passes_at_fourteen_keys() -> None:
+def test_claude_opus_completeness_passes_at_fifteen_keys() -> None:
     """KOD-63's completeness rule obliges the default set to supply both."""
-    assert len(PromptKey) == 14
+    assert len(PromptKey) == 15
     members = {path.stem for path in SET_DIR.glob("*.md")}
     assert members == {key.value for key in PromptKey}
 

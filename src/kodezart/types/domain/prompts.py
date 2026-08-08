@@ -23,6 +23,7 @@ class PromptKey(StrEnum):
     TICKET_REVIEW = "ticket_review"
     TICKET_REVISION = "ticket_revision"
     ACCEPTANCE_CRITERIA = "acceptance_criteria"
+    CRITERIA_VALIDATION = "criteria_validation"
     IMPLEMENTATION = "implementation"
     EVALUATION = "evaluation"
     ITERATION_FEEDBACK = "iteration_feedback"

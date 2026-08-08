@@ -53,6 +53,7 @@ from tests.fakes import (
     RecordingPromptProvider,
     SequentialCIMonitor,
     make_failing_evaluation,
+    make_generated_criteria,
     make_passing_evaluation,
     make_prompt_provider,
 )
@@ -413,7 +414,7 @@ async def test_quality_gate_receives_correct_params() -> None:
     assert "Test ticket" in call["prompt"]
     assert call["repo_path"] == "/tmp/fake"
     assert call["base_branch"] == "main"
-    assert call["acceptance_criteria"] == ["Tests pass", "No lint errors"]
+    assert call["acceptance_criteria"] == make_generated_criteria()
     assert isinstance(call["feature_branch"], str)
     assert call["feature_branch"].startswith("kodezart/")
     assert isinstance(call["ralph_branch"], str)
@@ -467,7 +468,7 @@ async def test_workflow_generates_criteria_before_loop() -> None:
     ]
 
     assert len(gate.calls) == 1
-    assert gate.calls[0]["acceptance_criteria"] == ["Tests pass", "No lint errors"]
+    assert gate.calls[0]["acceptance_criteria"] == make_generated_criteria()
 
 
 async def test_workflow_streams_criteria_event() -> None:
@@ -1040,7 +1041,16 @@ class _SequentialReviewExecutor:
                             num_turns=1,
                             session_id="seq",
                             structured_output={
-                                "criteria": ["Tests pass", "No lint errors"],
+                                "criteria": [
+                                    {
+                                        "text": "Tests pass",
+                                        "classification": "hard_gate",
+                                    },
+                                    {
+                                        "text": "No lint errors",
+                                        "classification": "soft_signal",
+                                    },
+                                ],
                                 "reasoning": "Generated.",
                             },
                         )
@@ -1056,6 +1066,29 @@ class _SequentialReviewExecutor:
                             structured_output={
                                 "title": "feat: test PR",
                                 "description": "Test PR description.",
+                            },
+                        )
+                        return
+                    if "findings" in props:
+                        yield ResultEvent(
+                            subtype="result",
+                            duration_ms=1,
+                            duration_api_ms=1,
+                            is_error=False,
+                            num_turns=1,
+                            session_id="seq",
+                            structured_output={
+                                "findings": [
+                                    {
+                                        "criterionId": "AC-1",
+                                        "smallestRepair": "none",
+                                    },
+                                    {
+                                        "criterionId": "AC-2",
+                                        "smallestRepair": "none",
+                                    },
+                                ],
+                                "contradictions": [],
                             },
                         )
                         return
@@ -1134,12 +1167,34 @@ async def test_workflow_review_fails_triggers_fix() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass now."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass now.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass now.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -1432,7 +1487,18 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
@@ -1553,12 +1619,34 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
     """
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
         ],
     }
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -2006,7 +2094,18 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
     """
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -2108,7 +2207,18 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
     """
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -2487,12 +2597,34 @@ async def test_fix_code_node_divergent_routes_to_comment_failure_when_pr_url_set
     """fix_code DIVERGENT + pr_url set → comment_failure → complete."""
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
         ],
     }
     # 1st review: pass → open_pr; 2nd review (after CI fail + fix): fail → comment.
@@ -2545,7 +2677,18 @@ async def test_fix_code_node_divergent_routes_to_complete_when_no_pr_url() -> No
     """fix_code DIVERGENT + no pr_url → complete (no comment_failure)."""
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
@@ -2600,7 +2743,18 @@ async def test_fix_code_node_already_integrated_does_not_raise_advances_fix_roun
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     # Two failing reviews so fix runs (and fix_rounds_used reaches max_fix_rounds=1).
@@ -2658,7 +2812,18 @@ async def test_fix_code_node_source_missing_routes_terminally() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
@@ -2789,12 +2954,34 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass now."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass now.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass now.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -2873,7 +3060,7 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     # fix prompt carries the review-failure body so the routed-through-
     # gate path preserves the fix-prompt assembly (incl. the
     # "## Review Failures" header from _fix_code_node).
-    assert fix_call["acceptance_criteria"] == ["Tests pass", "No lint errors"]
+    assert fix_call["acceptance_criteria"] == make_generated_criteria()
     assert isinstance(fix_call["ralph_branch"], str)
     assert isinstance(fix_call["feature_branch"], str)
     assert fix_call["ralph_branch"].startswith(fix_call["feature_branch"])
@@ -3367,12 +3554,34 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Fixed."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Fixed.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Fixed.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -3428,7 +3637,18 @@ async def test_fix_round_divergent_still_sets_ci_passed_false() -> None:
     """The DIVERGENT / SOURCE_MISSING failure write is unchanged."""
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
@@ -3499,12 +3719,34 @@ async def test_terminal_totals_are_cumulative_and_last_round_wins() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Fixed."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Fixed.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Fixed.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(

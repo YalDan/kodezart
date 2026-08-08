@@ -20,6 +20,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.criteria import AcceptanceCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
@@ -33,6 +34,7 @@ from tests.fakes import (
     FakeRepoCache,
     FakeWorkspaceProvider,
     RecordingPromptProvider,
+    make_criteria,
     make_prompt_provider,
 )
 
@@ -73,14 +75,14 @@ class _RunKwargs(TypedDict):
     base_branch: str
     permission_mode: str
     allowed_tools: list[str]
-    acceptance_criteria: list[str]
+    acceptance_criteria: list[AcceptanceCriterion]
     cache_key: str
     repo_visibility: RepoVisibility
 
 
 def _run_kwargs(
     *,
-    acceptance_criteria: list[str] | None = None,
+    acceptance_criteria: list[AcceptanceCriterion] | None = None,
 ) -> _RunKwargs:
     return _RunKwargs(
         prompt="fix it",
@@ -91,7 +93,7 @@ def _run_kwargs(
         base_branch="main",
         permission_mode="bypassPermissions",
         allowed_tools=["Bash"],
-        acceptance_criteria=acceptance_criteria or ["Tests pass"],
+        acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),
         cache_key="test-cache-key",
         repo_visibility=RepoVisibility.UNKNOWN,
     )
@@ -112,6 +114,7 @@ async def test_loop_single_iteration_accepted() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "All good.",
@@ -157,6 +160,7 @@ async def test_loop_max_iterations_exhausted() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": False,
                             "reasoning": "Tests fail.",
@@ -224,6 +228,7 @@ async def test_loop_second_iteration_succeeds() -> None:
                                 structured_output={
                                     "criteriaResults": [
                                         {
+                                            "criterionId": "AC-1",
                                             "criterion": "Tests pass",
                                             "passed": False,
                                             "reasoning": "Tests fail.",
@@ -242,6 +247,7 @@ async def test_loop_second_iteration_succeeds() -> None:
                                 structured_output={
                                     "criteriaResults": [
                                         {
+                                            "criterionId": "AC-1",
                                             "criterion": "Tests pass",
                                             "passed": True,
                                             "reasoning": "All good.",
@@ -307,6 +313,7 @@ async def test_loop_streams_events_per_node() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "OK.",
@@ -348,6 +355,7 @@ async def test_loop_does_not_emit_complete_event() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "OK.",
@@ -394,6 +402,7 @@ async def test_loop_exactly_one_iteration_event_per_cycle() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "All good.",
@@ -525,16 +534,19 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
                                 structured_output={
                                     "criteriaResults": [
                                         {
+                                            "criterionId": "AC-1",
                                             "criterion": "Tests pass",
                                             "passed": True,
                                             "reasoning": "pytest green",
                                         },
                                         {
+                                            "criterionId": "AC-2",
                                             "criterion": "No lint errors",
                                             "passed": False,
                                             "reasoning": "ruff found B008",
                                         },
                                         {
+                                            "criterionId": "AC-3",
                                             "criterion": "Docs updated",
                                             "passed": True,
                                             "reasoning": "README has section",
@@ -553,16 +565,19 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
                                 structured_output={
                                     "criteriaResults": [
                                         {
+                                            "criterionId": "AC-1",
                                             "criterion": "Tests pass",
                                             "passed": True,
                                             "reasoning": "pytest green",
                                         },
                                         {
+                                            "criterionId": "AC-2",
                                             "criterion": "No lint errors",
                                             "passed": True,
                                             "reasoning": "ruff clean",
                                         },
                                         {
+                                            "criterionId": "AC-3",
                                             "criterion": "Docs updated",
                                             "passed": True,
                                             "reasoning": "README has section",
@@ -592,7 +607,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
     )
     loop = _make_loop(executor=executor, persister=persister, prompts=prompts)
 
-    criteria = ["Tests pass", "No lint errors", "Docs updated"]
+    criteria = make_criteria("Tests pass", "No lint errors", "Docs updated")
     events = [
         e
         async for e in loop.run(
@@ -665,6 +680,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
                             structured_output={
                                 "criteriaResults": [
                                     {
+                                        "criterionId": "AC-1",
                                         "criterion": "Tests pass",
                                         "passed": passed,
                                         "reasoning": "ok",
@@ -736,6 +752,7 @@ async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch()
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "ok",
@@ -770,6 +787,7 @@ async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> N
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "ok",
@@ -858,7 +876,11 @@ class _ScriptedLoopExecutor:
     ``IterationRecord.commit_sha`` is observable.
     """
 
-    def __init__(self, criteria: list[str], pass_masks: list[list[bool]]) -> None:
+    def __init__(
+        self,
+        criteria: list[AcceptanceCriterion],
+        pass_masks: list[list[bool]],
+    ) -> None:
         self._criteria = criteria
         self._pass_masks = list(pass_masks)
         self._eval_count = 0
@@ -895,7 +917,8 @@ class _ScriptedLoopExecutor:
                         structured_output={
                             "criteriaResults": [
                                 {
-                                    "criterion": criterion,
+                                    "criterionId": criterion.id,
+                                    "criterion": criterion.text,
                                     "passed": passed,
                                     "reasoning": "scripted",
                                 }
@@ -919,14 +942,14 @@ class _ScriptedLoopExecutor:
         )
 
 
-_THREE_CRITERIA = ["Criterion A", "Criterion B", "Criterion C"]
+_THREE_CRITERIA = make_criteria("Criterion A", "Criterion B", "Criterion C")
 # passed counts 2, 1, 2 — no new best in the last two iterations.
 _PLATEAU_MASKS = [
     [True, True, False],
     [True, False, False],
     [True, True, False],
 ]
-_FIVE_CRITERIA = [f"Criterion {letter}" for letter in "ABCDE"]
+_FIVE_CRITERIA = make_criteria(*(f"Criterion {letter}" for letter in "ABCDE"))
 # passed counts 1, 2, 3, 4 — a new best every iteration, never all five.
 _IMPROVING_MASKS = [
     [True, False, False, False, False],
@@ -1125,7 +1148,7 @@ async def test_loop_stops_on_plateau_before_budget_is_exhausted() -> None:
     assert last.trajectory.plateaued is True
     # Budget is NOT silently swallowed: the run stopped with iterations left.
     assert last.iteration < 5
-    assert last.trajectory.never_passed_ids == ["Criterion C"]
+    assert last.trajectory.never_passed_ids == ["AC-3"]
 
 
 async def test_loop_still_improving_runs_its_full_budget() -> None:

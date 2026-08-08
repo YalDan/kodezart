@@ -1,0 +1,91 @@
+"""Grade one evaluation pass against the DISPATCHED criteria set.
+
+The evaluator returns results; the harness decides what they are worth.
+Reconciliation is keyed by ``criterion_id`` and the denominator is the
+dispatched count, so:
+
+* a result for an id nobody dispatched is discarded and named;
+* a second result for an id already answered is discarded and named;
+* an id with no result grades FAILED and is named — never a silently
+  shorter denominator, and never acceptance over a partial set;
+* the text carried forward is the harness's own, looked up by id, so an
+  echoed whitespace or backslash mutation changes neither the keying nor
+  the criterion the next iteration is asked to fix.
+"""
+
+from collections.abc import Sequence
+
+from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
+from kodezart.types.domain.criteria import AcceptanceCriterion, CriterionFailure
+from kodezart.types.domain.grading import IterationGrade
+
+MISSING_RESULT_REASONING = (
+    "The evaluator returned no result for this criterion id. "
+    "A dispatched criterion with no verdict grades failed."
+)
+
+
+def grade_iteration(
+    criteria: Sequence[AcceptanceCriterion],
+    output: AcceptanceCriteriaOutput,
+) -> IterationGrade:
+    """Reconcile *output* against *criteria* and grade fail-closed."""
+    dispatched = {criterion.id: criterion for criterion in criteria}
+    answered: dict[str, CriterionResult] = {}
+    unknown_ids: list[str] = []
+    duplicate_ids: list[str] = []
+
+    for result in output.criteria_results:
+        if result.criterion_id not in dispatched:
+            unknown_ids.append(result.criterion_id)
+            continue
+        if result.criterion_id in answered:
+            duplicate_ids.append(result.criterion_id)
+            continue
+        answered[result.criterion_id] = result
+
+    results: list[CriterionResult] = []
+    failures: list[CriterionFailure] = []
+    missing_ids: list[str] = []
+
+    for criterion in criteria:
+        answer = answered.get(criterion.id)
+        if answer is None:
+            missing_ids.append(criterion.id)
+            results.append(
+                CriterionResult(
+                    criterion_id=criterion.id,
+                    criterion=criterion.text,
+                    passed=False,
+                    reasoning=MISSING_RESULT_REASONING,
+                )
+            )
+            failures.append(
+                CriterionFailure(
+                    criterion_id=criterion.id,
+                    text=criterion.text,
+                    reasoning=MISSING_RESULT_REASONING,
+                )
+            )
+            continue
+        results.append(answer)
+        if not answer.passed:
+            failures.append(
+                CriterionFailure(
+                    criterion_id=criterion.id,
+                    text=criterion.text,
+                    reasoning=answer.reasoning,
+                )
+            )
+
+    passed_count = sum(1 for result in results if result.passed)
+    return IterationGrade(
+        results=results,
+        failures=failures,
+        missing_ids=missing_ids,
+        unknown_ids=unknown_ids,
+        duplicate_ids=duplicate_ids,
+        dispatched_count=len(criteria),
+        passed_count=passed_count,
+        accepted=passed_count == len(criteria),
+    )

@@ -25,6 +25,8 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "task",
         "task_md",
         "task_description",
+        "base_ref",
+        "validation_findings",
         "prior_prompt",
         "pending_failures",
         "criteria",
