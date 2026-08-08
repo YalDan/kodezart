@@ -129,6 +129,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
             max_depth_per_lane=config.queue_max_depth_per_lane,
             terminal_retention_seconds=config.queue_terminal_retention_seconds,
+            event_buffer_retention_seconds=(
+                config.queue_event_buffer_retention_seconds
+            ),
             event_buffer_capacity=config.queue_event_buffer_capacity,
         )
         app.state.job_queue = job_queue

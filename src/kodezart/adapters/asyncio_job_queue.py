@@ -15,7 +15,7 @@ default of 1 is the only thing making runs serial.
 import asyncio
 import uuid
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
 from datetime import UTC, datetime
 
 from kodezart.core.constants import DEFAULT_LANE
@@ -54,6 +54,16 @@ class _JobStream:
         for subscriber in self._subscribers:
             subscriber.put_nowait(None)
 
+    def discard_buffer(self) -> int:
+        """Release every buffered frame, returning how many were dropped.
+
+        Frees the expensive part of a terminal job — its frames — while
+        the cheap record stays addressable for its own, longer window.
+        """
+        dropped = len(self._buffer)
+        self._buffer.clear()
+        return dropped
+
     async def stream(self) -> AsyncIterator[AgentEvent]:
         """Replay the buffer, then go live until the job reaches TERMINAL."""
         replay = list(self._buffer)
@@ -91,6 +101,14 @@ class AsyncioJobQueue:
     drops every job still waiting and terminates every job in flight.
     An HTTP-submitted fire lost to a restart is re-submitted by its
     caller — documented behavior, not a silent one.
+
+    A terminal job is retained on TWO independent windows, because its
+    two parts cost different amounts: ``terminal_retention_seconds``
+    governs the ~1-2 KB ``JobRecord``, while the far shorter
+    ``event_buffer_retention_seconds`` governs the replay buffer, whose
+    frames run to megabytes.  Dropping the buffer marks the record
+    ``truncated`` — the same flag overflow sets, because it is the same
+    fact: frames a client can no longer replay.
     """
 
     def __init__(
@@ -100,12 +118,14 @@ class AsyncioJobQueue:
         max_concurrent_runs_per_lane: int,
         max_depth_per_lane: int,
         terminal_retention_seconds: float,
+        event_buffer_retention_seconds: float,
         event_buffer_capacity: int,
     ) -> None:
         self._engine: WorkflowEngine = engine
         self._max_concurrent_runs_per_lane: int = max_concurrent_runs_per_lane
         self._max_depth_per_lane: int = max_depth_per_lane
         self._terminal_retention_seconds: float = terminal_retention_seconds
+        self._event_buffer_retention_seconds: float = event_buffer_retention_seconds
         self._event_buffer_capacity: int = event_buffer_capacity
         self._lanes: dict[str, _Lane] = {}
         self._records: dict[str, JobRecord] = {}
@@ -312,11 +332,35 @@ class AsyncioJobQueue:
             lane=lane,
             outcome=outcome.value if outcome is not None else None,
         )
-        eviction = asyncio.create_task(self._evict_later(job_id))
+        self._schedule(self._drop_buffer_later(job_id))
+        self._schedule(self._drop_record_later(job_id))
+
+    def _schedule(self, coroutine: Coroutine[object, object, None]) -> None:
+        eviction = asyncio.create_task(coroutine)
         self._evictions.add(eviction)
         eviction.add_done_callback(self._evictions.discard)
 
-    async def _evict_later(self, job_id: str) -> None:
+    async def _drop_buffer_later(self, job_id: str) -> None:
+        """Release the job's frames on the buffer's own, shorter window."""
+        await asyncio.sleep(self._event_buffer_retention_seconds)
+        stream = self._streams.get(job_id)
+        if stream is None:
+            return
+        dropped = stream.discard_buffer()
+        if dropped == 0:
+            return
+        record = self._records.get(job_id)
+        if record is not None and not record.truncated:
+            self._records[job_id] = record.model_copy(update={"truncated": True})
+        await self._log.ainfo(
+            "job_event_buffer_dropped",
+            job_id=job_id,
+            frames=dropped,
+            retention_seconds=self._event_buffer_retention_seconds,
+        )
+
+    async def _drop_record_later(self, job_id: str) -> None:
+        """Evict the record itself, so the registry cannot grow unbounded."""
         await asyncio.sleep(self._terminal_retention_seconds)
         self._records.pop(job_id, None)
         self._streams.pop(job_id, None)

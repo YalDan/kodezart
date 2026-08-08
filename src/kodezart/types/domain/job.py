@@ -29,7 +29,8 @@ class JobRecord(CamelCaseModel):
     QUEUED.  ``outcome`` is written by the dispatcher when it observes
     the terminal ``WorkflowCompleteEvent``; run state itself lives on the
     checkpointer, never here.  ``truncated`` records that the replay
-    buffer dropped events — never a silent gap.
+    buffer dropped events — whether by overflowing its capacity or by
+    outliving its retention window — never a silent gap.
     """
 
     model_config = ConfigDict(frozen=True)

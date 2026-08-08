@@ -1102,7 +1102,8 @@ async def attached_job_queue(
     *,
     max_concurrent_runs_per_lane: int = 1,
     max_depth_per_lane: int = 64,
-    terminal_retention_seconds: float = 3600.0,
+    terminal_retention_seconds: float = 86400.0,
+    event_buffer_retention_seconds: float = 900.0,
     event_buffer_capacity: int = 512,
 ) -> AsyncGenerator[AsyncioJobQueue, None]:
     """Attach a started AsyncioJobQueue to *app*, stopping it on exit.
@@ -1116,6 +1117,7 @@ async def attached_job_queue(
         max_concurrent_runs_per_lane=max_concurrent_runs_per_lane,
         max_depth_per_lane=max_depth_per_lane,
         terminal_retention_seconds=terminal_retention_seconds,
+        event_buffer_retention_seconds=event_buffer_retention_seconds,
         event_buffer_capacity=event_buffer_capacity,
     )
     app.state.job_queue = queue

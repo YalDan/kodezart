@@ -10,10 +10,12 @@ import pytest_asyncio
 import structlog
 from httpx import ASGITransport, AsyncClient, Response
 from langgraph.checkpoint.memory import InMemorySaver
+from pydantic import ValidationError
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.domain.errors import QueueFullError
@@ -140,6 +142,19 @@ async def _wait_terminal(
     raise AssertionError(msg)
 
 
+async def _wait_truncated(
+    queue: AsyncioJobQueue, job_id: str, *, ticks: int = 400
+) -> None:
+    """Yield to the loop until *job_id*'s record is marked truncated."""
+    for _ in range(ticks):
+        record = await queue.get(job_id=job_id)
+        if record is not None and record.truncated:
+            return
+        await asyncio.sleep(0)
+    msg = f"job {job_id} was never marked truncated"
+    raise AssertionError(msg)
+
+
 async def _until(predicate: object, *, ticks: int = 200) -> None:
     """Yield to the loop until *predicate* holds. Fails loudly on timeout."""
     check = predicate
@@ -157,7 +172,8 @@ def _make_queue(
     *,
     max_concurrent_runs_per_lane: int = 1,
     max_depth_per_lane: int = 64,
-    terminal_retention_seconds: float = 3600.0,
+    terminal_retention_seconds: float = 86400.0,
+    event_buffer_retention_seconds: float = 900.0,
     event_buffer_capacity: int = 512,
 ) -> AsyncioJobQueue:
     return AsyncioJobQueue(
@@ -165,6 +181,7 @@ def _make_queue(
         max_concurrent_runs_per_lane=max_concurrent_runs_per_lane,
         max_depth_per_lane=max_depth_per_lane,
         terminal_retention_seconds=terminal_retention_seconds,
+        event_buffer_retention_seconds=event_buffer_retention_seconds,
         event_buffer_capacity=event_buffer_capacity,
     )
 
@@ -559,7 +576,11 @@ async def test_replay_buffer_overflow_marks_the_record_truncated() -> None:
 async def test_terminal_records_are_evicted_after_the_retention_window() -> None:
     """The registry cannot grow without bound."""
     engine = ChattyWorkflowEngine([_complete_event(WorkflowOutcome.ci_passed)])
-    queue = _make_queue(engine, terminal_retention_seconds=0.05)
+    queue = _make_queue(
+        engine,
+        terminal_retention_seconds=0.05,
+        event_buffer_retention_seconds=0.05,
+    )
     await queue.start()
     try:
         record = await queue.submit(lane=DEFAULT_LANE, request=_request("fix"))
@@ -569,6 +590,121 @@ async def test_terminal_records_are_evicted_after_the_retention_window() -> None
         assert await queue.get(job_id=record.job_id) is None
     finally:
         await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# KOD-61: retention is two independent windows (founder ruling 2026-08-08)
+# ---------------------------------------------------------------------------
+
+
+async def test_buffer_is_dropped_while_the_record_is_still_retained() -> None:
+    """The expensive buffer goes early; the cheap record outlives it."""
+    engine = ChattyWorkflowEngine(
+        [
+            AssistantTextEvent(text="expensive frame", model="m"),
+            _complete_event(WorkflowOutcome.ci_passed),
+        ],
+    )
+    queue = _make_queue(
+        engine,
+        terminal_retention_seconds=30.0,
+        event_buffer_retention_seconds=0.05,
+    )
+    await queue.start()
+    try:
+        record = await queue.submit(lane=DEFAULT_LANE, request=_request("fix"))
+        assert len(await _drain(queue, record.job_id)) == 2
+
+        # Before the buffer window elapses: frames still replayable.
+        assert len(await _drain(queue, record.job_id)) == 2
+
+        with structlog.testing.capture_logs() as logs:
+            await asyncio.sleep(0.15)
+
+        # Buffer gone, record still answerable through the registry.
+        assert await _drain(queue, record.job_id) == []
+        surviving = await queue.get(job_id=record.job_id)
+        assert surviving is not None
+        assert surviving.outcome is WorkflowOutcome.ci_passed
+        # Dropped frames are never a silent gap.
+        assert surviving.truncated is True
+        drops = [e for e in logs if e["event"] == "job_event_buffer_dropped"]
+        assert len(drops) == 1
+        assert drops[0]["frames"] == 2
+    finally:
+        await queue.stop()
+
+
+async def test_zero_buffer_retention_drops_the_buffer_at_terminal() -> None:
+    """0.0 is legal: the buffer goes as soon as the job goes terminal."""
+    engine = ChattyWorkflowEngine([_complete_event(WorkflowOutcome.ci_passed)])
+    queue = _make_queue(
+        engine,
+        terminal_retention_seconds=30.0,
+        event_buffer_retention_seconds=0.0,
+    )
+    await queue.start()
+    try:
+        record = await queue.submit(lane=DEFAULT_LANE, request=_request("fix"))
+        await _wait_terminal(queue, record.job_id)
+        await _wait_truncated(queue, record.job_id)
+        assert await _drain(queue, record.job_id) == []
+    finally:
+        await queue.stop()
+
+
+def test_retention_defaults_are_the_ruled_windows() -> None:
+    """24h for the record, 15 minutes for the buffer, from AppConfig."""
+    config = AppConfig()
+    assert config.queue_terminal_retention_seconds == 86400.0
+    assert config.queue_event_buffer_retention_seconds == 900.0
+    assert config.queue_event_buffer_capacity == 512
+    assert config.queue_max_depth_per_lane == 64
+    assert config.queue_max_concurrent_runs_per_lane == 1
+
+
+def test_each_retention_field_says_which_object_it_governs() -> None:
+    """The separation is the point, so it is legible at the config surface."""
+    fields = AppConfig.model_fields
+    record_description = fields["queue_terminal_retention_seconds"].description
+    buffer_description = fields["queue_event_buffer_retention_seconds"].description
+    assert record_description is not None
+    assert buffer_description is not None
+    assert "JOB RECORD" in record_description
+    assert "REPLAY BUFFER" in buffer_description
+
+
+def test_a_buffer_outliving_its_record_is_rejected_at_boot() -> None:
+    """Incoherent config fails loud rather than being clamped."""
+    with pytest.raises(ValidationError, match="cannot outlive"):
+        AppConfig(
+            queue_terminal_retention_seconds=120.0,
+            queue_event_buffer_retention_seconds=121.0,
+        )
+
+
+def test_equal_retention_windows_are_accepted() -> None:
+    """The bound is <=, not <: a buffer may live exactly as long."""
+    config = AppConfig(
+        queue_terminal_retention_seconds=120.0,
+        queue_event_buffer_retention_seconds=120.0,
+    )
+    assert config.queue_event_buffer_retention_seconds == 120.0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("queue_terminal_retention_seconds", 59.0),
+        ("queue_terminal_retention_seconds", 604801.0),
+        ("queue_event_buffer_retention_seconds", -1.0),
+        ("queue_event_buffer_retention_seconds", 86401.0),
+    ],
+)
+def test_retention_bounds_are_enforced(field: str, value: float) -> None:
+    """Both windows carry the ruled bounds."""
+    with pytest.raises(ValidationError):
+        AppConfig(**{field: value})
 
 
 async def test_stop_marks_in_flight_jobs_terminal_and_leaves_no_worker() -> None:
