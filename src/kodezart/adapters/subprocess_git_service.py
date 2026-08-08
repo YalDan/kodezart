@@ -452,10 +452,9 @@ class SubprocessGitService:
             proc.returncode if proc.returncode is not None else _UNKNOWN_EXIT_CODE
         )
         if returncode not in allowed:
-            detail = self._failure_detail(stdout, stderr, returncode)
             msg = (
                 f"{' '.join(cmd[:3])} exited {returncode} "
-                f"(allowed {sorted(allowed)}): {detail}"
+                f"(allowed {sorted(allowed)}): {stderr.decode().strip()}"
             )
             raise RuntimeError(msg)
         return returncode, stdout.decode().strip()
