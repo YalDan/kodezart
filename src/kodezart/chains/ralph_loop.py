@@ -19,10 +19,12 @@ from kodezart.core.protocols import (
 )
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
+from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
@@ -121,7 +123,7 @@ class RalphLoop:
 
         initial_state: RalphLoopState = {
             "iteration": 0,
-            "accepted": False,
+            "verdict": AcceptVerdict.rejected,
             "pending_failures": [],
             "iteration_records": [],
         }
@@ -274,9 +276,12 @@ class RalphLoop:
                 unknown_ids=grade.unknown_ids,
                 duplicate_ids=grade.duplicate_ids,
             )
-        accepted = grade.accepted
+        verdict = grade.verdict
         pending_failures = grade.failures
-        reconciled = AcceptanceCriteriaOutput(criteria_results=grade.results)
+        reconciled = AcceptanceCriteriaOutput(
+            criteria_results=grade.results,
+            sherlock_flags=grade.sherlock_flags,
+        )
         records = [
             *state["iteration_records"],
             IterationRecord(
@@ -292,14 +297,14 @@ class RalphLoop:
                 iteration=state["iteration"],
                 branch=ctx.ralph_branch,
                 commit_sha=state.get("iteration_commit_sha"),
-                accepted=accepted,
+                verdict=verdict,
                 evaluation=reconciled,
                 trajectory=trajectory,
             )
         )
         if (
             trajectory.plateaued
-            and not accepted
+            and not gate_cleared(verdict)
             and state["iteration"] < self._max_iterations
         ):
             await self._log.awarning(
@@ -309,7 +314,7 @@ class RalphLoop:
                 never_passed_ids=trajectory.never_passed_ids,
             )
         return {
-            "accepted": accepted,
+            "verdict": verdict,
             "pending_failures": pending_failures,
             "iteration_records": records,
         }
@@ -318,7 +323,7 @@ class RalphLoop:
         self,
         state: RalphLoopState,
     ) -> str:
-        if state["accepted"]:
+        if gate_cleared(state["verdict"]):
             return END
         if state["iteration"] >= self._max_iterations:
             return END

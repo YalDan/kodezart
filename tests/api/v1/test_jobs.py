@@ -51,7 +51,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     ScriptedFakeExecutor,
-    make_passing_evaluation,
+    make_passing_evaluation_over,
     make_prompt_provider,
 )
 
@@ -223,7 +223,7 @@ def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngi
         service=service,
         quality_gate=FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_over("AC-1", "AC-2", "AC-3"),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -257,7 +257,7 @@ class GatedQualityGate:
         self._release: asyncio.Event = asyncio.Event()
         self._inner = FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_over("AC-1", "AC-2", "AC-3"),
             total_iterations=1,
             last_commit_sha="a" * 40,
         )

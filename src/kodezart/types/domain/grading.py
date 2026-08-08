@@ -9,6 +9,7 @@ can produce acceptance over a shorter list.
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
 from kodezart.types.domain.agent import CriterionResult
 from kodezart.types.domain.criteria import CriterionFailure
 
@@ -25,4 +26,5 @@ class IterationGrade(CamelCaseModel):
     duplicate_ids: list[str] = Field(default_factory=list)
     dispatched_count: int = Field(ge=1)
     passed_count: int = Field(ge=0)
-    accepted: bool
+    verdict: AcceptVerdict
+    sherlock_flags: list[SherlockFlag] = Field(default_factory=list)

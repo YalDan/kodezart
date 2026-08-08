@@ -10,6 +10,7 @@ per leaf module, as ``consolidation.py``, ``outcome.py`` and
 from pydantic import ConfigDict
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.accept import AcceptVerdict
 
 
 class RunState(CamelCaseModel):
@@ -24,7 +25,7 @@ class RunState(CamelCaseModel):
     last_completed_node: str | None = None
     total_iterations: int = 0
     fix_rounds_used: int = 0
-    accepted: bool = False
+    accept_verdict: AcceptVerdict | None = None
     merged: bool = False
     review_passed: bool = False
     ci_passed: bool | None = None

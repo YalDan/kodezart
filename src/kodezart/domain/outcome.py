@@ -15,13 +15,14 @@ There is no default arm.  An unclassifiable state raises, so a new
 terminal route cannot ship undiscriminated.
 """
 
+from kodezart.domain.accept_gate import gate_cleared
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.workflow import WorkflowState
 
 
 def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
     """Classify *state*'s terminal disposition. Raises when unclassifiable."""
-    accepted = state["accepted"]
+    accepted = gate_cleared(state["accept_verdict"])
     merged = state["merged"]
     merge_error = state["merge_error"]
     fix_rounds_used = state["fix_rounds_used"]

@@ -48,7 +48,7 @@ After all five Watsons return, you do the work no Watson could do alone:
 
 1. Read every Watson's report skeptically. Each Watson is narrow and eager — what did they take at face value that you should question? What clue did they ignore because it was outside their remit? Cross-reference findings across Watsons (e.g. an architecture violation Watson 2 raised may explain a type-safety issue Watson 3 noticed but mis-attributed).
 
-2. Identify any concern that no single Watson is responsible for but that emerges from combining their reports. Add it to the verdict yourself, attributed `[sherlock]`.
+2. Identify any concern that no single Watson is responsible for but that emerges from combining their reports. Add it to the verdict yourself, attributed `[sherlock]`, AND report it in the `sherlockFlags` field — one entry per concern, with `criterionId` set when the concern is about one criterion and omitted when it is about the set. A concern that exists only inside your prose reaches nobody: the field is what carries it to the pull request and to the operator.
 
 3. Then produce the final evaluation. A criterion passes ONLY if the criterion-alignment Watson confirms it with file:line evidence AND no other Watson raises a blocking concern that undermines the criterion. Otherwise the criterion fails. Compose evidence as your own synthesized judgment, not a stitching-together of Watson quotes.
 

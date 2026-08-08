@@ -16,6 +16,7 @@ dispatched count, so:
 
 from collections.abc import Sequence
 
+from kodezart.domain.accept_gate import accept_verdict
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import CriterionFailure, ValidatedCriterion
 from kodezart.types.domain.grading import IterationGrade
@@ -98,5 +99,6 @@ def grade_iteration(
         duplicate_ids=duplicate_ids,
         dispatched_count=len(criteria),
         passed_count=passed_count,
-        accepted=passed_count == len(criteria),
+        verdict=accept_verdict(criteria, results),
+        sherlock_flags=list(output.sherlock_flags),
     )

@@ -14,6 +14,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
+from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.trajectory import fold_trajectory
@@ -1035,6 +1036,27 @@ def make_passing_evaluation(
     )
 
 
+def make_passing_evaluation_over(*criterion_ids: str) -> AcceptanceCriteriaOutput:
+    """A pass for every dispatched id — the shape a real evaluator returns.
+
+    The gate grades against the DISPATCHED set, so an evaluation that
+    answers fewer ids than were dispatched is a failing run, not a
+    passing one.  A fixture that means "everything passed" has to say so
+    for every id.
+    """
+    return AcceptanceCriteriaOutput(
+        criteria_results=[
+            CriterionResult(
+                criterion_id=criterion_id,
+                criterion=f"criterion {criterion_id}",
+                passed=True,
+                reasoning="Fake passing evaluation.",
+            )
+            for criterion_id in criterion_ids
+        ],
+    )
+
+
 def make_failing_evaluation(
     criterion: str = "Tests pass",
     reasoning: str = "Fake failing evaluation.",
@@ -1082,7 +1104,7 @@ class FakeQualityGate:
         base_branch: str,
         permission_mode: str,
         allowed_tools: list[str],
-        acceptance_criteria: list[AcceptanceCriterion],
+        acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -1108,7 +1130,7 @@ class FakeQualityGate:
             iteration=self._total_iterations,
             branch=ralph_branch,
             commit_sha=self._last_commit_sha,
-            accepted=all(r.passed for r in results),
+            verdict=accept_verdict(acceptance_criteria, results),
             evaluation=self._evaluation,
             trajectory=self._trajectory
             or fold_trajectory(

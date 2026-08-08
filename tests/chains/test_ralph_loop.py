@@ -12,6 +12,7 @@ from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import AgentExecutor
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -141,7 +142,7 @@ async def test_loop_single_iteration_accepted() -> None:
     iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     assert len(iteration_events) >= 1
     last_iter = iteration_events[-1]
-    assert last_iter.accepted is True
+    assert last_iter.verdict is AcceptVerdict.accepted
     assert last_iter.iteration == 1
     assert last_iter.evaluation.criteria_results
     assert all(r.passed for r in last_iter.evaluation.criteria_results)
@@ -186,7 +187,7 @@ async def test_loop_max_iterations_exhausted() -> None:
 
     iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     last_iter = iteration_events[-1]
-    assert last_iter.accepted is False
+    assert last_iter.verdict is AcceptVerdict.rejected
     assert last_iter.iteration == 2
     assert any(not r.passed for r in last_iter.evaluation.criteria_results)
 
@@ -296,7 +297,7 @@ async def test_loop_second_iteration_succeeds() -> None:
 
     iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     last_iter = iteration_events[-1]
-    assert last_iter.accepted is True
+    assert last_iter.verdict is AcceptVerdict.accepted
     assert last_iter.iteration == 2
 
 
@@ -431,10 +432,10 @@ async def test_loop_exactly_one_iteration_event_per_cycle() -> None:
     assert len(iteration_events) == 1, (
         f"Expected 1 WorkflowIterationEvent per cycle, "
         f"got {len(iteration_events)}: "
-        f"{[e.accepted for e in iteration_events]}"
+        f"{[e.verdict for e in iteration_events]}"
     )
     # The single event must have accepted set (not None)
-    assert iteration_events[0].accepted is True
+    assert iteration_events[0].verdict is AcceptVerdict.accepted
     assert iteration_events[0].iteration == 1
 
 
@@ -1188,7 +1189,7 @@ async def test_loop_stops_on_plateau_before_budget_is_exhausted() -> None:
     iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     assert len(iteration_events) == 3
     last = iteration_events[-1]
-    assert last.accepted is False
+    assert last.verdict is AcceptVerdict.rejected
     assert last.trajectory.plateaued is True
     # Budget is NOT silently swallowed: the run stopped with iterations left.
     assert last.iteration < 5

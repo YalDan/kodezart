@@ -2,6 +2,7 @@
 
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.criteria_grading import MISSING_RESULT_REASONING, grade_iteration
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import CriterionClassification, DraftedCriterion
 
@@ -42,7 +43,7 @@ def test_partial_return_grades_the_missing_ids_failed_and_keeps_the_denominator(
     assert grade.dispatched_count == 10
     assert len(grade.results) == 10
     assert grade.passed_count == 3
-    assert grade.accepted is False
+    assert grade.verdict is AcceptVerdict.rejected
     assert grade.missing_ids == [f"AC-{n}" for n in range(4, 11)]
     assert [r.passed for r in grade.results] == [True] * 3 + [False] * 7
     assert all(
@@ -66,7 +67,7 @@ def test_a_full_pass_over_a_partial_return_is_not_acceptance() -> None:
             ),
         ],
     )
-    assert grade_iteration(criteria, output).accepted is False
+    assert grade_iteration(criteria, output).verdict is AcceptVerdict.rejected
 
 
 def test_echoed_text_mutation_changes_neither_keying_nor_reinjected_text() -> None:
@@ -152,7 +153,7 @@ def test_unknown_and_duplicate_ids_are_discarded_and_named() -> None:
     assert grade.missing_ids == []
     # The FIRST answer for an id stands; the duplicate never overrides it.
     assert grade.results[0].passed is True
-    assert grade.accepted is True
+    assert grade.verdict is AcceptVerdict.accepted
     assert len(grade.results) == 2
 
 

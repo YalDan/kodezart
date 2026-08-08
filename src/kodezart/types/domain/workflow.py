@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
 from kodezart.types.domain.criteria import (
     AcceptanceCriterion,
@@ -105,7 +106,7 @@ class RalphLoopState(TypedDict):
     """
 
     iteration: int
-    accepted: bool
+    verdict: AcceptVerdict
     pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
     iteration_commit_sha: NotRequired[str | None]
@@ -133,7 +134,8 @@ class WorkflowState(TypedDict):
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
     criteria_infeasible: bool
-    accepted: bool
+    accept_verdict: AcceptVerdict
+    flagged_items: list[FlaggedItem]
     total_iterations: int
     feature_tip_sha: str | None
     review_base_sha: str | None

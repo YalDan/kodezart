@@ -32,6 +32,11 @@ from kodezart.core.protocols import (
 )
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
+from kodezart.domain.accept_gate import (
+    append_flagged_section,
+    flagged_items,
+    gate_cleared,
+)
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
@@ -49,6 +54,7 @@ from kodezart.domain.prompt_variables import (
 )
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     BRANCH_NAME_SCHEMA,
@@ -226,7 +232,8 @@ class RalphWorkflowEngine:
             "criteria_validation": None,
             "criteria_regeneration_rounds": 0,
             "criteria_infeasible": False,
-            "accepted": False,
+            "accept_verdict": AcceptVerdict.rejected,
+            "flagged_items": [],
             "total_iterations": 0,
             "feature_tip_sha": None,
             "review_base_sha": None,
@@ -777,7 +784,12 @@ class RalphWorkflowEngine:
         # feature_tip_sha is left None here; _merge_to_feature_node sets it
         # from the merger's outcome.feature_tip_sha (canonical, post-push).
         return {
-            "accepted": last_iteration_event.accepted,
+            "accept_verdict": last_iteration_event.verdict,
+            "flagged_items": flagged_items(
+                _validated_criteria(state),
+                last_iteration_event.evaluation.criteria_results,
+                last_iteration_event.evaluation.sherlock_flags,
+            ),
             "total_iterations": last_iteration_event.iteration,
             "feature_tip_sha": None,
             "trajectory": last_iteration_event.trajectory,
@@ -847,7 +859,7 @@ class RalphWorkflowEngine:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        if not state["accepted"]:
+        if not gate_cleared(state["accept_verdict"]):
             return {
                 "merged": False,
                 "merge_error": None,
@@ -1000,7 +1012,7 @@ class RalphWorkflowEngine:
                 unknown_ids=grade.unknown_ids,
                 duplicate_ids=grade.duplicate_ids,
             )
-        passed = grade.accepted
+        passed = gate_cleared(grade.verdict)
 
         feedback: str | None = None
         if not passed:
@@ -1114,7 +1126,12 @@ class RalphWorkflowEngine:
         # invocation's.
         cumulative: dict[str, object] = {
             "fix_rounds_used": state["fix_rounds_used"] + 1,
-            "accepted": gate_event.accepted,
+            "accept_verdict": gate_event.verdict,
+            "flagged_items": flagged_items(
+                _validated_criteria(state),
+                gate_event.evaluation.criteria_results,
+                gate_event.evaluation.sherlock_flags,
+            ),
             "total_iterations": state["total_iterations"] + gate_event.iteration,
             "trajectory": gate_event.trajectory,
         }
@@ -1244,7 +1261,10 @@ class RalphWorkflowEngine:
                 writer_name="pr_title",
             ),
             body=await self._gated(
-                content=pr_output.description,
+                content=append_flagged_section(
+                    pr_output.description,
+                    state["flagged_items"],
+                ),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
                 writer_name="pr_body",
@@ -1382,7 +1402,7 @@ class RalphWorkflowEngine:
                 feature_branch=state["feature_branch"],
                 ralph_branch=state["ralph_branch"],
                 total_iterations=state["total_iterations"],
-                accepted=state["accepted"],
+                accepted=gate_cleared(state["accept_verdict"]),
                 outcome=classify_outcome(state),
                 merged=state["merged"],
                 final_commit_sha=state["feature_tip_sha"],
@@ -1395,7 +1415,7 @@ class RalphWorkflowEngine:
             )
         )
 
-        if state["accepted"] and state["merged"]:
+        if gate_cleared(state["accept_verdict"]) and state["merged"]:
             await self._log.ainfo(
                 "backup_cleanup_starting",
                 prefix=state["feature_branch"],
@@ -1409,7 +1429,7 @@ class RalphWorkflowEngine:
         else:
             await self._log.adebug(
                 "backup_cleanup_skipped",
-                accepted=state["accepted"],
+                accept_verdict=state["accept_verdict"],
                 merged=state["merged"],
             )
 

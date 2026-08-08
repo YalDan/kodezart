@@ -11,6 +11,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
+from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -2925,7 +2926,7 @@ class _SequentialQualityGate:
             iteration=iteration,
             branch=ralph_branch,
             commit_sha=self._last_commit_sha,
-            accepted=all(r.passed for r in results),
+            verdict=accept_verdict(acceptance_criteria, results),
             evaluation=evaluation,
             trajectory=fold_trajectory(
                 [

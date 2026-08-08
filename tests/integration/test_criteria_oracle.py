@@ -14,6 +14,7 @@ from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.domain.criteria import mint_criteria
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
@@ -212,8 +213,8 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
 
     iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     assert len(iterations) == 2, "the run must reach a second iteration"
-    assert iterations[0].accepted is False
-    assert iterations[1].accepted is True
+    assert iterations[0].verdict is AcceptVerdict.rejected
+    assert iterations[1].verdict is AcceptVerdict.accepted
 
     # (a) the workflow_criteria event
     criteria_event = next(e for e in events if isinstance(e, WorkflowCriteriaEvent))

@@ -9,6 +9,7 @@ from datetime import datetime
 from pydantic import Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 
@@ -31,7 +32,7 @@ class RunStateResponse(CamelCaseModel):
     last_completed_node: str | None = None
     total_iterations: int = 0
     fix_rounds_used: int = 0
-    accepted: bool = False
+    accept_verdict: AcceptVerdict | None = None
     merged: bool = False
     review_passed: bool = False
     ci_passed: bool | None = None

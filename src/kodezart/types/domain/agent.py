@@ -11,6 +11,7 @@ from pydantic import (
 )
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
@@ -299,9 +300,16 @@ class CriterionResult(CamelCaseModel):
 
 
 class AcceptanceCriteriaOutput(CamelCaseModel):
-    """Structured output for acceptance criteria evaluation."""
+    """Structured output for acceptance criteria evaluation.
+
+    ``sherlock_flags`` carries the synthesis's own concerns as data.  A
+    reasoning error the evaluator noticed but could only write into prose
+    is invisible to every consumer downstream of it; as a typed field it
+    rides the iteration event and reaches the pull-request body.
+    """
 
     criteria_results: list[CriterionResult] = Field(min_length=1)
+    sherlock_flags: list[SherlockFlag] = Field(default_factory=list)
 
 
 class BranchNameOutput(CamelCaseModel):
@@ -373,13 +381,17 @@ class WorkflowIterationEvent(AgentEvent):
     ``trajectory`` is the loop's progress memory folded over every
     iteration so far.  It is required — the loop→workflow seam carries
     it on this existing channel rather than on a second event type.
+
+    ``verdict`` is three-state.  It replaced a boolean ``accepted``:
+    a run whose only failures are soft signals ships AND has something to
+    say, and no boolean could carry both.
     """
 
     type: Literal["workflow_iteration"] = "workflow_iteration"
     iteration: int
     branch: str
     commit_sha: str | None = None
-    accepted: bool
+    verdict: AcceptVerdict
     evaluation: AcceptanceCriteriaOutput
     trajectory: LoopTrajectory
 
