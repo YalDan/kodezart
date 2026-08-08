@@ -395,7 +395,7 @@ class GitHubAPIClient:
         on failure or timeout, ``(None, ...)`` when no CI ran.
         """
         owner, repo = extract_owner_repo(repo_url)
-        grace_interval = self._ci_grace_poll_interval
+        grace_interval = min(self._ci_poll_interval, self._ci_grace_poll_interval)
 
         probe: WorkflowsProbeResult | None = None
         grace_polls: int = self._ci_no_checks_grace_polls

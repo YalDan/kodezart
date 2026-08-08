@@ -597,10 +597,16 @@ async def test_grace_sleeps_strictly_between_polls(sleeps: list[float]) -> None:
     await client.close()
 
 
-async def test_grace_interval_is_used_verbatim_when_longer_than_poll_interval(
+async def test_grace_cadence_is_clamped_to_the_poll_interval(
     sleeps: list[float],
 ) -> None:
-    """ci_grace_poll_interval_seconds is never clamped to the poll interval."""
+    """The grace cadence is min(poll, grace) — never slower than the poll interval.
+
+    The defaults (poll 30, grace 10) make ``min`` a no-op, so this case
+    inverts them: only a grace interval *longer* than the poll interval
+    can tell the pinned ``min`` apart from using the configured value
+    verbatim.
+    """
 
     def handler(request: httpx.Request) -> httpx.Response:
         if "actions/workflows" in str(request.url):
@@ -617,7 +623,7 @@ async def test_grace_interval_is_used_verbatim_when_longer_than_poll_interval(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
     assert passed is None
-    assert sleeps == [30.0, 30.0]
+    assert sleeps == [15.0, 15.0]
     await client.close()
 
 

@@ -133,9 +133,7 @@ class AppConfig(BaseSettings):
         ge=1.0,
         le=60.0,
         description=(
-            "Seconds between check-runs polls while no check run has been observed "
-            "yet. Independent of ci_poll_interval_seconds — it is used verbatim, "
-            "whether shorter or longer than the post-observation cadence."
+            "Seconds between check-runs polls while no check run has been observed yet."
         ),
     )
     ci_ref_not_found_grace_polls: int = Field(
