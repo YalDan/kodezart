@@ -140,6 +140,14 @@ Skills are **host-provisioned at user scope** — kodezart neither vendors nor
 installs them. It only selects among what the host already provides under
 `KODEZART_CLAUDE_HOME_DIR` (`~/.claude/skills` plus plugin bundles).
 
+An allowlist entry names a skill the way a session addresses it. A bare skill
+is its directory name (`<claude home>/skills/<name>/SKILL.md` → `<name>`); a
+plugin skill is `<plugin>:<skill>`. Plugin skills are discovered through the
+host's `plugins/installed_plugins.json`, which is the authority on what is
+installed and where each bundle lives. The plugin cache is never walked
+directly: cache directories outlive uninstallation, so a name found there
+could pass the boot pre-flight and then be silently filtered at session time.
+
 `KODEZART_SKILLS_MODE` is three-state, with no "unset" inhabitant:
 
 | Mode | Effect |
