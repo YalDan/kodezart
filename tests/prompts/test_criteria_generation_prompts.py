@@ -1,9 +1,16 @@
-"""Set-world prompt tests for criteria generation and refutation.
+"""Set-world WIRING tests for criteria generation and refutation.
 
-A prompt test cannot run a model, so it asserts the thing the prompt is
-responsible for: that the guard a defect pattern needs is PRESENT and
-addressed to the case, and that the rendered dispatch carries the ticket
-and the ids the downstream stages key off.
+These tests assert what the harness controls: that the ticket, the ids
+and the resolved base reach the template, and that the guard a defect
+pattern needs is present and addressed to the case.
+
+**They do not assert compliance, and must never be read as doing so.**
+That an instruction is present is not that the output obeys it, and a
+green gate over the substituted claim is precisely the failure this lane
+exists to remove.  The compliance claim — that no forbidden-class
+instance and no non-domain switch arm reaches the loop — is behaviour,
+enforced by the sweep and asserted over the DISPATCHED criteria in
+``tests/chains/test_criteria_validation.py``.
 """
 
 import pytest
@@ -61,7 +68,11 @@ def _render(
     ids=["pattern-1", "pattern-3", "pattern-5"],
 )
 def test_the_forbidden_classes_reach_every_pattern_fixture(ticket: str) -> None:
-    """Each defect pattern's ticket renders with the class ban addressed."""
+    """The ban is addressed to the case — a wiring claim, not a compliance one.
+
+    What happens when the drafter emits one anyway is asserted where it
+    can be: over the criteria the loop receives.
+    """
     rendered = _render(ticket)
     assert "FORBIDDEN CRITERIA CLASSES" in rendered
     assert "pull-request body" in rendered
@@ -83,7 +94,7 @@ def test_the_forbidden_classes_reach_every_pattern_fixture(ticket: str) -> None:
 def test_exhaustive_switch_criteria_are_cross_checked_against_the_type(
     ticket: str,
 ) -> None:
-    """Pattern 5: an arm the type does not declare may not be demanded."""
+    """Pattern 5's instruction is present; its enforcement is in the sweep."""
     rendered = _render(ticket)
     assert "BEHAVIORAL OVER LITERAL — EXHAUSTIVE SWITCHES" in rendered
     assert "read that type's ACTUAL definition first" in rendered

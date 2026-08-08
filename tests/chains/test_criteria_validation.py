@@ -598,3 +598,167 @@ async def test_the_drafter_is_told_which_base_the_lane_is_measured_against() -> 
     assert len(drafter_prompts) == 1
     assert "This lane's comparison base is `main`" in drafter_prompts[0]
     assert "Never write `main` or `trunk` as the base" in drafter_prompts[0]
+
+
+# ---------------------------------------------------------------------------
+# AC-17 — the historical defect patterns, as behaviour rather than as prose
+# ---------------------------------------------------------------------------
+
+# Each fixture is a ticket abstracted from a run that induced the pattern,
+# paired with the criterion that run's drafter actually produced and the
+# evidence a refuter reading the repository at base reports about it. The
+# assertion is over the criteria the LOOP RECEIVES: an instruction being
+# present in a prompt is not compliance, so nothing here asserts that.
+
+PATTERN_1_TICKET = (
+    "Add a `status` arm to the run-state renderer so every state the domain "
+    "declares is rendered, including any the ticket author expects to exist."
+)
+PATTERN_3_TICKET = (
+    "Tighten the lint surface: the change must not weaken any existing check."
+)
+PATTERN_5_TICKET = (
+    "Complete the switch over `WorkflowOutcome` so no terminal route is "
+    "left undiscriminated."
+)
+
+PATTERN_1_BAD = (
+    "The renderer handles every `RunState` arm, including `archived` and `paused`."
+)
+PATTERN_3_BAD = "Running `uv run ruff check src/ tests/` exits 0 with no warnings."
+PATTERN_5_BAD = (
+    "The `WorkflowOutcome` switch covers `criteria_infeasible`, `pr_opened` "
+    "and `rolled_back`."
+)
+
+PATTERN_1_FINDING = {
+    "criterionId": "AC-1",
+    "smallestRepair": "criterion_text",
+    "undeclaredSwitchArms": ["archived", "paused"],
+    "refutation": (
+        "`RunState` declares no `archived` and no `paused` member; an arm the "
+        "type does not have cannot be handled by any implementation"
+    ),
+}
+PATTERN_3_FINDING = {
+    "criterionId": "AC-1",
+    "smallestRepair": "criterion_text",
+    "forbiddenClass": "execution_graded",
+    "refutation": (
+        "the criterion is graded by the exit status of a command, which is "
+        "the run's own stochastic execution rather than a property of the tree"
+    ),
+}
+PATTERN_5_FINDING = {
+    "criterionId": "AC-1",
+    "smallestRepair": "criterion_text",
+    "undeclaredSwitchArms": ["rolled_back"],
+    "refutation": (
+        "`WorkflowOutcome` declares no `rolled_back` member; the arms it does "
+        "declare are the eleven terminal routes named in types/domain/outcome.py"
+    ),
+}
+
+CORRECTED = "Every arm the named type actually declares is handled by the renderer."
+
+
+@pytest.mark.parametrize(
+    ("ticket", "drafted", "finding"),
+    [
+        (PATTERN_1_TICKET, PATTERN_1_BAD, PATTERN_1_FINDING),
+        (PATTERN_3_TICKET, PATTERN_3_BAD, PATTERN_3_FINDING),
+        (PATTERN_5_TICKET, PATTERN_5_BAD, PATTERN_5_FINDING),
+    ],
+    ids=["pattern-1", "pattern-3", "pattern-5"],
+)
+async def test_no_forbidden_class_or_non_domain_arm_reaches_the_loop(
+    ticket: str,
+    drafted: str,
+    finding: dict[str, object],
+) -> None:
+    """The pattern's own criterion is refuted and amended before dispatch."""
+    _ = ticket
+    executor = ValidatorScriptExecutor(
+        sweeps=[
+            {"findings": [finding, FEASIBLE_B], "contradictions": []},
+            {"findings": [FEASIBLE_A, FEASIBLE_B], "contradictions": []},
+        ],
+        criteria_rounds=[_criteria_round(drafted), _criteria_round(CORRECTED)],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    sweep_event = next(
+        e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
+    )
+    assert sweep_event.regeneration_targets == ["AC-1"]
+
+    dispatched = gate.calls[0]["acceptance_criteria"]
+    assert isinstance(dispatched, list)
+    texts = [criterion.text for criterion in dispatched]
+    assert drafted not in texts
+    assert CORRECTED in texts
+    for criterion in dispatched:
+        assert criterion.feasibility.forbidden_class is None
+        assert criterion.feasibility.undeclared_switch_arms == []
+
+
+async def test_an_ungradeable_class_survives_the_bound_as_a_halt() -> None:
+    """A drafter that keeps emitting one halts the run instead of dispatching it."""
+    executor = ValidatorScriptExecutor(
+        sweeps=[
+            {"findings": [PATTERN_3_FINDING, FEASIBLE_B], "contradictions": []},
+            {"findings": [PATTERN_3_FINDING, FEASIBLE_B], "contradictions": []},
+        ],
+        criteria_rounds=[
+            _criteria_round(PATTERN_3_BAD),
+            _criteria_round(PATTERN_3_BAD),
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    assert gate.calls == [], "an ungradeable criterion never reached the loop"
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.criteria_infeasible
+
+
+async def test_a_literal_count_class_is_flagged_rather_than_regenerated() -> None:
+    """The one banned class that is not a feasibility fault keeps its text."""
+    executor = ValidatorScriptExecutor(
+        sweeps=[
+            {
+                "findings": [
+                    {
+                        "criterionId": "AC-1",
+                        "smallestRepair": "none",
+                        "forbiddenClass": "literal_count",
+                    },
+                    FEASIBLE_B,
+                ],
+                "contradictions": [],
+            },
+        ],
+        criteria_rounds=[_criteria_round("Exactly 3 files under `src/` change.")],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    assert executor.criteria_calls == 1, "no regeneration round was consumed"
+    dispatched = gate.calls[0]["acceptance_criteria"]
+    assert isinstance(dispatched, list)
+    flagged = dispatched[0]
+    assert flagged.text == "Exactly 3 files under `src/` change."
+    assert flagged.classification is CriterionClassification.soft_signal

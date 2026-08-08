@@ -50,6 +50,7 @@ from kodezart.types.domain.criteria import (
     CriterionFinding,
     CriterionFlag,
     FeasibilityVerdict,
+    ForbiddenCriterionClass,
     LimitArm,
     RepairKind,
     StruckGround,
@@ -85,15 +86,53 @@ def _observe_flags(finding: CriterionFinding) -> list[CriterionFlag]:
     demonstration = finding.base_demonstration
     if demonstration is not None and demonstration.satisfied_at_base:
         flags.append(CriterionFlag.vacuous_at_base)
-    if finding.pinned_literals:
+    if finding.pinned_literals or (
+        finding.forbidden_class is ForbiddenCriterionClass.literal_count
+    ):
         flags.append(CriterionFlag.literal_pinning)
     return flags
+
+
+def _ungradeable(finding: CriterionFinding) -> bool:
+    """Whether the finding reports something the loop could never grade.
+
+    A forbidden class other than ``literal_count`` names a criterion about
+    something outside the tree the loop can read, and an undeclared switch
+    arm names a case the type does not have.  Both are faults in the
+    criterion's own text, so both take the criterion-text arm — never the
+    environment arm, because nothing supplied to a runner makes an arm
+    exist.
+    """
+    named_class = finding.forbidden_class
+    ungradeable_class = (
+        named_class is not None
+        and named_class is not ForbiddenCriterionClass.literal_count
+    )
+    return ungradeable_class or bool(finding.undeclared_switch_arms)
 
 
 def classify_finding(finding: CriterionFinding) -> CriterionFeasibility:
     """Compute one criterion's verdict from its finding. Raises when ungrounded."""
     surviving_cost, struck = _weigh_cost(finding.cost_claim)
     flags = _observe_flags(finding)
+
+    if _ungradeable(finding):
+        if _blank(finding.refutation):
+            msg = (
+                "A forbidden class or an undeclared switch arm was reported "
+                "with no refutation naming what the criterion turns on"
+            )
+            raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
+        return CriterionFeasibility(
+            criterion_id=finding.criterion_id,
+            verdict=FeasibilityVerdict.infeasible,
+            limit_arm=LimitArm.not_a_limit,
+            refutation=finding.refutation,
+            struck_grounds=struck,
+            flags=flags,
+            forbidden_class=finding.forbidden_class,
+            undeclared_switch_arms=list(finding.undeclared_switch_arms),
+        )
 
     if (
         CriterionFlag.vacuous_at_base in flags

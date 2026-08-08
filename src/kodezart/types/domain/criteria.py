@@ -95,6 +95,29 @@ class CriterionFlag(StrEnum):
     literal_pinning = "literal_pinning"
 
 
+class ForbiddenCriterionClass(StrEnum):
+    """The classes the drafter is instructed never to emit.
+
+    The instruction is best-effort prose and the drafter is a model, so
+    an instance reaching the sweep is expected rather than exceptional.
+    What must NOT happen is one reaching the loop: five of the six
+    describe criteria nothing in the run can grade, and a criterion the
+    loop cannot grade fails every iteration and burns the budget proving
+    a defect that existed before iteration one.
+
+    ``literal_count`` is the exception and is not a feasibility fault:
+    the count can be hit.  It is brittle, so it is FLAGGED and forced to
+    ``soft_signal`` rather than regenerated.
+    """
+
+    pull_request_body = "pull_request_body"
+    ci_status = "ci_status"
+    merge_state = "merge_state"
+    execution_graded = "execution_graded"
+    literal_count = "literal_count"
+    transient_pipeline_state = "transient_pipeline_state"
+
+
 class BaseDemonstration(CamelCaseModel):
     """A demonstration of a criterion performed against the repo AT BASE.
 
@@ -173,6 +196,8 @@ class CriterionFinding(CamelCaseModel):
     cost_claim: CostClaim | None = None
     base_demonstration: BaseDemonstration | None = None
     pinned_literals: list[str] = Field(default_factory=list)
+    forbidden_class: ForbiddenCriterionClass | None = None
+    undeclared_switch_arms: list[str] = Field(default_factory=list)
 
 
 class Contradiction(CamelCaseModel):
@@ -204,6 +229,8 @@ class CriterionFeasibility(CamelCaseModel):
     cost_measurement: CostMeasurement | None = None
     struck_grounds: list[StruckGround] = Field(default_factory=list)
     flags: list[CriterionFlag] = Field(default_factory=list)
+    forbidden_class: ForbiddenCriterionClass | None = None
+    undeclared_switch_arms: list[str] = Field(default_factory=list)
 
 
 class ConjunctionVerdict(CamelCaseModel):
