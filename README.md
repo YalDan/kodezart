@@ -107,6 +107,14 @@ All settings use the `KODEZART_` environment variable prefix. Copy
 `.env.example` for the most commonly customized variables. See
 [docs/configuration.md](docs/configuration.md) for the full 15-field reference.
 
+Every entry in `.env.example` carries its own shipped default, so copying the
+file changes no behaviour. Entries that are **commented out** are deliberately
+unset: for an optional field an empty assignment binds the empty string, which
+is a different value from absence — `KODEZART_MODEL=` pins an empty model id
+rather than leaving the account default in place, and `KODEZART_OPERATION_CONFIG=`
+is a path of `""` that fails startup. Uncomment a line only when you are
+supplying a real value.
+
 ### Prompt sets
 
 Prompts are DATA, not code. A set is a directory
