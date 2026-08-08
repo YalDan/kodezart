@@ -16,6 +16,9 @@ live with the cutover work itself.
 | Who may approve | `OperationConfig.principals` — the APPROVER role, never a name |
 | Queue and lifecycle vocabulary | `OperationConfig.queue_states` / `workflow_states` |
 | Which repositories a pass may act on, and how they are verified | `OperationConfig.repos` |
+| What counts as a mention of the operation | `OperationConfig.agent_identities` |
+| Whose word creates a reply obligation | `OperationConfig.principals` |
+| Which initiatives receive a status update | `OperationConfig.initiatives` |
 | Where the scan-window marker lives | `OperationConfig.documents["checkpoint"]` |
 | Reference material a pass reads | `OperationConfig.knowledge` |
 | Where escalations go | `OperationConfig.endpoints` |
@@ -40,13 +43,24 @@ every referenced section exists in the referenced template.
 ## Placeholder → OperationConfig field
 
 Total in both directions: every placeholder the pass templates reference maps
-to exactly one OperationConfig path, and every path listed here is reachable
-from at least one template. A test asserts both directions.
+to exactly one OperationConfig path, and every field of `OperationConfig` is
+reachable from at least one template. A test asserts both directions, and the
+second one is derived from `OperationConfig.model_fields` rather than from the
+rows below, so the table can never be checked against itself.
+
+A reference introduced by an enclosing `{{#each}}` — `{{this.tracker_user}}`,
+`{{this.url}}`, `{{this.check_commands}}`, `{{this.id}}`, `{{this.target_date}}`
+— is a member of the iterated item, not a placeholder in its own right. The
+block's own name is the mapped placeholder, and that is what the rows carry.
 
 | Placeholder | OperationConfig path |
 | --- | --- |
 | operation_name | operation_name |
 | workspace | workspace |
+| principals | principals |
+| agent_identities | agent_identities |
+| repos | repos |
+| initiatives | initiatives |
 | teams.primary | teams |
 | queue_states.triage | queue_states |
 | queue_states.proposed | queue_states |

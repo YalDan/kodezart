@@ -18,7 +18,12 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import PromptRenderError, PromptResolutionError
-from kodezart.core.prompt_rendering import PromptTemplate, render_template
+from kodezart.core.prompt_rendering import (
+    PromptTemplate,
+    binding_names,
+    free_binding_names,
+    render_template,
+)
 from kodezart.core.protocols import PromptProvider
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.ticket import format_ticket_as_task
@@ -364,6 +369,30 @@ def test_renderer_rejects_unbalanced_blocks() -> None:
     """A malformed template fails loudly instead of rendering half a prompt."""
     with pytest.raises(PromptRenderError):
         render_template("{{#if x}}unclosed", {"x": 1})
+
+
+def test_free_names_exclude_references_an_each_frame_supplies() -> None:
+    """A loop-local is a member of the iterated item, not a binding."""
+    body = "{{#each repos}}{{this.url}}{{@index1}}{{/each}}"
+    assert free_binding_names(body) == frozenset({"repos"})
+    assert binding_names(body) == frozenset({"repos", "this.url"})
+
+
+def test_free_names_keep_outer_references_made_inside_a_loop() -> None:
+    """Only the item-rooted names are loop-local; the rest still bind."""
+    body = "{{#each principals}}{{this.role}} in {{workspace}}{{/each}}"
+    assert free_binding_names(body) == frozenset({"principals", "workspace"})
+
+
+def test_free_names_keep_an_item_reference_made_outside_any_loop() -> None:
+    """With no enclosing frame there is nothing to supply it — it must bind."""
+    assert free_binding_names("{{this.url}}") == frozenset({"this.url"})
+
+
+def test_free_names_handle_a_nested_loop_over_an_item_member() -> None:
+    """The inner sequence is reached through the item, so only the outer binds."""
+    body = "{{#each repos}}{{#each this.check_commands}}{{this}}{{/each}}{{/each}}"
+    assert free_binding_names(body) == frozenset({"repos"})
 
 
 def test_pyproject_gains_no_templating_dependency() -> None:

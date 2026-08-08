@@ -223,3 +223,31 @@ def _collect(nodes: Sequence[_Node], names: set[str]) -> None:
             continue
         names.add(node.path)
         _collect(node.body, names)
+
+
+def free_binding_names(body: str) -> frozenset[str]:
+    """Every name *body* must resolve from its bindings — loop-locals excluded.
+
+    Inside an ``{{#each}}`` frame, a reference rooted at the current item or
+    its index is a member of the iterated value, not a binding: the block's
+    own path is what the bindings have to supply.  ``{{#each repos}}`` with
+    ``{{this.url}}`` in its body therefore has one free name, ``repos``.
+    """
+    names: set[str] = set()
+    _collect_free(_parse(body), names, in_each=False)
+    return frozenset(names)
+
+
+def _collect_free(nodes: Sequence[_Node], names: set[str], *, in_each: bool) -> None:
+    for node in nodes:
+        if isinstance(node, _Text):
+            continue
+        if not _is_loop_local(node.path, in_each=in_each):
+            names.add(node.path)
+        if isinstance(node, _Block):
+            _collect_free(node.body, names, in_each=in_each or node.kind == _EACH)
+
+
+def _is_loop_local(path: str, *, in_each: bool) -> bool:
+    """Whether *path* is rooted at a name an enclosing each-frame supplies."""
+    return in_each and path.partition(".")[0] in (_ITEM_NAME, _INDEX_NAME)

@@ -22,7 +22,7 @@ from kodezart.core.prompt_namespaces import (
     bindings_for,
     operation_bindings,
 )
-from kodezart.core.prompt_rendering import binding_names
+from kodezart.core.prompt_rendering import binding_names, free_binding_names
 from kodezart.types.domain.gating import (
     GateVerdict,
     RedactionCategory,
@@ -459,22 +459,46 @@ def test_all_six_named_dimensions_are_covered() -> None:
     }
 
 
+def template_placeholders() -> set[str]:
+    """Every free name the two pass templates reference, fragments excluded.
+
+    Free: a reference an enclosing ``{{#each}}`` frame supplies is a member of
+    the iterated item, not a placeholder resolving to an OperationConfig path.
+    """
+    registry = load_registry()
+    referenced: set[str] = set()
+    for key in PASS_KEYS:
+        referenced |= free_binding_names(registry.template_for(key).body)
+    return referenced - SET_FRAGMENT_NAMES
+
+
 def test_placeholder_mapping_is_total_in_both_directions() -> None:
-    """Every placeholder maps to one path; every path is template-reachable."""
+    """Every placeholder maps to one path; every field is template-reachable."""
     rows = markdown_rows("## Placeholder → OperationConfig field")
     mapped = {row[0]: row[1] for row in rows}
     assert len(mapped) == len(rows)
 
-    registry = load_registry()
-    referenced: set[str] = set()
-    for key in PASS_KEYS:
-        names = binding_names(registry.template_for(key).body)
-        referenced |= names - SET_FRAGMENT_NAMES
-
+    # Direction 1 — no placeholder the templates reference is unmapped.
+    referenced = template_placeholders()
     assert referenced == set(mapped), referenced ^ set(mapped)
     for placeholder, path in mapped.items():
         assert placeholder.split(".")[0] == path
-        assert path in OperationConfig.model_fields
+
+    # Direction 2 — read off the MODEL, never off the table's own rows, so
+    # the mapping can no longer be checked against what it was derived from.
+    assert set(mapped.values()) == set(OperationConfig.model_fields)
+
+
+def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
+    """Direction 2 again, straight from the templates to the model.
+
+    R2 added four fields — principals, agent_identities, repos, initiatives —
+    on the reasoning that the passes consume them.  A field no template can
+    reach is a field the port did not actually port.
+    """
+    reachable = {name.split(".")[0] for name in template_placeholders()}
+    unreachable = set(OperationConfig.model_fields) - reachable
+    assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
 
 
 def test_cutover_document_maps_routine_behavior_to_components() -> None:
