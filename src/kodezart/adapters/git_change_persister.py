@@ -190,7 +190,7 @@ class GitChangePersister:
         backup_name = str(
             BackupBranchName(
                 source_branch=branch,
-                job_id_prefix=backup_ref_id_prefix,
+                workspace_id_prefix=backup_ref_id_prefix,
             )
         )
         # Step 1: backup BEFORE any state mutation. Preserves the divergent

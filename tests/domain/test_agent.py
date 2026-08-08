@@ -1,15 +1,15 @@
 """Tests for pure domain functions."""
 
 from kodezart.domain.agent import (
-    generate_job_id,
     generate_ralph_branch_name,
+    generate_workspace_id,
 )
 
 
-def test_generate_job_id_is_hex():
-    job_id = generate_job_id()
-    assert len(job_id) == 32
-    int(job_id, 16)
+def test_generate_workspace_id_is_hex():
+    workspace_id = generate_workspace_id()
+    assert len(workspace_id) == 32
+    int(workspace_id, 16)
 
 
 def test_generate_ralph_branch_name_format():

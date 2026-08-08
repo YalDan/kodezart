@@ -13,6 +13,8 @@ from pydantic import (
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.trajectory import LoopTrajectory
 
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)
@@ -346,7 +348,12 @@ class WorkflowCIEvent(AgentEvent):
 
 
 class WorkflowIterationEvent(AgentEvent):
-    """Emitted after each ralph loop iteration."""
+    """Emitted after each ralph loop iteration.
+
+    ``trajectory`` is the loop's progress memory folded over every
+    iteration so far.  It is required — the loop→workflow seam carries
+    it on this existing channel rather than on a second event type.
+    """
 
     type: Literal["workflow_iteration"] = "workflow_iteration"
     iteration: int
@@ -354,6 +361,7 @@ class WorkflowIterationEvent(AgentEvent):
     commit_sha: str | None = None
     accepted: bool
     evaluation: AcceptanceCriteriaOutput
+    trajectory: LoopTrajectory
 
 
 class WorkflowConsolidationEvent(AgentEvent):
@@ -375,19 +383,26 @@ class WorkflowConsolidationEvent(AgentEvent):
 
 
 class WorkflowCompleteEvent(AgentEvent):
-    """Emitted when the ralph loop finishes."""
+    """Emitted when the ralph loop finishes.
+
+    ``outcome`` is the sole terminal discriminator — required and
+    non-nullable, so ``exclude_none=True`` can never drop it and no
+    serializer hack is needed to force it onto the wire.
+    """
 
     type: Literal["workflow_complete"] = "workflow_complete"
     feature_branch: str
     ralph_branch: str
     total_iterations: int
     accepted: bool
+    outcome: WorkflowOutcome
     merged: bool = False
     final_commit_sha: str | None = None
     error: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None
     ci_passed: bool | None = None
+    trajectory: LoopTrajectory | None = None
 
     @model_serializer(mode="wrap")
     def _force_ci_field(
@@ -408,6 +423,21 @@ class WorkflowVisibilityEvent(AgentEvent):
     type: Literal["workflow_visibility"] = "workflow_visibility"
     visibility: RepoVisibility
     repo_url: str | None = None
+
+
+class JobAcceptedEvent(AgentEvent):
+    """Leading frame of an attached run — carries the reconnect handle.
+
+    A client that drops mid-run reconnects at ``stream_url`` with this
+    ``job_id`` instead of losing the run.
+    """
+
+    type: Literal["job_accepted"] = "job_accepted"
+    job_id: str
+    lane: str
+    queue_position: int
+    status_url: str
+    stream_url: str
 
 
 class WorkflowCriteriaEvent(AgentEvent):

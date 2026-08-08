@@ -17,6 +17,7 @@ from kodezart.core.protocols import AgentRunner, PromptProvider, WorkspaceProvid
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WorkspaceError
+from kodezart.domain.thread_id import ticket_thread_id
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.types.domain.agent import (
     TICKET_DRAFT_SCHEMA,
@@ -133,7 +134,7 @@ class TicketGenerationLoop:
             )
             configurable: dict[str, object] = ctx.model_dump()
             if self._checkpointer is not None:
-                configurable["thread_id"] = f"{cache_key}-ticket"
+                configurable["thread_id"] = ticket_thread_id(cache_key)
 
             config: RunnableConfig = {"configurable": configurable}
 

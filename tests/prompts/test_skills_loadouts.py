@@ -253,6 +253,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key="k",
         )
     ]
 
@@ -267,6 +268,7 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
     loop = RalphLoop(
         service=runner,
         max_iterations=1,
+        plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
         prompts=make_prompt_provider(),

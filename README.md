@@ -76,11 +76,14 @@ The Docker image includes a built-in healthcheck on `/api/v1/health` (every
 
 ## API Endpoints
 
-| Method | Path                      | Description                      |
-| ------ | ------------------------- | -------------------------------- |
-| GET    | `/api/v1/health`          | Health check                     |
-| POST   | `/api/v1/agent/query`     | One-shot agent query (SSE)       |
-| POST   | `/api/v1/agent/workflow`  | Full iterative workflow (SSE)    |
+| Method | Path                            | Description                       |
+| ------ | ------------------------------- | --------------------------------- |
+| GET    | `/api/v1/health`                | Health check                      |
+| POST   | `/api/v1/agent/query`           | One-shot agent query (SSE)        |
+| POST   | `/api/v1/agent/workflow`        | Queue a workflow and attach (SSE) |
+| POST   | `/api/v1/agent/fire`            | Queue a workflow, no stream (202) |
+| GET    | `/api/v1/jobs/{jobId}`          | Job status                        |
+| GET    | `/api/v1/jobs/{jobId}/stream`   | Attach to a queued job (SSE)      |
 
 ### One-shot query
 
@@ -97,6 +100,31 @@ curl -N http://localhost:8000/api/v1/agent/workflow \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Add input validation to the user endpoint", "repoUrl": "owner/repo", "baseBranch": "main"}'
 ```
+
+### Queued runs
+
+`POST /api/v1/agent/workflow` and `POST /api/v1/agent/fire` both submit into
+the same in-process queue; `workflow` attaches to the resulting stream and
+`fire` returns only the job handle. Reconnect to a run with
+`GET /api/v1/jobs/{jobId}/stream`, which replays the job's buffered events
+before going live.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agent/fire \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Add input validation to the user endpoint", "repoUrl": "owner/repo"}'
+```
+
+The queue is **not persistent**: it lives in the serving process, so a restart
+drops every job still waiting and terminates every job in flight. A fire lost
+to a restart is re-submitted by its caller.
+
+A finished job's replay buffer is released well before its status record is
+(15 minutes against 24 hours by default), because buffered frames are orders of
+magnitude larger than the record. Once released, the job still answers at
+`GET /api/v1/jobs/{jobId}` with `truncated: true` — there is nothing left to
+replay, and that is stated rather than served as an empty stream. See
+[docs/configuration.md](docs/configuration.md#queue-retention--two-independent-windows).
 
 See [docs/api.md](docs/api.md) for the full API reference including all 18 SSE
 event types.

@@ -272,6 +272,76 @@ class AppConfig(BaseSettings):
         default="~/.claude",
         description="Host directory holding user-scope skills and plugins.",
     )
+    loop_plateau_window: int = Field(
+        default=2,
+        ge=2,
+        le=10,
+        description=(
+            "Iterations without a new best passed-count before the Ralph "
+            "loop is considered plateaued and stops."
+        ),
+    )
+    queue_max_concurrent_runs_per_lane: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        description="Dispatcher worker tasks per lane. 1 makes runs serial.",
+    )
+    queue_max_depth_per_lane: int = Field(
+        default=64,
+        ge=1,
+        le=1024,
+        description="Queued submissions a lane accepts before rejecting.",
+    )
+    queue_terminal_retention_seconds: float = Field(
+        default=86400.0,
+        ge=60.0,
+        le=604800.0,
+        description=(
+            "Seconds the terminal JOB RECORD is retained in the registry. "
+            "Governs the record only — a record is 1-2 KB, so a long window "
+            "is cheap. The replay buffer has its own, shorter window."
+        ),
+    )
+    queue_event_buffer_retention_seconds: float = Field(
+        default=900.0,
+        ge=0.0,
+        le=86400.0,
+        description=(
+            "Seconds a terminal job's REPLAY BUFFER is retained, independently "
+            "of its record. Governs the buffer only — buffered events run to "
+            "megabytes per job, so this window is short: long enough for a "
+            "disconnected client to reconnect and replay. 0 drops the buffer "
+            "as soon as the job goes terminal."
+        ),
+    )
+    queue_event_buffer_capacity: int = Field(
+        default=512,
+        ge=1,
+        le=10000,
+        description="Events retained per job for replay on attach.",
+    )
+
+    @model_validator(mode="after")
+    def _buffer_retention_within_record_retention(self) -> Self:
+        """Reject a replay buffer that would outlive its own job record.
+
+        Replayable frames for a job the registry can no longer name are
+        incoherent, so the configuration is rejected at boot rather than
+        clamped.
+        """
+        if self.queue_event_buffer_retention_seconds > (
+            self.queue_terminal_retention_seconds
+        ):
+            msg = (
+                "queue_event_buffer_retention_seconds "
+                f"({self.queue_event_buffer_retention_seconds}) must not exceed "
+                "queue_terminal_retention_seconds "
+                f"({self.queue_terminal_retention_seconds}): a replay buffer "
+                "cannot outlive the job record that names it"
+            )
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def _check_skills_configuration(self) -> Self:

@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, ChangePersister, WorkspaceProvider
-from kodezart.domain.agent import generate_job_id
+from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
@@ -194,7 +194,7 @@ class AgentService:
                     yield event
 
             if persist_branch and self._persister and buffered_result:
-                backup_ref_id_prefix = (session_id or generate_job_id())[:8]
+                backup_ref_id_prefix = (session_id or generate_workspace_id())[:8]
                 persist_result = await self._persister.persist(
                     workspace_path=workspace_path,
                     branch=persist_branch,

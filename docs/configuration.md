@@ -30,6 +30,34 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_RETRY_MAX_ATTEMPTS`     | `int`        | `3`                      | 1-10        | LangGraph node retry attempts on failure                 |
 | `KODEZART_RETRY_INITIAL_INTERVAL` | `float`      | `1.0`                    | >= 0.1      | Retry backoff initial interval in seconds                |
 | `KODEZART_CHECKPOINT_URL`         | `str\|None`  | `None`                   |             | LangGraph checkpoint URL (see Checkpointing below)       |
+| `KODEZART_LOOP_PLATEAU_WINDOW`    | `int`        | `2`                      | 2-10        | Iterations without a new best passed-count before the Ralph loop is considered plateaued and stops |
+| `KODEZART_QUEUE_MAX_CONCURRENT_RUNS_PER_LANE` | `int` | `1`             | 1-16        | Dispatcher worker tasks per lane; `1` makes runs serial. Above 1 is honored and warns at start |
+| `KODEZART_QUEUE_MAX_DEPTH_PER_LANE` | `int`      | `64`                     | 1-1024      | Queued submissions a lane accepts before rejecting with HTTP 429 |
+| `KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS` | `float` | `86400.0`        | 60-604800   | Seconds the terminal **job record** is retained in the registry (see Queue retention below) |
+| `KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS` | `float` | `900.0`      | 0-86400     | Seconds a terminal job's **replay buffer** is retained, independently of its record (see Queue retention below) |
+| `KODEZART_QUEUE_EVENT_BUFFER_CAPACITY` | `int`   | `512`                    | 1-10000     | Events retained per job for replay on attach; overflow drops oldest and marks the job truncated |
+
+## Queue retention — two independent windows
+
+A terminal job has two parts that cost very different amounts, so each has its
+own window:
+
+- the **job record** (`jobId`, lane, state, outcome, truncated) is 1-2 KB, so it
+  is kept for a day by default;
+- the **replay buffer** holds up to `QUEUE_EVENT_BUFFER_CAPACITY` full SSE
+  frames, which run to megabytes per job, so it is released after 15 minutes —
+  long enough for a disconnected client to reconnect at
+  `GET /api/v1/jobs/{jobId}/stream` and replay.
+
+`0` is a legal buffer retention and drops the buffer as soon as the job goes
+terminal. Releasing a buffer marks the record `truncated: true` and logs
+`job_event_buffer_dropped`, so frames a client can no longer replay are never a
+silent gap.
+
+`QUEUE_EVENT_BUFFER_RETENTION_SECONDS` must not exceed
+`QUEUE_TERMINAL_RETENTION_SECONDS`: a buffer outliving the record that names it
+is incoherent, so the configuration is **rejected at startup** rather than
+clamped.
 
 ## .env.example
 

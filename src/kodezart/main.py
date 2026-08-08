@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.git_artifact_persister import GitArtifactPersister
 from kodezart.adapters.git_branch_merger import GitBranchMerger
@@ -18,6 +19,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
@@ -34,6 +36,7 @@ from kodezart.core.logging import BoundLogger, configure_logging, get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import PromptProvider, SkillInventory
 from kodezart.services.agent_service import AgentService
+from kodezart.services.job_service import JobService
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 
@@ -199,59 +202,86 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     app.state.agent_service = agent_service
 
-    checkpointer = make_checkpointer(config.checkpoint_url)
-    ralph_loop = RalphLoop(
-        service=agent_service,
-        max_iterations=config.max_iterations,
-        git=git,
-        cache=cache,
-        prompts=prompts,
-        skills=skills,
-        checkpointer=checkpointer,
-        retry_max_attempts=config.retry_max_attempts,
-        retry_initial_interval=config.retry_initial_interval,
-    )
-    ticket_generator = TicketGenerationLoop(
-        service=agent_service,
-        workspace=workspace,
-        prompts=prompts,
-        skills=skills,
-        max_reviews=config.max_reviews,
-        checkpointer=checkpointer,
-        retry_max_attempts=config.retry_max_attempts,
-        retry_initial_interval=config.retry_initial_interval,
-    )
-    app.state.workflow_engine = RalphWorkflowEngine(
-        service=agent_service,
-        quality_gate=ralph_loop,
-        ticket_generator=ticket_generator,
-        merger=merger,
-        git_base_url=config.git_base_url,
-        git_remote=config.git_remote,
-        git=git,
-        cache=cache,
-        prompts=prompts,
-        skills=skills,
-        gate=gate,
-        visibility_resolver=github_api,
-        checkpointer=checkpointer,
-        retry_max_attempts=config.retry_max_attempts,
-        retry_initial_interval=config.retry_initial_interval,
-        pr_creator=github_api,
-        ci_monitor=github_api,
-        max_fix_rounds=config.max_fix_rounds,
-        artifact_persister=artifact_persister,
-    )
+    async with make_checkpointer(config.checkpoint_url) as checkpointer:
+        app.state.checkpointer = checkpointer
+        ralph_loop = RalphLoop(
+            service=agent_service,
+            max_iterations=config.max_iterations,
+            plateau_window=config.loop_plateau_window,
+            git=git,
+            cache=cache,
+            prompts=prompts,
+            skills=skills,
+            checkpointer=checkpointer,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+        )
+        ticket_generator = TicketGenerationLoop(
+            service=agent_service,
+            workspace=workspace,
+            prompts=prompts,
+            skills=skills,
+            max_reviews=config.max_reviews,
+            checkpointer=checkpointer,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+        )
+        workflow_engine = RalphWorkflowEngine(
+            service=agent_service,
+            quality_gate=ralph_loop,
+            ticket_generator=ticket_generator,
+            merger=merger,
+            git_base_url=config.git_base_url,
+            git_remote=config.git_remote,
+            git=git,
+            cache=cache,
+            prompts=prompts,
+            skills=skills,
+            gate=gate,
+            visibility_resolver=github_api,
+            checkpointer=checkpointer,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+            pr_creator=github_api,
+            ci_monitor=github_api,
+            max_fix_rounds=config.max_fix_rounds,
+            artifact_persister=artifact_persister,
+        )
+        app.state.workflow_engine = workflow_engine
 
-    await log.ainfo(
-        "application_starting",
-        project=config.project_name,
-        debug=config.debug,
-    )
-    yield
-    if github_api is not None:
-        await github_api.close()
-    await log.ainfo("application_shutdown")
+        job_queue = AsyncioJobQueue(
+            engine=workflow_engine,
+            max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
+            max_depth_per_lane=config.queue_max_depth_per_lane,
+            terminal_retention_seconds=config.queue_terminal_retention_seconds,
+            event_buffer_retention_seconds=(
+                config.queue_event_buffer_retention_seconds
+            ),
+            event_buffer_capacity=config.queue_event_buffer_capacity,
+        )
+        app.state.job_queue = job_queue
+        await job_queue.start()
+
+        run_state_reader = (
+            LangGraphRunStateReader(checkpointer=checkpointer)
+            if checkpointer is not None
+            else None
+        )
+        app.state.job_service = JobService(
+            registry=job_queue,
+            run_state_reader=run_state_reader,
+        )
+
+        await log.ainfo(
+            "application_starting",
+            project=config.project_name,
+            debug=config.debug,
+        )
+        yield
+        await job_queue.stop()
+        if github_api is not None:
+            await github_api.close()
+        await log.ainfo("application_shutdown")
 
 
 def create_app() -> FastAPI:

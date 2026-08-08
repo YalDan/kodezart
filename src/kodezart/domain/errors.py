@@ -75,3 +75,7 @@ class OutboundContentBlockedError(Exception):
         super().__init__(detail)
         self.writer: str = writer
         self.categories: tuple[str, ...] = tuple(categories)
+
+
+class QueueFullError(Exception):
+    """Raised when a lane's queue is at capacity and cannot accept a submission."""

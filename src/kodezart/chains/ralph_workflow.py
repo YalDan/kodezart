@@ -36,7 +36,9 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.domain.git_url import resolve_repo_url
+from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
@@ -141,30 +143,23 @@ class RalphWorkflowEngine:
         base_branch: str,
         permission_mode: str,
         allowed_tools: list[str],
+        cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the full workflow pipeline.
 
-        Generate cache_key, resolve repo URL, build execution context, and
-        stream events from the compiled LangGraph graph.
+        ``cache_key`` IS the LangGraph thread id: the caller's job id
+        addresses this run's checkpoints.
         """
-        # TODO(time-travel): E2E checkpoint resume requires changes here
-        # — this is the root of the resume chain (HTTP → handler →
-        # protocol → here → sub-graphs).
-        # 1. Accept optional thread_id param; reuse it as cache_key
-        #    for resume instead of generating a fresh uuid.
+        # TODO(time-travel): E2E checkpoint resume still requires:
         # 2. On resume: pass None (not initial_state) to astream()
         #    so LangGraph loads from the outer checkpoint.
-        # 3. Emit cache_key in the first SSE event so callers can
-        #    store it for future resume requests.
         # 4. Sub-graphs are called imperatively (not LangGraph
         #    subgraphs), so each has isolated checkpoints. On outer
         #    resume the sub-graph nodes re-enter; inner loops must
         #    also accept a resume signal (see ralph_loop.py and
         #    ticket_generation.py TODOs).
-        # 5. WorkflowEngine protocol, WorkflowRequest, and handler
-        #    all need a thread_id param to plumb resume from HTTP.
-        cache_key = uuid.uuid4().hex
-
+        # 5. WorkflowRequest and the handler need a resume signal to
+        #    plumb an existing job id back in from HTTP.
         resolved_url = (
             resolve_repo_url(repo_url, self._git_base_url)
             if repo_url is not None
@@ -182,7 +177,7 @@ class RalphWorkflowEngine:
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self._checkpointer is not None:
-            configurable["thread_id"] = cache_key
+            configurable["thread_id"] = workflow_thread_id(cache_key)
 
         config: RunnableConfig = {"configurable": configurable}
 
@@ -207,6 +202,7 @@ class RalphWorkflowEngine:
             "ci_summary": None,
             "repo_url": resolved_url,
             "repo_visibility": RepoVisibility.UNKNOWN,
+            "trajectory": None,
         }
 
         async for event in self._compiled.astream(
@@ -619,6 +615,7 @@ class RalphWorkflowEngine:
             "accepted": last_iteration_event.accepted,
             "total_iterations": last_iteration_event.iteration,
             "feature_tip_sha": None,
+            "trajectory": last_iteration_event.trajectory,
         }
 
     async def _persist_artifacts_node(
@@ -907,7 +904,7 @@ class RalphWorkflowEngine:
             },
         )
 
-        await self._run_quality_gate(
+        gate_event = await self._run_quality_gate(
             prompt=fix_prompt,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
@@ -938,12 +935,22 @@ class RalphWorkflowEngine:
             )
         )
 
+        # Terminal totals are cumulative across rounds: total_iterations is a
+        # SUM, accepted is last-round-wins, trajectory is the most recent gate
+        # invocation's.
+        cumulative: dict[str, object] = {
+            "fix_rounds_used": state["fix_rounds_used"] + 1,
+            "accepted": gate_event.accepted,
+            "total_iterations": state["total_iterations"] + gate_event.iteration,
+            "trajectory": gate_event.trajectory,
+        }
+
         if outcome.status in (
             ConsolidationStatus.DIVERGENT,
             ConsolidationStatus.SOURCE_MISSING,
         ):
             return {
-                "fix_rounds_used": state["fix_rounds_used"] + 1,
+                **cumulative,
                 "feature_tip_sha": pre_fix_head_sha,
                 "merged": False,
                 "merge_error": (
@@ -958,13 +965,12 @@ class RalphWorkflowEngine:
         # FAST_FORWARDED or ALREADY_INTEGRATED — both yield a fresh
         # tip the reviewer can evaluate against the pre-fix tip.
         return {
-            "fix_rounds_used": state["fix_rounds_used"] + 1,
+            **cumulative,
             "feature_tip_sha": outcome.feature_tip_sha,
             "merged": True,
             "merge_error": None,
             "review_base_sha": pre_fix_head_sha,
             "review_head_sha": outcome.feature_tip_sha,
-            "ci_passed": False,
             "ci_summary": None,
         }
 
@@ -1203,16 +1209,14 @@ class RalphWorkflowEngine:
                 ralph_branch=state["ralph_branch"],
                 total_iterations=state["total_iterations"],
                 accepted=state["accepted"],
+                outcome=classify_outcome(state),
                 merged=state["merged"],
-                # TODO: add a `reason` field on WorkflowCompleteEvent so consumers can
-                # distinguish "acceptance criteria did not pass" from "ran but could
-                # not merge" without inferring it from the absence of a consolidation
-                # event.
                 final_commit_sha=state["feature_tip_sha"],
                 error=state["merge_error"],
                 pr_url=state["pr_url"],
                 pr_number=state["pr_number"],
                 ci_passed=state["ci_passed"],
+                trajectory=state["trajectory"],
             )
         )
 

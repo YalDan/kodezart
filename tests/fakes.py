@@ -1,16 +1,21 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
 from collections.abc import AsyncGenerator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from fastapi import FastAPI
+
+from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
 from kodezart.core.prompt_rendering import PromptTemplate
-from kodezart.core.protocols import AgentExecutor, PromptProvider
+from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
 from kodezart.domain.errors import WorkspaceError
+from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -37,6 +42,7 @@ from kodezart.types.domain.gating import (
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
 DEFAULT_SETTING_SOURCES: list[SettingSource] = [
@@ -884,11 +890,13 @@ class FakeQualityGate:
         evaluation: AcceptanceCriteriaOutput,
         total_iterations: int = 1,
         last_commit_sha: str | None = None,
+        trajectory: LoopTrajectory | None = None,
     ) -> None:
         self._events = events
         self._evaluation = evaluation
         self._total_iterations = total_iterations
         self._last_commit_sha = last_commit_sha
+        self._trajectory = trajectory
         self.calls: list[dict[str, object]] = []
 
     async def run(
@@ -923,12 +931,27 @@ class FakeQualityGate:
         )
         for event in self._events:
             yield event
+        results = self._evaluation.criteria_results
         yield WorkflowIterationEvent(
             iteration=self._total_iterations,
             branch=ralph_branch,
             commit_sha=self._last_commit_sha,
-            accepted=all(r.passed for r in self._evaluation.criteria_results),
+            accepted=all(r.passed for r in results),
             evaluation=self._evaluation,
+            trajectory=self._trajectory
+            or fold_trajectory(
+                [
+                    IterationRecord(
+                        iteration=self._total_iterations,
+                        passed_count=sum(1 for r in results if r.passed),
+                        failing_criterion_ids=[
+                            r.criterion for r in results if not r.passed
+                        ],
+                        commit_sha=self._last_commit_sha,
+                    ),
+                ],
+                plateau_window=2,
+            ),
         )
 
 
@@ -1231,3 +1254,36 @@ class FakeContentScanner:
     def scan(self, content: str) -> list[ScanHit]:
         self.calls.append(content)
         return list(self._hits)
+
+
+@asynccontextmanager
+async def attached_job_queue(
+    app: FastAPI,
+    engine: WorkflowEngine,
+    *,
+    max_concurrent_runs_per_lane: int = 1,
+    max_depth_per_lane: int = 64,
+    terminal_retention_seconds: float = 86400.0,
+    event_buffer_retention_seconds: float = 900.0,
+    event_buffer_capacity: int = 512,
+) -> AsyncGenerator[AsyncioJobQueue, None]:
+    """Attach a started AsyncioJobQueue to *app*, stopping it on exit.
+
+    The httpx ASGITransport does not run lifespan events, so tests that
+    exercise queued endpoints wire the dispatcher the way the lifespan
+    does and stop it the same way.
+    """
+    queue = AsyncioJobQueue(
+        engine=engine,
+        max_concurrent_runs_per_lane=max_concurrent_runs_per_lane,
+        max_depth_per_lane=max_depth_per_lane,
+        terminal_retention_seconds=terminal_retention_seconds,
+        event_buffer_retention_seconds=event_buffer_retention_seconds,
+        event_buffer_capacity=event_buffer_capacity,
+    )
+    app.state.job_queue = queue
+    await queue.start()
+    try:
+        yield queue
+    finally:
+        await queue.stop()

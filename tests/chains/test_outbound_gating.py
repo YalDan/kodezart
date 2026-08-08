@@ -1,5 +1,7 @@
 """Workflow-level gating: visibility resolution and writer coverage (KOD-47)."""
 
+import uuid
+
 import pytest
 
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
@@ -92,6 +94,7 @@ async def run_engine(
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 

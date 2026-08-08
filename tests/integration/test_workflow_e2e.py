@@ -1,6 +1,7 @@
 """E2E workflow tests — real git repos, real components, scripted agent."""
 
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     ScriptedFakeExecutor,
+    attached_job_queue,
     make_passing_evaluation,
     make_prompt_provider,
 )
@@ -158,6 +160,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
+        plateau_window=2,
         git=git,
         cache=cache,
     )
@@ -192,6 +195,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -266,6 +270,7 @@ async def test_workflow_e2e_exhausts_iterations(
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=2,
+        plateau_window=2,
         git=git,
         cache=cache,
     )
@@ -300,6 +305,7 @@ async def test_workflow_e2e_exhausts_iterations(
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -425,6 +431,7 @@ async def test_workflow_e2e_divergent_base_branch(
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
+        plateau_window=2,
         git=git,
         cache=cache,
     )
@@ -459,6 +466,7 @@ async def test_workflow_e2e_divergent_base_branch(
             base_branch="develop",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -682,6 +690,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         prompts=make_prompt_provider(),
         service=service,
         max_iterations=3,
+        plateau_window=2,
         git=git,
         cache=cache,
     )
@@ -716,6 +725,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -973,6 +983,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
                 base_branch="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
             )
         ]
 
@@ -1091,19 +1102,20 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
     app.state.agent_service = service
     app.state.workflow_engine = engine
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test",
-    ) as ac:
-        async with ac.stream(
-            "POST",
-            "/api/v1/agent/workflow",
-            json={"prompt": "fix", "repoPath": "/tmp/fake"},
-        ) as response:
-            events: list[dict[str, object]] = []
-            async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    events.append(json.loads(line[6:]))
+    async with attached_job_queue(app, engine):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as ac:
+            async with ac.stream(
+                "POST",
+                "/api/v1/agent/workflow",
+                json={"prompt": "fix", "repoPath": "/tmp/fake"},
+            ) as response:
+                events: list[dict[str, object]] = []
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        events.append(json.loads(line[6:]))
 
     error_events = [e for e in events if e.get("type") == "error"]
     assert len(error_events) == 1, f"expected one error event, got events={events}"
