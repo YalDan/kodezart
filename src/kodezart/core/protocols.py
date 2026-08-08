@@ -16,10 +16,21 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.tracker import (
+    ClaimResult,
+    IssuePriority,
+    IssueQuery,
+    MappingRef,
+    StateTransition,
+    TrackerAsset,
+    TrackerComment,
+    TrackerIssue,
+)
 from kodezart.types.requests.agent import WorkflowRequest
 
 
@@ -326,6 +337,165 @@ class CIMonitor(Protocol):
         repo_url: str,
         ref: str,
     ) -> tuple[bool | None, str]: ...
+
+
+@runtime_checkable
+class DeliveryProbe(Protocol):
+    """Answers whether an open pull request already delivers an issue.
+
+    The forge side of the delivered-in-review / crashed discrimination:
+    workflow state alone conflates the two, and the open pull request is
+    the mechanical discriminator.  Matching a pull request to an issue is
+    adapter-owned — no consumer parses a branch name or a body.
+    """
+
+    async def open_delivery_exists(
+        self,
+        *,
+        repo_url: str,
+        issue_key: str,
+    ) -> bool:
+        """True iff an OPEN pull request on *repo_url* delivers *issue_key*."""
+        ...
+
+
+@runtime_checkable
+class McpToolCaller(Protocol):
+    """Speaks MCP to one server: a tool name plus arguments, in, result out.
+
+    The transport seam under every MCP-backed adapter.  No model is in
+    this loop — the caller names the tool, so the deterministic path stays
+    deterministic.  An in-process fake server satisfies this protocol,
+    which is what keeps CI free of live-workspace access.
+    """
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Invoke the named tool and return its structured result."""
+        ...
+
+
+@runtime_checkable
+class TrackerPort(Protocol):
+    """The whole capability surface the passes and the runner need.
+
+    Vendor-neutral by construction: every parameter and every return type
+    is domain vocabulary.  Substitutability is total — an adapter
+    implements ALL of this or it is not an adapter.  There are no
+    capability flags and no feature detection, so no consumer ever
+    branches on which backend is configured.
+    """
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        """Issues matching *query*, in backend order."""
+        ...
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        """The full issue — body, state, relations, parent, assignee."""
+        ...
+
+    async def create_issue(
+        self,
+        *,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        """Create an issue on *team_key* and return it as stored."""
+        ...
+
+    async def update_issue(
+        self,
+        *,
+        issue_key: str,
+        title: str | None = None,
+        body: str | None = None,
+    ) -> TrackerIssue:
+        """Update the given fields; ``None`` leaves a field untouched."""
+        ...
+
+    async def set_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        stage: LifecycleStage,
+    ) -> TrackerIssue:
+        """Move the issue to the state the configuration binds *stage* to."""
+        ...
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        """Set the semantic queue state, replacing any other member."""
+        ...
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        """Post a comment and return it as stored."""
+        ...
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
+        ...
+
+    async def claim_issue(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult:
+        """Attempt an exactly-once claim.
+
+        Concurrent claimants on one issue produce exactly one
+        ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
+        value, never an exception.
+        """
+        ...
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        """Release a claim held by *holder*. A claim it does not hold is a no-op."""
+        ...
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        """The unexpired claim on the issue, or ``None`` when unclaimed."""
+        ...
+
+    async def queue_state_provenance(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> StateTransition | None:
+        """Who most recently set *state*, or ``None`` if it never was set."""
+        ...
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        ...
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
+        ...
+
+    async def resolve_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingRef]:
+        """The subset of *refs* that does NOT resolve in the workspace.
+
+        Empty means every configured mapping exists.  The adapter resolves;
+        deciding what an unresolvable entry means is the caller's.
+        """
+        ...
 
 
 @runtime_checkable

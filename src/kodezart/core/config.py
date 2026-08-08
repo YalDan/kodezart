@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from kodezart.types.domain.gating import GateVerdict, RedactionCategory
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.tracker import TrackerBackend
 
 # Credential shapes are the one category that ships populated: a credential
 # leaving the process is never acceptable regardless of deployment. Every
@@ -183,6 +184,72 @@ class AppConfig(BaseSettings):
     forge_api_base_url: str = Field(
         default="https://api.github.com",
         description="Base URL for code hosting platform REST API.",
+    )
+    tracker: TrackerBackend = Field(
+        default=TrackerBackend.LINEAR,
+        description=(
+            "Which tracker adapter implements TrackerPort. Adding a backend "
+            "is a new adapter plus a member here — never a consumer change."
+        ),
+    )
+    tracker_mcp_server_name: str = Field(
+        default="linear",
+        description=(
+            "Identity of the vendor MCP server the tracker adapter dials. One "
+            "server definition, two consumers: the programmatic client on the "
+            "deterministic path and session attachment for judgment passes."
+        ),
+    )
+    tracker_mcp_server_url: str = Field(
+        default="https://mcp.linear.app/mcp",
+        description="Endpoint of the vendor MCP server the tracker adapter dials.",
+    )
+    tracker_token: str | None = Field(
+        default=None,
+        description="Tracker credential for the MCP server. Environment only.",
+    )
+    tracker_api_timeout_seconds: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=120.0,
+        description="Timeout for one tracker MCP tool call.",
+    )
+    tracker_api_max_retries: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum retry attempts for a transient tracker MCP failure.",
+    )
+    tracker_api_retry_backoff_factor: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=30.0,
+        description="Base backoff multiplier in seconds for tracker MCP retries.",
+    )
+    tracker_claim_lease_seconds: float = Field(
+        default=900.0,
+        ge=30.0,
+        le=86400.0,
+        description=(
+            "Lease an atomic claim holds before it expires and the issue "
+            "becomes eligible again."
+        ),
+    )
+    tracker_query_page_size: int = Field(
+        default=50,
+        ge=1,
+        le=250,
+        description="Issues requested per tracker scan page.",
+    )
+    dispatch_pass_interval_seconds: float = Field(
+        default=300.0,
+        ge=10.0,
+        le=86400.0,
+        description="Seconds between approved-fire dispatch passes.",
+    )
+    dispatch_lane: str = Field(
+        default="tracker",
+        description="Fire-queue lane tracker-originated dispatches are enqueued on.",
     )
     checkpoint_url: str | None = Field(
         default=None,

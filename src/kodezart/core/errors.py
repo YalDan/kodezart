@@ -145,6 +145,35 @@ class OperationConfigError(Exception):
         self.failures: tuple[str, ...] = tuple(failures)
 
 
+class TrackerBootValidationError(Exception):
+    """Raised at boot when a configured tracker mapping does not resolve.
+
+    Lists EVERY unresolvable entry at once, each described by kind, semantic
+    name and configured identifier.  There is no partial operation: a
+    mapping the workspace cannot resolve would otherwise surface as a
+    mis-targeted write hours later, so the process refuses to start.
+    """
+
+    def __init__(self, message: str, *, unresolved: Sequence[str]) -> None:
+        super().__init__(f"{message} ({'; '.join(unresolved)})")
+        self.unresolved: tuple[str, ...] = tuple(unresolved)
+
+
+class TrackerProtocolError(Exception):
+    """Raised when a tracker backend's response cannot be read as its shape.
+
+    The adapter refuses to guess.  A field that is absent, of the wrong
+    type, or carries an unmappable value is this error and never a
+    substituted default — a silently defaulted priority or state would
+    reorder the dispatch queue with nothing to falsify.
+    """
+
+    def __init__(self, message: str, *, tool: str, detail: str) -> None:
+        super().__init__(f"{message} (tool: {tool}; {detail})")
+        self.tool: str = tool
+        self.detail: str = detail
+
+
 class PromptNamespaceCollisionError(Exception):
     """Raised at boot when the three binding namespaces are not disjoint."""
 
