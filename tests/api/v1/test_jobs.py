@@ -47,6 +47,7 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    ScriptedFakeExecutor,
     make_passing_evaluation,
 )
 
@@ -229,6 +230,114 @@ def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngi
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         checkpointer=checkpointer,
+        artifact_persister=None,
+    )
+
+
+class GatedQualityGate:
+    """QualityGate whose Nth invocation blocks until released.
+
+    Holds the outer workflow graph open *inside* the node that called it,
+    so a checkpoint read lands genuinely mid-run instead of after the
+    fact.  Every invocation that is not gated behaves exactly like
+    ``FakeQualityGate``, which it delegates to.
+    """
+
+    def __init__(self, *, gate_on_call: int) -> None:
+        self.calls: int = 0
+        self.entered: asyncio.Event = asyncio.Event()
+        self._gate_on_call = gate_on_call
+        self._release: asyncio.Event = asyncio.Event()
+        self._inner = FakeQualityGate(
+            events=[AssistantTextEvent(text="done", model="m")],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha="a" * 40,
+        )
+
+    def release(self) -> None:
+        self._release.set()
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        feature_branch: str,
+        ralph_branch: str,
+        base_branch: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        acceptance_criteria: list[str],
+        cache_key: str,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.calls += 1
+        if self.calls == self._gate_on_call:
+            self.entered.set()
+            await self._release.wait()
+        async for event in self._inner.run(
+            prompt=prompt,
+            repo_path=repo_path,
+            repo_url=repo_url,
+            feature_branch=feature_branch,
+            ralph_branch=ralph_branch,
+            base_branch=base_branch,
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
+            acceptance_criteria=acceptance_criteria,
+            cache_key=cache_key,
+        ):
+            yield event
+
+
+def _mid_run_engine(
+    checkpointer: InMemorySaver,
+    quality_gate: GatedQualityGate,
+) -> RalphWorkflowEngine:
+    """Engine whose first post-merge review fails, forcing one fix round.
+
+    The scripted executor answers the review schema: failing first, then
+    passing, so the graph reaches ``fix_code`` — where *quality_gate*
+    holds it open.
+    """
+    service = AgentService(
+        executor=ScriptedFakeExecutor(
+            eval_results=[
+                {
+                    "criteriaResults": [
+                        {
+                            "criterion": "Tests pass",
+                            "passed": False,
+                            "reasoning": "Review found a gap.",
+                        },
+                    ],
+                },
+                {
+                    "criteriaResults": [
+                        {
+                            "criterion": "Tests pass",
+                            "passed": True,
+                            "reasoning": "Fixed.",
+                        },
+                    ],
+                },
+            ],
+        ),
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    return RalphWorkflowEngine(
+        service=service,
+        quality_gate=quality_gate,
+        ticket_generator=FakeTicketGenerator(),
+        merger=FakeBranchMerger(),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        checkpointer=checkpointer,
+        max_fix_rounds=1,
         artifact_persister=None,
     )
 
@@ -870,6 +979,54 @@ async def test_status_of_a_running_job_reports_checkpointed_progress(
     assert "currentNode" not in run
 
 
+async def test_status_reports_progress_while_the_graph_is_paused_mid_run() -> None:
+    """A checkpoint read mid-graph names an intermediate node, not the last.
+
+    The engine is a real ``RalphWorkflowEngine``; its quality gate blocks
+    on the fix round, so the graph is genuinely suspended inside
+    ``fix_code`` while the status endpoint answers.
+    """
+    saver = InMemorySaver()
+    gate = GatedQualityGate(gate_on_call=2)
+    async for wired in _build_app(
+        _mid_run_engine(saver, gate),
+        checkpointer=saver,
+    ):
+        fired = await wired.client.post("/api/v1/agent/fire", json=_BODY)
+        job_id = fired.json()["jobId"]
+
+        # Suspended inside fix_code: the loop and the failed review are
+        # committed, the fix round is not.
+        await _until(gate.entered.is_set)
+
+        payload = (await wired.client.get(f"/api/v1/jobs/{job_id}")).json()
+        assert payload["state"] == "running"
+        assert payload["outcome"] is None
+        assert payload["runStateAvailable"] is True
+        run = payload["run"]
+        assert run is not None
+        assert run["lastCompletedNode"] == "review_against_ticket"
+        assert run["lastCompletedNode"] != "complete"
+        assert run["totalIterations"] == 1
+        assert run["fixRoundsUsed"] == 0
+        assert run["ciPassed"] is None
+        assert run["reviewPassed"] is False
+        assert run["merged"] is True
+        assert run["featureBranch"].startswith("kodezart/")
+
+        # Releasing the gate advances exactly those counters, which is
+        # what proves the read above was mid-flight and not a final state.
+        gate.release()
+        await _wait_terminal(wired.queue, job_id)
+
+        final = (await wired.client.get(f"/api/v1/jobs/{job_id}")).json()
+        assert final["state"] == "terminal"
+        assert final["run"]["lastCompletedNode"] == "complete"
+        assert final["run"]["fixRoundsUsed"] == 1
+        assert final["run"]["totalIterations"] == 2
+        assert final["run"]["reviewPassed"] is True
+
+
 async def test_status_of_a_terminal_job_carries_the_outcome_discriminator(
     checkpointed_app: _JobApp,
 ) -> None:
@@ -1000,6 +1157,57 @@ def test_neither_service_nor_reader_branches_on_checkpointer_backend() -> None:
         lowered = sources[module].lower()
         assert "postgres" not in lowered
         assert ":memory:" not in lowered
+
+
+# ---------------------------------------------------------------------------
+# KOD-52: one queue, two producers, never a second dispatch path
+# ---------------------------------------------------------------------------
+
+_ADAPTER_MODULE = "adapters/asyncio_job_queue.py"
+_WIRING_MODULE = "main.py"
+
+
+def test_exactly_one_lane_queue_construction_site() -> None:
+    """One dispatcher owns the only per-lane asyncio.Queue."""
+    sites = [
+        f"{name}:{number}"
+        for name, text in _sources().items()
+        for number, line in enumerate(text.splitlines(), start=1)
+        if "asyncio.Queue(" in line
+    ]
+    assert all(site.startswith(f"{_ADAPTER_MODULE}:") for site in sites), sites
+    lane_queues = [
+        line
+        for name, text in _sources().items()
+        for line in text.splitlines()
+        if "asyncio.Queue(maxsize=" in line
+    ]
+    assert len(lane_queues) == 1
+
+
+def test_a_workflow_run_is_only_ever_started_by_the_dispatcher() -> None:
+    """No execution entry point for a run outside the dispatcher."""
+    starters = {
+        name
+        for name, text in _sources().items()
+        if "engine.run(" in text or "_engine.run(" in text
+    }
+    assert starters == {_ADAPTER_MODULE}
+
+
+def test_producers_depend_on_the_ports_never_on_the_adapter() -> None:
+    """Endpoints, handlers and services name the protocols only."""
+    users = {
+        name
+        for name, text in _sources().items()
+        if "AsyncioJobQueue" in text and name != _ADAPTER_MODULE
+    }
+    assert users == {_WIRING_MODULE}
+
+    for name, text in _sources().items():
+        if not name.startswith(("api/", "handlers/", "services/")):
+            continue
+        assert "asyncio_job_queue" not in text, name
 
 
 def test_run_state_is_its_own_leaf_module_not_a_third_job_type() -> None:
