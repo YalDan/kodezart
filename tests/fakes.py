@@ -55,6 +55,8 @@ class FakeGitService:
         remote_branches: list[str] | None = None,
         *,
         remote_branch_shas: dict[str, str | None] | None = None,
+        remote_branch_sha_sequences: dict[str, list[str | None]] | None = None,
+        delete_remote_branch_error: Exception | None = None,
         ancestor_pairs: set[tuple[str, str]] | None = None,
         diff_digests: dict[tuple[str, str], ChangesetDigest] | None = None,
         trees: dict[str, str] | None = None,
@@ -67,6 +69,12 @@ class FakeGitService:
         self._remote_branch_shas: dict[str, str | None] = (
             dict(remote_branch_shas) if remote_branch_shas is not None else {}
         )
+        self._remote_branch_sha_sequences: dict[str, list[str | None]] = (
+            {branch: list(shas) for branch, shas in remote_branch_sha_sequences.items()}
+            if remote_branch_sha_sequences is not None
+            else {}
+        )
+        self._delete_remote_branch_error: Exception | None = delete_remote_branch_error
         self._ancestor_pairs: set[tuple[str, str]] = (
             set(ancestor_pairs) if ancestor_pairs is not None else set()
         )
@@ -148,6 +156,12 @@ class FakeGitService:
         branch: str,
     ) -> None:
         self.calls.append(("delete_remote_branch", cwd, remote, branch))
+        if self._delete_remote_branch_error is not None:
+            err, self._delete_remote_branch_error = (
+                self._delete_remote_branch_error,
+                None,
+            )
+            raise err
 
     async def list_remote_branches(
         self,
@@ -174,6 +188,9 @@ class FakeGitService:
         branch: str,
     ) -> str | None:
         self.calls.append(("remote_branch_sha", cwd, remote, branch))
+        sequence = self._remote_branch_sha_sequences.get(branch)
+        if sequence:
+            return sequence.pop(0)
         if branch in self._remote_branch_shas:
             return self._remote_branch_shas[branch]
         # Defaults: treat all branches as present at a deterministic SHA

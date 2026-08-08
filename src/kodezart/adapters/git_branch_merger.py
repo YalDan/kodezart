@@ -268,8 +268,23 @@ class GitBranchMerger:
         Invoked only on the FAST_FORWARDED branch of `consolidate`.
         Callers MUST NOT depend on this side effect — it's an internal
         housekeeping action tied to a successful integration.
+
+        The existence re-probe narrows the staleness window between the
+        SOURCE_MISSING gate and the delete to a single round-trip; it
+        does not close it, so the try/except stays.
         """
         try:
+            still_present = await self._git.remote_branch_sha(
+                workspace_path,
+                self._remote,
+                branch,
+            )
+            if still_present is None:
+                await self._log.adebug(
+                    "branch_cleanup_skipped",
+                    branch=branch,
+                )
+                return
             await self._git.delete_remote_branch(
                 workspace_path,
                 self._remote,

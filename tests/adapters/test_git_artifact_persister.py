@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+import structlog
 
 from kodezart.adapters.git_artifact_persister import ARTIFACT_DIR, GitArtifactPersister
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
@@ -23,6 +24,20 @@ async def _run_git(cmd: list[str], cwd: Path) -> None:
     if proc.returncode != 0:
         msg = f"{' '.join(cmd[:3])} failed: {stderr.decode()}"
         raise RuntimeError(msg)
+
+
+async def _run_git_output(cmd: list[str], cwd: Path) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=str(cwd),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        msg = f"{' '.join(cmd[:3])} failed: {stderr.decode()}"
+        raise RuntimeError(msg)
+    return stdout.decode().strip()
 
 
 @pytest.fixture
@@ -156,3 +171,52 @@ async def test_clean_noop_when_no_artifacts(
         repo_url=None,
         branch="empty-branch",
     )
+
+
+async def test_persist_skips_when_target_gitignores_artifact_dir(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """A target whose .gitignore matches .kodezart/ skips commit and push."""
+    repo, bare = git_env
+    (repo / ".gitignore").write_text(f"{ARTIFACT_DIR}/\n")
+    await _run_git(["git", "add", ".gitignore"], cwd=repo)
+    await _run_git(["git", "commit", "-m", "chore: ignore artifacts"], cwd=repo)
+    await _run_git(["git", "push", "origin", "HEAD:refs/heads/main"], cwd=repo)
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    persister = GitArtifactPersister(
+        git=git,
+        workspace=workspace,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        await persister.persist(
+            repo_path=str(repo),
+            repo_url=None,
+            branch="ignored-branch",
+            base_branch="main",
+            artifacts={"ticket.json": '{"title": "test"}'},
+        )
+
+    skipped = [e for e in logs if e["event"] == "artifacts_persist_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["branch"] == "ignored-branch"
+    assert [e for e in logs if e["event"] == "artifacts_persisted"] == []
+
+    remote_branches = await _run_git_output(["git", "branch", "--list"], cwd=bare)
+    assert "ignored-branch" not in remote_branches
+
+    verify = tmp_path / "verify-ignored"
+    clone_cmd = ["git", "clone", "-b", "main", str(bare), str(verify)]
+    await _run_git(clone_cmd, cwd=tmp_path)
+    assert not (verify / ARTIFACT_DIR).exists()

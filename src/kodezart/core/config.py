@@ -128,7 +128,34 @@ class AppConfig(BaseSettings):
         ge=1,
         le=20,
         description=(
-            "Consecutive empty polls before concluding no CI checks are configured."
+            "Consecutive empty check-runs polls before concluding no CI checks "
+            "appeared for the ref (workflows present or probe indeterminate)."
+        ),
+    )
+    ci_no_workflows_grace_polls: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description=(
+            "Consecutive empty check-runs polls before concluding no CI when the "
+            "repository has no active workflows."
+        ),
+    )
+    ci_grace_poll_interval_seconds: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=60.0,
+        description=(
+            "Seconds between check-runs polls while no check run has been observed yet."
+        ),
+    )
+    ci_ref_not_found_grace_polls: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description=(
+            "Consecutive check-runs 404s tolerated before the ref is treated as "
+            "a transient API failure."
         ),
     )
     forge_api_timeout_seconds: float = Field(
