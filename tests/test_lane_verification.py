@@ -148,3 +148,18 @@ def test_the_registry_adapter_performs_no_substitution() -> None:
     ).read_text(encoding="utf-8")
     assert "def render_template(" in renderer_source
     assert renderer_source.count("def render_template(") == 1
+
+
+def test_no_second_substitution_implementation_exists_anywhere_in_src() -> None:
+    """AC-1, second half: the renderer is unique across the whole package.
+
+    The bullet asks for the absence of ANY second substitution implementation,
+    which the single-file check above cannot see.  One definition, in one
+    module, renders registry-set templates and ported pass templates alike.
+    """
+    definitions = sorted(
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "src").rglob("*.py")
+        if "def render_template(" in path.read_text(encoding="utf-8")
+    )
+    assert definitions == ["src/kodezart/core/prompt_rendering.py"]
