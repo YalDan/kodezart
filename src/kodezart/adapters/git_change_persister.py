@@ -157,7 +157,11 @@ class GitChangePersister:
         full_message = commit_msg.title
         if commit_msg.body:
             full_message = f"{commit_msg.title}\n\n{commit_msg.body}"
-        full_message = self._gated_message(full_message, visibility, "commit_message")
+        full_message = await self._gated_message(
+            full_message,
+            visibility,
+            "commit_message",
+        )
         sha = await self._git.commit(
             cwd=workspace_path,
             message=full_message,
@@ -211,7 +215,7 @@ class GitChangePersister:
 
         # Capture divergent-HEAD message + tree BEFORE reset (defensive: keeps
         # recovery correct even if a worktree pruned unreachable objects).
-        head_message_divergent = self._gated_message(
+        head_message_divergent = await self._gated_message(
             await self._git.head_commit_message(workspace_path),
             visibility,
             "commit_message_divergence_replay",
@@ -264,17 +268,28 @@ class GitChangePersister:
             source=PersistSource.DIVERGENCE_REPLAY,
         )
 
-    def _gated_message(
+    async def _gated_message(
         self,
         message: str,
         visibility: RepoVisibility,
         writer: str,
     ) -> str:
-        """Route a commit message through the outbound gate."""
+        """Route a commit message through the outbound gate.
+
+        Every verdict is observable: a rewritten message is never silently
+        posted and a blocked one is never silently dropped.
+        """
         decision = self._gate.gate(
             content=message,
             visibility=visibility,
             shape=WriterShape.PROSE,
+        )
+        await self._log.ainfo(
+            "outbound_content_gated",
+            writer=writer,
+            verdict=decision.verdict.value,
+            visibility=visibility.value,
+            categories=[c.value for c in decision.categories],
         )
         if decision.verdict is GateVerdict.BLOCKED:
             msg = "Outbound content blocked before commit"
