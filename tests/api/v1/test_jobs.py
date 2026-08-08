@@ -22,6 +22,7 @@ from kodezart.domain.errors import QueueFullError
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.services.job_service import JobService
+from kodezart.types.domain import job as job_types
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
@@ -29,6 +30,7 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run import RunState
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FakeAgentExecutor,
@@ -918,6 +920,17 @@ async def test_status_of_an_unknown_job_is_404_with_a_typed_body(
     payload = response.json()
     assert payload["success"] is False
     assert payload["error"] == "job not found: missing-id"
+
+
+def test_run_state_is_its_own_leaf_module_not_a_third_job_type() -> None:
+    """job.py answers for the handle; run.py answers for the execution."""
+    own_types = {
+        name
+        for name, value in vars(job_types).items()
+        if isinstance(value, type) and value.__module__ == job_types.__name__
+    }
+    assert own_types == {"JobState", "JobRecord"}
+    assert RunState.__module__ == "kodezart.types.domain.run"
 
 
 async def test_one_adapter_satisfies_both_ports() -> None:

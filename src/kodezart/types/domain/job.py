@@ -3,6 +3,9 @@
 From PR 2 onward ``job_id`` in this codebase means only the queue handle
 that is also the LangGraph thread id.  The older workspace-scoped
 identifier is ``workspace_id``.
+
+This module answers for the handle.  What a checkpoint knows about the
+execution behind it is ``types/domain/run.py``'s ``RunState``.
 """
 
 from datetime import datetime
@@ -42,26 +45,3 @@ class JobRecord(CamelCaseModel):
     submitted_at: datetime
     outcome: WorkflowOutcome | None = None
     truncated: bool = False
-
-
-class RunState(CamelCaseModel):
-    """Checkpoint-derived view of a run, read through ``RunStateReader``.
-
-    ``last_completed_node`` is what the checkpoint actually knows — the
-    last node that finished — never a claimed "current node".
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    last_completed_node: str | None = None
-    total_iterations: int = 0
-    fix_rounds_used: int = 0
-    accepted: bool = False
-    merged: bool = False
-    review_passed: bool = False
-    ci_passed: bool | None = None
-    ci_summary: str | None = None
-    pr_url: str | None = None
-    pr_number: int | None = None
-    feature_branch: str | None = None
-    ralph_branch: str | None = None

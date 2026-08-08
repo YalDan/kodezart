@@ -8,8 +8,9 @@ from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
-from kodezart.types.domain.job import JobRecord, RunState
+from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.run import RunState
 from kodezart.types.requests.agent import WorkflowRequest
 
 

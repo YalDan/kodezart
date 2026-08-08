@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from kodezart.types.domain.job import RunState
+from kodezart.types.domain.run import RunState
 
 # LangGraph's bookkeeping pseudo-nodes; neither is a graph node a reader
 # should report as the last one that completed.
