@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.base_spec import BaseSpec
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -444,7 +445,7 @@ class QualityGate(Protocol):
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -482,7 +483,8 @@ class WorkflowEngine(Protocol):
         prompt: str,
         repo_path: str | None,
         repo_url: str | None,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,

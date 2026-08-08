@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.base_spec import BaseSpec
 from kodezart.types.domain.criteria import (
     AcceptanceCriterion,
     CriteriaArtifact,
@@ -60,11 +61,22 @@ class WorkflowContext(CamelCaseModel):
 
 
 class ExecutionContext(WorkflowContext):
-    """Context for stages that execute code against a repository."""
+    """Context for stages that execute code against a repository.
 
-    base_branch: str = Field(min_length=1)
+    ``base_branch`` is not a field.  It is the recorded base's ref and
+    nothing else, so there is no second place a base could enter the run
+    and no way for a surface to be handed one baseline while another
+    surface uses a different one.
+    """
+
+    base_spec: BaseSpec
     permission_mode: str = Field(min_length=1)
     allowed_tools: list[str]
+
+    @property
+    def base_branch(self) -> str:
+        """The ref every scope surface compares against."""
+        return self.base_spec.base_ref
 
 
 class RalphLoopContext(ExecutionContext):

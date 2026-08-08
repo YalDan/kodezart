@@ -29,6 +29,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowTicketEvent,
 )
+from kodezart.types.domain.base_spec import BaseSpec
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -1101,7 +1102,7 @@ class FakeQualityGate:
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -1116,7 +1117,8 @@ class FakeQualityGate:
                 "repo_url": repo_url,
                 "feature_branch": feature_branch,
                 "ralph_branch": ralph_branch,
-                "base_branch": base_branch,
+                "base_spec": base_spec,
+                "base_branch": base_spec.base_ref,
                 "permission_mode": permission_mode,
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,

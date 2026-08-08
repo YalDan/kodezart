@@ -21,6 +21,7 @@ from kodezart.types.domain.agent import (
     WorkflowCriteriaEvent,
     WorkflowCriteriaValidationEvent,
 )
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriterionClassification,
@@ -183,7 +184,7 @@ async def _run(engine: RalphWorkflowEngine) -> list[AgentEvent]:
             prompt="do the thing",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key="criteria-gate",

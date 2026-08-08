@@ -32,6 +32,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.base_spec import BaseSpec
 from kodezart.types.domain.criteria import ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
@@ -90,7 +91,7 @@ class RalphLoop:
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -107,7 +108,7 @@ class RalphLoop:
             repo_path=repo_path,
             repo_url=repo_url,
             cache_key=cache_key,
-            base_branch=base_branch,
+            base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             feature_branch=feature_branch,

@@ -12,6 +12,7 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
+from kodezart.types.domain.base_spec import BaseInput, BaseRefRole
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
@@ -456,6 +457,22 @@ class WorkflowVisibilityEvent(AgentEvent):
     type: Literal["workflow_visibility"] = "workflow_visibility"
     visibility: RepoVisibility
     repo_url: str | None = None
+
+
+class WorkflowScopeBaseEvent(AgentEvent):
+    """Emitted once per run: the ref every scope comparison is made against.
+
+    A maintainer reading a run's events can confirm which ref the scope
+    and no-touch checks compared against, and — on a constructed base —
+    which blockers it was built from.  Without this the baseline is only
+    visible by inference from a diff, which is exactly how a wrong one
+    went unnoticed.
+    """
+
+    type: Literal["workflow_scope_base"] = "workflow_scope_base"
+    base_ref: str
+    role: BaseRefRole
+    inputs: list[BaseInput] = Field(default_factory=list)
 
 
 class JobAcceptedEvent(AgentEvent):

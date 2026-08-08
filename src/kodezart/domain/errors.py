@@ -119,3 +119,27 @@ class UngroundedVerdictError(Exception):
     def __init__(self, message: str, *, criterion_id: str) -> None:
         super().__init__(f"{message} (criterion: {criterion_id})")
         self.criterion_id: str = criterion_id
+
+
+class StaleBaseError(Exception):
+    """Raised when a lane's recorded base is not the base its blockers imply.
+
+    A criterion graded against a branch is graded against that branch ON
+    ITS BASE, so when the base moves the tree the verdict was about no
+    longer exists.  Grading anyway would produce a fresh assertion about
+    a tree nobody has: the check refuses instead, and carries both refs
+    as primitives so a reader can see what moved.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        recorded_ref: str,
+        implied_ref: str,
+        changed_inputs: Sequence[str] = (),
+    ) -> None:
+        super().__init__(message)
+        self.recorded_ref: str = recorded_ref
+        self.implied_ref: str = implied_ref
+        self.changed_inputs: list[str] = list(changed_inputs)

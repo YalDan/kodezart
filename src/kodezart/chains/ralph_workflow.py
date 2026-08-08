@@ -38,6 +38,7 @@ from kodezart.domain.accept_gate import (
     gate_cleared,
 )
 from kodezart.domain.agent import generate_ralph_branch_name
+from kodezart.domain.base_scope import scope_base
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
@@ -75,9 +76,11 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowPREvent,
     WorkflowReviewEvent,
+    WorkflowScopeBaseEvent,
     WorkflowTicketEvent,
     WorkflowVisibilityEvent,
 )
+from kodezart.types.domain.base_spec import BaseRefRole, BaseSpec
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
@@ -182,12 +185,18 @@ class RalphWorkflowEngine:
         prompt: str,
         repo_path: str | None,
         repo_url: str | None,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the full workflow pipeline.
+
+        *base_spec* is the lane's recorded base and *implied_base* is the
+        base its blockers imply now; the run refuses before any node when
+        they differ, because a criterion graded against a base that has
+        moved is about a tree that no longer exists.
 
         ``cache_key`` IS the LangGraph thread id: the caller's job id
         addresses this run's checkpoints.
@@ -202,6 +211,10 @@ class RalphWorkflowEngine:
         #    ticket_generation.py TODOs).
         # 5. WorkflowRequest and the handler need a resume signal to
         #    plumb an existing job id back in from HTTP.
+        # Refuses here, before any node: a stale baseline produces no
+        # scope verdict at all rather than one graded against the wrong tree.
+        scope_base(base_spec, implied_base)
+
         resolved_url = (
             resolve_repo_url(repo_url, self._git_base_url)
             if repo_url is not None
@@ -213,7 +226,7 @@ class RalphWorkflowEngine:
             repo_path=repo_path,
             repo_url=resolved_url,
             cache_key=cache_key,
-            base_branch=base_branch,
+            base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
         )
@@ -437,6 +450,20 @@ class RalphWorkflowEngine:
                 visibility=visibility,
                 repo_url=ctx.repo_url,
             )
+        )
+        # Stated once, before any surface compares anything against it.
+        writer(
+            WorkflowScopeBaseEvent(
+                base_ref=ctx.base_spec.base_ref,
+                role=ctx.base_spec.role,
+                inputs=list(ctx.base_spec.inputs),
+            )
+        )
+        await self._log.ainfo(
+            "scope_base_resolved",
+            base_ref=ctx.base_spec.base_ref,
+            role=ctx.base_spec.role.value,
+            input_count=len(ctx.base_spec.inputs),
         )
         return {"repo_visibility": visibility}
 
@@ -717,7 +744,7 @@ class RalphWorkflowEngine:
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -733,7 +760,7 @@ class RalphWorkflowEngine:
             repo_url=repo_url,
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
-            base_branch=base_branch,
+            base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
@@ -773,7 +800,7 @@ class RalphWorkflowEngine:
             repo_url=ctx.repo_url,
             feature_branch=state["feature_branch"],
             ralph_branch=state["ralph_branch"],
-            base_branch=ctx.base_branch,
+            base_spec=ctx.base_spec,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=_validated_criteria(state),
@@ -1096,7 +1123,12 @@ class RalphWorkflowEngine:
             repo_url=ctx.repo_url,
             feature_branch=state["feature_branch"],
             ralph_branch=fix_branch,
-            base_branch=state["feature_branch"],
+            # The fix round measures itself against this lane's own
+            # deliverable ref, which is what the feature branch IS.
+            base_spec=BaseSpec(
+                base_ref=state["feature_branch"],
+                role=BaseRefRole.deliverable,
+            ),
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=_validated_criteria(state),

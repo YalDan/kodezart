@@ -15,6 +15,7 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
     WorkflowVisibilityEvent,
 )
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.gating import (
     RedactionCategory,
     RepoVisibility,
@@ -91,7 +92,7 @@ async def run_engine(
             prompt="do the thing",
             repo_path=repo_path,
             repo_url=repo_url,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,

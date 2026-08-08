@@ -22,6 +22,7 @@ from kodezart.types.domain.agent import (
     WorkflowCriteriaEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriterionClassification,
@@ -204,7 +205,7 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
             prompt="do the thing",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key="oracle-run",
@@ -280,7 +281,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
             prompt="do the thing",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key="oracle-feedback",
@@ -323,7 +324,7 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
             repo_url=None,
             feature_branch="kodezart/oracle-12345678",
             ralph_branch="kodezart/oracle-12345678-ralph-abcdef01",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             acceptance_criteria=as_validated(

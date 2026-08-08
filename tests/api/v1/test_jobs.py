@@ -34,6 +34,7 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     WorkflowCompleteEvent,
 )
+from kodezart.types.domain.base_spec import BaseSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -91,7 +92,8 @@ class GatedWorkflowEngine:
         prompt: str,
         repo_path: str | None,
         repo_url: str | None,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
@@ -117,7 +119,8 @@ class ChattyWorkflowEngine:
         prompt: str,
         repo_path: str | None,
         repo_url: str | None,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
@@ -273,7 +276,8 @@ class GatedQualityGate:
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[str],
@@ -290,7 +294,7 @@ class GatedQualityGate:
             repo_url=repo_url,
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
-            base_branch=base_branch,
+            base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,

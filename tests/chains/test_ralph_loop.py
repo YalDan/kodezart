@@ -21,6 +21,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.criteria import FeasibilityVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
@@ -93,7 +94,7 @@ def _run_kwargs(
         repo_url=None,
         feature_branch="kodezart/test-12345678",
         ralph_branch="kodezart/test-12345678-ralph-abcdef01",
-        base_branch="main",
+        base_spec=trunk_base("main"),
         permission_mode="bypassPermissions",
         allowed_tools=["Bash"],
         acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),

@@ -24,6 +24,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowPREvent,
 )
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.criteria import CriterionClassification
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
@@ -254,7 +255,7 @@ async def _run(engine: RalphWorkflowEngine) -> list[object]:
             prompt="fix it",
             repo_path=None,
             repo_url="https://github.com/o/r",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
