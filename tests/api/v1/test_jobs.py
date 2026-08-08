@@ -34,7 +34,12 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     WorkflowCompleteEvent,
 )
-from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.base_spec import (
+    BaseInput,
+    BaseRefRole,
+    BaseSpec,
+    trunk_base,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -1321,3 +1326,73 @@ async def test_truncation_flag_reaches_the_status_payload() -> None:
             assert payload["truncated"] is True
     finally:
         await queue.stop()
+
+
+class BaseRecordingEngine:
+    """Engine double that records exactly which base it was dispatched with."""
+
+    def __init__(self) -> None:
+        self.base_specs: list[BaseSpec] = []
+        self.implied: list[BaseSpec | None] = []
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
+        permission_mode: str,
+        allowed_tools: list[str],
+        cache_key: str,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.base_specs.append(base_spec)
+        self.implied.append(implied_base)
+        yield _complete_event(WorkflowOutcome.pr_opened)
+
+
+async def test_a_recorded_base_is_dispatched_and_the_trunk_default_is_not() -> None:
+    """AC-35: the request's ``"main"`` default never becomes the scope baseline.
+
+    The request leaves ``baseBranch`` at its default and carries a
+    recorded base; what reaches the engine is the recorded base, and the
+    literal default is not consulted.
+    """
+    engine = BaseRecordingEngine()
+    recorded = BaseSpec(
+        base_ref="kodezart/blocker-a-11111111",
+        role=BaseRefRole.deliverable,
+        inputs=(
+            BaseInput(
+                blocker_issue_id="KOD-A",
+                branch="kodezart/blocker-a-11111111",
+                sha="a" * 40,
+            ),
+        ),
+    )
+    body: dict[str, object] = {
+        **_BODY,
+        "baseSpec": recorded.model_dump(by_alias=True, mode="json"),
+    }
+    async for wired in _build_app(engine):
+        fired = await wired.client.post("/api/v1/agent/fire", json=body)
+        await _wait_terminal(wired.queue, fired.json()["jobId"])
+
+    assert engine.base_specs == [recorded]
+    assert (
+        engine.base_specs[0].base_ref
+        != WorkflowRequest.model_fields["base_branch"].get_default()
+    )
+
+
+async def test_a_request_with_no_recorded_base_is_a_trunk_fired_lane() -> None:
+    """AC-26: the default IS the baseline exactly when there are no blockers."""
+    engine = BaseRecordingEngine()
+    async for wired in _build_app(engine):
+        fired = await wired.client.post("/api/v1/agent/fire", json=_BODY)
+        await _wait_terminal(wired.queue, fired.json()["jobId"])
+
+    assert engine.base_specs == [trunk_base("main")]
+    assert engine.base_specs[0].role is BaseRefRole.trunk
+    assert engine.implied == [None]
