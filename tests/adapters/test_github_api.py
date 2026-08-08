@@ -461,8 +461,8 @@ async def test_wait_for_checks_timeout() -> None:
 async def test_wait_for_checks_no_checks_configured() -> None:
     """Zero runs throughout with no workflows terminates as no-CI.
 
-    Two workflows calls: the lazy probe on the first empty poll and the
-    confirmation on the poll that concludes.
+    Exactly one workflows call: the lazy probe on the first empty poll,
+    memoised call-local for the rest of the call.
     """
     runs_calls = 0
     workflows_calls = 0
@@ -482,7 +482,7 @@ async def test_wait_for_checks_no_checks_configured() -> None:
     assert passed is None
     assert "no ci checks" in summary.lower()
     assert summary == "No CI checks configured: repository has no active workflows."
-    assert workflows_calls == 2
+    assert workflows_calls == 1
     assert runs_calls == 2
     await client.close()
 
@@ -618,64 +618,6 @@ async def test_grace_interval_is_used_verbatim_when_longer_than_poll_interval(
     )
     assert passed is None
     assert sleeps == [30.0, 30.0]
-    await client.close()
-
-
-async def test_none_active_probe_is_confirmed_before_the_short_window_concludes() -> (
-    None
-):
-    """A workflow registered mid-window returns the ref to the long window."""
-    runs_calls = 0
-    workflows_calls = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal runs_calls, workflows_calls
-        if "actions/workflows" in str(request.url):
-            workflows_calls += 1
-            return _workflows(active=workflows_calls > 1)
-        runs_calls += 1
-        return _empty_runs()
-
-    client = _make_client(
-        handler,
-        ci_no_checks_grace_polls=4,
-        ci_no_workflows_grace_polls=1,
-    )
-    passed, summary = await client.wait_for_checks(
-        repo_url="https://github.com/owner/repo", ref="abc123"
-    )
-    assert passed is None
-    assert summary == "No CI checks appeared for this ref after 4 polls."
-    assert runs_calls == 4
-    assert workflows_calls == 2
-    await client.close()
-
-
-async def test_confirmed_none_active_still_concludes_on_the_short_window() -> None:
-    """When the second probe agrees, the short window stays in force."""
-    runs_calls = 0
-    workflows_calls = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal runs_calls, workflows_calls
-        if "actions/workflows" in str(request.url):
-            workflows_calls += 1
-            return _workflows(active=False)
-        runs_calls += 1
-        return _empty_runs()
-
-    client = _make_client(
-        handler,
-        ci_no_checks_grace_polls=10,
-        ci_no_workflows_grace_polls=2,
-    )
-    passed, summary = await client.wait_for_checks(
-        repo_url="https://github.com/owner/repo", ref="abc123"
-    )
-    assert passed is None
-    assert summary == "No CI checks configured: repository has no active workflows."
-    assert runs_calls == 2
-    assert workflows_calls == 2
     await client.close()
 
 

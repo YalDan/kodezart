@@ -371,30 +371,6 @@ class GitHubAPIClient:
         )
         return probe
 
-    async def _confirm_no_workflows(
-        self,
-        owner: str,
-        repo: str,
-        ref: str,
-    ) -> WorkflowsProbeResult:
-        """Re-probe on the poll that would conclude ``NONE_ACTIVE``.
-
-        ``GET /actions/workflows`` is repository-scoped and reports what
-        Actions has indexed, not what will run for *ref*: a ref that adds
-        its own workflow file, or a repository where Actions has not yet
-        registered one, classifies ``NONE_ACTIVE`` on the first poll.
-        The second probe decides — a workflow that appeared during the
-        window returns the ref to the long grace window.
-        """
-        confirmation = await self._probe_workflows(owner, repo)
-        await self._log.ainfo(
-            "ci_no_workflows_confirmation",
-            ref=ref,
-            result=confirmation,
-            confirmed=confirmation is WorkflowsProbeResult.NONE_ACTIVE,
-        )
-        return confirmation
-
     async def wait_for_checks(
         self,
         *,
@@ -410,11 +386,6 @@ class GitHubAPIClient:
         at the standard cadence and evaluate until the poll budget is
         exhausted — an empty page after observation is pending, never
         no-CI.  Sleeps occur strictly between polls.
-
-        A ``NONE_ACTIVE`` probe shortens the window, so it is confirmed
-        by a second probe on the poll that would conclude; a workflow
-        registered mid-window flips the verdict to the long window
-        instead of ending the call.
 
         A 404 on the check-runs page advances neither counter and is
         tolerated up to ``ci_ref_not_found_grace_polls`` consecutive
@@ -460,13 +431,6 @@ class GitHubAPIClient:
                 empty_polls += 1
                 if probe is None:
                     probe = await self._probe_workflows(owner, repo)
-                    grace_polls = self._grace_polls_for(probe)
-                needs_confirmation = (
-                    empty_polls >= grace_polls
-                    and probe is WorkflowsProbeResult.NONE_ACTIVE
-                )
-                if needs_confirmation:
-                    probe = await self._confirm_no_workflows(owner, repo, ref)
                     grace_polls = self._grace_polls_for(probe)
                 if empty_polls >= grace_polls:
                     await self._log.ainfo(
