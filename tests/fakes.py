@@ -41,6 +41,7 @@ from kodezart.types.domain.gating import (
     ScanHit,
     WriterShape,
 )
+from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
@@ -50,6 +51,8 @@ from kodezart.types.domain.tracker import (
     ClaimStatus,
     IssuePriority,
     IssueQuery,
+    IssueRelation,
+    IssueRelationKind,
     MappingRef,
     StateTransition,
     TrackerAsset,
@@ -58,6 +61,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
 )
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
+from kodezart.types.requests.agent import WorkflowRequest
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
 FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
@@ -1678,6 +1682,7 @@ class FakeTracker:
         self._sequence: int = 0
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        await asyncio.sleep(0)
         self.scans.append(query)
         return tuple(
             issue
@@ -1686,6 +1691,7 @@ class FakeTracker:
         )
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        await asyncio.sleep(0)
         return self.issues[issue_key]
 
     async def create_issue(
@@ -1772,9 +1778,13 @@ class FakeTracker:
         holder: str,
         lease_seconds: float,
     ) -> ClaimResult:
+        # The scheduling point is BEFORE the check-and-set, never inside it:
+        # a fake whose claim is not genuinely atomic proves nothing about
+        # exactly-once semantics.
+        await asyncio.sleep(0)
         expires_at = self._clock() + timedelta(seconds=lease_seconds)
-        held = await self.active_claim(issue_key=issue_key)
-        if held is not None:
+        held = self.claims.get(issue_key)
+        if held is not None and held.expires_at > self._clock():
             return ClaimResult(
                 issue_key=issue_key,
                 status=ClaimStatus.LOST,
@@ -1796,6 +1806,7 @@ class FakeTracker:
             del self.claims[issue_key]
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        await asyncio.sleep(0)
         held = self.claims.get(issue_key)
         if held is None or held.expires_at <= self._clock():
             return None
@@ -1807,6 +1818,7 @@ class FakeTracker:
         issue_key: str,
         state: QueueState,
     ) -> StateTransition | None:
+        await asyncio.sleep(0)
         return self._provenance.get((issue_key, state))
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
@@ -1833,3 +1845,97 @@ class FakeDeliveryProbe:
     async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
         self.calls.append(issue_key)
         return issue_key in self.delivered
+
+
+def make_tracker_issue(
+    issue_key: str,
+    *,
+    priority: IssuePriority = IssuePriority.NONE,
+    state_name: str = "Todo",
+    state_kind: WorkflowStateKind = WorkflowStateKind.UNSTARTED,
+    queue_states: Sequence[QueueState] = (QueueState.APPROVED,),
+    blocked_by: Sequence[str] = (),
+    created_at: datetime = FIXTURE_EPOCH,
+    body: str = "fixture body",
+) -> TrackerIssue:
+    """A domain issue for port-consumer fixtures."""
+    return TrackerIssue(
+        issue_key=issue_key,
+        title=issue_key,
+        body=body,
+        priority=priority,
+        state_name=state_name,
+        state_kind=state_kind,
+        queue_states=frozenset(queue_states),
+        relations=tuple(
+            IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=key)
+            for key in blocked_by
+        ),
+        created_at=created_at,
+        updated_at=created_at,
+        url=f"https://tracker.invalid/issue/{issue_key}",
+    )
+
+
+def approved_by(
+    issue_key: str,
+    actor_key: str,
+    *,
+    occurred_at: datetime = FIXTURE_EPOCH,
+) -> tuple[tuple[str, QueueState], StateTransition]:
+    """One provenance entry for ``FakeTracker(provenance=dict([...]))``."""
+    return (
+        (issue_key, QueueState.APPROVED),
+        StateTransition(
+            issue_key=issue_key,
+            queue_state=QueueState.APPROVED,
+            actor_key=actor_key,
+            occurred_at=occurred_at,
+        ),
+    )
+
+
+class FakeJobQueue:
+    """``JobQueue`` and ``JobRegistry`` over an in-memory submission list.
+
+    One queue, two producers: this double is what proves the dispatcher
+    enqueues onto the same surface HTTP submissions use.
+    """
+
+    def __init__(self, *, states: Mapping[str, JobState] | None = None) -> None:
+        self.submissions: list[tuple[str, WorkflowRequest]] = []
+        self.records: dict[str, JobRecord] = {}
+        self._states: dict[str, JobState] = dict(states or {})
+        self._sequence: int = 0
+
+    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+        await asyncio.sleep(0)
+        self._sequence += 1
+        job_id = f"job-{self._sequence:04d}"
+        record = JobRecord(
+            job_id=job_id,
+            lane=lane,
+            state=self._states.get(job_id, JobState.QUEUED),
+            queue_position=len(self.submissions) + 1,
+            submitted_at=FIXTURE_EPOCH,
+        )
+        self.submissions.append((lane, request))
+        self.records[job_id] = record
+        return record
+
+    def attach(self, *, job_id: str) -> AsyncGenerator[AgentEvent, None]:
+        async def _empty() -> AsyncGenerator[AgentEvent, None]:
+            return
+            yield  # pragma: no cover - an empty async generator needs a yield
+
+        return _empty()
+
+    async def get(self, *, job_id: str) -> JobRecord | None:
+        await asyncio.sleep(0)
+        return self.records.get(job_id)
+
+    def mark(self, job_id: str, state: JobState) -> None:
+        """Move a submitted job to *state*, as the dispatcher would observe."""
+        self.records[job_id] = self.records[job_id].model_copy(
+            update={"state": state},
+        )
