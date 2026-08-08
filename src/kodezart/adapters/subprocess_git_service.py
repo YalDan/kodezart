@@ -434,9 +434,7 @@ class SubprocessGitService:
             env=process_env,
         )
         stdout, stderr = await proc.communicate()
-        returncode = (
-            proc.returncode if proc.returncode is not None else _UNKNOWN_EXIT_CODE
-        )
+        returncode = proc.returncode if proc.returncode is not None else -1
         if returncode not in allowed:
             msg = (
                 f"{' '.join(cmd[:3])} exited {returncode} "
