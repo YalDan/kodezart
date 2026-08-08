@@ -14,6 +14,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, GitService, RepoCache
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
+from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.prompts import evaluation, iteration_feedback
 from kodezart.types.domain.agent import (
@@ -99,7 +100,7 @@ class RalphLoop:
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self._checkpointer is not None:
-            configurable["thread_id"] = f"{cache_key}-ralph"
+            configurable["thread_id"] = ralph_thread_id(cache_key)
 
         config: RunnableConfig = {"configurable": configurable}
 

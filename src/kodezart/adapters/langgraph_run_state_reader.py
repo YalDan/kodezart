@@ -1,8 +1,11 @@
 """LangGraph checkpoint reader — the only place ``aget_tuple`` appears.
 
-Every LangGraph detail lives behind this seam: the thread id derivation,
-the ``aget_tuple`` call, and the unpacking of ``channel_values`` and
-``versions_seen`` into a typed ``RunState``.
+Every LangGraph *read* lives behind this seam: the ``aget_tuple`` call
+and the unpacking of ``channel_values`` and ``versions_seen`` into a
+typed ``RunState``.  The thread-id derivation is shared with the chains
+that write those checkpoints (``domain/thread_id.py``), because a chain
+must set its own thread id to execute and cannot reach into an adapter
+to learn it.
 """
 
 from collections.abc import Mapping
@@ -10,6 +13,7 @@ from collections.abc import Mapping
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
+from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.types.domain.run import RunState
 
 # LangGraph's bookkeeping pseudo-nodes; neither is a graph node a reader
@@ -42,6 +46,11 @@ def _last_completed_node(
     LangGraph versions are zero-padded, lexicographically ordered
     strings, so the maximum identifies the most recent node regardless
     of the order nodes were first inserted.
+
+    This is the last **committed** node, never the in-flight one: a node
+    is entered into ``versions_seen`` when its writes are committed, so a
+    checkpoint read while a node is executing names its predecessor.
+    ``lastCompletedNode`` therefore keeps its promise.
     """
     best_node: str | None = None
     best_version: str = ""
@@ -66,7 +75,9 @@ class LangGraphRunStateReader:
 
         The job id IS the outer graph's thread id.
         """
-        config: RunnableConfig = {"configurable": {"thread_id": job_id}}
+        config: RunnableConfig = {
+            "configurable": {"thread_id": workflow_thread_id(job_id)},
+        }
         snapshot = await self._checkpointer.aget_tuple(config)
         if snapshot is None:
             return None
@@ -76,6 +87,10 @@ class LangGraphRunStateReader:
             for channel in _RUN_STATE_CHANNELS
             if channel in values
         }
+        # Read from ``versions_seen`` rather than ``metadata["writes"]``:
+        # langgraph 1.0.10's CheckpointMetadata carries only source, step
+        # and parents, so ``writes`` is absent on every checkpoint and
+        # would answer null forever.
         payload["last_completed_node"] = _last_completed_node(
             snapshot.checkpoint["versions_seen"],
         )

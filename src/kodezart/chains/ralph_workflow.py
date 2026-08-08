@@ -33,6 +33,7 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
+from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.prompts import evaluation as evaluation_prompt
 from kodezart.prompts import pr_description as pr_description_prompt
@@ -157,7 +158,7 @@ class RalphWorkflowEngine:
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self._checkpointer is not None:
-            configurable["thread_id"] = cache_key
+            configurable["thread_id"] = workflow_thread_id(cache_key)
 
         config: RunnableConfig = {"configurable": configurable}
 

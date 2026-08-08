@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -19,6 +20,11 @@ from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.domain.errors import QueueFullError
+from kodezart.domain.thread_id import (
+    ralph_thread_id,
+    ticket_thread_id,
+    workflow_thread_id,
+)
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.services.job_service import JobService
@@ -920,6 +926,80 @@ async def test_status_of_an_unknown_job_is_404_with_a_typed_body(
     payload = response.json()
     assert payload["success"] is False
     assert payload["error"] == "job not found: missing-id"
+
+
+# ---------------------------------------------------------------------------
+# KOD-49: one shared thread-id derivation, one LangGraph read seam
+# ---------------------------------------------------------------------------
+
+_SRC_ROOT = Path(__file__).resolve().parents[3] / "src" / "kodezart"
+_DERIVATION_MODULE = "domain/thread_id.py"
+_READER_MODULE = "adapters/langgraph_run_state_reader.py"
+
+
+def _sources() -> dict[str, str]:
+    """Every module under ``src/kodezart``, keyed by package-relative path."""
+    return {
+        path.relative_to(_SRC_ROOT).as_posix(): path.read_text()
+        for path in sorted(_SRC_ROOT.rglob("*.py"))
+    }
+
+
+def test_thread_ids_come_from_one_shared_derivation() -> None:
+    """The suffix rule is written once and called from both sides."""
+    assert workflow_thread_id("j0b") == "j0b"
+    assert ralph_thread_id("j0b") == "j0b-ralph"
+    assert ticket_thread_id("j0b") == "j0b-ticket"
+
+    callers = {
+        name
+        for name, text in _sources().items()
+        if "thread_id(" in text and name != _DERIVATION_MODULE
+    }
+    assert callers == {
+        _READER_MODULE,
+        "chains/ralph_workflow.py",
+        "chains/ralph_loop.py",
+        "chains/ticket_generation.py",
+    }
+
+
+def test_no_module_interpolates_a_thread_id_of_its_own() -> None:
+    """Three modules each building their own suffix is what this forbids."""
+    offenders = [
+        f"{name}: {line.strip()}"
+        for name, text in _sources().items()
+        if name != _DERIVATION_MODULE
+        for line in text.splitlines()
+        if "thread_id" in line and 'f"' in line
+    ]
+    assert offenders == []
+
+
+def test_the_derivation_is_pure() -> None:
+    """No I/O, no LangGraph, no config — so a chain can call it inward."""
+    text = _sources()[_DERIVATION_MODULE]
+    imports = [
+        line
+        for line in text.splitlines()
+        if line.startswith(("import ", "from ")) or " import " in line
+    ]
+    assert imports == []
+
+
+def test_aget_tuple_appears_only_in_the_run_state_reader() -> None:
+    """The reader is the only seam onto LangGraph checkpoint reads."""
+    readers = {name for name, text in _sources().items() if "aget_tuple" in text}
+    assert readers == {_READER_MODULE}
+
+
+def test_neither_service_nor_reader_branches_on_checkpointer_backend() -> None:
+    """Backend independence is static: no postgres/memory branch either side."""
+    sources = _sources()
+    for module in ("services/job_service.py", _READER_MODULE):
+        lowered = sources[module].lower()
+        assert "postgres" not in lowered
+        assert ":memory:" not in lowered
 
 
 def test_run_state_is_its_own_leaf_module_not_a_third_job_type() -> None:
