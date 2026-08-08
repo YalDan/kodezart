@@ -79,3 +79,43 @@ class OutboundContentBlockedError(Exception):
 
 class QueueFullError(Exception):
     """Raised when a lane's queue is at capacity and cannot accept a submission."""
+
+
+class CriteriaFanInError(Exception):
+    """Raised when validator findings do not correspond 1:1 to dispatched ids.
+
+    Fail-closed and observable: the missing, duplicate and unknown ids are
+    all named, so the failure reads as a fan-in defect rather than as an
+    absent verdict silently defaulting to a pass.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        missing_ids: Sequence[str],
+        duplicate_ids: Sequence[str],
+        unknown_ids: Sequence[str],
+    ) -> None:
+        detail = (
+            f"{message} (missing: {', '.join(missing_ids) or '-'}; "
+            f"duplicate: {', '.join(duplicate_ids) or '-'}; "
+            f"unknown: {', '.join(unknown_ids) or '-'})"
+        )
+        super().__init__(detail)
+        self.missing_ids: tuple[str, ...] = tuple(missing_ids)
+        self.duplicate_ids: tuple[str, ...] = tuple(duplicate_ids)
+        self.unknown_ids: tuple[str, ...] = tuple(unknown_ids)
+
+
+class UngroundedVerdictError(Exception):
+    """Raised when a refuter demanded a repair but established nothing.
+
+    A ``criterion_text`` repair with no refutation, or an
+    ``environment_supply`` repair with no named resource, is not a verdict.
+    It never rests as ``unverifiable`` by default.
+    """
+
+    def __init__(self, message: str, *, criterion_id: str) -> None:
+        super().__init__(f"{message} (criterion: {criterion_id})")
+        self.criterion_id: str = criterion_id
