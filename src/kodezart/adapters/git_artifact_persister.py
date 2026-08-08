@@ -6,7 +6,6 @@ from pathlib import Path
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService, WorkspaceProvider
-from kodezart.types.domain.persist import ArtifactPersistStatus
 
 ARTIFACT_DIR = ".kodezart"
 
@@ -40,15 +39,8 @@ class GitArtifactPersister:
         base_branch: str,
         artifacts: Mapping[str, str],
         cache_key: str | None = None,
-    ) -> ArtifactPersistStatus:
-        """Write artifacts to .kodezart/, commit, push.
-
-        Nothing staged has two causes and they are reported apart: the
-        target's ignore rules match the artifact directory
-        (``IGNORED_BY_TARGET`` — no run will ever persist artifacts to
-        this repository), or the artifacts already match the commit on
-        the branch (``UNCHANGED``).
-        """
+    ) -> None:
+        """Write artifacts to .kodezart/, commit, push."""
         workspace_path = await self._workspace.acquire(
             repo_path=repo_path,
             repo_url=repo_url,
@@ -64,7 +56,11 @@ class GitArtifactPersister:
                 (artifact_dir / name).write_text(content)
             await self._git.add_all(workspace_path)
             if not await self._git.has_changes(workspace_path):
-                return await self._skip_status(workspace_path, branch)
+                await self._log.ainfo(
+                    "artifacts_persist_skipped",
+                    branch=branch,
+                )
+                return
             await self._git.commit(
                 cwd=workspace_path,
                 message="kodezart: persist workflow artifacts",
@@ -76,29 +72,8 @@ class GitArtifactPersister:
                 "artifacts_persisted",
                 branch=branch,
             )
-            return ArtifactPersistStatus.PERSISTED
         finally:
             await self._workspace.release(workspace_path)
-
-    async def _skip_status(
-        self,
-        workspace_path: str,
-        branch: str,
-    ) -> ArtifactPersistStatus:
-        """Classify an empty stage: ignored by the target, or unchanged."""
-        if await self._git.is_path_ignored(workspace_path, ARTIFACT_DIR):
-            await self._log.awarning(
-                "artifacts_persist_skipped",
-                branch=branch,
-                reason=ArtifactPersistStatus.IGNORED_BY_TARGET,
-            )
-            return ArtifactPersistStatus.IGNORED_BY_TARGET
-        await self._log.ainfo(
-            "artifacts_persist_skipped",
-            branch=branch,
-            reason=ArtifactPersistStatus.UNCHANGED,
-        )
-        return ArtifactPersistStatus.UNCHANGED
 
     async def clean(
         self,

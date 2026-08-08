@@ -4,21 +4,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 
-class ArtifactPersistStatus(StrEnum):
-    """Outcome of an ``ArtifactPersister.persist`` call.
-
-    ``UNCHANGED`` and ``IGNORED_BY_TARGET`` both leave the branch
-    untouched but for opposite reasons: the artifacts already match what
-    is committed, versus the target repository's ignore rules matching
-    the artifact directory so nothing was ever staged.  The second means
-    the operator gets zero artifacts on every run and needs to know.
-    """
-
-    PERSISTED = "persisted"
-    UNCHANGED = "unchanged"
-    IGNORED_BY_TARGET = "ignored_by_target"
-
-
 class PersistSource(StrEnum):
     """How the canonical ref was advanced to the workspace HEAD.
 

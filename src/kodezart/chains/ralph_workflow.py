@@ -46,7 +46,6 @@ from kodezart.types.domain.agent import (
     GeneratedCriteriaOutput,
     PRDescriptionOutput,
     TicketDraftOutput,
-    WorkflowArtifactsEvent,
     WorkflowCIEvent,
     WorkflowCompleteEvent,
     WorkflowConsolidationEvent,
@@ -526,7 +525,6 @@ class RalphWorkflowEngine:
     ) -> dict[str, object]:
         """Persist ticket and criteria to .kodezart/ on the ralph branch."""
         ctx = ExecutionContext.from_configurable(config)
-        writer = get_stream_writer()
 
         if self._artifact_persister is None:
             msg = "persist_artifacts node requires artifact_persister"
@@ -545,19 +543,13 @@ class RalphWorkflowEngine:
             ).decode(),
         }
 
-        status = await self._artifact_persister.persist(
+        await self._artifact_persister.persist(
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             branch=state["ralph_branch"],
             base_branch=ctx.base_branch,
             artifacts=artifacts,
             cache_key=ctx.cache_key,
-        )
-        writer(
-            WorkflowArtifactsEvent(
-                status=status,
-                branch=state["ralph_branch"],
-            )
         )
         # TODO(artifact-resume): On checkpoint resume, check if artifacts
         # already exist on the branch and skip regeneration. Requires the

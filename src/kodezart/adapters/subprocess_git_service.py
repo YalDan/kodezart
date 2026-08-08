@@ -128,20 +128,6 @@ class SubprocessGitService:
         output = await self._run_output(["git", "status", "--porcelain"], cwd=cwd)
         return len(output) > 0
 
-    async def is_path_ignored(self, cwd: str, path: str) -> bool:
-        """Return True iff *path* is excluded by the repository's ignore rules.
-
-        Maps to ``git check-ignore --quiet``: exit 0 → ignored,
-        exit 1 → not ignored, any other exit raises.  Consults the index,
-        so a tracked path is reported as not ignored.
-        """
-        exit_code, _ = await self._run_with_exit_codes(
-            ["git", "check-ignore", "--quiet", path],
-            cwd=cwd,
-            allowed=frozenset({0, 1}),
-        )
-        return exit_code == 0
-
     async def add_all(self, cwd: str) -> None:
         """Stage all changes."""
         await self._run(["git", "add", "--all"], cwd=cwd)

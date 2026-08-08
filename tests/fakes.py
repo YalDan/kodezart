@@ -21,7 +21,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
-from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+from kodezart.types.domain.persist import PersistResult
 
 
 class FakeGitService:
@@ -32,7 +32,6 @@ class FakeGitService:
         has_changes_result: bool = False,
         remote_branches: list[str] | None = None,
         *,
-        is_path_ignored_result: bool = False,
         remote_branch_shas: dict[str, str | None] | None = None,
         remote_branch_sha_sequences: dict[str, list[str | None]] | None = None,
         delete_remote_branch_error: Exception | None = None,
@@ -44,7 +43,6 @@ class FakeGitService:
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.has_changes_result: bool = has_changes_result
-        self._ignored_paths_result: bool = is_path_ignored_result
         self._remote_branches: list[str] = remote_branches or []
         self._remote_branch_shas: dict[str, str | None] = (
             dict(remote_branch_shas) if remote_branch_shas is not None else {}
@@ -98,10 +96,6 @@ class FakeGitService:
     async def has_changes(self, cwd: str) -> bool:
         self.calls.append(("has_changes", cwd))
         return self.has_changes_result
-
-    async def is_path_ignored(self, cwd: str, path: str) -> bool:
-        self.calls.append(("is_path_ignored", cwd, path))
-        return self._ignored_paths_result
 
     async def add_all(self, cwd: str) -> None:
         self.calls.append(("add_all", cwd))
@@ -1068,14 +1062,9 @@ class FakeTicketGenerator:
 class FakeArtifactPersister:
     """Records persist/clean calls for assertion."""
 
-    def __init__(
-        self,
-        *,
-        persist_status: ArtifactPersistStatus = ArtifactPersistStatus.PERSISTED,
-    ) -> None:
+    def __init__(self) -> None:
         self.persist_calls: list[tuple[str | None, str | None, str, str]] = []
         self.clean_calls: list[tuple[str | None, str | None, str]] = []
-        self._persist_status = persist_status
 
     async def persist(
         self,
@@ -1086,9 +1075,8 @@ class FakeArtifactPersister:
         base_branch: str,
         artifacts: Mapping[str, str],
         cache_key: str | None = None,
-    ) -> ArtifactPersistStatus:
+    ) -> None:
         self.persist_calls.append((repo_path, repo_url, branch, base_branch))
-        return self._persist_status
 
     async def clean(
         self,

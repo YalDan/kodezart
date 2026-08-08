@@ -8,7 +8,7 @@ from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
-from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+from kodezart.types.domain.persist import PersistResult
 
 
 @runtime_checkable
@@ -49,15 +49,6 @@ class GitService(Protocol):
     ) -> None: ...
 
     async def has_changes(self, cwd: str) -> bool: ...
-
-    async def is_path_ignored(self, cwd: str, path: str) -> bool:
-        """True iff *path* is excluded by the repository's ignore rules.
-
-        Maps to ``git check-ignore --quiet <path>`` (exit 0 → True,
-        exit 1 → False, any other exit raises).  A path already tracked
-        in the index is reported as not ignored.
-        """
-        ...
 
     async def add_all(self, cwd: str) -> None: ...
 
@@ -335,13 +326,8 @@ class ArtifactPersister(Protocol):
         base_branch: str,
         artifacts: Mapping[str, str],
         cache_key: str | None = None,
-    ) -> ArtifactPersistStatus:
-        """Write artifacts to .kodezart/, commit, push.
-
-        Returns which of the three outcomes occurred; a caller that only
-        knows "it did not raise" cannot tell a successful push from a
-        target that ignores the artifact directory.
-        """
+    ) -> None:
+        """Write artifacts to .kodezart/, commit, push."""
         ...
 
     async def clean(
