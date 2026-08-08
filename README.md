@@ -119,6 +119,13 @@ The queue is **not persistent**: it lives in the serving process, so a restart
 drops every job still waiting and terminates every job in flight. A fire lost
 to a restart is re-submitted by its caller.
 
+A finished job's replay buffer is released well before its status record is
+(15 minutes against 24 hours by default), because buffered frames are orders of
+magnitude larger than the record. Once released, the job still answers at
+`GET /api/v1/jobs/{jobId}` with `truncated: true` — there is nothing left to
+replay, and that is stated rather than served as an empty stream. See
+[docs/configuration.md](docs/configuration.md#queue-retention--two-independent-windows).
+
 See [docs/api.md](docs/api.md) for the full API reference including all 18 SSE
 event types.
 
