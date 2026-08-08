@@ -32,6 +32,17 @@ class PullRequestResponse(BaseModel):
     number: int
 
 
+class PullRequestSummary(BaseModel):
+    """One entry of the open pull request listing."""
+
+    model_config = ConfigDict(frozen=True)
+
+    number: int
+    title: str
+    body: str | None = None
+    html_url: str
+
+
 class RepositoryResponse(BaseModel):
     """Wrapper for the GitHub repository metadata response."""
 

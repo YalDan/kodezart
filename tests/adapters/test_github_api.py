@@ -1066,3 +1066,86 @@ async def test_non_404_status_error_propagates_from_wait_for_checks() -> None:
         )
     assert runs_calls == 1
     await client.close()
+
+
+class TestOpenDeliveryProbe:
+    """The forge side of the delivered-in-review / crashed discrimination."""
+
+    async def _client(self, entries: list[dict[str, object]]) -> GitHubAPIClient:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.params["state"] == "open"
+            return httpx.Response(200, json=entries)
+
+        return _make_client(handler)
+
+    async def test_a_referencing_open_pr_is_a_delivery(self) -> None:
+        client = await self._client(
+            [
+                {
+                    "number": 1,
+                    "title": "feat: something",
+                    "body": "Closes KOD-58.",
+                    "html_url": "https://example.invalid/pull/1",
+                },
+            ],
+        )
+        assert await client.open_delivery_exists(
+            repo_url="https://github.com/owner/repo",
+            issue_key="KOD-58",
+        )
+
+    async def test_an_unrelated_open_pr_is_not_a_delivery(self) -> None:
+        client = await self._client(
+            [
+                {
+                    "number": 1,
+                    "title": "chore: unrelated",
+                    "body": None,
+                    "html_url": "https://example.invalid/pull/1",
+                },
+            ],
+        )
+        assert not await client.open_delivery_exists(
+            repo_url="https://github.com/owner/repo",
+            issue_key="KOD-58",
+        )
+
+    async def test_a_key_that_is_a_prefix_of_another_does_not_match(self) -> None:
+        """KOD-5 must not be delivered by a pull request about KOD-58."""
+        client = await self._client(
+            [
+                {
+                    "number": 1,
+                    "title": "feat: KOD-58",
+                    "body": "",
+                    "html_url": "https://example.invalid/pull/1",
+                },
+            ],
+        )
+        assert not await client.open_delivery_exists(
+            repo_url="https://github.com/owner/repo",
+            issue_key="KOD-5",
+        )
+
+    async def test_no_open_pull_requests_is_not_a_delivery(self) -> None:
+        client = await self._client([])
+        assert not await client.open_delivery_exists(
+            repo_url="https://github.com/owner/repo",
+            issue_key="KOD-58",
+        )
+
+    async def test_the_title_alone_is_enough(self) -> None:
+        client = await self._client(
+            [
+                {
+                    "number": 2,
+                    "title": "KOD-58: the tracker port",
+                    "body": None,
+                    "html_url": "https://example.invalid/pull/2",
+                },
+            ],
+        )
+        assert await client.open_delivery_exists(
+            repo_url="https://github.com/owner/repo",
+            issue_key="KOD-58",
+        )
