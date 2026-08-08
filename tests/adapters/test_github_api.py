@@ -24,7 +24,7 @@ def _make_client(
     ci_poll_max_attempts: int = 10,
     ci_no_checks_grace_polls: int = 3,
     ci_no_workflows_grace_polls: int = 3,
-    ci_grace_poll_interval_seconds: float = 0.0,
+    ci_grace_poll_interval_seconds: float = 10.0,
     ci_ref_not_found_grace_polls: int = 3,
     timeout_seconds: float = 5.0,
     max_retries: int = 1,
