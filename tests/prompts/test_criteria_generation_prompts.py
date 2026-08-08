@@ -35,7 +35,12 @@ PATTERN_5_TICKET = (
 )
 
 
-def _render(ticket: str, *, findings: str | None = None) -> str:
+def _render(
+    ticket: str,
+    *,
+    findings: str | None = None,
+    base_ref: str = "main",
+) -> str:
     return (
         load_registry()
         .template_for(PromptKey.ACCEPTANCE_CRITERIA)
@@ -43,6 +48,7 @@ def _render(ticket: str, *, findings: str | None = None) -> str:
             {
                 "task_description": ticket,
                 "validation_findings": findings,
+                "base_ref": base_ref,
                 "skills_reference": "",
             },
         )

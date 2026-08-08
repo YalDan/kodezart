@@ -592,6 +592,7 @@ class RalphWorkflowEngine:
                     state["acceptance_criteria"],
                     state["criteria_validation"],
                 ),
+                "base_ref": ctx.base_branch,
             },
         )
 

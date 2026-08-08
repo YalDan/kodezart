@@ -65,8 +65,13 @@ FEASIBLE_B = {"criterionId": "AC-2", "smallestRepair": "none"}
 class ValidatorScriptExecutor:
     """Answers every workflow schema; scripts the validator round by round."""
 
-    def __init__(self, sweeps: list[dict[str, object]]) -> None:
+    def __init__(
+        self,
+        sweeps: list[dict[str, object]],
+        criteria_rounds: list[dict[str, object]] | None = None,
+    ) -> None:
         self._sweeps = list(sweeps)
+        self._criteria_rounds = list(criteria_rounds or [])
         self.sweep_calls = 0
         self.criteria_calls = 0
         self.prompts: list[str] = []
@@ -99,6 +104,18 @@ class ValidatorScriptExecutor:
             structured = self._sweeps.pop(0)
         elif "criteria" in props and "criteriaResults" not in props:
             self.criteria_calls += 1
+            if self._criteria_rounds:
+                structured = self._criteria_rounds.pop(0)
+                yield ResultEvent(
+                    subtype="result",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="validator-script",
+                    structured_output=structured,
+                )
+                return
             structured = {
                 "criteria": [
                     {
@@ -494,3 +511,90 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
         == "a PostgreSQL server reachable from the runner"
     )
     assert artifact.conjunction.satisfiable is True
+
+
+# ---------------------------------------------------------------------------
+# AC-32 — a scope criterion that names no base never reaches the loop
+# ---------------------------------------------------------------------------
+
+
+BARE_DIFF_CRITERION = (
+    "Running `git diff --name-only` shows changes only under `src/kodezart/api/`."
+)
+BASED_CRITERION = (
+    "Against the lane's recorded base `kodezart/blocker-a-11111111`, the "
+    "changed file set is confined to `src/kodezart/api/`."
+)
+
+
+def _criteria_round(scope_text: str) -> dict[str, object]:
+    return {
+        "criteria": [
+            {"text": scope_text, "classification": "hard_gate"},
+            {
+                "text": "`Foo` is importable from `app.api`.",
+                "classification": "hard_gate",
+            },
+        ],
+        "reasoning": "Generated from codebase analysis.",
+    }
+
+
+WRONG_BASELINE_FINDING = {
+    "criterionId": "AC-1",
+    "smallestRepair": "criterion_text",
+    "refutation": (
+        "the criterion measures scope with a bare `git diff` and names no base, "
+        "so it is measured against whatever the grader picks — against the "
+        "recorded base `kodezart/blocker-a-11111111` it is not the same claim"
+    ),
+}
+
+
+async def test_a_scope_criterion_with_no_stated_base_is_regenerated() -> None:
+    """The wrong-baseline class is a criterion-text fault, so it is amended.
+
+    What reaches the loop names the resolved base; the bare ``git diff``
+    draft does not survive the sweep, and the assertion is over the
+    dispatched set rather than over the prompt that asked for it.
+    """
+    executor = ValidatorScriptExecutor(
+        sweeps=[
+            {"findings": [WRONG_BASELINE_FINDING, FEASIBLE_B], "contradictions": []},
+            {"findings": [FEASIBLE_A, FEASIBLE_B], "contradictions": []},
+        ],
+        criteria_rounds=[
+            _criteria_round(BARE_DIFF_CRITERION),
+            _criteria_round(BASED_CRITERION),
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    assert executor.criteria_calls == 2, "the bare-diff draft consumed a round"
+    dispatched = gate.calls[0]["acceptance_criteria"]
+    assert isinstance(dispatched, list)
+    texts = [criterion.text for criterion in dispatched]
+    assert BASED_CRITERION in texts
+    assert BARE_DIFF_CRITERION not in texts
+    assert "kodezart/blocker-a-11111111" in texts[0]
+    assert "git diff --name-only`" not in texts[0]
+
+
+async def test_the_drafter_is_told_which_base_the_lane_is_measured_against() -> None:
+    """The resolved base reaches the drafter as data, not as an assumption."""
+    executor = ValidatorScriptExecutor(
+        sweeps=[{"findings": [FEASIBLE_A, FEASIBLE_B], "contradictions": []}],
+    )
+    await _run(_engine(executor))
+
+    drafter_prompts = [
+        p for p in executor.prompts if "SCOPE CRITERIA NAME THEIR BASE" in p
+    ]
+    assert len(drafter_prompts) == 1
+    assert "This lane's comparison base is `main`" in drafter_prompts[0]
+    assert "Never write `main` or `trunk` as the base" in drafter_prompts[0]

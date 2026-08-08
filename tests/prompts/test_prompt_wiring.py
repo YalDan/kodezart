@@ -150,7 +150,11 @@ GOLDEN_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "commit_message": (PromptKey.COMMIT_MESSAGE, {}),
     "acceptance_criteria": (
         PromptKey.ACCEPTANCE_CRITERIA,
-        {"task_description": TASK_MD, "validation_findings": None},
+        {
+            "task_description": TASK_MD,
+            "validation_findings": None,
+            "base_ref": "main",
+        },
     ),
     "acceptance_criteria__regeneration_round": (
         PromptKey.ACCEPTANCE_CRITERIA,
@@ -160,6 +164,7 @@ GOLDEN_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
                 MINTED_CRITERIA,
                 VALIDATION,
             ),
+            "base_ref": "kodezart/blocker-a-12345678",
         },
     ),
     "criteria_validation": (
@@ -827,7 +832,7 @@ def test_acceptance_criteria_set_content_contains_watson_dispatch() -> None:
     """The acceptance-criteria member still carries the Watson dispatch."""
     registry = load_registry()
     output = registry.template_for(PromptKey.ACCEPTANCE_CRITERIA).render(
-        {"task_description": "Implement feature X"},
+        {"task_description": "Implement feature X", "base_ref": "main"},
     )
     assert "WATSON 1" in output
     assert "graceful degradation" in output
