@@ -5,13 +5,24 @@ Git operations via subprocess.
 
 import asyncio
 import os
+import re
 from pathlib import Path
 
 from kodezart.core.protocols import GitAuth
+from kodezart.domain.errors import MergeConflictError
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
 
 _UNKNOWN_EXIT_CODE = -1
+
+_CONFLICT_LINE = re.compile(r"^CONFLICT \([^)]*\): .*? in (?P<path>.+)$", re.MULTILINE)
+
+
+def _conflicting_paths(output: str) -> tuple[str, ...]:
+    """Every path git named in a ``CONFLICT (...)`` line of *output*."""
+    return tuple(
+        match.group("path").strip() for match in _CONFLICT_LINE.finditer(output)
+    )
 
 
 class SubprocessGitService:
@@ -160,8 +171,22 @@ class SubprocessGitService:
         )
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None:
-        """Fast-forward merge a source branch into HEAD."""
-        await self._run(["git", "merge", "--ff-only", source_branch], cwd=cwd)
+        """Fast-forward merge a source branch into HEAD.
+
+        A merge git refuses raises ``MergeConflictError`` carrying the paths
+        git named as conflicting.  The list is empty when git refused
+        without naming any — a divergence that cannot fast-forward, for
+        instance — because "conflicts, here" and "conflicts, somewhere" are
+        different facts and collapsing them would lose the second.
+        """
+        try:
+            await self._run(["git", "merge", "--ff-only", source_branch], cwd=cwd)
+        except RuntimeError as exc:
+            raise MergeConflictError(
+                f"merge of {source_branch} could not be completed",
+                source_branch=source_branch,
+                paths=_conflicting_paths(str(exc)),
+            ) from exc
 
     async def current_sha(self, cwd: str) -> str:
         """Return the current HEAD SHA."""

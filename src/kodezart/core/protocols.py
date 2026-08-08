@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.branch import WorkRef
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -483,6 +484,25 @@ class TrackerPort(Protocol):
 
     async def read_document(self, *, document_key: str) -> str:
         """The document's text content."""
+        ...
+
+    async def record_work_ref(self, *, ref: WorkRef) -> WorkRef:
+        """Record *ref* against its issue and return it as stored.
+
+        At most one ``DELIVERABLE`` ref exists per issue: a second raises
+        ``DuplicateWorkRefError`` and is never a silent replacement.
+        Recording the same ref twice is idempotent.
+        """
+        ...
+
+    async def list_work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        """Every ref recorded against the issue, oldest first.
+
+        This is the read D2 requires: *which refs deliver issue X, in which
+        roles, at which shas* is answerable through the port, so no code
+        anywhere derives an issue identity, a role or a parent from a
+        branch name.
+        """
         ...
 
     async def resolve_mappings(

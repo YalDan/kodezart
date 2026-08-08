@@ -79,3 +79,90 @@ class OutboundContentBlockedError(Exception):
 
 class QueueFullError(Exception):
     """Raised when a lane's queue is at capacity and cannot accept a submission."""
+
+
+class DuplicateWorkRefError(Exception):
+    """Raised when a second ref is recorded at a role that admits only one.
+
+    At most one ``DELIVERABLE`` ref exists per issue.  A second is an error
+    and never a silent replacement: silently replacing it would move every
+    dependent lane's base without anything saying so.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        issue_id: str,
+        role: str,
+        existing_branch: str,
+        offered_branch: str,
+    ) -> None:
+        super().__init__(message)
+        self.issue_id: str = issue_id
+        self.role: str = role
+        self.existing_branch: str = existing_branch
+        self.offered_branch: str = offered_branch
+
+
+class BaseResolutionError(Exception):
+    """Raised when a lane's base cannot be resolved. The lane does not dispatch.
+
+    Trunk is NEVER substituted on this path.  A lane whose premise cannot be
+    located must not build without it, and a base that silently fell back to
+    trunk is indistinguishable from a lane that had no premise at all.
+
+    Carries primitives only, the metadata shape ``RateLimitError`` uses.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        issue_id: str,
+        blocker_issue_ids: Sequence[str] = (),
+        branches: Sequence[str] = (),
+    ) -> None:
+        super().__init__(message)
+        self.issue_id: str = issue_id
+        self.blocker_issue_ids: tuple[str, ...] = tuple(blocker_issue_ids)
+        self.branches: tuple[str, ...] = tuple(branches)
+
+
+class BaseIntegrationConflictError(BaseResolutionError):
+    """Raised when two inputs to a constructed base conflict textually.
+
+    Never resolved by judgment, never by dropping an input, and trunk is
+    never substituted.  No partial integration ref is pushed or recorded.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        issue_id: str,
+        branches: Sequence[str],
+        paths: Sequence[str],
+    ) -> None:
+        detail = (
+            f"{message} (refs: {', '.join(branches)}; "
+            f"conflicting paths: {', '.join(paths)})"
+        )
+        super().__init__(detail, issue_id=issue_id, branches=branches)
+        self.paths: tuple[str, ...] = tuple(paths)
+
+
+class MergeConflictError(Exception):
+    """Raised by the git port when a merge cannot be completed.
+
+    ``paths`` carries the paths git named as conflicting; it is empty when
+    git refused the merge without naming any (a non-fast-forwardable
+    divergence, for instance).
+    """
+
+    def __init__(
+        self, message: str, *, source_branch: str, paths: Sequence[str]
+    ) -> None:
+        super().__init__(message)
+        self.source_branch: str = source_branch
+        self.paths: tuple[str, ...] = tuple(paths)

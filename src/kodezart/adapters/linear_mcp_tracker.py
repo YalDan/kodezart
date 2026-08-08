@@ -28,7 +28,8 @@ from pydantic import ValidationError
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
-from kodezart.domain.errors import TransientAPIError
+from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
+from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.linear_mcp import (
     LinearCommentListWire,
     LinearCommentWire,
@@ -100,6 +101,34 @@ _MAPPING_TOOL_BY_KIND: Mapping[MappingKind, str] = {
     MappingKind.QUEUE_STATE: _TOOL_LIST_ISSUE_LABELS,
     MappingKind.WORKFLOW_STATE: _TOOL_LIST_ISSUE_STATUSES,
 }
+
+_WORK_REF_MARKER = re.compile(
+    r"<!--\s*kodezart-workref\s+role=\"(?P<role>[^\"]+)\"\s+"
+    r"branch=\"(?P<branch>[^\"]+)\""
+    r"(?:\s+pushed-head-sha=\"(?P<sha>[^\"]+)\")?\s*-->",
+)
+
+_WORK_REF_ROLE_BY_VALUE: Mapping[str, WorkRefRole] = {
+    role.value: role for role in WorkRefRole
+}
+
+
+def _work_ref_marker(ref: WorkRef) -> str:
+    """The marker comment body for *ref*.
+
+    ``pushed_head_sha`` at ``None`` omits the attribute entirely: an empty
+    attribute value would read back as ``""``, which is a fourth state the
+    domain does not have.
+    """
+    sha = (
+        ""
+        if ref.pushed_head_sha is None
+        else f' pushed-head-sha="{ref.pushed_head_sha}"'
+    )
+    return (
+        f'<!-- kodezart-workref role="{ref.role.value}" branch="{ref.branch}"{sha} -->'
+    )
+
 
 _RETRY_BACKOFF_BASE = 2.0
 
@@ -393,6 +422,58 @@ class LinearMcpTracker:
             payload,
             _TOOL_GET_DOCUMENT,
         ).content
+
+    async def record_work_ref(self, *, ref: WorkRef) -> WorkRef:
+        """Append a work-ref marker comment and return the ref as stored.
+
+        The comment log is the same append-only, server-timestamped surface
+        the claim mechanism uses; a work ref is a second marker on it.  The
+        sha attribute is OMITTED when the ref is not pushed, so ``None``
+        round-trips as ``None`` rather than as an empty string.
+        """
+        existing = await self.list_work_refs(issue_key=ref.issue_id)
+        for held in existing:
+            if held == ref:
+                return held
+            if held.role is WorkRefRole.DELIVERABLE is ref.role:
+                raise DuplicateWorkRefError(
+                    "an issue carries at most one deliverable ref",
+                    issue_id=ref.issue_id,
+                    role=ref.role.value,
+                    existing_branch=held.branch,
+                    offered_branch=ref.branch,
+                )
+        payload = await self._call(
+            _TOOL_SAVE_COMMENT,
+            {"issueId": ref.issue_id, "body": _work_ref_marker(ref)},
+        )
+        wire = self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
+        return ref.model_copy(update={"recorded_at": wire.created_at})
+
+    async def list_work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        """Every work ref recorded on the issue, oldest first."""
+        refs: list[WorkRef] = []
+        for wire in await self._comment_wires(issue_key):
+            match = _WORK_REF_MARKER.search(wire.body)
+            if match is None:
+                continue
+            role = _WORK_REF_ROLE_BY_VALUE.get(match.group("role"))
+            if role is None:
+                raise TrackerProtocolError(
+                    "work-ref marker names an unknown role",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=match.group("role"),
+                )
+            refs.append(
+                WorkRef(
+                    issue_id=issue_key,
+                    role=role,
+                    branch=match.group("branch"),
+                    pushed_head_sha=match.group("sha"),
+                    recorded_at=wire.created_at,
+                ),
+            )
+        return tuple(refs)
 
     async def resolve_mappings(
         self,

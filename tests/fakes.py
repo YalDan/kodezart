@@ -16,7 +16,12 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
-from kodezart.domain.errors import TransientAPIError, WorkspaceError
+from kodezart.domain.errors import (
+    DuplicateWorkRefError,
+    MergeConflictError,
+    TransientAPIError,
+    WorkspaceError,
+)
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
@@ -29,6 +34,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowTicketEvent,
 )
+from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -88,8 +94,10 @@ class FakeGitService:
         trees: dict[str, str] | None = None,
         commit_tree_result: str = "c" * 40,
         push_error: Exception | None = None,
+        merge_conflicts: dict[str, tuple[str, ...]] | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
+        self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
         self.has_changes_result: bool = has_changes_result
         self._remote_branches: list[str] = remote_branches or []
         self._remote_branch_shas: dict[str, str | None] = (
@@ -166,6 +174,13 @@ class FakeGitService:
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None:
         self.calls.append(("merge_branch", cwd, source_branch))
+        paths = self._merge_conflicts.get(source_branch)
+        if paths is not None:
+            raise MergeConflictError(
+                f"merge of {source_branch} could not be completed",
+                source_branch=source_branch,
+                paths=paths,
+            )
 
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
@@ -1660,10 +1675,14 @@ class FakeTracker:
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         unresolvable: Sequence[MappingRef] = (),
+        work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
             issue.issue_key: issue for issue in issues
+        }
+        self.work_refs: dict[str, list[WorkRef]] = {
+            key: list(value) for key, value in (work_refs or {}).items()
         }
         self.claims: dict[str, ClaimResult] = {}
         self.comments: list[TrackerComment] = []
@@ -1826,6 +1845,27 @@ class FakeTracker:
 
     async def read_document(self, *, document_key: str) -> str:
         return self._documents[document_key]
+
+    async def record_work_ref(self, *, ref: WorkRef) -> WorkRef:
+        await asyncio.sleep(0)
+        held = self.work_refs.setdefault(ref.issue_id, [])
+        for existing in held:
+            if existing == ref:
+                return existing
+            if existing.role is WorkRefRole.DELIVERABLE is ref.role:
+                raise DuplicateWorkRefError(
+                    "an issue carries at most one deliverable ref",
+                    issue_id=ref.issue_id,
+                    role=ref.role.value,
+                    existing_branch=existing.branch,
+                    offered_branch=ref.branch,
+                )
+        held.append(ref)
+        return ref
+
+    async def list_work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        await asyncio.sleep(0)
+        return tuple(self.work_refs.get(issue_key, ()))
 
     async def resolve_mappings(
         self,
