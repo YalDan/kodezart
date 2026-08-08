@@ -1259,6 +1259,7 @@ class FakeArtifactPersister:
     def __init__(self) -> None:
         self.persist_calls: list[tuple[str | None, str | None, str, str]] = []
         self.clean_calls: list[tuple[str | None, str | None, str]] = []
+        self.artifacts: list[Mapping[str, str]] = []
 
     async def persist(
         self,
@@ -1271,6 +1272,7 @@ class FakeArtifactPersister:
         cache_key: str | None = None,
     ) -> None:
         self.persist_calls.append((repo_path, repo_url, branch, base_branch))
+        self.artifacts.append(dict(artifacts))
 
     async def clean(
         self,
