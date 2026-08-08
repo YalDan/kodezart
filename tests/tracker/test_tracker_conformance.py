@@ -15,6 +15,8 @@ from datetime import timedelta
 import pytest
 
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.errors import DuplicateWorkRefError
+from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     ClaimStatus,
@@ -456,3 +458,118 @@ class TestSubstitutability:
         }
         adapter_members = {name for name in dir(tracker) if not name.startswith("_")}
         assert adapter_members == port_members
+
+
+class TestWorkRefs:
+    """Work refs round-trip through the port, at every role.
+
+    Added here rather than beside the resolver so it binds every FUTURE
+    adapter rather than today's: an adapter that cannot carry a role, or
+    that recovers an unpushed ref as anything other than ``None``, fails
+    the suite that defines conforming.
+    """
+
+    @pytest.mark.parametrize("role", list(WorkRefRole))
+    async def test_every_role_round_trips_byte_identical(
+        self,
+        tracker: TrackerPort,
+        role: WorkRefRole,
+    ) -> None:
+        ref = WorkRef(
+            issue_id=APPROVED_ISSUE,
+            role=role,
+            branch=f"kodezart/fixture-{role.value}",
+            pushed_head_sha="0" * 40,
+            recorded_at=FIXTURE_NOW,
+        )
+        await tracker.record_work_ref(ref=ref)
+        stored = await tracker.list_work_refs(issue_key=APPROVED_ISSUE)
+        assert [(r.role, r.branch, r.pushed_head_sha) for r in stored] == [
+            (role, ref.branch, ref.pushed_head_sha),
+        ]
+
+    async def test_an_unpushed_ref_recovers_as_none_and_never_as_false(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Three-state, preserved across the wire.
+
+        ``False`` and ``""`` are both wrong answers here: an adapter that
+        collapsed the field to a boolean would let a resolution treat an
+        unpushed ref as present.
+        """
+        await tracker.record_work_ref(
+            ref=WorkRef(
+                issue_id=APPROVED_ISSUE,
+                role=WorkRefRole.DELIVERABLE,
+                branch="kodezart/unpushed",
+                pushed_head_sha=None,
+                recorded_at=FIXTURE_NOW,
+            ),
+        )
+        (stored,) = await tracker.list_work_refs(issue_key=APPROVED_ISSUE)
+        assert stored.pushed_head_sha is None
+        assert stored.pushed_head_sha is not False
+
+    async def test_an_issue_with_no_recorded_refs_reads_empty(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        assert await tracker.list_work_refs(issue_key=CLAIMED_ISSUE) == ()
+
+    async def test_a_second_deliverable_ref_raises_and_replaces_nothing(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        first = WorkRef(
+            issue_id=APPROVED_ISSUE,
+            role=WorkRefRole.DELIVERABLE,
+            branch="kodezart/first",
+            pushed_head_sha="a" * 40,
+            recorded_at=FIXTURE_NOW,
+        )
+        await tracker.record_work_ref(ref=first)
+        with pytest.raises(DuplicateWorkRefError):
+            await tracker.record_work_ref(
+                ref=first.model_copy(update={"branch": "kodezart/second"}),
+            )
+        stored = await tracker.list_work_refs(issue_key=APPROVED_ISSUE)
+        assert [r.branch for r in stored] == ["kodezart/first"]
+
+    async def test_recording_the_same_ref_twice_is_idempotent(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        ref = WorkRef(
+            issue_id=APPROVED_ISSUE,
+            role=WorkRefRole.DELIVERABLE,
+            branch="kodezart/first",
+            pushed_head_sha="a" * 40,
+            recorded_at=FIXTURE_NOW,
+        )
+        await tracker.record_work_ref(ref=ref)
+        await tracker.record_work_ref(ref=ref)
+        assert len(await tracker.list_work_refs(issue_key=APPROVED_ISSUE)) == 1
+
+    async def test_work_refs_and_claims_do_not_read_each_other(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Both live on the comment log; neither may see the other's markers."""
+        await tracker.claim_issue(
+            issue_key=APPROVED_ISSUE,
+            holder="fixture-holder",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.record_work_ref(
+            ref=WorkRef(
+                issue_id=APPROVED_ISSUE,
+                role=WorkRefRole.ITERATION,
+                branch="kodezart/iteration",
+                recorded_at=FIXTURE_NOW,
+            ),
+        )
+        claim = await tracker.active_claim(issue_key=APPROVED_ISSUE)
+        assert claim is not None and claim.holder == "fixture-holder"
+        refs = await tracker.list_work_refs(issue_key=APPROVED_ISSUE)
+        assert [r.role for r in refs] == [WorkRefRole.ITERATION]

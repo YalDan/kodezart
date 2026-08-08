@@ -1850,7 +1850,7 @@ class FakeTracker:
         await asyncio.sleep(0)
         held = self.work_refs.setdefault(ref.issue_id, [])
         for existing in held:
-            if existing == ref:
+            if existing.identity() == ref.identity():
                 return existing
             if existing.role is WorkRefRole.DELIVERABLE is ref.role:
                 raise DuplicateWorkRefError(
@@ -1895,12 +1895,14 @@ def make_tracker_issue(
     state_kind: WorkflowStateKind = WorkflowStateKind.UNSTARTED,
     queue_states: Sequence[QueueState] = (QueueState.APPROVED,),
     blocked_by: Sequence[str] = (),
+    parent_key: str | None = None,
     created_at: datetime = FIXTURE_EPOCH,
     body: str = "fixture body",
 ) -> TrackerIssue:
     """A domain issue for port-consumer fixtures."""
     return TrackerIssue(
         issue_key=issue_key,
+        parent_key=parent_key,
         title=issue_key,
         body=body,
         priority=priority,

@@ -71,6 +71,15 @@ class WorkRef(CamelCaseModel):
     pushed_head_sha: str | None = None
     recorded_at: datetime
 
+    def identity(self) -> tuple[str, WorkRefRole, str, str | None]:
+        """What makes this ref THIS ref, ``recorded_at`` excluded.
+
+        The recording instant is assigned by the backend, so two adapters
+        storing the same ref may return different ones.  Recording a ref
+        that is already recorded is idempotent and is decided here.
+        """
+        return (self.issue_id, self.role, self.branch, self.pushed_head_sha)
+
 
 class BaseInput(CamelCaseModel):
     """One resolved blocker contribution to a base, as it was at computation."""

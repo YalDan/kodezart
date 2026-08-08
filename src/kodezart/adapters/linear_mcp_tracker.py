@@ -433,7 +433,7 @@ class LinearMcpTracker:
         """
         existing = await self.list_work_refs(issue_key=ref.issue_id)
         for held in existing:
-            if held == ref:
+            if held.identity() == ref.identity():
                 return held
             if held.role is WorkRefRole.DELIVERABLE is ref.role:
                 raise DuplicateWorkRefError(
