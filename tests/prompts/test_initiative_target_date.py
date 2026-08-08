@@ -61,7 +61,17 @@ name = "check"
 command = "make check"
 
 [documents.checkpoint]
+system = "tracker"
 id = "doc-1"
+
+[documents.house_rules]
+system = "knowledge"
+id = "doc-2"
+
+[records.run_log]
+system = "knowledge"
+id = "record-1"
+append_only = true
 
 [knowledge]
 house_rules = "doc-2"

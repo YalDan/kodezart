@@ -73,15 +73,32 @@ depends_on = "type-check"
 # Read-side document registry, addressed by stable key. The "checkpoint" key
 # is required: the scan-window marker is addressed by key rather than by name
 # so the later writer never has to match on a title.
+#
+# `system` is REQUIRED alongside `id`. An id on its own renders into a prompt
+# as an opaque token, and a session given only that prompt cannot tell which
+# system to open. Legal values: "tracker", "knowledge".
 [documents.checkpoint]
+system = "tracker"
 id = "example-checkpoint-document-id"
 
 [documents.house_rules]
+system = "knowledge"
 id = "example-house-rules-document-id"
 
-# Reference material addressed from templates by key.
+# WRITE-side destination registry — where a pass records a row, as opposed to
+# where it reads. Deliberately separate from `documents`: that registry is
+# read-side, and a write flag on it would make it silently write-capable while
+# still not saying what is written. The "run_log" key is required.
+[records.run_log]
+system = "knowledge"
+id = "example-run-log-destination-id"
+append_only = true
+
+# Reference material held in the knowledge store, addressed by key. Every
+# value here belongs to the knowledge system by construction, which is what
+# a template naming it must say.
 [knowledge]
-house_rules = "example-house-rules-document-id"
+house_rules = "example-house-rules-knowledge-entry"
 
 # Named infrastructure endpoints. No endpoint string ever appears in a
 # template — templates reference the key.

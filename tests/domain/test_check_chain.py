@@ -20,7 +20,13 @@ from kodezart.types.domain.operation import CheckStep, OperationConfig
 
 _MINIMAL_TAIL = """
 [documents.checkpoint]
+system = "tracker"
 id = "doc-1"
+
+[records.run_log]
+system = "knowledge"
+id = "record-1"
+append_only = true
 
 [knowledge]
 

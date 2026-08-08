@@ -61,7 +61,20 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
             stage.value: label for stage, label in config.workflow_states.items()
         },
         "teams": dict(config.teams),
-        "documents": {key: entry.id for key, entry in config.documents.items()},
+        # An id alone renders as an opaque token no reader can resolve, so
+        # every document and record reference carries its system beside it.
+        "documents": {
+            key: {"system": entry.system.value, "id": entry.id}
+            for key, entry in config.documents.items()
+        },
+        "records": {
+            key: {
+                "system": entry.system.value,
+                "id": entry.id,
+                "append_only": entry.append_only,
+            }
+            for key, entry in config.records.items()
+        },
         "knowledge": dict(config.knowledge),
         "endpoints": dict(config.endpoints),
         # ``target_date`` is absent on a real initiative more often than not.

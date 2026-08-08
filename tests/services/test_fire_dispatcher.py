@@ -21,12 +21,14 @@ from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
+    DocumentSystem,
     Initiative,
     LifecycleStage,
     OperationConfig,
     Principal,
     PrincipalRole,
     QueueState,
+    RecordDestination,
     RepoEntry,
 )
 from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
@@ -84,7 +86,19 @@ def operation_config() -> OperationConfig:
                 check_commands=[CheckStep(name="check", command="make check")],
             )
         ],
-        documents={"checkpoint": DocumentEntry(id="doc-1")},
+        documents={
+            "checkpoint": DocumentEntry(
+                system=DocumentSystem.TRACKER,
+                id="doc-1",
+            ),
+        },
+        records={
+            "run_log": RecordDestination(
+                system=DocumentSystem.KNOWLEDGE,
+                id="record-1",
+                append_only=True,
+            ),
+        },
         knowledge={},
         endpoints={},
         initiatives=[Initiative(id="init-1")],

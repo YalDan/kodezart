@@ -31,6 +31,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
+    RUN_LOG_RECORD_KEY,
     LifecycleStage,
     OperationConfig,
     PrincipalRole,
@@ -104,8 +105,13 @@ def markdown_rows(heading: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
-    """Field-by-field: the eight specced fields plus the four added ones."""
+def test_all_thirteen_fields_are_present_with_the_stated_types() -> None:
+    """Field-by-field census: exact equality, never a subset check.
+
+    Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
+    registry).  The census stays total and stays ``==``; a census loosened
+    to a containment check stops being one.
+    """
     fields = OperationConfig.model_fields
     assert set(fields) == {
         "operation_name",
@@ -117,6 +123,7 @@ def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
         "workflow_states",
         "repos",
         "documents",
+        "records",
         "knowledge",
         "endpoints",
         "initiatives",
@@ -128,6 +135,7 @@ def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
     assert set(config.workflow_states) == set(LifecycleStage)
     assert config.initiatives[0].target_date == date(2026, 12, 31)
     assert config.repos[0].check_commands
+    assert config.records[RUN_LOG_RECORD_KEY].append_only is True
 
 
 def test_unknown_field_is_rejected(tmp_path: Path) -> None:
@@ -569,6 +577,11 @@ def _to_toml(raw: dict[str, object]) -> str:
                         lines.append(f"\n[[{key}.{sub_key}]]")
                         lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_item.items())
     return "\n".join(lines) + "\n"
+
+
+def write_toml(tmp_path: Path, raw: dict[str, object]) -> Path:
+    """Public name for the serialiser, for sibling modules to reuse."""
+    return _write_toml(tmp_path, raw)
 
 
 def _is_table_array(value: object) -> bool:

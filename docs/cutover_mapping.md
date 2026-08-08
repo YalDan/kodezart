@@ -72,7 +72,10 @@ block's own name is the mapped placeholder, and that is what the rows carry.
 | workflow_states.in_progress | workflow_states |
 | workflow_states.in_review | workflow_states |
 | workflow_states.done | workflow_states |
-| documents.checkpoint | documents |
+| documents.checkpoint.system | documents |
+| documents.checkpoint.id | documents |
+| records.run_log.system | records |
+| records.run_log.id | records |
 | knowledge.house_rules | knowledge |
 | endpoints.escalation | endpoints |
 

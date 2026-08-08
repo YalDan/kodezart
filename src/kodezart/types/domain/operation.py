@@ -13,6 +13,19 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, model_validator
 
 CHECKPOINT_DOCUMENT_KEY = "checkpoint"
+RUN_LOG_RECORD_KEY = "run_log"
+
+
+class DocumentSystem(StrEnum):
+    """The system a document or record id belongs to.
+
+    An enum rather than a free string: a free string reintroduces the
+    unresolvable-identifier problem one level up, which is the defect this
+    vocabulary exists to close.  Two members because two systems exist.
+    """
+
+    TRACKER = "tracker"
+    KNOWLEDGE = "knowledge"
 
 
 class PrincipalRole(StrEnum):
@@ -85,9 +98,28 @@ class RepoEntry(OperationModel):
 
 
 class DocumentEntry(OperationModel):
-    """A read-side document reference addressed by a stable key."""
+    """A read-side document reference addressed by a stable key.
 
+    ``system`` is required because an id alone is unresolvable: a rendered
+    prompt saying "the marker in <opaque-id>" names no system a session can
+    open, and a session given only the rendered prompt cannot recover one.
+    """
+
+    system: DocumentSystem
     id: str
+
+
+class RecordDestination(OperationModel):
+    """A WRITE-side destination a pass records a row to.
+
+    Deliberately not a flag on :class:`DocumentEntry`: ``documents`` is a
+    read-side registry, and a boolean there would make it silently
+    write-capable while still not saying what is written.
+    """
+
+    system: DocumentSystem
+    id: str
+    append_only: bool
 
 
 class Initiative(OperationModel):
@@ -150,6 +182,7 @@ class OperationConfig(OperationModel):
     workflow_states: dict[LifecycleStage, str]
     repos: list[RepoEntry]
     documents: dict[str, DocumentEntry]
+    records: dict[str, RecordDestination]
     knowledge: dict[str, str]
     endpoints: dict[str, str]
     initiatives: list[Initiative]
@@ -181,6 +214,11 @@ class OperationConfig(OperationModel):
             failures.append(
                 f"documents is missing the stable checkpoint key "
                 f"{CHECKPOINT_DOCUMENT_KEY!r}",
+            )
+
+        if RUN_LOG_RECORD_KEY not in self.records:
+            failures.append(
+                f"records is missing the stable run-log key {RUN_LOG_RECORD_KEY!r}",
             )
 
         failures.extend(
