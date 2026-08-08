@@ -14,6 +14,7 @@ from pathlib import Path
 import structlog
 
 from kodezart.domain.dispatch import DOMAIN_PRIORITY_ORDER
+from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.types.domain.dispatch import DispatchOutcome, ExclusionClause
 from kodezart.types.domain.job import JobState
@@ -45,6 +46,9 @@ LANE = "tracker"
 HOLDER = "pass-a"
 LEASE_SECONDS = 600.0
 PAGE_SIZE = 50
+ASSET_MAX_COUNT = 20
+ASSET_MAX_BYTES = 262144
+ASSET_FETCH_TIMEOUT_SECONDS = 30.0
 
 # Raw values as the vendor encodes priority: 0 is "no priority" and would
 # sort FIRST under an ascending numeric sort.  The fixture is stated in raw
@@ -109,6 +113,12 @@ def dispatcher(
         "holder": holder,
         "claim_lease_seconds": LEASE_SECONDS,
         "query_page_size": PAGE_SIZE,
+        "assembler": FireContextAssembler(
+            tracker=tracker,
+            max_count=ASSET_MAX_COUNT,
+            max_bytes=ASSET_MAX_BYTES,
+            fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,
+        ),
     }
     if draw is not None:
         kwargs["draw"] = draw

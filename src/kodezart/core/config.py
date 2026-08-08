@@ -251,6 +251,30 @@ class AppConfig(BaseSettings):
         default="tracker",
         description="Fire-queue lane tracker-originated dispatches are enqueued on.",
     )
+    asset_max_count: int = Field(
+        default=20,
+        ge=1,
+        le=200,
+        description=(
+            "Assets one fire's ticket may reference. A ticket referencing more "
+            "fails loudly rather than being fetched in part."
+        ),
+    )
+    asset_max_bytes: int = Field(
+        default=262144,
+        ge=1024,
+        le=10485760,
+        description=(
+            "Largest single asset admitted into a fire context. An asset over "
+            "the bound is a typed failure, never a truncation."
+        ),
+    )
+    asset_fetch_timeout_seconds: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=300.0,
+        description="Time one asset fetch may take before the fire fails to build.",
+    )
     checkpoint_url: str | None = Field(
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",

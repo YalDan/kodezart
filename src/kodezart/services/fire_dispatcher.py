@@ -30,6 +30,7 @@ from kodezart.domain.dispatch import (
     ranked_order,
     select_top_ranked,
 )
+from kodezart.services.fire_context import FireContextAssembler
 from kodezart.types.domain.dispatch import (
     DispatchOutcome,
     DispatchReport,
@@ -64,9 +65,11 @@ class FireDispatcher:
         holder: str,
         claim_lease_seconds: float,
         query_page_size: int,
+        assembler: FireContextAssembler,
         draw: Callable[[Sequence[str]], str] = _uniform_draw,
     ) -> None:
         self._tracker: TrackerPort = tracker
+        self._assembler: FireContextAssembler = assembler
         self._queue: JobQueue = queue
         self._registry: JobRegistry = registry
         self._delivery: DeliveryProbe = delivery
@@ -174,9 +177,13 @@ class FireDispatcher:
         winner = next(
             issue for issue in eligible if issue.issue_key == selection.winner_key
         )
+        context = await self._assembler.assemble(
+            issue_key=winner.issue_key,
+            body=winner.body,
+        )
         record = await self._queue.submit(
             lane=self._lane,
-            request=WorkflowRequest(prompt=winner.body, repo_url=self._repo_url),
+            request=WorkflowRequest(prompt=context.render(), repo_url=self._repo_url),
         )
         self._jobs_by_issue[winner.issue_key] = record.job_id
         await self._log.ainfo(

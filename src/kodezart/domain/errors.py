@@ -105,6 +105,33 @@ class DuplicateWorkRefError(Exception):
         self.offered_branch: str = offered_branch
 
 
+class AssetFetchError(Exception):
+    """Raised when a fire's referenced asset cannot be brought into its context.
+
+    Every asset a ticket references is required: kodezart does not decide
+    which of an author's references matter.  A fetch that failed and a fetch
+    that was skipped are indistinguishable to the session working the fire,
+    so there is no skip — the fire does not build.
+
+    ``reason`` is a short machine-readable token (``unreadable``,
+    ``too_large``, ``too_many``, ``timeout``) so a consumer can route on the
+    failure without parsing the message.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        issue_key: str,
+        reason: str,
+        asset_key: str | None = None,
+    ) -> None:
+        super().__init__(f"{message} (issue: {issue_key}; reason: {reason})")
+        self.issue_key: str = issue_key
+        self.reason: str = reason
+        self.asset_key: str | None = asset_key
+
+
 class BaseResolutionError(Exception):
     """Raised when a lane's base cannot be resolved. The lane does not dispatch.
 
