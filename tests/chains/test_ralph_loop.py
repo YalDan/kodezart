@@ -1,6 +1,8 @@
 """Tests for RalphLoop (inner quality-gating loop) with fakes."""
 
+import ast
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import TypedDict
 
 import pytest
@@ -1009,6 +1011,74 @@ def test_fold_trajectory_is_pure_over_empty_records() -> None:
     assert trajectory.best_iteration == 0
     assert trajectory.best_commit_sha is None
     assert trajectory.plateaued is False
+
+
+_SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+_PLATEAU_MODULE = "kodezart.domain.trajectory"
+_TYPES_IMPORT = (
+    "from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory"
+)
+_IMPURE_MARKERS = ("executor", "service", "agent")
+
+
+def _module_source(module: str) -> str:
+    relative = Path(*module.split(".")[1:])
+    candidates = (
+        _SRC_ROOT / relative.with_suffix(".py"),
+        _SRC_ROOT / relative / "__init__.py",
+    )
+    return next(path for path in candidates if path.is_file()).read_text()
+
+
+def _first_party_imports(module: str) -> set[str]:
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(_module_source(module))):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            if node.module.startswith("kodezart."):
+                found.add(node.module)
+        elif isinstance(node, ast.Import):
+            found.update(
+                alias.name for alias in node.names if alias.name.startswith("kodezart.")
+            )
+    return found
+
+
+def _first_party_closure(module: str) -> set[str]:
+    """Every ``kodezart.*`` module reachable from *module* by import."""
+    seen: set[str] = set()
+    pending = [module]
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        pending.extend(_first_party_imports(current) - seen)
+    return seen
+
+
+def test_plateau_classification_reaches_no_executor_service_or_agent() -> None:
+    """KOD-41 V3: the fold takes records plus a window and nothing else.
+
+    Two depths.  The module itself imports only the trajectory types, so
+    no executor, service or agent can be named in it directly.  And its
+    whole first-party import closure is free of them, so none can be
+    reached through an intermediary either — plateau classification is
+    arithmetic, not a call into the outside world.
+    """
+    imports = [
+        line
+        for line in _module_source(_PLATEAU_MODULE).splitlines()
+        if line.startswith(("import ", "from ")) or " import " in line
+    ]
+    assert imports == [_TYPES_IMPORT]
+
+    offenders = [
+        module
+        for module in _first_party_closure(_PLATEAU_MODULE)
+        if module != _PLATEAU_MODULE
+        and any(marker in module for marker in _IMPURE_MARKERS)
+    ]
+    assert offenders == []
 
 
 async def test_loop_retains_one_record_per_iteration_with_own_commit_sha() -> None:
