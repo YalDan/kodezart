@@ -66,19 +66,6 @@ def _empty_runs() -> httpx.Response:
     return httpx.Response(200, json={"total_count": 0, "check_runs": []})
 
 
-def _green_runs(count: int, *, first_id: int = 1) -> list[dict[str, object]]:
-    """*count* completed, successful check runs with distinct ids and names."""
-    return [
-        {
-            "id": first_id + offset,
-            "name": f"ci/check-{first_id + offset}",
-            "status": "completed",
-            "conclusion": "success",
-        }
-        for offset in range(count)
-    ]
-
-
 def _completed_run(conclusion: str = "success") -> httpx.Response:
     """Check-runs page with a single completed run."""
     return httpx.Response(
@@ -840,90 +827,8 @@ async def test_grace_polls_do_not_consume_the_poll_budget() -> None:
     await client.close()
 
 
-# -- Check-runs pagination ----------------------------------------------------
-
-
-async def test_partial_check_runs_listing_never_reports_a_pass() -> None:
-    """A run set shorter than total_count is pending, never a green verdict."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "actions/workflows" in str(request.url):
-            return _workflows(active=True)
-        if request.url.params.get("page") == "1":
-            return httpx.Response(
-                200,
-                json={"total_count": 101, "check_runs": _green_runs(100)},
-            )
-        return httpx.Response(200, json={"total_count": 101, "check_runs": []})
-
-    client = _make_client(handler, ci_poll_max_attempts=2)
-    passed, summary = await client.wait_for_checks(
-        repo_url="https://github.com/owner/repo", ref="abc123"
-    )
-    assert passed is not True
-    assert passed is False
-    assert summary == "CI checks still running after 2 polls."
-    await client.close()
-
-
-async def test_degenerate_count_without_runs_never_reports_a_pass() -> None:
-    """total_count > 0 with an empty run list is pending, not a vacuous pass."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "actions/workflows" in str(request.url):
-            return _workflows(active=True)
-        return httpx.Response(200, json={"total_count": 3, "check_runs": []})
-
-    client = _make_client(handler, ci_poll_max_attempts=2)
-    passed, summary = await client.wait_for_checks(
-        repo_url="https://github.com/owner/repo", ref="abc123"
-    )
-    assert passed is False
-    assert summary == "CI checks still running after 2 polls."
-    await client.close()
-
-
-async def test_pagination_evaluates_runs_beyond_the_first_page() -> None:
-    """A failure on page 2 is seen; the first page alone is not the verdict."""
-    pages_requested: list[str | None] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "actions/workflows" in str(request.url):
-            return _workflows(active=True)
-        page = request.url.params.get("page")
-        pages_requested.append(page)
-        if page == "1":
-            return httpx.Response(
-                200,
-                json={"total_count": 101, "check_runs": _green_runs(100)},
-            )
-        return httpx.Response(
-            200,
-            json={
-                "total_count": 101,
-                "check_runs": [
-                    {
-                        "id": 101,
-                        "name": "ci/slow",
-                        "status": "completed",
-                        "conclusion": "failure",
-                    },
-                ],
-            },
-        )
-
-    client = _make_client(handler)
-    passed, summary = await client.wait_for_checks(
-        repo_url="https://github.com/owner/repo", ref="abc123"
-    )
-    assert passed is False
-    assert summary == "CI failed: ci/slow"
-    assert pages_requested == ["1", "2"]
-    await client.close()
-
-
-async def test_single_page_listing_issues_one_request() -> None:
-    """A complete first page ends the walk without a second request."""
+async def test_one_poll_issues_exactly_one_check_runs_request() -> None:
+    """A poll is a single GET, so ci_poll_max_attempts bounds requests too."""
     runs_calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:

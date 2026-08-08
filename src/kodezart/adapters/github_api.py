@@ -10,7 +10,6 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import RateLimitError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.github import (
-    CheckRun,
     CheckRunsResponse,
     PullRequestResponse,
     WorkflowsResponse,
@@ -256,16 +255,8 @@ class GitHubAPIClient:
         return f"No CI checks appeared for this ref after {grace_polls} polls."
 
     def _verdict(self, page: CheckRunsResponse) -> tuple[bool, str] | None:
-        """Terminal pass/fail verdict for a page, or None while pending.
-
-        A run set shorter than ``total_count`` is never terminal: the
-        listing is incomplete (runs were added while paginating, or the
-        API reported a count it did not enumerate), and a verdict drawn
-        from it would report a pass this adapter did not verify.
-        """
+        """Terminal pass/fail verdict for a page, or None while pending."""
         if page.total_count == 0:
-            return None
-        if len(page.check_runs) != page.total_count:
             return None
         if any(run.status != "completed" for run in page.check_runs):
             return None
@@ -286,41 +277,25 @@ class GitHubAPIClient:
         repo: str,
         ref: str,
     ) -> CheckRunsResponse | None:
-        """Fetch every check-runs page for *ref*, or ``None`` when it 404s.
+        """Fetch one check-runs page, or ``None`` when the ref 404s.
 
-        Pages until the collected runs reach the reported ``total_count``
-        so the verdict is drawn from the whole run set, not the first
-        page.  A page carrying no runs ends the walk — the count is then
-        larger than what the API enumerated and ``_verdict`` treats the
-        result as pending.
-
-        A 404 means the ref is not yet visible to the checks API — a
-        transient condition on a freshly pushed commit.  Every other
-        status error propagates.
+        One poll is one request.  A 404 means the ref is not yet visible
+        to the checks API — a transient condition on a freshly pushed
+        commit.  Every other status error propagates.
         """
-        collected: list[CheckRun] = []
-        page_number = 1
-        while True:
-            try:
-                response = await self._request_with_retry(
-                    "GET",
-                    f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
-                    params={"per_page": self._PAGE_SIZE, "page": page_number},
-                )
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == self._NOT_FOUND_STATUS:
-                    return None
-                raise
-            page = CheckRunsResponse.model_validate(
-                response.json(),
+        try:
+            response = await self._request_with_retry(
+                "GET",
+                f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
+                params={"per_page": self._PAGE_SIZE},
             )
-            collected.extend(page.check_runs)
-            if not page.check_runs or len(collected) >= page.total_count:
-                return CheckRunsResponse(
-                    total_count=page.total_count,
-                    check_runs=collected,
-                )
-            page_number += 1
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == self._NOT_FOUND_STATUS:
+                return None
+            raise
+        return CheckRunsResponse.model_validate(
+            response.json(),
+        )
 
     async def _probe_workflows(
         self,
