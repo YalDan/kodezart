@@ -10,6 +10,8 @@ from kodezart.domain.agent import generate_job_id
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
+from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.skills import SkillsSelection
 
 
 class AgentService:
@@ -40,6 +42,7 @@ class AgentService:
         branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -58,6 +61,7 @@ class AgentService:
             ref=effective_ref,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
+            skills=skills,
             session_id=session_id,
             output_format=output_format,
             cache_key=cache_key,
@@ -71,6 +75,7 @@ class AgentService:
         workspace_path: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -80,6 +85,7 @@ class AgentService:
             cwd=workspace_path,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
+            skills=skills,
             session_id=session_id,
             output_format=output_format,
         ):
@@ -96,6 +102,8 @@ class AgentService:
         ralph_branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
+        visibility: RepoVisibility,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -111,6 +119,8 @@ class AgentService:
             create_branch=create_branch,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
+            skills=skills,
+            visibility=visibility,
             persist_branch=effective_ralph,
             cache_key=cache_key,
         ):
@@ -131,6 +141,8 @@ class AgentService:
         create_branch: bool = True,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         persist_branch: str | None = None,
@@ -172,6 +184,7 @@ class AgentService:
                 cwd=workspace_path,
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
+                skills=skills,
                 session_id=session_id,
                 output_format=output_format,
             ):
@@ -187,6 +200,8 @@ class AgentService:
                     branch=persist_branch,
                     executor=self._executor,
                     backup_ref_id_prefix=backup_ref_id_prefix,
+                    skills=skills,
+                    visibility=visibility,
                 )
                 if persist_result:
                     buffered_result = buffered_result.model_copy(

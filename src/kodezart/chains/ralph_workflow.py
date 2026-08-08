@@ -23,18 +23,21 @@ from kodezart.core.protocols import (
     BranchMerger,
     CIMonitor,
     GitService,
+    OutboundContentGate,
     PRCreator,
+    PromptProvider,
     QualityGate,
     RepoCache,
+    RepoVisibilityResolver,
     TicketGenerator,
 )
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.agent import generate_ralph_branch_name
+from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.domain.git_url import resolve_repo_url
+from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.ticket import format_ticket_as_task
-from kodezart.prompts import evaluation as evaluation_prompt
-from kodezart.prompts import pr_description as pr_description_prompt
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     BRANCH_NAME_SCHEMA,
@@ -54,8 +57,16 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
     WorkflowReviewEvent,
     WorkflowTicketEvent,
+    WorkflowVisibilityEvent,
 )
 from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.gating import (
+    GateVerdict,
+    RepoVisibility,
+    WriterShape,
+)
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 
 _CRITERIA_TA: TypeAdapter[list[str]] = TypeAdapter(list[str])
@@ -79,6 +90,10 @@ class RalphWorkflowEngine:
         git_remote: str,
         git: GitService,
         cache: RepoCache,
+        prompts: PromptProvider,
+        skills: SkillsSelection,
+        gate: OutboundContentGate,
+        visibility_resolver: RepoVisibilityResolver | None = None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
@@ -98,6 +113,10 @@ class RalphWorkflowEngine:
         # query canonical SHAs without leaking shell into the workflow body.
         self._git: GitService = git
         self._cache: RepoCache = cache
+        self._prompts: PromptProvider = prompts
+        self._skills: SkillsSelection = skills
+        self._gate: OutboundContentGate = gate
+        self._visibility_resolver: RepoVisibilityResolver | None = visibility_resolver
         self._pr_creator: PRCreator | None = pr_creator
         self._ci_monitor: CIMonitor | None = ci_monitor
         self._max_fix_rounds: int = max_fix_rounds
@@ -187,6 +206,7 @@ class RalphWorkflowEngine:
             "ci_passed": None,
             "ci_summary": None,
             "repo_url": resolved_url,
+            "repo_visibility": RepoVisibility.UNKNOWN,
         }
 
         async for event in self._compiled.astream(
@@ -206,6 +226,11 @@ class RalphWorkflowEngine:
     ) -> StateGraph[WorkflowState, None, WorkflowState, WorkflowState]:
         graph: StateGraph[WorkflowState, None, WorkflowState, WorkflowState] = (
             StateGraph(WorkflowState)
+        )
+        graph.add_node(
+            "resolve_visibility",
+            self._resolve_visibility_node,
+            retry_policy=self._retry,
         )
         graph.add_node(
             "generate_branch",
@@ -266,7 +291,8 @@ class RalphWorkflowEngine:
                 retry_policy=self._retry,
             )
 
-        graph.add_edge(START, "generate_branch")
+        graph.add_edge(START, "resolve_visibility")
+        graph.add_edge("resolve_visibility", "generate_branch")
         graph.add_edge("generate_branch", "generate_ticket")
         graph.add_edge("generate_ticket", "generate_criteria")
         if self._artifact_persister is not None:
@@ -320,23 +346,88 @@ class RalphWorkflowEngine:
 
     # -- Existing nodes ------------------------------------------------------
 
+    async def _resolve_visibility_node(
+        self,
+        state: WorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Resolve repository visibility ONCE, before any gated writer runs.
+
+        Fail-closed with no exemption: a resolution failure, a deployment
+        with no forge client, and a local-only run all yield UNKNOWN, which
+        takes the public path with the gate engaged.
+        """
+        _ = state  # required by LangGraph but unused in this node
+        ctx = ExecutionContext.from_configurable(config)
+        writer = get_stream_writer()
+
+        visibility = RepoVisibility.UNKNOWN
+        if self._visibility_resolver is not None and ctx.repo_url is not None:
+            visibility = await self._visibility_resolver.resolve_visibility(
+                repo_url=ctx.repo_url,
+            )
+
+        await self._log.ainfo(
+            "repo_visibility_resolved",
+            visibility=visibility.value,
+            repo_url=ctx.repo_url,
+        )
+        writer(
+            WorkflowVisibilityEvent(
+                visibility=visibility,
+                repo_url=ctx.repo_url,
+            )
+        )
+        return {"repo_visibility": visibility}
+
+    async def _gated(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+        writer_name: str,
+    ) -> str:
+        """Route one outbound payload through the gate. BLOCKED raises."""
+        decision = self._gate.gate(
+            content=content,
+            visibility=visibility,
+            shape=shape,
+        )
+        await self._log.ainfo(
+            "outbound_content_gated",
+            writer=writer_name,
+            verdict=decision.verdict.value,
+            visibility=visibility.value,
+            categories=[c.value for c in decision.categories],
+        )
+        if decision.verdict is GateVerdict.BLOCKED:
+            msg = "Outbound content blocked before write"
+            raise OutboundContentBlockedError(
+                msg,
+                writer=writer_name,
+                categories=[c.value for c in decision.categories],
+            )
+        return decision.content
+
     async def _generate_branch_node(
         self,
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
         """Ask the agent to generate a descriptive branch name."""
-        _ = state  # required by LangGraph but unused in this node
-        from kodezart.prompts import branch_name as branch_name_prompt
-
         ctx = ExecutionContext.from_configurable(config)
+        branch_prompt = self._prompts.template_for(PromptKey.BRANCH_NAME).render(
+            {"task": ctx.prompt},
+        )
         result_event, rate_limit_rejected = await drain(
             self._service.stream(
-                prompt=f"{branch_name_prompt.PROMPT}\n\nTask: {ctx.prompt}",
+                prompt=branch_prompt,
                 repo_path=ctx.repo_path,
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": BRANCH_NAME_SCHEMA,
@@ -355,7 +446,13 @@ class RalphWorkflowEngine:
             )
 
         output = BranchNameOutput.model_validate(result_event.structured_output)
-        feature_branch = f"kodezart/{output.slug}-{uuid.uuid4().hex[:8]}"
+        slug = await self._gated(
+            content=output.slug,
+            visibility=state["repo_visibility"],
+            shape=WriterShape.IDENTIFIER,
+            writer_name="branch_name",
+        )
+        feature_branch = f"kodezart/{slug}-{uuid.uuid4().hex[:8]}"
         ralph_branch = generate_ralph_branch_name(feature_branch)
         return {"feature_branch": feature_branch, "ralph_branch": ralph_branch}
 
@@ -393,8 +490,6 @@ class RalphWorkflowEngine:
         config: RunnableConfig,
     ) -> dict[str, object]:
         """Ask the agent to analyze the codebase and generate acceptance criteria."""
-        from kodezart.prompts import acceptance_criteria as criteria_prompt
-
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
@@ -403,8 +498,8 @@ class RalphWorkflowEngine:
             msg = "generate_criteria requires a ticket but state['ticket'] is None."
             raise RuntimeError(msg)
 
-        prompt = criteria_prompt.build_prompt(
-            task_description=format_ticket_as_task(ticket),
+        prompt = self._prompts.template_for(PromptKey.ACCEPTANCE_CRITERIA).render(
+            {"task_description": format_ticket_as_task(ticket)},
         )
 
         result_event, rate_limit_rejected = await drain(
@@ -415,6 +510,7 @@ class RalphWorkflowEngine:
                 branch=ctx.base_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": GENERATED_CRITERIA_SCHEMA,
@@ -458,6 +554,7 @@ class RalphWorkflowEngine:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility,
     ) -> WorkflowIterationEvent:
         """Delegate to the quality gate for iterative execution."""
         writer = get_stream_writer()
@@ -473,6 +570,7 @@ class RalphWorkflowEngine:
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
             cache_key=cache_key,
+            repo_visibility=repo_visibility,
         ):
             writer(event)
             if isinstance(event, WorkflowIterationEvent):
@@ -497,8 +595,12 @@ class RalphWorkflowEngine:
             msg = "run_ralph_loop requires a ticket but state['ticket'] is None."
             raise RuntimeError(msg)
 
+        implementation_prompt = self._prompts.template_for(
+            PromptKey.IMPLEMENTATION,
+        ).render({"task_md": format_ticket_as_task(ticket)})
+
         last_iteration_event = await self._run_quality_gate(
-            prompt=format_ticket_as_task(ticket),
+            prompt=implementation_prompt,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             feature_branch=state["feature_branch"],
@@ -508,6 +610,7 @@ class RalphWorkflowEngine:
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=state["acceptance_criteria"],
             cache_key=ctx.cache_key,
+            repo_visibility=state["repo_visibility"],
         )
 
         # feature_tip_sha is left None here; _merge_to_feature_node sets it
@@ -536,11 +639,21 @@ class RalphWorkflowEngine:
             raise RuntimeError(msg)
 
         artifacts: dict[str, str] = {
-            "ticket.json": ticket.model_dump_json(indent=2, by_alias=True),
-            "criteria.json": _CRITERIA_TA.dump_json(
-                state["acceptance_criteria"],
-                indent=2,
-            ).decode(),
+            "ticket.json": await self._gated(
+                content=ticket.model_dump_json(indent=2, by_alias=True),
+                visibility=state["repo_visibility"],
+                shape=WriterShape.PROSE,
+                writer_name="artifact_ticket_json",
+            ),
+            "criteria.json": await self._gated(
+                content=_CRITERIA_TA.dump_json(
+                    state["acceptance_criteria"],
+                    indent=2,
+                ).decode(),
+                visibility=state["repo_visibility"],
+                shape=WriterShape.PROSE,
+                writer_name="artifact_criteria_json",
+            ),
         }
 
         await self._artifact_persister.persist(
@@ -681,9 +794,11 @@ class RalphWorkflowEngine:
             base_ref=review_base_sha,
             head_ref=review_head_sha,
         )
-        prompt = evaluation_prompt.build_prompt(
-            criteria=state["acceptance_criteria"],
-            changeset=changeset,
+        prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(
+            {
+                "criteria": state["acceptance_criteria"],
+                **changeset_variables(changeset),
+            },
         )
 
         result_event, rate_limit_rejected = await drain(
@@ -694,6 +809,7 @@ class RalphWorkflowEngine:
                 branch=state["feature_branch"],
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,
@@ -783,15 +899,13 @@ class RalphWorkflowEngine:
             msg = "fix_code requires feature_tip_sha to be set."
             raise RuntimeError(msg)
 
-        task_md = format_ticket_as_task(ticket)
-        fix_prompt_parts = [f"Fix the following issues in the code:\n\n{task_md}"]
-        if state["review_feedback"] is not None:
-            fix_prompt_parts.append(
-                f"\n\n## Review Failures\n{state['review_feedback']}"
-            )
-        if state["ci_summary"] is not None:
-            fix_prompt_parts.append(f"\n\n## CI Failures\n{state['ci_summary']}")
-        fix_prompt = "".join(fix_prompt_parts)
+        fix_prompt = self._prompts.template_for(PromptKey.FIX).render(
+            {
+                "task_md": format_ticket_as_task(ticket),
+                "review_feedback": state["review_feedback"],
+                "ci_summary": state["ci_summary"],
+            },
+        )
 
         await self._run_quality_gate(
             prompt=fix_prompt,
@@ -804,6 +918,7 @@ class RalphWorkflowEngine:
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=state["acceptance_criteria"],
             cache_key=ctx.cache_key,
+            repo_visibility=state["repo_visibility"],
         )
 
         outcome = await self._merger.consolidate(
@@ -904,10 +1019,12 @@ class RalphWorkflowEngine:
             )
 
         # Generate PR description via agent
-        prompt = pr_description_prompt.build_prompt(
-            ticket=ticket,
-            acceptance_criteria=state["acceptance_criteria"],
-            total_iterations=state["total_iterations"],
+        prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
+            {
+                "task_md": format_ticket_as_task(ticket),
+                "acceptance_criteria": state["acceptance_criteria"],
+                "total_iterations": state["total_iterations"],
+            },
         )
         result_event, rate_limit_rejected = await drain(
             self._service.stream(
@@ -916,6 +1033,7 @@ class RalphWorkflowEngine:
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": PR_DESCRIPTION_SCHEMA,
@@ -939,8 +1057,18 @@ class RalphWorkflowEngine:
 
         pr_url, pr_number = await pr_creator.create_pr(
             repo_url=repo_url,
-            title=pr_output.title,
-            body=pr_output.description,
+            title=await self._gated(
+                content=pr_output.title,
+                visibility=state["repo_visibility"],
+                shape=WriterShape.PROSE,
+                writer_name="pr_title",
+            ),
+            body=await self._gated(
+                content=pr_output.description,
+                visibility=state["repo_visibility"],
+                shape=WriterShape.PROSE,
+                writer_name="pr_body",
+            ),
             head=state["feature_branch"],
             base=ctx.base_branch,
         )
@@ -1040,7 +1168,12 @@ class RalphWorkflowEngine:
         if state["ci_summary"] is not None:
             comment_parts.append(f"\n### CI Summary\n{state['ci_summary']}\n")
 
-        comment_body = "".join(comment_parts)
+        comment_body = await self._gated(
+            content="".join(comment_parts),
+            visibility=state["repo_visibility"],
+            shape=WriterShape.PROSE,
+            writer_name="pr_comment",
+        )
 
         try:
             await pr_creator.comment_on_pr(

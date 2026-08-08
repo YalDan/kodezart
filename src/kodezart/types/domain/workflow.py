@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.agent import CriterionResult, TicketDraftOutput
+from kodezart.types.domain.gating import RepoVisibility
 
 _LANGGRAPH_RESERVED_PREFIX = "__pregel_"
 _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
@@ -62,6 +63,7 @@ class RalphLoopContext(ExecutionContext):
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     acceptance_criteria: list[str] = Field(min_length=1)
+    repo_visibility: RepoVisibility
 
 
 # ---------------------------------------------------------------------------
@@ -128,3 +130,4 @@ class WorkflowState(TypedDict):
     ci_passed: bool | None
     ci_summary: str | None
     repo_url: str | None
+    repo_visibility: RepoVisibility

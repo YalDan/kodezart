@@ -11,10 +11,15 @@ from langgraph.types import RetryPolicy
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, GitService, RepoCache
+from kodezart.core.protocols import (
+    AgentRunner,
+    GitService,
+    PromptProvider,
+    RepoCache,
+)
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
-from kodezart.prompts import evaluation, iteration_feedback
+from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
@@ -23,6 +28,9 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
 
 
@@ -39,6 +47,8 @@ class RalphLoop:
         max_iterations: int,
         git: GitService,
         cache: RepoCache,
+        prompts: PromptProvider,
+        skills: SkillsSelection,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
@@ -51,6 +61,8 @@ class RalphLoop:
         # merger does that internally).
         self._git: GitService = git
         self._cache: RepoCache = cache
+        self._prompts: PromptProvider = prompts
+        self._skills: SkillsSelection = skills
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
             initial_interval=retry_initial_interval,
@@ -75,6 +87,7 @@ class RalphLoop:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the quality-gating loop.
 
@@ -92,6 +105,7 @@ class RalphLoop:
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
             acceptance_criteria=acceptance_criteria,
+            repo_visibility=repo_visibility,
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self._checkpointer is not None:
@@ -156,9 +170,11 @@ class RalphLoop:
 
         prompt = ctx.prompt
         if not is_first:
-            prompt = iteration_feedback.augment_prompt(
-                prompt,
-                state["pending_failures"],
+            prompt = self._prompts.template_for(PromptKey.ITERATION_FEEDBACK).render(
+                {
+                    "prior_prompt": prompt,
+                    "pending_failures": state["pending_failures"],
+                },
             )
 
         commit_sha: str | None = None
@@ -171,6 +187,8 @@ class RalphLoop:
             ralph_branch=ctx.ralph_branch,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
+            skills=self._skills,
+            visibility=ctx.repo_visibility,
             create_branch=is_first,
             cache_key=ctx.cache_key,
         ):
@@ -203,9 +221,11 @@ class RalphLoop:
             base_ref=ctx.base_branch,
             head_ref=ctx.ralph_branch,
         )
-        eval_prompt = evaluation.build_prompt(
-            criteria=ctx.acceptance_criteria,
-            changeset=changeset,
+        eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
+            {
+                "criteria": ctx.acceptance_criteria,
+                **changeset_variables(changeset),
+            },
         )
 
         result_event, rate_limit_rejected = await drain(
@@ -216,6 +236,7 @@ class RalphLoop:
                 branch=ctx.ralph_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,

@@ -12,6 +12,7 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.gating import RepoVisibility
 
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)
@@ -399,6 +400,14 @@ class WorkflowCompleteEvent(AgentEvent):
         if key not in result:
             result[key] = None
         return result
+
+
+class WorkflowVisibilityEvent(AgentEvent):
+    """Emitted once per run when repository visibility is resolved."""
+
+    type: Literal["workflow_visibility"] = "workflow_visibility"
+    visibility: RepoVisibility
+    repo_url: str | None = None
 
 
 class WorkflowCriteriaEvent(AgentEvent):

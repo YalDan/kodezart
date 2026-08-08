@@ -28,8 +28,12 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import WorkflowState
 from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeArtifactPersister,
     FakeBranchMerger,
@@ -41,9 +45,12 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    PassThroughGate,
+    RecordingPromptProvider,
     SequentialCIMonitor,
     make_failing_evaluation,
     make_passing_evaluation,
+    make_prompt_provider,
 )
 
 
@@ -66,6 +73,7 @@ def _make_engine(
     ci_monitor: FakeCIMonitor | None = None,
     max_fix_rounds: int = 2,
     artifact_persister: FakeArtifactPersister | None = None,
+    prompts: RecordingPromptProvider | None = None,
 ) -> RalphWorkflowEngine:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -81,6 +89,9 @@ def _make_engine(
         persister=FakeChangePersister(),
     )
     return RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=prompts if prompts is not None else make_prompt_provider(),
         service=service,
         quality_gate=quality_gate,
         ticket_generator=ticket_generator or FakeTicketGenerator(),
@@ -528,6 +539,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -575,6 +587,9 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -801,6 +816,9 @@ async def test_criteria_receives_formatted_ticket() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -963,6 +981,7 @@ class _SequentialReviewExecutor:
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -1111,6 +1130,9 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -1390,6 +1412,9 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -1515,6 +1540,9 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -1955,6 +1983,9 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -2054,6 +2085,9 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -2309,21 +2343,9 @@ async def test_merge_to_feature_source_missing_raises() -> None:
         ]
 
 
-async def test_review_against_ticket_passes_changeset_digest_to_build_prompt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """build_prompt receives a ChangesetDigest, not a positional criteria list."""
-    from kodezart.prompts import evaluation as eval_mod
-    from kodezart.types.domain.consolidation import ChangesetDigest
-
-    captured: list[ChangesetDigest] = []
-    original = eval_mod.build_prompt
-
-    def spy(*, criteria: list[str], changeset: ChangesetDigest) -> str:
-        captured.append(changeset)
-        return original(criteria=criteria, changeset=changeset)
-
-    monkeypatch.setattr(eval_mod, "build_prompt", spy)
+async def test_review_against_ticket_renders_the_changeset_digest() -> None:
+    """The post-merge review render receives digest DATA plus the criteria."""
+    prompts = RecordingPromptProvider(make_prompt_provider())
 
     merger = FakeBranchMerger(
         consolidation_outcomes=[
@@ -2339,7 +2361,7 @@ async def test_review_against_ticket_passes_changeset_digest_to_build_prompt(
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = _make_engine(quality_gate=gate, merger=merger)
+    engine = _make_engine(quality_gate=gate, merger=merger, prompts=prompts)
     _ = [
         e
         async for e in engine.run(
@@ -2351,7 +2373,10 @@ async def test_review_against_ticket_passes_changeset_digest_to_build_prompt(
             allowed_tools=["Bash"],
         )
     ]
-    assert any(isinstance(c, ChangesetDigest) for c in captured)
+    captured = prompts.variables_for(PromptKey.POST_MERGE_REVIEW)
+    assert captured
+    assert "commit_subjects" in captured[0]
+    assert "criteria" in captured[0]
 
 
 # ---------------------------------------------------------------------------
@@ -2366,6 +2391,7 @@ def _make_engine_with_executor(
     pr_creator: FakePRCreator | None = None,
     ci_monitor: FakeCIMonitor | None = None,
     max_fix_rounds: int = 2,
+    prompts: RecordingPromptProvider | None = None,
 ) -> RalphWorkflowEngine:
     """Build an engine wired to a pre-configured executor (e.g. _Sequential)."""
     service = AgentService(
@@ -2380,6 +2406,9 @@ def _make_engine_with_executor(
         last_commit_sha="a" * 40,
     )
     return RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=prompts if prompts is not None else make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -2645,6 +2674,7 @@ class _SequentialQualityGate:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
@@ -2717,6 +2747,9 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
         persister=FakeChangePersister(),
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -2820,6 +2853,9 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         last_commit_sha=feature_tip,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -2937,6 +2973,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -2967,6 +3004,9 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         persister=FakeChangePersister(),
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=FakeQualityGate(
             events=[],

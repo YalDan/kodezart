@@ -20,6 +20,7 @@ async def stream_query(body: QueryRequest, request: Request) -> StreamingRespons
     await _log.adebug("stream_query_endpoint")
     handler = AgentHandler(
         service=request.app.state.agent_service,
+        skills=request.app.state.skills,
         workflow_engine=getattr(
             request.app.state,
             "workflow_engine",
@@ -43,6 +44,7 @@ async def stream_workflow(
     await _log.adebug("stream_workflow_endpoint")
     handler = AgentHandler(
         service=request.app.state.agent_service,
+        skills=request.app.state.skills,
         workflow_engine=request.app.state.workflow_engine,
     )
 

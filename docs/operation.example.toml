@@ -1,0 +1,78 @@
+# Annotated example operation config.
+#
+# Pointed at by KODEZART_OPERATION_CONFIG. Parsed with stdlib tomllib; no new
+# dependency. This file is ORG-SHAPED runtime configuration — deployment and
+# infrastructure knobs live in AppConfig (env), cadence lives in scheduler
+# configuration, and per-fire parameters are request fields. Secrets NEVER
+# appear here: the model is extra="forbid", so a stray token key fails at load.
+#
+# Every field below is required. Validation is structural and collects every
+# failure into one typed error; existence resolution against the live
+# workspace belongs to the tracker adapter, not to config load.
+
+# Human-readable name of the operation these settings describe.
+operation_name = "example-operation"
+
+# The tracker workspace the operation acts within. A slug, not a URL.
+workspace = "example-workspace"
+
+# Identities the agent posts under. Must not collide with a principal.
+agent_identities = ["example-agent"]
+
+# Authority is enforced by ROLE, never by name in code or templates.
+# EXACTLY ONE principal carries the approver role; validated at load.
+[[principals]]
+tracker_user = "example-approver"
+role = "approver"
+
+[[principals]]
+tracker_user = "example-contributor"
+role = "principal"
+
+# Teams addressed from templates by key.
+[teams]
+primary = "EXA"
+
+# Queue states. An OPEN mapping: the five members code addresses by name are
+# required present, and any additional member is legal as a pure configuration
+# entry, addressable from templates, with no type or consumer change.
+[queue_states]
+triage = "queue:triage"
+proposed = "queue:proposed"
+approved = "queue:approved"
+done = "queue:done"
+decision = "queue:decision"
+
+# Lifecycle states, validated exactly parallel to queue_states.
+[workflow_states]
+in_progress = "In Progress"
+in_review = "In Review"
+done = "Done"
+
+# Repositories the operation acts on plus the commands that verify them.
+[[repos]]
+url = "https://example.invalid/example-org/example-repo"
+check_commands = ["make check"]
+
+# Read-side document registry, addressed by stable key. The "checkpoint" key
+# is required: the scan-window marker is addressed by key rather than by name
+# so the later writer never has to match on a title.
+[documents.checkpoint]
+id = "example-checkpoint-document-id"
+
+[documents.house_rules]
+id = "example-house-rules-document-id"
+
+# Reference material addressed from templates by key.
+[knowledge]
+house_rules = "example-house-rules-document-id"
+
+# Named infrastructure endpoints. No endpoint string ever appears in a
+# template — templates reference the key.
+[endpoints]
+escalation = "https://example.invalid/escalation"
+
+# Initiatives the operation is steering toward.
+[[initiatives]]
+id = "example-initiative"
+target_date = 2026-12-31

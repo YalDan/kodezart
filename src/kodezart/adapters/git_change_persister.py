@@ -19,15 +19,23 @@ mutated (no reset, no commit-tree, no follow-up push).
 
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentExecutor, GitService
+from kodezart.core.protocols import (
+    AgentExecutor,
+    GitService,
+    OutboundContentGate,
+    PromptProvider,
+)
 from kodezart.core.stream_drain import drain
-from kodezart.prompts import commit_message
+from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.agent import (
     COMMIT_MESSAGE_SCHEMA,
     CommitMessageOutput,
 )
 from kodezart.types.domain.branch import BackupBranchName
+from kodezart.types.domain.gating import GateVerdict, RepoVisibility, WriterShape
 from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 
 
 class GitChangePersister:
@@ -43,11 +51,15 @@ class GitChangePersister:
         committer_email: str,
         *,
         remote: str,
+        prompts: PromptProvider,
+        gate: OutboundContentGate,
     ) -> None:
         self._git = git
         self._committer_name = committer_name
         self._committer_email = committer_email
         self._remote = remote
+        self._prompts: PromptProvider = prompts
+        self._gate: OutboundContentGate = gate
         self._log: BoundLogger = get_logger(__name__)
 
     async def persist(
@@ -57,6 +69,8 @@ class GitChangePersister:
         branch: str,
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
+        skills: SkillsSelection,
+        visibility: RepoVisibility,
     ) -> PersistResult | None:
         """Ensure ``<remote>/<branch>`` equals workspace HEAD.
 
@@ -76,6 +90,8 @@ class GitChangePersister:
                 workspace_path=workspace_path,
                 branch=branch,
                 executor=executor,
+                skills=skills,
+                visibility=visibility,
             )
 
         head_sha = await self._git.current_sha(workspace_path)
@@ -106,6 +122,7 @@ class GitChangePersister:
                 head_sha=head_sha,
                 remote_tip=remote_tip,
                 backup_ref_id_prefix=backup_ref_id_prefix,
+                visibility=visibility,
             )
 
         head_message = await self._git.head_commit_message(workspace_path)
@@ -128,12 +145,23 @@ class GitChangePersister:
         workspace_path: str,
         branch: str,
         executor: AgentExecutor,
+        skills: SkillsSelection,
+        visibility: RepoVisibility,
     ) -> PersistResult:
-        commit_msg = await self._generate_commit_message(executor, workspace_path)
+        commit_msg = await self._generate_commit_message(
+            executor,
+            workspace_path,
+            skills,
+        )
         await self._git.add_all(workspace_path)
         full_message = commit_msg.title
         if commit_msg.body:
             full_message = f"{commit_msg.title}\n\n{commit_msg.body}"
+        full_message = await self._gated_message(
+            full_message,
+            visibility,
+            "commit_message",
+        )
         sha = await self._git.commit(
             cwd=workspace_path,
             message=full_message,
@@ -157,6 +185,7 @@ class GitChangePersister:
         head_sha: str,
         remote_tip: str,
         backup_ref_id_prefix: str,
+        visibility: RepoVisibility,
     ) -> PersistResult:
         backup_name = str(
             BackupBranchName(
@@ -186,7 +215,11 @@ class GitChangePersister:
 
         # Capture divergent-HEAD message + tree BEFORE reset (defensive: keeps
         # recovery correct even if a worktree pruned unreachable objects).
-        head_message_divergent = await self._git.head_commit_message(workspace_path)
+        head_message_divergent = await self._gated_message(
+            await self._git.head_commit_message(workspace_path),
+            visibility,
+            "commit_message_divergence_replay",
+        )
         head_tree = await self._git.tree_of(workspace_path, head_sha)
 
         # Step 2: single reset moves the shared refs/heads/<branch>.
@@ -235,10 +268,43 @@ class GitChangePersister:
             source=PersistSource.DIVERGENCE_REPLAY,
         )
 
+    async def _gated_message(
+        self,
+        message: str,
+        visibility: RepoVisibility,
+        writer: str,
+    ) -> str:
+        """Route a commit message through the outbound gate.
+
+        Every verdict is observable: a rewritten message is never silently
+        posted and a blocked one is never silently dropped.
+        """
+        decision = self._gate.gate(
+            content=message,
+            visibility=visibility,
+            shape=WriterShape.PROSE,
+        )
+        await self._log.ainfo(
+            "outbound_content_gated",
+            writer=writer,
+            verdict=decision.verdict.value,
+            visibility=visibility.value,
+            categories=[c.value for c in decision.categories],
+        )
+        if decision.verdict is GateVerdict.BLOCKED:
+            msg = "Outbound content blocked before commit"
+            raise OutboundContentBlockedError(
+                msg,
+                writer=writer,
+                categories=[c.value for c in decision.categories],
+            )
+        return decision.content
+
     async def _generate_commit_message(
         self,
         executor: AgentExecutor,
         cwd: str,
+        skills: SkillsSelection,
     ) -> CommitMessageOutput:
         output_format: dict[str, object] = {
             "type": "json_schema",
@@ -247,10 +313,11 @@ class GitChangePersister:
 
         result_event, rate_limit_rejected = await drain(
             executor.stream(
-                prompt=commit_message.PROMPT,
+                prompt=self._prompts.template_for(PromptKey.COMMIT_MESSAGE).render({}),
                 cwd=cwd,
                 permission_mode="plan",
                 allowed_tools=["Read", "Glob", "Grep", "Bash"],
+                skills=skills,
                 output_format=output_format,
             )
         )

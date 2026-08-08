@@ -1,14 +1,23 @@
 """Protocol definitions — composition without inheritance."""
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
+from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
+from kodezart.types.domain.gating import (
+    GateDecision,
+    RepoVisibility,
+    ScanHit,
+    WriterShape,
+)
 from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
 
 
 @runtime_checkable
@@ -186,6 +195,7 @@ class AgentExecutor(Protocol):
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -226,6 +236,8 @@ class ChangePersister(Protocol):
         branch: str,
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
+        skills: SkillsSelection,
+        visibility: RepoVisibility,
     ) -> PersistResult | None:
         """Commit and push changes. ``None`` if clean.
 
@@ -361,6 +373,7 @@ class AgentRunner(Protocol):
         branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -379,6 +392,8 @@ class AgentRunner(Protocol):
         ralph_branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
+        visibility: RepoVisibility,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -392,6 +407,7 @@ class AgentRunner(Protocol):
         workspace_path: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -429,6 +445,7 @@ class QualityGate(Protocol):
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Iterate execute/evaluate until pass or max."""
         ...
@@ -466,4 +483,68 @@ class WorkflowEngine(Protocol):
         allowed_tools: list[str],
     ) -> AsyncIterator[AgentEvent]:
         """Full pipeline: branch → ticket → criteria → loop → merge."""
+        ...
+
+
+@runtime_checkable
+class PromptProvider(Protocol):
+    """Serves UNRENDERED prompt templates by function key.
+
+    Consumers never import prompt modules — there are none.  Rendering is
+    orthogonal: the provider returns a template, the single rendering path
+    substitutes.  ``InRepoPromptRegistry`` is the first adapter.
+    """
+
+    def template_for(self, key: PromptKey) -> PromptTemplate:
+        """Return the template registered for *key*."""
+        ...
+
+    def resolution_table(self) -> Mapping[PromptKey, str]:
+        """Effective ``key -> set/source`` mapping over every key."""
+        ...
+
+    def declared_skills(self, key: PromptKey) -> Sequence[str]:
+        """Skill names the resolved set declares for *key*. Empty is legal."""
+        ...
+
+
+@runtime_checkable
+class SkillInventory(Protocol):
+    """The skill names the host exposes at user scope."""
+
+    def available(self) -> frozenset[str]:
+        """Every resolvable skill name, including plugin-qualified ones."""
+        ...
+
+
+@runtime_checkable
+class RepoVisibilityResolver(Protocol):
+    """Resolves a repository's visibility once per run."""
+
+    async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
+        """Return PRIVATE / PUBLIC, or UNKNOWN when resolution fails."""
+        ...
+
+
+@runtime_checkable
+class ContentScanner(Protocol):
+    """Finds deny-pattern matches in an outbound payload."""
+
+    def scan(self, content: str) -> Sequence[ScanHit]:
+        """Every match, with its category and span."""
+        ...
+
+
+@runtime_checkable
+class OutboundContentGate(Protocol):
+    """Assigns an explicit, observable verdict to every outbound payload."""
+
+    def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+    ) -> GateDecision:
+        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted."""
         ...

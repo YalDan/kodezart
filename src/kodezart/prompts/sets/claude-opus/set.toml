@@ -1,0 +1,34 @@
+# Prompt set metadata. Parsed with stdlib tomllib by InRepoPromptRegistry.
+# Unknown top-level keys and unknown sections are a typed boot error;
+# new sections are added by extending PromptSetMetadata additively.
+
+name = "claude-opus"
+engines = ["claude-opus"]
+
+# Set-level fragment content. The registry binds {{skills_reference}} in every
+# member from this header plus the member key's [skills] loadout; a key with an
+# empty loadout binds the fragment to the empty string.
+[fragments]
+skills_reference_header = """\
+── SKILLS AVAILABLE FOR THIS ROLE ──
+Load each skill below when its subject matter is in play; ignore the ones \
+that do not apply.\
+"""
+
+# Function key -> skill names the role should reach for. Declared for every
+# key; an explicit empty list means the role loads no skills.
+[skills]
+branch_name = []
+ticket_create = ["code-review"]
+ticket_review = ["code-review", "security-review"]
+ticket_revision = []
+acceptance_criteria = ["code-review"]
+implementation = ["code-review"]
+evaluation = ["code-review", "security-review"]
+iteration_feedback = ["code-review"]
+post_merge_review = ["code-review", "security-review"]
+fix = ["code-review"]
+commit_message = []
+pr_description = []
+fire_prep_pass = []
+grooming_pass = []

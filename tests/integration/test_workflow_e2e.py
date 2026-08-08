@@ -21,8 +21,11 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistSource
+from kodezart.types.domain.skills import SkillsSelection
 from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
@@ -31,8 +34,10 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    PassThroughGate,
     ScriptedFakeExecutor,
     make_passing_evaluation,
+    make_prompt_provider,
 )
 
 
@@ -113,6 +118,8 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         committer_email="t@t.dev",
     )
     persister = GitChangePersister(
+        gate=PassThroughGate(),
+        prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
         committer_email="t@t.dev",
@@ -146,13 +153,25 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
+    ralph_loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        max_iterations=3,
+        git=git,
+        cache=cache,
+    )
     ticket_generator = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=ralph_loop,
         ticket_generator=ticket_generator,
@@ -207,6 +226,8 @@ async def test_workflow_e2e_exhausts_iterations(
         committer_email="t@t.dev",
     )
     persister = GitChangePersister(
+        gate=PassThroughGate(),
+        prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
         committer_email="t@t.dev",
@@ -240,13 +261,25 @@ async def test_workflow_e2e_exhausts_iterations(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=2, git=git, cache=cache)
+    ralph_loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        max_iterations=2,
+        git=git,
+        cache=cache,
+    )
     ticket_generator = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=ralph_loop,
         ticket_generator=ticket_generator,
@@ -314,6 +347,7 @@ class _MarkerCapturingExecutor:
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -321,6 +355,7 @@ class _MarkerCapturingExecutor:
         snapshot = marker.read_text() if marker.exists() else ""
         self.marker_snapshots.append((output_format, snapshot))
         async for event in self._inner.stream(
+            skills=SUPPRESS_ALL_SKILLS,
             prompt=prompt,
             cwd=cwd,
             permission_mode=permission_mode,
@@ -349,6 +384,8 @@ async def test_workflow_e2e_divergent_base_branch(
         committer_email="t@t.dev",
     )
     persister = GitChangePersister(
+        gate=PassThroughGate(),
+        prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
         committer_email="t@t.dev",
@@ -383,13 +420,25 @@ async def test_workflow_e2e_divergent_base_branch(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
+    ralph_loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        max_iterations=3,
+        git=git,
+        cache=cache,
+    )
     ticket_generator = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=ralph_loop,
         ticket_generator=ticket_generator,
@@ -593,6 +642,8 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         committer_email="t@t.dev",
     )
     persister = GitChangePersister(
+        gate=PassThroughGate(),
+        prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
         committer_email="t@t.dev",
@@ -626,13 +677,25 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         workspace=workspace,
         persister=persister,
     )
-    ralph_loop = RalphLoop(service=service, max_iterations=3, git=git, cache=cache)
+    ralph_loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        max_iterations=3,
+        git=git,
+        cache=cache,
+    )
     ticket_generator = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=2,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=ralph_loop,
         ticket_generator=ticket_generator,
@@ -765,6 +828,8 @@ async def test_git_change_persister_recovers_from_divergence_against_configured_
     # --- Provoke: persist() on a clean tree HEAD that diverges from remote
     git = SubprocessGitService(remote=remote_name)
     persister = GitChangePersister(
+        gate=PassThroughGate(),
+        prompts=make_prompt_provider(),
         git=git,
         committer_name="test",
         committer_email="t@t.dev",
@@ -772,9 +837,11 @@ async def test_git_change_persister_recovers_from_divergence_against_configured_
     )
 
     result = await persister.persist(
+        skills=SUPPRESS_ALL_SKILLS,
         workspace_path=str(repo),
         branch="main",
         executor=ScriptedFakeExecutor(eval_results=[]),
+        visibility=RepoVisibility.UNKNOWN,
         backup_ref_id_prefix="abc12345",
     )
     assert result is not None
@@ -867,6 +934,9 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
     must track the configured remote.
     """
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=AgentService(
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
@@ -1004,6 +1074,9 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         last_commit_sha="a" * 40,
     )
     engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
         ticket_generator=FakeTicketGenerator(),
@@ -1014,6 +1087,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         cache=FakeRepoCache(),
         artifact_persister=None,
     )
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service
     app.state.workflow_engine = engine
 

@@ -11,7 +11,11 @@ from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
-from tests.fakes import FakeAgentExecutor, FakeWorkspaceProvider
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeAgentExecutor,
+    FakeWorkspaceProvider,
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -84,6 +88,7 @@ def git_branch_merger(
 @pytest.fixture
 async def agent_client() -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
         executor=FakeAgentExecutor(
             events=[

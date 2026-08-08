@@ -15,7 +15,13 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
     WorkflowTicketReviewEvent,
 )
-from tests.fakes import FakeAgentExecutor, FakeWorkspaceProvider
+from kodezart.types.domain.skills import SkillsSelection
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeAgentExecutor,
+    FakeWorkspaceProvider,
+    make_prompt_provider,
+)
 
 
 def _make_loop(
@@ -29,6 +35,8 @@ def _make_loop(
         persister=None,
     )
     return TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         workspace=FakeWorkspaceProvider(),
         max_reviews=max_reviews,
@@ -103,6 +111,7 @@ class _ScriptedReviewExecutor:
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -430,6 +439,7 @@ async def test_no_structured_output_from_creator_raises() -> None:
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -521,6 +531,7 @@ async def test_no_structured_output_from_reviewer_raises() -> None:
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -600,6 +611,8 @@ def _make_loop_with_workspace(
         persister=None,
     )
     return TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         workspace=workspace,
         max_reviews=max_reviews,
@@ -649,6 +662,7 @@ async def test_workspace_released_on_node_error() -> None:
             cwd: str,
             permission_mode: str,
             allowed_tools: list[str],
+            skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:

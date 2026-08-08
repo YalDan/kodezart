@@ -2,8 +2,21 @@
 
 from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from kodezart.types.domain.gating import GateVerdict, RedactionCategory
+from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+
+# Credential shapes are the one category that ships populated: a credential
+# leaving the process is never acceptable regardless of deployment. Every
+# other category ships empty so an unconfigured deployment behaves exactly as
+# it did before the gate existed.
+_SHIPPED_CREDENTIAL_PATTERNS: list[str] = [
+    r"https?://x-access-token:[^@\s/]+@",
+    r"\bgh[posu]_[A-Za-z0-9]{36,}",
+    r"\bgithub_pat_[A-Za-z0-9_]{20,}",
+]
 
 
 class AppConfig(BaseSettings):
@@ -148,6 +161,114 @@ class AppConfig(BaseSettings):
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
     )
+    prompt_set: str = Field(
+        default="claude-opus",
+        description=(
+            "Default prompt set name (a directory under prompts/sets/). "
+            "Deliberately independent of the model knob."
+        ),
+    )
+    prompt_set_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "JSON object mapping a prompt function key to the set that serves "
+            "it, overriding the default set for that key only."
+        ),
+    )
+    prompt_template_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "JSON object mapping a prompt function key to a filesystem path of "
+            "a template file. Highest precedence layer."
+        ),
+    )
+
+    skills_mode: SkillsMode = Field(
+        default=SkillsMode.NONE,
+        description=(
+            "Three-state skill selection: NONE suppresses every skill, ALL "
+            "loads every discovered skill, EXPLICIT loads the allowlist."
+        ),
+    )
+    skills_allowlist: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Skill names loaded under EXPLICIT mode. Must be empty in every "
+            "other mode. Names are host-provisioned at user scope."
+        ),
+    )
+    setting_sources: list[SettingSource] = Field(
+        default_factory=lambda: [
+            SettingSource.USER,
+            SettingSource.PROJECT,
+            SettingSource.LOCAL,
+        ],
+        description=(
+            "Settings sources passed explicitly to agent sessions so enabling "
+            "the skills knob never silently narrows loaded settings."
+        ),
+    )
+    deny_patterns: dict[RedactionCategory, list[str]] = Field(
+        default_factory=lambda: {
+            RedactionCategory.CROSS_REPO_NAMES: [],
+            RedactionCategory.TRACKER_URLS: [],
+            RedactionCategory.EMAIL_HANDLES: [],
+            RedactionCategory.INFRA_ENDPOINTS: [],
+            RedactionCategory.CREDENTIALS: list(_SHIPPED_CREDENTIAL_PATTERNS),
+        },
+        description=(
+            "JSON object mapping a redaction category to its regex pattern "
+            "list. Ships empty except the credential category."
+        ),
+    )
+    deny_pattern_verdicts: dict[RedactionCategory, GateVerdict] = Field(
+        default_factory=lambda: {
+            RedactionCategory.CROSS_REPO_NAMES: GateVerdict.REDACTED,
+            RedactionCategory.TRACKER_URLS: GateVerdict.REDACTED,
+            RedactionCategory.EMAIL_HANDLES: GateVerdict.REDACTED,
+            RedactionCategory.INFRA_ENDPOINTS: GateVerdict.BLOCKED,
+            RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED,
+        },
+        description=(
+            "JSON object mapping a redaction category to the verdict a hit "
+            "in that category yields. A payload takes the max severity."
+        ),
+    )
+    operation_config: str | None = Field(
+        default=None,
+        description=(
+            "Filesystem path to the operation config TOML. None means no "
+            "operation config is loaded and its binding namespace is empty."
+        ),
+    )
+    claude_home_dir: str = Field(
+        default="~/.claude",
+        description="Host directory holding user-scope skills and plugins.",
+    )
+
+    @model_validator(mode="after")
+    def _check_skills_configuration(self) -> Self:
+        """Reject the two contradictory skill configurations at load time."""
+        if self.skills_mode is SkillsMode.EXPLICIT and not self.skills_allowlist:
+            msg = (
+                "KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty "
+                "KODEZART_SKILLS_ALLOWLIST"
+            )
+            raise ValueError(msg)
+        if self.skills_mode is not SkillsMode.EXPLICIT and self.skills_allowlist:
+            msg = (
+                f"KODEZART_SKILLS_ALLOWLIST must be empty when "
+                f"KODEZART_SKILLS_MODE={self.skills_mode.value}"
+            )
+            raise ValueError(msg)
+        return self
+
+    def skills_selection(self) -> SkillsSelection:
+        """The typed three-state selection threaded to executor sessions."""
+        return SkillsSelection(
+            mode=self.skills_mode,
+            allowlist=tuple(self.skills_allowlist),
+        )
 
     @classmethod
     def from_env(cls) -> Self:
