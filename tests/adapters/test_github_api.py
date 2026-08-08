@@ -704,8 +704,13 @@ async def test_probe_failure_403_falls_back_to_standard_grace() -> None:
     await client.close()
 
 
-async def test_probe_rate_limit_propagates_instead_of_degrading() -> None:
-    """A retry-exhausted 429 on the workflows probe raises, never INDETERMINATE."""
+async def test_probe_rate_limit_falls_back_to_standard_grace() -> None:
+    """A retry-exhausted 429 probe degrades to the longer grace, never raises.
+
+    ``RateLimitError`` is a ``TransientAPIError``, and the acceptance
+    criterion names rate-limit alongside 403 and 5xx: the probe only
+    selects a grace window, so no probe failure may end the call.
+    """
     runs_calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -722,33 +727,17 @@ async def test_probe_rate_limit_propagates_instead_of_degrading() -> None:
         max_retries=1,
         retry_backoff_factor=0.01,
     )
-    with pytest.raises(RateLimitError):
-        await client.wait_for_checks(
+    with structlog.testing.capture_logs() as logs:
+        result = await client.wait_for_checks(
             repo_url="https://github.com/owner/repo", ref="abc123"
         )
-    assert runs_calls == 1
-    await client.close()
 
-
-async def test_probe_rate_limit_carries_retry_metadata() -> None:
-    """The propagated RateLimitError keeps the headers the caller needs."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "actions/workflows" in str(request.url):
-            return httpx.Response(
-                429,
-                headers={"retry-after": "0.01", "x-ratelimit-reset": "1700000000"},
-                json={"message": "rate limited"},
-            )
-        return _empty_runs()
-
-    client = _make_client(handler, max_retries=1, retry_backoff_factor=0.01)
-    with pytest.raises(RateLimitError) as exc_info:
-        await client.wait_for_checks(
-            repo_url="https://github.com/owner/repo", ref="abc123"
-        )
-    assert exc_info.value.retry_after == 0.01
-    assert exc_info.value.resets_at == 1700000000
+    assert result == (None, "No CI checks appeared for this ref after 3 polls.")
+    assert runs_calls == 3
+    probe_failed = [e for e in logs if e["event"] == "ci_workflows_probe_failed"]
+    assert len(probe_failed) == 1
+    assert probe_failed[0]["log_level"] == "warning"
+    assert probe_failed[0]["grace_polls"] == 3
     await client.close()
 
 

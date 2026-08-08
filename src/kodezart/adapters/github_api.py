@@ -332,11 +332,10 @@ class GitHubAPIClient:
         A listing carrying more workflows than the page returned errs
         toward ``ACTIVE`` — the longer grace window.
 
-        A retry-exhausted rate limit propagates: it says nothing about
-        the repository's workflows, and the caller's ``RetryPolicy``
-        needs the ``retry_after``/``resets_at`` metadata.  Only failures
-        that are genuinely about classification degrade to
-        ``INDETERMINATE``.
+        Every request failure degrades to ``INDETERMINATE``, including a
+        retry-exhausted rate limit (``RateLimitError`` is a
+        ``TransientAPIError``): the probe only ever selects a grace
+        window, and no probe failure may end the call.
         """
         try:
             response = await self._request_with_retry(
@@ -344,8 +343,6 @@ class GitHubAPIClient:
                 f"/repos/{owner}/{repo}/actions/workflows",
                 params={"per_page": self._PAGE_SIZE},
             )
-        except RateLimitError:
-            raise
         except (httpx.HTTPStatusError, TransientAPIError) as exc:
             await self._log.awarning(
                 "ci_workflows_probe_failed",
