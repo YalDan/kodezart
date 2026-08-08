@@ -453,3 +453,57 @@ async def test_commit_tree_creates_commit_with_parent_author_and_message(
     assert subject == "replay"
     assert author_name == "A"
     assert author_email == "a@a"
+
+
+async def test_run_failure_with_empty_stderr_reports_stdout(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """_run: a command failing with empty stderr surfaces its stdout."""
+    with pytest.raises(RuntimeError) as exc_info:
+        await git_service.commit(
+            cwd=str(git_repo),
+            message="empty",
+            author_name="test",
+            author_email="test@test.dev",
+        )
+    message = str(exc_info.value)
+    assert "working tree clean" in message
+    assert not message.endswith("failed: ")
+
+
+async def test_run_output_failure_with_empty_stderr_reports_stdout(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """_run_output: a command failing with empty stderr surfaces its stdout."""
+    with pytest.raises(RuntimeError) as exc_info:
+        await git_service._run_output(
+            ["git", "commit", "-m", "empty"],
+            cwd=str(git_repo),
+        )
+    message = str(exc_info.value)
+    assert "working tree clean" in message
+    assert not message.endswith("failed: ")
+
+
+async def test_run_failure_with_both_streams_empty_reports_exit_code(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """_run: neither stream carries detail, so the exit code is reported."""
+    with pytest.raises(RuntimeError) as exc_info:
+        await git_service._run(
+            ["git", "grep", "--quiet", "zzz-no-such-pattern-zzz"],
+            cwd=str(git_repo),
+        )
+    assert str(exc_info.value) == "git grep --quiet failed: exit code 1"
+
+
+async def test_run_output_failure_with_both_streams_empty_reports_exit_code(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """_run_output: neither stream carries detail, so the exit code is reported."""
+    with pytest.raises(RuntimeError) as exc_info:
+        await git_service._run_output(
+            ["git", "grep", "--quiet", "zzz-no-such-pattern-zzz"],
+            cwd=str(git_repo),
+        )
+    assert str(exc_info.value) == "git grep --quiet failed: exit code 1"

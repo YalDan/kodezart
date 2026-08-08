@@ -3,8 +3,8 @@
 import uuid
 
 
-def generate_job_id() -> str:
-    """Generate a unique 32-character hex job identifier for workspace isolation."""
+def generate_workspace_id() -> str:
+    """Generate a unique 32-character hex identifier for workspace isolation."""
     return uuid.uuid4().hex
 
 

@@ -14,6 +14,8 @@ Experiment: Run a workflow with shorthand repo_url and verify the merger
   receives a fully-resolved HTTPS URL, not the raw shorthand.
 """
 
+import uuid
+
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -21,6 +23,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
 )
 from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
@@ -29,7 +32,9 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
+    PassThroughGate,
     make_passing_evaluation,
+    make_prompt_provider,
 )
 
 
@@ -52,6 +57,9 @@ def _make_engine(
         git_base_url="https://github.com",
     )
     return RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
         service=service,
         quality_gate=quality_gate,
         ticket_generator=FakeTicketGenerator(),
@@ -80,6 +88,7 @@ async def test_merger_receives_resolved_url_not_shorthand() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -114,6 +123,7 @@ async def test_full_url_passes_through_unchanged() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 
@@ -147,6 +157,7 @@ async def test_local_repo_path_not_affected() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
         )
     ]
 

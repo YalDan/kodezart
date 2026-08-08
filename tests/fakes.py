@@ -1,10 +1,21 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Mapping, Sequence
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from kodezart.core.protocols import AgentExecutor
+from fastapi import FastAPI
+
+from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.adapters.in_repo_prompt_registry import (
+    InRepoPromptRegistry,
+    default_sets_root,
+)
+from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
 from kodezart.domain.errors import WorkspaceError
+from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -21,7 +32,24 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.gating import (
+    GateDecision,
+    GateVerdict,
+    RepoVisibility,
+    ScanHit,
+    WriterShape,
+)
 from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
+
+SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
+DEFAULT_SETTING_SOURCES: list[SettingSource] = [
+    SettingSource.USER,
+    SettingSource.PROJECT,
+    SettingSource.LOCAL,
+]
 
 
 class FakeGitService:
@@ -33,6 +61,8 @@ class FakeGitService:
         remote_branches: list[str] | None = None,
         *,
         remote_branch_shas: dict[str, str | None] | None = None,
+        remote_branch_sha_sequences: dict[str, list[str | None]] | None = None,
+        delete_remote_branch_error: Exception | None = None,
         ancestor_pairs: set[tuple[str, str]] | None = None,
         diff_digests: dict[tuple[str, str], ChangesetDigest] | None = None,
         trees: dict[str, str] | None = None,
@@ -45,6 +75,12 @@ class FakeGitService:
         self._remote_branch_shas: dict[str, str | None] = (
             dict(remote_branch_shas) if remote_branch_shas is not None else {}
         )
+        self._remote_branch_sha_sequences: dict[str, list[str | None]] = (
+            {branch: list(shas) for branch, shas in remote_branch_sha_sequences.items()}
+            if remote_branch_sha_sequences is not None
+            else {}
+        )
+        self._delete_remote_branch_error: Exception | None = delete_remote_branch_error
         self._ancestor_pairs: set[tuple[str, str]] = (
             set(ancestor_pairs) if ancestor_pairs is not None else set()
         )
@@ -126,6 +162,12 @@ class FakeGitService:
         branch: str,
     ) -> None:
         self.calls.append(("delete_remote_branch", cwd, remote, branch))
+        if self._delete_remote_branch_error is not None:
+            err, self._delete_remote_branch_error = (
+                self._delete_remote_branch_error,
+                None,
+            )
+            raise err
 
     async def list_remote_branches(
         self,
@@ -152,6 +194,9 @@ class FakeGitService:
         branch: str,
     ) -> str | None:
         self.calls.append(("remote_branch_sha", cwd, remote, branch))
+        sequence = self._remote_branch_sha_sequences.get(branch)
+        if sequence:
+            return sequence.pop(0)
         if branch in self._remote_branch_shas:
             return self._remote_branch_shas[branch]
         # Defaults: treat all branches as present at a deterministic SHA
@@ -288,6 +333,7 @@ class FakeAgentExecutor:
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -299,6 +345,7 @@ class FakeAgentExecutor:
                 "allowed_tools": allowed_tools,
                 "session_id": session_id,
                 "permission_mode": permission_mode,
+                "skills": skills,
             }
         )
         if self._is_branch_name_schema(output_format):
@@ -417,6 +464,7 @@ class FakeRaisingExecutor:
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -480,6 +528,8 @@ class FakeChangePersister:
         branch: str,
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> PersistResult | None:
         self.calls.append(
             {
@@ -572,11 +622,12 @@ class FakeAgentRunner:
         branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
-        self.calls.append({"method": "stream", "prompt": prompt})
+        self.calls.append({"method": "stream", "prompt": prompt, "skills": skills})
         for event in self._events:
             yield event
 
@@ -591,10 +642,19 @@ class FakeAgentRunner:
         ralph_branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
-        self.calls.append({"method": "stream_workflow", "prompt": prompt})
+        self.calls.append(
+            {
+                "method": "stream_workflow",
+                "prompt": prompt,
+                "skills": skills,
+                "visibility": visibility,
+            },
+        )
         for event in self._events:
             yield event
 
@@ -605,6 +665,7 @@ class FakeAgentRunner:
         workspace_path: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -647,6 +708,7 @@ class ScriptedFakeExecutor:
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -658,6 +720,7 @@ class ScriptedFakeExecutor:
                 "allowed_tools": allowed_tools,
                 "session_id": session_id,
                 "permission_mode": permission_mode,
+                "skills": skills,
             }
         )
         if output_format is None:
@@ -827,11 +890,13 @@ class FakeQualityGate:
         evaluation: AcceptanceCriteriaOutput,
         total_iterations: int = 1,
         last_commit_sha: str | None = None,
+        trajectory: LoopTrajectory | None = None,
     ) -> None:
         self._events = events
         self._evaluation = evaluation
         self._total_iterations = total_iterations
         self._last_commit_sha = last_commit_sha
+        self._trajectory = trajectory
         self.calls: list[dict[str, object]] = []
 
     async def run(
@@ -847,9 +912,11 @@ class FakeQualityGate:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
+                "repo_visibility": repo_visibility,
                 "prompt": prompt,
                 "repo_path": repo_path,
                 "repo_url": repo_url,
@@ -864,12 +931,27 @@ class FakeQualityGate:
         )
         for event in self._events:
             yield event
+        results = self._evaluation.criteria_results
         yield WorkflowIterationEvent(
             iteration=self._total_iterations,
             branch=ralph_branch,
             commit_sha=self._last_commit_sha,
-            accepted=all(r.passed for r in self._evaluation.criteria_results),
+            accepted=all(r.passed for r in results),
             evaluation=self._evaluation,
+            trajectory=self._trajectory
+            or fold_trajectory(
+                [
+                    IterationRecord(
+                        iteration=self._total_iterations,
+                        passed_count=sum(1 for r in results if r.passed),
+                        failing_criterion_ids=[
+                            r.criterion for r in results if not r.passed
+                        ],
+                        commit_sha=self._last_commit_sha,
+                    ),
+                ],
+                plateau_window=2,
+            ),
         )
 
 
@@ -1070,3 +1152,138 @@ class FakeArtifactPersister:
         cache_key: str | None = None,
     ) -> None:
         self.clean_calls.append((repo_path, repo_url, branch))
+
+
+DEFAULT_PROMPT_SET = "claude-opus"
+
+
+def make_prompt_provider() -> InRepoPromptRegistry:
+    """The real in-repo registry addressed by set name — prompts are data."""
+    return InRepoPromptRegistry.load(
+        sets_root=default_sets_root(),
+        default_set=DEFAULT_PROMPT_SET,
+        set_overrides={},
+        template_overrides={},
+        bindings={},
+    )
+
+
+@dataclass(frozen=True)
+class _RecordingTemplate(PromptTemplate):
+    """Template that appends every render call to a shared recorder."""
+
+    recorder: list[tuple[PromptKey, dict[str, object]]] = field(default_factory=list)
+
+    def render(self, variables: Mapping[str, object]) -> str:
+        self.recorder.append((self.key, dict(variables)))
+        return super().render(variables)
+
+
+class RecordingPromptProvider:
+    """PromptProvider that records the key and variables of every render."""
+
+    def __init__(self, inner: PromptProvider) -> None:
+        self._inner = inner
+        self.renders: list[tuple[PromptKey, dict[str, object]]] = []
+
+    def template_for(self, key: PromptKey) -> PromptTemplate:
+        inner = self._inner.template_for(key)
+        return _RecordingTemplate(
+            key=inner.key,
+            source=inner.source,
+            body=inner.body,
+            bindings=inner.bindings,
+            recorder=self.renders,
+        )
+
+    def resolution_table(self) -> Mapping[PromptKey, str]:
+        return self._inner.resolution_table()
+
+    def declared_skills(self, key: PromptKey) -> Sequence[str]:
+        return self._inner.declared_skills(key)
+
+    def variables_for(self, key: PromptKey) -> list[dict[str, object]]:
+        """Every recorded variable mapping rendered under *key*."""
+        return [variables for recorded, variables in self.renders if recorded is key]
+
+
+class PassThroughGate:
+    """OutboundContentGate that records calls and passes everything CLEAN."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, RepoVisibility, WriterShape]] = []
+
+    def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+    ) -> GateDecision:
+        self.calls.append((content, visibility, shape))
+        return GateDecision(verdict=GateVerdict.CLEAN, content=content)
+
+
+class FakeVisibilityResolver:
+    """RepoVisibilityResolver that scripts one visibility per run."""
+
+    def __init__(
+        self,
+        visibility: RepoVisibility = RepoVisibility.PUBLIC,
+        *,
+        fail: Exception | None = None,
+    ) -> None:
+        self._visibility = visibility
+        self._fail = fail
+        self.calls: list[str] = []
+
+    async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
+        self.calls.append(repo_url)
+        if self._fail is not None:
+            raise self._fail
+        return self._visibility
+
+
+class FakeContentScanner:
+    """ContentScanner that reports scripted hits, for scanner-ordering tests."""
+
+    def __init__(self, hits: list[ScanHit]) -> None:
+        self._hits = hits
+        self.calls: list[str] = []
+
+    def scan(self, content: str) -> list[ScanHit]:
+        self.calls.append(content)
+        return list(self._hits)
+
+
+@asynccontextmanager
+async def attached_job_queue(
+    app: FastAPI,
+    engine: WorkflowEngine,
+    *,
+    max_concurrent_runs_per_lane: int = 1,
+    max_depth_per_lane: int = 64,
+    terminal_retention_seconds: float = 86400.0,
+    event_buffer_retention_seconds: float = 900.0,
+    event_buffer_capacity: int = 512,
+) -> AsyncGenerator[AsyncioJobQueue, None]:
+    """Attach a started AsyncioJobQueue to *app*, stopping it on exit.
+
+    The httpx ASGITransport does not run lifespan events, so tests that
+    exercise queued endpoints wire the dispatcher the way the lifespan
+    does and stop it the same way.
+    """
+    queue = AsyncioJobQueue(
+        engine=engine,
+        max_concurrent_runs_per_lane=max_concurrent_runs_per_lane,
+        max_depth_per_lane=max_depth_per_lane,
+        terminal_retention_seconds=terminal_retention_seconds,
+        event_buffer_retention_seconds=event_buffer_retention_seconds,
+        event_buffer_capacity=event_buffer_capacity,
+    )
+    app.state.job_queue = queue
+    await queue.start()
+    try:
+        yield queue
+    finally:
+        await queue.stop()

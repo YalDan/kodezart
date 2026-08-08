@@ -32,9 +32,34 @@ class PullRequestResponse(BaseModel):
     number: int
 
 
+class RepositoryResponse(BaseModel):
+    """Wrapper for the GitHub repository metadata response."""
+
+    model_config = ConfigDict(frozen=True)
+
+    private: bool
+
+
 class CheckSuitesResponse(BaseModel):
     """Wrapper for the GitHub Check Suites API response."""
 
     model_config = ConfigDict(frozen=True)
 
     total_count: int
+
+
+class Workflow(BaseModel):
+    """A single GitHub Actions workflow."""
+
+    model_config = ConfigDict(frozen=True)
+
+    state: str
+
+
+class WorkflowsResponse(BaseModel):
+    """Wrapper for the GitHub Actions Workflows API response."""
+
+    model_config = ConfigDict(frozen=True)
+
+    total_count: int
+    workflows: list[Workflow]

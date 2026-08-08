@@ -12,10 +12,12 @@ from claude_agent_sdk import (
 
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
+from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.skills import SettingSource, SkillsSelection
 
 
 class ClaudeAgentExecutor:
@@ -26,7 +28,8 @@ class ClaudeAgentExecutor:
     production default.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, setting_sources: list[SettingSource]) -> None:
+        self._setting_sources = setting_sources
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -36,6 +39,7 @@ class ClaudeAgentExecutor:
         cwd: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -46,6 +50,7 @@ class ClaudeAgentExecutor:
             session_id=session_id,
             permission_mode=permission_mode,
             has_output_format=output_format is not None,
+            skills_mode=skills.mode.value,
         )
         options = ClaudeAgentOptions(
             cwd=cwd,
@@ -53,6 +58,8 @@ class ClaudeAgentExecutor:
             allowed_tools=allowed_tools,
             resume=session_id,
             output_format=output_format,
+            skills=map_skills(skills),
+            setting_sources=map_setting_sources(self._setting_sources),
         )
         # TODO: symmetric ProcessError/CLIConnectionError/ClaudeSDKError
         # detail preservation (exit_code, stderr_tail) matching

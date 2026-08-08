@@ -7,6 +7,9 @@ from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.agent import CriterionResult, TicketDraftOutput
+from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
+from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
 
 _LANGGRAPH_RESERVED_PREFIX = "__pregel_"
 _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
@@ -62,6 +65,7 @@ class RalphLoopContext(ExecutionContext):
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     acceptance_criteria: list[str] = Field(min_length=1)
+    repo_visibility: RepoVisibility
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +100,7 @@ class RalphLoopState(TypedDict):
     iteration: int
     accepted: bool
     pending_failures: list[CriterionResult]
+    iteration_records: list[IterationRecord]
     iteration_commit_sha: NotRequired[str | None]
 
 
@@ -107,6 +112,10 @@ class WorkflowState(TypedDict):
     runs.  ``review_base_sha`` / ``review_head_sha`` are the exact 40-char
     SHAs the evaluator's ``ChangesetDigest`` is computed between — set by
     consolidation nodes, read by ``_review_against_ticket_node``.
+
+    ``trajectory`` carries the most recent quality-gate invocation's
+    ``LoopTrajectory``; ``None`` until the first gate invocation projects
+    one.
     """
 
     feature_branch: str
@@ -128,3 +137,5 @@ class WorkflowState(TypedDict):
     ci_passed: bool | None
     ci_summary: str | None
     repo_url: str | None
+    repo_visibility: RepoVisibility
+    trajectory: LoopTrajectory | None

@@ -2,8 +2,21 @@
 
 from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from kodezart.types.domain.gating import GateVerdict, RedactionCategory
+from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+
+# Credential shapes are the one category that ships populated: a credential
+# leaving the process is never acceptable regardless of deployment. Every
+# other category ships empty so an unconfigured deployment behaves exactly as
+# it did before the gate existed.
+_SHIPPED_CREDENTIAL_PATTERNS: list[str] = [
+    r"https?://x-access-token:[^@\s/]+@",
+    r"\bgh[posu]_[A-Za-z0-9]{36,}",
+    r"\bgithub_pat_[A-Za-z0-9_]{20,}",
+]
 
 
 class AppConfig(BaseSettings):
@@ -115,7 +128,34 @@ class AppConfig(BaseSettings):
         ge=1,
         le=20,
         description=(
-            "Consecutive empty polls before concluding no CI checks are configured."
+            "Consecutive empty check-runs polls before concluding no CI checks "
+            "appeared for the ref (workflows present or probe indeterminate)."
+        ),
+    )
+    ci_no_workflows_grace_polls: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description=(
+            "Consecutive empty check-runs polls before concluding no CI when the "
+            "repository has no active workflows."
+        ),
+    )
+    ci_grace_poll_interval_seconds: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=60.0,
+        description=(
+            "Seconds between check-runs polls while no check run has been observed yet."
+        ),
+    )
+    ci_ref_not_found_grace_polls: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description=(
+            "Consecutive check-runs 404s tolerated before the ref is treated as "
+            "a transient API failure."
         ),
     )
     forge_api_timeout_seconds: float = Field(
@@ -148,6 +188,184 @@ class AppConfig(BaseSettings):
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
     )
+    prompt_set: str = Field(
+        default="claude-opus",
+        description=(
+            "Default prompt set name (a directory under prompts/sets/). "
+            "Deliberately independent of the model knob."
+        ),
+    )
+    prompt_set_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "JSON object mapping a prompt function key to the set that serves "
+            "it, overriding the default set for that key only."
+        ),
+    )
+    prompt_template_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "JSON object mapping a prompt function key to a filesystem path of "
+            "a template file. Highest precedence layer."
+        ),
+    )
+
+    skills_mode: SkillsMode = Field(
+        default=SkillsMode.NONE,
+        description=(
+            "Three-state skill selection: NONE suppresses every skill, ALL "
+            "loads every discovered skill, EXPLICIT loads the allowlist."
+        ),
+    )
+    skills_allowlist: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Skill names loaded under EXPLICIT mode. Must be empty in every "
+            "other mode. Names are host-provisioned at user scope."
+        ),
+    )
+    setting_sources: list[SettingSource] = Field(
+        default_factory=lambda: [
+            SettingSource.USER,
+            SettingSource.PROJECT,
+            SettingSource.LOCAL,
+        ],
+        description=(
+            "Settings sources passed explicitly to agent sessions so enabling "
+            "the skills knob never silently narrows loaded settings."
+        ),
+    )
+    deny_patterns: dict[RedactionCategory, list[str]] = Field(
+        default_factory=lambda: {
+            RedactionCategory.CROSS_REPO_NAMES: [],
+            RedactionCategory.TRACKER_URLS: [],
+            RedactionCategory.EMAIL_HANDLES: [],
+            RedactionCategory.INFRA_ENDPOINTS: [],
+            RedactionCategory.CREDENTIALS: list(_SHIPPED_CREDENTIAL_PATTERNS),
+        },
+        description=(
+            "JSON object mapping a redaction category to its regex pattern "
+            "list. Ships empty except the credential category."
+        ),
+    )
+    deny_pattern_verdicts: dict[RedactionCategory, GateVerdict] = Field(
+        default_factory=lambda: {
+            RedactionCategory.CROSS_REPO_NAMES: GateVerdict.REDACTED,
+            RedactionCategory.TRACKER_URLS: GateVerdict.REDACTED,
+            RedactionCategory.EMAIL_HANDLES: GateVerdict.REDACTED,
+            RedactionCategory.INFRA_ENDPOINTS: GateVerdict.BLOCKED,
+            RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED,
+        },
+        description=(
+            "JSON object mapping a redaction category to the verdict a hit "
+            "in that category yields. A payload takes the max severity."
+        ),
+    )
+    operation_config: str | None = Field(
+        default=None,
+        description=(
+            "Filesystem path to the operation config TOML. None means no "
+            "operation config is loaded and its binding namespace is empty."
+        ),
+    )
+    claude_home_dir: str = Field(
+        default="~/.claude",
+        description="Host directory holding user-scope skills and plugins.",
+    )
+    loop_plateau_window: int = Field(
+        default=2,
+        ge=2,
+        le=10,
+        description=(
+            "Iterations without a new best passed-count before the Ralph "
+            "loop is considered plateaued and stops."
+        ),
+    )
+    queue_max_concurrent_runs_per_lane: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        description="Dispatcher worker tasks per lane. 1 makes runs serial.",
+    )
+    queue_max_depth_per_lane: int = Field(
+        default=64,
+        ge=1,
+        le=1024,
+        description="Queued submissions a lane accepts before rejecting.",
+    )
+    queue_terminal_retention_seconds: float = Field(
+        default=86400.0,
+        ge=60.0,
+        le=604800.0,
+        description=(
+            "Seconds the terminal JOB RECORD is retained in the registry. "
+            "Governs the record only — a record is 1-2 KB, so a long window "
+            "is cheap. The replay buffer has its own, shorter window."
+        ),
+    )
+    queue_event_buffer_retention_seconds: float = Field(
+        default=900.0,
+        ge=0.0,
+        le=86400.0,
+        description=(
+            "Seconds a terminal job's REPLAY BUFFER is retained, independently "
+            "of its record. Governs the buffer only — buffered events run to "
+            "megabytes per job, so this window is short: long enough for a "
+            "disconnected client to reconnect and replay. 0 drops the buffer "
+            "as soon as the job goes terminal."
+        ),
+    )
+    queue_event_buffer_capacity: int = Field(
+        default=512,
+        ge=1,
+        le=10000,
+        description="Events retained per job for replay on attach.",
+    )
+
+    @model_validator(mode="after")
+    def _buffer_retention_within_record_retention(self) -> Self:
+        """Reject a replay buffer that would outlive its own job record.
+
+        Replayable frames for a job the registry can no longer name are
+        incoherent, so the configuration is rejected at boot rather than
+        clamped.
+        """
+        if self.queue_event_buffer_retention_seconds > (
+            self.queue_terminal_retention_seconds
+        ):
+            msg = (
+                "queue_event_buffer_retention_seconds "
+                f"({self.queue_event_buffer_retention_seconds}) must not exceed "
+                "queue_terminal_retention_seconds "
+                f"({self.queue_terminal_retention_seconds}): a replay buffer "
+                "cannot outlive the job record that names it"
+            )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _check_skills_configuration(self) -> Self:
+        """Reject the two contradictory skill configurations at load time."""
+        if self.skills_mode is SkillsMode.EXPLICIT and not self.skills_allowlist:
+            msg = (
+                "KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty "
+                "KODEZART_SKILLS_ALLOWLIST"
+            )
+            raise ValueError(msg)
+        if self.skills_mode is not SkillsMode.EXPLICIT and self.skills_allowlist:
+            msg = (
+                f"KODEZART_SKILLS_ALLOWLIST must be empty when "
+                f"KODEZART_SKILLS_MODE={self.skills_mode.value}"
+            )
+            raise ValueError(msg)
+        return self
+
+    def skills_selection(self) -> SkillsSelection:
+        """The typed three-state selection threaded to executor sessions."""
+        return SkillsSelection(
+            mode=self.skills_mode,
+            allowlist=tuple(self.skills_allowlist),
+        )
 
     @classmethod
     def from_env(cls) -> Self:

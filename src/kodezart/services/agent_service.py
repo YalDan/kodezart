@@ -6,10 +6,12 @@ from collections.abc import AsyncGenerator
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, ChangePersister, WorkspaceProvider
-from kodezart.domain.agent import generate_job_id
+from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
+from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.skills import SkillsSelection
 
 
 class AgentService:
@@ -40,6 +42,7 @@ class AgentService:
         branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -58,6 +61,7 @@ class AgentService:
             ref=effective_ref,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
+            skills=skills,
             session_id=session_id,
             output_format=output_format,
             cache_key=cache_key,
@@ -71,6 +75,7 @@ class AgentService:
         workspace_path: str,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -80,6 +85,7 @@ class AgentService:
             cwd=workspace_path,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
+            skills=skills,
             session_id=session_id,
             output_format=output_format,
         ):
@@ -96,6 +102,8 @@ class AgentService:
         ralph_branch: str | None = None,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
+        visibility: RepoVisibility,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -111,6 +119,8 @@ class AgentService:
             create_branch=create_branch,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
+            skills=skills,
+            visibility=visibility,
             persist_branch=effective_ralph,
             cache_key=cache_key,
         ):
@@ -131,6 +141,8 @@ class AgentService:
         create_branch: bool = True,
         permission_mode: str,
         allowed_tools: list[str],
+        skills: SkillsSelection,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         persist_branch: str | None = None,
@@ -172,6 +184,7 @@ class AgentService:
                 cwd=workspace_path,
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
+                skills=skills,
                 session_id=session_id,
                 output_format=output_format,
             ):
@@ -181,12 +194,14 @@ class AgentService:
                     yield event
 
             if persist_branch and self._persister and buffered_result:
-                backup_ref_id_prefix = (session_id or generate_job_id())[:8]
+                backup_ref_id_prefix = (session_id or generate_workspace_id())[:8]
                 persist_result = await self._persister.persist(
                     workspace_path=workspace_path,
                     branch=persist_branch,
                     executor=self._executor,
                     backup_ref_id_prefix=backup_ref_id_prefix,
+                    skills=skills,
+                    visibility=visibility,
                 )
                 if persist_result:
                     buffered_result = buffered_result.model_copy(

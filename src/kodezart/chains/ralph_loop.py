@@ -11,10 +11,17 @@ from langgraph.types import RetryPolicy
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, GitService, RepoCache
+from kodezart.core.protocols import (
+    AgentRunner,
+    GitService,
+    PromptProvider,
+    RepoCache,
+)
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
-from kodezart.prompts import evaluation, iteration_feedback
+from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.thread_id import ralph_thread_id
+from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
@@ -23,6 +30,10 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.trajectory import IterationRecord
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
 
 
@@ -37,20 +48,26 @@ class RalphLoop:
         service: AgentRunner,
         *,
         max_iterations: int,
+        plateau_window: int,
         git: GitService,
         cache: RepoCache,
+        prompts: PromptProvider,
+        skills: SkillsSelection,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
     ) -> None:
         self._service = service
         self._max_iterations = max_iterations
+        self._plateau_window = plateau_window
         # git/cache are injected solely so _evaluate_node can pre-compute
         # the ChangesetDigest passed to evaluation.build_prompt — the loop
         # does NOT take on canonical-tip bookkeeping (the outer engine's
         # merger does that internally).
         self._git: GitService = git
         self._cache: RepoCache = cache
+        self._prompts: PromptProvider = prompts
+        self._skills: SkillsSelection = skills
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
             initial_interval=retry_initial_interval,
@@ -75,6 +92,7 @@ class RalphLoop:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the quality-gating loop.
 
@@ -92,10 +110,11 @@ class RalphLoop:
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
             acceptance_criteria=acceptance_criteria,
+            repo_visibility=repo_visibility,
         )
         configurable: dict[str, object] = ctx.model_dump()
         if self._checkpointer is not None:
-            configurable["thread_id"] = f"{cache_key}-ralph"
+            configurable["thread_id"] = ralph_thread_id(cache_key)
 
         config: RunnableConfig = {"configurable": configurable}
 
@@ -103,6 +122,7 @@ class RalphLoop:
             "iteration": 0,
             "accepted": False,
             "pending_failures": [],
+            "iteration_records": [],
         }
 
         # TODO(time-travel): For E2E checkpoint resume, two changes needed:
@@ -156,9 +176,11 @@ class RalphLoop:
 
         prompt = ctx.prompt
         if not is_first:
-            prompt = iteration_feedback.augment_prompt(
-                prompt,
-                state["pending_failures"],
+            prompt = self._prompts.template_for(PromptKey.ITERATION_FEEDBACK).render(
+                {
+                    "prior_prompt": prompt,
+                    "pending_failures": state["pending_failures"],
+                },
             )
 
         commit_sha: str | None = None
@@ -171,6 +193,8 @@ class RalphLoop:
             ralph_branch=ctx.ralph_branch,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
+            skills=self._skills,
+            visibility=ctx.repo_visibility,
             create_branch=is_first,
             cache_key=ctx.cache_key,
         ):
@@ -203,9 +227,11 @@ class RalphLoop:
             base_ref=ctx.base_branch,
             head_ref=ctx.ralph_branch,
         )
-        eval_prompt = evaluation.build_prompt(
-            criteria=ctx.acceptance_criteria,
-            changeset=changeset,
+        eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
+            {
+                "criteria": ctx.acceptance_criteria,
+                **changeset_variables(changeset),
+            },
         )
 
         result_event, rate_limit_rejected = await drain(
@@ -216,6 +242,7 @@ class RalphLoop:
                 branch=ctx.ralph_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS,
+                skills=self._skills,
                 output_format={
                     "type": "json_schema",
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,
@@ -240,6 +267,16 @@ class RalphLoop:
         pending_failures: list[CriterionResult] = [
             r for r in output.criteria_results if not r.passed
         ]
+        records = [
+            *state["iteration_records"],
+            IterationRecord(
+                iteration=state["iteration"],
+                passed_count=sum(1 for r in output.criteria_results if r.passed),
+                failing_criterion_ids=[r.criterion for r in pending_failures],
+                commit_sha=state.get("iteration_commit_sha"),
+            ),
+        ]
+        trajectory = fold_trajectory(records, plateau_window=self._plateau_window)
         writer(
             WorkflowIterationEvent(
                 iteration=state["iteration"],
@@ -247,11 +284,24 @@ class RalphLoop:
                 commit_sha=state.get("iteration_commit_sha"),
                 accepted=accepted,
                 evaluation=output,
+                trajectory=trajectory,
             )
         )
+        if (
+            trajectory.plateaued
+            and not accepted
+            and state["iteration"] < self._max_iterations
+        ):
+            await self._log.awarning(
+                "loop_plateau_stop",
+                iterations_used=state["iteration"],
+                iterations_remaining=self._max_iterations - state["iteration"],
+                never_passed_ids=trajectory.never_passed_ids,
+            )
         return {
             "accepted": accepted,
             "pending_failures": pending_failures,
+            "iteration_records": records,
         }
 
     def _should_continue(
@@ -261,5 +311,11 @@ class RalphLoop:
         if state["accepted"]:
             return END
         if state["iteration"] >= self._max_iterations:
+            return END
+        trajectory = fold_trajectory(
+            state["iteration_records"],
+            plateau_window=self._plateau_window,
+        )
+        if trajectory.plateaued:
             return END
         return "execute"

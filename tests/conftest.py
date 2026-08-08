@@ -11,7 +11,11 @@ from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
-from tests.fakes import FakeAgentExecutor, FakeWorkspaceProvider
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeAgentExecutor,
+    FakeWorkspaceProvider,
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -27,18 +31,27 @@ def _git_test_identity() -> None:
     os.environ.setdefault("GIT_COMMITTER_EMAIL", "test@kodezart-test.invalid")
 
 
+_GATED_MARKERS: dict[str, str] = {
+    "live": "live tests need Claude CLI (run with: pytest -m live)",
+    "postgres": (
+        "postgres tests need a database at KODEZART_TEST_POSTGRES_URL "
+        "(run with: pytest -m postgres)"
+    ),
+}
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config,
     items: list[pytest.Item],
 ) -> None:
     marker_expr = config.getoption("-m", default="")
-    if "live" in marker_expr:
-        return
-    reason = "live tests need Claude CLI (run with: pytest -m live)"
-    skip = pytest.mark.skip(reason=reason)
-    for item in items:
-        if "live" in item.keywords:
-            item.add_marker(skip)
+    for marker, reason in _GATED_MARKERS.items():
+        if marker in marker_expr:
+            continue
+        skip = pytest.mark.skip(reason=reason)
+        for item in items:
+            if marker in item.keywords:
+                item.add_marker(skip)
 
 
 @pytest.fixture(scope="session")
@@ -84,6 +97,7 @@ def git_branch_merger(
 @pytest.fixture
 async def agent_client() -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
+    app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
         executor=FakeAgentExecutor(
             events=[
