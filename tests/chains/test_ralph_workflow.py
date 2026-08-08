@@ -52,8 +52,8 @@ from tests.fakes import (
     PassThroughGate,
     RecordingPromptProvider,
     SequentialCIMonitor,
+    make_dispatched_criteria,
     make_failing_evaluation,
-    make_generated_criteria,
     make_passing_evaluation,
     make_prompt_provider,
 )
@@ -414,7 +414,7 @@ async def test_quality_gate_receives_correct_params() -> None:
     assert "Test ticket" in call["prompt"]
     assert call["repo_path"] == "/tmp/fake"
     assert call["base_branch"] == "main"
-    assert call["acceptance_criteria"] == make_generated_criteria()
+    assert call["acceptance_criteria"] == make_dispatched_criteria()
     assert isinstance(call["feature_branch"], str)
     assert call["feature_branch"].startswith("kodezart/")
     assert isinstance(call["ralph_branch"], str)
@@ -468,7 +468,7 @@ async def test_workflow_generates_criteria_before_loop() -> None:
     ]
 
     assert len(gate.calls) == 1
-    assert gate.calls[0]["acceptance_criteria"] == make_generated_criteria()
+    assert gate.calls[0]["acceptance_criteria"] == make_dispatched_criteria()
 
 
 async def test_workflow_streams_criteria_event() -> None:
@@ -3060,7 +3060,7 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     # fix prompt carries the review-failure body so the routed-through-
     # gate path preserves the fix-prompt assembly (incl. the
     # "## Review Failures" header from _fix_code_node).
-    assert fix_call["acceptance_criteria"] == make_generated_criteria()
+    assert fix_call["acceptance_criteria"] == make_dispatched_criteria()
     assert isinstance(fix_call["ralph_branch"], str)
     assert isinstance(fix_call["feature_branch"], str)
     assert fix_call["ralph_branch"].startswith(fix_call["feature_branch"])

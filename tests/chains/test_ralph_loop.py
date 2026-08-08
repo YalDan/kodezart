@@ -20,7 +20,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.criteria import AcceptanceCriterion
+from kodezart.types.domain.criteria import FeasibilityVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
@@ -34,7 +34,9 @@ from tests.fakes import (
     FakeRepoCache,
     FakeWorkspaceProvider,
     RecordingPromptProvider,
+    as_validated,
     make_criteria,
+    make_minted_criteria,
     make_prompt_provider,
 )
 
@@ -75,14 +77,14 @@ class _RunKwargs(TypedDict):
     base_branch: str
     permission_mode: str
     allowed_tools: list[str]
-    acceptance_criteria: list[AcceptanceCriterion]
+    acceptance_criteria: list[ValidatedCriterion]
     cache_key: str
     repo_visibility: RepoVisibility
 
 
 def _run_kwargs(
     *,
-    acceptance_criteria: list[AcceptanceCriterion] | None = None,
+    acceptance_criteria: list[ValidatedCriterion] | None = None,
 ) -> _RunKwargs:
     return _RunKwargs(
         prompt="fix it",
@@ -806,6 +808,48 @@ async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> N
     assert "commit_count" in captured[0]
 
 
+async def test_the_evaluation_prompt_states_each_criterion_verdict() -> None:
+    """AC-12: an unverifiable criterion is not dispatched as a plain one.
+
+    The rendered prompt names the verdict and the resource whose absence
+    blocks the demonstration, so the evaluator cannot read a deferred
+    demonstration as a criterion the implementation simply failed.
+    """
+    criteria = as_validated(
+        make_minted_criteria("Checkpoints survive a restart"),
+        verdict=FeasibilityVerdict.unverifiable,
+        missing_resource="a PostgreSQL server reachable from the runner",
+    )
+    executor = FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=10,
+                duration_api_ms=5,
+                is_error=False,
+                num_turns=1,
+                session_id="s1",
+                structured_output={
+                    "criteriaResults": [
+                        {
+                            "criterionId": "AC-1",
+                            "criterion": "Checkpoints survive a restart",
+                            "passed": False,
+                            "reasoning": "no database was reachable",
+                        },
+                    ],
+                },
+            ),
+        ]
+    )
+    loop = _make_loop(executor=executor)
+    _ = [e async for e in loop.run(**_run_kwargs(acceptance_criteria=criteria))]
+
+    rendered = str(executor.calls[-1]["prompt"])
+    assert "AC-1 [hard_gate] [unverifiable]" in rendered
+    assert "[blocked on: a PostgreSQL server reachable from the runner]" in rendered
+
+
 # ---------------------------------------------------------------------------
 # Evaluator-node soft-failure: the 8th raise site (Sherlock-confirmed by
 # direct ``git show`` of the previous PR's ralph_loop.py:226-228).  Without
@@ -878,7 +922,7 @@ class _ScriptedLoopExecutor:
 
     def __init__(
         self,
-        criteria: list[AcceptanceCriterion],
+        criteria: list[ValidatedCriterion],
         pass_masks: list[list[bool]],
     ) -> None:
         self._criteria = criteria

@@ -9,7 +9,7 @@ from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
-from kodezart.types.domain.criteria import AcceptanceCriterion
+from kodezart.types.domain.criteria import ValidatedCriterion
 from kodezart.types.domain.gating import (
     GateDecision,
     RepoVisibility,
@@ -447,7 +447,7 @@ class QualityGate(Protocol):
         base_branch: str,
         permission_mode: str,
         allowed_tools: list[str],
-        acceptance_criteria: list[AcceptanceCriterion],
+        acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:

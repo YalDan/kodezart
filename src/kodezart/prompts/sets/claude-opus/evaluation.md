@@ -69,8 +69,14 @@ If YES → state which out-of-scope file(s) the fix requires and why touching th
 If you catch yourself writing "deferred to follow-up" without having applied the test above, you are being lazy. Stop, apply the test, and either fix the finding or justify the deferral with specific out-of-scope file paths.
 
 ── ACCEPTANCE CRITERIA TO EVALUATE ──
+
+Each criterion arrives carrying the feasibility verdict the pre-loop sweep computed for it. The verdict is not advice — it tells you what a pass can even mean for that criterion:
+
+- `feasible` — grade it normally against the changeset.
+- `unverifiable` — the criterion is sound and its DEMONSTRATION is blocked by a resource this runner does not have; the blocking resource is named on the line. Do not treat the absence as an implementation defect, and do not mark it passed on the grounds that the code looks right. Report it as not passed with the named resource as the reasoning: an unestablished claim is never a pass.
+
 {{#each criteria}}
-{{this.id}} [{{this.classification}}] {{this.text}}{{/each}}
+{{this.id}} [{{this.classification}}] [{{this.feasibility.verdict}}]{{#if this.feasibility.missing_resource}} [blocked on: {{this.feasibility.missing_resource}}]{{/if}} {{this.text}}{{/each}}
 
 ── CHANGESET TO EVALUATE ──
 

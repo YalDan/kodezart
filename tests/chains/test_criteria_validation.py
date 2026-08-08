@@ -370,6 +370,36 @@ async def test_the_unverifiable_criterion_reaches_the_loop_byte_identical() -> N
     assert [c.id for c in dispatched] == ["AC-1", "AC-2"]
 
 
+async def test_the_loop_receives_the_verdict_and_the_named_resource() -> None:
+    """AC-12's second half: the criterion arrives CARRYING its verdict.
+
+    An ``unverifiable`` criterion that reaches the loop indistinguishable
+    from a ``feasible`` one is the collapse the three-state vocabulary
+    exists to prevent, re-entering through the dispatch seam.
+    """
+    executor = ValidatorScriptExecutor(
+        sweeps=[{"findings": [FEASIBLE_A, UNVERIFIABLE_B], "contradictions": []}],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    dispatched = gate.calls[0]["acceptance_criteria"]
+    assert isinstance(dispatched, list)
+    feasible, unverifiable = dispatched
+    assert feasible.feasibility.verdict is FeasibilityVerdict.feasible
+    assert feasible.feasibility.missing_resource is None
+    assert unverifiable.feasibility.verdict is FeasibilityVerdict.unverifiable
+    assert unverifiable.feasibility.limit_arm is LimitArm.resource_absent
+    assert (
+        unverifiable.feasibility.missing_resource
+        == "a PostgreSQL server reachable from the runner"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Conjunction failure routes like an infeasible criterion
 # ---------------------------------------------------------------------------

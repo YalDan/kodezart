@@ -36,7 +36,10 @@ from kodezart.types.domain.consolidation import (
 from kodezart.types.domain.criteria import (
     AcceptanceCriterion,
     CriterionClassification,
+    CriterionFeasibility,
     DraftedCriterion,
+    FeasibilityVerdict,
+    ValidatedCriterion,
 )
 from kodezart.types.domain.gating import (
     GateDecision,
@@ -941,11 +944,38 @@ class ScriptedFakeExecutor:
 DEFAULT_CRITERION_ID = "AC-1"
 
 
-def make_criteria(
+def as_validated(
+    criteria: Sequence[AcceptanceCriterion],
+    *,
+    verdict: FeasibilityVerdict = FeasibilityVerdict.feasible,
+    missing_resource: str | None = None,
+) -> list[ValidatedCriterion]:
+    """Wrap minted criteria in the post-sweep shape the loop is handed.
+
+    The loop never receives a bare criterion: every dispatched criterion
+    carries the verdict the sweep computed and, when the verdict is
+    ``unverifiable``, the resource whose absence blocks its demonstration.
+    """
+    return [
+        ValidatedCriterion(
+            id=criterion.id,
+            text=criterion.text,
+            classification=criterion.classification,
+            feasibility=CriterionFeasibility(
+                criterion_id=criterion.id,
+                verdict=verdict,
+                missing_resource=missing_resource,
+            ),
+        )
+        for criterion in criteria
+    ]
+
+
+def make_minted_criteria(
     *texts: str,
     classification: CriterionClassification = CriterionClassification.hard_gate,
 ) -> list[AcceptanceCriterion]:
-    """Mint AC-n identities for *texts* the way the workflow node does."""
+    """Mint AC-n identities for *texts* the way the generation node does."""
     return list(
         mint_criteria(
             [
@@ -954,6 +984,19 @@ def make_criteria(
             ]
         )
     )
+
+
+def make_criteria(
+    *texts: str,
+    classification: CriterionClassification = CriterionClassification.hard_gate,
+) -> list[ValidatedCriterion]:
+    """The dispatch shape: minted, then carrying a sweep verdict."""
+    return as_validated(make_minted_criteria(*texts, classification=classification))
+
+
+def make_dispatched_criteria() -> list[ValidatedCriterion]:
+    """What the gate is handed once the fake generator's criteria are swept."""
+    return as_validated(make_generated_criteria())
 
 
 def make_generated_criteria() -> list[AcceptanceCriterion]:

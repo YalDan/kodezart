@@ -30,7 +30,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.criteria import AcceptanceCriterion
+from kodezart.types.domain.criteria import ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
@@ -91,7 +91,7 @@ class RalphLoop:
         base_branch: str,
         permission_mode: str,
         allowed_tools: list[str],
-        acceptance_criteria: list[AcceptanceCriterion],
+        acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:

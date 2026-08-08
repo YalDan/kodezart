@@ -70,8 +70,14 @@ If you catch yourself writing "deferred to follow-up" without having applied the
 
 ── ACCEPTANCE CRITERIA TO EVALUATE ──
 
-AC-1 [hard_gate] First criterion
-AC-2 [soft_signal] Second criterion
+Each criterion arrives carrying the feasibility verdict the pre-loop sweep computed for it. The verdict is not advice — it tells you what a pass can even mean for that criterion:
+
+- `feasible` — grade it normally against the changeset.
+- `unverifiable` — the criterion is sound and its DEMONSTRATION is blocked by a resource this runner does not have; the blocking resource is named on the line. Do not treat the absence as an implementation defect, and do not mark it passed on the grounds that the code looks right. Report it as not passed with the named resource as the reasoning: an unestablished claim is never a pass.
+
+
+AC-1 [hard_gate] [feasible] First criterion
+AC-2 [soft_signal] [feasible] Second criterion
 
 ── CHANGESET TO EVALUATE ──
 

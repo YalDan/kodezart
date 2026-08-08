@@ -47,6 +47,7 @@ from kodezart.types.domain.prompts import (
     PromptSetFragments,
     PromptSetMetadata,
 )
+from tests.fakes import as_validated
 
 DEFAULT_SET = "claude-opus"
 GOLDENS = Path(__file__).parent / "goldens" / "claude_opus_empty_skills"
@@ -70,7 +71,7 @@ TICKET = TicketDraftOutput(
 )
 TASK = "Golden task description"
 TASK_MD = format_ticket_as_task(TICKET)
-CRITERIA = list(
+MINTED_CRITERIA = list(
     mint_criteria(
         [
             DraftedCriterion(
@@ -84,11 +85,14 @@ CRITERIA = list(
         ]
     )
 )
+# Every criteria-consuming template downstream of the sweep is handed the
+# VALIDATED shape, so the goldens render what the run renders.
+CRITERIA = as_validated(MINTED_CRITERIA)
 
 
 def make_criteria(*texts: str) -> list:
-    """Mint AC-n identities for inline template fixtures."""
-    return list(
+    """Mint AC-n identities for inline template fixtures, then validate them."""
+    return as_validated(
         mint_criteria(
             [
                 DraftedCriterion(
@@ -152,7 +156,10 @@ GOLDEN_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         PromptKey.ACCEPTANCE_CRITERIA,
         {
             "task_description": TASK_MD,
-            "validation_findings": render_validation_findings(CRITERIA, VALIDATION),
+            "validation_findings": render_validation_findings(
+                MINTED_CRITERIA,
+                VALIDATION,
+            ),
         },
     ),
     "criteria_validation": (

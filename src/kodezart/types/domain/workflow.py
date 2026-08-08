@@ -9,8 +9,10 @@ from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.agent import TicketDraftOutput
 from kodezart.types.domain.criteria import (
     AcceptanceCriterion,
+    CriteriaArtifact,
     CriteriaValidation,
     CriterionFailure,
+    ValidatedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
@@ -69,7 +71,7 @@ class RalphLoopContext(ExecutionContext):
 
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
-    acceptance_criteria: list[AcceptanceCriterion] = Field(min_length=1)
+    acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
     repo_visibility: RepoVisibility
 
 
@@ -127,6 +129,7 @@ class WorkflowState(TypedDict):
     ralph_branch: str
     ticket: TicketDraftOutput | None
     acceptance_criteria: list[AcceptanceCriterion]
+    criteria_artifact: CriteriaArtifact | None
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
     criteria_infeasible: bool

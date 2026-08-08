@@ -38,6 +38,7 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
+    as_validated,
     make_prompt_provider,
 )
 
@@ -324,7 +325,7 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
             base_branch="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
-            acceptance_criteria=list(
+            acceptance_criteria=as_validated(
                 mint_criteria(
                     [
                         DraftedCriterion(

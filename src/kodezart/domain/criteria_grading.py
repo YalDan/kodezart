@@ -17,7 +17,7 @@ dispatched count, so:
 from collections.abc import Sequence
 
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
-from kodezart.types.domain.criteria import AcceptanceCriterion, CriterionFailure
+from kodezart.types.domain.criteria import CriterionFailure, ValidatedCriterion
 from kodezart.types.domain.grading import IterationGrade
 
 MISSING_RESULT_REASONING = (
@@ -27,7 +27,7 @@ MISSING_RESULT_REASONING = (
 
 
 def grade_iteration(
-    criteria: Sequence[AcceptanceCriterion],
+    criteria: Sequence[ValidatedCriterion],
     output: AcceptanceCriteriaOutput,
 ) -> IterationGrade:
     """Reconcile *output* against *criteria* and grade fail-closed."""
