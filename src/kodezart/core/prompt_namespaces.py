@@ -64,8 +64,19 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         "documents": {key: entry.id for key, entry in config.documents.items()},
         "knowledge": dict(config.knowledge),
         "endpoints": dict(config.endpoints),
+        # ``target_date`` is absent on a real initiative more often than not.
+        # ``{{#if}}`` treats ``None`` as absent, so the two renderings are
+        # selected by two mutually exclusive bindings rather than by an
+        # else-branch the renderer does not have: exactly one of the pair is
+        # ever non-``None``.
         "initiatives": [
-            {"id": item.id, "target_date": item.target_date.isoformat()}
+            {
+                "id": item.id,
+                "target_date": (
+                    None if item.target_date is None else item.target_date.isoformat()
+                ),
+                "target_date_absent": True if item.target_date is None else None,
+            }
             for item in config.initiatives
         ],
         "principals": [
@@ -74,7 +85,17 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         ],
         "agent_identities": list(config.agent_identities),
         "repos": [
-            {"url": repo.url, "check_commands": repo.check_commands}
+            {
+                "url": repo.url,
+                "check_commands": [
+                    {
+                        "name": step.name,
+                        "command": step.command,
+                        "depends_on": step.depends_on,
+                    }
+                    for step in repo.check_commands
+                ],
+            }
             for repo in config.repos
         ],
     }

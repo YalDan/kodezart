@@ -49,10 +49,26 @@ in_progress = "In Progress"
 in_review = "In Review"
 done = "Done"
 
-# Repositories the operation acts on plus the commands that verify them.
+# Repositories the operation acts on plus the chain that verifies them.
+# Each step names itself and what it depends on. A step with no `depends_on`
+# is a GATE: its failure is a root cause. A step whose named predecessor also
+# failed is a CASCADE and is reported as one, never as an independent red.
 [[repos]]
 url = "https://example.invalid/example-org/example-repo"
-check_commands = ["make check"]
+
+[[repos.check_commands]]
+name = "lint"
+command = "make lint"
+
+[[repos.check_commands]]
+name = "type-check"
+command = "make type-check"
+depends_on = "lint"
+
+[[repos.check_commands]]
+name = "test"
+command = "make test"
+depends_on = "type-check"
 
 # Read-side document registry, addressed by stable key. The "checkpoint" key
 # is required: the scan-window marker is addressed by key rather than by name
@@ -72,7 +88,13 @@ house_rules = "example-house-rules-document-id"
 [endpoints]
 escalation = "https://example.invalid/escalation"
 
-# Initiatives the operation is steering toward.
+# Initiatives the operation is steering toward. `target_date` is OPTIONAL and
+# omitting it is the ordinary case: most real initiatives carry none, and a
+# config that had to invent one would make its passes report a distance to a
+# commitment the tracker does not hold.
 [[initiatives]]
 id = "example-initiative"
 target_date = 2026-12-31
+
+[[initiatives]]
+id = "example-initiative-without-a-target-date"

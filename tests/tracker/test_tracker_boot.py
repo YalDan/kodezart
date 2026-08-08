@@ -1,7 +1,5 @@
 """Boot validation: one bad mapping aborts startup naming exactly that entry."""
 
-from datetime import date
-
 import pytest
 
 from kodezart.core.errors import TrackerBootValidationError
@@ -10,6 +8,7 @@ from kodezart.services.tracker_boot import (
     validate_tracker_mappings,
 )
 from kodezart.types.domain.operation import (
+    CheckStep,
     DocumentEntry,
     Initiative,
     LifecycleStage,
@@ -44,11 +43,16 @@ def operation_config() -> OperationConfig:
         teams=dict(TEAM_IDENTIFIERS),
         queue_states=dict(QUEUE_STATE_LABELS),
         workflow_states=dict(WORKFLOW_STATE_NAMES),
-        repos=[RepoEntry(url="https://example.invalid/repo", check_commands=["make"])],
+        repos=[
+            RepoEntry(
+                url="https://example.invalid/repo",
+                check_commands=[CheckStep(name="check", command="make check")],
+            )
+        ],
         documents={"checkpoint": DocumentEntry(id="doc-1")},
         knowledge={},
         endpoints={},
-        initiatives=[Initiative(id="init-1", target_date=date(2026, 12, 31))],
+        initiatives=[Initiative(id="init-1")],
     )
 
 

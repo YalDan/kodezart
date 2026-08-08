@@ -5,6 +5,7 @@ does: ``extra="forbid"`` makes a stray token key a load-time failure.
 Authority binds to a ROLE, never to a name in code or in a template.
 """
 
+from collections.abc import Sequence
 from datetime import date
 from enum import StrEnum
 from typing import Self
@@ -57,11 +58,30 @@ class Principal(OperationModel):
     role: PrincipalRole
 
 
+class CheckStep(OperationModel):
+    """One command in a repository's check chain, and what gates it.
+
+    ``depends_on`` names the step whose success this one is conditional on.
+    A step naming none is a GATE: its failure is a root cause.  A step whose
+    named ancestor failed is a CASCADE and carries no independent
+    information.
+
+    The distinction is the whole point of the type.  The passes carry an
+    honesty rule — report one root failure plus its cascades, never a list
+    of independent-looking reds — and a flat list of command strings cannot
+    say which command that rule is about.
+    """
+
+    name: str
+    command: str
+    depends_on: str | None = None
+
+
 class RepoEntry(OperationModel):
-    """A repository the operation acts on plus its verification commands."""
+    """A repository the operation acts on plus its verification chain."""
 
     url: str
-    check_commands: list[str]
+    check_commands: list[CheckStep]
 
 
 class DocumentEntry(OperationModel):
@@ -71,10 +91,51 @@ class DocumentEntry(OperationModel):
 
 
 class Initiative(OperationModel):
-    """An initiative the operation is steering toward."""
+    """An initiative the operation is steering toward.
+
+    ``target_date`` is optional because a real initiative frequently has
+    none.  A required field forced every config to invent one, and a pass
+    rendered from an invented date reports a distance to a commitment the
+    tracker does not hold — an assertion about the operation manufactured
+    by its own configuration model.
+    """
 
     id: str
-    target_date: date
+    target_date: date | None = None
+
+
+def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
+    """Every structural failure in one repository's check chain.
+
+    A chain that names a step twice, depends on a step that is not in it,
+    or closes a cycle cannot be classified into roots and cascades at all,
+    so it is rejected at load rather than mis-reported at run time.
+    """
+    failures: list[str] = []
+    seen: set[str] = set()
+    for step in steps:
+        if step.name in seen:
+            failures.append(f"duplicate step name {step.name!r}")
+        seen.add(step.name)
+
+    by_name = {step.name: step for step in steps}
+    for step in steps:
+        if step.depends_on is None:
+            continue
+        if step.depends_on not in by_name:
+            failures.append(
+                f"step {step.name!r} depends on unknown step {step.depends_on!r}",
+            )
+            continue
+        walked: set[str] = {step.name}
+        cursor: str | None = step.depends_on
+        while cursor is not None:
+            if cursor in walked:
+                failures.append(f"step {step.name!r} closes a dependency cycle")
+                break
+            walked.add(cursor)
+            cursor = by_name[cursor].depends_on
+    return failures
 
 
 class OperationConfig(OperationModel):
@@ -127,6 +188,11 @@ class OperationConfig(OperationModel):
             for index, repo in enumerate(self.repos)
             if not repo.check_commands
         )
+        for index, repo in enumerate(self.repos):
+            failures.extend(
+                f"repos[{index}].check_commands: {failure}"
+                for failure in _check_chain_failures(repo.check_commands)
+            )
 
         known_users = {p.tracker_user for p in self.principals}
         failures.extend(

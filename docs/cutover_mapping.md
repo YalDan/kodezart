@@ -49,7 +49,9 @@ second one is derived from `OperationConfig.model_fields` rather than from the
 rows below, so the table can never be checked against itself.
 
 A reference introduced by an enclosing `{{#each}}` — `{{this.tracker_user}}`,
-`{{this.url}}`, `{{this.check_commands}}`, `{{this.id}}`, `{{this.target_date}}`
+`{{this.url}}`, `{{this.check_commands}}`, `{{this.name}}`, `{{this.command}}`,
+`{{this.depends_on}}`, `{{this.id}}`, `{{this.target_date}}`,
+`{{this.target_date_absent}}`
 — is a member of the iterated item, not a placeholder in its own right. The
 block's own name is the mapped placeholder, and that is what the rows carry.
 

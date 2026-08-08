@@ -8,7 +8,7 @@ domain objects and no vendor name appears anywhere below.
 import asyncio
 import re
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import structlog
@@ -18,6 +18,7 @@ from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.types.domain.dispatch import DispatchOutcome, ExclusionClause
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import (
+    CheckStep,
     DocumentEntry,
     Initiative,
     LifecycleStage,
@@ -73,11 +74,16 @@ def operation_config() -> OperationConfig:
             LifecycleStage.IN_REVIEW: "In Review",
             LifecycleStage.DONE: "Done",
         },
-        repos=[RepoEntry(url=REPO_URL, check_commands=["make check"])],
+        repos=[
+            RepoEntry(
+                url=REPO_URL,
+                check_commands=[CheckStep(name="check", command="make check")],
+            )
+        ],
         documents={"checkpoint": DocumentEntry(id="doc-1")},
         knowledge={},
         endpoints={},
-        initiatives=[Initiative(id="init-1", target_date=date(2026, 12, 31))],
+        initiatives=[Initiative(id="init-1")],
     )
 
 
