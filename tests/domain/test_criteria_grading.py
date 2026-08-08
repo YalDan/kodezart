@@ -110,6 +110,8 @@ def test_echoed_text_mutation_changes_neither_keying_nor_reinjected_text() -> No
     assert [f.text for f in grade.failures] == [c.text for c in criteria]
     assert grade.failures[0].text.encode() == criteria[0].text.encode()
     assert grade.failures[1].text.encode() == criteria[1].text.encode()
+    # The report is byte-stable too — the echo never reaches a reader.
+    assert [r.criterion for r in grade.results] == [c.text for c in criteria]
 
 
 def test_unknown_and_duplicate_ids_are_discarded_and_named() -> None:

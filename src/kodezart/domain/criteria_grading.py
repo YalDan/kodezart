@@ -8,9 +8,10 @@ dispatched count, so:
 * a second result for an id already answered is discarded and named;
 * an id with no result grades FAILED and is named — never a silently
   shorter denominator, and never acceptance over a partial set;
-* the text carried forward is the harness's own, looked up by id, so an
+* the text carried forward — into the report AND into the next
+  iteration's feedback — is the harness's own, looked up by id, so an
   echoed whitespace or backslash mutation changes neither the keying nor
-  the criterion the next iteration is asked to fix.
+  the criterion anybody downstream reads.
 """
 
 from collections.abc import Sequence
@@ -68,7 +69,17 @@ def grade_iteration(
                 )
             )
             continue
-        results.append(answer)
+        # The REPORT carries the harness's text, not the echo: the oracle is
+        # byte-identical across the criteria event, the persisted artifact and
+        # every iteration's evaluation, with identity carried by the id.
+        results.append(
+            CriterionResult(
+                criterion_id=criterion.id,
+                criterion=criterion.text,
+                passed=answer.passed,
+                reasoning=answer.reasoning,
+            )
+        )
         if not answer.passed:
             failures.append(
                 CriterionFailure(
