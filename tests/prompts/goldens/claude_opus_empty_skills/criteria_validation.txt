@@ -19,6 +19,13 @@ If neither repair is needed, report `none`.
 
 **Premise versus demonstration** is this same line asked of the pair that most often looks like one case. A criterion whose PREMISE is false at base — it asserts a binding, a mechanism or an artifact that does not exist in the target — is at fault in its own text: `criterion_text`. A criterion whose premise holds and whose DEMONSTRATION needs something you lack: `environment_supply`.
 
+── THE TWO OBSERVATIONS THAT ARE NOT FAULTS ──
+
+Some criteria are perfectly satisfiable and still worthless as gates. These are NOT repairs and you must never dress one up as a refutation — report them as observations and the harness draws the consequence.
+
+1. **Already satisfied at base.** RUN the criterion's own check against the repository at `main`, before any work exists, and report `base_demonstration` with the exact `command` you ran and `satisfiedAtBase`. A criterion that already passes at base is satisfied by every implementation including the empty one — it is not impossible, it discriminates nothing. Report `smallest_repair: none`: a demonstration that ran and passed cannot also ground a repair demand, and the harness rejects a finding that claims both.
+2. **Pinned to literals.** A criterion that turns on a file existing at a path, on an exact occurrence count, or on a grep-shaped literal is satisfiable — the file can exist and the count can be hit. Report every such literal in `pinned_literals`. Do not refute it: the drafter was already told not to write one (`FORBIDDEN CRITERIA CLASSES`), so an instance reaching you is an observation about that instruction's compliance, not a finding about the implementer.
+
 ── COST IS NOT INFEASIBILITY, AND A COST CLAIM IS MEASURED ──
 
 "Satisfiable, but too expensive to demonstrate" is a claim about a specific implementation and is bound by the same grounding rule as an impossibility claim. If you believe a demonstration is uneconomic, RUN THE CHEAPEST EXPERIMENT THAT WOULD SETTLE IT and report `cost_claim.measurement` with what you observed and whether it was affordable. An unmeasured cost hypothesis supports nothing — report it as a `cost_claim` with no `measurement` and the harness will strike it.

@@ -13,6 +13,7 @@ from kodezart.types.domain.criteria import (
     AcceptanceCriterion,
     CriteriaArtifact,
     CriteriaValidation,
+    CriterionClassification,
     CriterionFeasibility,
     DraftedCriterion,
     ValidatedCriterion,
@@ -50,6 +51,24 @@ def criteria_by_id(
     return {criterion.id: criterion for criterion in criteria}
 
 
+def effective_classification(
+    criterion: AcceptanceCriterion,
+    feasibility: CriterionFeasibility,
+) -> CriterionClassification:
+    """The classification a criterion carries AFTER the sweep.
+
+    A flagged criterion is forced to ``soft_signal``: a criterion the base
+    already satisfies, or one pinned to literals, cannot gate anything, so
+    it must not sit in the hard-gate partition the accept gate's
+    arithmetic reads.  The downgrade is computed from the sweep's flags
+    and is never a judgement; an unflagged criterion keeps the
+    classification the generator assigned, byte for byte.
+    """
+    if feasibility.flags:
+        return CriterionClassification.soft_signal
+    return criterion.classification
+
+
 def build_artifact(
     criteria: Sequence[AcceptanceCriterion],
     validation: CriteriaValidation,
@@ -63,7 +82,10 @@ def build_artifact(
             ValidatedCriterion(
                 id=criterion.id,
                 text=criterion.text,
-                classification=criterion.classification,
+                classification=effective_classification(
+                    criterion,
+                    verdicts[criterion.id],
+                ),
                 feasibility=verdicts[criterion.id],
             )
             for criterion in criteria

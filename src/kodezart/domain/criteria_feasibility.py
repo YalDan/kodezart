@@ -22,6 +22,17 @@ Two rules keep that line from drifting:
   ``infeasible``.  A measured demonstration that ran and proved
   affordable is likewise struck.  Only a measured, genuinely uneconomic
   demonstration survives, and it is environment-side.
+
+A criterion the base ALREADY SATISFIES is satisfied by every
+implementation, so it is ``feasible`` under the same definition — calling
+it infeasible would contradict the vocabulary.  Its defect is
+discriminating power, not feasibility, and that is what
+:class:`CriterionFlag` records.  A flag is computed from evidence only its
+own class supplies — a demonstration actually run against the repo at
+base, or the literals a criterion pins — never from ``smallest_repair``,
+so it cannot be produced by re-labelling a repair.  Flagged criteria
+consume no regeneration round and reach no halt; their consequence is the
+forced ``soft_signal`` downgrade in :mod:`kodezart.domain.criteria`.
 """
 
 from collections.abc import Sequence
@@ -37,6 +48,7 @@ from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
     CriterionFeasibility,
     CriterionFinding,
+    CriterionFlag,
     FeasibilityVerdict,
     LimitArm,
     RepairKind,
@@ -61,21 +73,50 @@ def _weigh_cost(
     return claim.measurement, []
 
 
+def _observe_flags(finding: CriterionFinding) -> list[CriterionFlag]:
+    """Read the class-specific observations off the finding's evidence.
+
+    Each flag is computed from a field only that evidence class supplies —
+    a demonstration run against the repo at base, or the literals the
+    criterion pins.  Neither is read off ``smallest_repair``, so an
+    observation cannot be produced by re-labelling a repair.
+    """
+    flags: list[CriterionFlag] = []
+    demonstration = finding.base_demonstration
+    if demonstration is not None and demonstration.satisfied_at_base:
+        flags.append(CriterionFlag.vacuous_at_base)
+    if finding.pinned_literals:
+        flags.append(CriterionFlag.literal_pinning)
+    return flags
+
+
 def classify_finding(finding: CriterionFinding) -> CriterionFeasibility:
     """Compute one criterion's verdict from its finding. Raises when ungrounded."""
     surviving_cost, struck = _weigh_cost(finding.cost_claim)
+    flags = _observe_flags(finding)
+
+    if (
+        CriterionFlag.vacuous_at_base in flags
+        and finding.smallest_repair is not RepairKind.none
+    ):
+        msg = (
+            "A criterion demonstrated satisfied at base needs no repair: a "
+            "demonstration that ran and passed cannot also ground a repair demand"
+        )
+        raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
 
     if finding.smallest_repair is RepairKind.criterion_text:
-        return _classify_criterion_side(finding, surviving_cost, struck)
+        return _classify_criterion_side(finding, surviving_cost, struck, flags)
     if finding.smallest_repair is RepairKind.environment_supply:
-        return _classify_environment_side(finding, surviving_cost, struck)
-    return _classify_no_repair(finding, surviving_cost, struck)
+        return _classify_environment_side(finding, surviving_cost, struck, flags)
+    return _classify_no_repair(finding, surviving_cost, struck, flags)
 
 
 def _classify_criterion_side(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
     struck: list[StruckGround],
+    flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if not _blank(finding.refutation):
         return CriterionFeasibility(
@@ -84,6 +125,7 @@ def _classify_criterion_side(
             limit_arm=LimitArm.not_a_limit,
             refutation=finding.refutation,
             struck_grounds=struck,
+            flags=flags,
         )
     if surviving_cost is not None:
         msg = (
@@ -101,6 +143,7 @@ def _classify_criterion_side(
         verdict=FeasibilityVerdict.feasible,
         limit_arm=LimitArm.not_a_limit,
         struck_grounds=struck,
+        flags=flags,
     )
 
 
@@ -108,6 +151,7 @@ def _classify_environment_side(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
     struck: list[StruckGround],
+    flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if _blank(finding.missing_resource):
         msg = "An environment-supply repair was demanded with no resource named"
@@ -122,6 +166,7 @@ def _classify_environment_side(
         missing_resource=finding.missing_resource,
         cost_measurement=surviving_cost,
         struck_grounds=struck,
+        flags=flags,
     )
 
 
@@ -129,6 +174,7 @@ def _classify_no_repair(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
     struck: list[StruckGround],
+    flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if surviving_cost is not None:
         msg = (
@@ -141,6 +187,7 @@ def _classify_no_repair(
         verdict=FeasibilityVerdict.feasible,
         limit_arm=LimitArm.not_a_limit,
         struck_grounds=struck,
+        flags=flags,
     )
 
 

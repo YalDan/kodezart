@@ -79,6 +79,37 @@ class StruckGround(StrEnum):
     affordable_cost = "affordable_cost"
 
 
+class CriterionFlag(StrEnum):
+    """An observation about a criterion that is NOT a feasibility fault.
+
+    A criterion the base already satisfies is satisfied by every
+    implementation, including the empty one, so it is ``feasible`` by the
+    vocabulary's own definition.  What it lacks is DISCRIMINATING POWER,
+    and that is what a flag records.  A flagged criterion consumes no
+    regeneration round, reaches no halt, and leaves the sweep with its
+    text byte-identical — but it can no longer sit in the hard-gate
+    partition the accept gate's arithmetic reads.
+    """
+
+    vacuous_at_base = "vacuous_at_base"
+    literal_pinning = "literal_pinning"
+
+
+class BaseDemonstration(CamelCaseModel):
+    """A demonstration of a criterion performed against the repo AT BASE.
+
+    Its existence is the claim that the refuter ran the criterion's own
+    check before any work: ``satisfied_at_base`` is the observed result,
+    never a prediction.  Vacuity is computed from this and from nothing
+    else — a criterion is not called vacuous because it reads that way.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    command: str = Field(min_length=1)
+    satisfied_at_base: bool
+
+
 class CostMeasurement(CamelCaseModel):
     """A measurement of a demonstration that ACTUALLY RAN.
 
@@ -140,6 +171,8 @@ class CriterionFinding(CamelCaseModel):
     refutation: str | None = None
     missing_resource: str | None = None
     cost_claim: CostClaim | None = None
+    base_demonstration: BaseDemonstration | None = None
+    pinned_literals: list[str] = Field(default_factory=list)
 
 
 class Contradiction(CamelCaseModel):
@@ -170,6 +203,7 @@ class CriterionFeasibility(CamelCaseModel):
     missing_resource: str | None = None
     cost_measurement: CostMeasurement | None = None
     struck_grounds: list[StruckGround] = Field(default_factory=list)
+    flags: list[CriterionFlag] = Field(default_factory=list)
 
 
 class ConjunctionVerdict(CamelCaseModel):

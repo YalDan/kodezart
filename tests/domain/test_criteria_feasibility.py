@@ -20,6 +20,7 @@ from kodezart.domain.criteria_feasibility import (
 from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
 from kodezart.types.domain.criteria import (
     AcceptanceCriterion,
+    BaseDemonstration,
     Contradiction,
     CostClaim,
     CostMeasurement,
@@ -27,6 +28,7 @@ from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
     CriterionClassification,
     CriterionFinding,
+    CriterionFlag,
     DraftedCriterion,
     FeasibilityVerdict,
     LimitArm,
@@ -82,7 +84,7 @@ def test_a_lack_that_clears_with_time_does_not_reach_feasible() -> None:
 # ---------------------------------------------------------------------------
 
 _CLASSIFICATION_TABLE: list[
-    tuple[str, CriterionFinding, FeasibilityVerdict, LimitArm]
+    tuple[str, CriterionFinding, FeasibilityVerdict, LimitArm, list[CriterionFlag]]
 ] = [
     (
         "class-1 structurally impossible: lint boundary forbids the export",
@@ -96,6 +98,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.infeasible,
         LimitArm.not_a_limit,
+        [],
     ),
     (
         "class-2 false premise: the named binding exists nowhere at base",
@@ -106,26 +109,32 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.infeasible,
         LimitArm.not_a_limit,
+        [],
     ),
     (
         "class-4 already satisfied at base",
         CriterionFinding(
             criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            refutation="the clause already holds at the base ref before any work",
+            smallest_repair=RepairKind.none,
+            base_demonstration=BaseDemonstration(
+                command="uv run pytest tests/api/v1/test_health.py -q",
+                satisfied_at_base=True,
+            ),
         ),
-        FeasibilityVerdict.infeasible,
+        FeasibilityVerdict.feasible,
         LimitArm.not_a_limit,
+        [CriterionFlag.vacuous_at_base],
     ),
     (
         "class-5 literal-count pinning",
         CriterionFinding(
             criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            refutation="pins an exact symbol count brittle to a legitimate refactor",
+            smallest_repair=RepairKind.none,
+            pinned_literals=["src/kodezart/core/config.py", "exactly 3 occurrences"],
         ),
-        FeasibilityVerdict.infeasible,
+        FeasibilityVerdict.feasible,
         LimitArm.not_a_limit,
+        [CriterionFlag.literal_pinning],
     ),
     (
         "class-6 wrong-baseline scope criterion",
@@ -136,6 +145,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.infeasible,
         LimitArm.not_a_limit,
+        [],
     ),
     (
         "no repair needed",
@@ -145,6 +155,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.feasible,
         LimitArm.not_a_limit,
+        [],
     ),
     (
         "premise holds, demonstration needs a database the runner lacks",
@@ -155,6 +166,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.unverifiable,
         LimitArm.resource_absent,
+        [],
     ),
     # --- second domain: a browser-automation lane, no code changed ---------
     (
@@ -166,6 +178,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.infeasible,
         LimitArm.not_a_limit,
+        [],
     ),
     (
         "second domain, environment side: no display server for the headed run",
@@ -176,6 +189,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.unverifiable,
         LimitArm.resource_absent,
+        [],
     ),
     # --- cost claims (item 1c) --------------------------------------------
     (
@@ -189,6 +203,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.feasible,
         LimitArm.not_a_limit,
+        [],
     ),
     (
         "measured and affordable: the criterion text is untouched",
@@ -202,6 +217,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.feasible,
         LimitArm.not_a_limit,
+        [],
     ),
     (
         "a quota prevented the demonstration: environment side, resource named",
@@ -212,6 +228,7 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.unverifiable,
         LimitArm.resource_absent,
+        [],
     ),
     (
         "the demonstration ran and is uneconomic: measured, so the other arm",
@@ -229,12 +246,13 @@ _CLASSIFICATION_TABLE: list[
         ),
         FeasibilityVerdict.unverifiable,
         LimitArm.uneconomic,
+        [],
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("label", "finding", "expected_verdict", "expected_arm"),
+    ("label", "finding", "expected_verdict", "expected_arm", "expected_flags"),
     _CLASSIFICATION_TABLE,
     ids=[row[0] for row in _CLASSIFICATION_TABLE],
 )
@@ -243,11 +261,13 @@ def test_classification_table(
     finding: CriterionFinding,
     expected_verdict: FeasibilityVerdict,
     expected_arm: LimitArm,
+    expected_flags: list[CriterionFlag],
 ) -> None:
     """Every row classifies from evidence alone — no per-case branch."""
     verdict = classify_finding(finding)
     assert verdict.verdict is expected_verdict, label
     assert verdict.limit_arm is expected_arm, label
+    assert verdict.flags == expected_flags, label
 
 
 def test_unverifiable_is_never_coerced_to_a_pass() -> None:
@@ -260,6 +280,144 @@ def test_unverifiable_is_never_coerced_to_a_pass() -> None:
     verdict = classify_finding(finding)
     assert verdict.verdict is FeasibilityVerdict.unverifiable
     assert verdict.verdict is not FeasibilityVerdict.feasible
+
+
+# ---------------------------------------------------------------------------
+# A criterion the base already satisfies is FEASIBLE and flagged (R1 on KOD-66)
+# ---------------------------------------------------------------------------
+
+
+def test_the_two_observation_classes_are_told_apart_by_their_own_evidence() -> None:
+    """The flag is carried by class-specific evidence, not by the repair field.
+
+    Both findings report the SAME ``smallest_repair``.  If the sweep read
+    the evidence class off that field the two would be indistinguishable;
+    each is separated only by the evidence its own class supplies — a
+    demonstration that ran at base, or the literals the criterion pins.
+    """
+    shared = {"criterion_id": "AC-1", "smallest_repair": RepairKind.none}
+    satisfied_at_base = CriterionFinding(
+        **shared,
+        base_demonstration=BaseDemonstration(
+            command="rg -n 'class AppConfig' src/",
+            satisfied_at_base=True,
+        ),
+    )
+    pinned = CriterionFinding(**shared, pinned_literals=["exactly 3 occurrences"])
+    bare = CriterionFinding(**shared)
+
+    assert classify_finding(satisfied_at_base).flags == [CriterionFlag.vacuous_at_base]
+    assert classify_finding(pinned).flags == [CriterionFlag.literal_pinning]
+    assert classify_finding(bare).flags == []
+
+
+def test_a_demonstration_that_failed_at_base_flags_nothing() -> None:
+    """Vacuity is the OBSERVED result, never the presence of a demonstration."""
+    verdict = classify_finding(
+        CriterionFinding(
+            criterion_id="AC-1",
+            smallest_repair=RepairKind.none,
+            base_demonstration=BaseDemonstration(
+                command="uv run pytest tests/chains/test_ralph_loop.py -q",
+                satisfied_at_base=False,
+            ),
+        )
+    )
+    assert verdict.verdict is FeasibilityVerdict.feasible
+    assert verdict.flags == []
+
+
+def test_satisfied_at_base_alongside_a_repair_demand_raises() -> None:
+    """A check that ran and passed cannot also ground a demand to repair it."""
+    with pytest.raises(UngroundedVerdictError) as excinfo:
+        classify_finding(
+            CriterionFinding(
+                criterion_id="AC-4",
+                smallest_repair=RepairKind.criterion_text,
+                refutation="the clause already holds at base before any work",
+                base_demonstration=BaseDemonstration(
+                    command="uv run pytest -q",
+                    satisfied_at_base=True,
+                ),
+            )
+        )
+    assert excinfo.value.criterion_id == "AC-4"
+
+
+def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> None:
+    """The flag's whole consequence: it leaves the hard-gate partition.
+
+    The text is byte-identical either side of the sweep and no
+    regeneration round is consumed — the defect is discriminating power,
+    which regeneration cannot repair.
+    """
+    criteria = mint_criteria(
+        [
+            DraftedCriterion(
+                text="`AppConfig` exposes a `max_iterations` field.",
+                classification=CriterionClassification.hard_gate,
+            ),
+            DraftedCriterion(
+                text="The new module is importable from `kodezart.domain`.",
+                classification=CriterionClassification.hard_gate,
+            ),
+        ]
+    )
+    output = CriteriaValidationOutput(
+        findings=[
+            CriterionFinding(
+                criterion_id="AC-1",
+                smallest_repair=RepairKind.none,
+                base_demonstration=BaseDemonstration(
+                    command="rg -n 'max_iterations' src/kodezart/core/config.py",
+                    satisfied_at_base=True,
+                ),
+            ),
+            CriterionFinding(criterion_id="AC-2", smallest_repair=RepairKind.none),
+        ],
+    )
+
+    validation = sweep(criteria, output)
+    artifact = build_artifact(criteria, validation)
+
+    assert validation.verdicts[0].verdict is FeasibilityVerdict.feasible
+    assert validation.verdicts[0].flags == [CriterionFlag.vacuous_at_base]
+    assert regeneration_targets(validation) == ()
+    assert demands_regeneration(validation) is False
+
+    flagged, untouched = artifact.criteria
+    assert flagged.classification is CriterionClassification.soft_signal
+    assert flagged.text == criteria[0].text
+    assert untouched.classification is CriterionClassification.hard_gate
+
+
+def test_pinned_literals_downgrade_the_same_way() -> None:
+    """Same mechanism, second observation class — one downgrade rule."""
+    criteria = mint_criteria(
+        [
+            DraftedCriterion(
+                text="`src/kodezart/domain/criteria.py` contains 4 public functions.",
+                classification=CriterionClassification.hard_gate,
+            )
+        ]
+    )
+    validation = sweep(
+        criteria,
+        CriteriaValidationOutput(
+            findings=[
+                CriterionFinding(
+                    criterion_id="AC-1",
+                    smallest_repair=RepairKind.none,
+                    pinned_literals=["4 public functions"],
+                )
+            ],
+        ),
+    )
+    artifact = build_artifact(criteria, validation)
+
+    assert validation.verdicts[0].verdict is FeasibilityVerdict.feasible
+    assert regeneration_targets(validation) == ()
+    assert artifact.criteria[0].classification is CriterionClassification.soft_signal
 
 
 # ---------------------------------------------------------------------------
