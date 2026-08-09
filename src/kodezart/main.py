@@ -53,6 +53,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.services.hygiene_scan import HygieneScan
 from kodezart.services.job_service import JobService
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
@@ -397,6 +398,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         scanners=scanners,
         verdicts=config.deny_pattern_verdicts,
         fragment_digest=fragment_digest,
+    )
+
+    # One engine, two pattern sets. The hygiene scan is NOT registered on
+    # the outbound gate: its categories carry no verdict there and its
+    # question is a different one. What it shares is the scanner.
+    hygiene_scan = HygieneScan(
+        scanner=RegexContentScanner(patterns=config.hygiene_patterns),
+    )
+    app.state.hygiene_scan = hygiene_scan
+    await log.ainfo(
+        "fire_body_hygiene_set_registered",
+        categories=sorted(category.value for category in config.hygiene_patterns),
+        scanner=type(scanners[0]).__name__,
     )
 
     cache = LocalBareRepoCache(git=git, base_dir=config.clone_cache_dir)

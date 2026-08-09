@@ -133,7 +133,11 @@ class PatternOutboundContentGate:
         """Max-severity-wins over every hit's resolved verdict."""
         verdict = GateVerdict.CLEAN
         for hit in hits:
-            declared = self._verdicts.get(hit.category, GateVerdict.BLOCKED)
+            declared = (
+                self._verdicts.get(hit.category, GateVerdict.BLOCKED)
+                if isinstance(hit.category, RedactionCategory)
+                else GateVerdict.BLOCKED
+            )
             if shape is WriterShape.IDENTIFIER or not hit.has_span:
                 declared = GateVerdict.BLOCKED
             verdict = max_verdict(verdict, declared)

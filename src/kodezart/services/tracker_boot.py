@@ -120,11 +120,7 @@ async def reconcile_tracker_mappings(
     refs = owned_mappings(config)
     identifiers = [ref.identifier for ref in refs]
     collisions = sorted(
-        {
-            ref.describe()
-            for ref in refs
-            if identifiers.count(ref.identifier) > 1
-        },
+        {ref.describe() for ref in refs if identifiers.count(ref.identifier) > 1},
     )
     if collisions:
         raise TrackerEnsureConflictError(

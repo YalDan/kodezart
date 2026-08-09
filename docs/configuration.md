@@ -60,6 +60,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_FORGE_API_MAX_RETRIES` | `int` | `3` | >= 0, <= 10 | Maximum retry attempts for code hosting platform API 429/5xx responses. |
 | `KODEZART_FORGE_API_RETRY_BACKOFF_FACTOR` | `float` | `1.0` | >= 0.1, <= 30.0 | Base backoff multiplier in seconds for code hosting platform API retries. |
 | `KODEZART_FORGE_API_TIMEOUT_SECONDS` | `float` | `30.0` | >= 5.0, <= 120.0 | HTTP timeout for code hosting platform API requests. |
+| `KODEZART_HYGIENE_PATTERNS` | `dict[HygieneCategory, list[str]]` | `(shipped set)` |  | JSON object mapping a fire-body hygiene category to its regex pattern list. Runs through the same scanner engine as the deny set and answers a different question: whether the implementer receiving the body can act on it alone. Ships populated for `orchestration_vocabulary`, `tracker_shorthand` and `evaluator_material`. |
 | `KODEZART_MAX_FIX_ROUNDS` | `int` | `2` | >= 0, <= 10 | Maximum automatic fix attempts after review feedback. |
 | `KODEZART_MODEL` | `str \| None` | `None` |  | Claude model override. None uses SDK default. |
 | `KODEZART_OPERATION_CONFIG` | `str \| None` | `None` |  | Filesystem path to the operation config TOML. None means no operation config is loaded and its binding namespace is empty. |

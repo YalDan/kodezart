@@ -78,6 +78,31 @@ PATTERNLESS_CATEGORIES: frozenset[RedactionCategory] = frozenset(
 )
 
 
+class HygieneCategory(StrEnum):
+    """Fire-body quality categories, scanned before a body is promoted.
+
+    A different QUESTION from :class:`RedactionCategory`, over the same
+    engine.  Redaction asks "may this leave the process?"; hygiene asks
+    "can the implementer who receives this body act on it alone?"  A body
+    that names the orchestration that scheduled it, leans on tracker
+    shorthand nobody outside the board can resolve, or hands the evaluator
+    its own answer sheet fails that question whatever its privacy.
+
+    The values are disjoint from :class:`RedactionCategory`'s, which a test
+    asserts: :data:`ScanCategory` is a union, and two enums sharing a value
+    would make a hit's category ambiguous on the way back in.
+    """
+
+    ORCHESTRATION_VOCABULARY = "orchestration_vocabulary"
+    TRACKER_SHORTHAND = "tracker_shorthand"
+    EVALUATOR_MATERIAL = "evaluator_material"
+
+
+#: What a :class:`ScanHit` can be categorised as.  The engine is one; the
+#: pattern sets are many, and each set brings its own category vocabulary.
+type ScanCategory = RedactionCategory | HygieneCategory
+
+
 class WriterShape(StrEnum):
     """What kind of artifact a writer emits.
 
@@ -187,7 +212,7 @@ class ScanHit(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    category: RedactionCategory
+    category: ScanCategory
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)
     rationale: str | None = None
@@ -237,7 +262,24 @@ class GateDecision(CamelCaseModel):
 
     verdict: GateVerdict
     content: str
-    categories: tuple[RedactionCategory, ...] = ()
+    categories: tuple[ScanCategory, ...] = ()
+    hits: tuple[ScanHit, ...] = ()
+    failure: ScanFailureKind | None = None
+
+
+class HygieneReport(CamelCaseModel):
+    """Whether one fire body may be promoted, and what stopped it.
+
+    ``promotable`` is never inferred from an empty hit list: a scanner that
+    could not answer sets ``failure`` and refuses promotion, the same
+    three-state discipline the outbound gate holds.  "Said it is clean" and
+    "did not answer" are two states, and only one of them promotes.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    promotable: bool
+    categories: tuple[ScanCategory, ...] = ()
     hits: tuple[ScanHit, ...] = ()
     failure: ScanFailureKind | None = None
 
