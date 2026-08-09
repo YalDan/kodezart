@@ -318,6 +318,100 @@ live workspace belongs to the tracker adapter, not to config load.
   maps to which kodezart component, plus the behavior-parity dimension and
   placeholder mapping tables.
 
+### Setting up the self-running service
+
+Executable start to finish — no step assumes knowledge that is not on this
+page. Linear is the reference adapter and the worked example here; the tracker
+port is vendor-neutral, and another adapter passing the same conformance suite
+gets its own appendix rather than changes to these steps.
+
+**1. Tracker account and token.** Designate a tracker account for the service —
+its own, not a person's, because every write it makes is attributed and
+attribution to a human makes the approval record unreadable. Issue an API token
+for that account and give it access to every team the operation names under
+`[teams]`. The token needs to read issues, comments, labels, users, teams and
+documents, and to write issue state, labels, comments and claims. Put it in
+`KODEZART_TRACKER_TOKEN` and nowhere else: the operation config is
+`extra="forbid"`, so a token key in that file fails the load rather than
+sitting in a repository.
+
+The forge token is separate. `KODEZART_GITHUB_TOKEN` is a fine-grained PAT and
+its required permissions are listed under [Configuration](#configuration).
+
+**2. Queue labels.** Create one label per queue state. The names are yours —
+code never contains a literal label string and resolves every one of them
+through `[queue_states]`. What must exist is one label per member the code
+addresses by name: `triage`, `proposed`, `approved`, `done`, `decision`. You
+do not have to create them by hand: a label the operation *owns* and that does
+not exist yet is created at boot and adopted unchanged if it is already there.
+A label that exists with a conflicting definition aborts boot rather than being
+altered underneath you.
+
+**3. Principals and their ids.** Designate exactly one approver, then the
+principals whose word creates a reply obligation, then the escalation target.
+For each, collect two identifiers, because they are two different things:
+
+- `tracker_user` — the id the tracker records as the actor of a state change.
+  Authority is checked against this one.
+- `handle` — the string a person writes when addressing that principal. The
+  mention sweep is text matching, so this is what it matches on.
+
+They are routinely different, and swapping them silently breaks either
+authority checking or the mention sweep. Exactly one principal may carry the
+approver role; two is a load failure naming the field.
+
+**4. Documents and records.** Create or designate the checkpoint document the
+passes read their scan window from, and collect its id. A document id is
+declared with the system it belongs to, because an opaque id with no system is
+unresolvable by anyone holding only the rendered prompt:
+
+```toml
+[documents.checkpoint]
+system = "tracker"
+id = "<the document id>"
+```
+
+Do the same for the run-log destination under `[records.run_log]`. A record
+declared `append_only` is never rewritten, only added to.
+
+**5. Write the operation config.** Copy
+[`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
+field by field and covers every one — fill in the values from steps 2–4, and
+point `KODEZART_OPERATION_CONFIG` at the file.
+
+**6. Boot and verify.** Start the service and read the startup log. Validation
+is fail-loud and collects every failure at once, so one boot tells you
+everything that is wrong rather than the first thing:
+
+| What you see | What it means | What to do |
+| --- | --- | --- |
+| `tracker_not_configured` with `tracker_token_present: false` | No credential, so no tracker is wired. The service still serves HTTP. | Set `KODEZART_TRACKER_TOKEN`. |
+| `tracker_not_configured` with `operation_config_present: false` | No operation config, so there is nothing to reconcile. | Set `KODEZART_OPERATION_CONFIG`. |
+| `OperationConfigError` listing several failures | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. | Fix every listed failure; the list is exhaustive. |
+| `TrackerBootValidationError` naming entries | A principal, team or state mapping the operation does *not* own could not be resolved in the live workspace. | Correct the id, or grant the token access to that team. |
+| `TrackerEnsureConflictError` | A value the operation *owns* exists with a conflicting definition. | Reconcile the workspace or the config by hand; boot will not alter it for you. |
+| `tracker_mappings_reconciled` with `created` / `adopted` lists | Success. Everything the operation owns now exists; everything it does not own resolved. | Nothing. |
+| `scheduled_passes_not_wired` | The tracker is up but no dispatch pass is scheduled, and the event names which half is missing. | Supply the named half — usually the forge token, which the delivery probe needs. |
+
+A successful boot logs `tracker_mappings_reconciled` and then
+`pass_scheduler_started`, listing each pass and its interval.
+
+**7. Smoke test.** File one small, self-contained issue on a team the config
+names, then, **as the approver account**, add the approved label. Watch for this
+sequence in the log:
+
+1. `pass_gate_delta` — the pre-query saw the issue move.
+2. `dispatch_pass_completed` with `outcome: fire_enqueued` and the issue key —
+   the claim was granted and a job was enqueued.
+3. The lifecycle write-back moving the issue In Progress → In Review → Done.
+4. A terminal outcome comment on the issue.
+
+Approval is the only human act in that sequence. kodezart never sets or removes
+the approved state — if it could, the one gate in the loop would not be a gate.
+If the pass never wakes, the issue's queue state or its approver is wrong; if it
+wakes and reports `empty_eligible_set`, the report names the clause that
+excluded the issue.
+
 ## Development
 
 ```bash
