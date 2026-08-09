@@ -23,7 +23,12 @@ from kodezart.types.domain.agent import (
     WorkflowCriteriaValidationEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.base_spec import (
+    BaseInput,
+    BaseRefRole,
+    BaseSpec,
+    trunk_base,
+)
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriterionClassification,
@@ -207,6 +212,7 @@ async def _run(
     *,
     prompt: str = "do the thing",
     repo_url: str | None = None,
+    base_spec: BaseSpec | None = None,
 ) -> list[AgentEvent]:
     return [
         event
@@ -214,7 +220,7 @@ async def _run(
             prompt=prompt,
             repo_path=None if repo_url else "/tmp/fake",
             repo_url=repo_url,
-            base_spec=trunk_base("main"),
+            base_spec=base_spec or trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key="criteria-gate",
@@ -531,6 +537,24 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
 # ---------------------------------------------------------------------------
 
 
+STACKED_BASE = BaseSpec(
+    base_ref="kodezart/blocker-a-11111111",
+    role=BaseRefRole.deliverable,
+    inputs=(
+        BaseInput(
+            blocker_issue_id="KOD-101",
+            branch="kodezart/blocker-a-11111111",
+            sha="a" * 40,
+        ),
+    ),
+)
+
+
+def _base_line(base_ref: str) -> str:
+    """The sentence the harness states the resolved base in."""
+    return f"This lane's comparison base is `{base_ref}`"
+
+
 BARE_DIFF_CRITERION = (
     "Running `git diff --name-only` shows changes only under `src/kodezart/api/`."
 )
@@ -586,7 +610,10 @@ async def test_a_scope_criterion_with_no_stated_base_is_regenerated() -> None:
         evaluation=make_passing_evaluation(),
         last_commit_sha="a" * 40,
     )
-    await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+    await _run(
+        _engine(executor, max_rounds=1, quality_gate=gate),
+        base_spec=STACKED_BASE,
+    )
 
     assert executor.criteria_calls == 2, "the bare-diff draft consumed a round"
     dispatched = gate.calls[0]["acceptance_criteria"]
@@ -594,23 +621,71 @@ async def test_a_scope_criterion_with_no_stated_base_is_regenerated() -> None:
     texts = [criterion.text for criterion in dispatched]
     assert BASED_CRITERION in texts
     assert BARE_DIFF_CRITERION not in texts
-    assert "kodezart/blocker-a-11111111" in texts[0]
     assert "git diff --name-only`" not in texts[0]
 
+    # The amendment is demanded AGAINST the base the run resolved. Asserting
+    # the base only in the dispatched text would compare one test constant to
+    # another: the drafts are scripted, so their contents prove nothing about
+    # the run. What the run supplies is this line.
+    regeneration = [p for p in executor.prompts if "<validation_findings>" in p]
+    assert len(regeneration) == 1
+    assert _base_line(STACKED_BASE.base_ref) in regeneration[0]
 
-async def test_the_drafter_is_told_which_base_the_lane_is_measured_against() -> None:
-    """The resolved base reaches the drafter as data, not as an assumption."""
+
+@pytest.mark.parametrize(
+    ("spec", "other_base"),
+    [
+        (trunk_base("main"), STACKED_BASE.base_ref),
+        (STACKED_BASE, "main"),
+    ],
+    ids=["trunk-fired", "stacked"],
+)
+async def test_the_drafter_is_told_which_base_the_lane_is_measured_against(
+    spec: BaseSpec,
+    other_base: str,
+) -> None:
+    """The resolved base reaches the drafter as data, not as an assumption.
+
+    Two runs differing only in the base they were fired with, each asserting
+    the OTHER lane's base is absent.  A literal in the harness — `main`, or
+    anything else fixed — satisfies at most one of the two, and a corrupted
+    render satisfies neither: the assertion is a function of the run's own
+    input rather than of a constant this test also supplies.
+    """
     executor = ValidatorScriptExecutor(
         sweeps=[{"findings": [FEASIBLE_A, FEASIBLE_B], "contradictions": []}],
     )
-    await _run(_engine(executor))
+    await _run(_engine(executor), base_spec=spec)
 
     drafter_prompts = [
         p for p in executor.prompts if "SCOPE CRITERIA NAME THEIR BASE" in p
     ]
     assert len(drafter_prompts) == 1
-    assert "This lane's comparison base is `main`" in drafter_prompts[0]
+    assert _base_line(spec.base_ref) in drafter_prompts[0]
+    assert _base_line(other_base) not in drafter_prompts[0]
     assert "Never write `main` or `trunk` as the base" in drafter_prompts[0]
+
+
+async def test_the_refuter_reads_scope_against_the_same_base_the_drafter_was_given(
+) -> None:
+    """One base per run, or the two surfaces grade different claims.
+
+    The drafter is told which base to write criteria against and the refuter
+    is told which base to test them against.  Two bases in one run is the
+    defect this lane exists to close, arriving as a disagreement rather than
+    as a wrong value.
+    """
+    executor = ValidatorScriptExecutor(
+        sweeps=[{"findings": [FEASIBLE_A, FEASIBLE_B], "contradictions": []}],
+    )
+    await _run(_engine(executor), base_spec=STACKED_BASE)
+
+    drafter = next(p for p in executor.prompts if "SCOPE CRITERIA NAME THEIR BASE" in p)
+    refuter = next(p for p in executor.prompts if "ADVERSARIAL REFUTER" in p)
+    assert _base_line(STACKED_BASE.base_ref) in drafter
+    assert f"you hold the repository at base ref `{STACKED_BASE.base_ref}`" in refuter
+    assert _base_line("main") not in drafter
+    assert "repository at base ref `main`" not in refuter
 
 
 # ---------------------------------------------------------------------------
