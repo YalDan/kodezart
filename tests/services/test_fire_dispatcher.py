@@ -71,6 +71,24 @@ RAW_PRIORITY_FIXTURE: dict[str, tuple[int, IssuePriority]] = {
     "RAW-LOW": (4, IssuePriority.LOW),
 }
 
+# The ordering tokens the defect shows up as.  Stated here and mirrored in
+# ``make verify-no-raw-priority-sort`` so the two cannot disagree about what
+# they forbid; the arrow is stripped first because ``-> int`` on a signature
+# mentioning priority is not a comparison.
+_ORDERING_TOKENS = re.compile(r"[0-9]|sort|key\s*=|min\(|max\(|<|>|cmp")
+
+
+def raw_priority_ordering(line: str) -> bool:
+    """Whether *line* lets a priority reach an ordering by any route.
+
+    ``priority_rank`` is the single exemption: it IS the domain order, so a
+    line naming it is the one legitimate way priority reaches a comparison.
+    """
+    lowered = line.lower().replace("->", "")
+    if "priority" not in lowered or "priority_rank" in lowered:
+        return False
+    return _ORDERING_TOKENS.search(lowered) is not None
+
 
 def operation_config() -> OperationConfig:
     return OperationConfig(
@@ -436,15 +454,51 @@ class TestPriorityRanking:
         fire, _, _ = dispatcher(tracker)
         assert (await fire.run_pass()).claimed_issue_key == "RAW-LOW"
 
-    def test_no_module_outside_the_adapter_pairs_priority_with_a_number(
+    def test_the_predicate_fires_on_every_natural_shape_of_the_defect(
+        self,
+    ) -> None:
+        """The guard is shown to fail before it is trusted to pass.
+
+        The predicate this shares with ``make verify-no-raw-priority-sort``
+        was a digit test, and the natural form of the defect carries no
+        digit at all — so the check passed the exact line it names.  Every
+        form below is asserted to trip it, and the two legitimate forms are
+        asserted not to, because a predicate that flags the domain order
+        would be turned off rather than obeyed.
+        """
+        assert [
+            line
+            for line in (
+                "return sorted(issues, key=lambda i: i.raw_priority)",
+                "return sorted(issues, key=lambda x: x.priority)",
+                "issues.sort(key=attrgetter('priority'))",
+                "return min(issues, key=lambda i: i.priority)",
+                "return max(issues, key=lambda i: i.priority)",
+                "if left.priority < right.priority:",
+                "PRIORITY_URGENT = 1",
+            )
+            if not raw_priority_ordering(line)
+        ] == []
+        assert [
+            line
+            for line in (
+                "priority=priority_rank(issue.priority),",
+                "sorted(IssuePriority, key=priority_rank),",
+                "priority: IssuePriority",
+            )
+            if raw_priority_ordering(line)
+        ] == []
+
+    def test_no_module_outside_the_adapter_orders_by_a_raw_priority(
         self,
     ) -> None:
         """A raw-numeric sort is asserted absent, mechanically.
 
         The vendor's numeric encoding is allowed to exist in exactly two
         modules — the adapter that maps it and the wire shape that declares
-        it.  Anywhere else, a line mentioning priority alongside a digit is
-        a raw-numeric comparison waiting to happen.
+        it.  Anywhere else, priority reaching a sort key, a comparison or a
+        selection is the defect, and ``priority_rank`` — the domain order —
+        is the one way it may.
         """
         root = Path(__file__).resolve().parents[2] / "src" / "kodezart"
         allowed = {
@@ -459,8 +513,7 @@ class TestPriorityRanking:
                 path.read_text().splitlines(),
                 start=1,
             ):
-                lowered = line.lower()
-                if "priority" in lowered and re.search(r"\d", lowered):
+                if raw_priority_ordering(line):
                     offenders.append(f"{path.name}:{number}: {line.strip()}")
         assert offenders == []
 

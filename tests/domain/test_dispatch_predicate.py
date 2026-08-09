@@ -252,10 +252,10 @@ class TestRanking:
 
     def test_the_rank_key_carries_no_backend_encoding(self) -> None:
         key = rank_key(make_tracker_issue("K-1", priority=IssuePriority.URGENT))
-        assert key.priority == 0
+        assert key.priority_rank == 0
         assert (
             rank_key(
                 make_tracker_issue("K-2", priority=IssuePriority.NONE),
-            ).priority
+            ).priority_rank
             == len(DOMAIN_PRIORITY_ORDER) - 1
         )

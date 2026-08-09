@@ -112,17 +112,20 @@ class RankKey:
     full-precision: the random draw applies only to exact equality.
     """
 
-    priority: int
+    priority_rank: int
     created_at: datetime
 
     def __lt__(self, other: "RankKey") -> bool:
-        return (self.priority, self.created_at) < (other.priority, other.created_at)
+        return (self.priority_rank, self.created_at) < (
+            other.priority_rank,
+            other.created_at,
+        )
 
 
 def rank_key(issue: TrackerIssue) -> RankKey:
-    """Primary priority (Urgent first, None last), secondary oldest-first."""
+    """Primary rank (Urgent first, None last), secondary oldest-first."""
     return RankKey(
-        priority=priority_rank(issue.priority),
+        priority_rank=priority_rank(issue.priority),
         created_at=issue.created_at,
     )
 
@@ -170,7 +173,7 @@ def ranked_order(issues: Sequence[TrackerIssue]) -> tuple[str, ...]:
         for issue in sorted(
             issues,
             key=lambda issue: (
-                rank_key(issue).priority,
+                rank_key(issue).priority_rank,
                 rank_key(issue).created_at,
                 issue.issue_key,
             ),

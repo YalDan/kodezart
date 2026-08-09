@@ -400,13 +400,17 @@ def test_the_resolver_has_exactly_one_implementation() -> None:
     ]
     assert public == ["resolve_base"]
 
-    others = [
-        path
-        for path in (REPO_ROOT / "src").rglob("*.py")
-        if path != RESOLVER_MODULE
-        and "def resolve_base(" in path.read_text(encoding="utf-8")
+    # Walked rather than grepped, at every nesting depth: a second rule is
+    # far likelier to arrive as a method on a service than as a second
+    # module-level function, and an anchored text match cannot see one.
+    definitions = [
+        f"{path.relative_to(REPO_ROOT)}:{node.lineno}"
+        for path in sorted((REPO_ROOT / "src").rglob("*.py"))
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name == "resolve_base"
     ]
-    assert others == []
+    assert len(definitions) == 1, definitions
 
 
 def test_the_resolver_takes_no_branch_on_the_number_of_blockers() -> None:

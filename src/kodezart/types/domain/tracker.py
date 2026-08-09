@@ -54,7 +54,7 @@ PRIORITY_RANK_ORDER: tuple[IssuePriority, ...] = (
 
 
 def priority_rank(priority: IssuePriority) -> int:
-    """Rank of *priority* in the domain order — lower sorts first."""
+    """Position of *priority* in the domain order; the lower rank wins."""
     return PRIORITY_RANK_ORDER.index(priority)
 
 
