@@ -18,11 +18,15 @@ vocabulary and handed to the port.  Which backend instates or resolves
 them is the adapter's business.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from kodezart.core.errors import TrackerBootValidationError, TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import (
+    FIELD_OWNERSHIP,
+    ConfigOwnership,
+    OperationConfig,
+)
 from kodezart.types.domain.tracker import MappingKind, MappingOutcome, MappingRef
 
 
@@ -66,18 +70,11 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
     return tuple(refs)
 
 
-def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
-    """Every mapping entry boot INSTATES, in a stable order.
-
-    The queue vocabulary, and nothing else: it exists only because this
-    operation says it does, and no other system defines it.  Each ref
-    carries the container its value is created in — the operation's own
-    team when it declares exactly one, and workspace scope when it declares
-    several, because one queue state addressed on several teams' issues
-    cannot be a label private to one of them.
-    """
-    identifiers = sorted(set(config.teams.values()))
-    scope = identifiers[0] if len(identifiers) == 1 else None
+def _queue_state_refs(
+    config: OperationConfig,
+    scope: str | None,
+) -> tuple[MappingRef, ...]:
+    """The queue vocabulary: it exists only because this operation says so."""
     return tuple(
         MappingRef(
             kind=MappingKind.QUEUE_STATE,
@@ -87,6 +84,55 @@ def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
         )
         for name, identifier in sorted(config.queue_states.items())
     )
+
+
+#: How each OWNED field's declared values become refs boot can instate.
+#: Keyed by field name so the partition in the MODEL decides what is
+#: instated, rather than this module holding a second opinion about it.
+OWNED_REF_BUILDERS: dict[
+    str,
+    Callable[[OperationConfig, str | None], tuple[MappingRef, ...]],
+] = {
+    "queue_states": _queue_state_refs,
+}
+
+
+def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
+    """Every mapping entry boot INSTATES, in a stable order.
+
+    Derived from ``FIELD_OWNERSHIP`` rather than from a list here.  A
+    partition declared in the model and never read is decoration: it can be
+    neither honoured nor violated, and a field promoted to OWNED would
+    change nothing at boot.  Reading it means the promotion is what turns
+    the ensure on.
+
+    A field the model calls OWNED that this module cannot instate is a
+    typed boot failure, never a skip — the alternative is a config
+    declaring a value the operation claims to own, and a boot that quietly
+    owns nothing.
+
+    Each ref carries the container its value is created in — the
+    operation's own team when it declares exactly one, and workspace scope
+    when it declares several, because one queue state addressed on several
+    teams' issues cannot be a label private to one of them.
+    """
+    identifiers = sorted(set(config.teams.values()))
+    scope = identifiers[0] if len(identifiers) == 1 else None
+    owned = sorted(
+        field
+        for field, ownership in FIELD_OWNERSHIP.items()
+        if ownership is ConfigOwnership.OWNED
+    )
+    uninstatable = [field for field in owned if field not in OWNED_REF_BUILDERS]
+    if uninstatable:
+        raise TrackerBootValidationError(
+            "operation config declares OWNED fields boot cannot instate",
+            unresolved=uninstatable,
+        )
+    refs: list[MappingRef] = []
+    for field in owned:
+        refs.extend(OWNED_REF_BUILDERS[field](config, scope))
+    return tuple(refs)
 
 
 async def validate_tracker_mappings(

@@ -4,11 +4,15 @@ import pytest
 
 from kodezart.core.errors import TrackerBootValidationError
 from kodezart.services.tracker_boot import (
+    OWNED_REF_BUILDERS,
     configured_mappings,
+    owned_mappings,
     validate_tracker_mappings,
 )
 from kodezart.types.domain.operation import (
+    FIELD_OWNERSHIP,
     CheckStep,
+    ConfigOwnership,
     DocumentEntry,
     DocumentSystem,
     Initiative,
@@ -216,3 +220,51 @@ class TestBootValidation:
                 config=operation_config(),
             )
         assert caught.value.unresolved == (bad.describe(),)
+
+
+class TestOwnershipPartition:
+    """The partition is total, and boot READS it rather than restating it."""
+
+    def test_every_declared_field_carries_an_ownership_class(self) -> None:
+        """Derived from ``model_fields``, never from a hand-written list.
+
+        A hand-written list is checked against itself: a field added to the
+        model and forgotten here would be absent from both sides and the
+        assertion would pass.
+        """
+        assert set(FIELD_OWNERSHIP) == set(OperationConfig.model_fields)
+
+    def test_the_owned_set_is_what_boot_instates(self) -> None:
+        """The model decides; this is not a second opinion held elsewhere.
+
+        `owned_mappings` previously named `queue_states` directly and read
+        the partition not at all — so promoting a field to OWNED changed
+        nothing at boot, and the declaration was decoration.
+        """
+        owned = {
+            field
+            for field, ownership in FIELD_OWNERSHIP.items()
+            if ownership is ConfigOwnership.OWNED
+        }
+        assert owned == set(OWNED_REF_BUILDERS)
+
+        config = operation_config()
+        assert {ref.name for ref in owned_mappings(config)} == set(config.queue_states)
+
+    def test_an_owned_field_boot_cannot_instate_fails_loudly(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The promotion is what turns the ensure on — or stops the boot.
+
+        Written as a failing case rather than a comment because the whole
+        point of reading the partition is that a field promoted to OWNED
+        with no ensure behind it must not boot into quietly owning nothing.
+        This is the state `documents` is in today, held one step away by its
+        EXTERNAL classification alone.
+        """
+        monkeypatch.setitem(FIELD_OWNERSHIP, "documents", ConfigOwnership.OWNED)
+
+        with pytest.raises(TrackerBootValidationError) as caught:
+            owned_mappings(operation_config())
+        assert caught.value.unresolved == ("documents",)

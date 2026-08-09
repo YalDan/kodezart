@@ -346,12 +346,17 @@ class OperationConfig(OperationModel):
 #: mark ``principals`` ensurable and the adapter would try to create a user.
 #:
 #: ``documents`` and ``records`` are EXTERNAL rather than OWNED, which
-#: deviates from the 2026-08-08 partition and is recorded as a deviation on
-#: KOD-57.  Their declared value is a server-assigned identifier: a document
+#: deviates from the ruled partition.  OWNED means ensured at boot and
+#: created if absent, KEYED BY THE CONFIG'S DECLARED NAME — and neither
+#: :class:`DocumentEntry` nor :class:`RecordDestination` carries a name.
+#: Their declared value is a server-assigned identifier, so a document
 #: absent from the workspace cannot be created *with the id the config
-#: names*, so "create it if absent" has no implementation that leaves the
-#: config true.  Instating them needs a name-addressed registry, which is a
-#: model change, not an adapter change.
+#: names* and "create it if absent" has no implementation that leaves the
+#: config true.  Closing it means a declared name per entry with the id
+#: ADOPTED rather than declared, which is a change to THIS model, not to an
+#: adapter.  The amendment and its ground are recorded on KOD-57; a boot
+#: whose OWNED set names a field with no way to instate it fails loudly
+#: rather than skipping it, so this cannot go quiet.
 #:
 #: Totality over ``OperationConfig.model_fields`` is asserted by a test
 #: derived from ``model_fields``, never from a hand-written list.
