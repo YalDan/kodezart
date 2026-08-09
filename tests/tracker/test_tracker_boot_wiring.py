@@ -50,12 +50,12 @@ initiatives = []
 
 [[principals]]
 tracker_user = "{approver}"
-role = "approver"
+roles = ["approver", "principal", "assignee"]
 handle = "@approver"
 
 [[principals]]
 tracker_user = "{BYSTANDER}"
-role = "principal"
+roles = ["principal"]
 handle = "@bystander"
 
 [teams]
@@ -172,7 +172,7 @@ async def test_one_unresolvable_principal_aborts_boot_naming_that_entry(
     with pytest.raises(TrackerBootValidationError) as caught:
         async with lifespan(app):
             pass
-    assert caught.value.unresolved == ("user 'approver' -> 'ghost'",)
+    assert caught.value.unresolved == ("user 'approver+assignee+principal' -> 'ghost'",)
     # The session opened for the check does not leak past the failure.
     assert wired.closes == 1
 

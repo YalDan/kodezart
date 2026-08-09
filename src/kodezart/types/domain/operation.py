@@ -53,14 +53,19 @@ class PrincipalRole(StrEnum):
 
     Three members because the passes route three things differently and a
     two-valued enum collapses two of them.  ``APPROVER`` holds the approval
-    flip and is the assignment target; ``PRINCIPAL``'s word creates a reply
-    obligation the queue does not otherwise record; ``ESCALATION`` receives
-    out-of-band escalations and creates no reply obligation on its own.
+    flip; ``PRINCIPAL``'s word creates a reply obligation the queue does
+    not otherwise record; ``ASSIGNEE`` is what prepared fires, triage
+    filings and decision flags are assigned to.
+
+    Held as a SET rather than singly, because one principal demonstrably
+    holds two: the routines assign every prepared fire and every triage
+    filing to the same principal who holds the approval act, so a singular
+    field forces either a duplicate entry or a lost routing.
     """
 
     APPROVER = "approver"
     PRINCIPAL = "principal"
-    ESCALATION = "escalation"
+    ASSIGNEE = "assignee"
 
 
 class QueueState(StrEnum):
@@ -105,8 +110,14 @@ class Principal(OperationModel):
     """
 
     tracker_user: str
-    role: PrincipalRole
+    roles: frozenset[PrincipalRole]
     handle: str
+    #: The identifier this principal is recognised by on the FORGE, when it
+    #: differs from the tracker one.  Two surfaces name one person, and
+    #: review-borne mentions are answered on the forge, so recognising one
+    #: principal across both needs two identifiers.  ``None`` for a
+    #: principal who never appears there.
+    forge_handle: str | None = None
 
 
 class CheckStep(OperationModel):
@@ -246,11 +257,21 @@ class OperationConfig(OperationModel):
         """Collect EVERY structural failure into one error, never the first."""
         failures: list[str] = []
 
-        approvers = [p for p in self.principals if p.role is PrincipalRole.APPROVER]
+        approvers = [p for p in self.principals if PrincipalRole.APPROVER in p.roles]
         if len(approvers) != 1:
             failures.append(
                 f"exactly one APPROVER principal is required, found {len(approvers)}",
             )
+        assignees = [p for p in self.principals if PrincipalRole.ASSIGNEE in p.roles]
+        if len(assignees) != 1:
+            failures.append(
+                f"exactly one ASSIGNEE principal is required, found {len(assignees)}",
+            )
+        failures.extend(
+            f"principals[{index}] must carry the PRINCIPAL role"
+            for index, principal in enumerate(self.principals)
+            if PrincipalRole.PRINCIPAL not in principal.roles
+        )
 
         for member in QueueState:
             if member.value not in self.queue_states:
@@ -316,7 +337,7 @@ class OperationConfig(OperationModel):
 
     def approver(self) -> Principal:
         """The single principal holding APPROVER authority."""
-        return next(p for p in self.principals if p.role is PrincipalRole.APPROVER)
+        return next(p for p in self.principals if PrincipalRole.APPROVER in p.roles)
 
 
 #: Which class every declared field belongs to, and therefore what boot does

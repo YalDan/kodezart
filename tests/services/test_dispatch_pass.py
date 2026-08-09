@@ -70,7 +70,13 @@ def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationCo
         principals=[
             Principal(
                 tracker_user=APPROVER,
-                role=PrincipalRole.APPROVER,
+                roles=frozenset(
+                    {
+                        PrincipalRole.APPROVER,
+                        PrincipalRole.PRINCIPAL,
+                        PrincipalRole.ASSIGNEE,
+                    },
+                ),
                 handle="@approver",
             ),
         ],

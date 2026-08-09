@@ -97,12 +97,18 @@ def operation_config() -> OperationConfig:
         principals=[
             Principal(
                 tracker_user=APPROVER,
-                role=PrincipalRole.APPROVER,
+                roles=frozenset(
+                    {
+                        PrincipalRole.APPROVER,
+                        PrincipalRole.PRINCIPAL,
+                        PrincipalRole.ASSIGNEE,
+                    },
+                ),
                 handle="@approver",
             ),
             Principal(
                 tracker_user=IMPOSTOR,
-                role=PrincipalRole.PRINCIPAL,
+                roles=frozenset({PrincipalRole.PRINCIPAL}),
                 handle="@impostor",
             ),
         ],

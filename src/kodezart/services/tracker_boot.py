@@ -31,7 +31,7 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
     refs: list[MappingRef] = [
         MappingRef(
             kind=MappingKind.USER,
-            name=principal.role.value,
+            name="+".join(sorted(role.value for role in principal.roles)),
             identifier=principal.tracker_user,
         )
         for principal in config.principals

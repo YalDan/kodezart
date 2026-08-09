@@ -1,11 +1,11 @@
-"""Three routes, three roles, and two identifiers per principal.
+"""Three routes, a SET of roles per principal, and two identifiers each.
 
-The passes route three things differently — the approval flip and its
-assignment target, the word that creates a reply obligation, and the
-out-of-band escalation that creates none — so a two-valued enum collapses
-two of them into one and the routing becomes unexpressible.  The tests
-here fail if a member is removed, and fail if the identifier a mention is
-recognised by stops reaching a rendered pass.
+The passes route three things differently — the approval flip, the word
+that creates a reply obligation, and the target prepared fires and triage
+filings are assigned to — so a two-valued enum collapses two of them and
+the routing becomes unexpressible.  ``roles`` is set-valued because one
+principal demonstrably holds two of the three at once, which a singular
+field can only express as a duplicate entry or a lost routing.
 
 Every assertion runs over the shipped example config, the shipped bindings
 and the shipped templates.  Nothing here constructs a principal the loader
@@ -28,9 +28,9 @@ EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
 
 #: Each role and the routing that would have nowhere to go without it.
 ROUTES: dict[PrincipalRole, str] = {
-    PrincipalRole.APPROVER: "the approval flip and the assignment target",
+    PrincipalRole.APPROVER: "the approval flip",
     PrincipalRole.PRINCIPAL: "a word that creates a reply obligation",
-    PrincipalRole.ESCALATION: "an out-of-band escalation creating no obligation",
+    PrincipalRole.ASSIGNEE: "the target a prepared fire is assigned to",
 }
 
 
@@ -46,9 +46,37 @@ def test_the_three_routes_are_three_distinct_roles() -> None:
 
 def test_the_shipped_example_declares_a_principal_in_every_role() -> None:
     """A role no instance can hold is a member nothing exercises."""
-    declared = {principal.role for principal in example_config().principals}
+    declared = {
+        role for principal in example_config().principals for role in principal.roles
+    }
 
     assert declared == set(PrincipalRole)
+
+
+def test_one_principal_holds_two_roles_at_once() -> None:
+    """The set is load-bearing rather than a container around one value.
+
+    This is the case a singular ``role`` cannot express: the same principal
+    holds the approval act AND is what prepared work is assigned to.  With
+    a singular field the config must either duplicate the person or drop
+    one of the two routings, and both are silent.
+    """
+    config = example_config()
+    approver = config.approver()
+
+    assert PrincipalRole.ASSIGNEE in approver.roles
+    assert len(approver.roles) > 1
+    assert [
+        principal
+        for principal in config.principals
+        if principal.tracker_user == approver.tracker_user
+    ] == [approver]
+
+
+def test_every_principal_carries_the_principal_role() -> None:
+    """``principal`` is the floor: authority is added to it, never instead."""
+    for principal in example_config().principals:
+        assert PrincipalRole.PRINCIPAL in principal.roles
 
 
 def test_a_principal_carries_the_identifier_a_mention_is_recognised_by() -> None:
@@ -66,8 +94,28 @@ def test_a_principal_carries_the_identifier_a_mention_is_recognised_by() -> None
     assert config.approver().handle
 
 
-def test_the_recognition_identifier_reaches_a_rendered_pass() -> None:
-    """The sweep is renderable, not merely representable."""
+def test_a_principal_is_recognisable_on_the_forge_as_well_as_the_tracker() -> None:
+    """One principal, two surfaces, two identifiers — and three states.
+
+    Review-borne mentions are answered on the forge, so a principal whose
+    forge name differs from their tracker name is unrecognisable there
+    without a second identifier.  ``None`` is a real state — a principal
+    who never appears on the forge legitimately has none — so the example
+    carries both, and neither is inferred from the other.
+    """
+    config = example_config()
+    named = [p for p in config.principals if p.forge_handle is not None]
+    absent = [p for p in config.principals if p.forge_handle is None]
+
+    assert named
+    assert absent
+    for principal in named:
+        assert principal.forge_handle != principal.handle
+        assert principal.forge_handle != principal.tracker_user
+
+
+def test_both_identifiers_reach_a_rendered_pass() -> None:
+    """The two-surface sweep is renderable, not merely representable."""
     config = example_config()
     registry = load_registry()
     rendered = registry.template_for(PromptKey.FIRE_PREP_PASS).render(
@@ -77,12 +125,16 @@ def test_the_recognition_identifier_reaches_a_rendered_pass() -> None:
     obliging = [
         principal
         for principal in config.principals
-        if principal.role is PrincipalRole.PRINCIPAL
+        if PrincipalRole.PRINCIPAL in principal.roles
     ]
     assert obliging
     for principal in obliging:
         assert principal.handle in rendered
         assert principal.tracker_user in rendered
+        for role in principal.roles:
+            assert role.value in rendered
+        if principal.forge_handle is not None:
+            assert principal.forge_handle in rendered
 
 
 def test_a_second_approver_is_refused_rather_than_silently_ranked(
@@ -92,7 +144,7 @@ def test_a_second_approver_is_refused_rather_than_silently_ranked(
     body = EXAMPLE.read_text(encoding="utf-8") + (
         "\n[[principals]]\n"
         'tracker_user = "second"\n'
-        'role = "approver"\n'
+        'roles = ["approver", "principal"]\n'
         'handle = "@second"\n'
     )
     path = tmp_path / "operation.toml"
@@ -103,16 +155,39 @@ def test_a_second_approver_is_refused_rather_than_silently_ranked(
     assert any("approver" in failure.lower() for failure in caught.value.failures)
 
 
-def test_an_escalation_principal_does_not_hold_the_approval_flip() -> None:
-    """The third role is a role, not a relabelled principal."""
-    config = example_config()
-    escalation = [
-        principal
-        for principal in config.principals
-        if principal.role is PrincipalRole.ESCALATION
-    ]
+def test_a_second_assignee_is_refused_rather_than_silently_ranked(
+    tmp_path: Path,
+) -> None:
+    """The assignment target is singular for the same reason the flip is.
 
-    assert escalation
-    for principal in escalation:
-        assert principal.tracker_user != config.approver().tracker_user
-        assert principal.handle != config.approver().handle
+    Two assignees is not a wider grant, it is an ambiguous one: a prepared
+    fire has one target, and a config declaring two makes the pass pick.
+    """
+    body = EXAMPLE.read_text(encoding="utf-8") + (
+        "\n[[principals]]\n"
+        'tracker_user = "second"\n'
+        'roles = ["assignee", "principal"]\n'
+        'handle = "@second"\n'
+    )
+    path = tmp_path / "operation.toml"
+    path.write_text(body, encoding="utf-8")
+
+    with pytest.raises(OperationConfigError) as caught:
+        load_operation_config(path)
+    assert any("assignee" in failure.lower() for failure in caught.value.failures)
+
+
+def test_a_principal_without_the_principal_role_is_refused(tmp_path: Path) -> None:
+    """Authority without the floor is an entry the mention sweep cannot use."""
+    body = EXAMPLE.read_text(encoding="utf-8") + (
+        "\n[[principals]]\n"
+        'tracker_user = "roleless"\n'
+        'roles = []\n'
+        'handle = "@roleless"\n'
+    )
+    path = tmp_path / "operation.toml"
+    path.write_text(body, encoding="utf-8")
+
+    with pytest.raises(OperationConfigError) as caught:
+        load_operation_config(path)
+    assert any("principal role" in failure.lower() for failure in caught.value.failures)

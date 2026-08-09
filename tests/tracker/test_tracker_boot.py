@@ -40,12 +40,18 @@ def operation_config() -> OperationConfig:
         principals=[
             Principal(
                 tracker_user=APPROVER,
-                role=PrincipalRole.APPROVER,
+                roles=frozenset(
+                    {
+                        PrincipalRole.APPROVER,
+                        PrincipalRole.PRINCIPAL,
+                        PrincipalRole.ASSIGNEE,
+                    },
+                ),
                 handle="@approver",
             ),
             Principal(
                 tracker_user=BYSTANDER,
-                role=PrincipalRole.PRINCIPAL,
+                roles=frozenset({PrincipalRole.PRINCIPAL}),
                 handle="@bystander",
             ),
         ],
@@ -135,12 +141,18 @@ class TestBootValidation:
                 "principals": [
                     Principal(
                         tracker_user="ghost",
-                        role=PrincipalRole.APPROVER,
+                        roles=frozenset(
+                    {
+                        PrincipalRole.APPROVER,
+                        PrincipalRole.PRINCIPAL,
+                        PrincipalRole.ASSIGNEE,
+                    },
+                ),
                         handle="@approver",
                     ),
                     Principal(
                         tracker_user=BYSTANDER,
-                        role=PrincipalRole.PRINCIPAL,
+                        roles=frozenset({PrincipalRole.PRINCIPAL}),
                         handle="@bystander",
                     ),
                 ],
@@ -149,7 +161,9 @@ class TestBootValidation:
         tracker = linear_over_fake_mcp(fixture_server())
         with pytest.raises(TrackerBootValidationError) as caught:
             await validate_tracker_mappings(tracker=tracker, config=config)
-        assert caught.value.unresolved == ("user 'approver' -> 'ghost'",)
+        assert caught.value.unresolved == (
+            "user 'approver+assignee+principal' -> 'ghost'",
+        )
 
     async def test_one_bad_team_mapping_aborts_naming_exactly_that_entry(
         self,

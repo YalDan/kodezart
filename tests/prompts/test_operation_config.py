@@ -166,7 +166,7 @@ def test_unknown_field_is_rejected(tmp_path: Path) -> None:
 def test_authority_is_read_from_the_role_never_a_name() -> None:
     """The approver is found by role, not by matching a literal."""
     config = example_config()
-    assert config.approver().role is PrincipalRole.APPROVER
+    assert PrincipalRole.APPROVER in config.approver().roles
 
 
 def test_no_principal_name_literal_appears_in_code_or_templates() -> None:
@@ -189,13 +189,13 @@ def test_exactly_one_approver_is_enforced_at_config_load(
     principals: list[dict[str, str]] = [
         {
             "tracker_user": f"user-{i}",
-            "role": "approver",
+            "roles": ["approver", "principal", "assignee"],
             "handle": f"@user-{i}",
         }
         for i in range(approver_count)
     ]
     principals.append(
-        {"tracker_user": "user-x", "role": "principal", "handle": "@user-x"},
+        {"tracker_user": "user-x", "roles": ["principal"], "handle": "@user-x"},
     )
     raw["principals"] = principals
     path = _write_toml(tmp_path, raw)
@@ -273,7 +273,7 @@ def test_multiple_distinct_structural_failures_land_in_one_error(
     """Collect-all, not fail-on-first."""
     raw = raw_example()
     raw["principals"] = [
-        {"tracker_user": "u", "role": "principal", "handle": "@u"},
+        {"tracker_user": "u", "roles": ["principal"], "handle": "@u"},
     ]
     del raw["queue_states"][QueueState.TRIAGE.value]
     del raw["workflow_states"][LifecycleStage.DONE.value]

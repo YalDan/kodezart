@@ -29,31 +29,39 @@ agent_identities = ["example-agent"]
 private_surface = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
 
 # Authority is enforced by ROLE, never by name in code or templates.
-# EXACTLY ONE principal carries the approver role; validated at load.
+# EXACTLY ONE principal carries `approver` and EXACTLY ONE carries `assignee`;
+# every principal carries `principal`. All three are validated at load.
 #
 # Three roles, because the passes route three things differently:
-#   approver   — holds the approval flip and is the assignment target
-#   principal  — their word creates a reply obligation the queue does not record
-#   escalation — receives out-of-band escalations, creates no reply obligation
+#   approver  — holds the approval flip
+#   principal — their word creates a reply obligation the queue does not record
+#   assignee  — prepared fires, triage filings and decision flags are assigned here
+#
+# `roles` is a SET, not one value: one principal routinely holds two, and a
+# single-valued field would force either a duplicate entry or a lost routing.
 #
 # `tracker_user` is the identifier AUTHORITY is checked against; `handle` is the
 # identifier a MENTION is recognised by — the string a person writes when
 # addressing this principal. They are routinely different, and the mention sweep
 # is text matching with nothing but `handle` to match on. Handles are unique and
-# must not collide with an agent identity.
+# must not collide with an agent identity. `forge_handle` is the same principal's
+# name on the FORGE, where review-borne mentions are answered; omit it for a
+# principal who never appears there.
 [[principals]]
 tracker_user = "example-approver"
-role = "approver"
+roles = ["approver", "principal", "assignee"]
 handle = "@example-approver"
+forge_handle = "example-approver-on-forge"
 
 [[principals]]
 tracker_user = "example-contributor"
-role = "principal"
+roles = ["principal"]
 handle = "@example-contributor"
+forge_handle = "example-contributor-on-forge"
 
 [[principals]]
 tracker_user = "example-oncall"
-role = "escalation"
+roles = ["principal"]
 handle = "@example-oncall"
 
 # Teams addressed from templates by key.
