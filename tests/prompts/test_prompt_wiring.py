@@ -393,7 +393,7 @@ def test_free_names_keep_an_item_reference_made_outside_any_loop() -> None:
 
 def test_free_names_handle_a_nested_loop_over_an_item_member() -> None:
     """The inner sequence is reached through the item, so only the outer binds."""
-    body = "{{#each repos}}{{#each this.check_commands}}{{this}}{{/each}}{{/each}}"
+    body = "{{#each repos}}{{#each this.checks}}{{this}}{{/each}}{{/each}}"
     assert free_binding_names(body) == frozenset({"repos"})
 
 

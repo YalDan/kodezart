@@ -76,16 +76,16 @@ def _config(chain_toml: str, tmp_path: Path) -> OperationConfig:
 
 
 _GATE_PLUS_DEPENDENTS = """
-[[repos.check_commands]]
+[[repos.checks]]
 name = "lint"
 command = "make lint"
 
-[[repos.check_commands]]
+[[repos.checks]]
 name = "type-check"
 command = "make type-check"
 depends_on = "lint"
 
-[[repos.check_commands]]
+[[repos.checks]]
 name = "test"
 command = "make test"
 depends_on = "type-check"
@@ -96,7 +96,7 @@ def test_a_gate_plus_dependents_round_trips_through_the_model(
     tmp_path: Path,
 ) -> None:
     """The structure survives TOML -> model, naming what depends on what."""
-    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].check_commands
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
     assert [step.name for step in steps] == ["lint", "type-check", "test"]
     assert [step.depends_on for step in steps] == [None, "lint", "type-check"]
 
@@ -105,7 +105,7 @@ def test_a_consumer_can_tell_the_root_failure_from_its_cascades(
     tmp_path: Path,
 ) -> None:
     """The whole point: three reds, one problem."""
-    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].check_commands
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
     classification = classify_check_failures(
         steps,
         ["lint", "type-check", "test"],
@@ -117,15 +117,15 @@ def test_a_consumer_can_tell_the_root_failure_from_its_cascades(
 def test_two_independent_gates_failing_are_two_roots(tmp_path: Path) -> None:
     """The paired negative: not everything collapses to one root."""
     chain = """
-[[repos.check_commands]]
+[[repos.checks]]
 name = "lint"
 command = "make lint"
 
-[[repos.check_commands]]
+[[repos.checks]]
 name = "docs"
 command = "make docs"
 """
-    steps = _config(chain, tmp_path).repos[0].check_commands
+    steps = _config(chain, tmp_path).repos[0].checks
     classification = classify_check_failures(steps, ["lint", "docs"])
     assert classification.roots == ("lint", "docs")
     assert classification.cascades == ()
@@ -133,7 +133,7 @@ command = "make docs"
 
 def test_a_dependent_failing_alone_is_its_own_root(tmp_path: Path) -> None:
     """A cascade is a cascade only when its ancestor actually failed."""
-    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].check_commands
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
     classification = classify_check_failures(steps, ["test"])
     assert classification.roots == ("test",)
     assert classification.cascades == ()
@@ -143,7 +143,7 @@ def test_a_cascade_two_levels_below_a_failed_gate_is_still_a_cascade(
     tmp_path: Path,
 ) -> None:
     """Reachability, not adjacency: ``test`` cascades from ``lint``."""
-    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].check_commands
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
     classification = classify_check_failures(steps, ["lint", "test"])
     assert classification.roots == ("lint",)
     assert classification.cascades == ("test",)
@@ -151,7 +151,7 @@ def test_a_cascade_two_levels_below_a_failed_gate_is_still_a_cascade(
 
 def test_classification_is_ordered_by_the_declared_chain(tmp_path: Path) -> None:
     """Two runs over one chain and one failure set produce one report."""
-    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].check_commands
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
     first = classify_check_failures(steps, ["test", "lint", "type-check"])
     second = classify_check_failures(steps, ["lint", "type-check", "test"])
     assert first == second
@@ -170,7 +170,7 @@ def test_a_chain_depending_on_an_unknown_step_is_rejected_at_load(
 ) -> None:
     """An unclassifiable chain fails loudly at load, not silently at report."""
     chain = """
-[[repos.check_commands]]
+[[repos.checks]]
 name = "test"
 command = "make test"
 depends_on = "lint"
@@ -182,12 +182,12 @@ depends_on = "lint"
 
 def test_a_cyclic_chain_is_rejected_at_load(tmp_path: Path) -> None:
     chain = """
-[[repos.check_commands]]
+[[repos.checks]]
 name = "a"
 command = "make a"
 depends_on = "b"
 
-[[repos.check_commands]]
+[[repos.checks]]
 name = "b"
 command = "make b"
 depends_on = "a"
@@ -199,11 +199,11 @@ depends_on = "a"
 
 def test_a_duplicate_step_name_is_rejected_at_load(tmp_path: Path) -> None:
     chain = """
-[[repos.check_commands]]
+[[repos.checks]]
 name = "lint"
 command = "make lint"
 
-[[repos.check_commands]]
+[[repos.checks]]
 name = "lint"
 command = "make lint --again"
 """

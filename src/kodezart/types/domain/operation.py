@@ -152,7 +152,7 @@ class RepoEntry(OperationModel):
 
     url: str
     trunk: str = Field(min_length=1)
-    check_commands: list[CheckStep]
+    checks: tuple[CheckStep, ...]
 
 
 class DocumentEntry(OperationModel):
@@ -297,14 +297,14 @@ class OperationConfig(OperationModel):
             )
 
         failures.extend(
-            f"repos[{index}].check_commands must not be empty"
+            f"repos[{index}].checks must not be empty"
             for index, repo in enumerate(self.repos)
-            if not repo.check_commands
+            if not repo.checks
         )
         for index, repo in enumerate(self.repos):
             failures.extend(
-                f"repos[{index}].check_commands: {failure}"
-                for failure in _check_chain_failures(repo.check_commands)
+                f"repos[{index}].checks: {failure}"
+                for failure in _check_chain_failures(repo.checks)
             )
 
         known_users = {p.tracker_user for p in self.principals}

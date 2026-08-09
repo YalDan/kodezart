@@ -115,13 +115,13 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         "repos": [
             {
                 "url": repo.url,
-                "check_commands": [
+                "checks": [
                     {
                         "name": step.name,
                         "command": step.command,
                         "depends_on": step.depends_on,
                     }
-                    for step in repo.check_commands
+                    for step in repo.checks
                 ],
             }
             for repo in config.repos

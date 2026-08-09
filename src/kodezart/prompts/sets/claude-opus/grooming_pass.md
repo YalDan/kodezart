@@ -8,7 +8,7 @@ Re-read an item's state immediately before changing it and abandon the change if
 
 ## Build Verification
 Verify every registered repository by running its own commands and reading the output. A command you did not run is a check that did not happen, and an item may not be groomed as verified on the strength of a check you only reasoned about.{{#each repos}}
-- {{this.url}}{{#each this.check_commands}}
+- {{this.url}}{{#each this.checks}}
   - {{this.name}}: {{this.command}}{{#if this.depends_on}} — runs only after {{this.depends_on}} passes{{/if}}{{/each}}{{/each}}
 A step listed with no "runs only after" clause is a gate: its failure is a root cause. A step whose named predecessor also failed is a cascade and carries no independent information. Report a gate failure as a gate failure and a failure cascading from an upstream one as a cascade — never fold either into the other, and never let a cascade hide the gate that caused it. A verification performed in a scratch workspace is reported as a scratch result and is never presented as a result for the project itself.
 

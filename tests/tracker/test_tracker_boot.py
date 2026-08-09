@@ -63,7 +63,7 @@ def operation_config() -> OperationConfig:
             RepoEntry(
                 url="https://example.invalid/repo",
                 trunk="main",
-                check_commands=[CheckStep(name="check", command="make check")],
+                checks=[CheckStep(name="check", command="make check")],
             )
         ],
         documents={

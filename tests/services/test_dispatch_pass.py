@@ -92,7 +92,7 @@ def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationCo
             RepoEntry(
                 url=url,
                 trunk=TRUNK,
-                check_commands=[CheckStep(name="check", command="make check")],
+                checks=[CheckStep(name="check", command="make check")],
             )
             for url in repos
         ],

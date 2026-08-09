@@ -124,7 +124,7 @@ def operation_config() -> OperationConfig:
             RepoEntry(
                 url=REPO_URL,
                 trunk=TRUNK,
-                check_commands=[CheckStep(name="check", command="make check")],
+                checks=[CheckStep(name="check", command="make check")],
             )
         ],
         documents={

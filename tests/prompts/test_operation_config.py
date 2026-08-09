@@ -145,7 +145,7 @@ def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
     assert isinstance(config.queue_states, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
     assert config.initiatives[0].target_date == date(2026, 12, 31)
-    assert config.repos[0].check_commands
+    assert config.repos[0].checks
     assert config.records[RUN_LOG_RECORD_KEY].append_only is True
 
 
@@ -614,7 +614,7 @@ def write_toml(tmp_path: Path, raw: dict[str, object]) -> Path:
 
 
 def _is_table_array(value: object) -> bool:
-    """A nested array-of-tables, such as ``repos[].check_commands``."""
+    """A nested array-of-tables, such as ``repos[].checks``."""
     return isinstance(value, list) and bool(value) and isinstance(value[0], dict)
 
 

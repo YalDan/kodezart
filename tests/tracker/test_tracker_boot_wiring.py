@@ -73,7 +73,7 @@ done = "Done"
 url = "https://example.invalid/repo"
 trunk = "main"
 
-[[repos.check_commands]]
+[[repos.checks]]
 name = "check"
 command = "make check"
 
