@@ -90,15 +90,65 @@ def blob_at(revision: str, relative: str) -> str:
     return result.stdout
 
 
+def set_for_golden_dir(directory: Path) -> str:
+    """The prompt set whose renders the goldens in *directory* pin.
+
+    Read off the DIRECTORY, never off ``AppConfig().prompt_set``.  A golden
+    suite belongs to the set it was rendered from; resolving it from the
+    configured default is correct today only because one set exists, and it
+    would silently re-point every suite the moment a second one does —
+    which is the whole purpose of the set mechanism.
+
+    Suites are named ``<set with underscores>_<variant>``, so the longest
+    installed set name the directory begins with is its owner.
+    """
+    underscored = {
+        entry.name.replace("-", "_"): entry.name
+        for entry in default_sets_root().iterdir()
+        if entry.is_dir()
+    }
+    matches = [
+        name
+        for prefix, name in underscored.items()
+        if directory.name == prefix or directory.name.startswith(f"{prefix}_")
+    ]
+    if not matches:
+        msg = f"golden suite {directory.name!r} names no installed prompt set"
+        raise AssertionError(msg)
+    return max(matches, key=len)
+
+
 def template_for_golden(golden: Path) -> Path:
     """The single set template whose render the golden pins.
 
-    Goldens are named `<key>.txt` or `<key>__<variant>.txt`, and every suite
-    renders the default set, so the owning template is derivable from the
-    filename alone.
+    Goldens are named `<key>.txt` or `<key>__<variant>.txt`, under a
+    directory naming the set they were rendered from.
     """
     key = golden.stem.split("__", maxsplit=1)[0]
-    return default_sets_root() / AppConfig().prompt_set / f"{key}.md"
+    return default_sets_root() / set_for_golden_dir(golden.parent) / f"{key}.md"
+
+
+def test_a_golden_suite_resolves_to_the_set_it_was_rendered_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The default set is not the answer — the suite's own directory is.
+
+    The environment names a set that does not exist, which is the strongest
+    available stand-in for the second set milestone 8 adds: a resolution
+    that reads the default configuration cannot survive it, and one that
+    reads the directory does not notice.
+    """
+    monkeypatch.setenv("KODEZART_PROMPT_SET", "a-set-that-does-not-exist")
+    assert AppConfig().prompt_set == "a-set-that-does-not-exist"
+
+    for golden in sorted(GOLDENS_DIR.rglob("*.txt")):
+        assert template_for_golden(golden).is_file()
+
+
+def test_a_golden_suite_naming_no_installed_set_fails_loudly() -> None:
+    """Silence here would leave a whole suite unguarded by both V-2 checks."""
+    with pytest.raises(AssertionError, match="names no installed prompt set"):
+        set_for_golden_dir(GOLDENS_DIR / "some_other_engine_empty_skills")
 
 
 def test_every_golden_names_a_template_that_exists() -> None:
