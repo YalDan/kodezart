@@ -41,16 +41,19 @@ from kodezart.core.protocols import (
     AgentExecutor,
     ContentScanner,
     DeliveryProbe,
+    GitService,
     JobQueue,
     JobRegistry,
     ManagedMcpToolCaller,
     McpToolCaller,
     OutboundContentGate,
     PromptProvider,
+    RepoCache,
     SkillInventory,
     TrackerPort,
 )
 from kodezart.services.agent_service import AgentService
+from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
@@ -263,6 +266,9 @@ def build_dispatch_passes(
     queue: JobQueue,
     registry: JobRegistry,
     gate: OutboundContentGate,
+    git: GitService,
+    cache: RepoCache,
+    integration_workspace_dir: str,
 ) -> list[ScheduledPass]:
     """One gated dispatch pass per repository the operation acts on.
 
@@ -283,6 +289,7 @@ def build_dispatch_passes(
         queue=queue,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
     )
+    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
     passes: list[ScheduledPass] = []
     for repo in operation.repos:
         tick = GatedDispatchPass(
@@ -304,6 +311,10 @@ def build_dispatch_passes(
                 claim_lease_seconds=config.tracker_claim_lease_seconds,
                 query_page_size=config.tracker_query_page_size,
                 assembler=assembler,
+                resolver=resolver,
+                cache=cache,
+                trunk=repo.trunk,
+                integration_workspace_dir=integration_workspace_dir,
             ),
         )
         passes.append(
@@ -533,6 +544,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 queue=job_queue,
                 registry=job_queue,
                 gate=gate,
+                git=git,
+                cache=cache,
+                integration_workspace_dir=config.integration_workspace_dir,
             )
         else:
             await log.ainfo(

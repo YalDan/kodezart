@@ -10,7 +10,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CHECKPOINT_DOCUMENT_KEY = "checkpoint"
 RUN_LOG_RECORD_KEY = "run_log"
@@ -129,9 +129,18 @@ class CheckStep(OperationModel):
 
 
 class RepoEntry(OperationModel):
-    """A repository the operation acts on plus its verification chain."""
+    """A repository the operation acts on plus its verification chain.
+
+    ``trunk`` is the branch a lane with no blockers is based on.  It lives
+    here, on the repository, because a trunk name is a property OF a
+    repository: any other home makes one value stand for N repositories
+    that may not share a default branch.  It has no default, because the
+    only plausible default is the literal the base resolver is required to
+    prove it never reads.
+    """
 
     url: str
+    trunk: str = Field(min_length=1)
     check_commands: list[CheckStep]
 
 

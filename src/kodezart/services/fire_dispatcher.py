@@ -16,9 +16,17 @@ Throughput comes from successive passes, not from batch sends.
 
 import secrets
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import DeliveryProbe, JobQueue, JobRegistry, TrackerPort
+from kodezart.core.protocols import (
+    DeliveryProbe,
+    JobQueue,
+    JobRegistry,
+    RepoCache,
+    TrackerPort,
+)
+from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.dispatch import (
     Selection,
     blocker_keys,
@@ -30,6 +38,8 @@ from kodezart.domain.dispatch import (
     ranked_order,
     select_top_ranked,
 )
+from kodezart.domain.errors import BaseResolutionError
+from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.types.domain.dispatch import (
     DispatchOutcome,
@@ -49,6 +59,10 @@ def _uniform_draw(candidates: Sequence[str]) -> str:
     return secrets.SystemRandom().choice(candidates)
 
 
+def _now() -> datetime:
+    return datetime.now(tz=UTC)
+
+
 class FireDispatcher:
     """Runs one deterministic dispatch pass per invocation."""
 
@@ -66,7 +80,12 @@ class FireDispatcher:
         claim_lease_seconds: float,
         query_page_size: int,
         assembler: FireContextAssembler,
+        resolver: BaseResolver,
+        cache: RepoCache,
+        trunk: str,
+        integration_workspace_dir: str,
         draw: Callable[[Sequence[str]], str] = _uniform_draw,
+        clock: Callable[[], datetime] = _now,
     ) -> None:
         self._tracker: TrackerPort = tracker
         self._assembler: FireContextAssembler = assembler
@@ -79,7 +98,12 @@ class FireDispatcher:
         self._holder: str = holder
         self._claim_lease_seconds: float = claim_lease_seconds
         self._query_page_size: int = query_page_size
+        self._resolver: BaseResolver = resolver
+        self._cache: RepoCache = cache
+        self._trunk: str = trunk
+        self._integration_workspace_dir: str = integration_workspace_dir
         self._draw: Callable[[Sequence[str]], str] = draw
+        self._clock: Callable[[], datetime] = clock
         self._log: BoundLogger = get_logger(__name__)
         self._jobs_by_issue: dict[str, str] = {}
 
@@ -181,9 +205,51 @@ class FireDispatcher:
             issue_key=winner.issue_key,
             body=winner.body,
         )
+        # The base is READ off the graph, never assumed. A lane whose
+        # premise is another issue's delivered branch is dispatched onto
+        # that branch; only a lane with no blockers gets the repository's
+        # configured trunk, and the resolver raises rather than falling
+        # back to trunk for a premise it could not locate.
+        try:
+            spec = await self._resolver.resolve(
+                issue_key=winner.issue_key,
+                repo_path=await self._cache.ensure_available(self._repo_url),
+                integration_workspace=(
+                    f"{self._integration_workspace_dir}/{generate_workspace_id()}"
+                ),
+                trunk=self._trunk,
+                now=self._clock(),
+            )
+        except BaseResolutionError as exc:
+            # The claim is released rather than held: the obstacle is on the
+            # graph, not on this pass, and holding the lease would keep the
+            # issue out of every later pass for the whole lease window while
+            # the missing ref arrives.
+            await self._tracker.release_claim(
+                issue_key=winner.issue_key,
+                holder=self._holder,
+            )
+            await self._log.awarning(
+                "dispatch_base_unresolved",
+                outcome=DispatchOutcome.base_unresolved.value,
+                issue_key=winner.issue_key,
+                reason=str(exc),
+            )
+            return DispatchReport(
+                outcome=DispatchOutcome.base_unresolved,
+                snapshot=rows,
+                exclusions=exclusions,
+                eligible=eligible_keys,
+                tied_candidates=selection.tied,
+                claimed_issue_key=winner.issue_key,
+            )
         record = await self._queue.submit(
             lane=self._lane,
-            request=WorkflowRequest(prompt=context.render(), repo_url=self._repo_url),
+            request=WorkflowRequest(
+                prompt=context.render(),
+                repo_url=self._repo_url,
+                base_branch=spec.base_branch,
+            ),
         )
         self._jobs_by_issue[winner.issue_key] = record.job_id
         await self._log.ainfo(
@@ -191,6 +257,8 @@ class FireDispatcher:
             outcome=DispatchOutcome.fire_enqueued.value,
             issue_key=winner.issue_key,
             job_id=record.job_id,
+            base_branch=spec.base_branch,
+            base_role=None if spec.base_role is None else spec.base_role.value,
         )
         return DispatchReport(
             outcome=DispatchOutcome.fire_enqueued,
@@ -200,6 +268,7 @@ class FireDispatcher:
             tied_candidates=selection.tied,
             claimed_issue_key=winner.issue_key,
             job_id=record.job_id,
+            base=spec,
         )
 
     async def _exclude(self, issue: TrackerIssue) -> IssueExclusion | None:

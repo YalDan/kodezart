@@ -97,6 +97,13 @@ class AppConfig(BaseSettings):
         default="/tmp/kodezart-clones",
         description="Local directory for bare repository cache.",
     )
+    integration_workspace_dir: str = Field(
+        default="/tmp/kodezart-integration",
+        description=(
+            "Local directory the base resolver builds integration refs in. "
+            "One worktree per construction, removed when the ref is pushed."
+        ),
+    )
     git_base_url: str = Field(
         default="https://github.com",
         description="Base URL for resolving owner/repo shorthand.",

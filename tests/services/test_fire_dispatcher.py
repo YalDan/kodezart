@@ -14,8 +14,10 @@ from pathlib import Path
 import structlog
 
 from kodezart.domain.dispatch import DOMAIN_PRIORITY_ORDER
+from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import DispatchOutcome, ExclusionClause
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import (
@@ -32,10 +34,13 @@ from kodezart.types.domain.operation import (
     RepoEntry,
 )
 from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
+from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FIXTURE_EPOCH,
     FakeDeliveryProbe,
+    FakeGitService,
     FakeJobQueue,
+    FakeRepoCache,
     FakeTracker,
     approved_by,
     make_tracker_issue,
@@ -44,6 +49,9 @@ from tests.fakes import (
 APPROVER = "the-approver"
 IMPOSTOR = "not-the-approver"
 REPO_URL = "https://example.invalid/owner/repo"
+TRUNK = "trunk"
+REMOTE = "fixture-remote"
+INTEGRATION_DIR = "/tmp/fixture-integration"
 LANE = "tracker"
 HOLDER = "pass-a"
 LEASE_SECONDS = 600.0
@@ -91,6 +99,7 @@ def operation_config() -> OperationConfig:
         repos=[
             RepoEntry(
                 url=REPO_URL,
+                trunk=TRUNK,
                 check_commands=[CheckStep(name="check", command="make check")],
             )
         ],
@@ -120,10 +129,12 @@ def dispatcher(
     delivery: FakeDeliveryProbe | None = None,
     holder: str = HOLDER,
     draw: object = None,
+    git: FakeGitService | None = None,
 ) -> tuple[FireDispatcher, FakeJobQueue, FakeDeliveryProbe]:
     """A dispatcher plus the doubles a test asserts against."""
     the_queue = queue or FakeJobQueue()
     the_delivery = delivery or FakeDeliveryProbe()
+    git = git or FakeGitService()
     kwargs: dict[str, object] = {
         "tracker": tracker,
         "queue": the_queue,
@@ -141,10 +152,39 @@ def dispatcher(
             max_bytes=ASSET_MAX_BYTES,
             fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,
         ),
+        "resolver": BaseResolver(tracker=tracker, git=git, remote=REMOTE),
+        "cache": FakeRepoCache(),
+        "trunk": TRUNK,
+        "integration_workspace_dir": INTEGRATION_DIR,
     }
     if draw is not None:
         kwargs["draw"] = draw
     return FireDispatcher(**kwargs), the_queue, the_delivery  # type: ignore[arg-type]
+
+
+
+
+BLOCKER_BRANCH = "kodezart/k-2-deliverable"
+BLOCKER_SHA = "b" * 40
+
+
+def deliverable_ref(issue_id: str, branch: str) -> WorkRef:
+    """The ref an issue's own lane pushed — the premise a dependent builds on."""
+    return WorkRef(
+        issue_id=issue_id,
+        role=WorkRefRole.DELIVERABLE,
+        branch=branch,
+        pushed_head_sha=BLOCKER_SHA,
+        recorded_at=FIXTURE_EPOCH,
+    )
+
+
+def git_with(*branches: str) -> FakeGitService:
+    """A git double where each named branch is present on the remote."""
+    return FakeGitService(
+        remote_branch_shas=dict.fromkeys(branches, BLOCKER_SHA),
+    )
+
 
 
 class TestClauseDrivenExclusion:
@@ -204,6 +244,9 @@ class TestClauseDrivenExclusion:
         assert report.exclusions[0].detail == "K-2"
 
     async def test_clause_three_admits_an_issue_whose_blocker_is_closed(self) -> None:
+        # The blocker carries the ref that delivered it, because a closed
+        # blocker in a real workspace does: the base resolution the dispatch
+        # now performs needs the premise it is based on to exist.
         tracker = FakeTracker(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
@@ -214,8 +257,9 @@ class TestClauseDrivenExclusion:
                 ),
             ],
             provenance=dict([approved_by("K-1", APPROVER)]),
+            work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
         )
-        fire, _, _ = dispatcher(tracker)
+        fire, _, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
         report = await fire.run_pass()
         assert report.outcome is DispatchOutcome.fire_enqueued
         assert report.claimed_issue_key == "K-1"
@@ -720,3 +764,114 @@ class TestSingleWinner:
 
 def _forbidden_draw(candidates: Sequence[str]) -> str:
     raise AssertionError("the draw ran without an exact timestamp tie")
+
+
+class TestTheBaseIsReadOffTheGraph:
+    """KOD-67, wired: the dispatched base is resolved, never assumed.
+
+    Every assertion here is on the request that reached the QUEUE, because
+    that is the value the run is actually built on.  A dispatcher that
+    resolved a base and then submitted the default would pass a test that
+    only inspected the report.
+    """
+
+    async def test_a_lane_with_no_blockers_is_dispatched_on_the_configured_trunk(
+        self,
+    ) -> None:
+        """And specifically not on the literal the request model defaults to."""
+        assert WorkflowRequest(prompt="x", repo_url=REPO_URL).base_branch != TRUNK
+
+        tracker = FakeTracker(
+            issues=[make_tracker_issue("K-1")],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        fire, queue, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        _, request = queue.submissions[0]
+        assert request.base_branch == TRUNK
+        assert report.base is not None
+        assert report.base.base_role is None
+        assert report.base.inputs == ()
+
+    async def test_a_lane_with_a_blocker_is_dispatched_on_that_blockers_ref(
+        self,
+    ) -> None:
+        tracker = FakeTracker(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue(
+                    "K-2",
+                    queue_states=[QueueState.DONE],
+                    state_kind=WorkflowStateKind.COMPLETED,
+                ),
+            ],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+            work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
+        )
+        fire, queue, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
+
+        report = await fire.run_pass()
+
+        _, request = queue.submissions[0]
+        assert request.base_branch == BLOCKER_BRANCH
+        assert request.base_branch != TRUNK
+        assert report.base is not None
+        assert report.base.base_role is WorkRefRole.DELIVERABLE
+        assert [item.blocker_issue_id for item in report.base.inputs] == ["K-2"]
+
+    async def test_an_unresolvable_base_reports_it_and_enqueues_nothing(self) -> None:
+        """A missing premise is loud, released, and never trunk.
+
+        The blocker records no ref at all, so there is no base to build on.
+        Substituting trunk here would build the lane WITHOUT its premise and
+        call it delivered, which is the failure the resolver's typed error
+        exists to make impossible.
+        """
+        tracker = FakeTracker(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue(
+                    "K-2",
+                    queue_states=[QueueState.DONE],
+                    state_kind=WorkflowStateKind.COMPLETED,
+                ),
+            ],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        fire, queue, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.base_unresolved
+        assert report.claimed_issue_key == "K-1"
+        assert report.base is None
+        assert queue.submissions == []
+        assert await tracker.active_claim(issue_key="K-1") is None, (
+            "the claim is released so a later pass can retry"
+        )
+
+    async def test_a_ref_absent_from_the_remote_is_unresolved_not_substituted(
+        self,
+    ) -> None:
+        """Recorded is not the same as present, and the difference matters."""
+        tracker = FakeTracker(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue(
+                    "K-2",
+                    queue_states=[QueueState.DONE],
+                    state_kind=WorkflowStateKind.COMPLETED,
+                ),
+            ],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+            work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
+        )
+        absent = FakeGitService(remote_branch_shas={BLOCKER_BRANCH: None})
+        fire, queue, _ = dispatcher(tracker, git=absent)
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.base_unresolved
+        assert queue.submissions == []

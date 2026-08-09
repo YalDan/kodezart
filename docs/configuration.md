@@ -21,6 +21,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
 | `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   |             | GitHub PAT for cloning private repositories              |
 | `KODEZART_CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
+| `KODEZART_INTEGRATION_WORKSPACE_DIR` | `str`     | `/tmp/kodezart-integration` |          | Local directory the base resolver builds integration refs in |
 | `KODEZART_GIT_BASE_URL`           | `str`        | `https://github.com`     |             | Base URL for resolving `owner/repo` shorthand            |
 | `KODEZART_GIT_REMOTE`             | `str`        | `origin`                 |             | Git remote name for fetch/push operations and remote-ref probes |
 | `KODEZART_GIT_COMMITTER_NAME`     | `str`        | `kodezart`               |             | Git committer name for auto-generated commits            |
@@ -120,6 +121,7 @@ KODEZART_API_V1_PREFIX=/api/v1
 KODEZART_GITHUB_TOKEN=
 # Local directory for cached repository clones
 KODEZART_CLONE_CACHE_DIR=/tmp/kodezart-clones
+KODEZART_INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration
 ```
 
 ## Logging Modes

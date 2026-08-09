@@ -15,6 +15,7 @@ import asyncio
 
 from kodezart.core.config import AppConfig
 from kodezart.main import build_dispatch_passes
+from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
@@ -38,7 +39,9 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.outcome import WorkflowOutcome
 from tests.fakes import (
     FakeDeliveryProbe,
+    FakeGitService,
     FakeJobQueue,
+    FakeRepoCache,
     FakeTracker,
     PassThroughGate,
     approved_by,
@@ -49,6 +52,9 @@ APPROVER = "the-approver"
 PRIMARY_REPO = "https://example.invalid/owner/primary"
 SECOND_REPO = "https://example.invalid/owner/second"
 LANE = "tracker"
+TRUNK = "trunk"
+REMOTE = "fixture-remote"
+INTEGRATION_DIR = "/tmp/fixture-integration"
 HOLDER = "pass-a"
 LEASE_SECONDS = 600.0
 PAGE_SIZE = 50
@@ -79,6 +85,7 @@ def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationCo
         repos=[
             RepoEntry(
                 url=url,
+                trunk=TRUNK,
                 check_commands=[CheckStep(name="check", command="make check")],
             )
             for url in repos
@@ -129,6 +136,14 @@ def tick(tracker: FakeTracker) -> tuple[GatedDispatchPass, FakeJobQueue]:
                 max_bytes=ASSET_MAX_BYTES,
                 fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,
             ),
+            resolver=BaseResolver(
+                tracker=tracker,
+                git=FakeGitService(),
+                remote=REMOTE,
+            ),
+            cache=FakeRepoCache(),
+            trunk=TRUNK,
+            integration_workspace_dir=INTEGRATION_DIR,
         ),
     )
     return pass_, queue
@@ -191,6 +206,9 @@ def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
         queue=queue,
         registry=queue,
         gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
     )
 
     assert [entry.name for entry in passes] == [
@@ -219,6 +237,9 @@ def test_the_root_gives_every_pass_the_configured_cadence() -> None:
         queue=queue,
         registry=queue,
         gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
     )
 
     assert [entry.interval_seconds for entry in passes] == [unusual, unusual]
@@ -239,6 +260,9 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
         queue=queue,
         registry=queue,
         gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
     )
 
     await passes[0].run()
@@ -283,6 +307,9 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
         queue=queue,
         registry=queue,
         gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
     )
 
     await passes[0].run()

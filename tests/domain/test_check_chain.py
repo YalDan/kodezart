@@ -67,7 +67,7 @@ def _config(chain_toml: str, tmp_path: Path) -> OperationConfig:
     path = tmp_path / "operation.toml"
     path.write_text(
         _HEAD
-        + '\n[[repos]]\nurl = "https://example.invalid/repo"\n'
+        + '\n[[repos]]\nurl = "https://example.invalid/repo"\ntrunk = "main"\n'
         + chain_toml
         + _MINIMAL_TAIL,
         encoding="utf-8",

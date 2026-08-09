@@ -82,6 +82,7 @@ done = "Done"
 # failed is a CASCADE and is reported as one, never as an independent red.
 [[repos]]
 url = "https://example.invalid/example-org/example-repo"
+trunk = "main"
 
 [[repos.check_commands]]
 name = "lint"

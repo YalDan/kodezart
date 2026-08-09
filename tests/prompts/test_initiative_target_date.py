@@ -56,6 +56,7 @@ done = "Done"
 
 [[repos]]
 url = "https://example.invalid/repo"
+trunk = "main"
 
 [[repos.check_commands]]
 name = "check"

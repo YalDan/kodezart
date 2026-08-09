@@ -16,11 +16,12 @@ from enum import StrEnum
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.tracker import IssuePriority
 
 
 class DispatchOutcome(StrEnum):
-    """Three-way partition of a dispatch pass's terminal dispositions.
+    """Four-way partition of a dispatch pass's terminal dispositions.
 
     The FIELD is ``outcome``, matching the run-side discriminator's naming
     discipline, and this report is the single surface a pass reports on —
@@ -33,6 +34,12 @@ class DispatchOutcome(StrEnum):
     fire_enqueued = "fire_enqueued"
     claim_lost = "claim_lost"
     empty_eligible_set = "empty_eligible_set"
+    base_unresolved = "base_unresolved"
+    """The claim was granted and the base could not be resolved, so nothing
+    was enqueued and the claim was released.  A distinct member rather than
+    a variant of ``empty_eligible_set``, because the issue WAS eligible: the
+    obstacle is a missing premise on the graph, and the next pass re-selects
+    it once the premise is recorded."""
 
 
 class ExclusionClause(StrEnum):
@@ -92,6 +99,11 @@ class DispatchReport(DispatchModel):
     tied_candidates: tuple[str, ...] = ()
     claimed_issue_key: str | None = None
     job_id: str | None = None
+    base: BaseSpec | None = None
+    """The base the fire was dispatched on, and everything it was computed
+    from.  ``None`` on the two outcomes that enqueued nothing — a pass that
+    claimed no issue resolved no base, which is a different fact from a
+    base that resolved to trunk."""
 
 
 class PassDelta(DispatchModel):
