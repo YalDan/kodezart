@@ -6,6 +6,7 @@ adapter joins the suite by adding one entry to ``TRACKER_ADAPTERS`` — no
 test is copied, which is the whole point of a port-level suite.
 """
 
+import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -13,12 +14,14 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.protocols import TrackerPort
-from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.tracker import IssueQuery, StateTransition
 from tests.fakes import (
     FakeLinearMcpServer,
     FakeMcpAsset,
     FakeMcpHistoryEntry,
     FakeMcpIssue,
+    FakeTracker,
 )
 
 FIXTURE_NOW: datetime = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
@@ -55,6 +58,7 @@ ASSET_ISSUE = "FIX-3"
 
 DOCUMENT_KEY = "doc-1"
 DOCUMENT_CONTENT = "fixture document body"
+PAGE_SIZE = 50
 
 
 def fixture_server() -> FakeLinearMcpServer:
@@ -151,8 +155,68 @@ def linear_over_fake_mcp(server: FakeLinearMcpServer) -> TrackerPort:
     )
 
 
+async def _snapshot(source: TrackerPort) -> FakeTracker:
+    """Read the fixture workspace through the adapter into domain objects."""
+    keys = [
+        issue.issue_key
+        for issue in await source.scan_issues(query=IssueQuery(page_size=PAGE_SIZE))
+    ]
+    issues = [await source.read_issue(issue_key=key) for key in keys]
+    provenance: dict[tuple[str, QueueState], StateTransition] = {}
+    for key in keys:
+        for state in QueueState:
+            transition = await source.queue_state_provenance(
+                issue_key=key,
+                state=state,
+            )
+            if transition is not None:
+                provenance[(key, state)] = transition
+    return FakeTracker(
+        issues=issues,
+        provenance=provenance,
+        assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
+        documents={
+            DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),
+        },
+        work_refs={key: await source.list_work_refs(issue_key=key) for key in keys},
+        known_identifiers=[
+            *(APPROVER, BYSTANDER),
+            *TEAM_IDENTIFIERS.values(),
+            *QUEUE_STATE_LABELS.values(),
+            *WORKFLOW_STATE_NAMES.values(),
+        ],
+        clock=lambda: FIXTURE_NOW,
+    )
+
+
+def fake_port_over_fixture(server: FakeLinearMcpServer) -> TrackerPort:
+    """The consumer double, seeded from the SAME fixture workspace.
+
+    Seeded by reading through the adapter rather than by restating the
+    workspace in domain vocabulary: a hand-written second statement of the
+    fixture is a place for the two to disagree, and the disagreement would
+    show up as the double being wrong about the thing consumers trust it
+    for.  ``asyncio.run`` is safe here because the workspace is pure
+    in-memory state with nothing bound to a loop.
+    """
+    return asyncio.run(_snapshot(linear_over_fake_mcp(server)))
+
+
+#: Real adapters — every one must serve the fixture workspace unchanged.
 TRACKER_ADAPTERS: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
     "linear-mcp": linear_over_fake_mcp,
+}
+
+#: Test doubles that consumers are tested on.  They run the SAME suite, per
+#: the ruling that this is what keeps them honest: a double that drifts from
+#: the contract fails exactly where a non-conforming vendor adapter would.
+TRACKER_DOUBLES: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
+    "fake-port": fake_port_over_fixture,
+}
+
+TRACKER_IMPLEMENTATIONS: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
+    **TRACKER_ADAPTERS,
+    **TRACKER_DOUBLES,
 }
 
 
@@ -162,11 +226,21 @@ def server() -> FakeLinearMcpServer:
     return fixture_server()
 
 
-@pytest.fixture(params=sorted(TRACKER_ADAPTERS))
+@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
 def tracker(
     request: pytest.FixtureRequest,
     server: FakeLinearMcpServer,
 ) -> TrackerPort:
-    """Every registered adapter, over the same fixture workspace."""
+    """Every registered adapter AND double, over one fixture workspace."""
+    factory = TRACKER_IMPLEMENTATIONS[request.param]
+    return factory(server)
+
+
+@pytest.fixture(params=sorted(TRACKER_ADAPTERS))
+def adapter(
+    request: pytest.FixtureRequest,
+    server: FakeLinearMcpServer,
+) -> TrackerPort:
+    """Registered ADAPTERS only — for rules about backend substitutability."""
     factory = TRACKER_ADAPTERS[request.param]
     return factory(server)

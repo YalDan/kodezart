@@ -1737,6 +1737,17 @@ class ManagedFakeLinearMcpServer(FakeLinearMcpServer):
         self.closes += 1
 
 
+#: What a lifecycle stage means as a workflow-state KIND.  The fake owns the
+#: mapping because the conformance suite asks the port what the write did,
+#: and a double that recorded the write without applying it would answer for
+#: a state the issue is not in.
+_STAGE_KIND: Mapping[LifecycleStage, WorkflowStateKind] = {
+    LifecycleStage.IN_PROGRESS: WorkflowStateKind.STARTED,
+    LifecycleStage.IN_REVIEW: WorkflowStateKind.STARTED,
+    LifecycleStage.DONE: WorkflowStateKind.COMPLETED,
+}
+
+
 class FakeTracker:
     """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
 
@@ -1753,8 +1764,7 @@ class FakeTracker:
         provenance: Mapping[tuple[str, QueueState], StateTransition] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
-        unresolvable: Sequence[MappingRef] = (),
-        instated: Sequence[str] = (),
+        known_identifiers: Sequence[str] = (),
         work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
@@ -1776,20 +1786,20 @@ class FakeTracker:
             key: tuple(value) for key, value in (assets or {}).items()
         }
         self._documents: dict[str, str] = dict(documents or {})
-        self._unresolvable: tuple[MappingRef, ...] = tuple(unresolvable)
-        self.instated: set[str] = set(instated)
+        self.known_identifiers: set[str] = set(known_identifiers)
         self._clock: Callable[[], datetime] = clock
         self._sequence: int = 0
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
         await asyncio.sleep(0)
         self.scans.append(query)
-        return tuple(
+        matched = [
             issue
             for issue in self.issues.values()
             if (query.queue_state is None or query.queue_state in issue.queue_states)
             and (query.updated_since is None or issue.updated_at > query.updated_since)
-        )
+        ]
+        return tuple(matched[: query.page_size])
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)
@@ -1843,7 +1853,15 @@ class FakeTracker:
         stage: LifecycleStage,
     ) -> TrackerIssue:
         self.workflow_writes.append((issue_key, stage))
-        return self.issues[issue_key]
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(
+            update={
+                "state_name": stage.value,
+                "state_kind": _STAGE_KIND[stage],
+            },
+        )
+        self.issues[issue_key] = updated
+        return updated
 
     async def set_queue_state(
         self,
@@ -1954,7 +1972,10 @@ class FakeTracker:
         *,
         refs: Sequence[MappingRef],
     ) -> Sequence[MappingRef]:
-        return tuple(ref for ref in refs if ref in self._unresolvable)
+        await asyncio.sleep(0)
+        return tuple(
+            ref for ref in refs if ref.identifier not in self.known_identifiers
+        )
 
     async def ensure_mappings(
         self,
@@ -1964,11 +1985,8 @@ class FakeTracker:
         await asyncio.sleep(0)
         outcomes: list[MappingOutcome] = []
         for ref in refs:
-            created = ref.identifier not in self.instated
-            self.instated.add(ref.identifier)
-            self._unresolvable = tuple(
-                item for item in self._unresolvable if item.identifier != ref.identifier
-            )
+            created = ref.identifier not in self.known_identifiers
+            self.known_identifiers.add(ref.identifier)
             outcomes.append(
                 MappingOutcome(
                     ref=ref,

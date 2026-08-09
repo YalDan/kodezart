@@ -138,10 +138,10 @@ class TestBootValidation:
                         handle="@approver",
                     ),
                     Principal(
-                tracker_user=BYSTANDER,
-                role=PrincipalRole.PRINCIPAL,
-                handle="@bystander",
-            ),
+                        tracker_user=BYSTANDER,
+                        role=PrincipalRole.PRINCIPAL,
+                        handle="@bystander",
+                    ),
                 ],
             },
         )
@@ -186,9 +186,18 @@ class TestBootValidation:
             name="engineering",
             identifier=TEAM_IDENTIFIERS["engineering"],
         )
+        # The double resolves against what its workspace KNOWS, exactly as a
+        # real one does, so the fixture names everything the config declares
+        # except the team identifier under test.
+        resolvable = [
+            APPROVER,
+            BYSTANDER,
+            *QUEUE_STATE_LABELS.values(),
+            *WORKFLOW_STATE_NAMES.values(),
+        ]
         with pytest.raises(TrackerBootValidationError) as caught:
             await validate_tracker_mappings(
-                tracker=FakeTracker(unresolvable=[bad]),
+                tracker=FakeTracker(known_identifiers=resolvable),
                 config=operation_config(),
             )
         assert caught.value.unresolved == (bad.describe(),)

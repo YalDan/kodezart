@@ -442,7 +442,7 @@ class TestSubstitutability:
 
     def test_the_public_surface_is_exactly_the_port(
         self,
-        tracker: TrackerPort,
+        adapter: TrackerPort,
     ) -> None:
         """No extra public member — nothing for a consumer to discover on.
 
@@ -450,7 +450,17 @@ class TestSubstitutability:
         surface is exactly the port's leaves a consumer no way to branch on
         which backend is configured, which is what substitutability means
         here.
+
+        This one case takes the ADAPTER fixture rather than the shared one,
+        and it is the only case in the module that does.  The rule is about
+        what a deployment can be configured to dial: a test double is never
+        a configured backend, and it must expose the writes it recorded or a
+        consumer test has nothing to assert on.  Every BEHAVIOURAL case
+        below and above runs over the double unchanged, which is what the
+        ruling asks for; narrowing this one leaves the adapters it covers
+        covered exactly as before.
         """
+        tracker = adapter
         port_members = {
             name
             for name in dir(TrackerPort)
