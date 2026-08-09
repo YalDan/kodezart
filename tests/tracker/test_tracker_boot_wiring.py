@@ -1,4 +1,4 @@
-"""The composition root dials the tracker and reconciles it before serving.
+"""The composition root dials the tracker, reconciles it, and schedules.
 
 Every test here drives the REAL ``lifespan`` — the shipped adapter over the
 in-process fake MCP server, the shipped boot service, the shipped ordering.
@@ -18,6 +18,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.errors import TrackerBootValidationError
 from kodezart.core.protocols import ManagedMcpToolCaller
 from kodezart.main import create_app, lifespan
+from kodezart.services.pass_scheduler import PassScheduler
 from tests.fakes import ManagedFakeLinearMcpServer
 from tests.tracker.conftest import (
     APPROVER,
@@ -27,6 +28,10 @@ from tests.tracker.conftest import (
 )
 
 TOKEN = "fixture-tracker-token"
+
+#: A cadence no default would produce, and long enough that no pass fires
+#: inside a test: what is asserted is the wiring of the knob, not a tick.
+UNUSUAL_INTERVAL = 3607.0
 
 
 def _operation_toml(
@@ -245,3 +250,54 @@ async def test_without_a_credential_no_tracker_is_wired_and_boot_says_so(
     assert unconfigured[0]["operation_config_present"] is True
     assert unconfigured[0]["tracker_token_present"] is False
     assert wired.opens == 0
+
+
+async def test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """AC-20: the scheduler is constructed, driven and stopped by the root.
+
+    The interval asserted here is a value no default would produce, so the
+    assertion is about the knob's consumer and not about a coincidence.
+    """
+    monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
+    monkeypatch.setenv("KODEZART_DISPATCH_PASS_INTERVAL_SECONDS", str(UNUSUAL_INTERVAL))
+    _configure(monkeypatch, tmp_path, _operation_toml())
+    app = create_app()
+    assert app.state.config.dispatch_pass_interval_seconds == UNUSUAL_INTERVAL
+
+    async with lifespan(app):
+        scheduler: PassScheduler = app.state.pass_scheduler
+        assert scheduler.running
+        assert [entry.name for entry in scheduler.passes] == [
+            "dispatch:https://example.invalid/repo",
+        ]
+        assert [entry.interval_seconds for entry in scheduler.passes] == [
+            UNUSUAL_INTERVAL,
+        ]
+    assert not scheduler.running
+
+
+async def test_without_a_delivery_probe_no_pass_is_scheduled_and_boot_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """Three states, none silent: an unwired half is named, not inferred."""
+    monkeypatch.delenv("KODEZART_GITHUB_TOKEN", raising=False)
+    _configure(monkeypatch, tmp_path, _operation_toml())
+    app = create_app()
+    async with lifespan(app):
+        assert app.state.pass_scheduler.passes == ()
+
+    unwired = [
+        event
+        for event in _events(capsys.readouterr().out)
+        if event.get("event") == "scheduled_passes_not_wired"
+    ]
+    assert len(unwired) == 1
+    assert unwired[0]["tracker_present"] is True
+    assert unwired[0]["delivery_probe_present"] is False

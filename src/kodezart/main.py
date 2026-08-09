@@ -40,6 +40,9 @@ from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import (
     AgentExecutor,
     ContentScanner,
+    DeliveryProbe,
+    JobQueue,
+    JobRegistry,
     ManagedMcpToolCaller,
     McpToolCaller,
     PromptProvider,
@@ -47,10 +50,15 @@ from kodezart.core.protocols import (
     TrackerPort,
 )
 from kodezart.services.agent_service import AgentService
+from kodezart.services.dispatch_pass import GatedDispatchPass
+from kodezart.services.fire_context import FireContextAssembler
+from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.services.job_service import JobService
+from kodezart.services.pass_gate import PassGate
+from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.gating import content_digest
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
@@ -241,6 +249,59 @@ async def boot_tracker(
         ],
     )
     return tracker, caller
+
+
+def build_dispatch_passes(
+    *,
+    config: AppConfig,
+    operation: OperationConfig,
+    tracker: TrackerPort,
+    delivery: DeliveryProbe,
+    queue: JobQueue,
+    registry: JobRegistry,
+) -> list[ScheduledPass]:
+    """One gated dispatch pass per repository the operation acts on.
+
+    Every repository in the config, not a chosen one: the dispatcher
+    claims per repository, and picking one would leave the rest of the
+    operation's declared surface unserved with nothing saying so.
+    """
+    assembler = FireContextAssembler(
+        tracker=tracker,
+        max_count=config.asset_max_count,
+        max_bytes=config.asset_max_bytes,
+        fetch_timeout_seconds=config.asset_fetch_timeout_seconds,
+    )
+    passes: list[ScheduledPass] = []
+    for repo in operation.repos:
+        tick = GatedDispatchPass(
+            gate=PassGate(
+                tracker=tracker,
+                queue_state=QueueState.APPROVED,
+                page_size=config.tracker_query_page_size,
+            ),
+            dispatcher=FireDispatcher(
+                tracker=tracker,
+                queue=queue,
+                registry=registry,
+                delivery=delivery,
+                operation=operation,
+                repo_url=repo.url,
+                lane=config.dispatch_lane,
+                holder=config.dispatch_holder,
+                claim_lease_seconds=config.tracker_claim_lease_seconds,
+                query_page_size=config.tracker_query_page_size,
+                assembler=assembler,
+            ),
+        )
+        passes.append(
+            ScheduledPass(
+                name=f"dispatch:{repo.url}",
+                interval_seconds=config.dispatch_pass_interval_seconds,
+                run=tick.run,
+            ),
+        )
+    return passes
 
 
 @asynccontextmanager
@@ -439,12 +500,38 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             run_state_reader=run_state_reader,
         )
 
+        # Cadence is scheduler configuration and nothing else. Three
+        # states, none silent: no tracker, or no delivery probe to answer
+        # "is this issue already delivered?", and the passes do not run —
+        # named, never inferred from an empty schedule.
+        scheduled: list[ScheduledPass] = []
+        if tracker is not None and operation is not None and github_api is not None:
+            scheduled = build_dispatch_passes(
+                config=config,
+                operation=operation,
+                tracker=tracker,
+                delivery=github_api,
+                queue=job_queue,
+                registry=job_queue,
+            )
+        else:
+            await log.ainfo(
+                "scheduled_passes_not_wired",
+                tracker_present=tracker is not None,
+                operation_config_present=operation is not None,
+                delivery_probe_present=github_api is not None,
+            )
+        scheduler = PassScheduler(passes=scheduled)
+        app.state.pass_scheduler = scheduler
+        await scheduler.start()
+
         await log.ainfo(
             "application_starting",
             project=config.project_name,
             debug=config.debug,
         )
         yield
+        await scheduler.stop()
         await job_queue.stop()
         if mcp_caller is not None:
             await mcp_caller.close()

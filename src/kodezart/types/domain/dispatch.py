@@ -92,3 +92,21 @@ class DispatchReport(DispatchModel):
     tied_candidates: tuple[str, ...] = ()
     claimed_issue_key: str | None = None
     job_id: str | None = None
+
+
+class PassDelta(DispatchModel):
+    """What the deterministic pre-query saw since the last tick.
+
+    The gate a scheduled pass consults before anything expensive runs.
+    ``changed`` is the whole answer: an empty set means nothing moved, and
+    nothing that costs tokens wakes at all.  ``mark`` is the high-water
+    stamp the next tick asks from — carried on the value rather than left
+    implicit, so a tick is reconstructable from its own report.
+    """
+
+    changed: tuple[str, ...] = ()
+    mark: datetime | None = None
+
+    def has_delta(self) -> bool:
+        """True iff something moved and a full pass is therefore warranted."""
+        return bool(self.changed)

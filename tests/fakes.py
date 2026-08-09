@@ -1787,7 +1787,8 @@ class FakeTracker:
         return tuple(
             issue
             for issue in self.issues.values()
-            if query.queue_state is None or query.queue_state in issue.queue_states
+            if (query.queue_state is None or query.queue_state in issue.queue_states)
+            and (query.updated_since is None or issue.updated_at > query.updated_since)
         )
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
