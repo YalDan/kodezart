@@ -34,7 +34,7 @@ from tests.fakes import (
     FIXTURE_EPOCH,
     FakeGitService,
     FakePRCreator,
-    FakeTracker,
+    FakeTrackerPort,
     make_tracker_issue,
 )
 
@@ -70,11 +70,11 @@ def ref(
     )
 
 
-def resolver(tracker: FakeTracker, git: FakeGitService) -> BaseResolver:
+def resolver(tracker: FakeTrackerPort, git: FakeGitService) -> BaseResolver:
     return BaseResolver(tracker=tracker, git=git, remote=REMOTE)
 
 
-async def resolve(tracker: FakeTracker, git: FakeGitService) -> object:
+async def resolve(tracker: FakeTrackerPort, git: FakeGitService) -> object:
     return await resolver(tracker, git).resolve(
         issue_key=LANE,
         repo_path=REPO_PATH,
@@ -110,7 +110,7 @@ def test_work_ref_role_members_and_values_verbatim() -> None:
 
 async def test_a_second_deliverable_ref_for_one_issue_raises() -> None:
     """Never a silent replacement: it would move every dependent lane's base."""
-    tracker = FakeTracker(issues=[make_tracker_issue("B-1")])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("B-1")])
     await tracker.record_work_ref(ref=ref("B-1", "feature-a"))
     with pytest.raises(DuplicateWorkRefError) as excinfo:
         await tracker.record_work_ref(ref=ref("B-1", "feature-b"))
@@ -120,12 +120,12 @@ async def test_a_second_deliverable_ref_for_one_issue_raises() -> None:
 
 async def test_a_second_ref_at_another_role_is_accepted() -> None:
     """One issue carries several refs; only DELIVERABLE is exclusive."""
-    tracker = FakeTracker(issues=[make_tracker_issue("B-1")])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("B-1")])
     await tracker.record_work_ref(ref=ref("B-1", "feature-a"))
     await tracker.record_work_ref(
         ref=ref("B-1", "feature-a-ralph", role=WorkRefRole.ITERATION),
     )
-    assert len(await tracker.list_work_refs(issue_key="B-1")) == 2
+    assert len(await tracker.work_refs(issue_key="B-1")) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ async def test_a_second_ref_at_another_role_is_accepted() -> None:
 
 
 async def test_no_blockers_resolves_to_the_scopes_configured_trunk() -> None:
-    tracker = FakeTracker(issues=[make_tracker_issue(LANE)])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue(LANE)])
     git = FakeGitService()
     spec = await resolve(tracker, git)
     assert spec.base_branch == CONFIGURED_TRUNK
@@ -154,38 +154,38 @@ async def test_neither_shipped_main_default_is_consulted_on_the_trunk_arm() -> N
     assert request_default == "main"
     assert service_defaults["base_branch"] == "main"
 
-    tracker = FakeTracker(issues=[make_tracker_issue(LANE)])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue(LANE)])
     spec = await resolve(tracker, FakeGitService())
     assert spec.base_branch != request_default
     assert spec.base_branch == CONFIGURED_TRUNK
 
 
 async def test_one_blocker_resolves_to_that_blockers_deliverable_ref() -> None:
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-1"]),
             make_tracker_issue("B-1"),
         ],
-        work_refs={"B-1": [ref("B-1", "feature-b1")]},
+        recorded_work_refs={"B-1": [ref("B-1", "feature-b1")]},
     )
     git = FakeGitService()
     spec = await resolve(tracker, git)
     assert spec.base_branch == "feature-b1"
     assert spec.base_role is WorkRefRole.DELIVERABLE
     assert merge_calls(git) == []
-    assert tracker.work_refs.get(LANE, []) == []
+    assert tracker.recorded_work_refs.get(LANE, []) == []
 
 
 async def test_a_chain_of_three_blockers_resolves_to_the_tip() -> None:
     """Many blockers, singleton frontier — the same arm the single case takes."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-1", "B-2", "B-3"]),
             make_tracker_issue("B-1"),
             make_tracker_issue("B-2"),
             make_tracker_issue("B-3"),
         ],
-        work_refs={
+        recorded_work_refs={
             "B-1": [ref("B-1", "feature-b1")],
             "B-2": [ref("B-2", "feature-b2")],
             "B-3": [ref("B-3", "feature-b3")],
@@ -202,17 +202,17 @@ async def test_a_chain_of_three_blockers_resolves_to_the_tip() -> None:
     assert spec.base_branch == "feature-b3"
     assert spec.base_role is WorkRefRole.DELIVERABLE
     assert merge_calls(git) == []
-    assert tracker.work_refs.get(LANE, []) == []
+    assert tracker.recorded_work_refs.get(LANE, []) == []
 
 
 async def test_fan_in_constructs_and_records_an_integration_ref() -> None:
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-2", "B-1"]),
             make_tracker_issue("B-1"),
             make_tracker_issue("B-2"),
         ],
-        work_refs={
+        recorded_work_refs={
             "B-1": [ref("B-1", "feature-b1")],
             "B-2": [ref("B-2", "feature-b2")],
         },
@@ -228,7 +228,7 @@ async def test_fan_in_constructs_and_records_an_integration_ref() -> None:
     # Branched from the first input; the remainder merged in that order and
     # with no other input.
     assert merge_calls(git) == [("merge_branch", INTEGRATION_WORKSPACE, "feature-b2")]
-    recorded = tracker.work_refs[LANE]
+    recorded = tracker.recorded_work_refs[LANE]
     assert [(r.role, r.branch) for r in recorded] == [
         (WorkRefRole.INTEGRATION, spec.base_branch),
     ]
@@ -239,12 +239,14 @@ async def test_the_same_blockers_in_reversed_read_order_yield_one_base() -> None
     specs = []
     sequences = []
     for order in (["B-1", "B-2", "B-3"], ["B-3", "B-2", "B-1"]):
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(LANE, blocked_by=order),
                 *[make_tracker_issue(key) for key in order],
             ],
-            work_refs={key: [ref(key, f"feature-{key.lower()}")] for key in order},
+            recorded_work_refs={
+                key: [ref(key, f"feature-{key.lower()}")] for key in order
+            },
         )
         git = FakeGitService()
         specs.append(await resolve(tracker, git))
@@ -256,22 +258,22 @@ async def test_the_same_blockers_in_reversed_read_order_yield_one_base() -> None
 
 async def test_a_redundant_edge_reduces_to_the_descendant_alone() -> None:
     """The redundant edge changes neither the base nor the BaseSpec."""
-    without = FakeTracker(
+    without = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-2"]),
             make_tracker_issue("B-2"),
         ],
-        work_refs={"B-2": [ref("B-2", "feature-b2")]},
+        recorded_work_refs={"B-2": [ref("B-2", "feature-b2")]},
     )
     baseline = await resolve(without, FakeGitService())
 
-    with_edge = FakeTracker(
+    with_edge = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-1", "B-2"]),
             make_tracker_issue("B-1"),
             make_tracker_issue("B-2"),
         ],
-        work_refs={
+        recorded_work_refs={
             "B-1": [ref("B-1", "feature-b1")],
             "B-2": [ref("B-2", "feature-b2")],
         },
@@ -291,13 +293,13 @@ async def test_a_redundant_edge_reduces_to_the_descendant_alone() -> None:
 
 async def test_a_blocker_with_no_ref_resolves_to_its_nearest_ancestor() -> None:
     """Work riding another issue's pull request records no ref of its own."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-CHILD"]),
             make_tracker_issue("B-CHILD", parent_key="B-PARENT"),
             make_tracker_issue("B-PARENT"),
         ],
-        work_refs={"B-PARENT": [ref("B-PARENT", "feature-parent")]},
+        recorded_work_refs={"B-PARENT": [ref("B-PARENT", "feature-parent")]},
     )
     spec = await resolve(tracker, FakeGitService())
     assert spec.base_branch == "feature-parent"
@@ -305,7 +307,7 @@ async def test_a_blocker_with_no_ref_resolves_to_its_nearest_ancestor() -> None:
 
 async def test_a_blocker_whose_ancestors_carry_no_ref_raises() -> None:
     """The paired negative: trunk is NOT substituted."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-CHILD"]),
             make_tracker_issue("B-CHILD", parent_key="B-PARENT"),
@@ -319,12 +321,12 @@ async def test_a_blocker_whose_ancestors_carry_no_ref_raises() -> None:
 
 
 async def test_a_ref_absent_from_the_remote_raises() -> None:
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-1"]),
             make_tracker_issue("B-1"),
         ],
-        work_refs={"B-1": [ref("B-1", "feature-b1")]},
+        recorded_work_refs={"B-1": [ref("B-1", "feature-b1")]},
     )
     git = FakeGitService(remote_branch_shas={"feature-b1": None})
     with pytest.raises(BaseResolutionError) as excinfo:
@@ -336,14 +338,14 @@ async def test_a_ref_absent_from_the_remote_raises() -> None:
 
 async def test_a_ref_that_was_never_pushed_raises() -> None:
     """``pushed_head_sha is None`` is a refusal, not a falsy branch."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-1"]),
             make_tracker_issue("B-1"),
         ],
-        work_refs={"B-1": [ref("B-1", "feature-b1", sha=None)]},
+        recorded_work_refs={"B-1": [ref("B-1", "feature-b1", sha=None)]},
     )
-    tracker.work_refs["B-1"] = [
+    tracker.recorded_work_refs["B-1"] = [
         WorkRef(
             issue_id="B-1",
             role=WorkRefRole.DELIVERABLE,
@@ -360,13 +362,13 @@ async def test_a_ref_that_was_never_pushed_raises() -> None:
 
 
 async def test_a_textual_conflict_names_both_refs_and_the_paths() -> None:
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=["B-1", "B-2"]),
             make_tracker_issue("B-1"),
             make_tracker_issue("B-2"),
         ],
-        work_refs={
+        recorded_work_refs={
             "B-1": [ref("B-1", "feature-b1")],
             "B-2": [ref("B-2", "feature-b2")],
         },
@@ -380,7 +382,7 @@ async def test_a_textual_conflict_names_both_refs_and_the_paths() -> None:
     assert excinfo.value.branches == ("feature-b1", "feature-b2")
     assert excinfo.value.paths == ("src/a.py", "src/b.py")
     assert push_calls(git) == []
-    assert tracker.work_refs.get(LANE, []) == []
+    assert tracker.recorded_work_refs.get(LANE, []) == []
     assert CONFIGURED_TRUNK not in str(excinfo.value)
 
 
@@ -554,7 +556,7 @@ def test_the_resolver_holds_no_collaborator_that_could_read_forge_state(
     builds — a resolver that grew a forge collaborator fails here, whatever
     it then did with it.
     """
-    subject = resolver(FakeTracker(), FakeGitService())
+    subject = resolver(FakeTrackerPort(), FakeGitService())
 
     assert [value for value in vars(subject).values() if _is_forge_shaped(value)] == []
     assert _is_forge_shaped(pr_creator)

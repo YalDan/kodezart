@@ -21,7 +21,7 @@ from tests.fakes import (
     FakeMcpAsset,
     FakeMcpHistoryEntry,
     FakeMcpIssue,
-    FakeTracker,
+    FakeTrackerPort,
 )
 
 FIXTURE_NOW: datetime = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
@@ -155,7 +155,7 @@ def linear_over_fake_mcp(server: FakeLinearMcpServer) -> TrackerPort:
     )
 
 
-async def _snapshot(source: TrackerPort) -> FakeTracker:
+async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
     """Read the fixture workspace through the adapter into domain objects."""
     keys = [
         issue.issue_key
@@ -171,14 +171,14 @@ async def _snapshot(source: TrackerPort) -> FakeTracker:
             )
             if transition is not None:
                 provenance[(key, state)] = transition
-    return FakeTracker(
+    return FakeTrackerPort(
         issues=issues,
         provenance=provenance,
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),
         },
-        work_refs={key: await source.list_work_refs(issue_key=key) for key in keys},
+        recorded_work_refs={key: await source.work_refs(issue_key=key) for key in keys},
         known_identifiers=[
             *(APPROVER, BYSTANDER),
             *TEAM_IDENTIFIERS.values(),

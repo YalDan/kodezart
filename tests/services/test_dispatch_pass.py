@@ -42,7 +42,7 @@ from tests.fakes import (
     FakeGitService,
     FakeJobQueue,
     FakeRepoCache,
-    FakeTracker,
+    FakeTrackerPort,
     PassThroughGate,
     approved_by,
     make_tracker_issue,
@@ -106,7 +106,7 @@ def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationCo
     )
 
 
-def tick(tracker: FakeTracker) -> tuple[GatedDispatchPass, FakeJobQueue]:
+def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
     """The shipped tick over the shipped gate and the shipped dispatcher."""
     queue = FakeJobQueue()
     pass_ = GatedDispatchPass(
@@ -151,7 +151,7 @@ def tick(tracker: FakeTracker) -> tuple[GatedDispatchPass, FakeJobQueue]:
 
 async def test_a_delta_runs_the_pass_and_the_work_reaches_the_queue() -> None:
     """AC-19: something moved, so the expensive half runs and produces a job."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
         provenance=dict([approved_by("K-1", APPROVER)]),
     )
@@ -165,7 +165,7 @@ async def test_a_delta_runs_the_pass_and_the_work_reaches_the_queue() -> None:
 
 async def test_a_quiet_board_never_wakes_the_dispatcher() -> None:
     """AC-19: the gate is the whole cost of a tick over a board at rest."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1", queue_states=[QueueState.TRIAGE])],
     )
     pass_, queue = tick(tracker)
@@ -180,7 +180,7 @@ async def test_a_quiet_board_never_wakes_the_dispatcher() -> None:
 
 async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:
     """The mark carries between ticks, so a settled board stops waking."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
         provenance=dict([approved_by("K-1", APPROVER)]),
     )
@@ -196,7 +196,7 @@ async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:
 
 def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
     """AC-20: every repository the operation acts on gets its own pass."""
-    tracker = FakeTracker()
+    tracker = FakeTrackerPort()
     queue = FakeJobQueue()
     passes = build_dispatch_passes(
         config=AppConfig(),
@@ -227,7 +227,7 @@ def test_the_root_gives_every_pass_the_configured_cadence() -> None:
         != AppConfig().tracker_scheduler_pass_interval_seconds
     )
 
-    tracker = FakeTracker()
+    tracker = FakeTrackerPort()
     queue = FakeJobQueue()
     passes = build_dispatch_passes(
         config=config,
@@ -247,7 +247,7 @@ def test_the_root_gives_every_pass_the_configured_cadence() -> None:
 
 async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> None:
     """AC-20: the built object is wired, not merely shaped like one."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
         provenance=dict([approved_by("K-1", APPROVER)]),
     )
@@ -283,7 +283,7 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     on the tracker — so a root that constructs the writer without wiring
     it fails this.
     """
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
         provenance=dict([approved_by("K-1", APPROVER)]),
     )

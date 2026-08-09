@@ -13,11 +13,11 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
-from tests.fakes import FakeTracker, PassThroughGate, make_tracker_issue
+from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
 
 
-def writer() -> tuple[TrackerLifecycleWriter, FakeTracker]:
-    tracker = FakeTracker(issues=[make_tracker_issue("K-1")])
+def writer() -> tuple[TrackerLifecycleWriter, FakeTrackerPort]:
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
     return TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()), tracker
 
 
@@ -81,7 +81,7 @@ class TestTheCommentRoutesThroughTheGate:
     """The coordination surface mirrors publicly, so it is a gated writer."""
 
     async def test_the_comment_is_gated_at_the_tracker_destination(self) -> None:
-        tracker = FakeTracker(issues=[make_tracker_issue("K-1")])
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         gate = PassThroughGate()
         write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
 
@@ -97,7 +97,7 @@ class TestTheCommentRoutesThroughTheGate:
         self,
     ) -> None:
         """The repository's visibility is not the question on this surface."""
-        tracker = FakeTracker(issues=[make_tracker_issue("K-1")])
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         gate = PassThroughGate()
         write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
 
@@ -110,7 +110,7 @@ class TestTheCommentRoutesThroughTheGate:
         assert [call[1] for call in gate.calls] == [RepoVisibility.PUBLIC]
 
     async def test_a_blocked_comment_is_never_posted(self) -> None:
-        tracker = FakeTracker(issues=[make_tracker_issue("K-1")])
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         write = TrackerLifecycleWriter(tracker=tracker, gate=BlockingGate())
 
         with pytest.raises(OutboundContentBlockedError) as excinfo:

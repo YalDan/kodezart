@@ -26,7 +26,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.tracker import TrackerAsset
-from tests.fakes import FakeTracker, make_tracker_issue
+from tests.fakes import FakeTrackerPort, make_tracker_issue
 
 ISSUE = "K-1"
 BODY = "the ticket body"
@@ -50,8 +50,8 @@ def asset(key: str, title: str) -> TrackerAsset:
     )
 
 
-def tracker_serving(documents: dict[str, str]) -> FakeTracker:
-    return FakeTracker(
+def tracker_serving(documents: dict[str, str]) -> FakeTrackerPort:
+    return FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
         assets={
             ISSUE: [asset(key, f"{key}.md") for key in documents],
@@ -61,7 +61,7 @@ def tracker_serving(documents: dict[str, str]) -> FakeTracker:
 
 
 def assembler(
-    tracker: FakeTracker,
+    tracker: FakeTrackerPort,
     *,
     max_count: int = DEFAULTS.tracker_asset_max_count,
     max_bytes: int = DEFAULTS.tracker_asset_max_bytes,
@@ -81,7 +81,7 @@ def assembler(
 
 
 async def test_a_referenced_document_lands_in_the_fire_context() -> None:
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
         assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE)]},
         documents={SPEC_KEY: SPEC_CONTENT},
@@ -94,7 +94,7 @@ async def test_a_referenced_document_lands_in_the_fire_context() -> None:
 
 async def test_the_session_can_read_each_fetched_asset() -> None:
     """The rendered context reproduces the content the session must open."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
         assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE), asset(NOTES_KEY, NOTES_TITLE)]},
         documents={SPEC_KEY: SPEC_CONTENT, NOTES_KEY: NOTES_CONTENT},
@@ -111,7 +111,7 @@ async def test_the_session_can_read_each_fetched_asset() -> None:
 
 async def test_a_ticket_with_no_assets_says_so_rather_than_saying_nothing() -> None:
     """ "No assets" and "assets not fetched" must not look alike."""
-    tracker = FakeTracker(issues=[make_tracker_issue(ISSUE, body=BODY)])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE, body=BODY)])
     rendered = (await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)).render()
     assert "references no assets" in rendered
 
@@ -122,7 +122,7 @@ async def test_a_ticket_with_no_assets_says_so_rather_than_saying_nothing() -> N
 
 
 async def test_an_unfetchable_required_asset_raises_and_is_never_skipped() -> None:
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
         assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE)]},
         documents={},
@@ -136,7 +136,7 @@ async def test_an_unfetchable_required_asset_raises_and_is_never_skipped() -> No
 
 async def test_one_unfetchable_asset_fails_the_whole_context() -> None:
     """No partial context: a fire built on half its inputs is worse than none."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
         assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE), asset(NOTES_KEY, NOTES_TITLE)]},
         documents={SPEC_KEY: SPEC_CONTENT},
@@ -146,7 +146,7 @@ async def test_one_unfetchable_asset_fails_the_whole_context() -> None:
 
 
 async def test_a_fetch_that_outlives_the_timeout_raises_the_typed_error() -> None:
-    class SlowTracker(FakeTracker):
+    class SlowTracker(FakeTrackerPort):
         async def read_document(self, *, document_key: str) -> str:
             await asyncio.sleep(1.0)
             return SPEC_CONTENT
@@ -236,7 +236,7 @@ def shipped_gate() -> PatternOutboundContentGate:
 
 async def test_private_fixture_content_toward_a_repository_path_is_blocked() -> None:
     """Tracker-sourced content is private input; the gate is what makes it safe."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
         assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE)]},
         documents={SPEC_KEY: PRIVATE_FIXTURE_CONTENT},
@@ -253,7 +253,7 @@ async def test_private_fixture_content_toward_a_repository_path_is_blocked() -> 
 
 async def test_the_rendered_context_is_gated_as_a_whole_not_per_asset() -> None:
     """Embedding an asset in the fire's text does not launder it."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
         assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE)]},
         documents={SPEC_KEY: PRIVATE_FIXTURE_CONTENT},

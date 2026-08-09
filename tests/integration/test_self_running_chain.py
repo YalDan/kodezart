@@ -37,7 +37,7 @@ from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
     FakeRepoCache,
-    FakeTracker,
+    FakeTrackerPort,
     PassThroughGate,
     approved_by,
     make_tracker_issue,
@@ -100,7 +100,7 @@ async def _until(condition: object, *, tries: int = 500) -> None:
 
 async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> None:
     config = AppConfig()
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE)],
         provenance=dict([approved_by(ISSUE, APPROVER)]),
     )
@@ -162,7 +162,7 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
     show up here.
     """
     config = AppConfig()
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, queue_states=[QueueState.PROPOSED])],
     )
     queue = AsyncioJobQueue(

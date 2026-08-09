@@ -41,7 +41,7 @@ from tests.fakes import (
     FakeGitService,
     FakeJobQueue,
     FakeRepoCache,
-    FakeTracker,
+    FakeTrackerPort,
     approved_by,
     make_tracker_issue,
 )
@@ -141,7 +141,7 @@ def operation_config() -> OperationConfig:
 
 
 def dispatcher(
-    tracker: FakeTracker,
+    tracker: FakeTrackerPort,
     *,
     queue: FakeJobQueue | None = None,
     delivery: FakeDeliveryProbe | None = None,
@@ -209,7 +209,7 @@ class TestClauseDrivenExclusion:
     """Each clause excludes, and the report names which one."""
 
     async def test_an_eligible_issue_is_enqueued(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
         )
@@ -221,7 +221,7 @@ class TestClauseDrivenExclusion:
         assert queue.submissions[0][0] == LANE
 
     async def test_clause_one_excludes_a_state_set_by_a_non_approver(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", IMPOSTOR)]),
         )
@@ -233,7 +233,7 @@ class TestClauseDrivenExclusion:
         assert queue.submissions == []
 
     async def test_clause_two_excludes_a_closed_issue(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(
                     "K-1",
@@ -249,7 +249,7 @@ class TestClauseDrivenExclusion:
         assert report.exclusions[0].detail == "Done"
 
     async def test_clause_three_excludes_an_issue_with_a_live_blocker(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
@@ -265,7 +265,7 @@ class TestClauseDrivenExclusion:
         # The blocker carries the ref that delivered it, because a closed
         # blocker in a real workspace does: the base resolution the dispatch
         # now performs needs the premise it is based on to exist.
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue(
@@ -275,7 +275,7 @@ class TestClauseDrivenExclusion:
                 ),
             ],
             provenance=dict([approved_by("K-1", APPROVER)]),
-            work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
+            recorded_work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
         )
         fire, _, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
         report = await fire.run_pass()
@@ -283,7 +283,7 @@ class TestClauseDrivenExclusion:
         assert report.claimed_issue_key == "K-1"
 
     async def test_clause_four_excludes_an_issue_another_pass_holds(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
         )
@@ -299,7 +299,7 @@ class TestClauseDrivenExclusion:
         assert queue.submissions == []
 
     async def test_clause_four_excludes_an_issue_with_a_live_run(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
         )
@@ -312,7 +312,7 @@ class TestClauseDrivenExclusion:
         assert len(queue.submissions) == 1
 
     async def test_clause_five_excludes_an_issue_an_open_pr_delivers(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
         )
@@ -338,7 +338,7 @@ class TestCrashedVersusDeliveredInReview:
 
     async def test_delivered_in_review_is_excluded(self) -> None:
         """An open PR means the work is delivered; re-firing would duplicate."""
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(
                     "K-1",
@@ -361,7 +361,7 @@ class TestCrashedVersusDeliveredInReview:
         self,
     ) -> None:
         """Same workflow state, no open PR, no live run: still selectable."""
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(
                     "K-1",
@@ -386,7 +386,7 @@ class TestCrashedVersusDeliveredInReview:
 
     async def test_the_two_cases_differ_only_by_the_open_pull_request(self) -> None:
         """Workflow state alone cannot tell them apart — the PR is the seam."""
-        crashed_tracker = FakeTracker(
+        crashed_tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(
                     "K-1",
@@ -396,7 +396,7 @@ class TestCrashedVersusDeliveredInReview:
             ],
             provenance=dict([approved_by("K-1", APPROVER)]),
         )
-        delivered_tracker = FakeTracker(
+        delivered_tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(
                     "K-1",
@@ -425,7 +425,7 @@ class TestPriorityRanking:
             make_tracker_issue(key, priority=priority)
             for key, (_, priority) in RAW_PRIORITY_FIXTURE.items()
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
@@ -447,7 +447,7 @@ class TestPriorityRanking:
             make_tracker_issue("RAW-NONE", priority=IssuePriority.NONE),
             make_tracker_issue("RAW-LOW", priority=IssuePriority.LOW),
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
@@ -539,7 +539,7 @@ class TestTieBreak:
                 created_at=FIXTURE_EPOCH,
             ),
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
@@ -555,7 +555,7 @@ class TestTieBreak:
             make_tracker_issue(key, priority=IssuePriority.HIGH)
             for key in ("TIE-A", "TIE-B", "TIE-C")
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
@@ -572,7 +572,7 @@ class TestTieBreak:
             make_tracker_issue(key, priority=IssuePriority.HIGH)
             for key in ("TIE-A", "TIE-B")
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
@@ -595,7 +595,7 @@ class TestClaimRace:
     async def test_exactly_one_enqueue_and_the_loser_reports_claim_lost(
         self,
     ) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
         )
@@ -622,7 +622,7 @@ class TestClaimRace:
             make_tracker_issue("TOP", priority=IssuePriority.URGENT),
             make_tracker_issue("NEXT", priority=IssuePriority.HIGH),
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
@@ -663,7 +663,7 @@ class TestClaimRace:
             make_tracker_issue("TOP", priority=IssuePriority.URGENT),
             make_tracker_issue("NEXT", priority=IssuePriority.HIGH),
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
@@ -678,7 +678,7 @@ class TestClaimRace:
         assert report.exclusions[0].clause is ExclusionClause.CLAIMED_OR_IN_FLIGHT
 
     async def test_the_loser_reports_claim_lost_without_retrying(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
         )
@@ -729,7 +729,7 @@ class TestEmptyEligibleSet:
             ),
             make_tracker_issue("UNAPPROVED"),
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(
                 [
@@ -755,7 +755,7 @@ class TestEmptyEligibleSet:
             make_tracker_issue("BLOCKED", blocked_by=["LIVE"]),
             make_tracker_issue("LIVE", queue_states=[QueueState.TRIAGE]),
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict([approved_by("BLOCKED", APPROVER)]),
         )
@@ -766,7 +766,7 @@ class TestEmptyEligibleSet:
         assert report.snapshot[0].priority is IssuePriority.NONE
 
     async def test_the_outcome_uses_the_shared_discriminator(self) -> None:
-        tracker = FakeTracker(issues=[], provenance={})
+        tracker = FakeTrackerPort(issues=[], provenance={})
         fire, _, _ = dispatcher(tracker)
         report = await fire.run_pass()
         assert report.outcome is DispatchOutcome.empty_eligible_set
@@ -774,7 +774,7 @@ class TestEmptyEligibleSet:
         assert report.eligible == ()
 
     async def test_the_empty_set_is_logged_machine_readably(self) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("UNAPPROVED")],
             provenance=dict([approved_by("UNAPPROVED", IMPOSTOR)]),
         )
@@ -798,7 +798,7 @@ class TestSingleWinner:
             make_tracker_issue(key, priority=IssuePriority.URGENT)
             for key in ("A", "B", "C")
         ]
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=issues,
             provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
@@ -808,7 +808,7 @@ class TestSingleWinner:
         assert len(tracker.claims) == 1
 
     async def test_the_query_uses_the_configured_page_size(self) -> None:
-        tracker = FakeTracker(issues=[], provenance={})
+        tracker = FakeTrackerPort(issues=[], provenance={})
         fire, _, _ = dispatcher(tracker)
         await fire.run_pass()
         assert tracker.scans[0].page_size == PAGE_SIZE
@@ -834,7 +834,7 @@ class TestTheBaseIsReadOffTheGraph:
         """And specifically not on the literal the request model defaults to."""
         assert WorkflowRequest(prompt="x", repo_url=REPO_URL).base_branch != TRUNK
 
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
         )
@@ -851,7 +851,7 @@ class TestTheBaseIsReadOffTheGraph:
     async def test_a_lane_with_a_blocker_is_dispatched_on_that_blockers_ref(
         self,
     ) -> None:
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue(
@@ -861,7 +861,7 @@ class TestTheBaseIsReadOffTheGraph:
                 ),
             ],
             provenance=dict([approved_by("K-1", APPROVER)]),
-            work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
+            recorded_work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
         )
         fire, queue, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
 
@@ -882,7 +882,7 @@ class TestTheBaseIsReadOffTheGraph:
         call it delivered, which is the failure the resolver's typed error
         exists to make impossible.
         """
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue(
@@ -909,7 +909,7 @@ class TestTheBaseIsReadOffTheGraph:
         self,
     ) -> None:
         """Recorded is not the same as present, and the difference matters."""
-        tracker = FakeTracker(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue(
@@ -919,7 +919,7 @@ class TestTheBaseIsReadOffTheGraph:
                 ),
             ],
             provenance=dict([approved_by("K-1", APPROVER)]),
-            work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
+            recorded_work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
         )
         absent = FakeGitService(remote_branch_shas={BLOCKER_BRANCH: None})
         fire, queue, _ = dispatcher(tracker, git=absent)

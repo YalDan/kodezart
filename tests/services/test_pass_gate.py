@@ -14,7 +14,7 @@ from pathlib import Path
 
 from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.operation import QueueState
-from tests.fakes import FIXTURE_EPOCH, FakeTracker, make_tracker_issue
+from tests.fakes import FIXTURE_EPOCH, FakeTrackerPort, make_tracker_issue
 
 GATE_SOURCE = (
     Path(__file__).resolve().parents[2]
@@ -29,7 +29,7 @@ LATER = FIXTURE_EPOCH + timedelta(hours=1)
 LATEST = FIXTURE_EPOCH + timedelta(hours=2)
 
 
-def gate(tracker: FakeTracker) -> PassGate:
+def gate(tracker: FakeTrackerPort) -> PassGate:
     return PassGate(
         tracker=tracker,
         queue_state=QueueState.APPROVED,
@@ -39,7 +39,7 @@ def gate(tracker: FakeTracker) -> PassGate:
 
 async def test_the_gate_reports_every_issue_that_moved() -> None:
     """A board with approved work yields a delta naming it."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue("FIX-1"), make_tracker_issue("FIX-2")],
     )
     delta = await gate(tracker).delta()
@@ -50,7 +50,7 @@ async def test_the_gate_reports_every_issue_that_moved() -> None:
 
 async def test_a_quiet_board_yields_no_delta_at_all() -> None:
     """Nothing approved is nothing to wake for."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[make_tracker_issue("FIX-1", queue_states=[QueueState.TRIAGE])],
     )
     delta = await gate(tracker).delta()
@@ -61,7 +61,7 @@ async def test_a_quiet_board_yields_no_delta_at_all() -> None:
 
 async def test_the_gate_asks_the_tracker_exactly_once_and_for_one_state() -> None:
     """AC-19: the pre-query is a port call — one, scoped, and parameterised."""
-    tracker = FakeTracker(issues=[make_tracker_issue("FIX-1")])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1")])
     await gate(tracker).delta()
 
     assert len(tracker.scans) == 1
@@ -73,7 +73,7 @@ async def test_the_gate_asks_the_tracker_exactly_once_and_for_one_state() -> Non
 
 async def test_the_gate_writes_nothing_while_deciding() -> None:
     """A gate that mutated the board would not be a gate."""
-    tracker = FakeTracker(issues=[make_tracker_issue("FIX-1")])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1")])
     await gate(tracker).delta()
 
     assert tracker.claims == {}
@@ -84,7 +84,7 @@ async def test_the_gate_writes_nothing_while_deciding() -> None:
 
 async def test_the_mark_advances_to_the_newest_thing_the_gate_saw() -> None:
     """The next tick asks from the high-water stamp, not from the epoch."""
-    tracker = FakeTracker(
+    tracker = FakeTrackerPort(
         issues=[
             make_tracker_issue("FIX-1", created_at=LATER),
             make_tracker_issue("FIX-2", created_at=LATEST),
@@ -101,7 +101,7 @@ async def test_the_mark_advances_to_the_newest_thing_the_gate_saw() -> None:
 
 async def test_a_tick_that_saw_nothing_leaves_the_mark_where_it_was() -> None:
     """A missed window is re-read rather than skipped over."""
-    tracker = FakeTracker(issues=[make_tracker_issue("FIX-1", created_at=LATER)])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1", created_at=LATER)])
     subject = gate(tracker)
     await subject.delta()
     tracker.issues.clear()
@@ -142,7 +142,7 @@ def test_the_cost_predicate_recognises_an_executor_shaped_collaborator() -> None
 
 async def test_the_gate_holds_no_collaborator_that_could_reach_a_model() -> None:
     """AC-19: zero model involvement, asserted over the object, not the prose."""
-    tracker = FakeTracker(issues=[make_tracker_issue("FIX-1")])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1")])
     subject = gate(tracker)
 
     assert [

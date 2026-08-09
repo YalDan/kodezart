@@ -17,7 +17,7 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState
 from tests.fakes import (
     FIXTURE_EPOCH,
     FakeGitService,
-    FakeTracker,
+    FakeTrackerPort,
     make_tracker_issue,
 )
 
@@ -44,17 +44,17 @@ def tracker_with(
     *,
     blockers: Sequence[str],
     refs: dict[str, WorkRef],
-) -> FakeTracker:
-    return FakeTracker(
+) -> FakeTrackerPort:
+    return FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, blocked_by=list(blockers)),
             *[make_tracker_issue(key) for key in refs],
         ],
-        work_refs={key: [ref] for key, ref in refs.items()},
+        recorded_work_refs={key: [ref] for key, ref in refs.items()},
     )
 
 
-async def spec_of(tracker: FakeTracker) -> BaseSpec:
+async def spec_of(tracker: FakeTrackerPort) -> BaseSpec:
     resolver = BaseResolver(tracker=tracker, git=FakeGitService(), remote=REMOTE)
     return await resolver.resolve(
         issue_key=LANE,
@@ -65,7 +65,7 @@ async def spec_of(tracker: FakeTracker) -> BaseSpec:
     )
 
 
-async def baseline() -> tuple[FakeTracker, BaseSpec]:
+async def baseline() -> tuple[FakeTrackerPort, BaseSpec]:
     tracker = tracker_with(
         blockers=["B-1"],
         refs={"B-1": work_ref("B-1", "feature-b1", "sha-1")},

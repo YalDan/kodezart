@@ -508,8 +508,8 @@ class TrackerPort(Protocol):
         """The document's text content."""
         ...
 
-    async def record_work_ref(self, *, ref: WorkRef) -> WorkRef:
-        """Record *ref* against its issue and return it as stored.
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
+        """Record *ref* against its issue; ``work_refs`` is the read.
 
         At most one ``DELIVERABLE`` ref exists per issue: a second raises
         ``DuplicateWorkRefError`` and is never a silent replacement.
@@ -517,7 +517,7 @@ class TrackerPort(Protocol):
         """
         ...
 
-    async def list_work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         """Every ref recorded against the issue, oldest first.
 
         This is the read D2 requires: *which refs deliver issue X, in which

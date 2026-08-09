@@ -32,7 +32,7 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FakeJobQueue,
-    FakeTracker,
+    FakeTrackerPort,
     PassThroughGate,
     make_tracker_issue,
 )
@@ -62,9 +62,9 @@ def complete(*, merged: bool, outcome: WorkflowOutcome) -> WorkflowCompleteEvent
 
 def watcher(
     *events: AgentEvent,
-) -> tuple[LifecycleWatcher, FakeTracker, FakeJobQueue]:
+) -> tuple[LifecycleWatcher, FakeTrackerPort, FakeJobQueue]:
     """The shipped watcher over the shipped writer and a scripted run."""
-    tracker = FakeTracker(issues=[make_tracker_issue(ISSUE)])
+    tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
     queue = FakeJobQueue(events=events)
     return (
         LifecycleWatcher(
@@ -230,7 +230,7 @@ class TestThePremiseAgainstTheShippedQueue:
         )
         await queue.start()
         try:
-            tracker = FakeTracker(issues=[make_tracker_issue(ISSUE)])
+            tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
             watch = LifecycleWatcher(
                 queue=queue,
                 writer=TrackerLifecycleWriter(

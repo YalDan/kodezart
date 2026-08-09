@@ -122,7 +122,7 @@ class BaseResolver:
         cursor: str | None = blocker_key
         while cursor is not None and cursor not in seen:
             seen.add(cursor)
-            for ref in await self._tracker.list_work_refs(issue_key=cursor):
+            for ref in await self._tracker.work_refs(issue_key=cursor):
                 if ref.role is WorkRefRole.DELIVERABLE:
                     return ref
             cursor = (await self._tracker.read_issue(issue_key=cursor)).parent_key

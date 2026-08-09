@@ -440,18 +440,18 @@ class LinearMcpTracker:
             _TOOL_GET_DOCUMENT,
         ).content
 
-    async def record_work_ref(self, *, ref: WorkRef) -> WorkRef:
-        """Append a work-ref marker comment and return the ref as stored.
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
+        """Append a work-ref marker comment; the read is ``work_refs``.
 
         The comment log is the same append-only, server-timestamped surface
         the claim mechanism uses; a work ref is a second marker on it.  The
         sha attribute is OMITTED when the ref is not pushed, so ``None``
         round-trips as ``None`` rather than as an empty string.
         """
-        existing = await self.list_work_refs(issue_key=ref.issue_id)
+        existing = await self.work_refs(issue_key=ref.issue_id)
         for held in existing:
             if held.identity() == ref.identity():
-                return held
+                return
             if held.role is WorkRefRole.DELIVERABLE is ref.role:
                 raise DuplicateWorkRefError(
                     "an issue carries at most one deliverable ref",
@@ -464,10 +464,9 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT,
             {"issueId": ref.issue_id, "body": _work_ref_marker(ref)},
         )
-        wire = self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
-        return ref.model_copy(update={"recorded_at": wire.created_at})
+        self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
 
-    async def list_work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         """Every work ref recorded on the issue, oldest first."""
         refs: list[WorkRef] = []
         for wire in await self._comment_wires(issue_key):

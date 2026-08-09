@@ -493,7 +493,7 @@ class TestWorkRefs:
             recorded_at=FIXTURE_NOW,
         )
         await tracker.record_work_ref(ref=ref)
-        stored = await tracker.list_work_refs(issue_key=APPROVED_ISSUE)
+        stored = await tracker.work_refs(issue_key=APPROVED_ISSUE)
         assert [(r.role, r.branch, r.pushed_head_sha) for r in stored] == [
             (role, ref.branch, ref.pushed_head_sha),
         ]
@@ -517,7 +517,7 @@ class TestWorkRefs:
                 recorded_at=FIXTURE_NOW,
             ),
         )
-        (stored,) = await tracker.list_work_refs(issue_key=APPROVED_ISSUE)
+        (stored,) = await tracker.work_refs(issue_key=APPROVED_ISSUE)
         assert stored.pushed_head_sha is None
         assert stored.pushed_head_sha is not False
 
@@ -525,7 +525,7 @@ class TestWorkRefs:
         self,
         tracker: TrackerPort,
     ) -> None:
-        assert await tracker.list_work_refs(issue_key=CLAIMED_ISSUE) == ()
+        assert await tracker.work_refs(issue_key=CLAIMED_ISSUE) == ()
 
     async def test_a_second_deliverable_ref_raises_and_replaces_nothing(
         self,
@@ -543,7 +543,7 @@ class TestWorkRefs:
             await tracker.record_work_ref(
                 ref=first.model_copy(update={"branch": "kodezart/second"}),
             )
-        stored = await tracker.list_work_refs(issue_key=APPROVED_ISSUE)
+        stored = await tracker.work_refs(issue_key=APPROVED_ISSUE)
         assert [r.branch for r in stored] == ["kodezart/first"]
 
     async def test_recording_the_same_ref_twice_is_idempotent(
@@ -559,7 +559,7 @@ class TestWorkRefs:
         )
         await tracker.record_work_ref(ref=ref)
         await tracker.record_work_ref(ref=ref)
-        assert len(await tracker.list_work_refs(issue_key=APPROVED_ISSUE)) == 1
+        assert len(await tracker.work_refs(issue_key=APPROVED_ISSUE)) == 1
 
     async def test_work_refs_and_claims_do_not_read_each_other(
         self,
@@ -581,5 +581,5 @@ class TestWorkRefs:
         )
         claim = await tracker.active_claim(issue_key=APPROVED_ISSUE)
         assert claim is not None and claim.holder == "fixture-holder"
-        refs = await tracker.list_work_refs(issue_key=APPROVED_ISSUE)
+        refs = await tracker.work_refs(issue_key=APPROVED_ISSUE)
         assert [r.role for r in refs] == [WorkRefRole.ITERATION]

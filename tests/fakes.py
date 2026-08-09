@@ -1375,7 +1375,7 @@ async def attached_job_queue(
 # Two levels, deliberately.  ``FakeLinearMcpServer`` is an in-process MCP
 # SERVER: it satisfies ``McpToolCaller`` and serves the vendor tool contract,
 # so the real Linear adapter runs against it unmodified and the conformance
-# suite needs no live workspace.  ``FakeTracker`` satisfies ``TrackerPort``
+# suite needs no live workspace.  ``FakeTrackerPort`` satisfies ``TrackerPort``
 # directly and is what consumers of the port (the dispatcher, the passes) are
 # tested against — a consumer test that had to know the vendor's tool names
 # would have a vendor dependency the port exists to remove.
@@ -1748,7 +1748,7 @@ _STAGE_KIND: Mapping[LifecycleStage, WorkflowStateKind] = {
 }
 
 
-class FakeTracker:
+class FakeTrackerPort:
     """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
 
     Holds domain objects directly, so a consumer test states its fixture in
@@ -1765,14 +1765,14 @@ class FakeTracker:
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         known_identifiers: Sequence[str] = (),
-        work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
+        recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
             issue.issue_key: issue for issue in issues
         }
-        self.work_refs: dict[str, list[WorkRef]] = {
-            key: list(value) for key, value in (work_refs or {}).items()
+        self.recorded_work_refs: dict[str, list[WorkRef]] = {
+            key: list(value) for key, value in (recorded_work_refs or {}).items()
         }
         self.claims: dict[str, ClaimResult] = {}
         self.comments: list[TrackerComment] = []
@@ -1946,12 +1946,12 @@ class FakeTracker:
     async def read_document(self, *, document_key: str) -> str:
         return self._documents[document_key]
 
-    async def record_work_ref(self, *, ref: WorkRef) -> WorkRef:
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
         await asyncio.sleep(0)
-        held = self.work_refs.setdefault(ref.issue_id, [])
+        held = self.recorded_work_refs.setdefault(ref.issue_id, [])
         for existing in held:
             if existing.identity() == ref.identity():
-                return existing
+                return
             if existing.role is WorkRefRole.DELIVERABLE is ref.role:
                 raise DuplicateWorkRefError(
                     "an issue carries at most one deliverable ref",
@@ -1961,11 +1961,10 @@ class FakeTracker:
                     offered_branch=ref.branch,
                 )
         held.append(ref)
-        return ref
 
-    async def list_work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         await asyncio.sleep(0)
-        return tuple(self.work_refs.get(issue_key, ()))
+        return tuple(self.recorded_work_refs.get(issue_key, ()))
 
     async def resolve_mappings(
         self,
@@ -2046,7 +2045,7 @@ def approved_by(
     *,
     occurred_at: datetime = FIXTURE_EPOCH,
 ) -> tuple[tuple[str, QueueState], StateTransition]:
-    """One provenance entry for ``FakeTracker(provenance=dict([...]))``."""
+    """One provenance entry for ``FakeTrackerPort(provenance=dict([...]))``."""
     return (
         (issue_key, QueueState.APPROVED),
         StateTransition(

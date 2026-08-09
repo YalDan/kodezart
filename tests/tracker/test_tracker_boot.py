@@ -20,7 +20,7 @@ from kodezart.types.domain.operation import (
     RepoEntry,
 )
 from kodezart.types.domain.tracker import MappingKind, MappingRef
-from tests.fakes import FakeTracker
+from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
@@ -198,7 +198,7 @@ class TestBootValidation:
         ]
         with pytest.raises(TrackerBootValidationError) as caught:
             await validate_tracker_mappings(
-                tracker=FakeTracker(known_identifiers=resolvable),
+                tracker=FakeTrackerPort(known_identifiers=resolvable),
                 config=operation_config(),
             )
         assert caught.value.unresolved == (bad.describe(),)
