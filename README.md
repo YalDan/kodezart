@@ -403,8 +403,15 @@ sequence in the log:
 1. `pass_gate_delta` — the pre-query saw the issue move.
 2. `dispatch_pass_completed` with `outcome: fire_enqueued` and the issue key —
    the claim was granted and a job was enqueued.
-3. The lifecycle write-back moving the issue In Progress → In Review → Done.
-4. A terminal outcome comment on the issue.
+3. `lifecycle_in_progress`, then `lifecycle_in_review` once the run opens its
+   pull request, then `lifecycle_done` — the write-back walking the issue
+   through the states `[workflow_states]` binds those stages to. The service
+   follows the job's own event stream, so `lifecycle_in_progress` appears when
+   the run *starts*, not when it was enqueued, and `lifecycle_done` only on a
+   verified merge. A run that ends without one keeps its review state.
+4. `lifecycle_outcome_comment` — the terminal outcome comment on the issue,
+   naming the job id and the run's outcome. It is posted for every terminal
+   route, including the ones that did not merge.
 
 Approval is the only human act in that sequence. kodezart never sets or removes
 the approved state — if it could, the one gate in the loop would not be a gate.

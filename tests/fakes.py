@@ -2047,10 +2047,17 @@ class FakeJobQueue:
     enqueues onto the same surface HTTP submissions use.
     """
 
-    def __init__(self, *, states: Mapping[str, JobState] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        states: Mapping[str, JobState] | None = None,
+        events: Sequence[AgentEvent] = (),
+    ) -> None:
         self.submissions: list[tuple[str, WorkflowRequest]] = []
         self.records: dict[str, JobRecord] = {}
+        self.attached: list[str] = []
         self._states: dict[str, JobState] = dict(states or {})
+        self._events: tuple[AgentEvent, ...] = tuple(events)
         self._sequence: int = 0
 
     async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
@@ -2069,11 +2076,21 @@ class FakeJobQueue:
         return record
 
     def attach(self, *, job_id: str) -> AsyncGenerator[AgentEvent, None]:
-        async def _empty() -> AsyncGenerator[AgentEvent, None]:
-            return
-            yield  # pragma: no cover - an empty async generator needs a yield
+        """Replay the scripted run, exactly as the real queue's stream does.
 
-        return _empty()
+        The frames the real queue publishes begin only once the worker has
+        dequeued the job, so a scripted stream that starts empty and then
+        yields is the same shape a consumer sees in production.
+        """
+        self.attached.append(job_id)
+        scripted = self._events
+
+        async def _replay() -> AsyncGenerator[AgentEvent, None]:
+            for event in scripted:
+                await asyncio.sleep(0)
+                yield event
+
+        return _replay()
 
     async def get(self, *, job_id: str) -> JobRecord | None:
         await asyncio.sleep(0)

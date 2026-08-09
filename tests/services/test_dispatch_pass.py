@@ -11,12 +11,17 @@ own builder — and asserts that what boot hands the scheduler is this same
 object, one per declared repository, carrying the configured cadence.
 """
 
+import asyncio
+
 from kodezart.core.config import AppConfig
 from kodezart.main import build_dispatch_passes
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
+from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
+from kodezart.types.domain.agent import WorkflowCompleteEvent
 from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
@@ -30,10 +35,12 @@ from kodezart.types.domain.operation import (
     RecordDestination,
     RepoEntry,
 )
+from kodezart.types.domain.outcome import WorkflowOutcome
 from tests.fakes import (
     FakeDeliveryProbe,
     FakeJobQueue,
     FakeTracker,
+    PassThroughGate,
     approved_by,
     make_tracker_issue,
 )
@@ -96,6 +103,10 @@ def tick(tracker: FakeTracker) -> tuple[GatedDispatchPass, FakeJobQueue]:
     """The shipped tick over the shipped gate and the shipped dispatcher."""
     queue = FakeJobQueue()
     pass_ = GatedDispatchPass(
+        lifecycle=LifecycleWatcher(
+            queue=queue,
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        ),
         gate=PassGate(
             tracker=tracker,
             queue_state=QueueState.APPROVED,
@@ -179,6 +190,7 @@ def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
+        gate=PassThroughGate(),
     )
 
     assert [entry.name for entry in passes] == [
@@ -206,6 +218,7 @@ def test_the_root_gives_every_pass_the_configured_cadence() -> None:
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
+        gate=PassThroughGate(),
     )
 
     assert [entry.interval_seconds for entry in passes] == [unusual, unusual]
@@ -225,6 +238,7 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
+        gate=PassThroughGate(),
     )
 
     await passes[0].run()
@@ -234,3 +248,53 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
     assert lane == AppConfig().dispatch_lane
     assert request.repo_url == SECOND_REPO
     assert tracker.claims["K-1"].holder == AppConfig().dispatch_holder
+
+
+async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
+    """The lifecycle write-back is reached from the composition root.
+
+    Nothing here calls ``TrackerLifecycleWriter``.  The only input is a
+    dispatch pass built by ``build_dispatch_passes`` running over a queue
+    whose job emits a completed run, and the observable is the transition
+    on the tracker — so a root that constructs the writer without wiring
+    it fails this.
+    """
+    tracker = FakeTracker(
+        issues=[make_tracker_issue("K-1")],
+        provenance=dict([approved_by("K-1", APPROVER)]),
+    )
+    queue = FakeJobQueue(
+        events=[
+            WorkflowCompleteEvent(
+                feature_branch="feature",
+                ralph_branch="ralph",
+                total_iterations=1,
+                accepted=True,
+                outcome=WorkflowOutcome.ci_passed,
+                merged=True,
+            ),
+        ],
+    )
+    passes = build_dispatch_passes(
+        config=AppConfig(),
+        operation=operation_config(),
+        tracker=tracker,
+        delivery=FakeDeliveryProbe(),
+        queue=queue,
+        registry=queue,
+        gate=PassThroughGate(),
+    )
+
+    await passes[0].run()
+    for _ in range(64):
+        if tracker.comments:
+            break
+        await asyncio.sleep(0)
+
+    assert queue.attached == ["job-0001"]
+    assert tracker.workflow_writes == [
+        ("K-1", LifecycleStage.IN_PROGRESS),
+        ("K-1", LifecycleStage.DONE),
+    ]
+    assert tracker.queue_writes == [("K-1", QueueState.DONE)]
+    assert [comment.issue_key for comment in tracker.comments] == ["K-1"]

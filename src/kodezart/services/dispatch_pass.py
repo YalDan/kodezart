@@ -11,15 +11,24 @@ driven by the scheduler, which has no caller to hand a report to.
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
+from kodezart.types.domain.dispatch import DispatchOutcome
 
 
 class GatedDispatchPass:
     """A dispatch pass behind its deterministic pre-query."""
 
-    def __init__(self, *, gate: PassGate, dispatcher: FireDispatcher) -> None:
+    def __init__(
+        self,
+        *,
+        gate: PassGate,
+        dispatcher: FireDispatcher,
+        lifecycle: LifecycleWatcher,
+    ) -> None:
         self._gate: PassGate = gate
         self._dispatcher: FireDispatcher = dispatcher
+        self._lifecycle: LifecycleWatcher = lifecycle
         self._log: BoundLogger = get_logger(__name__)
 
     async def run(self) -> None:
@@ -34,5 +43,16 @@ class GatedDispatchPass:
             outcome=report.outcome.value,
             changed=list(delta.changed),
             claimed_issue_key=report.claimed_issue_key,
+            job_id=report.job_id,
+        )
+        # Enqueueing is the moment the issue acquires a run to report on.
+        # The other two outcomes claimed nothing, so there is nothing to
+        # follow — never an empty watch started "just in case".
+        if report.outcome is not DispatchOutcome.fire_enqueued:
+            return
+        if report.claimed_issue_key is None or report.job_id is None:
+            return
+        self._lifecycle.follow(
+            issue_key=report.claimed_issue_key,
             job_id=report.job_id,
         )

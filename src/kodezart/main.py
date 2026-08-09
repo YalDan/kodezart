@@ -45,6 +45,7 @@ from kodezart.core.protocols import (
     JobRegistry,
     ManagedMcpToolCaller,
     McpToolCaller,
+    OutboundContentGate,
     PromptProvider,
     SkillInventory,
     TrackerPort,
@@ -55,9 +56,11 @@ from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.services.hygiene_scan import HygieneScan
 from kodezart.services.job_service import JobService
+from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
+from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.gating import content_digest
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.prompts import PromptKey
@@ -260,6 +263,7 @@ def build_dispatch_passes(
     delivery: DeliveryProbe,
     queue: JobQueue,
     registry: JobRegistry,
+    gate: OutboundContentGate,
 ) -> list[ScheduledPass]:
     """One gated dispatch pass per repository the operation acts on.
 
@@ -273,9 +277,17 @@ def build_dispatch_passes(
         max_bytes=config.asset_max_bytes,
         fetch_timeout_seconds=config.asset_fetch_timeout_seconds,
     )
+    # One writer and one watcher for every repository: the lifecycle it
+    # writes belongs to the ISSUE, and an issue is not a per-repository
+    # thing. A watcher per pass would be N watchers over one tracker.
+    lifecycle = LifecycleWatcher(
+        queue=queue,
+        writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
+    )
     passes: list[ScheduledPass] = []
     for repo in operation.repos:
         tick = GatedDispatchPass(
+            lifecycle=lifecycle,
             gate=PassGate(
                 tracker=tracker,
                 queue_state=QueueState.APPROVED,
@@ -527,6 +539,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 delivery=github_api,
                 queue=job_queue,
                 registry=job_queue,
+                gate=gate,
             )
         else:
             await log.ainfo(
