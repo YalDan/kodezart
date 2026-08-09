@@ -63,9 +63,9 @@ def tracker_serving(documents: dict[str, str]) -> FakeTracker:
 def assembler(
     tracker: FakeTracker,
     *,
-    max_count: int = DEFAULTS.asset_max_count,
-    max_bytes: int = DEFAULTS.asset_max_bytes,
-    fetch_timeout_seconds: float = DEFAULTS.asset_fetch_timeout_seconds,
+    max_count: int = DEFAULTS.tracker_asset_max_count,
+    max_bytes: int = DEFAULTS.tracker_asset_max_bytes,
+    fetch_timeout_seconds: float = DEFAULTS.tracker_asset_fetch_timeout_seconds,
 ) -> FireContextAssembler:
     return FireContextAssembler(
         tracker=tracker,
@@ -171,9 +171,9 @@ async def test_a_fetch_that_outlives_the_timeout_raises_the_typed_error() -> Non
 async def test_the_three_bounds_are_kodezart_prefixed_config_fields() -> None:
     """No magic number: each bound is a named, constrained field."""
     for name in (
-        "asset_max_count",
-        "asset_max_bytes",
-        "asset_fetch_timeout_seconds",
+        "tracker_asset_max_count",
+        "tracker_asset_max_bytes",
+        "tracker_asset_fetch_timeout_seconds",
     ):
         assert name in AppConfig.model_fields
 

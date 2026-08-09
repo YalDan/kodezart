@@ -31,7 +31,7 @@ TOKEN = "fixture-tracker-token"
 
 #: A cadence no default would produce, and long enough that no pass fires
 #: inside a test: what is asserted is the wiring of the knob, not a tick.
-UNUSUAL_INTERVAL = 3607.0
+UNUSUAL_INTERVAL = 607.0
 
 
 def _operation_toml(
@@ -264,10 +264,13 @@ async def test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo(
     assertion is about the knob's consumer and not about a coincidence.
     """
     monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
-    monkeypatch.setenv("KODEZART_DISPATCH_PASS_INTERVAL_SECONDS", str(UNUSUAL_INTERVAL))
+    monkeypatch.setenv(
+        "KODEZART_TRACKER_SCHEDULER_PASS_INTERVAL_SECONDS",
+        str(UNUSUAL_INTERVAL),
+    )
     _configure(monkeypatch, tmp_path, _operation_toml())
     app = create_app()
-    assert app.state.config.dispatch_pass_interval_seconds == UNUSUAL_INTERVAL
+    assert app.state.config.tracker_scheduler_pass_interval_seconds == UNUSUAL_INTERVAL
 
     async with lifespan(app):
         scheduler: PassScheduler = app.state.pass_scheduler

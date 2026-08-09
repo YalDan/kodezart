@@ -179,7 +179,7 @@ def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCall
         url=config.tracker_mcp_server_url,
         server_name=config.tracker_mcp_server_name,
         token=token,
-        timeout_seconds=config.tracker_api_timeout_seconds,
+        timeout_seconds=config.tracker_timeout_seconds,
         auth_header_name=config.tracker_mcp_auth_header,
         auth_scheme=config.tracker_mcp_auth_scheme,
     )
@@ -203,8 +203,8 @@ def build_tracker(
                 queue_state_labels=operation.queue_states,
                 workflow_state_names=operation.workflow_states,
                 team_identifiers=operation.teams,
-                max_retries=config.tracker_api_max_retries,
-                retry_backoff_factor=config.tracker_api_retry_backoff_factor,
+                max_retries=config.tracker_max_retries,
+                retry_backoff_factor=config.tracker_retry_backoff_factor,
             )
 
 
@@ -278,9 +278,9 @@ def build_dispatch_passes(
     """
     assembler = FireContextAssembler(
         tracker=tracker,
-        max_count=config.asset_max_count,
-        max_bytes=config.asset_max_bytes,
-        fetch_timeout_seconds=config.asset_fetch_timeout_seconds,
+        max_count=config.tracker_asset_max_count,
+        max_bytes=config.tracker_asset_max_bytes,
+        fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,
     )
     # One writer and one watcher for every repository: the lifecycle it
     # writes belongs to the ISSUE, and an issue is not a per-repository
@@ -320,7 +320,7 @@ def build_dispatch_passes(
         passes.append(
             ScheduledPass(
                 name=f"dispatch:{repo.url}",
-                interval_seconds=config.dispatch_pass_interval_seconds,
+                interval_seconds=config.tracker_scheduler_pass_interval_seconds,
                 run=tick.run,
             ),
         )

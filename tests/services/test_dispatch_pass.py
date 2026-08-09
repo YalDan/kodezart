@@ -219,12 +219,12 @@ def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
 
 
 def test_the_root_gives_every_pass_the_configured_cadence() -> None:
-    """AC-20: ``dispatch_pass_interval_seconds`` has a real consumer."""
+    """AC-20: ``tracker_scheduler_pass_interval_seconds`` has a real consumer."""
     unusual = 41.0
-    config = AppConfig(dispatch_pass_interval_seconds=unusual)
+    config = AppConfig(tracker_scheduler_pass_interval_seconds=unusual)
     assert (
-        config.dispatch_pass_interval_seconds
-        != AppConfig().dispatch_pass_interval_seconds
+        config.tracker_scheduler_pass_interval_seconds
+        != AppConfig().tracker_scheduler_pass_interval_seconds
     )
 
     tracker = FakeTracker()

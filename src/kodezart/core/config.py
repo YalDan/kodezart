@@ -300,19 +300,19 @@ class AppConfig(BaseSettings):
         default=None,
         description="Tracker credential for the MCP server. Environment only.",
     )
-    tracker_api_timeout_seconds: float = Field(
+    tracker_timeout_seconds: float = Field(
         default=30.0,
         ge=5.0,
         le=120.0,
         description="Timeout for one tracker MCP tool call.",
     )
-    tracker_api_max_retries: int = Field(
+    tracker_max_retries: int = Field(
         default=3,
         ge=0,
         le=10,
         description="Maximum retry attempts for a transient tracker MCP failure.",
     )
-    tracker_api_retry_backoff_factor: float = Field(
+    tracker_retry_backoff_factor: float = Field(
         default=1.0,
         ge=0.1,
         le=30.0,
@@ -320,7 +320,7 @@ class AppConfig(BaseSettings):
     )
     tracker_claim_lease_seconds: float = Field(
         default=900.0,
-        ge=30.0,
+        ge=60.0,
         le=86400.0,
         description=(
             "Lease an atomic claim holds before it expires and the issue "
@@ -333,11 +333,15 @@ class AppConfig(BaseSettings):
         le=250,
         description="Issues requested per tracker scan page.",
     )
-    dispatch_pass_interval_seconds: float = Field(
+    tracker_scheduler_pass_interval_seconds: float = Field(
         default=300.0,
         ge=10.0,
-        le=86400.0,
-        description="Seconds between approved-fire dispatch passes.",
+        le=3600.0,
+        description=(
+            "Seconds between approved-fire dispatch passes. Dispatch is "
+            "single-winner-per-pass, so throughput IS the interval: the upper "
+            "bound is what stops a loaded queue sitting idle for a working day."
+        ),
     )
     dispatch_lane: str = Field(
         default="tracker",
@@ -352,7 +356,7 @@ class AppConfig(BaseSettings):
             "workspace must carry different values or they cannot race."
         ),
     )
-    asset_max_count: int = Field(
+    tracker_asset_max_count: int = Field(
         default=20,
         ge=1,
         le=200,
@@ -361,16 +365,16 @@ class AppConfig(BaseSettings):
             "fails loudly rather than being fetched in part."
         ),
     )
-    asset_max_bytes: int = Field(
-        default=262144,
+    tracker_asset_max_bytes: int = Field(
+        default=10485760,
         ge=1024,
-        le=10485760,
+        le=104857600,
         description=(
             "Largest single asset admitted into a fire context. An asset over "
             "the bound is a typed failure, never a truncation."
         ),
     )
-    asset_fetch_timeout_seconds: float = Field(
+    tracker_asset_fetch_timeout_seconds: float = Field(
         default=30.0,
         ge=1.0,
         le=300.0,
