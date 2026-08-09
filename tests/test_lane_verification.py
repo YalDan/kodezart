@@ -79,31 +79,90 @@ def git(*args: str) -> str:
     return result.stdout
 
 
-PROMPT_SETS_PATH = "src/kodezart/prompts/sets"
+def blob_at(revision: str, relative: str) -> str:
+    """The file's bytes at a revision, as text."""
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "show", f"{revision}:{relative}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
 
 
-def test_no_golden_file_was_rewritten_without_its_template_moving() -> None:
-    """V-2: a golden is re-baselined only alongside the prompt it renders.
+def template_for_golden(golden: Path) -> Path:
+    """The single set template whose render the golden pins.
 
-    The shortcut this guards against is re-baselining a golden so a
-    byte-identity assertion passes while the template it renders is
-    untouched.  A golden with more than one commit is an offender unless
-    its most recent commit also changed the prompt set — which is what a
-    legitimate prompt edit looks like and what a dodge never does.
+    Goldens are named `<key>.txt` or `<key>__<variant>.txt`, and every suite
+    renders the default set, so the owning template is derivable from the
+    filename alone.
+    """
+    key = golden.stem.split("__", maxsplit=1)[0]
+    return default_sets_root() / AppConfig().prompt_set / f"{key}.md"
+
+
+def test_every_golden_names_a_template_that_exists() -> None:
+    """The golden-to-template mapping the V-2 checks rest on is total."""
+    goldens = sorted(GOLDENS_DIR.rglob("*.txt"))
+    assert goldens, "no golden files found"
+
+    unmapped = [
+        golden.relative_to(REPO_ROOT).as_posix()
+        for golden in goldens
+        if not template_for_golden(golden).is_file()
+    ]
+    assert unmapped == [], f"goldens with no owning template: {unmapped}"
+
+
+def test_no_golden_diverges_from_its_baseline_unless_its_own_template_did() -> None:
+    """V-2, content half: a golden's bytes are its introducing commit's bytes.
+
+    The goldens are the byte-identity evidence for the prompt-set migration.
+    A golden that no longer matches the bytes it was introduced with has
+    abandoned that evidence, and the only thing that licenses abandoning it
+    is the template it renders having genuinely moved since the same commit.
+    Editing prompt A while re-baselining golden B is an offender here, because
+    the licence is read from B's own template, not from the set as a whole.
     """
     goldens = sorted(GOLDENS_DIR.rglob("*.txt"))
     assert goldens, "no golden files found"
 
-    set_commits = set(
-        git("log", "--format=%H", "--", PROMPT_SETS_PATH).split(),
-    )
     offenders: list[str] = []
     for golden in goldens:
         relative = golden.relative_to(REPO_ROOT).as_posix()
-        log = git("log", "--format=%H", "--", relative).split()
-        if len(log) > 1 and log[0] not in set_commits:
-            offenders.append(f"{relative}: re-baselined at {log[0][:8]}")
-    assert offenders == [], f"goldens re-baselined with no template change: {offenders}"
+        introducing = git("log", "--format=%H", "--", relative).split()[-1]
+        if golden.read_text(encoding="utf-8") == blob_at(introducing, relative):
+            continue
+        template = template_for_golden(golden).relative_to(REPO_ROOT).as_posix()
+        if blob_at("HEAD", template) != blob_at(introducing, template):
+            continue
+        offenders.append(f"{relative}: re-baselined, {template} unchanged")
+    assert offenders == [], f"goldens re-baselined off their own template: {offenders}"
+
+
+def test_every_golden_rewrite_commit_also_changed_that_goldens_template() -> None:
+    """V-2, history half: each rewrite rides its own template's rewrite.
+
+    The content check above compares only the endpoints, so a golden could be
+    re-baselined in one commit and its template edited in another.  Every
+    commit that rewrote a golden must itself have touched the one template
+    that golden renders.
+    """
+    goldens = sorted(GOLDENS_DIR.rglob("*.txt"))
+    assert goldens, "no golden files found"
+
+    offenders: list[str] = []
+    for golden in goldens:
+        relative = golden.relative_to(REPO_ROOT).as_posix()
+        template = template_for_golden(golden).relative_to(REPO_ROOT).as_posix()
+        template_commits = set(git("log", "--format=%H", "--", template).split())
+        rewrites = git("log", "--format=%H", "--", relative).split()[:-1]
+        offenders.extend(
+            f"{relative}: rewritten at {commit[:8]} with {template} untouched"
+            for commit in rewrites
+            if commit not in template_commits
+        )
+    assert offenders == [], f"goldens rewritten off their own template: {offenders}"
 
 
 def test_both_golden_suites_exist_and_cover_the_relocated_keys() -> None:
