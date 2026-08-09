@@ -7,6 +7,7 @@ the second-domain rows below are what catches it.
 """
 
 import pytest
+from pydantic import BaseModel, ValidationError
 
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
@@ -34,6 +35,7 @@ from kodezart.types.domain.criteria import (
     LimitArm,
     RepairKind,
     StruckGround,
+    ValidatedCriterion,
 )
 
 
@@ -741,14 +743,60 @@ def test_artifact_round_trips_ids_verdicts_and_evidence() -> None:
     assert '"limitArm"' in encoded
 
 
-def test_classification_round_trips_under_its_camel_case_alias() -> None:
+def test_criterion_class_round_trips_under_its_camel_case_alias() -> None:
+    """KOD-53/AC-14 — the field crosses the wire under the ruled alias.
+
+    The alias is the assertion: `criterion_class` is two words, so an
+    artifact written by a model without the camelCase generator carries
+    `"criterion_class"` and fails here.  It is what a reader of the
+    persisted artifact addresses the field by.
+    """
     criteria, output = _fault_line_pair()
     artifact = build_artifact(criteria, sweep(criteria, output))
     encoded = artifact.model_dump_json(by_alias=True)
 
     assert '"criterionClass":"hard_gate"' in encoded.replace(", ", ",")
+    assert '"criterion_class"' not in encoded
     restored = CriteriaArtifact.model_validate_json(encoded)
     assert restored.criteria[0].criterion_class is CriterionClass.hard_gate
+
+
+@pytest.mark.parametrize(
+    ("record", "payload"),
+    [
+        (DraftedCriterion, {"text": "a criterion"}),
+        (GeneratedCriterion, {"id": "AC-1", "text": "a criterion"}),
+        (
+            ValidatedCriterion,
+            {
+                "id": "AC-1",
+                "text": "a criterion",
+                "feasibility": {
+                    "criterionId": "AC-1",
+                    "verdict": CriterionVerdict.feasible.value,
+                },
+            },
+        ),
+    ],
+    ids=["drafted", "generated", "validated"],
+)
+def test_a_payload_without_the_criterion_class_fails_validation(
+    record: type[BaseModel],
+    payload: dict[str, object],
+) -> None:
+    """KOD-53/AC-14, KOD-69 R3 — *populated* as a schema fact, not an aspiration.
+
+    Every record carrying the field declares it with no default, so a
+    payload omitting it raises at the model boundary rather than
+    surfacing a silent default three surfaces downstream.  Asserted here
+    because a later default would otherwise pass the whole suite.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        record.model_validate(payload)
+    missing = [
+        error for error in excinfo.value.errors() if error["type"] == "missing"
+    ]
+    assert [error["loc"] for error in missing] == [("criterionClass",)]
 
 
 def test_artifact_accepts_soft_signal_classification() -> None:
