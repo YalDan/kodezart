@@ -53,6 +53,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_CONTENT_AUDIT_WORKING_DIR` | `str` | `/tmp/kodezart-content-audit` |  | Working directory the audit session runs in. Deliberately not the cloned target repository: an auditor whose working directory is attacker-writable is not an auditor. |
 | `KODEZART_DENY_PATTERNS` | `dict[RedactionCategory, list[str]]` | `(required)` |  | JSON object mapping a redaction category to its regex pattern list. Ships empty except the credential category. The `org_private` category is REJECTED as a key: a pattern naming an organisation contains the string it names. |
 | `KODEZART_DENY_PATTERN_VERDICTS` | `dict[RedactionCategory, GateVerdict]` | `(required)` |  | JSON object mapping a redaction category to the verdict a hit in that category yields. A payload takes the max severity. |
+| `KODEZART_DISPATCH_HOLDER` | `str` | `kodezart` | min length 1 | Identity this deployment holds atomic claims under. Names the PROCESS, not the tracker account: two deployments sharing one workspace must carry different values or they cannot race. |
 | `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
 | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `float` | `300.0` | >= 10.0, <= 86400.0 | Seconds between approved-fire dispatch passes. |
 | `KODEZART_FORGE_API_BASE_URL` | `str` | `https://api.github.com` |  | Base URL for code hosting platform REST API. |

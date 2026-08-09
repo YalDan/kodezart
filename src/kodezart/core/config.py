@@ -307,6 +307,15 @@ class AppConfig(BaseSettings):
         default="tracker",
         description="Fire-queue lane tracker-originated dispatches are enqueued on.",
     )
+    dispatch_holder: str = Field(
+        default="kodezart",
+        min_length=1,
+        description=(
+            "Identity this deployment holds atomic claims under. Names the "
+            "PROCESS, not the tracker account: two deployments sharing one "
+            "workspace must carry different values or they cannot race."
+        ),
+    )
     asset_max_count: int = Field(
         default=20,
         ge=1,
