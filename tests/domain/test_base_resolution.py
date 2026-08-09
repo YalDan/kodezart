@@ -508,19 +508,70 @@ def pr_creator() -> FakePRCreator:
     return FakePRCreator()
 
 
-@pytest.fixture(autouse=True)
-def _no_forge_state_reads() -> Iterator[FakePRCreator]:
-    """Merge-state independence, asserted across every fixture in the module.
+#: Every method the forge ports answer to: ``PRCreator``, ``CIMonitor``,
+#: ``DeliveryProbe`` and the visibility resolver.  A collaborator carrying
+#: any of them is a pull-request-state read waiting to be added.
+_FORGE_METHODS: frozenset[str] = frozenset(
+    {
+        "create_pr",
+        "comment_on_pr",
+        "wait_for_checks",
+        "open_delivery_exists",
+        "resolve_visibility",
+    },
+)
 
-    The forge double is constructed for every test and handed to none of
-    them: base resolution has no forge collaborator at all, so its
-    pull-request-state readers cannot record a call.  The assertion is that
-    the count is zero AFTER the test, which a resolver that grew a forge
-    dependency would fail.
+#: The two modules the rule and its I/O half live in.
+_RESOLUTION_MODULES: tuple[Path, ...] = (
+    RESOLVER_MODULE,
+    REPO_ROOT / "src" / "kodezart" / "services" / "base_resolver.py",
+)
+
+
+def _is_forge_shaped(value: object) -> bool:
+    return any(hasattr(value, name) for name in _FORGE_METHODS)
+
+
+def test_the_forge_predicate_recognises_the_forge_double(
+    pr_creator: FakePRCreator,
+) -> None:
+    """Guards the two tests below: a predicate that never fires proves nothing."""
+    assert _is_forge_shaped(pr_creator)
+
+
+def test_the_resolver_holds_no_collaborator_that_could_read_forge_state(
+    pr_creator: FakePRCreator,
+) -> None:
+    """Merge-state independence, asserted where it can actually fail.
+
+    Under the standing ruling an open unmerged pull request is the steady
+    state of every finished lane, so pull-request state is not an input to
+    base resolution.  The check is over the resolver a production call site
+    builds — a resolver that grew a forge collaborator fails here, whatever
+    it then did with it.
     """
-    probe = FakePRCreator()
-    yield probe
-    assert probe.calls == []
+    subject = resolver(FakeTracker(), FakeGitService())
+
+    assert [value for value in vars(subject).values() if _is_forge_shaped(value)] == []
+    assert _is_forge_shaped(pr_creator)
+
+
+def test_neither_resolution_module_can_reach_the_forge_at_all() -> None:
+    """The rule is pure and its I/O half reads the tracker and git, nothing else."""
+    for module in _RESOLUTION_MODULES:
+        source = module.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                imported.add(node.module)
+        assert not [
+            name for name in imported if "github" in name or "forge" in name
+        ], module.name
+        for name in _FORGE_METHODS:
+            assert name not in source, (module.name, name)
 
 
 # ---------------------------------------------------------------------------
