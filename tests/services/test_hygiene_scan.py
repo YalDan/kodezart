@@ -26,13 +26,8 @@ from kodezart.types.domain.gating import (
     ScanResult,
 )
 
-SERVICE_SOURCE = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "kodezart"
-    / "services"
-    / "hygiene_scan.py"
-)
+SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+SERVICE_SOURCE = SRC_ROOT / "services" / "hygiene_scan.py"
 
 DESTINATION = OutboundDestination.TRACKER_COMMENT
 
@@ -175,3 +170,26 @@ def test_the_shipped_set_covers_every_hygiene_category() -> None:
 
     assert set(patterns) == set(HygieneCategory)
     assert all(patterns[category] for category in HygieneCategory)
+
+
+def test_the_scan_is_constructed_nowhere_until_its_writer_exists() -> None:
+    """A capability nothing can invoke must not be built at boot either.
+
+    The scan's subject is a frozen fire body on its way onto the tracker.
+    That write is the fire-prep pass's, and it does not exist yet — which
+    is visible in ``OutboundDestination``, whose own rule is that a member
+    is registered when its writer exists and never in advance. So there is
+    no destination the scan could honestly be called with, and a boot that
+    constructs it anyway makes an unreachable capability read as a wired
+    one. This fails the moment the construction returns, so it cannot come
+    back silently; when the fire-prep writer lands, the construction and
+    this check change together.
+    """
+    sources = {
+        path.relative_to(SRC_ROOT).as_posix(): path.read_text(encoding="utf-8")
+        for path in SRC_ROOT.rglob("*.py")
+        if path != SERVICE_SOURCE
+    }
+    builders = sorted(name for name, text in sources.items() if "HygieneScan(" in text)
+
+    assert builders == []
