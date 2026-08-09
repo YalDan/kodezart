@@ -7,7 +7,7 @@ must be derivable from the rows — so the gate cannot be lifted by editing
 the sentence that states it.
 """
 
-import re
+import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -74,17 +74,40 @@ def test_every_dimension_the_cutover_map_traces_is_on_the_checklist() -> None:
     assert _mapped_dimensions() <= named, _mapped_dimensions() - named
 
 
+def _defined_names(module: Path) -> set[str]:
+    """Every ``test_x`` and ``Class::test_x`` the module actually defines.
+
+    Built from the syntax tree rather than by searching for the leaf name,
+    because a leaf search resolves a citation whose CLASS does not exist —
+    which is how a citation naming ``TestClaims`` read as evidence while
+    the class was called something else.
+    """
+    tree = ast.parse(module.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            names.add(node.name)
+        elif isinstance(node, ast.ClassDef):
+            names.update(
+                f"{node.name}::{child.name}"
+                for child in node.body
+                if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
+            )
+    return names
+
+
 def test_every_cited_test_exists_under_the_name_it_is_cited_by() -> None:
-    """A citation pointing at nothing is worse than an open row."""
+    """A citation pointing at nothing is worse than an open row.
+
+    The whole ``::`` path is resolved — class included — so a citation is
+    evidence only when the thing it names can be run under that name.
+    """
     for citation in _cited_tests():
         assert citation.startswith("`") and citation.endswith("`"), citation
         path_part, _, name = citation.strip("`").partition("::")
         module = REPO_ROOT / path_part
         assert module.is_file(), citation
-        leaf = name.rsplit("::", maxsplit=1)[-1]
-        assert re.search(rf"def {re.escape(leaf)}\b", module.read_text("utf-8")), (
-            citation
-        )
+        assert name in _defined_names(module), citation
 
 
 def test_every_evidence_cell_is_a_citation_or_the_exact_open_literal() -> None:
