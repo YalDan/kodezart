@@ -32,6 +32,7 @@ class PromptKey(StrEnum):
     PR_DESCRIPTION = "pr_description"
     FIRE_PREP_PASS = "fire_prep_pass"
     GROOMING_PASS = "grooming_pass"
+    CONTENT_AUDIT = "content_audit"
 
 
 class PromptSetFragments(BaseModel):

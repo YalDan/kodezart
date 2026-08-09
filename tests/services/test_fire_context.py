@@ -19,7 +19,12 @@ from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import AssetFetchError
 from kodezart.services.fire_context import FireContextAssembler
-from kodezart.types.domain.gating import GateVerdict, RepoVisibility, WriterShape
+from kodezart.types.domain.gating import (
+    GateVerdict,
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+)
 from kodezart.types.domain.tracker import TrackerAsset
 from tests.fakes import FakeTracker, make_tracker_issue
 
@@ -105,7 +110,7 @@ async def test_the_session_can_read_each_fetched_asset() -> None:
 
 
 async def test_a_ticket_with_no_assets_says_so_rather_than_saying_nothing() -> None:
-    """"No assets" and "assets not fetched" must not look alike."""
+    """ "No assets" and "assets not fetched" must not look alike."""
     tracker = FakeTracker(issues=[make_tracker_issue(ISSUE, body=BODY)])
     rendered = (await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)).render()
     assert "references no assets" in rendered
@@ -163,7 +168,7 @@ async def test_a_fetch_that_outlives_the_timeout_raises_the_typed_error() -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_the_three_bounds_are_kodezart_prefixed_config_fields() -> None:
+async def test_the_three_bounds_are_kodezart_prefixed_config_fields() -> None:
     """No magic number: each bound is a named, constrained field."""
     for name in (
         "asset_max_count",
@@ -237,10 +242,11 @@ async def test_private_fixture_content_toward_a_repository_path_is_blocked() -> 
         documents={SPEC_KEY: PRIVATE_FIXTURE_CONTENT},
     )
     context = await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)
-    decision = shipped_gate().gate(
+    decision = await shipped_gate().gate(
         content=context.assets[0].content,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
     )
     assert decision.verdict is GateVerdict.BLOCKED
 
@@ -253,9 +259,10 @@ async def test_the_rendered_context_is_gated_as_a_whole_not_per_asset() -> None:
         documents={SPEC_KEY: PRIVATE_FIXTURE_CONTENT},
     )
     rendered = (await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)).render()
-    decision = shipped_gate().gate(
+    decision = await shipped_gate().gate(
         content=rendered,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
     )
     assert decision.verdict is GateVerdict.BLOCKED

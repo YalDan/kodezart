@@ -5,7 +5,11 @@ from typing import Self
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from kodezart.types.domain.gating import GateVerdict, RedactionCategory
+from kodezart.types.domain.gating import (
+    PATTERNLESS_CATEGORIES,
+    GateVerdict,
+    RedactionCategory,
+)
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.tracker import TrackerBackend
 
@@ -101,6 +105,40 @@ class AppConfig(BaseSettings):
         default=1.0,
         ge=0.1,
         description="Retry backoff initial interval in seconds.",
+    )
+    content_scan_retry_max_attempts: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        description=(
+            "Attempts a judgment content scanner makes before declaring a "
+            "timeout, rate limit or transport failure. Exhaustion BLOCKS."
+        ),
+    )
+    content_scan_retry_initial_interval: float = Field(
+        default=1.0,
+        ge=0.1,
+        description=(
+            "Initial backoff interval in seconds between content-scan "
+            "attempts."
+        ),
+    )
+    content_scan_timeout_seconds: float = Field(
+        default=120.0,
+        ge=1.0,
+        description=(
+            "Wall-clock bound on one judgment content-scan session. "
+            "Exceeding it is TIMEOUT, which BLOCKS."
+        ),
+    )
+    agentic_content_scanner_enabled: bool = Field(
+        default=False,
+        description=(
+            "Whether the judgment half of the outbound gate is registered. "
+            "Ships disabled: the mechanism ships and the policy is operator "
+            "configuration. Enabling it without an OperationConfig "
+            "private_surface description aborts boot rather than degrading."
+        ),
     )
     model: str | None = Field(
         default=None,
@@ -336,7 +374,9 @@ class AppConfig(BaseSettings):
         },
         description=(
             "JSON object mapping a redaction category to its regex pattern "
-            "list. Ships empty except the credential category."
+            "list. Ships empty except the credential category. The "
+            "org_private category is REJECTED as a key: a pattern naming an "
+            "organisation contains the string it names."
         ),
     )
     deny_pattern_verdicts: dict[RedactionCategory, GateVerdict] = Field(
@@ -346,6 +386,7 @@ class AppConfig(BaseSettings):
             RedactionCategory.EMAIL_HANDLES: GateVerdict.REDACTED,
             RedactionCategory.INFRA_ENDPOINTS: GateVerdict.BLOCKED,
             RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED,
+            RedactionCategory.ORG_PRIVATE: GateVerdict.REDACTED,
         },
         description=(
             "JSON object mapping a redaction category to the verdict a hit "
@@ -430,6 +471,30 @@ class AppConfig(BaseSettings):
                 "queue_terminal_retention_seconds "
                 f"({self.queue_terminal_retention_seconds}): a replay buffer "
                 "cannot outlive the job record that names it"
+            )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _reject_a_pattern_list_for_a_patternless_category(self) -> Self:
+        """A category describing the organisation can never carry a pattern.
+
+        Enforced rather than remembered: the deny-pattern mechanism defeats
+        itself for this class, because writing the pattern publishes the
+        string it protects.  A configuration that tries it aborts boot.
+        """
+        offenders = sorted(
+            category.value
+            for category in self.deny_patterns
+            if category in PATTERNLESS_CATEGORIES
+        )
+        if offenders:
+            msg = (
+                f"KODEZART_DENY_PATTERNS must not carry a pattern list for "
+                f"{', '.join(offenders)}: a pattern describing this "
+                f"organisation contains the string it describes, so it "
+                f"cannot live in a repository. Describe the class in "
+                f"OperationConfig.private_surface instead."
             )
             raise ValueError(msg)
         return self

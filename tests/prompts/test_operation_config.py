@@ -25,6 +25,7 @@ from kodezart.core.prompt_namespaces import (
 from kodezart.core.prompt_rendering import binding_names, free_binding_names
 from kodezart.types.domain.gating import (
     GateVerdict,
+    OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     WriterShape,
@@ -45,6 +46,13 @@ EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
 CUTOVER = REPO_ROOT / "docs" / "cutover_mapping.md"
 SET_DIR = REPO_ROOT / "src" / "kodezart" / "prompts" / "sets" / "claude-opus"
 PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+
+# Names a shipped template references from inside an ``{{#each}}`` frame
+# WITHOUT the ``this.`` root, so the renderer resolves them off the current
+# item while the static reader cannot tell them from a free binding. They are
+# members of a per-call value, never OperationConfig paths, and every helper
+# that reads templates statically has to discount them the same way.
+ITEM_SCOPED_NAMES = frozenset({"criterion", "reasoning"})
 
 # Frequency words a cadence-agnostic template may not contain: scheduling
 # lives exclusively in scheduler configuration.
@@ -105,12 +113,14 @@ def markdown_rows(heading: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_thirteen_fields_are_present_with_the_stated_types() -> None:
+def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
     """Field-by-field census: exact equality, never a subset check.
 
     Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
-    registry).  The census stays total and stays ``==``; a census loosened
-    to a containment check stops being one.
+    registry) and by ``private_surface`` under KOD-106 R2 (the operator's
+    prose description of what this operation treats as private).  The
+    census stays total and stays ``==``; a census loosened to a containment
+    check stops being one.
     """
     fields = OperationConfig.model_fields
     assert set(fields) == {
@@ -127,6 +137,7 @@ def test_all_thirteen_fields_are_present_with_the_stated_types() -> None:
         "knowledge",
         "endpoints",
         "initiatives",
+        "private_surface",
     }
     config = example_config()
     assert isinstance(config.operation_name, str)
@@ -367,7 +378,6 @@ def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
     """The declared per-call set is not allowed to drift from the templates."""
     registry = load_registry()
     operation_names = set(bindings_for(example_config()))
-    declared_item_scoped = {"criterion", "reasoning"}
     for key in PromptKey:
         names = binding_names(registry.template_for(key).body)
         unaccounted = (
@@ -375,7 +385,7 @@ def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
             - operation_names
             - PER_CALL_VARIABLE_NAMES
             - SET_FRAGMENT_NAMES
-            - declared_item_scoped
+            - ITEM_SCOPED_NAMES
         )
         unaccounted = {n for n in unaccounted if "." not in n}
         assert unaccounted == set(), f"{key.value} references {unaccounted}"
@@ -399,9 +409,9 @@ def test_pass_templates_resolve_through_the_port_and_render(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_passes_at_fourteen_keys() -> None:
+def test_claude_opus_completeness_passes_at_fifteen_keys() -> None:
     """KOD-63's completeness rule obliges the default set to supply both."""
-    assert len(PromptKey) == 14
+    assert len(PromptKey) == 15
     members = {path.stem for path in SET_DIR.glob("*.md")}
     assert members == {key.value for key in PromptKey}
 
@@ -412,7 +422,7 @@ def test_claude_opus_completeness_passes_at_fourteen_keys() -> None:
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)
-def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
+async def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
     """Zero resolved org-shaped values in repository content."""
     config = AppConfig()
     gate = PatternOutboundContentGate(
@@ -423,10 +433,11 @@ def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
         verdicts=config.deny_pattern_verdicts,
     )
     body = (SET_DIR / f"{key.value}.md").read_text(encoding="utf-8")
-    decision = gate.gate(
+    decision = await gate.gate(
         content=body,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
     )
     assert decision.verdict is GateVerdict.CLEAN, decision.categories
 
@@ -468,16 +479,25 @@ def test_all_six_named_dimensions_are_covered() -> None:
 
 
 def template_placeholders() -> set[str]:
-    """Every free name the two pass templates reference, fragments excluded.
+    """Every OPERATION-namespace name the shipped templates reference.
 
     Free: a reference an enclosing ``{{#each}}`` frame supplies is a member of
     the iterated item, not a placeholder resolving to an OperationConfig path.
+
+    Every key, not only the two pass keys: KOD-106's content-audit template
+    is the sole reader of ``private_surface``, and a mapping scoped to the
+    pass templates would call a field unreachable that a shipped template
+    demonstrably reaches.  Per-call variables, set fragments and item-scoped
+    member names are removed because none of them resolves to an
+    OperationConfig path.
     """
     registry = load_registry()
     referenced: set[str] = set()
-    for key in PASS_KEYS:
+    for key in PromptKey:
         referenced |= free_binding_names(registry.template_for(key).body)
-    return referenced - SET_FRAGMENT_NAMES
+    return (
+        referenced - SET_FRAGMENT_NAMES - PER_CALL_VARIABLE_NAMES - ITEM_SCOPED_NAMES
+    )
 
 
 def test_placeholder_mapping_is_total_in_both_directions() -> None:

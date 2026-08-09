@@ -19,6 +19,15 @@ workspace = "example-workspace"
 # Identities the agent posts under. Must not collide with a principal.
 agent_identities = ["example-agent"]
 
+# Prose describing the CLASS of thing this operation treats as private, read
+# by the judgment half of the outbound gate. A CLASS, never a list of
+# instances: an instance list stops at what the operator remembered to
+# enumerate, and writing the instances down here would publish the very
+# strings the gate exists to withhold. Omitting the field is legal and means
+# the operator has supplied no description; enabling
+# KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED without one aborts boot.
+private_surface = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
+
 # Authority is enforced by ROLE, never by name in code or templates.
 # EXACTLY ONE principal carries the approver role; validated at load.
 [[principals]]

@@ -43,6 +43,8 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "commit_subjects",
         "changeset_is_empty",
         "changeset_has_commits",
+        "content",
+        "destination",
     }
 )
 
@@ -76,6 +78,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
             for key, entry in config.records.items()
         },
         "knowledge": dict(config.knowledge),
+        "private_surface": config.private_surface,
         "endpoints": dict(config.endpoints),
         # ``target_date`` is absent on a real initiative more often than not.
         # ``{{#if}}`` treats ``None`` as absent, so the two renderings are

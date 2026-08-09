@@ -17,6 +17,7 @@ divergence-recovery path fails — in that case no state has been
 mutated (no reset, no commit-tree, no follow-up push).
 """
 
+from kodezart.adapters.pattern_outbound_gate import content_digest
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
@@ -32,7 +33,13 @@ from kodezart.types.domain.agent import (
     CommitMessageOutput,
 )
 from kodezart.types.domain.branch import BackupBranchName
-from kodezart.types.domain.gating import GateVerdict, RepoVisibility, WriterShape
+from kodezart.types.domain.gating import (
+    GateVerdict,
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+    surface_of,
+)
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
@@ -160,7 +167,7 @@ class GitChangePersister:
         full_message = await self._gated_message(
             full_message,
             visibility,
-            "commit_message",
+            OutboundDestination.COMMIT_MESSAGE,
         )
         sha = await self._git.commit(
             cwd=workspace_path,
@@ -218,7 +225,7 @@ class GitChangePersister:
         head_message_divergent = await self._gated_message(
             await self._git.head_commit_message(workspace_path),
             visibility,
-            "commit_message_divergence_replay",
+            OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY,
         )
         head_tree = await self._git.tree_of(workspace_path, head_sha)
 
@@ -272,31 +279,46 @@ class GitChangePersister:
         self,
         message: str,
         visibility: RepoVisibility,
-        writer: str,
+        destination: OutboundDestination,
     ) -> str:
         """Route a commit message through the outbound gate.
 
         Every verdict is observable: a rewritten message is never silently
         posted and a blocked one is never silently dropped.
         """
-        decision = self._gate.gate(
+        decision = await self._gate.gate(
             content=message,
             visibility=visibility,
             shape=WriterShape.PROSE,
+            destination=destination,
         )
         await self._log.ainfo(
             "outbound_content_gated",
-            writer=writer,
+            writer=destination.value,
+            surface=surface_of(destination).value,
             verdict=decision.verdict.value,
             visibility=visibility.value,
             categories=[c.value for c in decision.categories],
+            failure=None if decision.failure is None else decision.failure.value,
+            content_digest=content_digest(message),
+            hits=[
+                {
+                    "category": hit.category.value,
+                    "start": hit.start,
+                    "end": hit.end,
+                    "rationale": hit.rationale,
+                }
+                for hit in decision.hits
+            ],
         )
         if decision.verdict is GateVerdict.BLOCKED:
             msg = "Outbound content blocked before commit"
             raise OutboundContentBlockedError(
                 msg,
-                writer=writer,
+                writer=destination.value,
                 categories=[c.value for c in decision.categories],
+                failure=decision.failure,
+                hits=decision.hits,
             )
         return decision.content
 

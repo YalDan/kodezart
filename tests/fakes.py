@@ -41,10 +41,15 @@ from kodezart.types.domain.consolidation import (
     ConsolidationStatus,
 )
 from kodezart.types.domain.gating import (
+    JUDGMENT_ROUTING,
     GateDecision,
     GateVerdict,
+    OutboundDestination,
     RepoVisibility,
+    ScanFailureKind,
     ScanHit,
+    ScannerRouting,
+    ScanResult,
     WriterShape,
 )
 from kodezart.types.domain.job import JobRecord, JobState
@@ -1247,15 +1252,18 @@ class PassThroughGate:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, RepoVisibility, WriterShape]] = []
+        self.destinations: list[OutboundDestination] = []
 
-    def gate(
+    async def gate(
         self,
         *,
         content: str,
         visibility: RepoVisibility,
         shape: WriterShape,
+        destination: OutboundDestination,
     ) -> GateDecision:
         self.calls.append((content, visibility, shape))
+        self.destinations.append(destination)
         return GateDecision(verdict=GateVerdict.CLEAN, content=content)
 
 
@@ -1280,15 +1288,50 @@ class FakeVisibilityResolver:
 
 
 class FakeContentScanner:
-    """ContentScanner that reports scripted hits, for scanner-ordering tests."""
+    """ContentScanner that reports a scripted result, and counts its calls.
 
-    def __init__(self, hits: list[ScanHit]) -> None:
-        self._hits = hits
+    Scripted rather than intelligent on purpose: what the corpus measures
+    under this double is the MECHANISM around a verdict — that a reported
+    hit reaches the fold, is applied at its reported span, and resolves to
+    the right verdict for its destination.  The model itself is measured by
+    the separately-marked live target, never here.
+    """
+
+    def __init__(
+        self,
+        hits: list[ScanHit] | None = None,
+        *,
+        failure: ScanFailureKind | None = None,
+        routing: ScannerRouting | None = None,
+        hits_by_destination: dict[OutboundDestination, list[ScanHit]] | None = None,
+    ) -> None:
+        self._hits = list(hits or [])
+        self._failure = failure
+        self._hits_by_destination = hits_by_destination
+        self._routing = routing or JUDGMENT_ROUTING
         self.calls: list[str] = []
+        self.destinations: list[OutboundDestination] = []
 
-    def scan(self, content: str) -> list[ScanHit]:
+    @property
+    def routing(self) -> ScannerRouting:
+        """The routing this double declares to the gate."""
+        return self._routing
+
+    async def scan(
+        self,
+        *,
+        content: str,
+        destination: OutboundDestination,
+    ) -> ScanResult:
         self.calls.append(content)
-        return list(self._hits)
+        self.destinations.append(destination)
+        if self._failure is not None:
+            return ScanResult(failure=self._failure)
+        if self._hits_by_destination is not None:
+            return ScanResult(
+                hits=tuple(self._hits_by_destination.get(destination, [])),
+            )
+        return ScanResult(hits=tuple(self._hits))
 
 
 @asynccontextmanager

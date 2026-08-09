@@ -10,6 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 from pydantic import TypeAdapter
 
+from kodezart.adapters.pattern_outbound_gate import content_digest
 from kodezart.core.constants import (
     EVAL_PERMISSION_MODE,
     EVAL_TOOLS,
@@ -64,8 +65,10 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.gating import (
     GateVerdict,
+    OutboundDestination,
     RepoVisibility,
     WriterShape,
+    surface_of,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
@@ -382,27 +385,42 @@ class RalphWorkflowEngine:
         content: str,
         visibility: RepoVisibility,
         shape: WriterShape,
-        writer_name: str,
+        destination: OutboundDestination,
     ) -> str:
         """Route one outbound payload through the gate. BLOCKED raises."""
-        decision = self._gate.gate(
+        decision = await self._gate.gate(
             content=content,
             visibility=visibility,
             shape=shape,
+            destination=destination,
         )
         await self._log.ainfo(
             "outbound_content_gated",
-            writer=writer_name,
+            writer=destination.value,
+            surface=surface_of(destination).value,
             verdict=decision.verdict.value,
             visibility=visibility.value,
             categories=[c.value for c in decision.categories],
+            failure=None if decision.failure is None else decision.failure.value,
+            content_digest=content_digest(content),
+            hits=[
+                {
+                    "category": hit.category.value,
+                    "start": hit.start,
+                    "end": hit.end,
+                    "rationale": hit.rationale,
+                }
+                for hit in decision.hits
+            ],
         )
         if decision.verdict is GateVerdict.BLOCKED:
             msg = "Outbound content blocked before write"
             raise OutboundContentBlockedError(
                 msg,
-                writer=writer_name,
+                writer=destination.value,
                 categories=[c.value for c in decision.categories],
+                failure=decision.failure,
+                hits=decision.hits,
             )
         return decision.content
 
@@ -446,7 +464,7 @@ class RalphWorkflowEngine:
             content=output.slug,
             visibility=state["repo_visibility"],
             shape=WriterShape.IDENTIFIER,
-            writer_name="branch_name",
+            destination=OutboundDestination.BRANCH_NAME,
         )
         feature_branch = f"kodezart/{slug}-{uuid.uuid4().hex[:8]}"
         ralph_branch = generate_ralph_branch_name(feature_branch)
@@ -640,7 +658,7 @@ class RalphWorkflowEngine:
                 content=ticket.model_dump_json(indent=2, by_alias=True),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="artifact_ticket_json",
+                destination=OutboundDestination.ARTIFACT_TICKET_JSON,
             ),
             "criteria.json": await self._gated(
                 content=_CRITERIA_TA.dump_json(
@@ -649,7 +667,7 @@ class RalphWorkflowEngine:
                 ).decode(),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="artifact_criteria_json",
+                destination=OutboundDestination.ARTIFACT_CRITERIA_JSON,
             ),
         }
 
@@ -1067,13 +1085,13 @@ class RalphWorkflowEngine:
                 content=pr_output.title,
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="pr_title",
+                destination=OutboundDestination.PR_TITLE,
             ),
             body=await self._gated(
                 content=pr_output.description,
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="pr_body",
+                destination=OutboundDestination.PR_BODY,
             ),
             head=state["feature_branch"],
             base=ctx.base_branch,
@@ -1178,7 +1196,7 @@ class RalphWorkflowEngine:
             content="".join(comment_parts),
             visibility=state["repo_visibility"],
             shape=WriterShape.PROSE,
-            writer_name="pr_comment",
+            destination=OutboundDestination.PR_COMMENT,
         )
 
         try:

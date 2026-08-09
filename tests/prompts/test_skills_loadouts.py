@@ -37,6 +37,7 @@ UTILITY_KEYS = (
     PromptKey.PR_DESCRIPTION,
     PromptKey.FIRE_PREP_PASS,
     PromptKey.GROOMING_PASS,
+    PromptKey.CONTENT_AUDIT,
 )
 
 

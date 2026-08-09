@@ -2,6 +2,8 @@
 
 from collections.abc import Sequence
 
+from kodezart.types.domain.gating import ScanFailureKind, ScanHit
+
 
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
@@ -62,6 +64,13 @@ class OutboundContentBlockedError(Exception):
 
     Carries the categories that triggered the block and the writer that was
     about to run, so the workflow can surface both in its event stream.
+
+    ``failure`` is the typed reason a scanner had NO answer, and it is a
+    separate field rather than a category because "the scanner did not
+    answer" and "the scanner found something" are different states an
+    operator must be able to tell apart.  ``hits`` carries the per-span
+    rationale, without which a human can neither confirm nor overrule the
+    block — and a gate that cannot be confirmed gets worked around.
     """
 
     def __init__(
@@ -70,11 +79,17 @@ class OutboundContentBlockedError(Exception):
         *,
         writer: str,
         categories: Sequence[str],
+        failure: ScanFailureKind | None = None,
+        hits: Sequence[ScanHit] = (),
     ) -> None:
         detail = f"{message} (writer: {writer}; categories: {', '.join(categories)})"
+        if failure is not None:
+            detail = f"{detail} (scan failure: {failure.value})"
         super().__init__(detail)
         self.writer: str = writer
         self.categories: tuple[str, ...] = tuple(categories)
+        self.failure: ScanFailureKind | None = failure
+        self.hits: tuple[ScanHit, ...] = tuple(hits)
 
 
 class QueueFullError(Exception):

@@ -186,6 +186,13 @@ class OperationConfig(OperationModel):
     knowledge: dict[str, str]
     endpoints: dict[str, str]
     initiatives: list[Initiative]
+    # Prose describing the CLASS of thing this operation treats as private,
+    # never a list of instances. Prose generalizes to instances the operator
+    # never enumerated, and it lives operator-side, which together is the
+    # whole reason this is not a pattern list. ``None`` means the operator
+    # has not supplied one; the judgment scanner then refuses to register
+    # rather than registering with nothing to judge against.
+    private_surface: str | None = None
 
     @model_validator(mode="after")
     def _check_structure(self) -> Self:

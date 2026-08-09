@@ -78,6 +78,7 @@ block's own name is the mapped placeholder, and that is what the rows carry.
 | records.run_log.id | records |
 | knowledge.house_rules | knowledge |
 | endpoints.escalation | endpoints |
+| private_surface | private_surface |
 
 ## What this lane does not claim
 
