@@ -84,14 +84,11 @@ class AppConfig(BaseSettings):
         le=20,
         description="Maximum Ralph loop iterations before stopping.",
     )
-    criteria_regeneration_max_rounds: int = Field(
+    criteria_max_regeneration_rounds: int = Field(
         default=1,
         ge=0,
         le=5,
-        description=(
-            "Regeneration rounds the criteria feasibility sweep may spend on "
-            "infeasible criteria before the run halts pre-loop."
-        ),
+        description="Maximum criteria regeneration rounds after an infeasible verdict.",
     )
     max_reviews: int = Field(
         default=2,

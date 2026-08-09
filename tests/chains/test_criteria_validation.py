@@ -191,7 +191,7 @@ def _engine(
         git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
-        criteria_regeneration_max_rounds=max_rounds,
+        criteria_max_regeneration_rounds=max_rounds,
         artifact_persister=artifact_persister,
     )
 
@@ -221,17 +221,17 @@ async def _run(
 
 
 def test_regeneration_bound_is_a_named_config_field() -> None:
-    """`KODEZART_CRITERIA_REGENERATION_MAX_ROUNDS`, never a bare number."""
-    field = AppConfig.model_fields["criteria_regeneration_max_rounds"]
+    """`KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS`, never a bare number."""
+    field = AppConfig.model_fields["criteria_max_regeneration_rounds"]
     assert field.annotation is int
-    assert AppConfig().criteria_regeneration_max_rounds >= 0
+    assert AppConfig().criteria_max_regeneration_rounds >= 0
 
 
 def test_regeneration_bound_reads_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("KODEZART_CRITERIA_REGENERATION_MAX_ROUNDS", "3")
-    assert AppConfig().criteria_regeneration_max_rounds == 3
+    monkeypatch.setenv("KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS", "3")
+    assert AppConfig().criteria_max_regeneration_rounds == 3
 
 
 # ---------------------------------------------------------------------------

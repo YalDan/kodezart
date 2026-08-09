@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             pr_creator=github_api,
             ci_monitor=github_api,
             max_fix_rounds=config.max_fix_rounds,
-            criteria_regeneration_max_rounds=config.criteria_regeneration_max_rounds,
+            criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
             artifact_persister=artifact_persister,
         )
         app.state.workflow_engine = workflow_engine

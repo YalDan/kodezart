@@ -73,9 +73,12 @@ def _trajectory(*, plateaued: bool) -> LoopTrajectory:
 
 
 def test_wire_values_are_pinned_verbatim() -> None:
-    """The ten values are a wire contract — a re-point must break the build."""
+    """The eleven values are a wire contract — a re-point must break the build.
+
+    The order is the module's stated extension convention: later work
+    APPENDS, so ``criteria_infeasible`` sits last rather than first.
+    """
     assert [member.value for member in WorkflowOutcome] == [
-        "criteria_infeasible",
         "merge_divergent",
         "fix_consolidation_failed",
         "loop_plateaued",
@@ -86,6 +89,7 @@ def test_wire_values_are_pinned_verbatim() -> None:
         "ci_passed",
         "ci_not_configured",
         "ci_failed_fix_budget_exhausted",
+        "criteria_infeasible",
     ]
 
 

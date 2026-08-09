@@ -145,7 +145,7 @@ class RalphWorkflowEngine:
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
         max_fix_rounds: int = 2,
-        criteria_regeneration_max_rounds: int = 1,
+        criteria_max_regeneration_rounds: int = 1,
         artifact_persister: ArtifactPersister | None = None,
     ) -> None:
         self._service: AgentRunner = service
@@ -166,7 +166,7 @@ class RalphWorkflowEngine:
         self._pr_creator: PRCreator | None = pr_creator
         self._ci_monitor: CIMonitor | None = ci_monitor
         self._max_fix_rounds: int = max_fix_rounds
-        self._criteria_regeneration_max_rounds: int = criteria_regeneration_max_rounds
+        self._criteria_max_regeneration_rounds: int = criteria_max_regeneration_rounds
         self._artifact_persister: ArtifactPersister | None = artifact_persister
         self._retry: RetryPolicy = RetryPolicy(
             max_attempts=retry_max_attempts,
@@ -697,7 +697,7 @@ class RalphWorkflowEngine:
         targets = regeneration_targets(validation)
         rounds_used = state["criteria_regeneration_rounds"]
         bound_exhausted = (
-            bool(targets) and rounds_used >= self._criteria_regeneration_max_rounds
+            bool(targets) and rounds_used >= self._criteria_max_regeneration_rounds
         )
 
         writer(

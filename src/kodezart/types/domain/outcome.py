@@ -24,7 +24,6 @@ class WorkflowOutcome(StrEnum):
     one.
     """
 
-    criteria_infeasible = "criteria_infeasible"
     merge_divergent = "merge_divergent"
     fix_consolidation_failed = "fix_consolidation_failed"
     loop_plateaued = "loop_plateaued"
@@ -35,3 +34,4 @@ class WorkflowOutcome(StrEnum):
     ci_passed = "ci_passed"
     ci_not_configured = "ci_not_configured"
     ci_failed_fix_budget_exhausted = "ci_failed_fix_budget_exhausted"
+    criteria_infeasible = "criteria_infeasible"
