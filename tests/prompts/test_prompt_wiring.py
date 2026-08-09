@@ -36,11 +36,11 @@ from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     CriteriaValidation,
-    CriterionClassification,
+    CriterionClass,
     CriterionFailure,
     CriterionFeasibility,
+    CriterionVerdict,
     DraftedCriterion,
-    FeasibilityVerdict,
 )
 from kodezart.types.domain.prompts import (
     PromptKey,
@@ -76,11 +76,11 @@ MINTED_CRITERIA = list(
         [
             DraftedCriterion(
                 text="First criterion",
-                classification=CriterionClassification.hard_gate,
+                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text="Second criterion",
-                classification=CriterionClassification.soft_signal,
+                criterion_class=CriterionClass.soft_signal,
             ),
         ]
     )
@@ -97,7 +97,7 @@ def make_criteria(*texts: str) -> list:
             [
                 DraftedCriterion(
                     text=text,
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 )
                 for text in texts
             ]
@@ -109,12 +109,12 @@ VALIDATION = CriteriaValidation(
     verdicts=[
         CriterionFeasibility(
             criterion_id="AC-1",
-            verdict=FeasibilityVerdict.infeasible,
+            verdict=CriterionVerdict.infeasible,
             refutation="golden refutation",
         ),
         CriterionFeasibility(
             criterion_id="AC-2",
-            verdict=FeasibilityVerdict.feasible,
+            verdict=CriterionVerdict.feasible,
         ),
     ],
     conjunction=ConjunctionVerdict(satisfiable=True),

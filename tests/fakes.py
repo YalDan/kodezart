@@ -36,11 +36,11 @@ from kodezart.types.domain.consolidation import (
     ConsolidationStatus,
 )
 from kodezart.types.domain.criteria import (
-    AcceptanceCriterion,
-    CriterionClassification,
+    CriterionClass,
     CriterionFeasibility,
+    CriterionVerdict,
     DraftedCriterion,
-    FeasibilityVerdict,
+    GeneratedCriterion,
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import (
@@ -391,8 +391,8 @@ class FakeAgentExecutor:
                 session_id="fake",
                 structured_output={
                     "criteria": [
-                        {"text": "Tests pass", "classification": "hard_gate"},
-                        {"text": "No lint errors", "classification": "soft_signal"},
+                        {"text": "Tests pass", "criterionClass": "hard_gate"},
+                        {"text": "No lint errors", "criterionClass": "soft_signal"},
                     ],
                     "reasoning": "Fake criteria.",
                 },
@@ -891,15 +891,15 @@ class ScriptedFakeExecutor:
                             "criteria": [
                                 {
                                     "text": "The fix compiles without errors",
-                                    "classification": "hard_gate",
+                                    "criterionClass": "hard_gate",
                                 },
                                 {
                                     "text": "All existing tests pass",
-                                    "classification": "hard_gate",
+                                    "criterionClass": "hard_gate",
                                 },
                                 {
                                     "text": ("Linting passes with no new warnings"),
-                                    "classification": "soft_signal",
+                                    "criterionClass": "soft_signal",
                                 },
                             ],
                             "reasoning": "Generated from codebase analysis.",
@@ -948,9 +948,9 @@ DEFAULT_CRITERION_ID = "AC-1"
 
 
 def as_validated(
-    criteria: Sequence[AcceptanceCriterion],
+    criteria: Sequence[GeneratedCriterion],
     *,
-    verdict: FeasibilityVerdict = FeasibilityVerdict.feasible,
+    verdict: CriterionVerdict = CriterionVerdict.feasible,
     missing_resource: str | None = None,
 ) -> list[ValidatedCriterion]:
     """Wrap minted criteria in the post-sweep shape the loop is handed.
@@ -963,7 +963,7 @@ def as_validated(
         ValidatedCriterion(
             id=criterion.id,
             text=criterion.text,
-            classification=criterion.classification,
+            criterion_class=criterion.criterion_class,
             feasibility=CriterionFeasibility(
                 criterion_id=criterion.id,
                 verdict=verdict,
@@ -976,13 +976,13 @@ def as_validated(
 
 def make_minted_criteria(
     *texts: str,
-    classification: CriterionClassification = CriterionClassification.hard_gate,
-) -> list[AcceptanceCriterion]:
+    criterion_class: CriterionClass = CriterionClass.hard_gate,
+) -> list[GeneratedCriterion]:
     """Mint AC-n identities for *texts* the way the generation node does."""
     return list(
         mint_criteria(
             [
-                DraftedCriterion(text=text, classification=classification)
+                DraftedCriterion(text=text, criterion_class=criterion_class)
                 for text in (texts or ("Tests pass",))
             ]
         )
@@ -991,10 +991,12 @@ def make_minted_criteria(
 
 def make_criteria(
     *texts: str,
-    classification: CriterionClassification = CriterionClassification.hard_gate,
+    criterion_class: CriterionClass = CriterionClass.hard_gate,
 ) -> list[ValidatedCriterion]:
     """The dispatch shape: minted, then carrying a sweep verdict."""
-    return as_validated(make_minted_criteria(*texts, classification=classification))
+    return as_validated(
+        make_minted_criteria(*texts, criterion_class=criterion_class)
+    )
 
 
 def make_dispatched_criteria() -> list[ValidatedCriterion]:
@@ -1002,18 +1004,18 @@ def make_dispatched_criteria() -> list[ValidatedCriterion]:
     return as_validated(make_generated_criteria())
 
 
-def make_generated_criteria() -> list[AcceptanceCriterion]:
+def make_generated_criteria() -> list[GeneratedCriterion]:
     """The minted criteria the fake generator emits — the harness's own copy."""
     return list(
         mint_criteria(
             [
                 DraftedCriterion(
                     text="Tests pass",
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 ),
                 DraftedCriterion(
                     text="No lint errors",
-                    classification=CriterionClassification.soft_signal,
+                    criterion_class=CriterionClass.soft_signal,
                 ),
             ]
         )

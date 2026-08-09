@@ -29,9 +29,9 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.criteria import (
-    CriterionClassification,
+    CriterionClass,
     CriterionFeasibility,
-    FeasibilityVerdict,
+    CriterionVerdict,
     LimitArm,
     ValidatedCriterion,
 )
@@ -53,17 +53,17 @@ from tests.fakes import (
     make_prompt_provider,
 )
 
-HARD = CriterionClassification.hard_gate
-SOFT = CriterionClassification.soft_signal
+HARD = CriterionClass.hard_gate
+SOFT = CriterionClass.soft_signal
 
 
 def _pair() -> list:
     """One hard gate and one soft signal, in that order."""
     return [
-        *make_criteria("The endpoint returns 204", classification=HARD),
+        *make_criteria("The endpoint returns 204", criterion_class=HARD),
         *[
-            criterion.model_copy(update={"id": "AC-2", "classification": SOFT})
-            for criterion in make_criteria("No new lint warnings", classification=SOFT)
+            criterion.model_copy(update={"id": "AC-2", "criterionClass": SOFT})
+            for criterion in make_criteria("No new lint warnings", criterion_class=SOFT)
         ],
     ]
 
@@ -82,10 +82,10 @@ def _ungraded(
     return ValidatedCriterion(
         id=identifier,
         text="The checkpointer survives a process restart",
-        classification=HARD,
+        criterion_class=HARD,
         feasibility=CriterionFeasibility(
             criterion_id=identifier,
-            verdict=FeasibilityVerdict.unverifiable,
+            verdict=CriterionVerdict.unverifiable,
             limit_arm=LimitArm.resource_absent,
             missing_resource=resource,
         ),

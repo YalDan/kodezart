@@ -113,7 +113,7 @@ def _validated_artifact(state: WorkflowState) -> CriteriaArtifact:
 
 
 def _validated_criteria(state: WorkflowState) -> list[ValidatedCriterion]:
-    """The criteria as validated — identity, text, classification, verdict."""
+    """The criteria as validated — identity, text, class, verdict."""
     return _validated_artifact(state).criteria
 
 

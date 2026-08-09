@@ -19,29 +19,29 @@ from kodezart.domain.criteria_feasibility import (
 )
 from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
 from kodezart.types.domain.criteria import (
-    AcceptanceCriterion,
     BaseDemonstration,
     Contradiction,
     CostClaim,
     CostMeasurement,
     CriteriaArtifact,
     CriteriaValidationOutput,
-    CriterionClassification,
+    CriterionClass,
     CriterionFinding,
     CriterionFlag,
+    CriterionVerdict,
     DraftedCriterion,
-    FeasibilityVerdict,
+    GeneratedCriterion,
     LimitArm,
     RepairKind,
     StruckGround,
 )
 
 
-def _criterion(id_: str, text: str) -> AcceptanceCriterion:
-    return AcceptanceCriterion(
+def _criterion(id_: str, text: str) -> GeneratedCriterion:
+    return GeneratedCriterion(
         id=id_,
         text=text,
-        classification=CriterionClassification.hard_gate,
+        criterion_class=CriterionClass.hard_gate,
     )
 
 
@@ -73,8 +73,8 @@ def test_a_lack_that_clears_with_time_does_not_reach_feasible() -> None:
         missing_resource="the provider rate-limit window, which resets in 4 hours",
     )
     verdict = classify_finding(finding)
-    assert verdict.verdict is not FeasibilityVerdict.feasible
-    assert verdict.verdict is FeasibilityVerdict.unverifiable
+    assert verdict.verdict is not CriterionVerdict.feasible
+    assert verdict.verdict is CriterionVerdict.unverifiable
     assert verdict.missing_resource is not None
     assert verdict.limit_arm is LimitArm.resource_absent
 
@@ -84,7 +84,7 @@ def test_a_lack_that_clears_with_time_does_not_reach_feasible() -> None:
 # ---------------------------------------------------------------------------
 
 _CLASSIFICATION_TABLE: list[
-    tuple[str, CriterionFinding, FeasibilityVerdict, LimitArm, list[CriterionFlag]]
+    tuple[str, CriterionFinding, CriterionVerdict, LimitArm, list[CriterionFlag]]
 ] = [
     (
         "class-1 structurally impossible: lint boundary forbids the export",
@@ -96,7 +96,7 @@ _CLASSIFICATION_TABLE: list[
                 "importing the demanded export"
             ),
         ),
-        FeasibilityVerdict.infeasible,
+        CriterionVerdict.infeasible,
         LimitArm.not_a_limit,
         [],
     ),
@@ -107,7 +107,7 @@ _CLASSIFICATION_TABLE: list[
             smallest_repair=RepairKind.criterion_text,
             refutation="no such binding is declared anywhere in the target repo",
         ),
-        FeasibilityVerdict.infeasible,
+        CriterionVerdict.infeasible,
         LimitArm.not_a_limit,
         [],
     ),
@@ -121,7 +121,7 @@ _CLASSIFICATION_TABLE: list[
                 satisfied_at_base=True,
             ),
         ),
-        FeasibilityVerdict.feasible,
+        CriterionVerdict.feasible,
         LimitArm.not_a_limit,
         [CriterionFlag.vacuous_at_base],
     ),
@@ -132,7 +132,7 @@ _CLASSIFICATION_TABLE: list[
             smallest_repair=RepairKind.none,
             pinned_literals=["src/kodezart/core/config.py", "exactly 3 occurrences"],
         ),
-        FeasibilityVerdict.feasible,
+        CriterionVerdict.feasible,
         LimitArm.not_a_limit,
         [CriterionFlag.literal_pinning],
     ),
@@ -143,7 +143,7 @@ _CLASSIFICATION_TABLE: list[
             smallest_repair=RepairKind.criterion_text,
             refutation="measures scope against trunk rather than the recorded base",
         ),
-        FeasibilityVerdict.infeasible,
+        CriterionVerdict.infeasible,
         LimitArm.not_a_limit,
         [],
     ),
@@ -153,7 +153,7 @@ _CLASSIFICATION_TABLE: list[
             criterion_id="AC-1",
             smallest_repair=RepairKind.none,
         ),
-        FeasibilityVerdict.feasible,
+        CriterionVerdict.feasible,
         LimitArm.not_a_limit,
         [],
     ),
@@ -164,7 +164,7 @@ _CLASSIFICATION_TABLE: list[
             smallest_repair=RepairKind.environment_supply,
             missing_resource="a PostgreSQL server reachable from the runner",
         ),
-        FeasibilityVerdict.unverifiable,
+        CriterionVerdict.unverifiable,
         LimitArm.resource_absent,
         [],
     ),
@@ -176,7 +176,7 @@ _CLASSIFICATION_TABLE: list[
             smallest_repair=RepairKind.criterion_text,
             refutation="the vendored driver exposes no such selector API at base",
         ),
-        FeasibilityVerdict.infeasible,
+        CriterionVerdict.infeasible,
         LimitArm.not_a_limit,
         [],
     ),
@@ -187,7 +187,7 @@ _CLASSIFICATION_TABLE: list[
             smallest_repair=RepairKind.environment_supply,
             missing_resource="an X display for the headed browser session",
         ),
-        FeasibilityVerdict.unverifiable,
+        CriterionVerdict.unverifiable,
         LimitArm.resource_absent,
         [],
     ),
@@ -201,7 +201,7 @@ _CLASSIFICATION_TABLE: list[
                 assertion="demonstrating this would take hours of compute",
             ),
         ),
-        FeasibilityVerdict.feasible,
+        CriterionVerdict.feasible,
         LimitArm.not_a_limit,
         [],
     ),
@@ -215,7 +215,7 @@ _CLASSIFICATION_TABLE: list[
                 measurement=CostMeasurement(observed="11s wall clock", affordable=True),
             ),
         ),
-        FeasibilityVerdict.feasible,
+        CriterionVerdict.feasible,
         LimitArm.not_a_limit,
         [],
     ),
@@ -226,7 +226,7 @@ _CLASSIFICATION_TABLE: list[
             smallest_repair=RepairKind.environment_supply,
             missing_resource="the daily API quota the demonstration consumes",
         ),
-        FeasibilityVerdict.unverifiable,
+        CriterionVerdict.unverifiable,
         LimitArm.resource_absent,
         [],
     ),
@@ -244,7 +244,7 @@ _CLASSIFICATION_TABLE: list[
                 ),
             ),
         ),
-        FeasibilityVerdict.unverifiable,
+        CriterionVerdict.unverifiable,
         LimitArm.uneconomic,
         [],
     ),
@@ -259,7 +259,7 @@ _CLASSIFICATION_TABLE: list[
 def test_classification_table(
     label: str,
     finding: CriterionFinding,
-    expected_verdict: FeasibilityVerdict,
+    expected_verdict: CriterionVerdict,
     expected_arm: LimitArm,
     expected_flags: list[CriterionFlag],
 ) -> None:
@@ -278,8 +278,8 @@ def test_unverifiable_is_never_coerced_to_a_pass() -> None:
         missing_resource="a PostgreSQL server reachable from the runner",
     )
     verdict = classify_finding(finding)
-    assert verdict.verdict is FeasibilityVerdict.unverifiable
-    assert verdict.verdict is not FeasibilityVerdict.feasible
+    assert verdict.verdict is CriterionVerdict.unverifiable
+    assert verdict.verdict is not CriterionVerdict.feasible
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +323,7 @@ def test_a_demonstration_that_failed_at_base_flags_nothing() -> None:
             ),
         )
     )
-    assert verdict.verdict is FeasibilityVerdict.feasible
+    assert verdict.verdict is CriterionVerdict.feasible
     assert verdict.flags == []
 
 
@@ -355,11 +355,11 @@ def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> No
         [
             DraftedCriterion(
                 text="`AppConfig` exposes a `max_iterations` field.",
-                classification=CriterionClassification.hard_gate,
+                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text="The new module is importable from `kodezart.domain`.",
-                classification=CriterionClassification.hard_gate,
+                criterion_class=CriterionClass.hard_gate,
             ),
         ]
     )
@@ -380,15 +380,15 @@ def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> No
     validation = sweep(criteria, output)
     artifact = build_artifact(criteria, validation)
 
-    assert validation.verdicts[0].verdict is FeasibilityVerdict.feasible
+    assert validation.verdicts[0].verdict is CriterionVerdict.feasible
     assert validation.verdicts[0].flags == [CriterionFlag.vacuous_at_base]
     assert regeneration_targets(validation) == ()
     assert demands_regeneration(validation) is False
 
     flagged, untouched = artifact.criteria
-    assert flagged.classification is CriterionClassification.soft_signal
+    assert flagged.criterion_class is CriterionClass.soft_signal
     assert flagged.text == criteria[0].text
-    assert untouched.classification is CriterionClassification.hard_gate
+    assert untouched.criterion_class is CriterionClass.hard_gate
 
 
 def test_pinned_literals_downgrade_the_same_way() -> None:
@@ -397,7 +397,7 @@ def test_pinned_literals_downgrade_the_same_way() -> None:
         [
             DraftedCriterion(
                 text="`src/kodezart/domain/criteria.py` contains 4 public functions.",
-                classification=CriterionClassification.hard_gate,
+                criterion_class=CriterionClass.hard_gate,
             )
         ]
     )
@@ -415,9 +415,9 @@ def test_pinned_literals_downgrade_the_same_way() -> None:
     )
     artifact = build_artifact(criteria, validation)
 
-    assert validation.verdicts[0].verdict is FeasibilityVerdict.feasible
+    assert validation.verdicts[0].verdict is CriterionVerdict.feasible
     assert regeneration_targets(validation) == ()
-    assert artifact.criteria[0].classification is CriterionClassification.soft_signal
+    assert artifact.criteria[0].criterion_class is CriterionClass.soft_signal
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +465,7 @@ def test_unmeasured_cost_claim_is_struck_and_recorded() -> None:
             cost_claim=CostClaim(assertion="too expensive to demonstrate"),
         )
     )
-    assert verdict.verdict is not FeasibilityVerdict.infeasible
+    assert verdict.verdict is not CriterionVerdict.infeasible
     assert verdict.struck_grounds == [StruckGround.unmeasured_cost]
 
 
@@ -480,7 +480,7 @@ def test_measured_affordable_cost_leaves_the_criterion_feasible() -> None:
             ),
         )
     )
-    assert verdict.verdict is FeasibilityVerdict.feasible
+    assert verdict.verdict is CriterionVerdict.feasible
     assert verdict.struck_grounds == [StruckGround.affordable_cost]
 
 
@@ -517,21 +517,21 @@ def test_environment_side_repair_without_a_named_resource_raises() -> None:
 
 
 def _fault_line_pair() -> tuple[
-    tuple[AcceptanceCriterion, ...],
+    tuple[GeneratedCriterion, ...],
     CriteriaValidationOutput,
 ]:
     criteria = mint_criteria(
         [
             DraftedCriterion(
                 text="The exported symbol `Foo` is importable from `app.api`.",
-                classification=CriterionClassification.hard_gate,
+                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text=(
                     "A round-trip through the  persistence layer preserves "
                     'the record\\\'s "id" field verbatim.'
                 ),
-                classification=CriterionClassification.hard_gate,
+                criterion_class=CriterionClass.hard_gate,
             ),
         ]
     )
@@ -567,11 +567,11 @@ def test_fault_line_pair_routes_one_arm_and_leaves_the_other_untouched() -> None
     validation = sweep(criteria, output)
     by_id = {v.criterion_id: v for v in validation.verdicts}
 
-    assert by_id["AC-1"].verdict is FeasibilityVerdict.infeasible
+    assert by_id["AC-1"].verdict is CriterionVerdict.infeasible
     assert by_id["AC-1"].refutation is not None
     assert "lint boundary" in by_id["AC-1"].refutation
 
-    assert by_id["AC-2"].verdict is FeasibilityVerdict.unverifiable
+    assert by_id["AC-2"].verdict is CriterionVerdict.unverifiable
     assert (
         by_id["AC-2"].missing_resource
         == "a PostgreSQL server reachable from the runner"
@@ -602,7 +602,7 @@ def test_unverifiable_only_set_consumes_no_regeneration_round() -> None:
     assert regeneration_targets(validation) == ()
     assert demands_regeneration(validation) is False
     by_id = {v.criterion_id: v for v in validation.verdicts}
-    assert by_id["AC-2"].verdict is FeasibilityVerdict.unverifiable
+    assert by_id["AC-2"].verdict is CriterionVerdict.unverifiable
     assert by_id["AC-2"].missing_resource is not None
 
 
@@ -616,15 +616,15 @@ def test_jointly_unsatisfiable_set_names_the_minimal_conflicting_subset() -> Non
         [
             DraftedCriterion(
                 text="`handler.py` exports exactly one public function.",
-                classification=CriterionClassification.hard_gate,
+                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text="`handler.py` exports both `read` and `write` publicly.",
-                classification=CriterionClassification.hard_gate,
+                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text="`handler.py` carries a module docstring.",
-                classification=CriterionClassification.soft_signal,
+                criterion_class=CriterionClass.soft_signal,
             ),
         ]
     )
@@ -648,7 +648,7 @@ def test_jointly_unsatisfiable_set_names_the_minimal_conflicting_subset() -> Non
 
     validation = sweep(criteria, output)
 
-    assert all(v.verdict is FeasibilityVerdict.feasible for v in validation.verdicts), (
+    assert all(v.verdict is CriterionVerdict.feasible for v in validation.verdicts), (
         "each criterion is individually feasible"
     )
     assert validation.conjunction.satisfiable is False
@@ -715,11 +715,11 @@ def test_ids_are_minted_in_emission_order() -> None:
     criteria = mint_criteria(
         [
             DraftedCriterion(
-                text="a", classification=CriterionClassification.hard_gate
+                text="a", criterion_class=CriterionClass.hard_gate
             ),
             DraftedCriterion(
                 text="b",
-                classification=CriterionClassification.soft_signal,
+                criterion_class=CriterionClass.soft_signal,
             ),
         ]
     )
@@ -746,9 +746,9 @@ def test_classification_round_trips_under_its_camel_case_alias() -> None:
     artifact = build_artifact(criteria, sweep(criteria, output))
     encoded = artifact.model_dump_json(by_alias=True)
 
-    assert '"classification":"hard_gate"' in encoded.replace(", ", ",")
+    assert '"criterionClass":"hard_gate"' in encoded.replace(", ", ",")
     restored = CriteriaArtifact.model_validate_json(encoded)
-    assert restored.criteria[0].classification is CriterionClassification.hard_gate
+    assert restored.criteria[0].criterion_class is CriterionClass.hard_gate
 
 
 def test_artifact_accepts_soft_signal_classification() -> None:
@@ -756,7 +756,7 @@ def test_artifact_accepts_soft_signal_classification() -> None:
         [
             DraftedCriterion(
                 text="grep finds no new `# noqa` on changed lines",
-                classification=CriterionClassification.soft_signal,
+                criterion_class=CriterionClass.soft_signal,
             ),
         ]
     )
@@ -769,4 +769,4 @@ def test_artifact_accepts_soft_signal_classification() -> None:
     restored = CriteriaArtifact.model_validate_json(
         artifact.model_dump_json(by_alias=True),
     )
-    assert restored.criteria[0].classification is CriterionClassification.soft_signal
+    assert restored.criteria[0].criterion_class is CriterionClass.soft_signal

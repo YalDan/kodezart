@@ -16,11 +16,11 @@ from kodezart.types.domain.base_spec import BaseInput, BaseRefRole
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
-    AcceptanceCriterion,
     CriteriaValidation,
     CriteriaValidationOutput,
     CriterionId,
     DraftedCriterion,
+    GeneratedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -495,7 +495,7 @@ class WorkflowCriteriaEvent(AgentEvent):
     """Emitted after acceptance criteria are generated from ticket analysis."""
 
     type: Literal["workflow_criteria"] = "workflow_criteria"
-    criteria: list[AcceptanceCriterion]
+    criteria: list[GeneratedCriterion]
     reasoning: str
 
 

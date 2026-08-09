@@ -39,7 +39,6 @@ from collections.abc import Sequence
 
 from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
 from kodezart.types.domain.criteria import (
-    AcceptanceCriterion,
     ConjunctionVerdict,
     Contradiction,
     CostClaim,
@@ -49,8 +48,9 @@ from kodezart.types.domain.criteria import (
     CriterionFeasibility,
     CriterionFinding,
     CriterionFlag,
-    FeasibilityVerdict,
+    CriterionVerdict,
     ForbiddenCriterionClass,
+    GeneratedCriterion,
     LimitArm,
     RepairKind,
     StruckGround,
@@ -125,7 +125,7 @@ def classify_finding(finding: CriterionFinding) -> CriterionFeasibility:
             raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
         return CriterionFeasibility(
             criterion_id=finding.criterion_id,
-            verdict=FeasibilityVerdict.infeasible,
+            verdict=CriterionVerdict.infeasible,
             limit_arm=LimitArm.not_a_limit,
             refutation=finding.refutation,
             struck_grounds=struck,
@@ -160,7 +160,7 @@ def _classify_criterion_side(
     if not _blank(finding.refutation):
         return CriterionFeasibility(
             criterion_id=finding.criterion_id,
-            verdict=FeasibilityVerdict.infeasible,
+            verdict=CriterionVerdict.infeasible,
             limit_arm=LimitArm.not_a_limit,
             refutation=finding.refutation,
             struck_grounds=struck,
@@ -179,7 +179,7 @@ def _classify_criterion_side(
     # the criterion stands unrefuted and its text is untouched.
     return CriterionFeasibility(
         criterion_id=finding.criterion_id,
-        verdict=FeasibilityVerdict.feasible,
+        verdict=CriterionVerdict.feasible,
         limit_arm=LimitArm.not_a_limit,
         struck_grounds=struck,
         flags=flags,
@@ -200,7 +200,7 @@ def _classify_environment_side(
     )
     return CriterionFeasibility(
         criterion_id=finding.criterion_id,
-        verdict=FeasibilityVerdict.unverifiable,
+        verdict=CriterionVerdict.unverifiable,
         limit_arm=arm,
         missing_resource=finding.missing_resource,
         cost_measurement=surviving_cost,
@@ -223,7 +223,7 @@ def _classify_no_repair(
         raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
     return CriterionFeasibility(
         criterion_id=finding.criterion_id,
-        verdict=FeasibilityVerdict.feasible,
+        verdict=CriterionVerdict.feasible,
         limit_arm=LimitArm.not_a_limit,
         struck_grounds=struck,
         flags=flags,
@@ -250,7 +250,7 @@ def minimal_conflicting_subset(
 
 
 def reconcile(
-    criteria: Sequence[AcceptanceCriterion],
+    criteria: Sequence[GeneratedCriterion],
     output: CriteriaValidationOutput,
 ) -> tuple[CriterionFinding, ...]:
     """Pair findings to dispatched ids 1:1. Raises on any correspondence hole."""
@@ -280,7 +280,7 @@ def reconcile(
 
 
 def sweep(
-    criteria: Sequence[AcceptanceCriterion],
+    criteria: Sequence[GeneratedCriterion],
     output: CriteriaValidationOutput,
 ) -> CriteriaValidation:
     """Reconcile, classify, and fold the conjunction check into one report."""
@@ -310,7 +310,7 @@ def regeneration_targets(validation: CriteriaValidation) -> tuple[str, ...]:
     targets = [
         verdict.criterion_id
         for verdict in validation.verdicts
-        if verdict.verdict is FeasibilityVerdict.infeasible
+        if verdict.verdict is CriterionVerdict.infeasible
     ]
     for id_ in validation.conjunction.conflicting_ids:
         if id_ not in targets:

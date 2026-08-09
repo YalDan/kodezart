@@ -28,7 +28,7 @@ from kodezart.types.domain.base_spec import (
     BaseSpec,
     trunk_base,
 )
-from kodezart.types.domain.criteria import FeasibilityVerdict, ValidatedCriterion
+from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
@@ -919,7 +919,7 @@ async def test_the_evaluation_prompt_states_each_criterion_verdict() -> None:
     """
     criteria = as_validated(
         make_minted_criteria("Checkpoints survive a restart"),
-        verdict=FeasibilityVerdict.unverifiable,
+        verdict=CriterionVerdict.unverifiable,
         missing_resource="a PostgreSQL server reachable from the runner",
     )
     executor = FakeAgentExecutor(

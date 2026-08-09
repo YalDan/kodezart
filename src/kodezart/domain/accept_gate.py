@@ -1,11 +1,11 @@
-"""The accept gate's arithmetic — computed from classification, never judged.
+"""The accept gate's arithmetic — computed from the class, never judged.
 
 The gate reads two things: whether a criterion passed, and which
 partition the sweep left it in.  A hard gate that failed rejects the run.
 A soft signal that failed cannot reject it — that is what the partition
 MEANS — but it must not vanish either, so it ships with a flag.
 
-No model call happens here and none may: the classification was decided
+No model call happens here and none may: the class was decided
 at generation time and possibly forced by the sweep, and the pass/fail
 was decided by the evaluator.  This module only counts.
 """
@@ -16,8 +16,8 @@ from kodezart.domain.errors import UngroundedVerdictError
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem, SherlockFlag
 from kodezart.types.domain.agent import CriterionResult
 from kodezart.types.domain.criteria import (
-    CriterionClassification,
-    FeasibilityVerdict,
+    CriterionClass,
+    CriterionVerdict,
     ValidatedCriterion,
 )
 
@@ -31,7 +31,7 @@ def is_graded(criterion: ValidatedCriterion) -> bool:
     text.  There is no third seat, so it takes none: not in the numerator,
     not in the denominator.
     """
-    return criterion.feasibility.verdict is not FeasibilityVerdict.unverifiable
+    return criterion.feasibility.verdict is not CriterionVerdict.unverifiable
 
 
 def ungraded(criteria: Sequence[ValidatedCriterion]) -> list[ValidatedCriterion]:
@@ -88,7 +88,7 @@ def accept_verdict(
     """
     failures = _failures(criteria, results)
     if any(
-        criterion.classification is CriterionClassification.hard_gate
+        criterion.criterion_class is CriterionClass.hard_gate
         for criterion, _ in failures
     ):
         return AcceptVerdict.rejected

@@ -1053,11 +1053,11 @@ class _SequentialReviewExecutor:
                                 "criteria": [
                                     {
                                         "text": "Tests pass",
-                                        "classification": "hard_gate",
+                                        "criterionClass": "hard_gate",
                                     },
                                     {
                                         "text": "No lint errors",
-                                        "classification": "soft_signal",
+                                        "criterionClass": "soft_signal",
                                     },
                                 ],
                                 "reasoning": "Generated.",

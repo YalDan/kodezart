@@ -2,7 +2,7 @@
 
 A criterion stops being a bare string here.  It carries a stable identity
 (``AC-n``, minted once at generation time), the hard-gate/soft-signal
-classification the generator assigns, and — after the feasibility sweep —
+``criterion_class`` the generator assigns, and — after the sweep —
 a three-state verdict with the evidence that produced it.
 
 The three-state vocabulary is load-bearing and is never collapsed to a
@@ -40,14 +40,14 @@ CRITERION_ID_PATTERN = r"^AC-[1-9][0-9]*$"
 CriterionId = NewType("CriterionId", str)
 
 
-class CriterionClassification(StrEnum):
+class CriterionClass(StrEnum):
     """Whether a criterion is a behavior contract or a shape signal."""
 
     hard_gate = "hard_gate"
     soft_signal = "soft_signal"
 
 
-class FeasibilityVerdict(StrEnum):
+class CriterionVerdict(StrEnum):
     """Three-state feasibility outcome. Never collapsed to a boolean."""
 
     feasible = "feasible"
@@ -171,14 +171,14 @@ class CostClaim(CamelCaseModel):
     measurement: CostMeasurement | None = None
 
 
-class AcceptanceCriterion(CamelCaseModel):
-    """One criterion with a stable identity and a classification."""
+class GeneratedCriterion(CamelCaseModel):
+    """One criterion with a stable identity and a class."""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     text: str = Field(min_length=1)
-    classification: CriterionClassification
+    criterion_class: CriterionClass
 
 
 class DraftedCriterion(CamelCaseModel):
@@ -187,7 +187,7 @@ class DraftedCriterion(CamelCaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     text: str = Field(min_length=1)
-    classification: CriterionClassification
+    criterion_class: CriterionClass
 
 
 class CriterionFinding(CamelCaseModel):
@@ -233,7 +233,7 @@ class CriterionFeasibility(CamelCaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
-    verdict: FeasibilityVerdict
+    verdict: CriterionVerdict
     limit_arm: LimitArm = LimitArm.not_a_limit
     refutation: str | None = None
     missing_resource: str | None = None
@@ -264,13 +264,13 @@ class CriteriaValidation(CamelCaseModel):
 
 
 class ValidatedCriterion(CamelCaseModel):
-    """One persisted criterion: identity, text, classification, verdict."""
+    """One persisted criterion: identity, text, class, verdict."""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     text: str = Field(min_length=1)
-    classification: CriterionClassification
+    criterion_class: CriterionClass
     feasibility: CriterionFeasibility
 
 
@@ -278,7 +278,7 @@ class CriteriaArtifact(CamelCaseModel):
     """The ``.kodezart/criteria.json`` document.
 
     Replaces the bare ``TypeAdapter[list[str]]`` the persister used to
-    dump: downstream consumers read identity, classification and verdict
+    dump: downstream consumers read identity, class and verdict
     instead of guessing from position in a list.
     """
 

@@ -4,7 +4,7 @@
 {{task_md}}
 
 ## Acceptance Criteria{{#each acceptance_criteria}}
-- {{this.id}} [{{this.classification}}] {{this.text}}{{/each}}
+- {{this.id}} [{{this.criterion_class}}] {{this.text}}{{/each}}
 
 ## Implementation Stats
 - Total iterations: {{total_iterations}}

@@ -12,13 +12,13 @@ from collections.abc import Mapping, Sequence
 
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
-    AcceptanceCriterion,
     CriteriaArtifact,
     CriteriaValidation,
-    CriterionClassification,
+    CriterionClass,
     CriterionFeasibility,
     CriterionId,
     DraftedCriterion,
+    GeneratedCriterion,
     ValidatedCriterion,
 )
 
@@ -44,45 +44,45 @@ def mint_criterion_id(index: int) -> CriterionId:
 
 def mint_criteria(
     drafted: Sequence[DraftedCriterion],
-) -> tuple[AcceptanceCriterion, ...]:
+) -> tuple[GeneratedCriterion, ...]:
     """Assign ``AC-n`` identities to *drafted* in emission order."""
     return tuple(
-        AcceptanceCriterion(
+        GeneratedCriterion(
             id=mint_criterion_id(index),
             text=criterion.text,
-            classification=criterion.classification,
+            criterion_class=criterion.criterion_class,
         )
         for index, criterion in enumerate(drafted, start=1)
     )
 
 
 def criteria_by_id(
-    criteria: Sequence[AcceptanceCriterion],
-) -> Mapping[CriterionId, AcceptanceCriterion]:
+    criteria: Sequence[GeneratedCriterion],
+) -> Mapping[CriterionId, GeneratedCriterion]:
     """Index *criteria* by identity — the harness's own text, by id."""
     return {criterion.id: criterion for criterion in criteria}
 
 
-def effective_classification(
-    criterion: AcceptanceCriterion,
+def effective_criterion_class(
+    criterion: GeneratedCriterion,
     feasibility: CriterionFeasibility,
-) -> CriterionClassification:
-    """The classification a criterion carries AFTER the sweep.
+) -> CriterionClass:
+    """The ``criterion_class`` a criterion carries AFTER the sweep.
 
     A flagged criterion is forced to ``soft_signal``: a criterion the base
     already satisfies, or one pinned to literals, cannot gate anything, so
     it must not sit in the hard-gate partition the accept gate's
     arithmetic reads.  The downgrade is computed from the sweep's flags
     and is never a judgement; an unflagged criterion keeps the
-    classification the generator assigned, byte for byte.
+    class the generator assigned, byte for byte.
     """
     if feasibility.flags:
-        return CriterionClassification.soft_signal
-    return criterion.classification
+        return CriterionClass.soft_signal
+    return criterion.criterion_class
 
 
 def build_artifact(
-    criteria: Sequence[AcceptanceCriterion],
+    criteria: Sequence[GeneratedCriterion],
     validation: CriteriaValidation,
 ) -> CriteriaArtifact:
     """Fold criteria and their sweep verdicts into the persisted document."""
@@ -94,7 +94,7 @@ def build_artifact(
             ValidatedCriterion(
                 id=criterion.id,
                 text=criterion.text,
-                classification=effective_classification(
+                criterion_class=effective_criterion_class(
                     criterion,
                     verdicts[criterion.id],
                 ),

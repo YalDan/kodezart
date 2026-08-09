@@ -20,10 +20,10 @@ from kodezart.domain.prompt_variables import render_validation_findings
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     CriteriaValidation,
-    CriterionClassification,
+    CriterionClass,
     CriterionFeasibility,
+    CriterionVerdict,
     DraftedCriterion,
-    FeasibilityVerdict,
 )
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.test_prompt_wiring import load_registry
@@ -103,12 +103,12 @@ def test_exhaustive_switch_criteria_are_cross_checked_against_the_type(
 
 
 def test_every_criterion_is_classified_hard_gate_or_soft_signal() -> None:
-    """KOD-69 deliverable 2: the classification is produced, not inferred."""
+    """KOD-69 deliverable 2: the class is produced, not inferred."""
     rendered = _render(PATTERN_3_TICKET)
     assert "HARD GATE OR SOFT SIGNAL" in rendered
     assert "`hard_gate`" in rendered
     assert "`soft_signal`" in rendered
-    assert "`classification`" in rendered
+    assert "`criterionClass`" in rendered
 
 
 def test_the_self_check_no_longer_claims_to_be_the_only_defence() -> None:
@@ -132,11 +132,11 @@ def test_a_regeneration_round_inlines_only_the_amended_criteria() -> None:
             [
                 DraftedCriterion(
                     text="`Foo` is importable from `app.api`.",
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 ),
                 DraftedCriterion(
                     text="A record round-trips through the store.",
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 ),
             ]
         )
@@ -145,12 +145,12 @@ def test_a_regeneration_round_inlines_only_the_amended_criteria() -> None:
         verdicts=[
             CriterionFeasibility(
                 criterion_id="AC-1",
-                verdict=FeasibilityVerdict.infeasible,
+                verdict=CriterionVerdict.infeasible,
                 refutation="the lint boundary forbids the export",
             ),
             CriterionFeasibility(
                 criterion_id="AC-2",
-                verdict=FeasibilityVerdict.unverifiable,
+                verdict=CriterionVerdict.unverifiable,
                 missing_resource="a PostgreSQL server",
             ),
         ],
@@ -174,7 +174,7 @@ def test_a_clean_sweep_renders_no_findings_block() -> None:
             [
                 DraftedCriterion(
                     text="`Foo` is importable from `app.api`.",
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 ),
             ]
         )
@@ -183,7 +183,7 @@ def test_a_clean_sweep_renders_no_findings_block() -> None:
         verdicts=[
             CriterionFeasibility(
                 criterion_id="AC-1",
-                verdict=FeasibilityVerdict.feasible,
+                verdict=CriterionVerdict.feasible,
             ),
         ],
         conjunction=ConjunctionVerdict(satisfiable=True),
@@ -202,11 +202,11 @@ def _render_validator(base_ref: str = "main") -> str:
             [
                 DraftedCriterion(
                     text="`Foo` is importable from `app.api`.",
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 ),
                 DraftedCriterion(
                     text="No new `# noqa` appears on changed lines.",
-                    classification=CriterionClassification.soft_signal,
+                    criterion_class=CriterionClass.soft_signal,
                 ),
             ]
         )

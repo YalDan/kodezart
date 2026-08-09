@@ -52,7 +52,7 @@ After all five Watsons return, you do the work no Watson could do alone:
 
 8. SCOPE CRITERIA NAME THEIR BASE. This lane's comparison base is `main`, and it is not necessarily the repository's trunk: a lane built on another lane's work inherits that work, and the inherited files are NOT this lane's changes. Any criterion about which files a change touches — a scope criterion, a no-touch criterion, a "modifies only" criterion — must state `main` as the base it is measured against, in the criterion's own text. A bare `git diff`, a `git diff --name-only` with no base, or any wording that leaves the base to whoever grades it is FORBIDDEN: the grader will pick a base of its own, and picking the trunk convicts this lane of every edit it inherited. Never write `main` or `trunk` as the base unless `main` is literally that.
 
-9. HARD GATE OR SOFT SIGNAL. Classify every criterion as you emit it. `hard_gate` — a behavior contract: what a caller, a downstream system or a reader observes differently once the problem is solved. `soft_signal` — a shape check that stands in for a behavior: a count, a literal pattern, a grep shape, a naming convention. The classification is machine-read downstream and decides what a failure costs, so classify by what the criterion MEASURES, not by how important it feels.
+9. HARD GATE OR SOFT SIGNAL. Classify every criterion as you emit it. `hard_gate` — a behavior contract: what a caller, a downstream system or a reader observes differently once the problem is solved. `soft_signal` — a shape check that stands in for a behavior: a count, a literal pattern, a grep shape, a naming convention. The `criterionClass` is machine-read downstream and decides what a failure costs, so classify by what the criterion MEASURES, not by how important it feels.
 
 Do NOT short-circuit. Even if one Watson flags a fatal gap, still wait for all five so the final criteria list covers every dimension — and so you can do the cross-reference pass that is the entire reason you exist.
 
@@ -75,4 +75,4 @@ Golden context
 golden description
 golden rationale
 
-Output ONLY the structured JSON: a `criteria` array whose every entry carries the criterion `text` and its `classification` (`hard_gate` or `soft_signal`), plus your `reasoning`.
+Output ONLY the structured JSON: a `criteria` array whose every entry carries the criterion `text` and its `criterionClass` (`hard_gate` or `soft_signal`), plus your `reasoning`.

@@ -31,8 +31,8 @@ from kodezart.types.domain.base_spec import (
 )
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
-    CriterionClassification,
-    FeasibilityVerdict,
+    CriterionClass,
+    CriterionVerdict,
     LimitArm,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -130,14 +130,14 @@ class ValidatorScriptExecutor:
                 "criteria": [
                     {
                         "text": "`Foo` is importable from `app.api`.",
-                        "classification": "hard_gate",
+                        "criterionClass": "hard_gate",
                     },
                     {
                         "text": (
                             "A record round-trips through the store "
                             'preserving its  "id" verbatim.'
                         ),
-                        "classification": "hard_gate",
+                        "criterionClass": "hard_gate",
                     },
                 ],
                 "reasoning": "Generated from codebase analysis.",
@@ -276,7 +276,7 @@ async def test_permanently_infeasible_criteria_halt_before_the_loop() -> None:
     # The sweep verdicts ride the report payload.
     assert complete.criteria_validation is not None
     verdicts = {v.criterion_id: v for v in complete.criteria_validation.verdicts}
-    assert verdicts["AC-1"].verdict is FeasibilityVerdict.infeasible
+    assert verdicts["AC-1"].verdict is CriterionVerdict.infeasible
     assert verdicts["AC-1"].refutation is not None
     assert "lint boundary" in verdicts["AC-1"].refutation
 
@@ -379,7 +379,7 @@ async def test_unverifiable_only_set_neither_regenerates_nor_halts() -> None:
     )
     assert sweep_event.regeneration_targets == []
     verdicts = {v.criterion_id: v for v in sweep_event.validation.verdicts}
-    assert verdicts["AC-2"].verdict is FeasibilityVerdict.unverifiable
+    assert verdicts["AC-2"].verdict is CriterionVerdict.unverifiable
     assert verdicts["AC-2"].limit_arm is LimitArm.resource_absent
     assert (
         verdicts["AC-2"].missing_resource
@@ -427,9 +427,9 @@ async def test_the_loop_receives_the_verdict_and_the_named_resource() -> None:
     dispatched = gate.calls[0]["acceptance_criteria"]
     assert isinstance(dispatched, list)
     feasible, unverifiable = dispatched
-    assert feasible.feasibility.verdict is FeasibilityVerdict.feasible
+    assert feasible.feasibility.verdict is CriterionVerdict.feasible
     assert feasible.feasibility.missing_resource is None
-    assert unverifiable.feasibility.verdict is FeasibilityVerdict.unverifiable
+    assert unverifiable.feasibility.verdict is CriterionVerdict.unverifiable
     assert unverifiable.feasibility.limit_arm is LimitArm.resource_absent
     assert (
         unverifiable.feasibility.missing_resource
@@ -523,8 +523,8 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
         persister.artifacts[0]["criteria.json"],
     )
     assert [c.id for c in artifact.criteria] == ["AC-1", "AC-2"]
-    assert artifact.criteria[0].classification is CriterionClassification.hard_gate
-    assert artifact.criteria[1].feasibility.verdict is FeasibilityVerdict.unverifiable
+    assert artifact.criteria[0].criterion_class is CriterionClass.hard_gate
+    assert artifact.criteria[1].feasibility.verdict is CriterionVerdict.unverifiable
     assert (
         artifact.criteria[1].feasibility.missing_resource
         == "a PostgreSQL server reachable from the runner"
@@ -567,10 +567,10 @@ BASED_CRITERION = (
 def _criteria_round(scope_text: str) -> dict[str, object]:
     return {
         "criteria": [
-            {"text": scope_text, "classification": "hard_gate"},
+            {"text": scope_text, "criterionClass": "hard_gate"},
             {
                 "text": "`Foo` is importable from `app.api`.",
-                "classification": "hard_gate",
+                "criterionClass": "hard_gate",
             },
         ],
         "reasoning": "Generated from codebase analysis.",
@@ -891,7 +891,7 @@ async def test_a_literal_count_class_is_flagged_rather_than_regenerated() -> Non
     assert isinstance(dispatched, list)
     flagged = dispatched[0]
     assert flagged.text == "Exactly 3 files under `src/` change."
-    assert flagged.classification is CriterionClassification.soft_signal
+    assert flagged.criterion_class is CriterionClass.soft_signal
 
 
 async def test_an_ungraded_criterion_clamps_the_run_and_names_its_resource() -> None:

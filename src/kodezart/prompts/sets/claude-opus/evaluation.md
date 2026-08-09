@@ -76,7 +76,7 @@ Each criterion arrives carrying the feasibility verdict the pre-loop sweep compu
 - `unverifiable` — the criterion is sound and its DEMONSTRATION is blocked by a resource this runner does not have; the blocking resource is named on the line. Do not treat the absence as an implementation defect, and do not mark it passed on the grounds that the code looks right. Report it as not passed with the named resource as the reasoning: an unestablished claim is never a pass.
 
 {{#each criteria}}
-{{this.id}} [{{this.classification}}] [{{this.feasibility.verdict}}]{{#if this.feasibility.missing_resource}} [blocked on: {{this.feasibility.missing_resource}}]{{/if}} {{this.text}}{{/each}}
+{{this.id}} [{{this.criterion_class}}] [{{this.feasibility.verdict}}]{{#if this.feasibility.missing_resource}} [blocked on: {{this.feasibility.missing_resource}}]{{/if}} {{this.text}}{{/each}}
 
 ── CHANGESET TO EVALUATE ──
 

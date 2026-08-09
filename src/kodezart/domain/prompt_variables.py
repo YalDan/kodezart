@@ -4,9 +4,9 @@ from collections.abc import Sequence
 
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criteria import (
-    AcceptanceCriterion,
     CriteriaValidation,
-    FeasibilityVerdict,
+    CriterionVerdict,
+    GeneratedCriterion,
 )
 
 
@@ -32,7 +32,7 @@ def changeset_variables(changeset: ChangesetDigest) -> dict[str, object]:
 
 
 def render_validation_findings(
-    criteria: Sequence[AcceptanceCriterion],
+    criteria: Sequence[GeneratedCriterion],
     validation: CriteriaValidation | None,
 ) -> str | None:
     """The ``<validation_findings>`` body for a regeneration round.
@@ -51,7 +51,7 @@ def render_validation_findings(
     conflicting = set(validation.conjunction.conflicting_ids)
     lines: list[str] = []
     for verdict in validation.verdicts:
-        if verdict.verdict is not FeasibilityVerdict.infeasible:
+        if verdict.verdict is not CriterionVerdict.infeasible:
             continue
         text = texts.get(verdict.criterion_id, "")
         lines.append(

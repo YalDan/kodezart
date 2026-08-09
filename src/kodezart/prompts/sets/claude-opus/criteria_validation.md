@@ -58,4 +58,4 @@ Exactly one finding per criterion id below — no more, no fewer, and no id that
 
 ── ACCEPTANCE CRITERIA UNDER REFUTATION ──
 {{#each acceptance_criteria}}
-{{this.id}} [{{this.classification}}] {{this.text}}{{/each}}
+{{this.id}} [{{this.criterion_class}}] {{this.text}}{{/each}}

@@ -5,10 +5,10 @@ from kodezart.domain.criteria_grading import MISSING_RESULT_REASONING, grade_ite
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import (
-    CriterionClassification,
+    CriterionClass,
     CriterionFeasibility,
+    CriterionVerdict,
     DraftedCriterion,
-    FeasibilityVerdict,
     ValidatedCriterion,
 )
 from tests.fakes import as_validated
@@ -26,7 +26,7 @@ def _criteria(count: int) -> list[ValidatedCriterion]:
             [
                 DraftedCriterion(
                     text=f"Criterion number {n}",
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 )
                 for n in range(1, count + 1)
             ]
@@ -90,11 +90,11 @@ def test_echoed_text_mutation_changes_neither_keying_nor_reinjected_text() -> No
             [
                 DraftedCriterion(
                     text='The rendered node carries class="kz-row", spaced exactly.',
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 ),
                 DraftedCriterion(
                     text="A path of the form C:\\\\Users\\\\x survives the round trip.",
-                    classification=CriterionClassification.hard_gate,
+                    criterion_class=CriterionClass.hard_gate,
                 ),
             ]
         )
@@ -202,7 +202,7 @@ def test_an_ungraded_criterion_seats_in_neither_count_nor_feedback() -> None:
             update={
                 "feasibility": CriterionFeasibility(
                     criterion_id=ungraded_criterion.id,
-                    verdict=FeasibilityVerdict.unverifiable,
+                    verdict=CriterionVerdict.unverifiable,
                     missing_resource="a PostgreSQL server reachable from the runner",
                 ),
             },
@@ -236,7 +236,7 @@ def test_an_ungraded_criterion_answered_as_passing_is_still_not_counted() -> Non
             update={
                 "feasibility": CriterionFeasibility(
                     criterion_id=ungraded_criterion.id,
-                    verdict=FeasibilityVerdict.unverifiable,
+                    verdict=CriterionVerdict.unverifiable,
                     missing_resource="a PostgreSQL server reachable from the runner",
                 ),
             },

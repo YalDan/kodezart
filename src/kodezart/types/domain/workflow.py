@@ -10,10 +10,10 @@ from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
 from kodezart.types.domain.base_spec import BaseSpec
 from kodezart.types.domain.criteria import (
-    AcceptanceCriterion,
     CriteriaArtifact,
     CriteriaValidation,
     CriterionFailure,
+    GeneratedCriterion,
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
@@ -141,7 +141,7 @@ class WorkflowState(TypedDict):
     feature_branch: str
     ralph_branch: str
     ticket: TicketDraftOutput | None
-    acceptance_criteria: list[AcceptanceCriterion]
+    acceptance_criteria: list[GeneratedCriterion]
     criteria_artifact: CriteriaArtifact | None
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
