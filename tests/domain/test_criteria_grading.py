@@ -4,11 +4,24 @@ from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.criteria_grading import MISSING_RESULT_REASONING, grade_iteration
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
-from kodezart.types.domain.criteria import CriterionClassification, DraftedCriterion
+from kodezart.types.domain.criteria import (
+    CriterionClassification,
+    CriterionFeasibility,
+    DraftedCriterion,
+    FeasibilityVerdict,
+    ValidatedCriterion,
+)
+from tests.fakes import as_validated
 
 
-def _criteria(count: int) -> list:
-    return list(
+def _criteria(count: int) -> list[ValidatedCriterion]:
+    """The dispatch shape: minted, then carrying the sweep's verdict.
+
+    Grading is over criteria that reached the loop, and nothing reaches the
+    loop before the sweep — so the fixture supplies the verdict the loop
+    would actually be holding rather than a pre-sweep criterion.
+    """
+    return as_validated(
         mint_criteria(
             [
                 DraftedCriterion(
@@ -72,7 +85,7 @@ def test_a_full_pass_over_a_partial_return_is_not_acceptance() -> None:
 
 def test_echoed_text_mutation_changes_neither_keying_nor_reinjected_text() -> None:
     """Whitespace and backslash mutations in the echo are inert."""
-    criteria = list(
+    criteria = as_validated(
         mint_criteria(
             [
                 DraftedCriterion(
@@ -172,3 +185,76 @@ def test_results_come_back_in_dispatch_order_whatever_order_they_arrived() -> No
     )
     grade = grade_iteration(criteria, output)
     assert [r.criterion_id for r in grade.results] == ["AC-1", "AC-2", "AC-3"]
+
+
+def test_an_ungraded_criterion_seats_in_neither_count_nor_feedback() -> None:
+    """An ``unverifiable`` criterion is named, never counted, never re-asked.
+
+    Two halves, and the second is the one that costs a run: it is absent
+    from ``failures``, which is what the next iteration's feedback is built
+    from.  A criterion nothing can grade that recurs every round is the
+    budget burn this lane exists to stop, arriving through the back door.
+    """
+    graded, ungraded_criterion = _criteria(2)
+    criteria = [
+        graded,
+        ungraded_criterion.model_copy(
+            update={
+                "feasibility": CriterionFeasibility(
+                    criterion_id=ungraded_criterion.id,
+                    verdict=FeasibilityVerdict.unverifiable,
+                    missing_resource="a PostgreSQL server reachable from the runner",
+                ),
+            },
+        ),
+    ]
+    output = AcceptanceCriteriaOutput(
+        criteria_results=[
+            CriterionResult(
+                criterion_id="AC-1",
+                criterion="echo",
+                passed=True,
+                reasoning="verified",
+            ),
+        ],
+    )
+
+    grade = grade_iteration(criteria, output)
+
+    assert grade.ungraded_criterion_ids == ["AC-2"]
+    assert grade.passed_count == 1
+    assert [f.criterion_id for f in grade.failures] == []
+    assert grade.verdict is AcceptVerdict.ship_with_flags
+
+
+def test_an_ungraded_criterion_answered_as_passing_is_still_not_counted() -> None:
+    """Never a pass: the evaluator's answer to it is worth nothing."""
+    graded, ungraded_criterion = _criteria(2)
+    criteria = [
+        graded,
+        ungraded_criterion.model_copy(
+            update={
+                "feasibility": CriterionFeasibility(
+                    criterion_id=ungraded_criterion.id,
+                    verdict=FeasibilityVerdict.unverifiable,
+                    missing_resource="a PostgreSQL server reachable from the runner",
+                ),
+            },
+        ),
+    ]
+    output = AcceptanceCriteriaOutput(
+        criteria_results=[
+            CriterionResult(
+                criterion_id=cid,
+                criterion="echo",
+                passed=True,
+                reasoning="verified",
+            )
+            for cid in ("AC-1", "AC-2")
+        ],
+    )
+
+    grade = grade_iteration(criteria, output)
+
+    assert grade.passed_count == 1
+    assert grade.verdict is AcceptVerdict.ship_with_flags

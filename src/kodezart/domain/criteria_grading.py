@@ -12,11 +12,19 @@ dispatched count, so:
   iteration's feedback — is the harness's own, looked up by id, so an
   echoed whitespace or backslash mutation changes neither the keying nor
   the criterion anybody downstream reads.
+
+``results`` carries a row for every dispatched id, because that is the
+report.  The ARITHMETIC is narrower: an ``unverifiable`` criterion is
+neither a pass nor a fail, so it seats in neither ``passed_count`` nor
+``failures`` — the second half is what keeps it out of the iteration
+feedback, where a criterion nothing can grade would otherwise recur every
+round and burn the budget.  It is named on ``ungraded_criterion_ids``
+instead, which is what clamps the verdict to ``ship_with_flags``.
 """
 
 from collections.abc import Sequence
 
-from kodezart.domain.accept_gate import accept_verdict
+from kodezart.domain.accept_gate import accept_verdict, is_graded, ungraded
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import CriterionFailure, ValidatedCriterion
 from kodezart.types.domain.grading import IterationGrade
@@ -90,7 +98,11 @@ def grade_iteration(
                 )
             )
 
-    passed_count = sum(1 for result in results if result.passed)
+    graded_ids = {criterion.id for criterion in criteria if is_graded(criterion)}
+    failures = [failure for failure in failures if failure.criterion_id in graded_ids]
+    passed_count = sum(
+        1 for result in results if result.passed and result.criterion_id in graded_ids
+    )
     return IterationGrade(
         results=results,
         failures=failures,
@@ -101,4 +113,5 @@ def grade_iteration(
         passed_count=passed_count,
         verdict=accept_verdict(criteria, results),
         sherlock_flags=list(output.sherlock_flags),
+        ungraded_criterion_ids=[criterion.id for criterion in ungraded(criteria)],
     )

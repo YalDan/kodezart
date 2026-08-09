@@ -14,12 +14,14 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import CriteriaFanInError
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     AgentEvent,
     ResultEvent,
     WorkflowCompleteEvent,
     WorkflowCriteriaEvent,
     WorkflowCriteriaValidationEvent,
+    WorkflowIterationEvent,
 )
 from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.criteria import (
@@ -36,12 +38,14 @@ from tests.fakes import (
     FakeBranchMerger,
     FakeChangePersister,
     FakeGitService,
+    FakePRCreator,
     FakeQualityGate,
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
     make_passing_evaluation,
+    make_passing_evaluation_over,
     make_prompt_provider,
     make_ticket_draft,
 )
@@ -168,6 +172,7 @@ def _engine(
     quality_gate: FakeQualityGate | None = None,
     artifact_persister: FakeArtifactPersister | None = None,
     ticket_generator: FakeTicketGenerator | None = None,
+    pr_creator: FakePRCreator | None = None,
 ) -> RalphWorkflowEngine:
     service = AgentService(
         executor=executor,
@@ -193,6 +198,7 @@ def _engine(
         cache=FakeRepoCache(),
         criteria_max_regeneration_rounds=max_rounds,
         artifact_persister=artifact_persister,
+        pr_creator=pr_creator,
     )
 
 
@@ -200,13 +206,14 @@ async def _run(
     engine: RalphWorkflowEngine,
     *,
     prompt: str = "do the thing",
+    repo_url: str | None = None,
 ) -> list[AgentEvent]:
     return [
         event
         async for event in engine.run(
             prompt=prompt,
-            repo_path="/tmp/fake",
-            repo_url=None,
+            repo_path=None if repo_url else "/tmp/fake",
+            repo_url=repo_url,
             base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
@@ -810,3 +817,35 @@ async def test_a_literal_count_class_is_flagged_rather_than_regenerated() -> Non
     flagged = dispatched[0]
     assert flagged.text == "Exactly 3 files under `src/` change."
     assert flagged.classification is CriterionClassification.soft_signal
+
+
+async def test_an_ungraded_criterion_clamps_the_run_and_names_its_resource() -> None:
+    """KOD-71 R3, through the graph: no seat, ceiling clamped, resource stated.
+
+    The evaluator answers BOTH ids as passing, so nothing failed anywhere in
+    the run.  A gate reading pass/fail alone reports ``accepted`` here; the
+    ruling says a run holding a criterion nobody could grade may not claim
+    clean acceptance, and the resource whose absence blocked it has to reach
+    the human reading the pull request.
+    """
+    executor = ValidatorScriptExecutor(
+        sweeps=[{"findings": [FEASIBLE_A, UNVERIFIABLE_B], "contradictions": []}],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation_over("AC-1", "AC-2"),
+        last_commit_sha="a" * 40,
+    )
+    pr_creator = FakePRCreator()
+    events = await _run(
+        _engine(executor, max_rounds=1, quality_gate=gate, pr_creator=pr_creator),
+        repo_url="https://github.com/o/r",
+    )
+
+    iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
+    assert iteration.verdict is AcceptVerdict.ship_with_flags
+
+    create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
+    body = str(create["body"])
+    assert "AC-2" in body
+    assert "a PostgreSQL server reachable from the runner" in body

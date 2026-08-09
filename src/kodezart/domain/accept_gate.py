@@ -12,25 +12,64 @@ was decided by the evaluator.  This module only counts.
 
 from collections.abc import Sequence
 
+from kodezart.domain.errors import UngroundedVerdictError
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem, SherlockFlag
 from kodezart.types.domain.agent import CriterionResult
-from kodezart.types.domain.criteria import CriterionClassification, ValidatedCriterion
+from kodezart.types.domain.criteria import (
+    CriterionClassification,
+    FeasibilityVerdict,
+    ValidatedCriterion,
+)
+
+
+def is_graded(criterion: ValidatedCriterion) -> bool:
+    """Whether this criterion's demonstration was possible at all.
+
+    An ``unverifiable`` criterion is never a pass — nothing established it,
+    and the sweep's own vocabulary forbids coercing that into one — and
+    never a fail, because it was not refuted and the fault lies outside its
+    text.  There is no third seat, so it takes none: not in the numerator,
+    not in the denominator.
+    """
+    return criterion.feasibility.verdict is not FeasibilityVerdict.unverifiable
+
+
+def ungraded(criteria: Sequence[ValidatedCriterion]) -> list[ValidatedCriterion]:
+    """The criteria the sweep left with no possible demonstration."""
+    return [criterion for criterion in criteria if not is_graded(criterion)]
+
+
+def named_resource(criterion: ValidatedCriterion) -> str:
+    """The resource whose absence blocks an ungraded criterion's demonstration.
+
+    An ``unverifiable`` verdict that names nothing has established nothing,
+    which is a refuter that produced no verdict rather than a verdict of
+    ``unverifiable``.  It is refused here rather than rendered as an absence
+    the reader is left to interpret.
+    """
+    resource = criterion.feasibility.missing_resource
+    if resource is None or not resource.strip():
+        msg = "An ungraded criterion reached the accept gate naming no resource"
+        raise UngroundedVerdictError(msg, criterion_id=criterion.id)
+    return resource
 
 
 def _failures(
     criteria: Sequence[ValidatedCriterion],
     results: Sequence[CriterionResult],
 ) -> list[tuple[ValidatedCriterion, CriterionResult | None]]:
-    """Every dispatched criterion that did not pass, with its result.
+    """Every GRADED criterion that did not pass, with its result.
 
-    Iteration is over the DISPATCHED set: an id with no result did not
-    pass, which is the same fail-closed denominator grading uses.
+    Iteration is over the graded half of the dispatched set: an id with no
+    result did not pass, which is the same fail-closed denominator grading
+    uses, and an ungraded id is absent because it has no seat here at all.
     """
     answered = {result.criterion_id: result for result in results}
     return [
         (criterion, answered.get(criterion.id))
         for criterion in criteria
-        if criterion.id not in answered or not answered[criterion.id].passed
+        if is_graded(criterion)
+        and (criterion.id not in answered or not answered[criterion.id].passed)
     ]
 
 
@@ -38,14 +77,22 @@ def accept_verdict(
     criteria: Sequence[ValidatedCriterion],
     results: Sequence[CriterionResult],
 ) -> AcceptVerdict:
-    """The three-state verdict for one evaluation pass."""
+    """The three-state verdict for one evaluation pass.
+
+    An ungraded criterion clamps the ceiling to ``ship_with_flags``.
+    Excluding it from the arithmetic and still returning ``accepted``
+    would let a run claim it satisfied a criterion nobody graded — the
+    coercion into a pass, reached by arithmetic instead of by an enum.
+    ``rejected`` would be the mirror fault: blocking correct work because
+    the runner lacked a resource.
+    """
     failures = _failures(criteria, results)
     if any(
         criterion.classification is CriterionClassification.hard_gate
         for criterion, _ in failures
     ):
         return AcceptVerdict.rejected
-    if failures:
+    if failures or ungraded(criteria):
         return AcceptVerdict.ship_with_flags
     return AcceptVerdict.accepted
 
@@ -65,7 +112,13 @@ def flagged_items(
     results: Sequence[CriterionResult],
     sherlock_flags: Sequence[SherlockFlag],
 ) -> list[FlaggedItem]:
-    """Everything a flagged run owes its reader, in one ordered list."""
+    """Everything a flagged run owes its reader, in one ordered list.
+
+    Three producers, one list: a failing soft signal, an ungraded
+    criterion, and a ``[sherlock]`` concern.  The ungraded entries carry
+    the resource their ``unverifiable`` verdict named, because an id alone
+    tells the reader nothing about what would settle it.
+    """
     items = [
         FlaggedItem(
             criterion_id=criterion.id,
@@ -76,6 +129,16 @@ def flagged_items(
         )
         for criterion, result in _failures(criteria, results)
     ]
+    items.extend(
+        FlaggedItem(
+            criterion_id=criterion.id,
+            summary=(
+                f"{criterion.text} — ungraded: demonstration deferred, "
+                f"{named_resource(criterion)} absent"
+            ),
+        )
+        for criterion in ungraded(criteria)
+    )
     items.extend(
         FlaggedItem(criterion_id=flag.criterion_id, summary=flag.concern)
         for flag in sherlock_flags

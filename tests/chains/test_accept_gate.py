@@ -7,6 +7,8 @@ result takes, and no test asks a model anything.
 
 import uuid
 
+import pytest
+
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.domain.accept_gate import (
     FLAGGED_HEADING,
@@ -15,6 +17,7 @@ from kodezart.domain.accept_gate import (
     flagged_items,
     gate_cleared,
 )
+from kodezart.domain.errors import UngroundedVerdictError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem, SherlockFlag
 from kodezart.types.domain.agent import (
@@ -25,7 +28,13 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
 )
 from kodezart.types.domain.base_spec import trunk_base
-from kodezart.types.domain.criteria import CriterionClassification
+from kodezart.types.domain.criteria import (
+    CriterionClassification,
+    CriterionFeasibility,
+    FeasibilityVerdict,
+    LimitArm,
+    ValidatedCriterion,
+)
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from tests.fakes import (
@@ -57,6 +66,30 @@ def _pair() -> list:
             for criterion in make_criteria("No new lint warnings", classification=SOFT)
         ],
     ]
+
+
+def _ungraded(
+    identifier: str,
+    *,
+    resource: str | None = "a PostgreSQL server reachable from the runner",
+) -> ValidatedCriterion:
+    """A hard gate the sweep left ``unverifiable``.
+
+    Hard on purpose: the classification is untouched by the verdict, so an
+    implementation that reached for ``soft_signal`` to express *this does
+    not gate* would be caught here rather than pass by coincidence.
+    """
+    return ValidatedCriterion(
+        id=identifier,
+        text="The checkpointer survives a process restart",
+        classification=HARD,
+        feasibility=CriterionFeasibility(
+            criterion_id=identifier,
+            verdict=FeasibilityVerdict.unverifiable,
+            limit_arm=LimitArm.resource_absent,
+            missing_resource=resource,
+        ),
+    )
 
 
 def _results(*passes: bool) -> list[CriterionResult]:
@@ -100,6 +133,53 @@ def test_a_dispatched_hard_gate_with_no_result_rejects() -> None:
     """The denominator is the dispatched set — an unanswered id did not pass."""
     answered_soft_only = [_results(True, True)[1]]
     assert accept_verdict(_pair(), answered_soft_only) is AcceptVerdict.rejected
+
+
+def test_an_ungraded_criterion_clamps_a_clean_run_to_ship_with_flags() -> None:
+    """Row 5: every graded criterion passes and one was never graded.
+
+    The pass on the ungraded criterion is the strong form of the case — the
+    evaluator answered it, and the answer is worth nothing, because the
+    sweep established nobody could demonstrate it.  Counting that answer
+    would be the coercion into a pass arrived at by arithmetic.
+    """
+    criteria = [*_pair(), _ungraded("AC-3")]
+    assert (
+        accept_verdict(criteria, _results(True, True, True))
+        is AcceptVerdict.ship_with_flags
+    )
+
+
+def test_an_ungraded_hard_gate_that_nobody_answered_does_not_reject() -> None:
+    """Row 6: the fault lies outside the criterion, so it blocks nothing.
+
+    An unanswered GRADED hard gate rejects — that is the row above.  This
+    one takes no seat at all: rejecting would punish correct work because
+    the runner lacked a resource.
+    """
+    criteria = [*_pair(), _ungraded("AC-3")]
+    assert (
+        accept_verdict(criteria, _results(True, True))
+        is AcceptVerdict.ship_with_flags
+    )
+
+
+def test_an_ungraded_criterion_is_flagged_with_the_resource_it_named() -> None:
+    """An id alone says nothing about what would settle it."""
+    criteria = [*_pair(), _ungraded("AC-3")]
+    rendered = append_flagged_section(
+        "Original PR body.",
+        flagged_items(criteria, _results(True, True, True), []),
+    )
+    assert "AC-3:" in rendered
+    assert "a PostgreSQL server reachable from the runner" in rendered
+
+
+def test_an_ungraded_criterion_naming_no_resource_is_refused() -> None:
+    """A refuter that established nothing produced no verdict at all."""
+    criteria = [*_pair(), _ungraded("AC-3", resource=None)]
+    with pytest.raises(UngroundedVerdictError):
+        flagged_items(criteria, _results(True, True, True), [])
 
 
 def test_the_verdict_partition_has_exactly_three_members() -> None:
