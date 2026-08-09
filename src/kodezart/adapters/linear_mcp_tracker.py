@@ -25,7 +25,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
 
-from kodezart.core.errors import TrackerProtocolError
+from kodezart.core.errors import TrackerEnsureConflictError, TrackerProtocolError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
@@ -44,11 +44,13 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     ClaimResult,
     ClaimStatus,
+    EnsureAction,
     IssuePriority,
     IssueQuery,
     IssueRelation,
     IssueRelationKind,
     MappingKind,
+    MappingOutcome,
     MappingRef,
     StateTransition,
     TrackerAsset,
@@ -68,6 +70,7 @@ _TOOL_GET_DOCUMENT = "get_document"
 _TOOL_LIST_USERS = "list_users"
 _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
+_TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
 _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
 
 _CLAIM_MARKER = re.compile(
@@ -131,6 +134,20 @@ def _work_ref_marker(ref: WorkRef) -> str:
 
 
 _RETRY_BACKOFF_BASE = 2.0
+
+
+def _label_arguments(ref: MappingRef) -> dict[str, object]:
+    """Create-arguments for one queue-state label.
+
+    A ref carrying a scope creates the label on that team; one carrying
+    none creates it at workspace scope, which is what a queue vocabulary
+    spanning several configured teams requires — a per-team label would
+    leave the same state unaddressable on another team's issues.
+    """
+    arguments: dict[str, object] = {"name": ref.identifier}
+    if ref.scope is not None:
+        arguments["teamId"] = ref.scope
+    return arguments
 
 
 def _utc_now() -> datetime:
@@ -489,6 +506,44 @@ class LinearMcpTracker:
             if ref.identifier not in known[ref.kind]:
                 unresolved.append(ref)
         return tuple(unresolved)
+
+    async def ensure_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingOutcome]:
+        """Instate every OWNED ref, creating only what is absent.
+
+        Queue states are labels here.  A label already carrying the
+        configured name is adopted verbatim — never renamed, never
+        recoloured, never re-scoped — so a second boot over the same
+        workspace writes nothing at all.
+        """
+        outcomes: list[MappingOutcome] = []
+        for ref in refs:
+            if ref.kind is not MappingKind.QUEUE_STATE:
+                raise TrackerEnsureConflictError(
+                    "this backend instates queue states only",
+                    entry=ref.describe(),
+                )
+            existing = await self._names_of(MappingKind.QUEUE_STATE)
+            if ref.identifier in existing:
+                outcomes.append(
+                    MappingOutcome(ref=ref, action=EnsureAction.ADOPTED),
+                )
+                continue
+            await self._call(
+                _TOOL_CREATE_ISSUE_LABEL,
+                _label_arguments(ref),
+            )
+            outcomes.append(MappingOutcome(ref=ref, action=EnsureAction.CREATED))
+            await self._log.ainfo(
+                "tracker_queue_label_created",
+                name=ref.name,
+                label=ref.identifier,
+                team=ref.scope,
+            )
+        return tuple(outcomes)
 
     async def _names_of(self, kind: MappingKind) -> frozenset[str]:
         tool = _MAPPING_TOOL_BY_KIND[kind]

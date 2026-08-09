@@ -159,6 +159,20 @@ class TrackerBootValidationError(Exception):
         self.unresolved: tuple[str, ...] = tuple(unresolved)
 
 
+class TrackerEnsureConflictError(Exception):
+    """Raised when instating an OWNED value would ALTER an existing definition.
+
+    Ensuring is creates-only.  A rename, a recolour, a re-scope or two
+    declared members claiming one backend value is this error and performs
+    no write: adopting the wrong definition silently would repurpose a
+    value another part of the workspace already means something by.
+    """
+
+    def __init__(self, message: str, *, entry: str) -> None:
+        super().__init__(f"{message} ({entry})")
+        self.entry: str = entry
+
+
 class TrackerProtocolError(Exception):
     """Raised when a tracker backend's response cannot be read as its shape.
 
@@ -172,6 +186,28 @@ class TrackerProtocolError(Exception):
         super().__init__(f"{message} (tool: {tool}; {detail})")
         self.tool: str = tool
         self.detail: str = detail
+
+
+class McpTransportError(Exception):
+    """Raised when an MCP session cannot be opened or a tool call cannot answer.
+
+    The transport refuses to guess in either direction: a server that
+    reports a tool error, returns no structured content, or is not dialled
+    at all is this error, never an empty result a caller would read as "no
+    such issue".
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        server_name: str,
+        tool_name: str | None = None,
+    ) -> None:
+        described = server_name if tool_name is None else f"{server_name}/{tool_name}"
+        super().__init__(f"{message} ({described})")
+        self.server_name: str = server_name
+        self.tool_name: str | None = tool_name
 
 
 class PromptNamespaceCollisionError(Exception):

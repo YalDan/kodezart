@@ -104,6 +104,19 @@ class MappingKind(StrEnum):
     WORKFLOW_STATE = "workflow_state"
 
 
+class EnsureAction(StrEnum):
+    """What ensuring one OWNED mapping did to the workspace.
+
+    Two members, both observable, so a first boot against a fresh
+    workspace is distinguishable from a boot against an established one.
+    An ensure that would ALTER an existing definition is neither member —
+    it is a typed error that performs no write.
+    """
+
+    ADOPTED = "adopted"
+    CREATED = "created"
+
+
 class ClaimStatus(StrEnum):
     """Outcome partition of one atomic claim attempt.
 
@@ -219,10 +232,21 @@ class MappingRef(TrackerModel):
     kind: MappingKind
     name: str = Field(min_length=1)
     identifier: str = Field(min_length=1)
+    #: Backend identifier of the container an INSTATED value is created in,
+    #: or ``None`` for one that belongs to the workspace rather than to a
+    #: container.  Read only on the ensure path: resolution never creates.
+    scope: str | None = None
 
     def describe(self) -> str:
         """Human-readable one-line description used in boot failures."""
         return f"{self.kind.value} {self.name!r} -> {self.identifier!r}"
+
+
+class MappingOutcome(TrackerModel):
+    """What ensuring one OWNED mapping did, reported in the startup record."""
+
+    ref: MappingRef
+    action: EnsureAction
 
 
 class IssueQuery(TrackerModel):

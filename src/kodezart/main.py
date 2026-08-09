@@ -16,11 +16,13 @@ from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.adapters.github_token_auth import GitHubTokenAuth
 from kodezart.adapters.host_skill_inventory import HostSkillInventory
+from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
+from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
@@ -38,15 +40,20 @@ from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import (
     AgentExecutor,
     ContentScanner,
+    ManagedMcpToolCaller,
+    McpToolCaller,
     PromptProvider,
     SkillInventory,
+    TrackerPort,
 )
 from kodezart.services.agent_service import AgentService
 from kodezart.services.job_service import JobService
+from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.gating import content_digest
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 
 
 def preflight_skills(
@@ -147,6 +154,95 @@ def outbound_scanners(
     return scanners, content_digest(private_surface)
 
 
+def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+    """The vendor MCP transport this deployment dials.
+
+    One server definition, two consumers (KOD-57's mechanism ruling): the
+    programmatic client on the deterministic path, and the same server
+    attached to judgment-pass sessions.
+    """
+    return HttpMcpToolCaller(
+        url=config.tracker_mcp_server_url,
+        server_name=config.tracker_mcp_server_name,
+        token=token,
+        timeout_seconds=config.tracker_api_timeout_seconds,
+        auth_header_name=config.tracker_mcp_auth_header,
+        auth_scheme=config.tracker_mcp_auth_scheme,
+    )
+
+
+def build_tracker(
+    *,
+    config: AppConfig,
+    operation: OperationConfig,
+    caller: McpToolCaller,
+) -> TrackerPort:
+    """The ``TrackerPort`` implementation ``config.tracker`` selects.
+
+    Adding a backend is a new adapter plus a member on ``TrackerBackend``.
+    Consumers hold the protocol and change by nothing at all.
+    """
+    match config.tracker:
+        case TrackerBackend.LINEAR:
+            return LinearMcpTracker(
+                caller=caller,
+                queue_state_labels=operation.queue_states,
+                workflow_state_names=operation.workflow_states,
+                team_identifiers=operation.teams,
+                max_retries=config.tracker_api_max_retries,
+                retry_backoff_factor=config.tracker_api_retry_backoff_factor,
+            )
+
+
+async def boot_tracker(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    log: BoundLogger,
+) -> tuple[TrackerPort, ManagedMcpToolCaller] | None:
+    """Dial the tracker and reconcile its configured mappings, or say why not.
+
+    Three states, none silent.  Both an operation config and a credential
+    present dials the backend and reconciles every declared mapping before
+    the process serves anything; either one absent logs exactly which is
+    absent and leaves the tracker unwired; an unreconcilable mapping aborts
+    boot with a typed error naming it.
+    """
+    if operation is None or config.tracker_token is None:
+        await log.ainfo(
+            "tracker_not_configured",
+            operation_config_present=operation is not None,
+            tracker_token_present=config.tracker_token is not None,
+        )
+        return None
+    caller = make_mcp_tool_caller(config=config, token=config.tracker_token)
+    await caller.open()
+    try:
+        tracker = build_tracker(config=config, operation=operation, caller=caller)
+        outcomes = await reconcile_tracker_mappings(
+            tracker=tracker,
+            config=operation,
+        )
+    except BaseException:
+        await caller.close()
+        raise
+    await log.ainfo(
+        "tracker_mappings_reconciled",
+        backend=config.tracker.value,
+        adopted=[
+            item.ref.describe()
+            for item in outcomes
+            if item.action is EnsureAction.ADOPTED
+        ],
+        created=[
+            item.ref.describe()
+            for item in outcomes
+            if item.action is EnsureAction.CREATED
+        ],
+    )
+    return tracker, caller
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle.
@@ -213,6 +309,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         allowlist=list(skills.allowlist),
         setting_sources=config.setting_sources,
     )
+
+    dialled = await boot_tracker(config=config, operation=operation, log=log)
+    tracker: TrackerPort | None = None if dialled is None else dialled[0]
+    mcp_caller: ManagedMcpToolCaller | None = None if dialled is None else dialled[1]
+    app.state.tracker = tracker
 
     git = SubprocessGitService(remote=config.git_remote, auth=auth)
     executor = ClaudeClientExecutor(
@@ -345,6 +446,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         yield
         await job_queue.stop()
+        if mcp_caller is not None:
+            await mcp_caller.close()
         if github_api is not None:
             await github_api.close()
         await log.ainfo("application_shutdown")

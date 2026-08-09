@@ -186,10 +186,17 @@ def test_exactly_one_approver_is_enforced_at_config_load(
 ) -> None:
     """Zero approvers and two approvers each raise the typed error."""
     raw = raw_example()
-    principals = [
-        {"tracker_user": f"user-{i}", "role": "approver"} for i in range(approver_count)
+    principals: list[dict[str, str]] = [
+        {
+            "tracker_user": f"user-{i}",
+            "role": "approver",
+            "handle": f"@user-{i}",
+        }
+        for i in range(approver_count)
     ]
-    principals.append({"tracker_user": "user-x", "role": "principal"})
+    principals.append(
+        {"tracker_user": "user-x", "role": "principal", "handle": "@user-x"},
+    )
     raw["principals"] = principals
     path = _write_toml(tmp_path, raw)
     with pytest.raises(OperationConfigError) as excinfo:
@@ -265,7 +272,9 @@ def test_multiple_distinct_structural_failures_land_in_one_error(
 ) -> None:
     """Collect-all, not fail-on-first."""
     raw = raw_example()
-    raw["principals"] = [{"tracker_user": "u", "role": "principal"}]
+    raw["principals"] = [
+        {"tracker_user": "u", "role": "principal", "handle": "@u"},
+    ]
     del raw["queue_states"][QueueState.TRIAGE.value]
     del raw["workflow_states"][LifecycleStage.DONE.value]
     del raw["documents"][CHECKPOINT_DOCUMENT_KEY]

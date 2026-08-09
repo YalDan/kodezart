@@ -95,8 +95,15 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
             }
             for item in config.initiatives
         ],
+        # ``handle`` is the identifier a MENTION is recognised by and
+        # ``tracker_user`` the one authority is checked against. A sweep
+        # given only the second has nothing to match on.
         "principals": [
-            {"tracker_user": p.tracker_user, "role": p.role.value}
+            {
+                "tracker_user": p.tracker_user,
+                "role": p.role.value,
+                "handle": p.handle,
+            }
             for p in config.principals
         ],
         "agent_identities": list(config.agent_identities),

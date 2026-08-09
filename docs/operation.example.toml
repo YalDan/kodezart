@@ -30,13 +30,31 @@ private_surface = "Anything identifying the people, customers or commercial arra
 
 # Authority is enforced by ROLE, never by name in code or templates.
 # EXACTLY ONE principal carries the approver role; validated at load.
+#
+# Three roles, because the passes route three things differently:
+#   approver   — holds the approval flip and is the assignment target
+#   principal  — their word creates a reply obligation the queue does not record
+#   escalation — receives out-of-band escalations, creates no reply obligation
+#
+# `tracker_user` is the identifier AUTHORITY is checked against; `handle` is the
+# identifier a MENTION is recognised by — the string a person writes when
+# addressing this principal. They are routinely different, and the mention sweep
+# is text matching with nothing but `handle` to match on. Handles are unique and
+# must not collide with an agent identity.
 [[principals]]
 tracker_user = "example-approver"
 role = "approver"
+handle = "@example-approver"
 
 [[principals]]
 tracker_user = "example-contributor"
 role = "principal"
+handle = "@example-contributor"
+
+[[principals]]
+tracker_user = "example-oncall"
+role = "escalation"
+handle = "@example-oncall"
 
 # Teams addressed from templates by key.
 [teams]

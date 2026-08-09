@@ -1,0 +1,121 @@
+"""``McpToolCaller`` over a remote MCP server reached by streamable HTTP.
+
+The transport under the tracker adapter on the deterministic path: a tool
+name plus arguments go out, a structured result comes back, and no model
+is anywhere in the loop.
+
+One session for the process, opened at boot and closed at shutdown.  A
+session per call would re-run the MCP initialise handshake for every
+scan, and the dispatch pass makes several calls per issue.
+
+Nothing here is tracker-shaped.  It speaks MCP and knows no tool names,
+so a second MCP-backed adapter reuses it unchanged.
+"""
+
+from collections.abc import Mapping
+from contextlib import AsyncExitStack
+from datetime import timedelta
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+from kodezart.core.errors import McpTransportError
+from kodezart.core.logging import BoundLogger, get_logger
+
+
+class HttpMcpToolCaller:
+    """A single initialised MCP session, addressed by tool name."""
+
+    def __init__(
+        self,
+        *,
+        url: str,
+        server_name: str,
+        token: str,
+        timeout_seconds: float,
+        auth_header_name: str,
+        auth_scheme: str,
+    ) -> None:
+        self._url: str = url
+        self._server_name: str = server_name
+        self._token: str = token
+        self._timeout_seconds: float = timeout_seconds
+        self._auth_header_name: str = auth_header_name
+        self._auth_scheme: str = auth_scheme
+        self._stack: AsyncExitStack | None = None
+        self._session: ClientSession | None = None
+        self._log: BoundLogger = get_logger(__name__)
+
+    async def open(self) -> None:
+        """Dial the server and complete the MCP initialise handshake."""
+        if self._session is not None:
+            raise McpTransportError(
+                "the MCP session is already open",
+                server_name=self._server_name,
+            )
+        stack = AsyncExitStack()
+        try:
+            read, write, _ = await stack.enter_async_context(
+                streamablehttp_client(
+                    url=self._url,
+                    headers={
+                        self._auth_header_name: f"{self._auth_scheme} {self._token}",
+                    },
+                    timeout=timedelta(seconds=self._timeout_seconds),
+                ),
+            )
+            session = await stack.enter_async_context(ClientSession(read, write))
+            await session.initialize()
+        except Exception as exc:
+            await stack.aclose()
+            raise McpTransportError(
+                "the MCP session could not be opened",
+                server_name=self._server_name,
+            ) from exc
+        self._stack = stack
+        self._session = session
+        await self._log.ainfo(
+            "mcp_session_opened",
+            server_name=self._server_name,
+            url=self._url,
+        )
+
+    async def close(self) -> None:
+        """Close the session. Closing a closed caller is a no-op."""
+        stack = self._stack
+        self._stack = None
+        self._session = None
+        if stack is None:
+            return
+        await stack.aclose()
+        await self._log.ainfo("mcp_session_closed", server_name=self._server_name)
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Invoke the named tool and return its structured result."""
+        session = self._session
+        if session is None:
+            raise McpTransportError(
+                "the MCP session is not open",
+                server_name=self._server_name,
+                tool_name=name,
+            )
+        result = await session.call_tool(name, dict(arguments))
+        if result.isError:
+            raise McpTransportError(
+                "the MCP server reported a tool error",
+                server_name=self._server_name,
+                tool_name=name,
+            )
+        structured = result.structuredContent
+        if structured is None:
+            raise McpTransportError(
+                "the MCP server returned no structured content",
+                server_name=self._server_name,
+                tool_name=name,
+            )
+        return structured

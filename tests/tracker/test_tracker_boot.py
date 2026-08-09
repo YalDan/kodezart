@@ -38,8 +38,16 @@ def operation_config() -> OperationConfig:
         operation_name="fixture",
         workspace="fixture-workspace",
         principals=[
-            Principal(tracker_user=APPROVER, role=PrincipalRole.APPROVER),
-            Principal(tracker_user=BYSTANDER, role=PrincipalRole.PRINCIPAL),
+            Principal(
+                tracker_user=APPROVER,
+                role=PrincipalRole.APPROVER,
+                handle="@approver",
+            ),
+            Principal(
+                tracker_user=BYSTANDER,
+                role=PrincipalRole.PRINCIPAL,
+                handle="@bystander",
+            ),
         ],
         agent_identities=[],
         teams=dict(TEAM_IDENTIFIERS),
@@ -124,8 +132,16 @@ class TestBootValidation:
         config = operation_config().model_copy(
             update={
                 "principals": [
-                    Principal(tracker_user="ghost", role=PrincipalRole.APPROVER),
-                    Principal(tracker_user=BYSTANDER, role=PrincipalRole.PRINCIPAL),
+                    Principal(
+                        tracker_user="ghost",
+                        role=PrincipalRole.APPROVER,
+                        handle="@approver",
+                    ),
+                    Principal(
+                tracker_user=BYSTANDER,
+                role=PrincipalRole.PRINCIPAL,
+                handle="@bystander",
+            ),
                 ],
             },
         )

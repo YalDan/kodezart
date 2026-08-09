@@ -250,6 +250,16 @@ class AppConfig(BaseSettings):
         default="https://mcp.linear.app/mcp",
         description="Endpoint of the vendor MCP server the tracker adapter dials.",
     )
+    tracker_mcp_auth_header: str = Field(
+        default="Authorization",
+        min_length=1,
+        description="Request header the tracker credential is presented in.",
+    )
+    tracker_mcp_auth_scheme: str = Field(
+        default="Bearer",
+        min_length=1,
+        description="Scheme prefixing the tracker credential in its auth header.",
+    )
     tracker_token: str | None = Field(
         default=None,
         description="Tracker credential for the MCP server. Environment only.",

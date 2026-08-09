@@ -1,23 +1,29 @@
-"""Boot validation for the tracker's configured mappings.
+"""Boot reconciliation for the tracker's configured mappings.
 
-Every identity, team and state mapping the operation config declares is
-resolved against the workspace before the process serves anything.  One
-unresolvable entry aborts startup naming exactly that entry — there is no
-partial operation and no silent default, because a mapping that does not
-resolve surfaces otherwise as a mis-targeted write hours later, with
-nothing to falsify.
+Split by OWNERSHIP, because "does this exist?" and "whose job is it to
+make it exist?" are different questions and the config declares both
+classes of thing.  A value the operation owns is INSTATED — created if
+absent, adopted unchanged if present — and a value another system is
+authoritative for is RESOLVED, with one unresolvable entry aborting
+startup naming exactly that entry.  A principal cannot be conjured; a
+queue label is nothing but this operation saying it exists.
+
+Treating both as "resolve or abort" made every owned value a manual
+prerequisite for booting, which is the manual step the cutover exists to
+remove: a real config could not boot until its checkpoint document and
+terminal queue label had been hand-made.
 
 Tracker-agnostic: the refs are built from the operation config in domain
-vocabulary and handed to ``TrackerPort.resolve_mappings``.  Which backend
-resolves them is the adapter's business.
+vocabulary and handed to the port.  Which backend instates or resolves
+them is the adapter's business.
 """
 
 from collections.abc import Sequence
 
-from kodezart.core.errors import TrackerBootValidationError
+from kodezart.core.errors import TrackerBootValidationError, TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.tracker import MappingKind, MappingRef
+from kodezart.types.domain.tracker import MappingKind, MappingOutcome, MappingRef
 
 
 def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
@@ -60,6 +66,29 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
     return tuple(refs)
 
 
+def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
+    """Every mapping entry boot INSTATES, in a stable order.
+
+    The queue vocabulary, and nothing else: it exists only because this
+    operation says it does, and no other system defines it.  Each ref
+    carries the container its value is created in — the operation's own
+    team when it declares exactly one, and workspace scope when it declares
+    several, because one queue state addressed on several teams' issues
+    cannot be a label private to one of them.
+    """
+    identifiers = sorted(set(config.teams.values()))
+    scope = identifiers[0] if len(identifiers) == 1 else None
+    return tuple(
+        MappingRef(
+            kind=MappingKind.QUEUE_STATE,
+            name=name,
+            identifier=identifier,
+            scope=scope,
+        )
+        for name, identifier in sorted(config.queue_states.items())
+    )
+
+
 async def validate_tracker_mappings(
     *,
     tracker: TrackerPort,
@@ -73,3 +102,35 @@ async def validate_tracker_mappings(
             "operation config names tracker entities the workspace does not resolve",
             unresolved=[ref.describe() for ref in unresolved],
         )
+
+
+async def reconcile_tracker_mappings(
+    *,
+    tracker: TrackerPort,
+    config: OperationConfig,
+) -> Sequence[MappingOutcome]:
+    """Instate what the operation owns, then resolve everything.
+
+    Ordered, and the order is the point: the owned values are created
+    first, so the resolution pass that follows sees the workspace the
+    operation declared rather than the one it started from.  What that pass
+    can still fail on is exactly the external class — a principal, a team, a
+    workflow state — which is the half no boot can instate.
+    """
+    refs = owned_mappings(config)
+    identifiers = [ref.identifier for ref in refs]
+    collisions = sorted(
+        {
+            ref.describe()
+            for ref in refs
+            if identifiers.count(ref.identifier) > 1
+        },
+    )
+    if collisions:
+        raise TrackerEnsureConflictError(
+            "two declared queue states claim one backend value",
+            entry="; ".join(collisions),
+        )
+    outcomes = await tracker.ensure_mappings(refs=refs)
+    await validate_tracker_mappings(tracker=tracker, config=config)
+    return outcomes

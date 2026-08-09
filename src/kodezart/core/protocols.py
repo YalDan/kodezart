@@ -28,6 +28,7 @@ from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
     IssueQuery,
+    MappingOutcome,
     MappingRef,
     StateTransition,
     TrackerAsset,
@@ -383,6 +384,25 @@ class McpToolCaller(Protocol):
 
 
 @runtime_checkable
+class ManagedMcpToolCaller(McpToolCaller, Protocol):
+    """An ``McpToolCaller`` whose connection has a lifetime the host owns.
+
+    The composition root opens one at boot and closes it at shutdown, so a
+    session handshake is not re-run per tool call.  Separate from
+    ``McpToolCaller`` because a consumer never opens or closes anything —
+    it names a tool and reads a result.
+    """
+
+    async def open(self) -> None:
+        """Establish the session. Opening an open caller is an error."""
+        ...
+
+    async def close(self) -> None:
+        """Close the session. Closing a closed caller is a no-op."""
+        ...
+
+
+@runtime_checkable
 class TrackerPort(Protocol):
     """The whole capability surface the passes and the runner need.
 
@@ -516,6 +536,20 @@ class TrackerPort(Protocol):
 
         Empty means every configured mapping exists.  The adapter resolves;
         deciding what an unresolvable entry means is the caller's.
+        """
+        ...
+
+    async def ensure_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingOutcome]:
+        """Instate every ref the operation OWNS, and say what that did.
+
+        Creates only.  A value already present is adopted unchanged and
+        never renamed, recoloured or repurposed; an ensure that would alter
+        an existing definition raises ``TrackerEnsureConflictError`` and
+        performs no write.  One outcome per ref, in the order given.
         """
         ...
 

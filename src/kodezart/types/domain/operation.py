@@ -28,11 +28,39 @@ class DocumentSystem(StrEnum):
     KNOWLEDGE = "knowledge"
 
 
+class ConfigOwnership(StrEnum):
+    """Who is authoritative for a declared value, and therefore what boot does.
+
+    Three classes, not two, because the fields do not split in two.  A
+    boolean would force ``operation_name`` and ``endpoints`` into one of two
+    behaviours neither of which applies to them.
+    """
+
+    #: The operation owns it and can create it: ensured at boot, created if
+    #: absent, adopted unchanged if present.
+    OWNED = "owned"
+    #: Another system is authoritative: resolved at boot, and a failure
+    #: aborts with a typed error naming the entry.  A principal cannot be
+    #: conjured.
+    EXTERNAL = "external"
+    #: Nothing exists in the workspace to resolve against; structural
+    #: validation only.
+    LOCAL = "local"
+
+
 class PrincipalRole(StrEnum):
-    """Authority is enforced via roles. Exactly one APPROVER exists."""
+    """Authority is enforced via roles. Exactly one APPROVER exists.
+
+    Three members because the passes route three things differently and a
+    two-valued enum collapses two of them.  ``APPROVER`` holds the approval
+    flip and is the assignment target; ``PRINCIPAL``'s word creates a reply
+    obligation the queue does not otherwise record; ``ESCALATION`` receives
+    out-of-band escalations and creates no reply obligation on its own.
+    """
 
     APPROVER = "approver"
     PRINCIPAL = "principal"
+    ESCALATION = "escalation"
 
 
 class QueueState(StrEnum):
@@ -65,10 +93,20 @@ class OperationModel(BaseModel):
 
 
 class Principal(OperationModel):
-    """A tracker user and the role that grants their authority."""
+    """A tracker user, the role granting their authority, and how they are named.
+
+    ``tracker_user`` is the identifier authority is checked against — a
+    provenance record answers "who set this state" with it.  ``handle`` is
+    the identifier a mention is RECOGNISED by: the string a person writes
+    when addressing this principal in a body or a comment.  The two are
+    routinely different, and a model carrying only the first cannot express
+    the mention sweep at all — that sweep is text matching, and it has no
+    identifier to match on.
+    """
 
     tracker_user: str
     role: PrincipalRole
+    handle: str
 
 
 class CheckStep(OperationModel):
@@ -246,6 +284,23 @@ class OperationConfig(OperationModel):
             if identity in known_users
         )
 
+        handles = [p.handle for p in self.principals]
+        failures.extend(
+            f"principals[{index}].handle must not be empty"
+            for index, handle in enumerate(handles)
+            if not handle.strip()
+        )
+        failures.extend(
+            f"principals[{index}].handle {handle!r} is not unique"
+            for index, handle in enumerate(handles)
+            if handles.count(handle) > 1
+        )
+        failures.extend(
+            f"principals[{index}].handle {handle!r} collides with an agent identity"
+            for index, handle in enumerate(handles)
+            if handle in set(self.agent_identities)
+        )
+
         if failures:
             raise ValueError("; ".join(failures))
         return self
@@ -253,3 +308,36 @@ class OperationConfig(OperationModel):
     def approver(self) -> Principal:
         """The single principal holding APPROVER authority."""
         return next(p for p in self.principals if p.role is PrincipalRole.APPROVER)
+
+
+#: Which class every declared field belongs to, and therefore what boot does
+#: with it.  A fixed partition in the MODEL rather than a per-field flag,
+#: because a flag makes ownership operator-editable data: an operator could
+#: mark ``principals`` ensurable and the adapter would try to create a user.
+#:
+#: ``documents`` and ``records`` are EXTERNAL rather than OWNED, which
+#: deviates from the 2026-08-08 partition and is recorded as a deviation on
+#: KOD-57.  Their declared value is a server-assigned identifier: a document
+#: absent from the workspace cannot be created *with the id the config
+#: names*, so "create it if absent" has no implementation that leaves the
+#: config true.  Instating them needs a name-addressed registry, which is a
+#: model change, not an adapter change.
+#:
+#: Totality over ``OperationConfig.model_fields`` is asserted by a test
+#: derived from ``model_fields``, never from a hand-written list.
+FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
+    "operation_name": ConfigOwnership.LOCAL,
+    "workspace": ConfigOwnership.EXTERNAL,
+    "principals": ConfigOwnership.EXTERNAL,
+    "agent_identities": ConfigOwnership.EXTERNAL,
+    "teams": ConfigOwnership.EXTERNAL,
+    "queue_states": ConfigOwnership.OWNED,
+    "workflow_states": ConfigOwnership.EXTERNAL,
+    "repos": ConfigOwnership.LOCAL,
+    "documents": ConfigOwnership.EXTERNAL,
+    "records": ConfigOwnership.EXTERNAL,
+    "knowledge": ConfigOwnership.LOCAL,
+    "endpoints": ConfigOwnership.LOCAL,
+    "initiatives": ConfigOwnership.EXTERNAL,
+    "private_surface": ConfigOwnership.LOCAL,
+}

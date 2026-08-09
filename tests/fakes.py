@@ -60,10 +60,12 @@ from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelect
 from kodezart.types.domain.tracker import (
     ClaimResult,
     ClaimStatus,
+    EnsureAction,
     IssuePriority,
     IssueQuery,
     IssueRelation,
     IssueRelationKind,
+    MappingOutcome,
     MappingRef,
     StateTransition,
     TrackerAsset,
@@ -1694,11 +1696,45 @@ class FakeLinearMcpServer:
     ) -> Mapping[str, object]:
         return self._named(self.labels)
 
+    def _tool_create_issue_label(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        name = str(arguments["name"])
+        if name in self.labels:
+            msg = f"fake workspace already carries the label {name!r}"
+            raise LookupError(msg)
+        self.labels.append(name)
+        return {"name": name}
+
     def _tool_list_issue_statuses(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
         return self._named(self.statuses)
+
+
+class ManagedFakeLinearMcpServer(FakeLinearMcpServer):
+    """The fake MCP server plus the session lifetime the composition root drives.
+
+    Satisfies ``ManagedMcpToolCaller``, so the lifespan opens and closes it
+    exactly as it opens and closes the real HTTP transport, and the real
+    adapter runs above it.  Counts rather than flags: an unbalanced
+    open/close is visible.
+    """
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self.opens: int = 0
+        self.closes: int = 0
+
+    async def open(self) -> None:
+        await asyncio.sleep(0)
+        self.opens += 1
+
+    async def close(self) -> None:
+        await asyncio.sleep(0)
+        self.closes += 1
 
 
 class FakeTracker:
@@ -1718,6 +1754,7 @@ class FakeTracker:
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         unresolvable: Sequence[MappingRef] = (),
+        instated: Sequence[str] = (),
         work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
@@ -1740,6 +1777,7 @@ class FakeTracker:
         }
         self._documents: dict[str, str] = dict(documents or {})
         self._unresolvable: tuple[MappingRef, ...] = tuple(unresolvable)
+        self.instated: set[str] = set(instated)
         self._clock: Callable[[], datetime] = clock
         self._sequence: int = 0
 
@@ -1916,6 +1954,27 @@ class FakeTracker:
         refs: Sequence[MappingRef],
     ) -> Sequence[MappingRef]:
         return tuple(ref for ref in refs if ref in self._unresolvable)
+
+    async def ensure_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingOutcome]:
+        await asyncio.sleep(0)
+        outcomes: list[MappingOutcome] = []
+        for ref in refs:
+            created = ref.identifier not in self.instated
+            self.instated.add(ref.identifier)
+            self._unresolvable = tuple(
+                item for item in self._unresolvable if item.identifier != ref.identifier
+            )
+            outcomes.append(
+                MappingOutcome(
+                    ref=ref,
+                    action=EnsureAction.CREATED if created else EnsureAction.ADOPTED,
+                ),
+            )
+        return tuple(outcomes)
 
 
 class FakeDeliveryProbe:

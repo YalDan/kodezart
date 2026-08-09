@@ -69,8 +69,16 @@ def operation_config() -> OperationConfig:
         operation_name="fixture",
         workspace="fixture-workspace",
         principals=[
-            Principal(tracker_user=APPROVER, role=PrincipalRole.APPROVER),
-            Principal(tracker_user=IMPOSTOR, role=PrincipalRole.PRINCIPAL),
+            Principal(
+                tracker_user=APPROVER,
+                role=PrincipalRole.APPROVER,
+                handle="@approver",
+            ),
+            Principal(
+                tracker_user=IMPOSTOR,
+                role=PrincipalRole.PRINCIPAL,
+                handle="@impostor",
+            ),
         ],
         agent_identities=[],
         teams={"engineering": "fixture-team"},

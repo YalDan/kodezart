@@ -44,6 +44,7 @@ agent_identities = []
 [[principals]]
 tracker_user = "user-a"
 role = "approver"
+handle = "@user-a"
 
 [teams]
 primary = "team-1"

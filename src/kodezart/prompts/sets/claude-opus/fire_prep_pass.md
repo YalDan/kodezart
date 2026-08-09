@@ -12,8 +12,8 @@ Before evaluating any item on its own, group the window into bundles: items that
 ## Mention Sweep
 The window is swept for three streams, not one: items awaiting triage, items carrying a mention, and items awaiting review. An item carries a mention when one of these handles appears in its body or in a comment on it:{{#each agent_identities}}
 - {{this}}{{/each}}
-Sweep separately for the principals whose word creates a reply obligation the queue does not otherwise record:{{#each principals}}
-- {{this.tracker_user}}, holding the {{this.role}} role{{/each}}
+Sweep separately for the principals whose word creates a reply obligation the queue does not otherwise record. Each is written as the first identifier below and acts as the second; recognise a mention by the first and check authority against the second, and never treat one as the other:{{#each principals}}
+- {{this.handle}}, acting as {{this.tracker_user}}, holding the {{this.role}} role{{/each}}
 A mention written by a principal is in scope even when the item carrying it falls outside the window; any other mention is in scope only inside it. Bundle the swept items with the rest of the window before evaluating any of them, route each into the reply rules below, and never answer a mention a principal or another actor has already answered.
 
 ## Queue State Transitions
