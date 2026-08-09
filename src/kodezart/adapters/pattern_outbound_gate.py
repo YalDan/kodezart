@@ -16,7 +16,6 @@ never downgraded to CLEAN, so "did not answer" and "said it is clean" stay
 two distinct observable states.
 """
 
-import hashlib
 from collections.abc import Mapping, Sequence
 
 from kodezart.core.content_classification import ContentClassifier
@@ -31,6 +30,7 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     ScanHit,
     WriterShape,
+    content_digest,
     max_verdict,
 )
 
@@ -138,18 +138,6 @@ class PatternOutboundContentGate:
                 declared = GateVerdict.BLOCKED
             verdict = max_verdict(verdict, declared)
         return verdict
-
-
-def content_digest(content: str) -> str:
-    """The payload hash that keys the memo and rides on the gate event.
-
-    Across runs the judgment verdict is genuinely non-deterministic, and
-    that is not engineered away here.  What rides on the event instead is
-    this hash plus the fragment digest, so a disagreement between two runs
-    over the same payload is RECONSTRUCTIBLE by an operator rather than
-    invisible.
-    """
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def _redact(content: str, hits: Sequence[ScanHit]) -> str:

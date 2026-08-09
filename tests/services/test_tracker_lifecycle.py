@@ -1,14 +1,38 @@
 """Lifecycle write-back: every identity resolved, no literal state name."""
 
+import pytest
+
+from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
+from kodezart.types.domain.gating import (
+    GateDecision,
+    GateVerdict,
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+)
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
-from tests.fakes import FakeTracker, make_tracker_issue
+from tests.fakes import FakeTracker, PassThroughGate, make_tracker_issue
 
 
 def writer() -> tuple[TrackerLifecycleWriter, FakeTracker]:
     tracker = FakeTracker(issues=[make_tracker_issue("K-1")])
-    return TrackerLifecycleWriter(tracker=tracker), tracker
+    return TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()), tracker
+
+
+class BlockingGate:
+    """An ``OutboundContentGate`` that blocks every payload it is handed."""
+
+    async def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+        destination: OutboundDestination,
+    ) -> GateDecision:
+        return GateDecision(verdict=GateVerdict.BLOCKED, content="")
 
 
 class TestLifecycleWrites:
@@ -51,3 +75,50 @@ class TestLifecycleWrites:
         body = tracker.comments[0].body
         assert "job-0001" in body
         assert WorkflowOutcome.ci_passed.value in body
+
+
+class TestTheCommentRoutesThroughTheGate:
+    """The coordination surface mirrors publicly, so it is a gated writer."""
+
+    async def test_the_comment_is_gated_at_the_tracker_destination(self) -> None:
+        tracker = FakeTracker(issues=[make_tracker_issue("K-1")])
+        gate = PassThroughGate()
+        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+
+        await write.on_terminal_outcome(
+            issue_key="K-1",
+            job_id="job-0001",
+            outcome=WorkflowOutcome.ci_passed,
+        )
+
+        assert gate.destinations == [OutboundDestination.TRACKER_COMMENT]
+
+    async def test_a_private_repository_does_not_exempt_the_tracker_write(
+        self,
+    ) -> None:
+        """The repository's visibility is not the question on this surface."""
+        tracker = FakeTracker(issues=[make_tracker_issue("K-1")])
+        gate = PassThroughGate()
+        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+
+        await write.on_terminal_outcome(
+            issue_key="K-1",
+            job_id="job-0001",
+            outcome=WorkflowOutcome.ci_passed,
+        )
+
+        assert [call[1] for call in gate.calls] == [RepoVisibility.PUBLIC]
+
+    async def test_a_blocked_comment_is_never_posted(self) -> None:
+        tracker = FakeTracker(issues=[make_tracker_issue("K-1")])
+        write = TrackerLifecycleWriter(tracker=tracker, gate=BlockingGate())
+
+        with pytest.raises(OutboundContentBlockedError) as excinfo:
+            await write.on_terminal_outcome(
+                issue_key="K-1",
+                job_id="job-0001",
+                outcome=WorkflowOutcome.ci_passed,
+            )
+
+        assert excinfo.value.writer == OutboundDestination.TRACKER_COMMENT.value
+        assert tracker.comments == []

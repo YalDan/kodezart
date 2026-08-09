@@ -10,7 +10,6 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 from pydantic import TypeAdapter
 
-from kodezart.adapters.pattern_outbound_gate import content_digest
 from kodezart.core.constants import (
     EVAL_PERMISSION_MODE,
     EVAL_TOOLS,
@@ -18,6 +17,7 @@ from kodezart.core.constants import (
 )
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
@@ -35,7 +35,6 @@ from kodezart.core.protocols import (
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.agent import generate_ralph_branch_name
-from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.prompt_variables import changeset_variables
@@ -64,11 +63,9 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.gating import (
-    GateVerdict,
     OutboundDestination,
     RepoVisibility,
     WriterShape,
-    surface_of,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
@@ -387,42 +384,15 @@ class RalphWorkflowEngine:
         shape: WriterShape,
         destination: OutboundDestination,
     ) -> str:
-        """Route one outbound payload through the gate. BLOCKED raises."""
-        decision = await self._gate.gate(
+        """Route one outbound payload through the one gated-write path."""
+        return await gated_write(
+            gate=self._gate,
+            log=self._log,
             content=content,
             visibility=visibility,
             shape=shape,
             destination=destination,
         )
-        await self._log.ainfo(
-            "outbound_content_gated",
-            writer=destination.value,
-            surface=surface_of(destination).value,
-            verdict=decision.verdict.value,
-            visibility=visibility.value,
-            categories=[c.value for c in decision.categories],
-            failure=None if decision.failure is None else decision.failure.value,
-            content_digest=content_digest(content),
-            hits=[
-                {
-                    "category": hit.category.value,
-                    "start": hit.start,
-                    "end": hit.end,
-                    "rationale": hit.rationale,
-                }
-                for hit in decision.hits
-            ],
-        )
-        if decision.verdict is GateVerdict.BLOCKED:
-            msg = "Outbound content blocked before write"
-            raise OutboundContentBlockedError(
-                msg,
-                writer=destination.value,
-                categories=[c.value for c in decision.categories],
-                failure=decision.failure,
-                hits=decision.hits,
-            )
-        return decision.content
 
     async def _generate_branch_node(
         self,

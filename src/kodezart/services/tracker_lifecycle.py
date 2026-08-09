@@ -14,16 +14,32 @@ to, and the queue state to its terminal member.
 """
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.outbound_write import gated_write
+from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.types.domain.gating import (
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+)
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
 
 
 class TrackerLifecycleWriter:
-    """Writes a fire's lifecycle back onto its originating issue."""
+    """Writes a fire's lifecycle back onto its originating issue.
 
-    def __init__(self, *, tracker: TrackerPort) -> None:
+    The state transitions carry no prose — a stage and a queue member, both
+    resolved from configuration — so the gate has nothing to judge on them.
+    The comment does carry prose, and the coordination surface mirrors
+    publicly, so it routes through the same gated-write path as every other
+    outbound writer.  It is gated BEFORE the passes that will compose their
+    comment bodies out of private board state, which is the whole reason
+    this enforcement lands ahead of the thing it enforces.
+    """
+
+    def __init__(self, *, tracker: TrackerPort, gate: OutboundContentGate) -> None:
         self._tracker: TrackerPort = tracker
+        self._gate: OutboundContentGate = gate
         self._log: BoundLogger = get_logger(__name__)
 
     async def on_dequeue(self, *, issue_key: str) -> None:
@@ -62,10 +78,19 @@ class TrackerLifecycleWriter:
         outcome: WorkflowOutcome,
     ) -> None:
         """Post the run's terminal outcome, read off the job-status surface."""
-        await self._tracker.post_comment(
-            issue_key=issue_key,
-            body=f"job {job_id} reached outcome {outcome.value}",
+        # The repository's own visibility is NOT the question here. This
+        # payload lands on the coordination surface, which mirrors publicly
+        # by the definition of OutboundSurface.TRACKER, so a private target
+        # repository must not exempt the write.
+        body = await gated_write(
+            gate=self._gate,
+            log=self._log,
+            content=f"job {job_id} reached outcome {outcome.value}",
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.TRACKER_COMMENT,
         )
+        await self._tracker.post_comment(issue_key=issue_key, body=body)
         await self._log.ainfo(
             "lifecycle_outcome_comment",
             issue_key=issue_key,

@@ -4,6 +4,7 @@ Every outbound write from a run carries a verdict that is explicit and
 observable: content is never silently dropped and never silently posted.
 """
 
+import hashlib
 from collections.abc import Mapping
 from enum import StrEnum
 
@@ -43,6 +44,18 @@ _SEVERITY: dict[GateVerdict, int] = {
 def max_verdict(left: GateVerdict, right: GateVerdict) -> GateVerdict:
     """Max-severity-wins combination of two verdicts."""
     return left if _SEVERITY[left] >= _SEVERITY[right] else right
+
+
+def content_digest(content: str) -> str:
+    """The payload hash that keys the gate's memo and rides on its event.
+
+    Across runs the judgment verdict is genuinely non-deterministic, and
+    that is not engineered away here.  What rides on the event instead is
+    this hash plus the fragment digest, so a disagreement between two runs
+    over the same payload is RECONSTRUCTIBLE by an operator rather than
+    invisible.
+    """
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 class RedactionCategory(StrEnum):

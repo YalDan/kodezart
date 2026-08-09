@@ -22,10 +22,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.pattern_outbound_gate import (
-    PatternOutboundContentGate,
-    content_digest,
-)
+from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.adapters.toml_operation_config import load_operation_config
@@ -46,6 +43,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.services.agent_service import AgentService
 from kodezart.services.job_service import JobService
+from kodezart.types.domain.gating import content_digest
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
