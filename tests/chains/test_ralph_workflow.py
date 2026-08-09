@@ -12,6 +12,7 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
 from kodezart.domain.accept_gate import accept_verdict
+from kodezart.domain.errors import StaleBaseError
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -25,6 +26,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowPREvent,
     WorkflowReviewEvent,
+    WorkflowScopeBaseEvent,
     WorkflowTicketEvent,
 )
 from kodezart.types.domain.base_spec import (
@@ -3243,6 +3245,75 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
     assert len(diff_calls) >= 1
     assert diff_calls[0][2] == blocker_sha
     assert diff_calls[0][2] != trunk_sha
+
+
+async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
+    """AC-36: the refusal is the run's, not just the helper's.
+
+    ``scope_base`` refusing in isolation leaves the claim that MATTERS
+    unpinned — that nothing is graded. This asserts the absence: no scope
+    event is emitted, no diff is taken, and the loop is never entered, so
+    there is no verdict anywhere about a tree that has moved.
+    """
+    recorded = BaseSpec(
+        base_ref="kodezart/blocker-a-11111111",
+        role=BaseRefRole.deliverable,
+        inputs=(
+            BaseInput(
+                blocker_issue_id="KOD-A",
+                branch="kodezart/blocker-a-11111111",
+                sha="a" * 40,
+            ),
+        ),
+    )
+    implied = recorded.model_copy(
+        update={"inputs": (recorded.inputs[0].model_copy(update={"sha": "c" * 40}),)},
+    )
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=AgentService(
+            executor=FakeAgentExecutor(events=[]),
+            workspace=FakeWorkspaceProvider(),
+            persister=FakeChangePersister(),
+        ),
+        quality_gate=gate,
+        ticket_generator=FakeTicketGenerator(),
+        merger=FakeBranchMerger(),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=git,
+        cache=FakeRepoCache(),
+        artifact_persister=None,
+    )
+
+    events: list[AgentEvent] = []
+    with pytest.raises(StaleBaseError) as excinfo:
+        async for event in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_spec=recorded,
+            implied_base=implied,
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        ):
+            events.append(event)
+
+    assert excinfo.value.recorded_ref == recorded.base_ref
+    assert events == []
+    assert [e for e in events if isinstance(e, WorkflowScopeBaseEvent)] == []
+    assert [c for c in git.calls if c[0] == "diff_summary"] == []
+    assert gate.calls == []
 
 
 async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
