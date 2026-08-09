@@ -364,7 +364,7 @@ class RalphWorkflowEngine:
         )
         graph.add_conditional_edges(
             "validate_criteria",
-            self._route_after_criteria_validation,
+            self._route_after_validation,
             {
                 "generate_criteria": "generate_criteria",
                 proceed: proceed,
@@ -724,7 +724,7 @@ class RalphWorkflowEngine:
             "criteria_infeasible": bound_exhausted,
         }
 
-    def _route_after_criteria_validation(self, state: WorkflowState) -> str:
+    def _route_after_validation(self, state: WorkflowState) -> str:
         """Halt, regenerate, or proceed — computed from the sweep alone."""
         if state["criteria_infeasible"]:
             return "complete"

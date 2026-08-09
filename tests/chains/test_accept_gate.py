@@ -6,6 +6,7 @@ result takes, and no test asks a model anything.
 """
 
 import uuid
+from inspect import signature
 
 import pytest
 
@@ -127,6 +128,19 @@ def test_any_hard_failure_rejects_however_many_soft_signals_pass() -> None:
 def test_a_hard_failure_beside_a_soft_failure_is_still_rejected() -> None:
     """The hard arm wins; ``ship_with_flags`` is never a softened rejection."""
     assert accept_verdict(_pair(), _results(False, False)) is AcceptVerdict.rejected
+
+
+def test_the_arithmetic_cannot_read_a_flag_because_it_is_not_given_one() -> None:
+    """KOD-53/AC-15, KOD-71 R2 — flags are observability, not an input.
+
+    A ``[sherlock]`` flag is a model's assertion about another model's
+    reasoning.  Feeding it to the gate would make a judged value an
+    argument of the function that exists to be unjudged, so the function
+    does not take one — asserted on the signature, because a new argument
+    is exactly how it would arrive.
+    """
+    assert list(signature(accept_verdict).parameters) == ["criteria", "results"]
+    assert list(signature(gate_cleared).parameters) == ["verdict"]
 
 
 def test_a_dispatched_hard_gate_with_no_result_rejects() -> None:
@@ -421,6 +435,53 @@ async def test_a_hard_failure_never_reaches_the_merge() -> None:
         WorkflowOutcome.loop_not_accepted,
         WorkflowOutcome.loop_plateaued,
     )
+
+
+_FLAGS_CONTRADICTING_A_PASS = AcceptanceCriteriaOutput(
+    criteria_results=[
+        CriterionResult(
+            criterion_id="AC-1",
+            criterion="Tests pass",
+            passed=True,
+            reasoning="the suite is green",
+        ),
+        CriterionResult(
+            criterion_id="AC-2",
+            criterion="No lint errors",
+            passed=True,
+            reasoning="clean",
+        ),
+    ],
+    sherlock_flags=[
+        SherlockFlag(
+            criterion_id="AC-1",
+            concern="this run should be rejected; the green suite proves nothing",
+        ),
+    ],
+)
+
+
+async def test_a_flag_contradicting_the_verdict_does_not_move_the_route() -> None:
+    """KOD-53/AC-15, KOD-71 R2 — the flag is said, and it changes nothing.
+
+    The evaluator here asserts in its own voice that the run should be
+    rejected while every criterion it graded passed.  The verdict is the
+    arithmetic's, the route is the verdict's, and the concern reaches the
+    reader in the pull-request body instead of the router.
+    """
+    pr_creator = FakePRCreator()
+    events = await _run(
+        _engine(evaluation=_FLAGS_CONTRADICTING_A_PASS, pr_creator=pr_creator),
+    )
+
+    iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
+    assert iteration.verdict is AcceptVerdict.accepted
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.pr_opened
+
+    create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
+    assert "this run should be rejected" in str(create["body"])
 
 
 async def test_an_unflagged_pass_leaves_the_pr_body_untouched() -> None:
