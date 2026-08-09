@@ -20,6 +20,7 @@ empirically on a later grading rather than by a verdict issued now.
 """
 
 from enum import StrEnum
+from typing import NewType
 
 from pydantic import ConfigDict, Field
 
@@ -27,6 +28,16 @@ from kodezart.types.base import CamelCaseModel
 
 #: Pattern every minted criterion identity matches.
 CRITERION_ID_PATTERN = r"^AC-[1-9][0-9]*$"
+
+#: A criterion's identity, distinct from the strings it is spelled with.
+#:
+#: A ``NewType`` rather than a constrained ``str`` alias: an alias validates
+#: the format and remains ``str`` to the type checker, so a union that
+#: discriminates a criterion identity from another minted identity collapses
+#: to ``str`` and admits any loose string.  Only the minting function
+#: constructs one, so a value reaching a criterion-id annotation came from
+#: the harness and not from a model's echo.
+CriterionId = NewType("CriterionId", str)
 
 
 class CriterionClassification(StrEnum):
@@ -165,7 +176,7 @@ class AcceptanceCriterion(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    id: str = Field(pattern=CRITERION_ID_PATTERN)
+    id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     text: str = Field(min_length=1)
     classification: CriterionClassification
 
@@ -189,7 +200,7 @@ class CriterionFinding(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: str = Field(pattern=CRITERION_ID_PATTERN)
+    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     smallest_repair: RepairKind
     refutation: str | None = None
     missing_resource: str | None = None
@@ -205,7 +216,7 @@ class Contradiction(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_ids: list[str] = Field(min_length=2)
+    criterion_ids: list[CriterionId] = Field(min_length=2)
     explanation: str = Field(min_length=1)
 
 
@@ -221,7 +232,7 @@ class CriterionFeasibility(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: str = Field(pattern=CRITERION_ID_PATTERN)
+    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     verdict: FeasibilityVerdict
     limit_arm: LimitArm = LimitArm.not_a_limit
     refutation: str | None = None
@@ -239,7 +250,7 @@ class ConjunctionVerdict(CamelCaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     satisfiable: bool
-    conflicting_ids: list[str] = Field(default_factory=list)
+    conflicting_ids: list[CriterionId] = Field(default_factory=list)
     explanation: str | None = None
 
 
@@ -257,7 +268,7 @@ class ValidatedCriterion(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    id: str = Field(pattern=CRITERION_ID_PATTERN)
+    id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     text: str = Field(min_length=1)
     classification: CriterionClassification
     feasibility: CriterionFeasibility
@@ -288,6 +299,6 @@ class CriterionFailure(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: str = Field(pattern=CRITERION_ID_PATTERN)
+    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     text: str = Field(min_length=1)
     reasoning: str = Field(min_length=1)

@@ -7,14 +7,17 @@ dispatch and grading, and the re-injected feedback text — keys off these
 ids and never off criterion text.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 
 from kodezart.types.domain.criteria import (
+    CRITERION_ID_PATTERN,
     AcceptanceCriterion,
     CriteriaArtifact,
     CriteriaValidation,
     CriterionClassification,
     CriterionFeasibility,
+    CriterionId,
     DraftedCriterion,
     ValidatedCriterion,
 )
@@ -22,12 +25,21 @@ from kodezart.types.domain.criteria import (
 _ID_PREFIX = "AC-"
 
 
-def mint_criterion_id(position: int) -> str:
-    """The identity of the criterion at 1-based *position*."""
-    if position < 1:
-        msg = f"Criterion positions are 1-based; got {position}"
+def mint_criterion_id(index: int) -> CriterionId:
+    """The identity of the criterion at 1-based *index*.
+
+    The single construction site for a ``CriterionId``: it formats the
+    ``AC-n`` shape and validates what it formatted, so no other surface
+    needs to know the shape and none may invent one.
+    """
+    if index < 1:
+        msg = f"Criterion positions are 1-based; got {index}"
         raise ValueError(msg)
-    return f"{_ID_PREFIX}{position}"
+    minted = f"{_ID_PREFIX}{index}"
+    if re.fullmatch(CRITERION_ID_PATTERN, minted) is None:
+        msg = f"Minted criterion identity does not match the scheme: {minted!r}"
+        raise ValueError(msg)
+    return CriterionId(minted)
 
 
 def mint_criteria(
@@ -36,17 +48,17 @@ def mint_criteria(
     """Assign ``AC-n`` identities to *drafted* in emission order."""
     return tuple(
         AcceptanceCriterion(
-            id=mint_criterion_id(position),
+            id=mint_criterion_id(index),
             text=criterion.text,
             classification=criterion.classification,
         )
-        for position, criterion in enumerate(drafted, start=1)
+        for index, criterion in enumerate(drafted, start=1)
     )
 
 
 def criteria_by_id(
     criteria: Sequence[AcceptanceCriterion],
-) -> Mapping[str, AcceptanceCriterion]:
+) -> Mapping[CriterionId, AcceptanceCriterion]:
     """Index *criteria* by identity — the harness's own text, by id."""
     return {criterion.id: criterion for criterion in criteria}
 
@@ -74,7 +86,7 @@ def build_artifact(
     validation: CriteriaValidation,
 ) -> CriteriaArtifact:
     """Fold criteria and their sweep verdicts into the persisted document."""
-    verdicts: dict[str, CriterionFeasibility] = {
+    verdicts: dict[CriterionId, CriterionFeasibility] = {
         verdict.criterion_id: verdict for verdict in validation.verdicts
     }
     return CriteriaArtifact(

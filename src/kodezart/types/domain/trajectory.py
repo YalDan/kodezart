@@ -12,22 +12,24 @@ the precedent: one typed partition per leaf module, re-exported from
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.criteria import CriterionId
 
 
 class IterationRecord(CamelCaseModel):
     """One iteration's contribution to the loop's progress memory.
 
-    ``failing_criterion_ids`` carries criterion TEXT verbatim
-    (``CriterionResult.criterion``) — no synthetic ids are minted.
-    ``commit_sha`` is that iteration's own commit, never overwritten by
-    a later iteration.
+    ``failing_criterion_ids`` carries minted ``CriterionId`` values, not
+    the evaluator's echo of a criterion's text: a plateau is a claim that
+    the SAME criteria keep failing, and text a model re-renders each
+    iteration cannot carry that claim.  ``commit_sha`` is that
+    iteration's own commit, never overwritten by a later iteration.
     """
 
     model_config = ConfigDict(frozen=True)
 
     iteration: int = Field(ge=1)
     passed_count: int = Field(ge=0)
-    failing_criterion_ids: list[str]
+    failing_criterion_ids: list[CriterionId]
     commit_sha: str | None = None
 
 
@@ -37,7 +39,7 @@ class LoopTrajectory(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
 
     records: list[IterationRecord]
-    never_passed_ids: list[str]
+    never_passed_ids: list[CriterionId]
     best_passed_count: int = Field(ge=0)
     best_iteration: int = Field(ge=0)
     best_commit_sha: str | None = None

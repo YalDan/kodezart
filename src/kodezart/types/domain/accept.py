@@ -18,6 +18,7 @@ from enum import StrEnum
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.criteria import CriterionId
 
 
 class AcceptVerdict(StrEnum):
@@ -43,7 +44,7 @@ class SherlockFlag(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: str | None = None
+    criterion_id: CriterionId | None = None
     concern: str = Field(min_length=1)
 
 
@@ -52,5 +53,5 @@ class FlaggedItem(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: str | None = None
+    criterion_id: CriterionId | None = None
     summary: str = Field(min_length=1)

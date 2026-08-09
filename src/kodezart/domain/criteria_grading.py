@@ -26,7 +26,11 @@ from collections.abc import Sequence
 
 from kodezart.domain.accept_gate import accept_verdict, is_graded, ungraded
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
-from kodezart.types.domain.criteria import CriterionFailure, ValidatedCriterion
+from kodezart.types.domain.criteria import (
+    CriterionFailure,
+    CriterionId,
+    ValidatedCriterion,
+)
 from kodezart.types.domain.grading import IterationGrade
 
 MISSING_RESULT_REASONING = (
@@ -41,9 +45,9 @@ def grade_iteration(
 ) -> IterationGrade:
     """Reconcile *output* against *criteria* and grade fail-closed."""
     dispatched = {criterion.id: criterion for criterion in criteria}
-    answered: dict[str, CriterionResult] = {}
-    unknown_ids: list[str] = []
-    duplicate_ids: list[str] = []
+    answered: dict[CriterionId, CriterionResult] = {}
+    unknown_ids: list[CriterionId] = []
+    duplicate_ids: list[CriterionId] = []
 
     for result in output.criteria_results:
         if result.criterion_id not in dispatched:
@@ -56,7 +60,7 @@ def grade_iteration(
 
     results: list[CriterionResult] = []
     failures: list[CriterionFailure] = []
-    missing_ids: list[str] = []
+    missing_ids: list[CriterionId] = []
 
     for criterion in criteria:
         answer = answered.get(criterion.id)

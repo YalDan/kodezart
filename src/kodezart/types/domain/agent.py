@@ -19,6 +19,7 @@ from kodezart.types.domain.criteria import (
     AcceptanceCriterion,
     CriteriaValidation,
     CriteriaValidationOutput,
+    CriterionId,
     DraftedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
@@ -294,7 +295,7 @@ class CriterionResult(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: str = Field(pattern=CRITERION_ID_PATTERN)
+    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     criterion: str = Field(min_length=1)
     passed: bool
     reasoning: str = Field(min_length=1)
