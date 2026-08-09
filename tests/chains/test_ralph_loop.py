@@ -1,6 +1,7 @@
 """Tests for RalphLoop (inner quality-gating loop) with fakes."""
 
 import ast
+import inspect
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TypedDict
@@ -21,7 +22,12 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.base_spec import (
+    BaseInput,
+    BaseRefRole,
+    BaseSpec,
+    trunk_base,
+)
 from kodezart.types.domain.criteria import FeasibilityVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
@@ -31,6 +37,7 @@ from kodezart.types.domain.trajectory import IterationRecord
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
+    FakeAgentRunner,
     FakeChangePersister,
     FakeGitService,
     FakeRepoCache,
@@ -76,7 +83,7 @@ class _RunKwargs(TypedDict):
     repo_url: str | None
     feature_branch: str
     ralph_branch: str
-    base_branch: str
+    base_spec: BaseSpec
     permission_mode: str
     allowed_tools: list[str]
     acceptance_criteria: list[ValidatedCriterion]
@@ -87,6 +94,7 @@ class _RunKwargs(TypedDict):
 def _run_kwargs(
     *,
     acceptance_criteria: list[ValidatedCriterion] | None = None,
+    base_spec: BaseSpec | None = None,
 ) -> _RunKwargs:
     return _RunKwargs(
         prompt="fix it",
@@ -94,7 +102,7 @@ def _run_kwargs(
         repo_url=None,
         feature_branch="kodezart/test-12345678",
         ralph_branch="kodezart/test-12345678-ralph-abcdef01",
-        base_spec=trunk_base("main"),
+        base_spec=base_spec if base_spec is not None else trunk_base("main"),
         permission_mode="bypassPermissions",
         allowed_tools=["Bash"],
         acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),
@@ -773,6 +781,98 @@ async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch()
     # diff_summary(cwd, base_ref, head_ref)
     assert diff_calls[0][2] == "main"
     assert diff_calls[0][3] == "kodezart/test-12345678-ralph-abcdef01"
+
+
+# ---------------------------------------------------------------------------
+# AC-31 / AC-35 — the digest's base is the lane's recorded base
+# ---------------------------------------------------------------------------
+
+_STACKED = BaseSpec(
+    base_ref="kodezart/blocker-a-11111111",
+    role=BaseRefRole.deliverable,
+    inputs=(
+        BaseInput(
+            blocker_issue_id="KOD-A",
+            branch="kodezart/blocker-a-11111111",
+            sha="a" * 40,
+        ),
+    ),
+)
+
+
+def _one_passing_evaluation() -> FakeAgentExecutor:
+    return FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=10,
+                duration_api_ms=5,
+                is_error=False,
+                num_turns=1,
+                session_id="s1",
+                structured_output={
+                    "criteriaResults": [
+                        {
+                            "criterionId": "AC-1",
+                            "criterion": "Tests pass",
+                            "passed": True,
+                            "reasoning": "ok",
+                        },
+                    ],
+                },
+            ),
+        ]
+    )
+
+
+async def test_the_digest_of_a_stacked_lane_uses_its_recorded_base() -> None:
+    """AC-31: the stacked arm of the same selection the trunk test pins.
+
+    Grading the digest against trunk is the defect KOD-36 reports: every
+    line the lane inherited from its blocker enters the evaluator's
+    changeset as though the lane had written it.
+    """
+    git = FakeGitService()
+    loop = _make_loop(executor=_one_passing_evaluation(), git=git)
+
+    _ = [e async for e in loop.run(**_run_kwargs(base_spec=_STACKED))]
+
+    diff_calls = [c for c in git.calls if c[0] == "diff_summary"]
+    assert len(diff_calls) >= 1
+    assert diff_calls[0][2] == _STACKED.base_ref
+    assert diff_calls[0][2] != "main"
+
+
+async def test_the_first_iteration_is_dispatched_with_the_recorded_base() -> None:
+    """AC-35: ``stream_workflow``'s own ``"main"`` default is never consulted.
+
+    The seam where the substitution would happen is the dispatch itself:
+    the loop names the base on every call, so the literal default on
+    ``AgentRunner.stream_workflow`` cannot become a scope baseline.
+    """
+    from kodezart.core.errors import NoStructuredOutputError
+
+    runner = FakeAgentRunner(events=[])
+    loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=runner,
+        max_iterations=1,
+        plateau_window=2,
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+    )
+
+    with pytest.raises(NoStructuredOutputError):
+        _ = [e async for e in loop.run(**_run_kwargs(base_spec=_STACKED))]
+
+    dispatches = [c for c in runner.calls if c["method"] == "stream_workflow"]
+    assert dispatches, "the execute node never dispatched"
+    assert dispatches[0]["base_branch"] == _STACKED.base_ref
+    service_default = inspect.signature(
+        AgentService.stream_workflow,
+    ).parameters["base_branch"]
+    assert dispatches[0]["base_branch"] != service_default.default
 
 
 async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> None:

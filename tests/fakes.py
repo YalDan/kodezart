@@ -702,6 +702,7 @@ class FakeAgentRunner:
                 "prompt": prompt,
                 "skills": skills,
                 "visibility": visibility,
+                "base_branch": base_branch,
             },
         )
         for event in self._events:

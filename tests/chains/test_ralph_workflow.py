@@ -27,7 +27,12 @@ from kodezart.types.domain.agent import (
     WorkflowReviewEvent,
     WorkflowTicketEvent,
 )
-from kodezart.types.domain.base_spec import BaseSpec, trunk_base
+from kodezart.types.domain.base_spec import (
+    BaseInput,
+    BaseRefRole,
+    BaseSpec,
+    trunk_base,
+)
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
@@ -3158,6 +3163,86 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
     assert len(head_ref) == 40
     assert base_ref == base_sha
     assert head_ref == feature_tip
+
+
+async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -> None:
+    """AC-31: the review diff's base is the lane's recorded base.
+
+    The stacked twin of the test above. A review taken against trunk sees
+    everything the lane inherited from its blocker as this lane's own
+    change — the reading that convicts inherited work of being
+    out-of-scope, which is the defect KOD-36 reports.
+    """
+    blocker_ref = "kodezart/blocker-a-11111111"
+    blocker_sha = "c" * 40
+    trunk_sha = "b" * 40
+    feature_tip = "a" * 40
+    git = FakeGitService(
+        remote_branch_shas={"main": trunk_sha, blocker_ref: blocker_sha},
+    )
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha=feature_tip,
+            ),
+        ],
+    )
+    service = AgentService(
+        executor=FakeAgentExecutor(events=[]),
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        quality_gate=FakeQualityGate(
+            events=[],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha=feature_tip,
+        ),
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger,
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=git,
+        cache=FakeRepoCache(),
+        artifact_persister=None,
+    )
+
+    _ = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_spec=BaseSpec(
+                base_ref=blocker_ref,
+                role=BaseRefRole.deliverable,
+                inputs=(
+                    BaseInput(
+                        blocker_issue_id="KOD-A",
+                        branch=blocker_ref,
+                        sha=blocker_sha,
+                    ),
+                ),
+            ),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    resolved = [c for c in git.calls if c[0] == "remote_branch_sha"]
+    assert [c[3] for c in resolved] == [blocker_ref]
+
+    diff_calls = [c for c in git.calls if c[0] == "diff_summary"]
+    assert len(diff_calls) >= 1
+    assert diff_calls[0][2] == blocker_sha
+    assert diff_calls[0][2] != trunk_sha
 
 
 async def test_review_against_ticket_raises_when_review_shas_missing() -> None:

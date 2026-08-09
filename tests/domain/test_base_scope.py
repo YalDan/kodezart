@@ -101,10 +101,18 @@ def test_the_context_holds_no_base_of_its_own() -> None:
 
 
 def test_no_scope_surface_parses_a_branch_name_to_obtain_a_base() -> None:
-    """AC-35: the name is not the record — nothing derives a base from one."""
+    """AC-35: the name is not the record — nothing derives a base from one.
+
+    The list is the scope surfaces themselves, not only the modules that
+    model a base: the changeset digest and the outer review diff are
+    where a parsed base would actually be spent, so a check that stopped
+    at the domain modules would leave the two consumers unpinned.
+    """
     modules = (
         "src/kodezart/domain/base_scope.py",
         "src/kodezart/types/domain/base_spec.py",
+        "src/kodezart/chains/ralph_loop.py",
+        "src/kodezart/chains/ralph_workflow.py",
     )
     for name in modules:
         body = (REPO_ROOT / name).read_text(encoding="utf-8")
