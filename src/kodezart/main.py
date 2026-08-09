@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.git_artifact_persister import GitArtifactPersister
@@ -21,7 +22,10 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
+from kodezart.adapters.pattern_outbound_gate import (
+    PatternOutboundContentGate,
+    content_digest,
+)
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.adapters.toml_operation_config import load_operation_config
@@ -31,12 +35,18 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import SkillPreflightError
+from kodezart.core.errors import ContentScannerBootError, SkillPreflightError
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
 from kodezart.core.prompt_namespaces import bindings_for
-from kodezart.core.protocols import PromptProvider, SkillInventory
+from kodezart.core.protocols import (
+    AgentExecutor,
+    ContentScanner,
+    PromptProvider,
+    SkillInventory,
+)
 from kodezart.services.agent_service import AgentService
 from kodezart.services.job_service import JobService
+from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 
@@ -92,6 +102,51 @@ def preflight_prompt_skill_loadouts(
             unresolvable=unresolvable,
             available=sorted(registered),
         )
+
+
+def outbound_scanners(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    executor: AgentExecutor,
+    prompts: PromptProvider,
+    skills: SkillsSelection,
+) -> tuple[list[ContentScanner], str]:
+    """The gate's ORDERED scanner list, and the fragment digest keying its memo.
+
+    Deterministic first, always, and that ordering is the whole reason a
+    credential is still caught when the judgment path is degraded.
+
+    Three states, none silent.  Enabled with a private-surface description
+    registers the judgment scanner; enabled without one aborts boot rather
+    than registering a scanner whose every answer would be
+    ``NOT_CONFIGURED``; disabled runs the deterministic scanners alone.
+    """
+    scanners: list[ContentScanner] = [
+        RegexContentScanner(patterns=config.deny_patterns),
+    ]
+    if not config.agentic_content_scanner_enabled:
+        return scanners, ""
+
+    private_surface = None if operation is None else operation.private_surface
+    if private_surface is None or not private_surface.strip():
+        msg = "The judgment content scanner is enabled with nothing to judge against"
+        raise ContentScannerBootError(msg, missing="OperationConfig.private_surface")
+
+    working_dir = Path(config.content_audit_working_dir).expanduser()
+    working_dir.mkdir(parents=True, exist_ok=True)
+    scanners.append(
+        AgentContentScanner(
+            executor=executor,
+            prompts=prompts,
+            neutral_cwd=str(working_dir),
+            skills=skills,
+            retry_max_attempts=config.content_scan_retry_max_attempts,
+            retry_initial_interval=config.content_scan_retry_initial_interval,
+            timeout_seconds=config.content_scan_timeout_seconds,
+        ),
+    )
+    return scanners, content_digest(private_surface)
 
 
 @asynccontextmanager
@@ -161,16 +216,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         setting_sources=config.setting_sources,
     )
 
-    gate = PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
-
     git = SubprocessGitService(remote=config.git_remote, auth=auth)
     executor = ClaudeClientExecutor(
         model=config.model,
         setting_sources=config.setting_sources,
     )
+    scanners, fragment_digest = outbound_scanners(
+        config=config,
+        operation=operation,
+        executor=executor,
+        prompts=prompts,
+        skills=skills,
+    )
+    await log.ainfo(
+        "outbound_content_scanners_resolved",
+        scanners=[type(scanner).__name__ for scanner in scanners],
+        judgment_scanner_enabled=config.agentic_content_scanner_enabled,
+    )
+    gate = PatternOutboundContentGate(
+        scanners=scanners,
+        verdicts=config.deny_pattern_verdicts,
+        fragment_digest=fragment_digest,
+    )
+
     cache = LocalBareRepoCache(git=git, base_dir=config.clone_cache_dir)
     workspace = GitWorktreeProvider(
         git=git,

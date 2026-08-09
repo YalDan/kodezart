@@ -180,3 +180,18 @@ class PromptNamespaceCollisionError(Exception):
     def __init__(self, message: str, *, colliding: Sequence[str]) -> None:
         super().__init__(f"{message} ({', '.join(colliding)})")
         self.colliding: tuple[str, ...] = tuple(colliding)
+
+
+class ContentScannerBootError(Exception):
+    """Raised at boot when the judgment scanner is enabled with nothing to judge.
+
+    The third state of the enable knob, made loud.  Enabled with no
+    private-surface description would leave a registered scanner whose every
+    scan is ``NOT_CONFIGURED`` — a gate that blocks every authored write, or
+    worse, one an operator disables to get work done.  The process refuses
+    to start instead.
+    """
+
+    def __init__(self, message: str, *, missing: str) -> None:
+        super().__init__(f"{message} ({missing})")
+        self.missing: str = missing

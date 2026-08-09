@@ -131,6 +131,14 @@ class AppConfig(BaseSettings):
             "Exceeding it is TIMEOUT, which BLOCKS."
         ),
     )
+    content_audit_working_dir: str = Field(
+        default="/tmp/kodezart-content-audit",
+        description=(
+            "Working directory the audit session runs in. Deliberately NOT "
+            "the cloned target repository: an auditor whose working "
+            "directory is attacker-writable is not an auditor."
+        ),
+    )
     agentic_content_scanner_enabled: bool = Field(
         default=False,
         description=(

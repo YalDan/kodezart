@@ -249,6 +249,43 @@ Pattern sets ship **empty except the credential category**, so an unconfigured
 deployment behaves exactly as it did before the gate existed, apart from the
 two new events.
 
+#### The judgment half
+
+The gate runs an **ordered list** of scanners and the patterns are only the
+first of them. A credential is arithmetic — `gh[posu]_` either matches or it
+does not — and stays deterministic so a token is caught with no network call.
+Whether a stranger would learn something from a payload that this operation
+did not choose to publish is not arithmetic: the set of private things is
+open-ended, a deny pattern naming an organisation *contains* the string it
+protects, and the same string can be unremarkable on one surface and a
+disclosure on another. `org_private` is therefore **rejected as a
+`KODEZART_DENY_PATTERNS` key** at boot, and answered by an audit session
+instead — a different session from the writer whose output it grades, with no
+shared context, no tools, and a neutral working directory.
+
+`KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` has three states and none of them
+is silent:
+
+| Knob | `OperationConfig.private_surface` | Result |
+| --- | --- | --- |
+| `false` (default) | anything | The deterministic scanners run alone. |
+| `true` | present | The audit scanner is registered **after** the patterns. |
+| `true` | absent or empty | Startup aborts with `ContentScannerBootError`. |
+
+The mechanism ships and the policy is operator configuration. `private_surface`
+is prose describing the **class** of thing this operation treats as private —
+never a list of instances, which would stop at what the operator remembered to
+enumerate and would publish those instances by writing them down. Every way of
+having no answer (`timeout`, `refusal`, `malformed_verdict`, `rate_limited`,
+`transport_error`, `empty_response`, `spans_unresolvable`, `budget_exhausted`,
+`not_configured`) resolves to `blocked` and is named on the event: "did not
+answer" and "said it is clean" stay two distinct observable states.
+
+Cost routing is deterministic and made once: the audit runs only on authored
+prose bound for a publication or tracker surface, plus the branch name. A
+criterion tick, a sha or a state transition classifies as structured and takes
+the cheap path by classification rather than by exemption.
+
 ### Operation config
 
 `KODEZART_OPERATION_CONFIG` points at a TOML file (parsed with stdlib
