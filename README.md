@@ -133,7 +133,9 @@ event types.
 
 All settings use the `KODEZART_` environment variable prefix. Copy
 `.env.example` for the most commonly customized variables. See
-[docs/configuration.md](docs/configuration.md) for the full 15-field reference.
+[docs/configuration.md](docs/configuration.md), which documents every field
+`AppConfig` ships — a test derives both sides and fails if the two disagree,
+so no count is written down here to go stale.
 
 Every entry in `.env.example` carries its own shipped default, so copying the
 file changes no behaviour. Entries that are **commented out** are deliberately
