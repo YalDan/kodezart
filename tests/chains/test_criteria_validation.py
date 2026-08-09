@@ -43,6 +43,7 @@ from tests.fakes import (
     PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
+    make_ticket_draft,
 )
 
 INFEASIBLE_A = {
@@ -166,6 +167,7 @@ def _engine(
     max_rounds: int = 1,
     quality_gate: FakeQualityGate | None = None,
     artifact_persister: FakeArtifactPersister | None = None,
+    ticket_generator: FakeTicketGenerator | None = None,
 ) -> RalphWorkflowEngine:
     service = AgentService(
         executor=executor,
@@ -183,7 +185,7 @@ def _engine(
             evaluation=make_passing_evaluation(),
             last_commit_sha="a" * 40,
         ),
-        ticket_generator=FakeTicketGenerator(),
+        ticket_generator=ticket_generator or FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
         git_remote="origin",
@@ -194,11 +196,15 @@ def _engine(
     )
 
 
-async def _run(engine: RalphWorkflowEngine) -> list[AgentEvent]:
+async def _run(
+    engine: RalphWorkflowEngine,
+    *,
+    prompt: str = "do the thing",
+) -> list[AgentEvent]:
     return [
         event
         async for event in engine.run(
-            prompt="do the thing",
+            prompt=prompt,
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
@@ -601,14 +607,18 @@ async def test_the_drafter_is_told_which_base_the_lane_is_measured_against() -> 
 
 
 # ---------------------------------------------------------------------------
-# AC-17 — the historical defect patterns, as behaviour rather than as prose
+# AC-13 / AC-17 — the historical defect patterns, as behaviour, not as prose
 # ---------------------------------------------------------------------------
 
 # Each fixture is a ticket abstracted from a run that induced the pattern,
 # paired with the criterion that run's drafter actually produced and the
 # evidence a refuter reading the repository at base reports about it. The
-# assertion is over the criteria the LOOP RECEIVES: an instruction being
-# present in a prompt is not compliance, so nothing here asserts that.
+# ticket DRIVES the run — it is the run's prompt and the summary the ticket
+# generator returns, so the drafter is rendered with it and the subject of
+# the assertion really is "this fixture ticket generates criteria that
+# comply". The claim is settled over the criteria the stage YIELDS: an
+# instruction being present in a prompt is not compliance, so no prompt
+# assertion here stands alone as evidence of one.
 
 PATTERN_1_TICKET = (
     "Add a `status` arm to the run-state renderer so every state the domain "
@@ -663,11 +673,11 @@ CORRECTED = "Every arm the named type actually declares is handled by the render
 
 
 @pytest.mark.parametrize(
-    ("ticket", "drafted", "finding"),
+    ("ticket", "drafted", "finding", "banned_arms"),
     [
-        (PATTERN_1_TICKET, PATTERN_1_BAD, PATTERN_1_FINDING),
-        (PATTERN_3_TICKET, PATTERN_3_BAD, PATTERN_3_FINDING),
-        (PATTERN_5_TICKET, PATTERN_5_BAD, PATTERN_5_FINDING),
+        (PATTERN_1_TICKET, PATTERN_1_BAD, PATTERN_1_FINDING, ("archived", "paused")),
+        (PATTERN_3_TICKET, PATTERN_3_BAD, PATTERN_3_FINDING, ()),
+        (PATTERN_5_TICKET, PATTERN_5_BAD, PATTERN_5_FINDING, ("rolled_back",)),
     ],
     ids=["pattern-1", "pattern-3", "pattern-5"],
 )
@@ -675,9 +685,16 @@ async def test_no_forbidden_class_or_non_domain_arm_reaches_the_loop(
     ticket: str,
     drafted: str,
     finding: dict[str, object],
+    banned_arms: tuple[str, ...],
 ) -> None:
-    """The pattern's own criterion is refuted and amended before dispatch."""
-    _ = ticket
+    """AC-13: the fixture ticket's own run yields criteria that comply.
+
+    The ticket is the run's prompt and the ticket generator's summary, so
+    the drafter is rendered with it and the criteria under assertion are
+    the ones this ticket produced.  What the stage yields carries no
+    forbidden class, no undeclared arm on its verdict, and no mention of
+    an arm the refuter established the named type does not declare.
+    """
     executor = ValidatorScriptExecutor(
         sweeps=[
             {"findings": [finding, FEASIBLE_B], "contradictions": []},
@@ -690,7 +707,22 @@ async def test_no_forbidden_class_or_non_domain_arm_reaches_the_loop(
         evaluation=make_passing_evaluation(),
         last_commit_sha="a" * 40,
     )
-    events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+    events = await _run(
+        _engine(
+            executor,
+            max_rounds=1,
+            quality_gate=gate,
+            ticket_generator=FakeTicketGenerator(make_ticket_draft(summary=ticket)),
+        ),
+        prompt=ticket,
+    )
+
+    drafter_prompts = [p for p in executor.prompts if "WATSON 1: BEHAVIORAL" in p]
+    assert len(drafter_prompts) == 2
+    assert ticket in drafter_prompts[0], "the fixture ticket drove generation"
+    refutation = finding["refutation"]
+    assert isinstance(refutation, str)
+    assert refutation in drafter_prompts[1], "the refutation was handed back"
 
     sweep_event = next(
         e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
@@ -705,6 +737,22 @@ async def test_no_forbidden_class_or_non_domain_arm_reaches_the_loop(
     for criterion in dispatched:
         assert criterion.feasibility.forbidden_class is None
         assert criterion.feasibility.undeclared_switch_arms == []
+        for arm in banned_arms:
+            assert arm not in criterion.text
+
+
+def test_the_pattern_5_fixture_still_names_an_arm_its_type_lacks() -> None:
+    """AC-13's premise is read off the production type, never assumed.
+
+    ``PATTERN_5_BAD`` is a Pattern-5 instance only while ``rolled_back`` is
+    absent from ``WorkflowOutcome`` and the arms it pairs that with are
+    present.  Appending ``rolled_back`` to the enum would quietly turn the
+    fixture into a satisfiable criterion and leave AC-13 asserted over
+    nothing, so the enum is consulted rather than trusted.
+    """
+    declared = {member.value for member in WorkflowOutcome}
+    assert "rolled_back" not in declared
+    assert {"criteria_infeasible", "pr_opened"} <= declared
 
 
 async def test_an_ungradeable_class_survives_the_bound_as_a_halt() -> None:
