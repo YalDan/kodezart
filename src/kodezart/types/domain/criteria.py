@@ -260,7 +260,25 @@ class CriteriaValidationOutput(CamelCaseModel):
 
 
 class CriterionFeasibility(CamelCaseModel):
-    """One criterion's verdict as the run records it, with its evidence."""
+    """One criterion's verdict as the run records it, with its evidence.
+
+    ``undeclared_switch_arms``, ``forbidden_class`` and ``cost_measurement``
+    have no reader in ``src`` and are not meant to have one: they are
+    carried FOR A HUMAN, and both surfaces that carry them were measured
+    rather than assumed.
+
+    This model is serialized whole into the ``workflow_criteria_validation``
+    SSE frame — the handler's own ``model_dump(by_alias=True,
+    exclude_none=True)``, a documented event — and written verbatim into
+    ``.kodezart/criteria.json``, which is committed and pushed to the ralph
+    branch and deleted from nowhere.  (``open_pr`` strips ``.kodezart/``
+    from the feature branch tip, so the pull request's file tree does not
+    carry it; the ralph branch and the merge history do.)  ``exclude_none``
+    is what makes an absence meaningful: present means observed.
+
+    A field here that reached neither surface would be an orphan write and
+    would go, as ``limit_arm`` and ``cost_claim_struck`` did.
+    """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 

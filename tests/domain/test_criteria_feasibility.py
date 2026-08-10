@@ -6,6 +6,8 @@ decides: which findings are accepted at all, which conflicts survive, and
 what the run persists and grades on.
 """
 
+import json
+
 import pytest
 from pydantic import BaseModel, ValidationError
 
@@ -18,6 +20,7 @@ from kodezart.domain.criteria_feasibility import (
     sweep,
 )
 from kodezart.domain.errors import CriteriaFanInError
+from kodezart.types.domain.agent import WorkflowCriteriaValidationEvent
 from kodezart.types.domain.criteria import (
     BaseDemonstration,
     Contradiction,
@@ -30,6 +33,7 @@ from kodezart.types.domain.criteria import (
     CriterionFlag,
     CriterionVerdict,
     DraftedCriterion,
+    ForbiddenCriterionClass,
     GeneratedCriterion,
     RepairKind,
     ValidatedCriterion,
@@ -727,6 +731,49 @@ def test_artifact_round_trips_ids_verdicts_and_evidence() -> None:
     assert restored.criteria[1].feasibility.missing_resource is not None
     assert '"missingResource"' in encoded
     assert '"limitArm"' not in encoded
+
+
+def test_the_evidence_fields_reach_both_surfaces_a_human_reads() -> None:
+    """The whole defence for three fields ``src`` never reads.
+
+    ``undeclaredSwitchArms``, ``forbiddenClass`` and ``costMeasurement``
+    are kept for human auditability, so the two surfaces that carry them
+    are the justification and are asserted rather than assumed: the SSE
+    frame under the handler's exact serialization, and the persisted
+    ``.kodezart/criteria.json``.  An ``exclude`` or a narrowed
+    ``model_dump`` on either would turn all three into orphan writes.
+    """
+    criteria = (_criterion("AC-1", "the switch covers every arm"),)
+    finding = CriterionFinding(
+        criterion_id="AC-1",
+        verdict=CriterionVerdict.infeasible,
+        smallest_repair=RepairKind.criterion_text,
+        refutation="the type declares no such arm",
+        undeclared_switch_arms=["archived", "paused"],
+        forbidden_class=ForbiddenCriterionClass.execution_graded,
+        cost_claim=CostClaim(
+            assertion="the demonstration is uneconomic",
+            measurement=CostMeasurement(observed="9h of runner time", affordable=False),
+        ),
+    )
+    validation = sweep(criteria, CriteriaValidationOutput(findings=[finding]))
+
+    frame = WorkflowCriteriaValidationEvent(
+        regeneration_round=0,
+        validation=validation,
+        regeneration_targets=["AC-1"],
+    ).model_dump(by_alias=True, exclude_none=True)
+    streamed = frame["validation"]["verdicts"][0]
+    assert streamed["undeclaredSwitchArms"] == ["archived", "paused"]
+    assert streamed["forbiddenClass"] is ForbiddenCriterionClass.execution_graded
+    assert streamed["costMeasurement"]["affordable"] is False
+
+    artifact = build_artifact(criteria, validation)
+    persisted = json.loads(artifact.model_dump_json(indent=2, by_alias=True))
+    feasibility = persisted["criteria"][0]["feasibility"]
+    assert feasibility["undeclaredSwitchArms"] == ["archived", "paused"]
+    assert feasibility["forbiddenClass"] == "execution_graded"
+    assert feasibility["costMeasurement"]["observed"] == "9h of runner time"
 
 
 def test_criterion_class_round_trips_under_its_camel_case_alias() -> None:

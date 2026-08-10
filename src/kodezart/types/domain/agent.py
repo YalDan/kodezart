@@ -287,15 +287,24 @@ class CommitMessageOutput(CamelCaseModel):
 class CriterionResult(CamelCaseModel):
     """Per-criterion evaluation result, keyed by the harness's stable id.
 
-    ``criterion`` is the evaluator's ECHO of the criterion text and
-    NOTHING READS IT.  ``grade_iteration`` overwrites it with the
-    harness's own text, looked up by id, on both the answered and the
-    unanswered path, so no event, artifact, prompt or reader ever sees
-    what the model returned here.  It is required on the wire, so the
-    evaluator reproduces every criterion's full text on every iteration
-    and every post-merge review for nothing.  KOD-91 deliverable 3 is
-    already rewriting this model's field descriptions and removes it
-    there, together with the two prompt lines that demand it.
+    ``criterion`` is two different things on the two directions this model
+    travels, and only one of them has a defence.
+
+    OUTBOUND it carries the HARNESS's text, looked up by id:
+    ``grade_iteration`` overwrites the field on both the answered and the
+    unanswered path, and the result reaches a human in the
+    ``workflow_iteration`` and ``workflow_review`` SSE frames, where a
+    reader sees which criterion a verdict is about without joining the
+    frame against the criteria set.  Measured on the handler's own
+    ``model_dump(by_alias=True, exclude_none=True)``.
+
+    INBOUND it is the evaluator's ECHO, and that has no defence: nothing
+    ever reads it, so requiring it costs a full reproduction of every
+    criterion's text on every iteration and every post-merge review and
+    buys nothing.  Dropping the inbound obligation without dropping the
+    outbound field means splitting this model in two; KOD-91 deliverable 3
+    is already rewriting these field descriptions and removes it there,
+    with the two prompt lines that demand it.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
