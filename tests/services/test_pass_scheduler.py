@@ -31,6 +31,10 @@ FAST_INTERVAL = 11.5
 SLOW_INTERVAL = 97.0
 TICKS = 3
 
+#: Generous: the wait is on a condition, not a duration, so this only ever
+#: bounds a genuine hang.
+SETTLE_TIMEOUT = 5.0
+
 
 class Recorder:
     """A pass that counts its own invocations."""
@@ -67,18 +71,31 @@ class Metronome:
     def __init__(self, *, limit: int) -> None:
         self.requested: list[float] = []
         self._limit: int = limit
+        self.parked: asyncio.Event = asyncio.Event()
 
     async def sleep(self, seconds: float) -> None:
         self.requested.append(seconds)
         if len(self.requested) > self._limit:
+            self.parked.set()
             await asyncio.Event().wait()
         await asyncio.sleep(0)
 
 
-async def _settle() -> None:
-    """Let every spawned driver task reach its next sleep."""
-    for _ in range(TICKS * 4):
-        await asyncio.sleep(0)
+async def _settle(metronome: Metronome) -> None:
+    """Wait until the driver loops have spent the metronome's budget.
+
+    The metronome parks a loop for good once the budget is gone, so that
+    park IS the settled state and waiting for it is exact.  It replaces a
+    fixed number of event-loop yields, which was a guess about how many
+    turns a pass body costs: a failing pass costs more than a succeeding
+    one, so the guess held on the fast path and under-ran the failure path
+    on a slower machine.
+
+    A driver sleeps before it runs, so the parking grant is requested only
+    after the previous run has completed — the budget is therefore an exact
+    count of completed runs, not an upper bound on started ones.
+    """
+    await asyncio.wait_for(metronome.parked.wait(), timeout=SETTLE_TIMEOUT)
 
 
 async def test_each_pass_runs_on_its_own_configured_interval() -> None:
@@ -93,7 +110,7 @@ async def test_each_pass_runs_on_its_own_configured_interval() -> None:
         sleep=metronome.sleep,
     )
     await scheduler.start()
-    await _settle()
+    await _settle(metronome)
     await scheduler.stop()
 
     assert set(metronome.requested) == {FAST_INTERVAL, SLOW_INTERVAL}
@@ -116,7 +133,7 @@ async def test_a_pass_runs_only_after_its_interval_has_elapsed() -> None:
         sleep=metronome.sleep,
     )
     await scheduler.start()
-    await _settle()
+    await _settle(metronome)
 
     assert metronome.requested == [FAST_INTERVAL]
     assert recorder.calls == 0
@@ -150,7 +167,7 @@ async def test_a_failing_pass_keeps_its_loop_and_says_what_broke() -> None:
             sleep=metronome.sleep,
         )
         await scheduler.start()
-        await _settle()
+        await _settle(metronome)
         await scheduler.stop()
     finally:
         structlog.reset_defaults()
