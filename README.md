@@ -352,18 +352,41 @@ not exist yet is created at boot and adopted unchanged if it is already there.
 A label that exists with a conflicting definition aborts boot rather than being
 altered underneath you.
 
-**3. Principals and their ids.** Designate exactly one approver, then the
-principals whose word creates a reply obligation, then the escalation target.
-For each, collect two identifiers, because they are two different things:
+**3. Principals and their ids.** Authority binds to a role, never to a name in
+code or in a template. There are three roles and `roles` is a **set**, because
+one principal routinely holds two:
+
+- `approver` — holds the approval flip. Nothing else in the system may set the
+  approved state.
+- `principal` — their word creates a reply obligation the queue does not
+  otherwise record. **Every** principal carries this one.
+- `assignee` — prepared fires, triage filings and decision flags are assigned
+  here.
+
+Two counts are validated at load and each names the field it failed on:
+**exactly one** principal carries `approver`, and **exactly one** carries
+`assignee`. Zero or two of either is a load failure, not a warning. A principal
+missing `principal` is also rejected, by index.
+
+For each principal, collect up to three identifiers, because they are three
+different things:
 
 - `tracker_user` — the id the tracker records as the actor of a state change.
   Authority is checked against this one.
 - `handle` — the string a person writes when addressing that principal. The
-  mention sweep is text matching, so this is what it matches on.
+  mention sweep is text matching, so this is what it matches on. Handles must
+  be non-empty, unique, and must not collide with an agent identity.
+- `forge_handle` — the same person's name on the forge, where review-borne
+  mentions are answered. Optional: omit it for a principal who never appears
+  there. Two surfaces name one person, and recognising them across both needs
+  two identifiers.
 
-They are routinely different, and swapping them silently breaks either
-authority checking or the mention sweep. Exactly one principal may carry the
-approver role; two is a load failure naming the field.
+`tracker_user` and `handle` are routinely different, and swapping them silently
+breaks either authority checking or the mention sweep.
+
+Escalation is **not** a role. Out-of-band notifications go to an address
+declared under `[endpoints]` in the operation config (step 5), because an
+endpoint is a place and a role is a person.
 
 **4. Documents and records.** Create or designate the checkpoint document the
 passes read their scan window from, and collect its id. A document id is

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from kodezart.core import errors
 from kodezart.types.domain.dispatch import DispatchOutcome
-from kodezart.types.domain.operation import QueueState
+from kodezart.types.domain.operation import Principal, PrincipalRole, QueueState
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README = REPO_ROOT / "README.md"
@@ -130,3 +130,77 @@ def test_the_smoke_test_names_real_dispatch_outcomes() -> None:
 
     assert DispatchOutcome.fire_enqueued.value in guide
     assert DispatchOutcome.empty_eligible_set.value in guide
+
+
+# ---------------------------------------------------------------------------
+# The principal vocabulary, derived rather than transcribed
+# ---------------------------------------------------------------------------
+
+
+#: Every identifier a principal is addressed by, read off the shipped model.
+#: Derived so a fourth identifier — or a renamed one — makes this red rather
+#: than leaving an operator collecting the wrong ids.
+def _principal_identifier_fields() -> set[str]:
+    return set(Principal.model_fields) - {"roles"}
+
+
+def _structural_invariants() -> str:
+    """The source of ``OperationConfig``'s own structural validator.
+
+    The invariants are read out of the validator rather than restated,
+    because a guide that restates them is a second copy of a rule the code
+    already owns — which is the class this whole check exists to close.
+    """
+    source = (SRC / "types" / "domain" / "operation.py").read_text(encoding="utf-8")
+    start = source.index("def _check_structure")
+    return source[start : source.index("\n    def ", start + 1)]
+
+
+def test_the_guide_names_every_principal_role_the_code_defines() -> None:
+    """A role the guide omits is a config an operator cannot write correctly.
+
+    `f7ce6cc`'s step 3 named an `escalation` target the model has never had
+    and never mentioned `assignee`, which the model requires exactly one of
+    — so an operator following only the guide wrote a config that fails to
+    load, while `docs/operation.example.toml` two steps later was right.
+    """
+    guide = _guide()
+
+    for member in PrincipalRole:
+        assert member.value in guide, member
+
+
+def test_the_guide_names_no_role_the_code_does_not_define() -> None:
+    """The other direction: a role in the guide that the enum lacks is the drift."""
+    guide = _guide().lower()
+    shipped = {member.value for member in PrincipalRole}
+
+    for invented in ("escalation", "reviewer", "owner", "watcher"):
+        assert invented in shipped or f"`{invented}`" not in guide, invented
+
+
+def test_the_guide_names_every_identifier_a_principal_carries() -> None:
+    """Three fields on the model, three collected by the operator."""
+    guide = _guide()
+
+    for field in _principal_identifier_fields():
+        assert field in guide, field
+
+
+def test_the_guide_states_the_two_exactly_one_invariants_the_loader_enforces() -> None:
+    """A count the loader rejects on must be a count the guide asked for.
+
+    Both arms are read out of the validator, so a third `exactly one` rule
+    added to the model fails here until the guide carries it.
+    """
+    invariants = _structural_invariants()
+    required = re.findall(
+        r"exactly one (\w+) principal is required",
+        invariants,
+    )
+    guide = _guide().lower()
+
+    assert sorted(required) == ["APPROVER", "ASSIGNEE"], required
+    for role in required:
+        assert f"`{role.lower()}`" in guide, role
+    assert "exactly one" in guide
