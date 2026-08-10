@@ -342,6 +342,47 @@ async def test_a_pass_whose_session_did_not_answer_re_reads_its_window() -> None
     assert tracker.issues[ISSUE].body == SHAPED_BODY
 
 
+async def test_an_item_this_pass_refused_is_not_offered_again_until_it_moves() -> None:
+    """KOD-60 R14: the window moves past a refusal, and the docstrings say so.
+
+    Three ticks over one item. The first composes a body the hygiene set
+    trips, so nothing is written and the item stays in the entry queue —
+    but the mark has already advanced over it, so the second tick asks
+    from that mark, gets nothing back and reaches no session. Only an
+    edit that moves the item's stamp brings it into a window again.
+
+    This is the behaviour the module docstrings previously denied. It
+    reddens in both directions: rewinding the mark for a refused item
+    makes the second tick spend a session, and a mark that never came
+    back for an edited item makes the third spend none.
+    """
+    executor = FakePassExecutor(
+        answers=[
+            {"preparations": [{"issueKey": ISSUE, "body": UNSHAPED_BODY}]},
+            {"preparations": [{"issueKey": ISSUE, "body": SHAPED_BODY}]},
+        ],
+    )
+    tracker = triage_tracker(ISSUE)
+    subject = make_pass(tracker=tracker, answers=[], executor=executor)
+
+    await subject.run()
+    await subject.run()
+
+    assert len(executor.calls) == 1
+    assert tracker.issues[ISSUE].body == "fixture body"
+    assert QueueState.TRIAGE in tracker.issues[ISSUE].queue_states
+
+    tracker.issues[ISSUE] = make_tracker_issue(
+        ISSUE,
+        queue_states=[QueueState.TRIAGE],
+        created_at=LATER,
+    )
+    await subject.run()
+
+    assert len(executor.calls) == 2
+    assert tracker.issues[ISSUE].body == SHAPED_BODY
+
+
 async def test_a_body_for_an_item_that_moved_under_the_session_is_dropped() -> None:
     """The re-read guard: another actor's change is not overwritten by a stale body.
 

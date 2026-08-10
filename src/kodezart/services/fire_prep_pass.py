@@ -29,7 +29,18 @@ and for four different reasons:
 
 Same body, four questions, and none of them substitutes for another.  A
 body that fails any of them leaves its issue exactly where it found it:
-nothing half-written, and the next pass sees the same item.
+body untouched, still on the entry queue, nothing half-written.
+
+What a refusal does NOT buy is a second attempt, and KOD-60 R14 states
+that rather than leaving it to be discovered.  The mark advanced over
+this tick's window before the session ran, and it goes back only for a
+session that did not answer, so an item this pass refused, had blocked or
+never prepared keeps its stamp, sits below the mark, and is not scanned
+by this pass again until an actor edits it and the stamp moves.
+Widening the hygiene or deny pattern sets afterwards therefore does not
+bring a dropped item back; ``fire_prep_body_refused`` and
+``fire_prep_body_blocked`` are the trace, and the item is still in the
+entry queue for any reader that does not carry this pass's mark.
 """
 
 from collections.abc import Mapping
@@ -155,8 +166,9 @@ class FirePrepPass:
         except OutboundContentBlockedError as exc:
             # One blocked body is not a failed pass. The categories and the
             # per-hit rationales are already on the gate's own event, and
-            # the issue stays exactly where it was, so the next pass sees
-            # it again rather than the window silently shrinking.
+            # the issue stays exactly where it was — body untouched, still
+            # on the entry queue. This pass's window has moved past it
+            # (KOD-60 R14), so nothing re-composes it until it is edited.
             await self._log.awarning(
                 "fire_prep_body_blocked",
                 issue_key=preparation.issue_key,

@@ -16,9 +16,19 @@ provider and no runner, and a test asserts that collaborator surface
 rather than trusting the docstring.
 
 The mark is the pass's own high-water stamp, advanced by a tick that
-observed something and put back by a pass that did not complete.  Either
-way a window is re-read rather than skipped: advancing on observation
-alone would consume a window unread every time a session failed to answer.
+observed something and put back by a pass that did not complete, so a
+window an aborted pass consumed is re-read rather than skipped: advancing
+on observation alone would consume a window unread every time a session
+failed to answer.
+
+That is the whole of the guarantee, and KOD-60 R14 states the other half
+plainly.  An item the pass DID process and then declined to act on — one
+whose body a later gate refused, or that the session never prepared —
+keeps its stamp, sits below the advanced mark and is not returned again
+until something edits it.  One stamp cannot express "everything above the
+mark except this item", and putting the mark back for a declined item
+would re-compose a permanently declined one every interval forever, which
+is the cost this gate exists to bound.
 """
 
 from collections.abc import Sequence
