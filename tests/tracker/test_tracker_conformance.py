@@ -497,7 +497,7 @@ class TestMappingEnsure:
         self,
         tracker: TrackerPort,
     ) -> None:
-        """ "Performs no write" is about the whole call, not about one ref."""
+        """"Performs no write" is about the whole call, not about one ref."""
         contested = "queue:conformance-first"
         follower = self._ref("queue:conformance-follower", TEAM)
         await tracker.ensure_mappings(refs=[self._ref(contested, TEAM)])
@@ -822,7 +822,7 @@ class TestRecordedBaseSpec:
         self,
         tracker: TrackerPort,
     ) -> None:
-        """ "Never dispatched" is ``None``, and is not a stale base."""
+        """"Never dispatched" is ``None``, and is not a stale base."""
         assert await tracker.read_base_spec(issue_key=APPROVED_ISSUE) is None
 
     async def test_a_recorded_spec_reads_back_whole(

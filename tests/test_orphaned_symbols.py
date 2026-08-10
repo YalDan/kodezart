@@ -49,7 +49,6 @@ _TEXT_FILENAMES: frozenset[str] = frozenset(
     {"Makefile", "Dockerfile", "CODEOWNERS", ".env.example"},
 )
 
-
 def _public_definitions() -> dict[str, list[str]]:
     """Every public, undecorated definition under ``src/kodezart``.
 
@@ -123,7 +122,7 @@ def test_the_scan_reports_a_symbol_nothing_reaches() -> None:
     """
     invented = "AnOrphanNoModuleDefinesOrMentions"
     site = "src/kodezart/nowhere.py:1"
-    reached = "FirePrepPass"
+    reached = "AgentHandler"
 
     reported = orphans_among({invented: [site], reached: [site]})
 
@@ -135,5 +134,4 @@ def test_the_scan_reads_a_meaningful_number_of_definitions() -> None:
     definitions = _public_definitions()
 
     assert len(definitions) > 100
-    assert "FirePrepPass" in definitions
-    assert "classify_check_failures" in definitions
+    assert "AgentHandler" in definitions

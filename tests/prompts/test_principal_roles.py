@@ -182,7 +182,7 @@ def test_a_principal_without_the_principal_role_is_refused(tmp_path: Path) -> No
     body = EXAMPLE.read_text(encoding="utf-8") + (
         "\n[[principals]]\n"
         'tracker_user = "roleless"\n'
-        "roles = []\n"
+        'roles = []\n'
         'handle = "@roleless"\n'
     )
     path = tmp_path / "operation.toml"

@@ -40,8 +40,6 @@ TOKEN = "fixture-tracker-token"
 #: A cadence no default would produce, and long enough that no pass fires
 #: inside a test: what is asserted is the wiring of the knob, not a tick.
 UNUSUAL_INTERVAL = 607.0
-UNUSUAL_PREP_INTERVAL = 613.0
-UNUSUAL_GROOMING_INTERVAL = 619.0
 
 
 def _operation_toml(
@@ -419,35 +417,20 @@ async def test_without_a_credential_no_tracker_is_wired_and_boot_says_so(
     assert wired.opens == 0
 
 
-async def test_boot_starts_a_scheduler_carrying_every_configured_pass(
+async def test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     wired: ManagedFakeLinearMcpServer,
 ) -> None:
     """AC-20: the scheduler is constructed, driven and stopped by the root.
 
-    Every interval asserted here is a value no default would produce, and
-    the three are mutually distinct, so each assertion is about ITS OWN
-    knob's consumer rather than about a coincidence — a builder that read
-    one interval for all three passes would still pass a single-value
-    check.
-
-    The roster is asserted whole rather than by membership: a pass boot
-    schedules that nothing declared is exactly the class this whole lane
-    exists to make visible.
+    The interval asserted here is a value no default would produce, so the
+    assertion is about the knob's consumer and not about a coincidence.
     """
     monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
     monkeypatch.setenv(
         "KODEZART_TRACKER_SCHEDULER_PASS_INTERVAL_SECONDS",
         str(UNUSUAL_INTERVAL),
-    )
-    monkeypatch.setenv(
-        "KODEZART_PREP_PASS_INTERVAL_SECONDS",
-        str(UNUSUAL_PREP_INTERVAL),
-    )
-    monkeypatch.setenv(
-        "KODEZART_GROOMING_PASS_INTERVAL_SECONDS",
-        str(UNUSUAL_GROOMING_INTERVAL),
     )
     _configure(monkeypatch, tmp_path, _operation_toml())
     app = create_app()
@@ -458,13 +441,9 @@ async def test_boot_starts_a_scheduler_carrying_every_configured_pass(
         assert scheduler.running
         assert [entry.name for entry in scheduler.passes] == [
             "dispatch:https://example.invalid/repo",
-            "fire-prep",
-            "grooming:https://example.invalid/repo",
         ]
         assert [entry.interval_seconds for entry in scheduler.passes] == [
             UNUSUAL_INTERVAL,
-            UNUSUAL_PREP_INTERVAL,
-            UNUSUAL_GROOMING_INTERVAL,
         ]
     assert not scheduler.running
 

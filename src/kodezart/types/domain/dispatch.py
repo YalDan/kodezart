@@ -17,7 +17,7 @@ from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.tracker import IssuePriority, TrackerIssue
+from kodezart.types.domain.tracker import IssuePriority
 
 
 class DispatchOutcome(StrEnum):
@@ -116,27 +116,16 @@ class DispatchReport(DispatchModel):
 class PassDelta(DispatchModel):
     """What the deterministic pre-query saw since the last tick.
 
-    The gate a scheduled pass consults before anything expensive runs.  An
-    empty set means nothing moved, and nothing that costs tokens wakes at
-    all.  ``mark`` is the high-water stamp the next tick asks from —
-    carried on the value rather than left implicit, so a tick is
-    reconstructable from its own report.
-
-    The issues themselves, not their keys, because for a pass that composes
-    over a window the pre-query IS the window read: carrying keys alone
-    would send the pass back to the tracker for rows the gate had already
-    fetched, and the second read would return a different set than the one
-    the mark was advanced over.
+    The gate a scheduled pass consults before anything expensive runs.
+    ``changed`` is the whole answer: an empty set means nothing moved, and
+    nothing that costs tokens wakes at all.  ``mark`` is the high-water
+    stamp the next tick asks from — carried on the value rather than left
+    implicit, so a tick is reconstructable from its own report.
     """
 
-    issues: tuple[TrackerIssue, ...] = ()
+    changed: tuple[str, ...] = ()
     mark: datetime | None = None
-
-    @property
-    def changed(self) -> tuple[str, ...]:
-        """The keys that moved, for a consumer needing no more than them."""
-        return tuple(issue.issue_key for issue in self.issues)
 
     def has_delta(self) -> bool:
         """True iff something moved and a full pass is therefore warranted."""
-        return bool(self.issues)
+        return bool(self.changed)

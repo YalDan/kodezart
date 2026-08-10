@@ -573,9 +573,9 @@ def test_neither_resolution_module_can_reach_the_forge_at_all() -> None:
                 imported.update(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module is not None:
                 imported.add(node.module)
-        assert not [name for name in imported if "github" in name or "forge" in name], (
-            module.name
-        )
+        assert not [
+            name for name in imported if "github" in name or "forge" in name
+        ], module.name
         for name in _FORGE_METHODS:
             assert name not in source, (module.name, name)
 

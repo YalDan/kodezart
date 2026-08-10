@@ -517,59 +517,6 @@ class FakeRaisingExecutor:
         yield  # pragma: no cover — makes this an async generator
 
 
-class FakePassExecutor:
-    """An ``AgentExecutor`` returning one scripted structured answer per call.
-
-    Deliberately not `ScriptedFakeExecutor`: a pass session is graded on
-    what it does with an answer it did not choose, so the answer is stated
-    by the test rather than inferred from the schema it was dispatched
-    with.  ``answers`` is popped in order, so a test over two repositories
-    scripts two different verdicts.
-    """
-
-    def __init__(
-        self,
-        *,
-        answers: Sequence[dict[str, object] | None],
-        is_error: bool = False,
-    ) -> None:
-        self._answers: list[dict[str, object] | None] = list(answers)
-        self._is_error: bool = is_error
-        self.calls: list[dict[str, object]] = []
-
-    async def stream(
-        self,
-        *,
-        prompt: str,
-        cwd: str,
-        permission_mode: str,
-        allowed_tools: list[str],
-        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
-        session_id: str | None = None,
-        output_format: dict[str, object] | None = None,
-    ) -> AsyncGenerator[AgentEvent, None]:
-        self.calls.append(
-            {
-                "prompt": prompt,
-                "cwd": cwd,
-                "permission_mode": permission_mode,
-                "allowed_tools": allowed_tools,
-                "output_format": output_format,
-            },
-        )
-        await asyncio.sleep(0)
-        answer = self._answers.pop(0) if self._answers else None
-        yield ResultEvent(
-            subtype="result",
-            duration_ms=1,
-            duration_api_ms=1,
-            is_error=self._is_error,
-            num_turns=1,
-            session_id="pass-session",
-            structured_output=answer,
-        )
-
-
 class FakeRepoCache:
     def __init__(self, repo_path: str = "/tmp/fake-cache") -> None:
         self._repo_path = repo_path

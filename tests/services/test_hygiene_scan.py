@@ -19,18 +19,15 @@ from kodezart.types.domain.gating import (
     UNCONDITIONAL_ROUTING,
     HygieneCategory,
     OutboundDestination,
-    OutboundSurface,
     RedactionCategory,
     ScanFailureKind,
     ScanHit,
     ScannerRouting,
     ScanResult,
-    surface_of,
 )
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "kodezart"
 SERVICE_SOURCE = SRC_ROOT / "services" / "hygiene_scan.py"
-FIRE_PREP_SOURCE = SRC_ROOT / "services" / "fire_prep_pass.py"
 
 DESTINATION = OutboundDestination.TRACKER_COMMENT
 
@@ -75,12 +72,12 @@ class RecordingScanner:
 
 
 def shipped_scan() -> HygieneScan:
-    """The scan exactly as the composition root builds it: engine and set.
+    """The scan as its writer WILL build it: shipped engine, shipped set.
 
-    Kept identical to `main.py`'s construction on purpose — a helper that
-    exercised a pattern set boot does not register would be grading a scan
-    the running system never performs, and the case below is what holds
-    the two together.
+    Not "as boot builds it" — boot builds it nowhere, which the case below
+    holds deliberately until the fire-prep writer that gives it a
+    destination exists.  A helper claiming a construction the module's own
+    assertion denies is the kind of statement this suite is here to catch.
     """
     return HygieneScan(
         scanner=RegexContentScanner(patterns=AppConfig().hygiene_patterns),
@@ -181,15 +178,18 @@ def test_the_shipped_set_covers_every_hygiene_category() -> None:
     assert all(patterns[category] for category in HygieneCategory)
 
 
-def test_the_scan_is_constructed_only_where_its_writer_is_built() -> None:
-    """The scan is built at the composition root, and nowhere else.
+def test_the_scan_is_constructed_nowhere_until_its_writer_exists() -> None:
+    """A capability nothing can invoke must not be built at boot either.
 
-    Replaces the absence guard this module carried while the fire-prep
-    writer did not exist — that check's own docstring said the construction
-    and this assertion change together when the writer lands, and it has.
-    The guard is not dropped, it is inverted: an unreachable capability
-    built at boot was the old failure, and a scan constructed off to the
-    side of the one writer whose bodies it inspects is the new one.
+    The scan's subject is a frozen fire body on its way onto the tracker.
+    That write is the fire-prep pass's, and it does not exist yet — which
+    is visible in ``OutboundDestination``, whose own rule is that a member
+    is registered when its writer exists and never in advance. So there is
+    no destination the scan could honestly be called with, and a boot that
+    constructs it anyway makes an unreachable capability read as a wired
+    one. This fails the moment the construction returns, so it cannot come
+    back silently; when the fire-prep writer lands, the construction and
+    this check change together.
     """
     sources = {
         path.relative_to(SRC_ROOT).as_posix(): path.read_text(encoding="utf-8")
@@ -198,19 +198,4 @@ def test_the_scan_is_constructed_only_where_its_writer_is_built() -> None:
     }
     builders = sorted(name for name, text in sources.items() if "HygieneScan(" in text)
 
-    assert builders == ["main.py"]
-
-
-def test_the_scan_reaches_the_destination_its_writer_actually_writes() -> None:
-    """The promoted body's surface has a member of its own, on the tracker.
-
-    ``OutboundDestination``'s rule is that a member is registered when its
-    writer exists. This holds the other half of it: the member the
-    preparation pass promotes onto is classified, and it is classified as
-    the coordination surface rather than as a repository artifact, because
-    that is where the body lands and the surface decides the gate's rules.
-    """
-    destination = OutboundDestination.PREPARED_FIRE_BODY
-
-    assert surface_of(destination) is OutboundSurface.TRACKER
-    assert FIRE_PREP_SOURCE.read_text(encoding="utf-8").count(destination.name) == 2
+    assert builders == []
