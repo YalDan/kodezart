@@ -108,10 +108,6 @@ class FireDispatcher:
         self._log: BoundLogger = get_logger(__name__)
         self._jobs_by_issue: dict[str, str] = {}
 
-    def job_for(self, issue_key: str) -> str | None:
-        """The job this dispatcher enqueued for *issue_key*, if any."""
-        return self._jobs_by_issue.get(issue_key)
-
     async def run_pass(self) -> DispatchReport:
         """Execute one pass and return its machine-readable report."""
         snapshot = await self._tracker.scan_issues(

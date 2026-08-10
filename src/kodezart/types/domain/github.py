@@ -51,14 +51,6 @@ class RepositoryResponse(BaseModel):
     private: bool
 
 
-class CheckSuitesResponse(BaseModel):
-    """Wrapper for the GitHub Check Suites API response."""
-
-    model_config = ConfigDict(frozen=True)
-
-    total_count: int
-
-
 class Workflow(BaseModel):
     """A single GitHub Actions workflow."""
 

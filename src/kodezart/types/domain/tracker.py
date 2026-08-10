@@ -145,20 +145,6 @@ class TrackerModel(CamelCaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-class TrackerUser(TrackerModel):
-    """A tracker user identity."""
-
-    user_key: str = Field(min_length=1)
-    display_name: str
-
-
-class TrackerTeam(TrackerModel):
-    """A tracker team identity."""
-
-    team_key: str = Field(min_length=1)
-    display_name: str
-
-
 class IssueRelation(TrackerModel):
     """One edge from an issue to another issue."""
 
