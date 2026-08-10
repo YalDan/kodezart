@@ -404,6 +404,25 @@ def test_pyproject_gains_no_templating_dependency() -> None:
         assert banned not in pyproject.lower()
 
 
+def test_no_shipped_template_ends_in_a_blank_line() -> None:
+    """`_read_member` drops one trailing newline; a second one is content.
+
+    An editor that removes a trailing section leaves the blank line that
+    separated it, and the surviving newline reaches the model as prompt
+    text.  Nothing else in the suite reads the files as bytes.
+    """
+    root = default_sets_root()
+    members = sorted(root.glob("*/*.md"))
+    assert members
+    framing = {
+        str(path.relative_to(root)): path.read_bytes()[-2:] for path in members
+    }
+    assert {
+        name: tail for name, tail in framing.items() if not tail.endswith(b"\n")
+    } == {}
+    assert {name: tail for name, tail in framing.items() if tail == b"\n\n"} == {}
+
+
 # ---------------------------------------------------------------------------
 # KOD-63/AC-6, AC-7a, AC-7b, AC-9b — typed boot failures
 # ---------------------------------------------------------------------------

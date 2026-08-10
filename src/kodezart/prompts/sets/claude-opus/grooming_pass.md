@@ -31,4 +31,3 @@ Compose each update's health from every item groomed under that initiative in th
 
 ## Escalation Endpoint
 Escalations and out-of-band notifications go to {{endpoints.escalation}} and nowhere else.
-
