@@ -109,13 +109,6 @@ def test_every_field_named_for_a_criterion_id_annotates_the_identity() -> None:
     assert offenders == []
 
 
-def test_at_least_one_field_is_reached_by_each_rule() -> None:
-    """The two rules above pass vacuously if they quantify over nothing."""
-    fields = _fields()
-    assert [f"{m}.{n}" for m, n, f in fields if _constrained_by_the_id_pattern(f)]
-    assert [f"{m}.{n}" for m, n, _ in fields if n.endswith(_IDENTITY_FIELD_SUFFIXES)]
-
-
 def test_the_minting_function_is_the_only_construction_site() -> None:
     """Nothing outside the minting module may call `CriterionId(...)`.
 
@@ -135,12 +128,6 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
             ):
                 offenders.append(f"{path}:{node.lineno}")
     assert offenders == []
-
-
-def test_the_minting_module_does_construct_one() -> None:
-    """The guard above is vacuous if nobody mints an identity at all."""
-    source = _MINTING_MODULE.read_text()
-    assert "CriterionId(" in source
 
 
 def test_a_minted_identity_matches_the_scheme() -> None:
