@@ -104,6 +104,17 @@ class MappingKind(StrEnum):
     WORKFLOW_STATE = "workflow_state"
 
 
+#: The mapping kinds an ensure can instate, in ANY backend.  A kind absent
+#: here belongs to a field the model does not class OWNED, so no ref builder
+#: produces it and no adapter may create it — instatability is a property of
+#: the domain's ownership partition, not of a vendor's capabilities.  Ensuring
+#: a ref outside this set is ``TrackerEnsureConflictError`` everywhere, which
+#: is what keeps an adapter and a test double from disagreeing about it.
+INSTATABLE_MAPPING_KINDS: frozenset[MappingKind] = frozenset(
+    {MappingKind.QUEUE_STATE},
+)
+
+
 class EnsureAction(StrEnum):
     """What ensuring one OWNED mapping did to the workspace.
 

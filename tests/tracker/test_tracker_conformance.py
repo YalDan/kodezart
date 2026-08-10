@@ -14,12 +14,15 @@ from datetime import timedelta
 
 import pytest
 
+from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import DuplicateWorkRefError
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
+    INSTATABLE_MAPPING_KINDS,
     ClaimStatus,
+    EnsureAction,
     IssuePriority,
     IssueQuery,
     IssueRelationKind,
@@ -37,9 +40,11 @@ from tests.tracker.conftest import (
     DOCUMENT_CONTENT,
     DOCUMENT_KEY,
     FIXTURE_NOW,
+    TEAM_IDENTIFIERS,
 )
 
 LEASE_SECONDS = 600.0
+TEAM = TEAM_IDENTIFIERS["engineering"]
 
 
 class TestScanAndRead:
@@ -429,6 +434,110 @@ class TestMappingResolution:
             identifier="never-existed",
         )
         assert await tracker.resolve_mappings(refs=[good, bad]) == (bad,)
+
+
+class TestMappingEnsure:
+    """The three ensure outcomes, plus the two refusals, over EVERY port.
+
+    ``ensure_mappings`` carried no conformance row at all before this class,
+    and the adapter and the consumer double had already drifted apart over
+    it — one refused every kind but ``QUEUE_STATE``, the other accepted and
+    created all four.  KOD-57 R6's premise is that the suite is what keeps
+    the double honest; it does not reach a method the suite never calls.
+    """
+
+    #: A container no fixture value is defined in, so a refusal here is
+    #: about the DECLARED container disagreeing rather than about a name.
+    OTHER_CONTAINER = "fixture-other-team"
+
+    def _ref(self, identifier: str, scope: str | None) -> MappingRef:
+        return MappingRef(
+            kind=MappingKind.QUEUE_STATE,
+            name="conformance",
+            identifier=identifier,
+            scope=scope,
+        )
+
+    async def test_an_absent_value_is_created_and_then_resolves(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        ref = self._ref("queue:conformance-created", TEAM)
+        assert await tracker.resolve_mappings(refs=[ref]) == (ref,)
+
+        outcomes = await tracker.ensure_mappings(refs=[ref])
+
+        assert [outcome.action for outcome in outcomes] == [EnsureAction.CREATED]
+        assert await tracker.resolve_mappings(refs=[ref]) == ()
+
+    async def test_a_value_already_present_is_adopted_and_not_rewritten(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A second boot over the same workspace writes nothing at all."""
+        ref = self._ref("queue:conformance-adopted", TEAM)
+        await tracker.ensure_mappings(refs=[ref])
+
+        outcomes = await tracker.ensure_mappings(refs=[ref])
+
+        assert [outcome.action for outcome in outcomes] == [EnsureAction.ADOPTED]
+
+    async def test_a_value_the_workspace_holds_elsewhere_refuses_and_writes_nothing(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """R7(c): an ensure that would ALTER a definition is a typed error."""
+        identifier = "queue:conformance-contested"
+        await tracker.ensure_mappings(refs=[self._ref(identifier, TEAM)])
+
+        with pytest.raises(TrackerEnsureConflictError) as caught:
+            await tracker.ensure_mappings(
+                refs=[self._ref(identifier, self.OTHER_CONTAINER)],
+            )
+
+        assert identifier in caught.value.entry
+        # The refusal wrote nothing: the value is still the one that was
+        # created, adopted unchanged under the container it was made in.
+        again = await tracker.ensure_mappings(refs=[self._ref(identifier, TEAM)])
+        assert [outcome.action for outcome in again] == [EnsureAction.ADOPTED]
+
+    async def test_the_refusal_aborts_before_the_refs_that_follow_it(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """"Performs no write" is about the whole call, not about one ref."""
+        contested = "queue:conformance-first"
+        follower = self._ref("queue:conformance-follower", TEAM)
+        await tracker.ensure_mappings(refs=[self._ref(contested, TEAM)])
+
+        with pytest.raises(TrackerEnsureConflictError):
+            await tracker.ensure_mappings(
+                refs=[self._ref(contested, self.OTHER_CONTAINER), follower],
+            )
+
+        assert await tracker.resolve_mappings(refs=[follower]) == (follower,)
+
+    @pytest.mark.parametrize(
+        "kind",
+        sorted(set(MappingKind) - INSTATABLE_MAPPING_KINDS),
+    )
+    async def test_a_kind_no_owned_field_produces_is_refused(
+        self,
+        tracker: TrackerPort,
+        kind: MappingKind,
+    ) -> None:
+        """Instatability is the domain's fact, so every port refuses alike."""
+        ref = MappingRef(
+            kind=kind,
+            name="conformance",
+            identifier="never-instated",
+            scope=TEAM,
+        )
+
+        with pytest.raises(TrackerEnsureConflictError):
+            await tracker.ensure_mappings(refs=[ref])
+
+        assert await tracker.resolve_mappings(refs=[ref]) == (ref,)
 
 
 class TestSubstitutability:

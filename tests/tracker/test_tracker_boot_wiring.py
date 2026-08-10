@@ -15,7 +15,10 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import TrackerBootValidationError
+from kodezart.core.errors import (
+    TrackerBootValidationError,
+    TrackerEnsureConflictError,
+)
 from kodezart.core.protocols import ManagedMcpToolCaller
 from kodezart.main import create_app, lifespan
 from kodezart.services.pass_scheduler import PassScheduler
@@ -103,6 +106,7 @@ def server() -> ManagedFakeLinearMcpServer:
     managed.users = source.users
     managed.teams = source.teams
     managed.labels = source.labels
+    managed.label_containers = source.label_containers
     managed.statuses = source.statuses
     managed.state_types = source.state_types
     managed.actor = source.actor
@@ -227,6 +231,53 @@ async def test_a_second_boot_over_the_same_workspace_adopts_and_writes_nothing(
     ]
     assert reconciled[0]["created"] == []
     assert "queue_state 'done' -> 'queue:terminal'" in reconciled[0]["adopted"]
+
+
+async def test_a_label_the_workspace_holds_elsewhere_aborts_boot_and_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """AC-4 / R7(c): an ensure that would ALTER a definition never writes.
+
+    The workspace already holds the declared label, but in another team's
+    container.  Adopting it would repurpose a value that team means
+    something by, and creating it would be the cross-container write R3
+    forbids — so boot aborts naming the entry instead.
+    """
+    contested = "queue:terminal"
+    wired.labels.append(contested)
+    wired.label_containers[contested] = "some-other-team"
+    _configure(
+        monkeypatch,
+        tmp_path,
+        _operation_toml(queue_states={**QUEUE_STATE_LABELS, "done": contested}),
+    )
+
+    with pytest.raises(TrackerEnsureConflictError) as caught:
+        async with lifespan(create_app()):
+            pass
+
+    assert contested in caught.value.entry
+    assert wired.tool_calls("create_issue_label") == []
+    assert wired.closes == 1
+
+
+async def test_two_declared_queue_states_claiming_one_label_abort_boot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """The second raise site: the config contradicts itself before any write."""
+    declared = {**QUEUE_STATE_LABELS, "decision": QUEUE_STATE_LABELS["done"]}
+    _configure(monkeypatch, tmp_path, _operation_toml(queue_states=declared))
+
+    with pytest.raises(TrackerEnsureConflictError) as caught:
+        async with lifespan(create_app()):
+            pass
+
+    assert QUEUE_STATE_LABELS["done"] in caught.value.entry
+    assert wired.tool_calls("create_issue_label") == []
 
 
 async def test_without_a_credential_no_tracker_is_wired_and_boot_says_so(

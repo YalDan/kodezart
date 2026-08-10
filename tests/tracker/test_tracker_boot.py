@@ -23,7 +23,11 @@ from kodezart.types.domain.operation import (
     RecordDestination,
     RepoEntry,
 )
-from kodezart.types.domain.tracker import MappingKind, MappingRef
+from kodezart.types.domain.tracker import (
+    INSTATABLE_MAPPING_KINDS,
+    MappingKind,
+    MappingRef,
+)
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import (
     APPROVER,
@@ -250,6 +254,21 @@ class TestOwnershipPartition:
 
         config = operation_config()
         assert {ref.name for ref in owned_mappings(config)} == set(config.queue_states)
+
+    def test_every_owned_ref_is_of_a_kind_an_ensure_may_instate(self) -> None:
+        """The two halves of instatability cannot drift apart silently.
+
+        ``OWNED_REF_BUILDERS`` says which FIELDS boot instates;
+        ``INSTATABLE_MAPPING_KINDS`` says which KINDS an ensure may create,
+        and every port refuses the rest.  A builder emitting a kind outside
+        that set would produce refs boot itself makes and every adapter
+        rejects — a config that cannot boot for a reason no config file
+        names.
+        """
+        kinds = {ref.kind for ref in owned_mappings(operation_config())}
+
+        assert kinds
+        assert kinds <= INSTATABLE_MAPPING_KINDS
 
     def test_an_owned_field_boot_cannot_instate_fails_loudly(
         self,

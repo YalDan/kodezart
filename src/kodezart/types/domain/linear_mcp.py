@@ -121,9 +121,15 @@ class LinearHistoryWire(LinearWireModel):
 
 
 class LinearNamedWire(LinearWireModel):
-    """A named workspace entity — a user, team, label or status."""
+    """A named workspace entity — a user, team, label or status.
+
+    ``team_id`` is the container the entity is defined in, when the vendor
+    reports one.  Absent means the listing did not say, which is NOT the
+    same fact as "defined at workspace scope" and is never read as one.
+    """
 
     name: str
+    team_id: str | None = None
 
 
 class LinearNamedListWire(LinearWireModel):

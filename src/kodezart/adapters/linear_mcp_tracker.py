@@ -42,6 +42,7 @@ from kodezart.types.domain.linear_mcp import (
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
+    INSTATABLE_MAPPING_KINDS,
     ClaimResult,
     ClaimStatus,
     EnsureAction,
@@ -517,16 +518,32 @@ class LinearMcpTracker:
         configured name is adopted verbatim — never renamed, never
         recoloured, never re-scoped — so a second boot over the same
         workspace writes nothing at all.
+
+        R8's definition of "an existing definition" is ``(name, container)``,
+        which is exactly what a create writes.  A label the workspace
+        reports under a container other than the declared one would have to
+        be re-scoped to serve this ref, so it raises and nothing is written
+        — not for that ref and not for any ref after it, since the loop
+        aborts.  A listing that reports NO container has said nothing to
+        differ from and the label is adopted: refusing on the backend's
+        silence would read absence as a positive fact about the workspace.
         """
         outcomes: list[MappingOutcome] = []
+        definitions = await self._label_definitions()
         for ref in refs:
-            if ref.kind is not MappingKind.QUEUE_STATE:
+            if ref.kind not in INSTATABLE_MAPPING_KINDS:
                 raise TrackerEnsureConflictError(
-                    "this backend instates queue states only",
+                    "this kind belongs to no field the operation owns",
                     entry=ref.describe(),
                 )
-            existing = await self._names_of(MappingKind.QUEUE_STATE)
-            if ref.identifier in existing:
+            if ref.identifier in definitions:
+                container = definitions[ref.identifier]
+                if container is not None and container != ref.scope:
+                    raise TrackerEnsureConflictError(
+                        "the workspace defines this value in another container; "
+                        f"declared {ref.scope!r}, found {container!r}",
+                        entry=ref.describe(),
+                    )
                 outcomes.append(
                     MappingOutcome(ref=ref, action=EnsureAction.ADOPTED),
                 )
@@ -535,6 +552,7 @@ class LinearMcpTracker:
                 _TOOL_CREATE_ISSUE_LABEL,
                 _label_arguments(ref),
             )
+            definitions[ref.identifier] = ref.scope
             outcomes.append(MappingOutcome(ref=ref, action=EnsureAction.CREATED))
             await self._log.ainfo(
                 "tracker_queue_label_created",
@@ -543,6 +561,13 @@ class LinearMcpTracker:
                 team=ref.scope,
             )
         return tuple(outcomes)
+
+    async def _label_definitions(self) -> dict[str, str | None]:
+        """Every queue-state label the workspace holds, with its container."""
+        tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
+        payload = await self._call(tool, {})
+        listing = self._validate(LinearNamedListWire, payload, tool)
+        return {entry.name: entry.team_id for entry in listing.entries}
 
     async def _names_of(self, kind: MappingKind) -> frozenset[str]:
         tool = _MAPPING_TOOL_BY_KIND[kind]

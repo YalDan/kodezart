@@ -14,6 +14,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
 from kodezart.domain.errors import (
@@ -58,6 +59,7 @@ from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.tracker import (
+    INSTATABLE_MAPPING_KINDS,
     ClaimResult,
     ClaimStatus,
     EnsureAction,
@@ -1500,6 +1502,7 @@ class FakeLinearMcpServer:
         users: Sequence[str] = (),
         teams: Sequence[str] = (),
         labels: Sequence[str] = (),
+        label_containers: Mapping[str, str] | None = None,
         statuses: Sequence[str] = (),
         state_types: Mapping[str, str] | None = None,
         actor: str = "fixture-actor",
@@ -1515,6 +1518,7 @@ class FakeLinearMcpServer:
         self.users: list[str] = list(users)
         self.teams: list[str] = list(teams)
         self.labels: list[str] = list(labels)
+        self.label_containers: dict[str, str] = dict(label_containers or {})
         self.statuses: list[str] = list(statuses)
         self.state_types: dict[str, str] = dict(state_types or {})
         self.actor: str = actor
@@ -1694,7 +1698,21 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        return self._named(self.labels)
+        """Labels with the container the workspace holds each one in.
+
+        A label seeded into the fixture reports NO container, exactly as a
+        listing that does not carry the field would: the fake states what
+        the workspace knows and never invents workspace scope for a label
+        nobody said anything about.
+        """
+        return {
+            "entries": [
+                {"name": name}
+                if self.label_containers.get(name) is None
+                else {"name": name, "teamId": self.label_containers[name]}
+                for name in self.labels
+            ],
+        }
 
     def _tool_create_issue_label(
         self,
@@ -1705,6 +1723,9 @@ class FakeLinearMcpServer:
             msg = f"fake workspace already carries the label {name!r}"
             raise LookupError(msg)
         self.labels.append(name)
+        team = arguments.get("teamId")
+        if team is not None:
+            self.label_containers[name] = str(team)
         return {"name": name}
 
     def _tool_list_issue_statuses(
@@ -1787,6 +1808,10 @@ class FakeTrackerPort:
         }
         self._documents: dict[str, str] = dict(documents or {})
         self.known_identifiers: set[str] = set(known_identifiers)
+        #: The container each INSTATED value was created in.  Seeded empty,
+        #: because a value the fixture merely knows about reports no
+        #: container — the same state a listing that omits the field is in.
+        self.mapping_containers: dict[str, str | None] = {}
         self._clock: Callable[[], datetime] = clock
         self._sequence: int = 0
 
@@ -1981,17 +2006,37 @@ class FakeTrackerPort:
         *,
         refs: Sequence[MappingRef],
     ) -> Sequence[MappingOutcome]:
+        """The port's ensure contract, held to the same rule the adapter is.
+
+        The double refused nothing before this: it accepted every kind and
+        created every ref, so a consumer could pass over behaviour the port
+        does not have.  R8's rule is the domain's, not a vendor's, so it
+        lives here identically — kinds outside ``INSTATABLE_MAPPING_KINDS``
+        and reported-container disagreements both raise and write nothing.
+        """
         await asyncio.sleep(0)
         outcomes: list[MappingOutcome] = []
         for ref in refs:
-            created = ref.identifier not in self.known_identifiers
+            if ref.kind not in INSTATABLE_MAPPING_KINDS:
+                raise TrackerEnsureConflictError(
+                    "this kind belongs to no field the operation owns",
+                    entry=ref.describe(),
+                )
+            if ref.identifier in self.known_identifiers:
+                container = self.mapping_containers.get(ref.identifier)
+                if container is not None and container != ref.scope:
+                    raise TrackerEnsureConflictError(
+                        "the workspace defines this value in another container; "
+                        f"declared {ref.scope!r}, found {container!r}",
+                        entry=ref.describe(),
+                    )
+                outcomes.append(
+                    MappingOutcome(ref=ref, action=EnsureAction.ADOPTED),
+                )
+                continue
             self.known_identifiers.add(ref.identifier)
-            outcomes.append(
-                MappingOutcome(
-                    ref=ref,
-                    action=EnsureAction.CREATED if created else EnsureAction.ADOPTED,
-                ),
-            )
+            self.mapping_containers[ref.identifier] = ref.scope
+            outcomes.append(MappingOutcome(ref=ref, action=EnsureAction.CREATED))
         return tuple(outcomes)
 
 
