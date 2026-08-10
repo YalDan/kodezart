@@ -1,7 +1,9 @@
 """Construction of the git-backed workspace stack.
 
-Moved verbatim from the composition root, which imports and wires rather
-than defines.
+``build_git_stack``'s body moved verbatim from the composition root, which
+imports and wires rather than defines. ``GitStack`` did not: the root held
+these six as six separate locals and the type is new here, so this module
+is an extraction plus one addition rather than a pure move.
 """
 
 from dataclasses import dataclass
