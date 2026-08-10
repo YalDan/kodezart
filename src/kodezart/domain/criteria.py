@@ -8,7 +8,7 @@ ids and never off criterion text.
 """
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
@@ -54,13 +54,6 @@ def mint_criteria(
         )
         for index, criterion in enumerate(drafted, start=1)
     )
-
-
-def criteria_by_id(
-    criteria: Sequence[GeneratedCriterion],
-) -> Mapping[CriterionId, GeneratedCriterion]:
-    """Index *criteria* by identity — the harness's own text, by id."""
-    return {criterion.id: criterion for criterion in criteria}
 
 
 def effective_criterion_class(
