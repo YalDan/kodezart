@@ -226,7 +226,6 @@ def test_an_ungraded_criterion_seats_in_neither_count_nor_feedback() -> None:
 
     grade = grade_iteration(criteria, output)
 
-    assert grade.ungraded_criterion_ids == ["AC-2"]
     assert grade.passed_count == 1
     assert [f.criterion_id for f in grade.failures] == []
     assert grade.verdict is AcceptVerdict.ship_with_flags

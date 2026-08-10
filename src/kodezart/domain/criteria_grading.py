@@ -18,13 +18,13 @@ report.  The ARITHMETIC is narrower: an ``unverifiable`` criterion is
 neither a pass nor a fail, so it seats in neither ``passed_count`` nor
 ``failures`` — the second half is what keeps it out of the iteration
 feedback, where a criterion nothing can grade would otherwise recur every
-round and burn the budget.  It is named on ``ungraded_criterion_ids``
-instead, which is what clamps the verdict to ``ship_with_flags``.
+round and burn the budget.  Its presence clamps the verdict to
+``ship_with_flags``.
 """
 
 from collections.abc import Sequence
 
-from kodezart.domain.accept_gate import accept_verdict, is_graded, ungraded
+from kodezart.domain.accept_gate import accept_verdict, is_graded
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import (
     CriterionFailure,
@@ -117,5 +117,4 @@ def grade_iteration(
         passed_count=passed_count,
         verdict=accept_verdict(criteria, results),
         sherlock_flags=list(output.sherlock_flags),
-        ungraded_criterion_ids=[criterion.id for criterion in ungraded(criteria)],
     )

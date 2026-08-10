@@ -8,9 +8,8 @@ can produce acceptance over a shorter list.
 One kind of criterion is exempt from that denominator and from the
 numerator alike: an ``unverifiable`` one, whose demonstration the sweep
 established the runner cannot perform.  It is never a pass and never a
-fail, so ``passed_count`` and ``failures`` pass over it and
-``ungraded_criterion_ids`` names it instead — the presence of that list
-is what clamps the verdict ceiling to ``ship_with_flags``.
+fail, so ``passed_count`` and ``failures`` pass over it, and its presence
+clamps the verdict ceiling to ``ship_with_flags``.
 """
 
 from pydantic import ConfigDict, Field
@@ -35,4 +34,3 @@ class IterationGrade(CamelCaseModel):
     passed_count: int = Field(ge=0)
     verdict: AcceptVerdict
     sherlock_flags: list[SherlockFlag] = Field(default_factory=list)
-    ungraded_criterion_ids: list[CriterionId] = Field(default_factory=list)
