@@ -31,6 +31,7 @@ from kodezart.types.domain.criteria import (
     CriterionFlag,
     CriterionVerdict,
     DraftedCriterion,
+    ForbiddenCriterionClass,
     GeneratedCriterion,
     LimitArm,
     RepairKind,
@@ -487,7 +488,8 @@ def test_measured_affordable_cost_leaves_the_criterion_feasible() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Neither verdict is a resting place for an inconclusive refuter (item 3)
+# Neither verdict is a resting place for an inconclusive refuter
+# (KOD-53/AC-1, KOD-66 item 3)
 # ---------------------------------------------------------------------------
 
 
@@ -511,6 +513,44 @@ def test_environment_side_repair_without_a_named_resource_raises() -> None:
             )
         )
     assert excinfo.value.criterion_id == "AC-2"
+
+
+@pytest.mark.parametrize(
+    ("label", "finding"),
+    [
+        (
+            "a forbidden class with nothing behind it",
+            CriterionFinding(
+                criterion_id="AC-5",
+                smallest_repair=RepairKind.criterion_text,
+                forbidden_class=ForbiddenCriterionClass.ci_status,
+            ),
+        ),
+        (
+            "an undeclared arm with nothing behind it",
+            CriterionFinding(
+                criterion_id="AC-5",
+                smallest_repair=RepairKind.none,
+                undeclared_switch_arms=["archived"],
+            ),
+        ),
+    ],
+    ids=["forbidden-class", "undeclared-arm"],
+)
+def test_an_ungradeable_report_without_a_refutation_raises(
+    label: str,
+    finding: CriterionFinding,
+) -> None:
+    """The third arm of the same rule, asserted like its two siblings.
+
+    An ungradeable report is the strongest verdict this gate issues — it
+    halts a run before the loop — and it is reached without any repair
+    field being consulted, so a refuter that named a class and established
+    nothing would otherwise buy the whole halt for a word.
+    """
+    with pytest.raises(UngroundedVerdictError) as excinfo:
+        classify_finding(finding)
+    assert excinfo.value.criterion_id == "AC-5", label
 
 
 # ---------------------------------------------------------------------------
