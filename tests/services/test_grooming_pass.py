@@ -24,11 +24,14 @@ from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import OutboundContentGate, PromptProvider
 from kodezart.services.grooming_pass import GroomingPass, report_body
 from kodezart.services.pass_session import PassSession
+from kodezart.services.trunk_gate import TrunkGate
 from kodezart.types.domain.gating import OutboundDestination
 from kodezart.types.domain.operation import CheckStep, OperationConfig, RepoEntry
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
+    FakeGitService,
     FakePassExecutor,
+    FakeRepoCache,
     FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
@@ -42,8 +45,14 @@ ISSUE = "K-7"
 SECOND_ISSUE = "K-8"
 HEAD_SHA = "0f1e2d3c4b5a6978"
 TRUNK = "trunk"
+REMOTE = "origin"
 TIMEOUT_SECONDS = 30.0
 TOOLS = ("Bash", "Read")
+#: Two successive trunk tips, for the ticks that turn on whether the code
+#: moved.  A third value is never needed: the gate compares the tip to the
+#: last VERIFIED one, not to the previous tick's.
+FIRST_TIP = "a" * 40
+SECOND_TIP = "b" * 40
 
 #: One gate, two steps that only run after it, and one step gated on
 #: nothing.  A failure set of {lint, type-check, test} over this chain has
@@ -82,6 +91,17 @@ def pass_prompts() -> PromptProvider:
     )
 
 
+def make_gate(git: FakeGitService | None = None) -> TrunkGate:
+    """The shipped pre-query over the fake git surface, as boot builds it."""
+    return TrunkGate(
+        git=git or FakeGitService(),
+        cache=FakeRepoCache(),
+        repo_url=PRIMARY_REPO,
+        trunk=TRUNK,
+        remote=REMOTE,
+    )
+
+
 def make_pass(
     *,
     tracker: FakeTrackerPort,
@@ -90,8 +110,10 @@ def make_pass(
     workspace: FakeWorkspaceProvider | None = None,
     gate: OutboundContentGate | None = None,
     executor: FakePassExecutor | None = None,
+    pre_query: TrunkGate | None = None,
 ) -> GroomingPass:
     return GroomingPass(
+        pre_query=pre_query or make_gate(),
         tracker=tracker,
         workspace=workspace or FakeWorkspaceProvider(),
         session=PassSession(
@@ -260,6 +282,84 @@ async def test_the_session_verifies_inside_the_checkout_with_its_granted_tools()
     # session reporting a step name has one it could have read.
     assert "make lint" in prompt
     assert "type-check" in prompt
+
+
+async def test_a_tick_at_an_already_verified_tip_costs_no_session_at_all() -> None:
+    """AC-19: the pre-query, not the interval, is what bounds the token cost.
+
+    Same tip twice: the second tick spends two git port calls and stops. A
+    pass wired without the gate re-runs the whole declared chain and posts
+    a byte-identical comment on every blocked issue, once per interval,
+    forever.
+    """
+    executor = FakePassExecutor(
+        answers=[verification(failed=["lint"]), verification(failed=["lint"])],
+    )
+    workspace = FakeWorkspaceProvider()
+    tracker = tracker_with(ISSUE)
+    subject = make_pass(
+        tracker=tracker,
+        answers=[],
+        executor=executor,
+        workspace=workspace,
+    )
+
+    await subject.run()
+    await subject.run()
+
+    assert len(executor.calls) == 1
+    assert len(tracker.comments) == 1
+    assert [call[0] for call in workspace.calls] == ["acquire", "release"]
+
+
+async def test_a_tick_at_a_tip_nobody_verified_yet_runs() -> None:
+    """Guards the case above: a gate that never opened would satisfy it."""
+    git = FakeGitService(
+        remote_branch_sha_sequences={TRUNK: [FIRST_TIP, SECOND_TIP]},
+    )
+    executor = FakePassExecutor(
+        answers=[verification(failed=["lint"]), verification(failed=["lint"])],
+    )
+    subject = make_pass(
+        tracker=tracker_with(ISSUE),
+        answers=[],
+        executor=executor,
+        pre_query=make_gate(git),
+    )
+
+    await subject.run()
+    await subject.run()
+
+    assert len(executor.calls) == 2
+
+
+async def test_a_tick_whose_session_did_not_answer_verifies_the_tip_again() -> None:
+    """A build nobody performed is not a build that came back green."""
+    executor = FakePassExecutor(answers=[None, verification(failed=["lint"])])
+    tracker = tracker_with(ISSUE)
+    subject = make_pass(tracker=tracker, answers=[], executor=executor)
+
+    await subject.run()
+    await subject.run()
+
+    assert len(executor.calls) == 2
+    assert len(tracker.comments) == 1
+
+
+async def test_a_trunk_the_remote_does_not_carry_verifies_nothing() -> None:
+    """Three states, none silent: an absent branch is not an unchanged one."""
+    git = FakeGitService(remote_branch_shas={TRUNK: None})
+    executor = FakePassExecutor(answers=[verification(failed=["lint"])])
+    tracker = tracker_with(ISSUE)
+    await make_pass(
+        tracker=tracker,
+        answers=[],
+        executor=executor,
+        pre_query=make_gate(git),
+    ).run()
+
+    assert executor.calls == []
+    assert tracker.comments == []
 
 
 def test_the_report_names_the_sha_it_was_taken_at() -> None:

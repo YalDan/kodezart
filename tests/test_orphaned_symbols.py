@@ -49,6 +49,7 @@ _TEXT_FILENAMES: frozenset[str] = frozenset(
     {"Makefile", "Dockerfile", "CODEOWNERS", ".env.example"},
 )
 
+
 def _public_definitions() -> dict[str, list[str]]:
     """Every public, undecorated definition under ``src/kodezart``.
 

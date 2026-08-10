@@ -18,6 +18,14 @@ A clean chain produces no comment.  That is the reply criterion the
 routines carry: grooming that produces no finding produces no comment, and
 a per-tick "still green" note on every issue is the noise the rule exists
 to prevent.
+
+Nothing that costs a checkout or a session runs before the pre-query.  The
+tick is gated on the repository's trunk tip (``services/trunk_gate.py``,
+KOD-60 R11): at an already-verified tip the classification is the one the
+pass already computed, so re-running it would spend a session to re-post
+the same finding on the same issues.  The tip is recorded only by a tick
+that completed, so a session that did not answer is retried rather than
+counted as a verification.
 """
 
 from kodezart.core.logging import BoundLogger, get_logger
@@ -29,6 +37,7 @@ from kodezart.domain.check_chain import (
 )
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.pass_session import PassSession
+from kodezart.services.trunk_gate import TrunkGate
 from kodezart.types.domain.gating import (
     OutboundDestination,
     RepoVisibility,
@@ -72,6 +81,7 @@ class GroomingPass:
     def __init__(
         self,
         *,
+        pre_query: TrunkGate,
         tracker: TrackerPort,
         workspace: WorkspaceProvider,
         session: PassSession,
@@ -79,6 +89,7 @@ class GroomingPass:
         repo: RepoEntry,
         allowed_tools: tuple[str, ...],
     ) -> None:
+        self._pre_query: TrunkGate = pre_query
         self._tracker: TrackerPort = tracker
         self._workspace: WorkspaceProvider = workspace
         self._session: PassSession = session
@@ -89,8 +100,17 @@ class GroomingPass:
 
     async def run(self) -> None:
         """Verify this repository in a checkout, then report what failed and why."""
+        tip = await self._pre_query.unverified_tip()
+        if tip is None:
+            await self._log.ainfo(
+                "grooming_pass_skipped_no_new_commit",
+                repo_url=self._repo.url,
+            )
+            return
         answer = await self._verify()
         if isinstance(answer, PassSessionFailure):
+            # The tip stays unrecorded: a build nobody performed is not a
+            # build that came back green, and the next tick asks again.
             await self._log.awarning(
                 "grooming_pass_unanswered",
                 repo_url=self._repo.url,
@@ -110,6 +130,7 @@ class GroomingPass:
                 )
                 continue
             await self._report(verification)
+        self._pre_query.record(tip)
 
     async def _verify(self) -> GroomingOutput | PassSessionFailure:
         """Run one verification session inside a checkout of this repository."""

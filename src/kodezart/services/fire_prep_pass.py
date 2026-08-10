@@ -4,30 +4,42 @@ The deterministic half of preparation.  The session composes bodies out of
 a work set this service froze and handed it; this service decides what
 happens to each one, and every step of that decision is arithmetic.
 
-Three gates stand between a composed body and the tracker, in this order
-and for three different reasons:
+Nothing that costs tokens runs before the pre-query.  The window is
+whatever the deterministic gate saw move on the entry queue since this
+pass's own high-water mark, so a tick over an unmoved queue reaches no
+session at all and a stalled queue is not re-composed every interval
+forever.  A tick whose session did not answer rewinds the mark, because a
+consumed-but-unprocessed window is worse than a repeated one.
+
+Four gates stand between a composed body and the tracker, in this order
+and for four different reasons:
 
 * **the frozen window** — a body naming an item the pass did not read is
   dropped.  A pass that acted outside the window it froze would be acting
-  on a state it never verified, which is the atomicity guard the routines
-  carry.
+  on a state it never verified.
 * **the hygiene scan** — can the implementer who receives this body act on
   it alone?  Orchestration vocabulary, tracker shorthand and pre-cooked
   evaluator material fail that question whatever their privacy.
 * **the outbound gate** — may this leave the process at all?
+* **the re-read** — is the item still the one the window recorded?  A
+  session runs for minutes, and an item another actor moved in the
+  meantime is dropped rather than overwritten.  Deliberately the LAST
+  question asked, immediately before the write, because the whole value of
+  a re-read is how little room it leaves after itself.
 
-Same body, three questions, and none of them substitutes for another.  A
+Same body, four questions, and none of them substitutes for another.  A
 body that fails any of them leaves its issue exactly where it found it:
 nothing half-written, and the next pass sees the same item.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.hygiene_scan import HygieneScan
+from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_session import PassSession
 from kodezart.types.domain.gating import (
     OutboundDestination,
@@ -42,7 +54,7 @@ from kodezart.types.domain.passes import (
     PreparedFire,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.tracker import IssueQuery, TrackerIssue
+from kodezart.types.domain.tracker import TrackerIssue
 
 #: The preparation session composes from a work set already rendered into
 #: its prompt, so it reaches nothing.  Not a hardened sandbox and not
@@ -56,32 +68,28 @@ class FirePrepPass:
     def __init__(
         self,
         *,
+        pre_query: PassGate,
         tracker: TrackerPort,
         session: PassSession,
         scan: HygieneScan,
         gate: OutboundContentGate,
-        page_size: int,
         working_dir: str,
     ) -> None:
+        self._pre_query: PassGate = pre_query
         self._tracker: TrackerPort = tracker
         self._session: PassSession = session
         self._scan: HygieneScan = scan
         self._gate: OutboundContentGate = gate
-        self._page_size: int = page_size
         self._working_dir: str = working_dir
         self._log: BoundLogger = get_logger(__name__)
 
     async def run(self) -> None:
-        """Freeze the entry-queue window, compose over it, promote what passes."""
-        window: Sequence[TrackerIssue] = await self._tracker.scan_issues(
-            query=IssueQuery(
-                queue_state=QueueState.TRIAGE,
-                page_size=self._page_size,
-            ),
-        )
-        if not window:
-            await self._log.ainfo("fire_prep_window_empty")
+        """Take this tick's window from the gate, compose, promote what passes."""
+        delta = await self._pre_query.delta()
+        if not delta.has_delta():
+            await self._log.ainfo("fire_prep_pass_skipped_no_delta")
             return
+        window = delta.issues
 
         answer = await self._session.compose(
             key=PromptKey.FIRE_PREP_PASS,
@@ -92,6 +100,10 @@ class FirePrepPass:
             allowed_tools=_NO_TOOLS,
         )
         if isinstance(answer, PassSessionFailure):
+            # The mark goes back. A window consumed by a pass that never
+            # processed it would leave its items unprepared with nothing
+            # ever asking about them again.
+            self._pre_query.rewind()
             await self._log.awarning(
                 "fire_prep_pass_unanswered",
                 failure=answer.value,
@@ -99,7 +111,7 @@ class FirePrepPass:
             )
             return
 
-        frozen = {issue.issue_key for issue in window}
+        frozen = {issue.issue_key: issue for issue in window}
         for preparation in answer.preparations:
             await self._promote(preparation, frozen=frozen)
 
@@ -107,10 +119,11 @@ class FirePrepPass:
         self,
         preparation: PreparedFire,
         *,
-        frozen: set[str],
+        frozen: Mapping[str, TrackerIssue],
     ) -> None:
         """Scan, gate and write one prepared body, or say which gate stopped it."""
-        if preparation.issue_key not in frozen:
+        recorded = frozen.get(preparation.issue_key)
+        if recorded is None:
             await self._log.awarning(
                 "fire_prep_body_outside_window",
                 issue_key=preparation.issue_key,
@@ -151,6 +164,9 @@ class FirePrepPass:
             )
             return
 
+        if not await self._still_as_recorded(recorded):
+            return
+
         await self._tracker.update_issue(issue_key=preparation.issue_key, body=body)
         # The entry queue is left behind only after the body is on the
         # issue: an item marked shaped whose body never landed is the one
@@ -164,3 +180,27 @@ class FirePrepPass:
             issue_key=preparation.issue_key,
             queue_state=QueueState.PROPOSED.value,
         )
+
+    async def _still_as_recorded(self, recorded: TrackerIssue) -> bool:
+        """Whether the item is where the frozen window last saw it.
+
+        Two facts, because they fail differently: an item that left the
+        entry queue was disposed of by someone else, and an item whose
+        stamp moved was edited under the session.  Either way this pass's
+        composed body answers a state that no longer exists, and writing it
+        would overwrite the other actor's change with a stale one.
+        """
+        current = await self._tracker.read_issue(issue_key=recorded.issue_key)
+        if (
+            QueueState.TRIAGE in current.queue_states
+            and current.updated_at == recorded.updated_at
+        ):
+            return True
+        await self._log.awarning(
+            "fire_prep_body_stale",
+            issue_key=recorded.issue_key,
+            recorded_at=recorded.updated_at.isoformat(),
+            current_at=current.updated_at.isoformat(),
+            queue_states=sorted(state.value for state in current.queue_states),
+        )
+        return False

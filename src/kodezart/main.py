@@ -68,6 +68,7 @@ from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.pass_session import PassSession
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
+from kodezart.services.trunk_gate import TrunkGate
 from kodezart.types.domain.gating import content_digest
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.prompts import PromptKey
@@ -343,6 +344,8 @@ def build_judgment_passes(
     skills: SkillsSelection,
     workspace: WorkspaceProvider,
     gate: OutboundContentGate,
+    git: GitService,
+    cache: RepoCache,
 ) -> list[ScheduledPass]:
     """The two judgment passes: one preparation tick, one groom per repository.
 
@@ -350,6 +353,13 @@ def build_judgment_passes(
     on it is not a per-repository thing — while verification is per
     REPOSITORY, because a session runs a chain inside one checkout and can
     only stand in one.
+
+    Each of them is constructed behind its own deterministic pre-query, and
+    the two are different ports because the two passes have different
+    subjects (KOD-60 R11): preparation is gated on entry-queue movement,
+    verification on the repository's trunk tip.  Neither pre-query is
+    shared between passes — a mark is one pass's own high-water stamp, and
+    a second consumer advancing it would skip the first one's window.
 
     This is where the pre-promotion hygiene scan is constructed, and the
     only place it is: its subject is the frozen body the preparation pass
@@ -366,13 +376,17 @@ def build_judgment_passes(
     working_dir = Path(config.pass_session_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
     prep = FirePrepPass(
+        pre_query=PassGate(
+            tracker=tracker,
+            queue_state=QueueState.TRIAGE,
+            page_size=config.tracker_query_page_size,
+        ),
         tracker=tracker,
         session=session,
         scan=HygieneScan(
             scanner=RegexContentScanner(patterns=config.hygiene_patterns),
         ),
         gate=gate,
-        page_size=config.tracker_query_page_size,
         working_dir=str(working_dir),
     )
     passes: list[ScheduledPass] = [
@@ -387,6 +401,13 @@ def build_judgment_passes(
             name=f"grooming:{repo.url}",
             interval_seconds=config.grooming_pass_interval_seconds,
             run=GroomingPass(
+                pre_query=TrunkGate(
+                    git=git,
+                    cache=cache,
+                    repo_url=repo.url,
+                    trunk=repo.trunk,
+                    remote=config.git_remote,
+                ),
                 tracker=tracker,
                 workspace=workspace,
                 session=session,
@@ -624,6 +645,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     skills=skills,
                     workspace=workspace,
                     gate=gate,
+                    git=git,
+                    cache=cache,
                 ),
             )
         else:

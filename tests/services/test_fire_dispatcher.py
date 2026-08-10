@@ -192,8 +192,6 @@ def dispatcher(
     return FireDispatcher(**kwargs), the_queue, the_delivery  # type: ignore[arg-type]
 
 
-
-
 BLOCKER_BRANCH = "kodezart/k-2-deliverable"
 BLOCKER_SHA = "b" * 40
 
@@ -214,7 +212,6 @@ def git_with(*branches: str) -> FakeGitService:
     return FakeGitService(
         remote_branch_shas=dict.fromkeys(branches, BLOCKER_SHA),
     )
-
 
 
 class TestClauseDrivenExclusion:

@@ -13,7 +13,8 @@ AC-18's production half lives here: the scan is reached through the pass,
 on a body the pass froze, at the destination its own writer writes to.
 """
 
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
+from datetime import timedelta
 
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
@@ -25,7 +26,9 @@ from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import OutboundContentGate, PromptProvider
 from kodezart.services.fire_prep_pass import FirePrepPass
 from kodezart.services.hygiene_scan import HygieneScan
+from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_session import PassSession
+from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.gating import (
     GateDecision,
     GateVerdict,
@@ -35,6 +38,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import QueueState
 from tests.fakes import (
+    FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
     FakeContentScanner,
     FakePassExecutor,
@@ -49,6 +53,7 @@ OTHER_ISSUE = "K-404"
 WORKING_DIR = "/tmp/fixture-pass-session"
 PAGE_SIZE = 50
 TIMEOUT_SECONDS = 30.0
+LATER = FIXTURE_EPOCH + timedelta(hours=1)
 
 SHAPED_BODY = (
     "The importer accepts a trailing comma in a list literal. It should "
@@ -58,6 +63,29 @@ SHAPED_BODY = (
 #: Trips the shipped evaluator-material set. A body handing the executing
 #: node its own answer sheet is the class the scan exists to stop.
 UNSHAPED_BODY = "Acceptance criteria: the parser rejects a trailing comma."
+
+
+class ExecutorAnotherActorRunsUnder(FakePassExecutor):
+    """A session during which somebody else changes the board.
+
+    The move happens when the session starts, which is the only place a
+    test can put it: the pass froze its window before that and writes
+    after, so this is the whole interval the re-read guard covers.
+    """
+
+    def __init__(
+        self,
+        *,
+        answers: Sequence[dict[str, object] | None],
+        move: Callable[[], None],
+    ) -> None:
+        super().__init__(answers=answers)
+        self._move: Callable[[], None] = move
+
+    async def stream(self, **kwargs: object) -> AsyncGenerator[AgentEvent, None]:
+        self._move()
+        async for event in super().stream(**kwargs):  # type: ignore[arg-type]
+            yield event
 
 
 class BlockingGate:
@@ -110,8 +138,18 @@ def make_pass(
     scan: HygieneScan | None = None,
     executor: FakePassExecutor | None = None,
 ) -> FirePrepPass:
-    """The pass over the shipped session, scan and gate."""
+    """The pass over the shipped session, scan, pre-query and gate.
+
+    The pre-query is the shipped ``PassGate`` over the same tracker, because
+    it is the pass's window read as well as its cost gate: a double here
+    would decide what the session sees.
+    """
     return FirePrepPass(
+        pre_query=PassGate(
+            tracker=tracker,
+            queue_state=QueueState.TRIAGE,
+            page_size=PAGE_SIZE,
+        ),
         tracker=tracker,
         session=PassSession(
             executor=executor or FakePassExecutor(answers=answers),
@@ -121,7 +159,6 @@ def make_pass(
         ),
         scan=scan or shipped_scan(),
         gate=gate or PassThroughGate(),
-        page_size=PAGE_SIZE,
         working_dir=WORKING_DIR,
     )
 
@@ -257,6 +294,107 @@ async def test_the_pass_never_sets_the_approved_state() -> None:
     ).run()
 
     assert QueueState.APPROVED not in {state for _, state in tracker.queue_writes}
+
+
+async def test_a_second_tick_over_an_unmoved_entry_queue_costs_no_session() -> None:
+    """AC-19: the pre-query bounds the token cost, not the interval.
+
+    Two ticks, one moved item: the second tick asks the tracker from the
+    mark the first advanced, gets nothing, and never reaches a session. A
+    pass wired without the gate composes over the same stalled window every
+    interval, forever, which is the unbounded cost the deliverable names.
+    """
+    executor = FakePassExecutor(
+        answers=[{"preparations": []}, {"preparations": []}],
+    )
+    tracker = triage_tracker(ISSUE)
+    subject = make_pass(tracker=tracker, answers=[], executor=executor)
+
+    await subject.run()
+    await subject.run()
+
+    assert len(executor.calls) == 1
+    assert tracker.scans[-1].updated_since == FIXTURE_EPOCH
+
+
+async def test_a_pass_whose_session_did_not_answer_re_reads_its_window() -> None:
+    """The mark goes back: a window an aborted pass consumed is not skipped.
+
+    Checkpointing without this is strictly worse than no checkpoint at all
+    — before the gate the whole entry queue was re-read every tick, so a
+    failed session was retried; a mark advanced on observation alone drops
+    the window silently.
+    """
+    executor = FakePassExecutor(
+        answers=[
+            None,
+            {"preparations": [{"issueKey": ISSUE, "body": SHAPED_BODY}]},
+        ],
+    )
+    tracker = triage_tracker(ISSUE)
+    subject = make_pass(tracker=tracker, answers=[], executor=executor)
+
+    await subject.run()
+    await subject.run()
+
+    assert len(executor.calls) == 2
+    assert tracker.scans[-1].updated_since is None
+    assert tracker.issues[ISSUE].body == SHAPED_BODY
+
+
+async def test_a_body_for_an_item_that_moved_under_the_session_is_dropped() -> None:
+    """The re-read guard: another actor's change is not overwritten by a stale body.
+
+    The item leaves the entry queue while the session composes — the exact
+    window the guard exists for, since a session runs for minutes and the
+    body it returns answers the state the pass froze.
+    """
+    tracker = triage_tracker(ISSUE)
+    executor = ExecutorAnotherActorRunsUnder(
+        answers=[{"preparations": [{"issueKey": ISSUE, "body": SHAPED_BODY}]}],
+        move=lambda: tracker.issues.__setitem__(
+            ISSUE,
+            make_tracker_issue(ISSUE, queue_states=[QueueState.PROPOSED]),
+        ),
+    )
+    await make_pass(tracker=tracker, answers=[], executor=executor).run()
+
+    assert tracker.issues[ISSUE].body == "fixture body"
+    assert tracker.queue_writes == []
+
+
+async def test_a_body_for_an_item_edited_under_the_session_is_dropped() -> None:
+    """Still in the entry queue, but no longer the text the pass read."""
+    tracker = triage_tracker(ISSUE)
+    executor = ExecutorAnotherActorRunsUnder(
+        answers=[{"preparations": [{"issueKey": ISSUE, "body": SHAPED_BODY}]}],
+        move=lambda: tracker.issues.__setitem__(
+            ISSUE,
+            make_tracker_issue(
+                ISSUE,
+                queue_states=[QueueState.TRIAGE],
+                created_at=LATER,
+                body="the founder rewrote this while the session was composing",
+            ),
+        ),
+    )
+    await make_pass(tracker=tracker, answers=[], executor=executor).run()
+
+    assert tracker.issues[ISSUE].body.startswith("the founder rewrote")
+    assert tracker.queue_writes == []
+
+
+async def test_an_item_nobody_touched_still_gets_its_body() -> None:
+    """Guards the two above: a guard that dropped everything would pass them."""
+    tracker = triage_tracker(ISSUE)
+    executor = ExecutorAnotherActorRunsUnder(
+        answers=[{"preparations": [{"issueKey": ISSUE, "body": SHAPED_BODY}]}],
+        move=lambda: None,
+    )
+    await make_pass(tracker=tracker, answers=[], executor=executor).run()
+
+    assert tracker.issues[ISSUE].body == SHAPED_BODY
+    assert tracker.queue_writes == [(ISSUE, QueueState.PROPOSED)]
 
 
 async def test_the_session_reads_the_window_and_holds_no_tool() -> None:

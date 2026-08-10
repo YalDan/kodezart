@@ -348,10 +348,10 @@ class AppConfig(BaseSettings):
         ge=10.0,
         le=86400.0,
         description=(
-            "Seconds between fire-preparation passes. A separate knob from "
+            "Seconds between fire-preparation ticks. A separate knob from "
             "the dispatch interval because the two passes cost differently: "
-            "dispatch is a free port call on a quiet board, preparation "
-            "spends a session on every window that is not empty."
+            "both are a free port call on an unmoved entry queue, and only "
+            "preparation spends a session on the window that moved."
         ),
     )
     grooming_pass_interval_seconds: float = Field(
@@ -359,8 +359,10 @@ class AppConfig(BaseSettings):
         ge=10.0,
         le=86400.0,
         description=(
-            "Seconds between grooming passes. Each one runs a repository's "
-            "whole declared check chain, so the interval is the cost."
+            "Seconds between grooming ticks. A tick whose repository has "
+            "not moved since the last verification is two git port calls "
+            "and no session, so this bounds how often a NEW trunk tip is "
+            "noticed rather than how often a check chain is run."
         ),
     )
     pass_session_timeout_seconds: float = Field(

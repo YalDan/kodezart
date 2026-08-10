@@ -51,7 +51,7 @@ reader can audit, whereas an undemonstrated one is an unknown.
 
 | Obligation | Ported into | Behavior that must hold | Evidence |
 | --- | --- | --- | --- |
-| scan-window checkpointing | fire_prep_pass `## Scan Window` | A pass reads from a high-water mark, advances it only on a tick that observed something, and re-reads rather than skips a window a missed tick left behind. | `tests/services/test_pass_gate.py::test_the_mark_advances_to_the_newest_thing_the_gate_saw` |
+| scan-window checkpointing | fire_prep_pass `## Scan Window` | A pass reads from a high-water mark, advances it only on a tick that observed something, and re-reads rather than skips a window a missed tick left behind. | `tests/services/test_fire_prep_pass.py::test_a_pass_whose_session_did_not_answer_re_reads_its_window` |
 | checkpoint write ordering | fire_prep_pass `## Scan Window` | The run digest and the checkpoint write are ordered so an interrupted run re-sweeps its window rather than skipping it. | not yet demonstrated |
 | bootstrap window | — | A checkpoint that is absent or unparseable produces a defined bootstrap window rather than an empty one or a crash. | not yet demonstrated |
 | bootstrap one-time sweep | — | The bootstrap window sweeps every open issue and every open, in-review and approved review exactly once. | not yet demonstrated |
@@ -81,8 +81,8 @@ reader can audit, whereas an undemonstrated one is an unknown.
 | deadline flagging | grooming_pass `## Initiative Status Updates` | A deadline at risk is flagged and the date is never moved. | not yet demonstrated |
 | status-update cadence | grooming_pass `## Initiative Status Updates` | Exactly one initiative status update per pass, and project updates only on change. | not yet demonstrated |
 | health mapping | grooming_pass `## Health Mapping` | A composite health verdict is computed per initiative from three inputs and posted as a status update; the badge means delivery health, not whether the build passed. | not yet demonstrated |
-| cost gate | — | The pre-query gating each full pass is a port call with no prompt, no session and no model, so a tick over a quiet board costs nothing. | `tests/services/test_pass_gate.py::test_the_gate_holds_no_collaborator_that_could_reach_a_model` |
-| atomicity/race guards | fire_prep_pass `## Atomicity Guards` | Two claimants on one issue produce exactly one winner; the loser reports a lost claim and does not fall through to the next-ranked issue. | `tests/tracker/test_tracker_conformance.py::TestAtomicClaim::test_two_simultaneous_claimants_produce_exactly_one_winner` |
+| cost gate | — | The pre-query gating each full pass is a port call with no prompt, no session and no model, so a tick over an unmoved subject reaches no session at all. | `tests/services/test_fire_prep_pass.py::test_a_second_tick_over_an_unmoved_entry_queue_costs_no_session` |
+| atomicity/race guards | fire_prep_pass `## Atomicity Guards` | An item's state is re-read immediately before the write; one another actor moved while the pass was composing is dropped rather than overwritten with a body answering a state that no longer exists. | `tests/services/test_fire_prep_pass.py::test_a_body_for_an_item_that_moved_under_the_session_is_dropped` |
 | one claim per pass | — | A pass claims exactly one issue; throughput comes from successive passes, never from batch sends. | `tests/services/test_fire_dispatcher.py::TestSingleWinner::test_a_pass_never_claims_more_than_one` |
 | cadence ownership | — | Pass scheduling reads exclusively from configuration; the driver holds no interval of its own. | `tests/services/test_pass_scheduler.py::test_the_driver_module_holds_no_numeric_literal` |
 | identity discipline | — | Rendering fails loudly on any unconditional placeholder without a config value, naming every missing name at once. | `tests/prompts/test_operation_config.py::test_an_unconditional_placeholder_without_a_config_value_fails_loudly` |
