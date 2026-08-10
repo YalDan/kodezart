@@ -9,6 +9,7 @@ from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateVerdict,
     OutboundDestination,
     RedactionCategory,
@@ -159,6 +160,7 @@ async def test_credential_gating_survives_a_copy_of_the_example_file() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
 
     assert decision.verdict is GateVerdict.BLOCKED

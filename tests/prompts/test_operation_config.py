@@ -24,6 +24,7 @@ from kodezart.core.prompt_namespaces import (
 )
 from kodezart.core.prompt_rendering import binding_names, free_binding_names
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateVerdict,
     OutboundDestination,
     RedactionCategory,
@@ -447,6 +448,7 @@ async def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> 
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN, decision.categories
 

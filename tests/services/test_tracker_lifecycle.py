@@ -5,6 +5,7 @@ import pytest
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateDecision,
     GateVerdict,
     OutboundDestination,
@@ -31,6 +32,7 @@ class BlockingGate:
         visibility: RepoVisibility,
         shape: WriterShape,
         destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
         return GateDecision(verdict=GateVerdict.BLOCKED, content="")
 

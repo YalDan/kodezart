@@ -32,6 +32,7 @@ from kodezart.core.protocols import OutboundContentGate, TrackerPort
 from kodezart.domain.errors import AssetFetchError
 from kodezart.types.domain.fire import FireAsset, FireContext
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
@@ -48,6 +49,13 @@ from kodezart.types.domain.gating import (
 _INBOUND_VISIBILITY = RepoVisibility.PUBLIC
 _INBOUND_SHAPE = WriterShape.PROSE
 _INBOUND_DESTINATION = OutboundDestination.PR_BODY
+
+#: A tracker document is written by whoever wrote it, and this process was
+#: not there.  Its provenance is unknown, which is not ``DERIVED``: nothing
+#: here can recompute the body from durable state, and the recompute test
+#: answers "no" for anything it cannot answer "yes" for.  The audited bucket
+#: is the safe one, and this is exactly the content KOD-107 reports.
+_INBOUND_CONTENT_CLASS = ContentClass.AUTHORED
 
 
 class FireContextAssembler:
@@ -138,6 +146,7 @@ class FireContextAssembler:
             visibility=_INBOUND_VISIBILITY,
             shape=_INBOUND_SHAPE,
             destination=_INBOUND_DESTINATION,
+            content_class=_INBOUND_CONTENT_CLASS,
         )
         await self._log.ainfo(
             "fire_asset_gated",

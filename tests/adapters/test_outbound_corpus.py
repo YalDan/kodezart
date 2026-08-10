@@ -31,6 +31,7 @@ from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
+    ContentClass,
     GateVerdict,
     OutboundDestination,
     RedactionCategory,
@@ -174,6 +175,7 @@ async def test_c1_a_must_not_pass_case_does_not_pass(
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is not GateVerdict.CLEAN, name
     assert leak not in decision.content
@@ -197,6 +199,7 @@ async def test_c1_the_deterministic_scanner_alone_calls_the_same_case_clean(
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN, name
     assert decision.content == payload
@@ -229,6 +232,7 @@ async def test_c2_the_observed_leak_is_redacted_not_deleted() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.REDACTED
     assert FIXTURE_WORKSPACE not in decision.content
@@ -244,6 +248,7 @@ async def test_c2_the_deterministic_scanner_alone_calls_it_clean() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == REGRESSION_PR_BODY
@@ -253,36 +258,40 @@ async def test_c2_the_deterministic_scanner_alone_calls_it_clean() -> None:
 # C-3 — the false-positive floor
 # ---------------------------------------------------------------------------
 
-MUST_PASS: list[tuple[str, str, OutboundDestination]] = [
+MUST_PASS: list[tuple[str, str, OutboundDestination, ContentClass]] = [
     (
         "ordinary technical pull-request body",
         "Moves `max_verdict` out of `adapters/pattern_outbound_gate.py` into "
         "`types/domain/gating.py` and points the two call sites at it. "
         "Behaviour is unchanged; the goldens are byte-identical.",
         OutboundDestination.PR_BODY,
+        ContentClass.AUTHORED,
     ),
     (
         "commit message naming a public dependency and issue number",
         "fix(deps): pin pydantic-settings to the release that restores "
         "extra=forbid on nested models (#4411)",
         OutboundDestination.COMMIT_MESSAGE,
+        ContentClass.AUTHORED,
     ),
     (
         "criteria artifact whose leaves are identifiers and enum members",
         '{"criteria": ["AC-1", "AC-2"], "verdict": "passed", "sha": "9f2c1ab"}',
         OutboundDestination.ARTIFACT_CRITERIA_JSON,
+        ContentClass.DERIVED,
     ),
     (
         "prose naming the private-surface categories without an instance",
         "The audit judges customer identities, member handles and internal "
         "hostnames, and names none of them here.",
         OutboundDestination.PR_COMMENT,
+        ContentClass.AUTHORED,
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("name", "payload", "destination"),
+    ("name", "payload", "destination", "content_class"),
     MUST_PASS,
     ids=[case[0] for case in MUST_PASS],
 )
@@ -290,6 +299,7 @@ async def test_c3_an_ordinary_payload_passes_byte_identical(
     name: str,
     payload: str,
     destination: OutboundDestination,
+    content_class: ContentClass,
 ) -> None:
     """C-3: CLEAN, and the content is the input unchanged."""
     decision = await judgment_gate({}).gate(
@@ -297,6 +307,7 @@ async def test_c3_an_ordinary_payload_passes_byte_identical(
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=destination,
+        content_class=content_class,
     )
     assert decision.verdict is GateVerdict.CLEAN, name
     assert decision.content == payload
@@ -328,12 +339,14 @@ async def test_c4_one_payload_two_destinations_two_verdicts() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     on_the_tracker = await gate.gate(
         content=TRACKER_LINK_PAYLOAD,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.TRACKER_COMMENT,
+        content_class=ContentClass.AUTHORED,
     )
 
     assert published.verdict is GateVerdict.REDACTED
@@ -375,6 +388,7 @@ async def test_c4_a_span_less_finding_blocks_rather_than_redacting() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.content == ""

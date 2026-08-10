@@ -17,6 +17,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
 from kodezart.types.domain.gating import (
+    ContentClass,
     OutboundDestination,
     RepoVisibility,
     WriterShape,
@@ -82,6 +83,9 @@ class TrackerLifecycleWriter:
         # payload lands on the coordination surface, which mirrors publicly
         # by the definition of OutboundSurface.TRACKER, so a private target
         # repository must not exempt the write.
+        # DERIVED: the body is a job id and a WorkflowOutcome member, both
+        # readable off the job-status surface. A process that never held the
+        # session recomputes this note exactly.
         body = await gated_write(
             gate=self._gate,
             log=self._log,
@@ -89,6 +93,7 @@ class TrackerLifecycleWriter:
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.TRACKER_COMMENT,
+            content_class=ContentClass.DERIVED,
         )
         await self._tracker.post_comment(issue_key=issue_key, body=body)
         await self._log.ainfo(

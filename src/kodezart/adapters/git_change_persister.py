@@ -33,6 +33,7 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.branch import BackupBranchName
 from kodezart.types.domain.gating import (
+    ContentClass,
     OutboundDestination,
     RepoVisibility,
     WriterShape,
@@ -161,10 +162,13 @@ class GitChangePersister:
         full_message = commit_msg.title
         if commit_msg.body:
             full_message = f"{commit_msg.title}\n\n{commit_msg.body}"
+        # AUTHORED: title and body come from _generate_commit_message, which
+        # is a model call over the working tree.
         full_message = await self._gated_message(
             full_message,
             visibility,
             OutboundDestination.COMMIT_MESSAGE,
+            ContentClass.AUTHORED,
         )
         sha = await self._git.commit(
             cwd=workspace_path,
@@ -219,10 +223,14 @@ class GitChangePersister:
 
         # Capture divergent-HEAD message + tree BEFORE reset (defensive: keeps
         # recovery correct even if a worktree pruned unreachable objects).
+        # AUTHORED: the divergent HEAD's message is replayed verbatim, and
+        # whoever wrote it wrote prose. Reading it back out of git does not
+        # launder it into a derived value.
         head_message_divergent = await self._gated_message(
             await self._git.head_commit_message(workspace_path),
             visibility,
             OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY,
+            ContentClass.AUTHORED,
         )
         head_tree = await self._git.tree_of(workspace_path, head_sha)
 
@@ -277,6 +285,7 @@ class GitChangePersister:
         message: str,
         visibility: RepoVisibility,
         destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> str:
         """Route a commit message through the one gated-write path."""
         return await gated_write(
@@ -286,6 +295,7 @@ class GitChangePersister:
             visibility=visibility,
             shape=WriterShape.PROSE,
             destination=destination,
+            content_class=content_class,
         )
 
     async def _generate_commit_message(

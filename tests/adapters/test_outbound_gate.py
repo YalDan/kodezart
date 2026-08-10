@@ -7,6 +7,7 @@ from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
 from kodezart.types.domain.gating import (
     PATTERNLESS_CATEGORIES,
+    ContentClass,
     GateVerdict,
     OutboundDestination,
     RedactionCategory,
@@ -43,6 +44,7 @@ async def test_no_hits_is_clean() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == "nothing to see"
@@ -56,6 +58,7 @@ async def test_redact_category_hit_alone_yields_redacted() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.REDACTED
     assert decision.categories == (RedactionCategory.TRACKER_URLS,)
@@ -68,6 +71,7 @@ async def test_block_category_hit_alone_yields_blocked() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.content == ""
@@ -81,6 +85,7 @@ async def test_both_categories_yield_blocked() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert set(decision.categories) == {
@@ -103,6 +108,7 @@ async def test_identifier_writer_blocks_on_a_redact_category_hit() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.IDENTIFIER,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert "[REDACTED:" not in decision.content
@@ -120,6 +126,7 @@ async def test_redacted_form_is_a_category_labelled_placeholder_per_span() -> No
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.content == ("a [REDACTED:tracker_urls] b [REDACTED:tracker_urls] c")
 
@@ -147,6 +154,7 @@ async def test_gate_engages_on_public_and_unknown_only(
         visibility=visibility,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is expected
 
@@ -166,6 +174,7 @@ async def test_unconfigured_deployment_is_clean_on_every_visibility(
         visibility=visibility,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN
 
@@ -183,6 +192,7 @@ async def test_shipped_credential_category_still_blocks() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.categories == (RedactionCategory.CREDENTIALS,)
@@ -220,6 +230,7 @@ async def test_a_second_registered_scanner_participates_with_no_gate_change() ->
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert extra.calls == ["host and TRACKER-9"]
     assert decision.verdict is GateVerdict.BLOCKED

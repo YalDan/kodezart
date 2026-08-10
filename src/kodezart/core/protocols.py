@@ -11,6 +11,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
 )
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateDecision,
     OutboundDestination,
     RepoVisibility,
@@ -852,6 +853,13 @@ class OutboundContentGate(Protocol):
         visibility: RepoVisibility,
         shape: WriterShape,
         destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
-        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted."""
+        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted.
+
+        ``content_class`` is declared by the caller and has no default: the
+        writer is the only party that knows where its bytes came from, and a
+        default would let a payload take the cheap path without anyone
+        saying so.
+        """
         ...

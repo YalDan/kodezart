@@ -25,6 +25,7 @@ from kodezart.core.protocols import OutboundContentGate
 from kodezart.domain.errors import AssetFetchError
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateDecision,
     GateVerdict,
     OutboundDestination,
@@ -247,7 +248,12 @@ PRIVATE_FIXTURE_CONTENT = (
 SANITIZED_CLAIM_TITLE = "routine prompt (sanitized, updated 2026-07-24)"
 
 
-type GatePosture = tuple[RepoVisibility, WriterShape, OutboundDestination]
+type GatePosture = tuple[
+    RepoVisibility,
+    WriterShape,
+    OutboundDestination,
+    ContentClass,
+]
 
 
 class ScriptedGate:
@@ -265,9 +271,10 @@ class ScriptedGate:
         visibility: RepoVisibility,
         shape: WriterShape,
         destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
         self.seen.append(content)
-        self.postures.append((visibility, shape, destination))
+        self.postures.append((visibility, shape, destination, content_class))
         return self.decision.model_copy(update={"content": content})
 
 
@@ -286,6 +293,7 @@ async def test_the_shipped_gate_is_what_refuses_the_private_fixture() -> None:
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
 
@@ -378,7 +386,12 @@ async def test_every_fetched_document_is_gated_at_the_ruled_posture() -> None:
 
     assert scripted.seen == [SPEC_CONTENT, NOTES_CONTENT]
     assert set(scripted.postures) == {
-        (RepoVisibility.PUBLIC, WriterShape.PROSE, OutboundDestination.PR_BODY),
+        (
+            RepoVisibility.PUBLIC,
+            WriterShape.PROSE,
+            OutboundDestination.PR_BODY,
+            ContentClass.AUTHORED,
+        ),
     }
     assert len(context.assets) == 2
 

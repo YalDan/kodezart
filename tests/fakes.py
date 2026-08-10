@@ -43,6 +43,7 @@ from kodezart.types.domain.consolidation import (
 )
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
+    ContentClass,
     GateDecision,
     GateVerdict,
     OutboundDestination,
@@ -1258,6 +1259,7 @@ class PassThroughGate:
     def __init__(self) -> None:
         self.calls: list[tuple[str, RepoVisibility, WriterShape]] = []
         self.destinations: list[OutboundDestination] = []
+        self.content_classes: list[ContentClass] = []
 
     async def gate(
         self,
@@ -1266,9 +1268,11 @@ class PassThroughGate:
         visibility: RepoVisibility,
         shape: WriterShape,
         destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
         self.calls.append((content, visibility, shape))
         self.destinations.append(destination)
+        self.content_classes.append(content_class)
         return GateDecision(verdict=GateVerdict.CLEAN, content=content)
 
 

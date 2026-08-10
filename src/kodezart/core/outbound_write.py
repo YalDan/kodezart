@@ -16,6 +16,7 @@ from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import OutboundContentGate
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
@@ -33,18 +34,24 @@ async def gated_write(
     visibility: RepoVisibility,
     shape: WriterShape,
     destination: OutboundDestination,
+    content_class: ContentClass,
 ) -> str:
     """Gate *content* for *destination*; return what may be written.
 
     BLOCKED raises: nothing is written and the failure kind, the categories
     and the per-hit rationales travel on the error, so a human can confirm
     or overrule rather than being told only that something was refused.
+
+    ``content_class`` is passed straight through and never inferred here.
+    This function does not know where the bytes came from; the writer that
+    called it does, which is why the parameter is required.
     """
     decision = await gate.gate(
         content=content,
         visibility=visibility,
         shape=shape,
         destination=destination,
+        content_class=content_class,
     )
     await log.ainfo(
         "outbound_content_gated",

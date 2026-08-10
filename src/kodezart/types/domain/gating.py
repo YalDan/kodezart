@@ -169,15 +169,25 @@ def surface_of(destination: OutboundDestination) -> OutboundSurface:
 
 
 class ContentClass(StrEnum):
-    """What a payload IS, decided deterministically and without a model.
+    """Where a payload CAME FROM, declared by the call site that built it.
 
-    The routing distinction that makes the judgment path affordable: a
-    criterion tick, a sha or a state transition is ``STRUCTURED`` and takes
-    the cheap path by classification, not by exemption.
+    Provenance, not typography.  The partition is one question: can this
+    write be recomputed from durable state by a process that never held the
+    session?  A criterion tick, a state transition, a note assembled from an
+    enum member and a job id all can — they are ``DERIVED`` and take the
+    cheap path.  Anything a model or a third party wrote is ``AUTHORED`` and
+    is audited.
+
+    Only the writer knows this.  It cannot be recovered from the bytes: a
+    derived note is a sentence with spaces in it, and a leaked credential is
+    one unbroken token, so any rule read off the shape of the payload is
+    anti-correlated with the thing the audit exists to catch.  Hence the
+    parameter is required at every call site and has no default — a default
+    would be a silent cheap path.
     """
 
-    STRUCTURED = "structured"
-    AUTHORED_PROSE = "authored_prose"
+    DERIVED = "derived"
+    AUTHORED = "authored"
 
 
 class ScanFailureKind(StrEnum):
@@ -272,10 +282,10 @@ class ScannerRouting(CamelCaseModel):
 
     Declared BY the scanner and read BY the gate, so the gate routes without
     knowing which adapter is which.  ``mandatory_destinations`` carries the
-    one rule the classifier cannot express: a payload derived from private
-    input is audited whatever it looks like — a branch name is generated
-    once per run from the raw task text, so its cost is one call per run and
-    its shape is beside the point.
+    one rule provenance does not settle on its own: a destination that is
+    always audited whatever class its writer declares — a branch name is
+    generated once per run from the raw task text, so its cost is one call
+    per run and its declared class is beside the point.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -314,15 +324,15 @@ UNCONDITIONAL_ROUTING: ScannerRouting = ScannerRouting(
 #: * surfaces — a payload published to the open internet or mirrored by the
 #:   coordination surface.  The repository's own history is out of scope for
 #:   this increment, which is where the affordability comes from.
-#: * classes — authored prose only.  Evaluator-cadence writes are
-#:   ``STRUCTURED`` and cost nothing, by classification rather than by
-#:   exemption; that is most of the outbound volume.
-#: * mandatory — the branch name, scanned despite being an identifier.  It
-#:   is generated once per run from the raw task text (the private-input
-#:   path), so the cost is one call per run, and an ``IDENTIFIER`` writer
-#:   blocks on any hit, which is the right outcome for a git ref.
+#: * classes — ``AUTHORED`` only.  Evaluator-cadence writes are ``DERIVED``
+#:   and cost nothing, by the writer declaring where its bytes came from
+#:   rather than by exemption; that is most of the outbound volume.
+#: * mandatory — the branch name, scanned whatever class its writer
+#:   declares.  It is generated once per run from the raw task text (the
+#:   private-input path), so the cost is one call per run, and an
+#:   ``IDENTIFIER`` writer blocks on any hit, which is right for a git ref.
 JUDGMENT_ROUTING: ScannerRouting = ScannerRouting(
     surfaces=frozenset({OutboundSurface.PUBLICATION, OutboundSurface.TRACKER}),
-    content_classes=frozenset({ContentClass.AUTHORED_PROSE}),
+    content_classes=frozenset({ContentClass.AUTHORED}),
     mandatory_destinations=frozenset({OutboundDestination.BRANCH_NAME}),
 )

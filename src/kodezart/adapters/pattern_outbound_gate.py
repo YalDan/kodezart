@@ -18,7 +18,6 @@ two distinct observable states.
 
 from collections.abc import Mapping, Sequence
 
-from kodezart.core.content_classification import ContentClassifier
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import ContentScanner
 from kodezart.types.domain.gating import (
@@ -36,6 +35,12 @@ from kodezart.types.domain.gating import (
 
 _PLACEHOLDER = "[REDACTED:{category}]"
 
+#: What makes two gate calls the same question.  The declared class is part
+#: of it: two payloads identical in bytes but declared with different
+#: provenance are routed to different scanners, so they must not share a
+#: verdict.
+type _MemoKey = tuple[str, OutboundDestination, str, ContentClass]
+
 
 class PatternOutboundContentGate:
     """``OutboundContentGate`` over configured scanners and category verdicts."""
@@ -45,14 +50,12 @@ class PatternOutboundContentGate:
         *,
         scanners: Sequence[ContentScanner],
         verdicts: Mapping[RedactionCategory, GateVerdict],
-        classifier: ContentClassifier | None = None,
         fragment_digest: str = "",
     ) -> None:
         self._scanners: tuple[ContentScanner, ...] = tuple(scanners)
         self._verdicts: Mapping[RedactionCategory, GateVerdict] = verdicts
-        self._classifier: ContentClassifier = classifier or ContentClassifier()
         self._fragment_digest: str = fragment_digest
-        self._memo: dict[tuple[str, OutboundDestination, str], GateDecision] = {}
+        self._memo: dict[_MemoKey, GateDecision] = {}
         self._log: BoundLogger = get_logger(__name__)
 
     async def gate(
@@ -62,12 +65,18 @@ class PatternOutboundContentGate:
         visibility: RepoVisibility,
         shape: WriterShape,
         destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
         """Decide what may be written for *content* under *visibility*."""
         if visibility is RepoVisibility.PRIVATE:
             return GateDecision(verdict=GateVerdict.CLEAN, content=content)
 
-        key = (content_digest(content), destination, self._fragment_digest)
+        key = (
+            content_digest(content),
+            destination,
+            self._fragment_digest,
+            content_class,
+        )
         memoized = self._memo.get(key)
         if memoized is not None:
             return memoized
@@ -76,6 +85,7 @@ class PatternOutboundContentGate:
             content=content,
             shape=shape,
             destination=destination,
+            content_class=content_class,
         )
         self._memo[key] = decision
         return decision
@@ -86,9 +96,9 @@ class PatternOutboundContentGate:
         content: str,
         shape: WriterShape,
         destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
         """Run the routed scanners in order, stopping at the first BLOCKED."""
-        content_class: ContentClass = self._classifier.classify(content)
         hits: list[ScanHit] = []
         for scanner in self._scanners:
             if not scanner.routing.applies(
