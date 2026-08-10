@@ -104,6 +104,13 @@ class DispatchReport(DispatchModel):
     from.  ``None`` on the two outcomes that enqueued nothing — a pass that
     claimed no issue resolved no base, which is a different fact from a
     base that resolved to trunk."""
+    superseded_base: BaseSpec | None = None
+    """The base a PREVIOUS dispatch of this issue recorded, when the graph
+    has moved under it since.  ``None`` covers two states deliberately —
+    a first dispatch, and a re-dispatch on an unchanged base — because
+    neither carries a superseded value; what distinguishes them is the
+    recorded spec, which the tracker holds and this report does not
+    duplicate."""
 
 
 class PassDelta(DispatchModel):

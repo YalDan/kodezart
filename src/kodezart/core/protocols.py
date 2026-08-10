@@ -5,7 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
-from kodezart.types.domain.branch import WorkRef
+from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -514,6 +514,28 @@ class TrackerPort(Protocol):
         roles, at which shas* is answerable through the port, so no code
         anywhere derives an issue identity, a role or a parent from a
         branch name.
+        """
+        ...
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        """Record the base *issue_key*'s lane was dispatched on.
+
+        KOD-67 R3: the spec is written THROUGH the port, on the dependent
+        issue.  Staleness compares a recorded spec against the one the
+        blockers imply now, and with nothing recorded there is nothing to
+        compare — the arithmetic would only ever compare a value with
+        itself.  Recording the same spec twice is idempotent; recording a
+        different one supersedes, because a lane dispatched again was
+        dispatched on the base of that dispatch.
+        """
+        ...
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        """The base most recently recorded for *issue_key*, or ``None``.
+
+        ``None`` means no dispatch ever recorded one — a first dispatch,
+        not a stale base.  The two are different states and no caller may
+        conflate them.
         """
         ...
 

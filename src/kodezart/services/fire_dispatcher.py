@@ -27,6 +27,7 @@ from kodezart.core.protocols import (
     TrackerPort,
 )
 from kodezart.domain.agent import generate_workspace_id
+from kodezart.domain.base_staleness import is_base_stale
 from kodezart.domain.dispatch import (
     Selection,
     blocker_keys,
@@ -243,6 +244,26 @@ class FireDispatcher:
                 tied_candidates=selection.tied,
                 claimed_issue_key=winner.issue_key,
             )
+        # The base the graph implies NOW, against the one a previous
+        # dispatch recorded. Detection is arithmetic and the comparison is
+        # only possible because the spec crosses the port: with nothing
+        # recorded, `is_base_stale` could compare a value only with itself.
+        # A moved base is reported, never silently accepted — a verdict is
+        # about a sha, and a criterion graded on a base that no longer
+        # exists is lapsed rather than passing.
+        recorded = await self._tracker.read_base_spec(issue_key=winner.issue_key)
+        superseded = (
+            recorded if recorded is not None and is_base_stale(recorded, spec) else None
+        )
+        if superseded is not None:
+            await self._log.awarning(
+                "dispatch_base_superseded",
+                issue_key=winner.issue_key,
+                recorded_base_branch=superseded.base_branch,
+                implied_base_branch=spec.base_branch,
+                lapsed_inputs=[item.blocker_issue_id for item in superseded.inputs],
+            )
+        await self._tracker.record_base_spec(issue_key=winner.issue_key, spec=spec)
         record = await self._queue.submit(
             lane=self._lane,
             request=WorkflowRequest(
@@ -269,6 +290,7 @@ class FireDispatcher:
             claimed_issue_key=winner.issue_key,
             job_id=record.job_id,
             base=spec,
+            superseded_base=superseded,
         )
 
     async def _exclude(self, issue: TrackerIssue) -> IssueExclusion | None:

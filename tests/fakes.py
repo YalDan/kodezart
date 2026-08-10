@@ -35,7 +35,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowTicketEvent,
 )
-from kodezart.types.domain.branch import WorkRef, WorkRefRole
+from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -1787,6 +1787,7 @@ class FakeTrackerPort:
         documents: Mapping[str, str] | None = None,
         known_identifiers: Sequence[str] = (),
         recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
+        recorded_base_specs: Mapping[str, BaseSpec] | None = None,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
@@ -1795,6 +1796,7 @@ class FakeTrackerPort:
         self.recorded_work_refs: dict[str, list[WorkRef]] = {
             key: list(value) for key, value in (recorded_work_refs or {}).items()
         }
+        self.recorded_base_specs: dict[str, BaseSpec] = dict(recorded_base_specs or {})
         self.claims: dict[str, ClaimResult] = {}
         self.comments: list[TrackerComment] = []
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
@@ -1990,6 +1992,14 @@ class FakeTrackerPort:
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         await asyncio.sleep(0)
         return tuple(self.recorded_work_refs.get(issue_key, ()))
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        await asyncio.sleep(0)
+        self.recorded_base_specs[issue_key] = spec
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        await asyncio.sleep(0)
+        return self.recorded_base_specs.get(issue_key)
 
     async def resolve_mappings(
         self,

@@ -179,6 +179,11 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),
         },
         recorded_work_refs={key: await source.work_refs(issue_key=key) for key in keys},
+        recorded_base_specs={
+            key: spec
+            for key in keys
+            if (spec := await source.read_base_spec(issue_key=key)) is not None
+        },
         known_identifiers=[
             *(APPROVER, BYSTANDER),
             *TEAM_IDENTIFIERS.values(),

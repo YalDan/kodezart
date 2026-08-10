@@ -17,7 +17,7 @@ import pytest
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import DuplicateWorkRefError
-from kodezart.types.domain.branch import WorkRef, WorkRefRole
+from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -692,3 +692,116 @@ class TestWorkRefs:
         assert claim is not None and claim.holder == "fixture-holder"
         refs = await tracker.work_refs(issue_key=APPROVED_ISSUE)
         assert [r.role for r in refs] == [WorkRefRole.ITERATION]
+
+
+class TestRecordedBaseSpec:
+    """The dispatched base round-trips through the port, at every arm.
+
+    KOD-67 R3 puts the recorded ``BaseSpec`` on the dependent issue THROUGH
+    the port, and staleness compares a recorded spec against the one the
+    blockers imply now.  Without these two methods the arithmetic could
+    only ever compare a value with itself, which is why
+    ``domain/base_staleness`` had no production caller.
+    """
+
+    def _spec(self, branch: str, *, sha: str = "a" * 40) -> BaseSpec:
+        return BaseSpec(
+            inputs=(
+                BaseInput(
+                    blocker_issue_id=CLAIMED_ISSUE,
+                    branch="kodezart/blocker",
+                    sha=sha,
+                ),
+            ),
+            base_branch=branch,
+            base_role=WorkRefRole.DELIVERABLE,
+        )
+
+    async def test_an_issue_with_no_dispatch_records_nothing(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """"Never dispatched" is ``None``, and is not a stale base."""
+        assert await tracker.read_base_spec(issue_key=APPROVED_ISSUE) is None
+
+    async def test_a_recorded_spec_reads_back_whole(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Every field, including the inputs the equality test is over."""
+        spec = self._spec("kodezart/blocker")
+
+        await tracker.record_base_spec(issue_key=APPROVED_ISSUE, spec=spec)
+
+        assert await tracker.read_base_spec(issue_key=APPROVED_ISSUE) == spec
+
+    async def test_the_trunk_arm_round_trips_with_no_role(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """``base_role`` is ``None`` on the trunk arm and only there."""
+        spec = BaseSpec(inputs=(), base_branch="main")
+
+        await tracker.record_base_spec(issue_key=APPROVED_ISSUE, spec=spec)
+
+        assert await tracker.read_base_spec(issue_key=APPROVED_ISSUE) == spec
+
+    async def test_recording_the_same_spec_twice_is_idempotent(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        spec = self._spec("kodezart/blocker")
+        await tracker.record_base_spec(issue_key=APPROVED_ISSUE, spec=spec)
+
+        await tracker.record_base_spec(issue_key=APPROVED_ISSUE, spec=spec)
+
+        assert await tracker.read_base_spec(issue_key=APPROVED_ISSUE) == spec
+
+    async def test_a_second_dispatch_supersedes_the_first(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A lane dispatched again was dispatched on the base of that dispatch."""
+        await tracker.record_base_spec(
+            issue_key=APPROVED_ISSUE,
+            spec=self._spec("kodezart/first"),
+        )
+        second = self._spec("kodezart/second", sha="b" * 40)
+
+        await tracker.record_base_spec(issue_key=APPROVED_ISSUE, spec=second)
+
+        assert await tracker.read_base_spec(issue_key=APPROVED_ISSUE) == second
+
+    async def test_the_spec_is_scoped_to_its_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        await tracker.record_base_spec(
+            issue_key=APPROVED_ISSUE,
+            spec=self._spec("kodezart/blocker"),
+        )
+
+        assert await tracker.read_base_spec(issue_key=ASSET_ISSUE) is None
+
+    async def test_the_base_spec_and_the_work_refs_do_not_see_each_other(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A third marker on one log must not be readable as either other."""
+        await tracker.record_base_spec(
+            issue_key=APPROVED_ISSUE,
+            spec=self._spec("kodezart/blocker"),
+        )
+        await tracker.record_work_ref(
+            ref=WorkRef(
+                issue_id=APPROVED_ISSUE,
+                role=WorkRefRole.DELIVERABLE,
+                branch="kodezart/deliverable",
+                recorded_at=FIXTURE_NOW,
+            ),
+        )
+
+        refs = await tracker.work_refs(issue_key=APPROVED_ISSUE)
+        assert [ref.role for ref in refs] == [WorkRefRole.DELIVERABLE]
+        recorded = await tracker.read_base_spec(issue_key=APPROVED_ISSUE)
+        assert recorded is not None and recorded.base_branch == "kodezart/blocker"

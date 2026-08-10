@@ -29,7 +29,7 @@ from kodezart.core.errors import TrackerEnsureConflictError, TrackerProtocolErro
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
-from kodezart.types.domain.branch import WorkRef, WorkRefRole
+from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.linear_mcp import (
     LinearCommentListWire,
     LinearCommentWire,
@@ -115,6 +115,25 @@ _WORK_REF_MARKER = re.compile(
 _WORK_REF_ROLE_BY_VALUE: Mapping[str, WorkRefRole] = {
     role.value: role for role in WorkRefRole
 }
+
+#: The recorded ``BaseSpec``, on the same append-only, server-timestamped
+#: comment log the claim and the work refs already use.  A third marker on
+#: one surface rather than a third surface: the log is what this backend
+#: offers that is ordered and cannot be silently rewritten.
+_BASE_SPEC_MARKER = re.compile(
+    r"<!--\s*kodezart-basespec\s+(?P<payload>\{.*?\})\s*-->",
+    re.DOTALL,
+)
+
+
+def _base_spec_marker(spec: BaseSpec) -> str:
+    """The marker comment body for *spec*, carrying its whole shape.
+
+    Serialized by alias so what goes onto the wire is the model's own
+    external form; a hand-rolled encoding here would be a second statement
+    of ``BaseSpec`` and a place for the two to disagree.
+    """
+    return f"<!-- kodezart-basespec {spec.model_dump_json(by_alias=True)} -->"
 
 
 def _work_ref_marker(ref: WorkRef) -> str:
@@ -491,6 +510,46 @@ class LinearMcpTracker:
                 ),
             )
         return tuple(refs)
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        """Append a base-spec marker; the read is ``read_base_spec``.
+
+        Idempotent for an unchanged spec: re-recording what is already the
+        latest writes nothing, so a pass that re-resolves the same base
+        does not grow the log.
+        """
+        if await self.read_base_spec(issue_key=issue_key) == spec:
+            return
+        payload = await self._call(
+            _TOOL_SAVE_COMMENT,
+            {"issueId": issue_key, "body": _base_spec_marker(spec)},
+        )
+        self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        """The latest recorded spec, or ``None`` when none was ever recorded.
+
+        Latest wins, because the log is append-only and a lane dispatched
+        twice was dispatched on the base of the second dispatch.  A marker
+        the model cannot read is a protocol error and never a ``None``:
+        "no spec recorded" and "a spec recorded in a shape I do not
+        understand" are different states and only one of them is a first
+        dispatch.
+        """
+        latest: BaseSpec | None = None
+        for wire in await self._comment_wires(issue_key):
+            match = _BASE_SPEC_MARKER.search(wire.body)
+            if match is None:
+                continue
+            try:
+                latest = BaseSpec.model_validate_json(match.group("payload"))
+            except ValidationError as exc:
+                raise TrackerProtocolError(
+                    "base-spec marker does not match its declared shape",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=str(exc),
+                ) from exc
+        return latest
 
     async def resolve_mappings(
         self,

@@ -18,7 +18,11 @@ from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
-from kodezart.types.domain.dispatch import DispatchOutcome, ExclusionClause
+from kodezart.types.domain.dispatch import (
+    DispatchOutcome,
+    DispatchReport,
+    ExclusionClause,
+)
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import (
     CheckStep,
@@ -936,3 +940,109 @@ class TestTheBaseIsReadOffTheGraph:
 
         assert report.outcome is DispatchOutcome.base_unresolved
         assert queue.submissions == []
+
+
+class TestTheDispatchedBaseIsRecordedAndCompared:
+    """KOD-67 R3, wired: the spec crosses the port, and staleness reads it.
+
+    ``domain/base_staleness`` had no production caller because nothing
+    recorded a spec to compare against — the arithmetic could only ever
+    compare a value with itself.  These cases are what make the comparison
+    real: the dispatch WRITES the spec through the port, and the next
+    dispatch of the same issue reads it back and says whether the graph
+    moved underneath it.
+    """
+
+    async def test_the_dispatched_base_is_recorded_on_the_issue(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        fire, _, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert await tracker.read_base_spec(issue_key="K-1") == report.base
+
+    async def test_a_first_dispatch_supersedes_nothing(self) -> None:
+        """No recorded spec is a first dispatch, never a stale base."""
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        fire, _, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.superseded_base is None
+
+    @staticmethod
+    async def _release(
+        tracker: FakeTrackerPort,
+        queue: FakeJobQueue,
+        report: DispatchReport,
+    ) -> None:
+        """Put the issue back in the eligible set, as a finished run does.
+
+        Clause 4 excludes an issue this pass still holds or whose run is
+        live, so without this a "second pass" would observe an empty
+        eligible set and every assertion below it would pass vacuously.
+        """
+        assert report.claimed_issue_key is not None
+        assert report.job_id is not None
+        await tracker.release_claim(
+            issue_key=report.claimed_issue_key,
+            holder=HOLDER,
+        )
+        queue.mark(report.job_id, JobState.TERMINAL)
+
+    async def test_a_re_dispatch_on_an_unchanged_graph_supersedes_nothing(
+        self,
+    ) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        fire, queue, _ = dispatcher(tracker)
+        first = await fire.run_pass()
+        await self._release(tracker, queue, first)
+
+        again = await fire.run_pass()
+
+        assert again.outcome is DispatchOutcome.fire_enqueued
+        assert again.superseded_base is None
+
+    async def test_a_blocker_added_after_the_first_dispatch_supersedes_the_base(
+        self,
+    ) -> None:
+        """The whole point: add an edge, and the recorded base is stale.
+
+        Nobody has to have noticed the edit — the next pass recomputes and
+        the arithmetic says the base moved, carrying the superseded value
+        so a lapsed verdict can be computed from the report alone.
+        """
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        fire, queue, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
+        first = await fire.run_pass()
+        assert first.base is not None and first.base.inputs == ()
+        await self._release(tracker, queue, first)
+
+        tracker.issues["K-1"] = make_tracker_issue("K-1", blocked_by=["K-2"])
+        tracker.issues["K-2"] = make_tracker_issue(
+            "K-2",
+            queue_states=[QueueState.DONE],
+            state_kind=WorkflowStateKind.COMPLETED,
+        )
+        tracker.recorded_work_refs["K-2"] = [
+            deliverable_ref("K-2", BLOCKER_BRANCH),
+        ]
+
+        second = await fire.run_pass()
+
+        assert second.superseded_base == first.base
+        assert second.base is not None
+        assert second.base.base_branch == BLOCKER_BRANCH
+        assert await tracker.read_base_spec(issue_key="K-1") == second.base
