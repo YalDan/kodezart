@@ -117,7 +117,12 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 
 ```
 
-### Streaming Events (11)
+Every event type below is enumerated from the event models in
+`kodezart.types.domain.agent`, and `tests/docs/test_api_event_reference.py`
+holds this reference to them: a new event model, a removed one, a renamed
+field or a stale heading count reddens that test.
+
+### Streaming Events (12)
 
 | Event Type            | Key Fields                                                  |
 | --------------------- | ----------------------------------------------------------- |
@@ -132,17 +137,36 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `task_notification`   | `subtype`, `taskId`, `status`, `outputFile`, `summary`, `uuid`, `sessionId` |
 | `result`              | `subtype`, `durationMs`, `durationApiMs`, `isError`, `numTurns`, `sessionId`, `stopReason`, `totalCostUsd`, `usage`, `result`, `branch`, `commitSha`, `structuredOutput` |
 | `stream_event`        | `sessionId`, `event`                                        |
+| `rate_limit_warning`  | `status`, `resetsAt`, `utilization`, `rateLimitType`        |
 
-### Workflow Events (6)
+### Workflow Events (13)
 
-| Event Type                | Key Fields                                      |
-| ------------------------- | ----------------------------------------------- |
-| `workflow_ticket_draft`   | `iteration`, `draft`                            |
-| `workflow_ticket_review`  | `iteration`, `approved`, `feedback`, `suggestions` |
-| `workflow_ticket`         | `ticket`, `reviewRounds`, `approved`            |
-| `workflow_criteria`       | `criteria`, `reasoning`                         |
-| `workflow_iteration`      | `iteration`, `branch`, `commitSha`, `accepted`, `evaluation` |
-| `workflow_complete`       | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `merged`, `finalCommitSha`, `error` |
+| Event Type                     | Key Fields                                      |
+| ------------------------------ | ----------------------------------------------- |
+| `workflow_ticket_draft`        | `iteration`, `draft`                            |
+| `workflow_ticket_review`       | `iteration`, `approved`, `feedback`, `suggestions` |
+| `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`            |
+| `workflow_scope_base`          | `baseRef`, `role`, `inputs`                     |
+| `workflow_visibility`          | `visibility`, `repoUrl`                         |
+| `workflow_criteria`            | `criteria`, `reasoning`                         |
+| `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets` |
+| `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
+| `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
+| `workflow_review`              | `passed`, `evaluation`, `fixRound`              |
+| `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
+| `workflow_ci`                  | `passed`, `summary`, `ref`                      |
+| `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `error` |
+
+`workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
+`rejected`), not a boolean.
+
+### Job Events (1)
+
+| Event Type     | Key Fields                                                     |
+| -------------- | -------------------------------------------------------------- |
+| `job_accepted` | `jobId`, `lane`, `queuePosition`, `statusUrl`, `streamUrl`     |
+
+Leading frame of a queued `/workflow` stream; carries the reconnect handle.
 
 ### Error Events (1)
 
