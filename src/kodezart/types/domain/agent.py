@@ -287,10 +287,15 @@ class CommitMessageOutput(CamelCaseModel):
 class CriterionResult(CamelCaseModel):
     """Per-criterion evaluation result, keyed by the harness's stable id.
 
-    ``criterion`` is the evaluator's ECHO of the criterion text and is
-    carried only so a reader can see what the model believed it was
-    grading.  Nothing keys off it: identity is ``criterion_id``, and the
-    text the harness re-injects is its own, looked up by that id.
+    ``criterion`` is the evaluator's ECHO of the criterion text and
+    NOTHING READS IT.  ``grade_iteration`` overwrites it with the
+    harness's own text, looked up by id, on both the answered and the
+    unanswered path, so no event, artifact, prompt or reader ever sees
+    what the model returned here.  It is required on the wire, so the
+    evaluator reproduces every criterion's full text on every iteration
+    and every post-merge review for nothing.  KOD-91 deliverable 3 is
+    already rewriting this model's field descriptions and removes it
+    there, together with the two prompt lines that demand it.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
@@ -324,8 +329,14 @@ class GeneratedCriteriaOutput(CamelCaseModel):
     """Agent-generated acceptance criteria from ticket + codebase analysis.
 
     Identity is NOT part of this shape — ``AC-n`` ids are minted
-    harness-side from emission order, so a regeneration round cannot
-    renumber a criterion by echoing a different id.
+    harness-side from emission order, so nothing a model echoes can
+    renumber a criterion WITHIN one dispatch.
+
+    The guarantee stops at the dispatch boundary and does not hold across
+    a regeneration round: ``mint_criteria`` always enumerates from 1 and
+    ``DraftedCriterion`` carries no id, so a regenerator cannot return an
+    identity even in principle.  Round two's ``AC-3`` is whatever landed
+    third, not round one's ``AC-3``.
     """
 
     criteria: list[DraftedCriterion] = Field(min_length=1)
