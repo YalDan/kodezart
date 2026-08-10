@@ -117,6 +117,17 @@ class Principal(OperationModel):
     #: review-borne mentions are answered on the forge, so recognising one
     #: principal across both needs two identifiers.  ``None`` for a
     #: principal who never appears there.
+    #:
+    #: NOT an orphan, though it currently reads as one: ``a43e5df`` reverted
+    #: the fire-prep binding that was its only consumer, on the ground that
+    #: no issue body names a forge identifier, and it has had no production
+    #: reader since.  The deployed routine awaiting verbatim restoration
+    #: (KOD-60) states the requirement in its own words — the operation's
+    #: approver is one principal written one way on the tracker and another
+    #: on the forge — and carries both spellings as literals.  Deriving that
+    #: sentence from configuration is what this field is for, and the
+    #: restoration is its reader.  Deleting it as unreferenced would have to
+    #: be undone by the pass that lands the routine.
     forge_handle: str | None = None
 
 
