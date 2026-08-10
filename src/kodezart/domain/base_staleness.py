@@ -13,11 +13,9 @@ so at the next read, with nobody needing to have noticed the edit.
 The consequence is deliberately expensive.  A verdict is about a sha, and a
 criterion graded against a branch is graded against that branch ON ITS
 BASE; when the base moves, the tree the verdict was about no longer exists.
-:func:`lapsed_criteria` is the trigger only — how a lapsed verdict is
-computed and carried belongs to the lane that owns lapse arithmetic.
+This module produces the trigger only: the lapse arithmetic itself, and the
+surface a lapsed verdict is carried on, belong to the lane that owns them.
 """
-
-from collections.abc import Sequence
 
 from kodezart.types.domain.branch import BaseSpec
 
@@ -31,20 +29,3 @@ def is_base_stale(recorded: BaseSpec, implied: BaseSpec) -> bool:
     the order to tracker read order.
     """
     return recorded != implied
-
-
-def lapsed_criteria(
-    recorded: BaseSpec,
-    implied: BaseSpec,
-    criteria_graded_on_recorded_base: Sequence[str],
-) -> tuple[str, ...]:
-    """Every criterion graded on *recorded* that a move to *implied* lapses.
-
-    All of them, or none of them.  A criterion graded on a base that no
-    longer exists is lapsed rather than passing: rebasing re-opens the
-    lane's entire obligation set and the work must be re-graded, and that
-    cost is paid whether or not a single file changes.
-    """
-    if not is_base_stale(recorded, implied):
-        return ()
-    return tuple(criteria_graded_on_recorded_base)

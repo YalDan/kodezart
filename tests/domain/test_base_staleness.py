@@ -10,7 +10,7 @@ base live.
 
 from collections.abc import Sequence
 
-from kodezart.domain.base_staleness import is_base_stale, lapsed_criteria
+from kodezart.domain.base_staleness import is_base_stale
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -26,8 +26,6 @@ INTEGRATION_WORKSPACE = "/fixture/integration"
 REMOTE = "fixture-remote"
 CONFIGURED_TRUNK = "fixture-trunk"
 LANE = "LANE-1"
-
-GRADED_CRITERIA: tuple[str, ...] = ("AC-1", "AC-2", "AC-3")
 
 
 def work_ref(issue_id: str, branch: str, sha: str) -> WorkRef:
@@ -166,27 +164,3 @@ async def test_a_change_touching_none_of_the_inputs_leaves_the_base_live() -> No
 
     implied = await spec_of(tracker)
     assert is_base_stale(recorded, implied) is False
-
-
-# ---------------------------------------------------------------------------
-# The consequence: a graded branch whose base moves lapses every criterion
-# ---------------------------------------------------------------------------
-
-
-async def test_a_stale_base_lapses_every_criterion_graded_on_the_old_one() -> None:
-    """Lapsed rather than passing: the tree the verdict was about is gone."""
-    _, recorded = await baseline()
-    implied = await spec_of(
-        tracker_with(
-            blockers=["B-1"],
-            refs={"B-1": work_ref("B-1", "feature-b1", "sha-2")},
-        ),
-    )
-    assert lapsed_criteria(recorded, implied, GRADED_CRITERIA) == GRADED_CRITERIA
-
-
-async def test_a_live_base_lapses_nothing() -> None:
-    tracker, recorded = await baseline()
-    await tracker.post_comment(issue_key="B-1", body="still an ordinary comment")
-    implied = await spec_of(tracker)
-    assert lapsed_criteria(recorded, implied, GRADED_CRITERIA) == ()
