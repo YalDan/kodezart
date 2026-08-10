@@ -30,10 +30,11 @@ list of behaviors kodezart currently has:
 - **The `Ported into` cell names where the obligation lives in the shipped
   prompt sets**, or `—` when no shipped clause carries it. A `—` is not a
   verdict; the evidence cell is the verdict.
-- **Six rows are kodezart-native.** They are parity dimensions the routines
-  never had to state because a prompt cannot state them — cadence ownership,
-  the cost gate, one claim per pass. They carry `—` as their source and are
-  held to the same evidence rule.
+- **A `—` source cell means one of two different things**, and the table does
+  not distinguish them because the evidence cell already does: either no
+  shipped clause carries the obligation yet, or it is a parity dimension a
+  prompt could never state — cadence, cost, one claim per pass. No count of
+  either is written here; the rows are the roster.
 
 ## The checklist
 
@@ -62,7 +63,7 @@ reader can audit, whereas an undemonstrated one is an unknown.
 | four shape decisions | — | Prepared work takes one of four shapes: in-place rewrite, parent fire with re-parented sub-issues, epic plus sub-issue fires, or project plan with frontier and stubs. | not yet demonstrated |
 | frontier rule | — | A project plan names its frontier, and work beyond it is a stub rather than a fire. | not yet demonstrated |
 | fire-body format | — | A promoted fire body carries the ruled sections and nothing else. | not yet demonstrated |
-| pre-promotion hygiene | — | Every frozen fire body is scanned for orchestration vocabulary, tracker shorthand and pre-cooked evaluator material, through the same scanner entry point as the sanitization set. | `tests/services/test_hygiene_scan.py::test_the_scan_reaches_the_body_through_the_port_entry_point` |
+| pre-promotion hygiene | — | Every frozen fire body is scanned for orchestration vocabulary, tracker shorthand and pre-cooked evaluator material, through the same scanner entry point as the sanitization set, and a body that trips the set is not promoted. | `tests/services/test_fire_prep_pass.py::test_a_body_the_hygiene_set_trips_is_never_written` |
 | queue-state transitions | fire_prep_pass `## Queue State Transitions` | A dispatched issue moves In Progress → In Review → Done, and approval is never demoted before the terminal write. | `tests/services/test_tracker_lifecycle.py::TestLifecycleWrites::test_approval_is_never_demoted_before_the_terminal_write` |
 | approval boundary | fire_prep_pass `## Queue State Transitions` | The approved state is set by the APPROVER alone: no pass sets it, and no pass removes it. | `tests/integration/test_self_running_chain.py::test_the_chain_never_sets_the_approved_state_itself` |
 | terminal done label | grooming_pass `## Queue State Transitions` | The terminal queue state exists in the workspace, created by the operation that owns it rather than by hand. | `tests/tracker/test_tracker_boot_wiring.py::test_an_absent_queue_label_is_created_at_boot_not_a_failure` |
@@ -71,7 +72,7 @@ reader can audit, whereas an undemonstrated one is an unknown.
 | run digest | fire_prep_pass `## Run Log` | Every pass appends exactly one run-log row, including a pass that aborted, and never rewrites an earlier one. | not yet demonstrated |
 | exit-silently condition | — | A pass that finds nothing to do exits without writing. | not ported, because the shipped `## Run Log` clause requires a row from every pass, including one that aborted, on the ground that an absent row is indistinguishable from a pass that never ran; the two rules cannot both hold and the louder one was kept |
 | build for real | grooming_pass `## Build Verification` | Every registered repository is verified by running its own commands, recording per-check exit codes against the HEAD sha, never a snapshot or a reasoned-about result. | not yet demonstrated |
-| gate-vs-cascade | grooming_pass `## Build Verification` | A failure report names one root and its cascades, never a list of independent-looking reds. | not yet demonstrated |
+| gate-vs-cascade | grooming_pass `## Build Verification` | A failure report names one root and its cascades, never a list of independent-looking reds. | `tests/services/test_grooming_pass.py::test_a_gate_failure_and_its_dependents_are_reported_as_one_root` |
 | sandbox-vs-project | grooming_pass `## Build Verification` | A verification performed in a scratch workspace is reported as a scratch result, and a project result is never inferred from one — with evidence required in both directions. | not yet demonstrated |
 | stack-head grounding | — | Work stacked on unlanded work is grounded on the stack head, not on a trunk that is only a scaffold. | `tests/domain/test_base_resolution.py::test_a_chain_of_three_blockers_resolves_to_the_tip` |
 | commit-PR-issue reconciliation | — | No commit inside the window ends the pass unexplained: each reconciles to a pull request and an issue. | not yet demonstrated |
@@ -89,14 +90,16 @@ reader can audit, whereas an undemonstrated one is an unknown.
 
 ## Why the undemonstrated rows are undemonstrated
 
-They fall into three classes, and the classes matter because they close in
-different ways.
+They fall into two classes, and the classes matter because they close in
+different ways. Every obligation named below is an open row, and a test
+holds that: a paragraph explaining why a demonstrated row is open is exactly
+the contradiction this section produced once already.
 
 **The judgment half of the passes.** Bundle-first grouping, the reply
 criteria, the health mapping, the four shape decisions, the frontier rule,
 the response-set test, the run digest: these are behaviors of a full agent
-session with the vendor MCP attached, not of the deterministic selection
-path. Each becomes demonstrable when a pass session runs against the fake
+session sweeping the board, not of the deterministic write path the passes
+now carry. Each becomes demonstrable when a sweep runs against the fake
 tracker and its transcript can be asserted over.
 
 **Obligations no shipped clause carries yet.** The bootstrap window and its
@@ -106,15 +109,12 @@ hygiene, the mention scan window, the fire-body format. These are open in a
 stronger sense: the instruction is not in the prompt set, so there is nothing
 for a session to follow. They are rows precisely so that this is visible.
 
-**Half-delivered arithmetic waiting on its caller.** Gate-vs-cascade has its
-classifier and a round-trip test in `domain/check_chain.py`, and the
-pre-promotion hygiene scan has its pattern set and its engine — but the
-grooming pass that would consume the first and the fire-prep writer that
-would consume the second do not exist. Citing the arithmetic would be citing
-the part that was never in doubt, so the rows stay open.
-
 ## How this document is checked
 
+- Every obligation this section's prose names as open is an open row. The
+  document could previously disagree with itself — the prose said the
+  pre-promotion hygiene row stayed open while the table gave it a citation —
+  because nothing derived one from the other.
 - Every obligation KOD-60 R1's floor enumerates has a row. The floor is
   transcribed into `tests/docs/test_parity_checklist.py` because CI cannot
   read a tracker comment; the transcription is declared there, along with

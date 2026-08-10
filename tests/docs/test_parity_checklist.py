@@ -220,6 +220,46 @@ def test_the_cutover_status_is_derived_from_the_rows_not_asserted() -> None:
     assert stated == expected, (stated, _open_obligations())
 
 
+WHY_SECTION = "## Why the undemonstrated rows are undemonstrated"
+
+
+def _why_section() -> str:
+    """The prose that accounts for the open rows, and nothing else."""
+    body = CHECKLIST.read_text(encoding="utf-8")
+    rest = body[body.index(WHY_SECTION) + len(WHY_SECTION) :]
+    end = rest.find("\n## ")
+    return (rest if end == -1 else rest[:end]).lower()
+
+
+def test_every_obligation_the_prose_calls_open_is_an_open_row() -> None:
+    """The document may not disagree with itself where nothing can see it.
+
+    It did: the prose said the pre-promotion hygiene row stayed open while
+    the table gave that row a citation, and no assertion read the prose at
+    all.  This derives one from the other, so a row that moves and a
+    paragraph that does not are the same failure.
+    """
+    prose = _why_section()
+    contradicted = [
+        obligation
+        for obligation, _, _, evidence in _rows()
+        if obligation.lower() in prose and evidence != OPEN
+    ]
+
+    assert contradicted == []
+
+
+def test_the_prose_accounts_for_a_real_share_of_the_open_rows() -> None:
+    """A section naming nothing would satisfy the check above vacuously."""
+    prose = _why_section()
+    accounted = [
+        obligation for obligation in _open_obligations() if obligation.lower() in prose
+    ]
+
+    assert len(accounted) >= len(_open_obligations()) // 2
+    assert len(accounted) >= 10
+
+
 def test_an_open_row_names_why_it_is_open() -> None:
     """An open row with no account of itself is a row nobody will ever close."""
     if not _open_obligations():
