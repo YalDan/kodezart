@@ -117,14 +117,18 @@ def test_both_pass_templates_actually_emit_an_addressed_reference() -> None:
 
     A test that only checks "every occurrence carries its system" passes
     trivially when there are no occurrences, so the occurrences themselves
-    are asserted present.
+    are asserted present.  The checkpoint is read by both passes and so is
+    asserted in both; the run-log destination is addressed once, which is
+    all the reachability rule asks and all a template a run does not own
+    should be made to carry.
     """
     config = example_config()
     checkpoint = config.documents[CHECKPOINT_DOCUMENT_KEY]
     run_log = config.records[RUN_LOG_RECORD_KEY]
-    for key, rendered in rendered_passes().items():
-        assert checkpoint.id in rendered, key.value
-        assert run_log.id in rendered, key.value
+    rendered = rendered_passes()
+    for key, body in rendered.items():
+        assert checkpoint.id in body, key.value
+    assert any(run_log.id in body for body in rendered.values())
 
 
 def test_a_document_entry_without_a_system_is_unconstructable() -> None:

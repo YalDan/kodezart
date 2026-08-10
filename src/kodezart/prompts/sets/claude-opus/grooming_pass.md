@@ -32,5 +32,3 @@ Compose each update's health from every item groomed under that initiative in th
 ## Escalation Endpoint
 Escalations and out-of-band notifications go to {{endpoints.escalation}} and nowhere else.
 
-## Run Log
-Close the pass by appending exactly one row to the run log — id {{records.run_log.id}} in the {{records.run_log.system}} system. The row states which pass ran, the window it covered, what it changed, and the single most load-bearing reason for the level it recorded. Append the row; never rewrite an earlier one, because a run log that can be edited cannot evidence what a pass did. A pass that aborted still writes its row, saying it aborted and where — an absent row is indistinguishable from a pass that never ran.

@@ -69,8 +69,8 @@ reader can audit, whereas an undemonstrated one is an unknown.
 | terminal done label | grooming_pass `## Queue State Transitions` | The terminal queue state exists in the workspace, created by the operation that owns it rather than by hand. | `tests/tracker/test_tracker_boot_wiring.py::test_an_absent_queue_label_is_created_at_boot_not_a_failure` |
 | reply criteria | grooming_pass `## Reply Criteria` | The three reply criteria decide which mentions and comments create a reply obligation, and a pass discharges exactly those. | not yet demonstrated |
 | five reply-routing rules | — | A reply obligation is routed by the five rules, so the same finding is not answered twice on two surfaces. | not yet demonstrated |
-| run digest | fire_prep_pass `## Run Log` | Every pass appends exactly one run-log row, including a pass that aborted, and never rewrites an earlier one. | not yet demonstrated |
-| exit-silently condition | — | A pass that finds nothing to do exits without writing. | not ported, because the shipped `## Run Log` clause requires a row from every pass, including one that aborted, on the ground that an absent row is indistinguishable from a pass that never ran; the two rules cannot both hold and the louder one was kept |
+| run digest | fire_prep_pass `## Run Log` | Every pass appends exactly one run-log row and never rewrites an earlier one. | not yet demonstrated |
+| exit-silently condition | — | A pass that finds nothing to do exits without writing. | not yet demonstrated |
 | build for real | grooming_pass `## Build Verification` | Every registered repository is verified by running its own commands, recording per-check exit codes against the HEAD sha, never a snapshot or a reasoned-about result. | not yet demonstrated |
 | gate-vs-cascade | grooming_pass `## Build Verification` | A failure report names one root and its cascades, never a list of independent-looking reds. | not yet demonstrated |
 | sandbox-vs-project | grooming_pass `## Build Verification` | A verification performed in a scratch workspace is reported as a scratch result, and a project result is never inferred from one — with evidence required in both directions. | not yet demonstrated |
@@ -105,9 +105,17 @@ tracker and its transcript can be asserted over.
 **Obligations no shipped clause carries yet.** The bootstrap window and its
 one-time sweep, per-issue comment pulls, reviews as an object class, the five
 reply-routing rules, commit-PR-issue reconciliation, graph and supersession
-hygiene, the mention scan window, the fire-body format. These are open in a
-stronger sense: the instruction is not in the prompt set, so there is nothing
-for a session to follow. They are rows precisely so that this is visible.
+hygiene, the mention scan window, the fire-body format, the exit-silently
+condition. These are open in a stronger sense: the instruction is not in the
+prompt set, so there is nothing for a session to follow. They are rows
+precisely so that this is visible.
+
+The exit-silently condition was briefly recorded here as *not ported*, on the
+ground that a shipped `## Run Log` clause required a row from every pass. That
+clause was written by this pass over a routine text it does not own, so it
+could not be a reason for dropping one of that text's obligations: an input
+may not be overruled by an edit to the input. The row is open, as it was
+before.
 
 ## How this document is checked
 
