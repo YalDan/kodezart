@@ -452,13 +452,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         fragment_digest=fragment_digest,
     )
 
-    # The hygiene scan is deliberately NOT constructed here. Its subject is
-    # a frozen fire body on its way onto the tracker, which is the fire-prep
-    # pass's write — and that writer does not exist yet, so no
-    # OutboundDestination member names its surface and the scan has no
-    # honest destination to be called with. Constructing it at boot and
-    # attaching it to app.state, as this module previously did, made an
-    # unreachable capability read as a wired one. A test holds the absence.
     cache = LocalBareRepoCache(git=git, base_dir=config.clone_cache_dir)
     workspace = GitWorktreeProvider(
         git=git,

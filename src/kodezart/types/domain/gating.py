@@ -267,23 +267,6 @@ class GateDecision(CamelCaseModel):
     failure: ScanFailureKind | None = None
 
 
-class HygieneReport(CamelCaseModel):
-    """Whether one fire body may be promoted, and what stopped it.
-
-    ``promotable`` is never inferred from an empty hit list: a scanner that
-    could not answer sets ``failure`` and refuses promotion, the same
-    three-state discipline the outbound gate holds.  "Said it is clean" and
-    "did not answer" are two states, and only one of them promotes.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    promotable: bool
-    categories: tuple[ScanCategory, ...] = ()
-    hits: tuple[ScanHit, ...] = ()
-    failure: ScanFailureKind | None = None
-
-
 class ScannerRouting(CamelCaseModel):
     """When a registered scanner must be consulted.
 

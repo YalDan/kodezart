@@ -8,7 +8,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from kodezart.types.domain.gating import (
     PATTERNLESS_CATEGORIES,
     GateVerdict,
-    HygieneCategory,
     RedactionCategory,
 )
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
@@ -23,35 +22,6 @@ _SHIPPED_CREDENTIAL_PATTERNS: list[str] = [
     r"\bgh[posu]_[A-Za-z0-9]{36,}",
     r"\bgithub_pat_[A-Za-z0-9_]{20,}",
 ]
-
-# The quality-vocabulary set the pre-promotion hygiene scan runs through the
-# SAME engine as the deny set.  These ship non-empty, unlike the deny set: a
-# fire body's readability is a property of this project's own writing, not of
-# a deployment's private surface, so there is nothing for an operator to
-# supply before the scan means something.
-_SHIPPED_HYGIENE_PATTERNS: dict[HygieneCategory, list[str]] = {
-    # Words that belong to the machinery that scheduled the work.  An
-    # implementer reading its own dispatch mechanics is reading noise.
-    HygieneCategory.ORCHESTRATION_VOCABULARY: [
-        r"(?i)\bqueue:[a-z_]+\b",
-        r"(?i)\bdispatch(?:er|ed)?\s+pass\b",
-        r"(?i)\bfire[- ]?(?:queue|runner|prep)\b",
-        r"(?i)\bscheduled\s+routine\b",
-    ],
-    # Identifiers that resolve only against the board.  A body that leans on
-    # one is unreadable to anybody who cannot open the tracker.
-    HygieneCategory.TRACKER_SHORTHAND: [
-        r"\b[A-Z]{2,5}-\d+\b",
-        r"(?i)\bAC-\d+\b",
-    ],
-    # The evaluator's own answer sheet.  A body carrying it grades itself.
-    HygieneCategory.EVALUATOR_MATERIAL: [
-        r"(?i)\bacceptance criteri(?:on|a)\b",
-        r"```diff",
-        r"(?m)^[+-]{3} [ab]/",
-        r"(?m)^@@ -\d+",
-    ],
-}
 
 
 class AppConfig(BaseSettings):
@@ -458,18 +428,6 @@ class AppConfig(BaseSettings):
         description=(
             "JSON object mapping a redaction category to the verdict a hit "
             "in that category yields. A payload takes the max severity."
-        ),
-    )
-    hygiene_patterns: dict[HygieneCategory, list[str]] = Field(
-        default_factory=lambda: {
-            category: list(patterns)
-            for category, patterns in _SHIPPED_HYGIENE_PATTERNS.items()
-        },
-        description=(
-            "JSON object mapping a fire-body hygiene category to its regex "
-            "pattern list. Runs through the same scanner engine as the deny "
-            "set and answers a different question: whether the implementer "
-            "receiving the body can act on it alone."
         ),
     )
     operation_config: str | None = Field(
