@@ -5,7 +5,9 @@ Reconciliation is keyed by ``criterion_id`` and the denominator is the
 dispatched count, so:
 
 * a result for an id nobody dispatched is discarded and named;
-* a second result for an id already answered is discarded and named;
+* an id answered TWICE grades FAILED and is named: two answers are the
+  model contradicting itself, so the criterion has no verdict, and
+  letting the first answer stand was this module's one optimistic arm;
 * an id with no result grades FAILED and is named — never a silently
   shorter denominator, and never acceptance over a partial set;
 * the text carried forward — into the report AND into the next
@@ -55,6 +57,11 @@ MISSING_RESULT_REASONING = (
     "A dispatched criterion with no verdict grades failed."
 )
 
+DUPLICATE_RESULT_REASONING = (
+    "The evaluator returned more than one result for this criterion id. "
+    "A criterion answered twice has no verdict, so it grades failed."
+)
+
 
 def grade_iteration(
     criteria: Sequence[ValidatedCriterion],
@@ -78,44 +85,32 @@ def grade_iteration(
     results: list[CriterionResult] = []
     failures: list[CriterionFailure] = []
     missing_ids: list[CriterionId] = []
+    duplicated = set(duplicate_ids)
 
     for criterion in criteria:
         answer = answered.get(criterion.id)
         if answer is None:
             missing_ids.append(criterion.id)
-            results.append(
-                CriterionResult(
-                    criterion_id=criterion.id,
-                    criterion=criterion.text,
-                    passed=False,
-                    reasoning=MISSING_RESULT_REASONING,
-                )
-            )
-            failures.append(
-                CriterionFailure(
-                    criterion_id=criterion.id,
-                    text=criterion.text,
-                    reasoning=MISSING_RESULT_REASONING,
-                )
-            )
-            continue
-        # The REPORT carries the harness's text, not the echo: the oracle is
-        # byte-identical across the criteria event, the persisted artifact and
-        # every iteration's evaluation, with identity carried by the id.
+            passed, reasoning = False, MISSING_RESULT_REASONING
+        elif criterion.id in duplicated:
+            passed, reasoning = False, DUPLICATE_RESULT_REASONING
+        else:
+            passed, reasoning = answer.passed, answer.reasoning
+        # The report carries the harness's text, never the echo.
         results.append(
             CriterionResult(
                 criterion_id=criterion.id,
                 criterion=criterion.text,
-                passed=answer.passed,
-                reasoning=answer.reasoning,
+                passed=passed,
+                reasoning=reasoning,
             )
         )
-        if not answer.passed:
+        if not passed:
             failures.append(
                 CriterionFailure(
                     criterion_id=criterion.id,
                     text=criterion.text,
-                    reasoning=answer.reasoning,
+                    reasoning=reasoning,
                 )
             )
 

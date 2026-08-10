@@ -6,7 +6,11 @@ keying nor the text carried forward) are demonstrated here.
 """
 
 from kodezart.domain.criteria import mint_criteria
-from kodezart.domain.criteria_grading import MISSING_RESULT_REASONING, grade_iteration
+from kodezart.domain.criteria_grading import (
+    DUPLICATE_RESULT_REASONING,
+    MISSING_RESULT_REASONING,
+    grade_iteration,
+)
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import (
@@ -133,7 +137,7 @@ def test_echoed_text_mutation_changes_neither_keying_nor_reinjected_text() -> No
     assert [r.criterion for r in grade.results] == [c.text for c in criteria]
 
 
-def test_unknown_and_duplicate_ids_are_discarded_and_named() -> None:
+def test_an_unknown_id_is_discarded_and_a_duplicated_one_grades_failed() -> None:
     criteria = _criteria(2)
     output = AcceptanceCriteriaOutput(
         criteria_results=[
@@ -169,9 +173,14 @@ def test_unknown_and_duplicate_ids_are_discarded_and_named() -> None:
     assert grade.duplicate_ids == ["AC-1"]
     assert grade.unknown_ids == ["AC-9"]
     assert grade.missing_ids == []
-    # The FIRST answer for an id stands; the duplicate never overrides it.
-    assert grade.results[0].passed is True
-    assert grade.verdict is AcceptVerdict.accepted
+    # AC-1 came back passed and then failed: the model contradicted itself,
+    # so the criterion has no verdict and grades failed rather than letting
+    # the first answer stand.
+    assert grade.results[0].passed is False
+    assert grade.results[0].reasoning == DUPLICATE_RESULT_REASONING
+    assert [f.criterion_id for f in grade.failures] == ["AC-1"]
+    assert grade.verdict is AcceptVerdict.rejected
+    assert grade.dispatched_count == 2
     assert len(grade.results) == 2
 
 
