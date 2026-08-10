@@ -530,7 +530,7 @@ def test_environment_side_repair_without_a_named_resource_raises() -> None:
             "a forbidden class with nothing behind it",
             CriterionFinding(
                 criterion_id="AC-5",
-                smallest_repair=RepairKind.criterion_text,
+                smallest_repair=RepairKind.none,
                 forbidden_class=ForbiddenCriterionClass.ci_status,
             ),
         ),
@@ -555,6 +555,14 @@ def test_an_ungradeable_report_without_a_refutation_raises(
     halts a run before the loop — and it is reached without any repair
     field being consulted, so a refuter that named a class and established
     nothing would otherwise buy the whole halt for a word.
+
+    Both rows carry ``RepairKind.none`` deliberately.  A row demanding a
+    criterion-text repair raises for a second, older reason — the repair
+    has no refutation behind it — so it would keep passing with the
+    ungradeable guard deleted and would demonstrate that guard's absence
+    to nobody.  With no repair demanded, deleting the guard routes both
+    rows to ``_classify_no_repair`` and both return ``feasible``, which is
+    the removal this parametrisation is here to catch.
     """
     with pytest.raises(UngroundedVerdictError) as excinfo:
         classify_finding(finding)
