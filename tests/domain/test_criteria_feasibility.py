@@ -720,6 +720,47 @@ def test_no_contradictions_yields_a_satisfiable_conjunction() -> None:
     assert minimal_conflicting_subset([]) is None
 
 
+def test_the_named_subset_is_the_smallest_then_the_lexicographically_first() -> None:
+    """KOD-53/AC-2 — the tie-break, over a report that can expose it.
+
+    The sibling test above reports one conflict and one superset of it, so
+    the inclusion filter leaves a single candidate and every ordering rule
+    agrees by construction.  Here three of the four contradictions survive
+    that filter and no two of the three contain each other, so the answer
+    is decided by size and then lexicographically or not at all.  The
+    same-sized rival is listed FIRST, so a selection that dropped the
+    lexicographic component and fell back on report order names it.
+
+    Falsifiers, each run against this fixture: ``min`` → ``max`` names the
+    three-id set; a key of ``len`` alone names ``AC-4``/``AC-5``; a key of
+    the sorted ids alone names the three-id set.
+    """
+    named = minimal_conflicting_subset(
+        [
+            Contradiction(
+                criterion_ids=["AC-4", "AC-5"],
+                explanation="the same size as the answer, and reported first",
+            ),
+            Contradiction(
+                criterion_ids=["AC-1", "AC-4", "AC-6"],
+                explanation="lexicographically earlier, and larger",
+            ),
+            Contradiction(
+                criterion_ids=["AC-2", "AC-3"],
+                explanation="one exported symbol cannot also be two",
+            ),
+            Contradiction(
+                criterion_ids=["AC-2", "AC-3", "AC-6"],
+                explanation="a strict superset of the real conflict",
+            ),
+        ]
+    )
+
+    assert named is not None
+    assert named.criterion_ids == ["AC-2", "AC-3"]
+    assert named.explanation == "one exported symbol cannot also be two"
+
+
 # ---------------------------------------------------------------------------
 # Fan-in is fail-closed and observable (KOD-53/AC-6)
 # ---------------------------------------------------------------------------
