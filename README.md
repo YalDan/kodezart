@@ -126,8 +126,9 @@ magnitude larger than the record. Once released, the job still answers at
 replay, and that is stated rather than served as an empty stream. See
 [docs/configuration.md](docs/configuration.md#queue-retention--two-independent-windows).
 
-See [docs/api.md](docs/api.md) for the full API reference including all 18 SSE
-event types.
+See [docs/api.md](docs/api.md) for the full API reference, including the table
+of SSE event types — derived from the shipped event models, so no count is
+written down here to go stale.
 
 ## Configuration
 

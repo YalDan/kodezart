@@ -149,6 +149,11 @@ curl -N http://localhost:8000/api/v1/jobs/job_01H.../stream
 
 ## SSE Event Types
 
+Every frame type the stream can carry is in one of the three tables below.
+A test compares them against `types/domain/agent.py` in both directions, so an
+event added to the code with no row fails the suite — and no count is written
+down anywhere to go stale.
+
 All responses from `/query` and `/workflow` are Server-Sent Event streams.
 Each frame follows the format:
 
@@ -174,10 +179,11 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 
 ```
 
-### Streaming Events (11)
+### Streaming Events
 
 | Event Type            | Key Fields                                                  |
 | --------------------- | ----------------------------------------------------------- |
+| `job_accepted`        | `jobId`, `lane`, `queuePosition`, `statusUrl`, `streamUrl`  |
 | `user_message`        | `content`                                                   |
 | `assistant_text`      | `text`, `model`                                             |
 | `assistant_thinking`  | `thinking`, `model`                                         |
@@ -189,8 +195,9 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `task_notification`   | `subtype`, `taskId`, `status`, `outputFile`, `summary`, `uuid`, `sessionId` |
 | `result`              | `subtype`, `durationMs`, `durationApiMs`, `isError`, `numTurns`, `sessionId`, `stopReason`, `totalCostUsd`, `usage`, `result`, `branch`, `commitSha`, `structuredOutput` |
 | `stream_event`        | `sessionId`, `event`                                        |
+| `rate_limit_warning`  | `status`, `resetsAt`, `utilization`, `rateLimitType`        |
 
-### Workflow Events (6)
+### Workflow Events
 
 | Event Type                | Key Fields                                      |
 | ------------------------- | ----------------------------------------------- |
@@ -199,9 +206,14 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `workflow_ticket`         | `ticket`, `reviewRounds`, `approved`            |
 | `workflow_criteria`       | `criteria`, `reasoning`                         |
 | `workflow_iteration`      | `iteration`, `branch`, `commitSha`, `accepted`, `evaluation` |
+| `workflow_review`         | `passed`, `evaluation`, `fixRound`              |
+| `workflow_consolidation`  | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
+| `workflow_visibility`     | `visibility`, `repoUrl`                         |
+| `workflow_pr`             | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
+| `workflow_ci`             | `passed`, `summary`, `ref`                      |
 | `workflow_complete`       | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `merged`, `finalCommitSha`, `error` |
 
-### Error Events (1)
+### Error Events
 
 | Event Type | Key Fields |
 | ---------- | ---------- |

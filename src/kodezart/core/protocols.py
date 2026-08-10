@@ -39,16 +39,6 @@ from kodezart.types.requests.agent import WorkflowRequest
 
 
 @runtime_checkable
-class LogEmitter(Protocol):
-    """Structured logging port — structlog.stdlib.BoundLogger satisfies this."""
-
-    async def ainfo(self, event: str, **kwargs: object) -> None: ...
-    async def adebug(self, event: str, **kwargs: object) -> None: ...
-    async def awarning(self, event: str, **kwargs: object) -> None: ...
-    async def aerror(self, event: str, **kwargs: object) -> None: ...
-
-
-@runtime_checkable
 class GitService(Protocol):
     """Git operations port — SubprocessGitService satisfies this."""
 

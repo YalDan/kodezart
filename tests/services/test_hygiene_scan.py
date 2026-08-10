@@ -72,7 +72,13 @@ class RecordingScanner:
 
 
 def shipped_scan() -> HygieneScan:
-    """The scan as boot builds it: the shipped engine, the shipped set."""
+    """The scan as its writer WILL build it: shipped engine, shipped set.
+
+    Not "as boot builds it" — boot builds it nowhere, which the case below
+    holds deliberately until the fire-prep writer that gives it a
+    destination exists.  A helper claiming a construction the module's own
+    assertion denies is the kind of statement this suite is here to catch.
+    """
     return HygieneScan(
         scanner=RegexContentScanner(patterns=AppConfig().hygiene_patterns),
     )

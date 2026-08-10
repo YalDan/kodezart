@@ -9,6 +9,7 @@ A new ``AppConfig`` field, a new route, or a release bump makes this module
 red until the document catches up.  That is the whole mechanism.
 """
 
+import ast
 import json
 import re
 import tomllib
@@ -18,10 +19,12 @@ from fastapi.routing import APIRoute
 
 from kodezart.core.config import AppConfig
 from kodezart.main import create_app
+from kodezart.types.domain.agent import AgentEvent
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGURATION_DOC = REPO_ROOT / "docs" / "configuration.md"
 API_DOC = REPO_ROOT / "docs" / "api.md"
+ARCHITECTURE_DOC = REPO_ROOT / "docs" / "architecture.md"
 README = REPO_ROOT / "README.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
@@ -126,22 +129,45 @@ def test_env_example_assigns_only_real_variables() -> None:
     assert assigned <= _shipped_config_variables()
 
 
-def test_env_example_values_load() -> None:
-    """Every assignment in the example is a value the field actually accepts."""
+def _env_example_assignments() -> dict[str, object]:
+    """Every uncommented assignment, keyed by field name and JSON-coerced."""
     values: dict[str, str] = {}
     for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
         if "=" not in line or line.lstrip().startswith("#"):
             continue
         key, raw = line.split("=", 1)
         values[key.strip().removeprefix(ENV_PREFIX).lower()] = raw.strip()
-    coerced: dict[str, object] = {
+    return {
         name: json.loads(raw)
         if AppConfig.model_fields[name].annotation not in (str, str | None)
         and raw.startswith(("{", "["))
         else raw
         for name, raw in values.items()
     }
-    AppConfig(**coerced)  # type: ignore[arg-type]
+
+
+def test_env_example_values_load() -> None:
+    """Every assignment in the example is a value the field actually accepts."""
+    AppConfig(**_env_example_assignments())  # type: ignore[arg-type]
+
+
+def test_every_env_example_value_is_the_fields_shipped_default() -> None:
+    """``README.md`` promises copying the file changes no behaviour.
+
+    Compared after validation rather than as text, so ``30`` against a float
+    default of ``30.0`` is equal — which is what "changes no behaviour"
+    means — while a genuinely drifted value is not.  Nothing here restates
+    a default: the expected side is the field's own, read off ``AppConfig()``.
+    """
+    defaults = AppConfig()
+    drifted = [
+        name
+        for name, value in _env_example_assignments().items()
+        if getattr(AppConfig(**{name: value}), name)  # type: ignore[arg-type]
+        != getattr(defaults, name)
+    ]
+
+    assert drifted == []
 
 
 def test_every_mounted_endpoint_is_documented() -> None:
@@ -180,3 +206,102 @@ def test_the_readme_names_every_permission_the_forge_calls_require() -> None:
         if permission.split(":")[0] not in readme
     ]
     assert missing == []
+
+
+def _documented_event_types() -> set[str]:
+    """Every event name the API reference's SSE table carries."""
+    section = API_DOC.read_text(encoding="utf-8").split("## SSE Event Types")[1]
+    names: set[str] = set()
+    for line in section.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 2 or cells[0] in {"Event Type", "---"}:
+            continue
+        if set(cells[0]) <= {"-", " "}:
+            continue
+        names.add(cells[0].strip("`"))
+    return names
+
+
+def _shipped_event_types() -> set[str]:
+    """Every discriminator a concrete ``AgentEvent`` subclass declares.
+
+    Read off the models rather than off the module text: a class whose
+    ``type`` field the doc table forgot is exactly the drift this catches.
+    """
+    return {
+        str(field.default)
+        for model in _agent_event_models()
+        if (field := model.model_fields.get("type")) is not None
+        and field.default is not None
+    }
+
+
+def _agent_event_models() -> list[type[AgentEvent]]:
+    subclasses: list[type[AgentEvent]] = []
+    pending: list[type[AgentEvent]] = [AgentEvent]
+    while pending:
+        current = pending.pop()
+        for child in current.__subclasses__():
+            subclasses.append(child)
+            pending.append(child)
+    return subclasses
+
+
+def test_every_shipped_sse_event_type_is_documented() -> None:
+    """A new event model with no row in the reference fails the suite."""
+    assert _shipped_event_types() - _documented_event_types() == set()
+
+
+def test_no_documented_sse_event_type_is_absent_from_the_code() -> None:
+    """The other direction: a row naming an event nothing emits is a lie."""
+    assert _documented_event_types() - _shipped_event_types() == set()
+
+
+def test_the_sse_event_table_has_rows_at_all() -> None:
+    """Guards the two set comparisons: an unparsed table would pass both."""
+    assert len(_documented_event_types()) > 10
+
+
+def _documented_protocols() -> set[str]:
+    """Every protocol named in the architecture doc's Protocol Map."""
+    section = ARCHITECTURE_DOC.read_text(encoding="utf-8").split("## Protocol Map")[1]
+    names: set[str] = set()
+    for line in section.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 3 or cells[0] in {"Protocol", "---"}:
+            continue
+        if set(cells[0]) <= {"-", " "}:
+            continue
+        names.add(cells[0])
+    return names
+
+
+def _shipped_protocols() -> set[str]:
+    """Every ``Protocol`` class ``core/protocols.py`` defines."""
+    tree = ast.parse(
+        (REPO_ROOT / "src" / "kodezart" / "core" / "protocols.py").read_text(
+            encoding="utf-8",
+        ),
+    )
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and any(
+            isinstance(base, ast.Name) and base.id == "Protocol" for base in node.bases
+        )
+    }
+
+
+def test_every_shipped_protocol_has_a_row_in_the_protocol_map() -> None:
+    """The doc said "all 12" over a file that defines far more than twelve."""
+    assert _shipped_protocols() - _documented_protocols() == set()
+
+
+def test_no_documented_protocol_is_absent_from_the_port_module() -> None:
+    """A row for a deleted protocol reads as a port the system still has."""
+    assert _documented_protocols() - _shipped_protocols() == set()
