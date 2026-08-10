@@ -13,6 +13,23 @@ dispatched count, so:
   echoed whitespace or backslash mutation changes neither the keying nor
   the criterion anybody downstream reads.
 
+The missing / unknown / duplicate DETECTION above is a KOD-91 workaround
+rather than architecture.  Server-side strict enforcement does not engage
+for any schema kodezart ships — every one uses keywords outside the strict
+allowlist — so nothing upstream rejects a partial or padded result set.
+Measured, not feared: ``criteria_results`` is ``Field(min_length=1)`` and
+acceptance is ``all(...)`` over whatever returned, so three results for ten
+criteria yielded acceptance over the partial set.
+
+KOD-91 is the expiry, and its deliverable 4 covers BOTH fan-in channels in
+terms — "The identical guard applies to the KOD-66 validator's verdict
+set: one verdict per dispatched id".  What KOD-91 retires is the detection
+half, by retrying a conforming result set into existence.  What survives it
+is the fail-closed GRADING arm, because deliverable 4 "falls through to
+KOD-11's fail-closed grading" once the retries are exhausted.  The
+detection half is retained TODAY on a scope boundary — KOD-11 assigns the
+retrying guard to KOD-91 — and not on a mechanism gap.
+
 ``results`` carries a row for every dispatched id, because that is the
 report.  The ARITHMETIC is narrower: an ``unverifiable`` criterion is
 neither a pass nor a fail, so it seats in neither ``passed_count`` nor
