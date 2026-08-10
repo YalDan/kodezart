@@ -278,6 +278,7 @@ def build_dispatch_passes(
     """
     assembler = FireContextAssembler(
         tracker=tracker,
+        gate=gate,
         max_count=config.tracker_asset_max_count,
         max_bytes=config.tracker_asset_max_bytes,
         fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,

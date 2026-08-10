@@ -42,6 +42,7 @@ from tests.fakes import (
     FakeJobQueue,
     FakeRepoCache,
     FakeTrackerPort,
+    PassThroughGate,
     approved_by,
     make_tracker_issue,
 )
@@ -172,6 +173,7 @@ def dispatcher(
         "query_page_size": PAGE_SIZE,
         "assembler": FireContextAssembler(
             tracker=tracker,
+            gate=PassThroughGate(),
             max_count=ASSET_MAX_COUNT,
             max_bytes=ASSET_MAX_BYTES,
             fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,

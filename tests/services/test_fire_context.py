@@ -4,10 +4,12 @@ Everything here runs over the in-process fake tracker serving fixture
 attachments and documents.  No live workspace, no live remote, no vendor
 call.
 
-The sanitization case references KOD-47's gate rather than re-implementing
-any part of it: tracker-sourced content is private input, and what makes
-that safe is that the gate — unchanged, constructed from shipped
-configuration — is what stands between it and a repository.
+The sanitization cases reference KOD-47's gate rather than re-implementing
+any part of it: tracker-sourced content is untrusted input, and KOD-107 R1
+rules that the gate — unchanged, constructed from shipped configuration —
+is what stands between a tracker document and a fire context.  Every
+assembler built here holds the shipped gate, so the admission rule is
+exercised by every case in the module and not only by the ones about it.
 """
 
 import asyncio
@@ -17,12 +19,15 @@ import pytest
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
+from kodezart.core.protocols import OutboundContentGate
 from kodezart.domain.errors import AssetFetchError
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.types.domain.gating import (
+    GateDecision,
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
+    ScanFailureKind,
     WriterShape,
 )
 from kodezart.types.domain.tracker import TrackerAsset
@@ -60,15 +65,26 @@ def tracker_serving(documents: dict[str, str]) -> FakeTrackerPort:
     )
 
 
+def shipped_gate() -> PatternOutboundContentGate:
+    """The gate as a deployment gets it: shipped patterns, shipped verdicts."""
+    config = AppConfig()
+    return PatternOutboundContentGate(
+        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
+        verdicts=config.deny_pattern_verdicts,
+    )
+
+
 def assembler(
     tracker: FakeTrackerPort,
     *,
+    gate: OutboundContentGate | None = None,
     max_count: int = DEFAULTS.tracker_asset_max_count,
     max_bytes: int = DEFAULTS.tracker_asset_max_bytes,
     fetch_timeout_seconds: float = DEFAULTS.tracker_asset_fetch_timeout_seconds,
 ) -> FireContextAssembler:
     return FireContextAssembler(
         tracker=tracker,
+        gate=shipped_gate() if gate is None else gate,
         max_count=max_count,
         max_bytes=max_bytes,
         fetch_timeout_seconds=fetch_timeout_seconds,
@@ -216,7 +232,7 @@ async def test_the_size_bound_is_measured_in_bytes_not_characters() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sanitization — the gate KOD-47 owns, referenced and not duplicated
+# Admission — KOD-107 R1: tracker documents are untrusted on the way IN
 # ---------------------------------------------------------------------------
 
 
@@ -224,26 +240,47 @@ PRIVATE_FIXTURE_CONTENT = (
     "deploy with https://x-access-token:ghp_" + "a" * 36 + "@example.invalid/o/r.git"
 )
 
-
-def shipped_gate() -> PatternOutboundContentGate:
-    """The gate as a deployment gets it: shipped patterns, shipped verdicts."""
-    config = AppConfig()
-    return PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
+#: The claim the two documents KOD-107 reports actually carry.  It buys
+#: nothing here, and the test below is what makes that checkable.
+SANITIZED_CLAIM_TITLE = "routine prompt (sanitized, updated 2026-07-24)"
 
 
-async def test_private_fixture_content_toward_a_repository_path_is_blocked() -> None:
-    """Tracker-sourced content is private input; the gate is what makes it safe."""
-    tracker = FakeTrackerPort(
+type GatePosture = tuple[RepoVisibility, WriterShape, OutboundDestination]
+
+
+class ScriptedGate:
+    """A gate returning one scripted decision, recording what it was asked."""
+
+    def __init__(self, decision: GateDecision) -> None:
+        self.decision: GateDecision = decision
+        self.seen: list[str] = []
+        self.postures: list[GatePosture] = []
+
+    async def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+        destination: OutboundDestination,
+    ) -> GateDecision:
+        self.seen.append(content)
+        self.postures.append((visibility, shape, destination))
+        return self.decision.model_copy(update={"content": content})
+
+
+def tracker_with(content: str, *, title: str = SPEC_TITLE) -> FakeTrackerPort:
+    return FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
-        assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE)]},
-        documents={SPEC_KEY: PRIVATE_FIXTURE_CONTENT},
+        assets={ISSUE: [asset(SPEC_KEY, title)]},
+        documents={SPEC_KEY: content},
     )
-    context = await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)
+
+
+async def test_the_shipped_gate_is_what_refuses_the_private_fixture() -> None:
+    """The refusals below are the shipped gate's verdict, not a local rule."""
     decision = await shipped_gate().gate(
-        content=context.assets[0].content,
+        content=PRIVATE_FIXTURE_CONTENT,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
@@ -251,18 +288,108 @@ async def test_private_fixture_content_toward_a_repository_path_is_blocked() -> 
     assert decision.verdict is GateVerdict.BLOCKED
 
 
-async def test_the_rendered_context_is_gated_as_a_whole_not_per_asset() -> None:
-    """Embedding an asset in the fire's text does not launder it."""
+async def test_a_document_carrying_a_private_identifier_never_enters_the_context() -> (
+    None
+):
+    """AC-66: the document is refused on the way in, naming it.
+
+    Supersedes the weaker pair this module used to carry, which assembled
+    the context first and then showed that writing it out would be blocked.
+    That demonstrated the outbound gate, which held at trunk already; what
+    the exposure path needed is that the content does not get in.
+    """
+    with pytest.raises(AssetFetchError) as excinfo:
+        await assembler(tracker_with(PRIVATE_FIXTURE_CONTENT)).assemble(
+            issue_key=ISSUE,
+            body=BODY,
+        )
+
+    assert excinfo.value.reason == "private_content"
+    assert excinfo.value.asset_key == SPEC_KEY
+    assert excinfo.value.issue_key == ISSUE
+
+
+async def test_a_document_claiming_to_be_sanitized_is_refused_on_its_body() -> None:
+    """AC-67: the safety claim is not evidence — it is the reported defect.
+
+    Both documents KOD-107 filed on are titled *sanitized* and are not.  A
+    machine-readable marker would be the same claim in stricter syntax, so
+    nothing here reads a title, a label or a marker.
+    """
+    with pytest.raises(AssetFetchError) as excinfo:
+        await assembler(
+            tracker_with(PRIVATE_FIXTURE_CONTENT, title=SANITIZED_CLAIM_TITLE),
+        ).assemble(issue_key=ISSUE, body=BODY)
+
+    assert excinfo.value.reason == "private_content"
+    assert excinfo.value.asset_key == SPEC_KEY
+
+
+async def test_a_gate_that_cannot_answer_refuses_rather_than_admitting() -> None:
+    """AC-67, fail-closed: "no answer" is not "clean", asserted on its own."""
+    scripted = ScriptedGate(
+        GateDecision(
+            verdict=GateVerdict.BLOCKED,
+            content="",
+            failure=ScanFailureKind.TIMEOUT,
+        ),
+    )
+
+    with pytest.raises(AssetFetchError) as excinfo:
+        await assembler(tracker_with(SPEC_CONTENT), gate=scripted).assemble(
+            issue_key=ISSUE,
+            body=BODY,
+        )
+
+    assert excinfo.value.reason == "private_content"
+    assert excinfo.value.asset_key == SPEC_KEY
+
+
+async def test_a_redacted_verdict_refuses_rather_than_admitting_the_redaction() -> None:
+    """Only CLEAN enters: a doctored input is worse than a fire that did not start."""
+    scripted = ScriptedGate(
+        GateDecision(verdict=GateVerdict.REDACTED, content="[redacted]"),
+    )
+
+    with pytest.raises(AssetFetchError) as excinfo:
+        await assembler(tracker_with(PRIVATE_FIXTURE_CONTENT), gate=scripted).assemble(
+            issue_key=ISSUE,
+            body=BODY,
+        )
+
+    assert excinfo.value.reason == "private_content"
+
+
+async def test_every_fetched_document_is_gated_at_the_ruled_posture() -> None:
+    """No document reaches a context ungated, and the posture is the ruled one."""
+    scripted = ScriptedGate(GateDecision(verdict=GateVerdict.CLEAN, content=""))
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE, body=BODY)],
-        assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE)]},
-        documents={SPEC_KEY: PRIVATE_FIXTURE_CONTENT},
+        assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE), asset(NOTES_KEY, NOTES_TITLE)]},
+        documents={SPEC_KEY: SPEC_CONTENT, NOTES_KEY: NOTES_CONTENT},
     )
-    rendered = (await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)).render()
-    decision = await shipped_gate().gate(
-        content=rendered,
-        visibility=RepoVisibility.PUBLIC,
-        shape=WriterShape.PROSE,
-        destination=OutboundDestination.PR_BODY,
+
+    context = await assembler(tracker, gate=scripted).assemble(
+        issue_key=ISSUE,
+        body=BODY,
     )
-    assert decision.verdict is GateVerdict.BLOCKED
+
+    assert scripted.seen == [SPEC_CONTENT, NOTES_CONTENT]
+    assert set(scripted.postures) == {
+        (RepoVisibility.PUBLIC, WriterShape.PROSE, OutboundDestination.PR_BODY),
+    }
+    assert len(context.assets) == 2
+
+
+async def test_one_refused_document_fails_the_whole_context() -> None:
+    """Embedding an asset in the fire's text cannot launder it: nothing renders."""
+    tracker = FakeTrackerPort(
+        issues=[make_tracker_issue(ISSUE, body=BODY)],
+        assets={ISSUE: [asset(SPEC_KEY, SPEC_TITLE), asset(NOTES_KEY, NOTES_TITLE)]},
+        documents={SPEC_KEY: SPEC_CONTENT, NOTES_KEY: PRIVATE_FIXTURE_CONTENT},
+    )
+
+    with pytest.raises(AssetFetchError) as excinfo:
+        await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)
+
+    assert excinfo.value.asset_key == NOTES_KEY

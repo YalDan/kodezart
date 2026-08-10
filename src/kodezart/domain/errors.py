@@ -129,8 +129,8 @@ class AssetFetchError(Exception):
     so there is no skip — the fire does not build.
 
     ``reason`` is a short machine-readable token (``unreadable``,
-    ``too_large``, ``too_many``, ``timeout``) so a consumer can route on the
-    failure without parsing the message.
+    ``too_large``, ``too_many``, ``timeout``, ``private_content``) so a
+    consumer can route on the failure without parsing the message.
     """
 
     def __init__(

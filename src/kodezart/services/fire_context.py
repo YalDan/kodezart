@@ -14,14 +14,40 @@ Two decisions the issue left open, taken here and recorded on it:
 
 The three bounds are ``AppConfig`` fields and are enforced here rather than
 in the adapter, so every backend is bounded identically.
+
+**Tracker-resident content is untrusted on the way IN** (KOD-107 R1).  Every
+fetched document passes KOD-47's gate before it becomes part of a context,
+and only a CLEAN verdict enters.  The alternative the issue names — trusting
+a document's own claim to be sanitized — is the defect it reports: the two
+documents that produced it are titled "sanitized" and are not, so a
+machine-readable marker would be the same false claim in stricter syntax.
+Nothing here consults a title, a label or a marker; the body is the only
+evidence.
 """
 
 import asyncio
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import OutboundContentGate, TrackerPort
 from kodezart.domain.errors import AssetFetchError
 from kodezart.types.domain.fire import FireAsset, FireContext
+from kodezart.types.domain.gating import (
+    GateVerdict,
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+)
+
+#: The posture every fetched document is judged at.  Not a guess about where
+#: the content will go: it is the surface KOD-47's recorded incident actually
+#: reached — a land-stage agent writing tracker links into a pull-request
+#: body on a public repository.  Content that could not be written there does
+#: not enter a context a session composes that field from, and a private
+#: repository buys no relaxation, because visibility is resolved per run and
+#: a fire outlives the assumption.
+_INBOUND_VISIBILITY = RepoVisibility.PUBLIC
+_INBOUND_SHAPE = WriterShape.PROSE
+_INBOUND_DESTINATION = OutboundDestination.PR_BODY
 
 
 class FireContextAssembler:
@@ -31,11 +57,13 @@ class FireContextAssembler:
         self,
         *,
         tracker: TrackerPort,
+        gate: OutboundContentGate,
         max_count: int,
         max_bytes: int,
         fetch_timeout_seconds: float,
     ) -> None:
         self._tracker: TrackerPort = tracker
+        self._gate: OutboundContentGate = gate
         self._max_count: int = max_count
         self._max_bytes: int = max_bytes
         self._fetch_timeout_seconds: float = fetch_timeout_seconds
@@ -92,4 +120,39 @@ class FireContextAssembler:
                 reason="too_large",
                 asset_key=asset_key,
             )
+        await self._admit(issue_key=issue_key, asset=asset)
         return asset
+
+    async def _admit(self, *, issue_key: str, asset: FireAsset) -> None:
+        """Refuse *asset* unless the gate returns CLEAN. No third arm.
+
+        REDACTED refuses as hard as BLOCKED.  Admitting a redacted document
+        would hand the session a silently altered input to build from, and a
+        fire built on a doctored asset is worse than one that did not start.
+        A scanner with no answer needs no rule of its own: KOD-47 resolves
+        every ``ScanFailureKind`` to BLOCKED, so "did not answer" reaches
+        this refusal by construction rather than by a second condition.
+        """
+        decision = await self._gate.gate(
+            content=asset.content,
+            visibility=_INBOUND_VISIBILITY,
+            shape=_INBOUND_SHAPE,
+            destination=_INBOUND_DESTINATION,
+        )
+        await self._log.ainfo(
+            "fire_asset_gated",
+            issue_key=issue_key,
+            asset_key=asset.asset_key,
+            verdict=decision.verdict.value,
+            categories=[category.value for category in decision.categories],
+            failure=None if decision.failure is None else decision.failure.value,
+        )
+        if decision.verdict is GateVerdict.CLEAN:
+            return
+        raise AssetFetchError(
+            "asset carries content that may not enter a fire context "
+            f"(verdict {decision.verdict.value})",
+            issue_key=issue_key,
+            reason="private_content",
+            asset_key=asset.asset_key,
+        )
