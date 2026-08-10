@@ -95,8 +95,16 @@ class MutatingEchoExecutor:
             yield _result(
                 {
                     "findings": [
-                        {"criterionId": "AC-1", "smallestRepair": "none"},
-                        {"criterionId": "AC-2", "smallestRepair": "none"},
+                        {
+                            "criterionId": "AC-1",
+                            "verdict": "feasible",
+                            "smallestRepair": "none",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "verdict": "feasible",
+                            "smallestRepair": "none",
+                        },
                     ],
                     "contradictions": [],
                 }

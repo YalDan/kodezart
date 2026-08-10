@@ -57,6 +57,7 @@ from tests.fakes import (
 
 INFEASIBLE_A = {
     "criterionId": "AC-1",
+    "verdict": "infeasible",
     "smallestRepair": "criterion_text",
     "refutation": (
         "the package's lint boundary forbids `app.api` from exporting `Foo` "
@@ -65,11 +66,12 @@ INFEASIBLE_A = {
 }
 UNVERIFIABLE_B = {
     "criterionId": "AC-2",
+    "verdict": "unverifiable",
     "smallestRepair": "environment_supply",
     "missingResource": "a PostgreSQL server reachable from the runner",
 }
-FEASIBLE_A = {"criterionId": "AC-1", "smallestRepair": "none"}
-FEASIBLE_B = {"criterionId": "AC-2", "smallestRepair": "none"}
+FEASIBLE_A = {"criterionId": "AC-1", "verdict": "feasible", "smallestRepair": "none"}
+FEASIBLE_B = {"criterionId": "AC-2", "verdict": "feasible", "smallestRepair": "none"}
 
 
 class ValidatorScriptExecutor:
@@ -479,8 +481,7 @@ async def test_an_unsatisfiable_conjunction_regenerates_then_halts() -> None:
     assert complete.criteria_validation is not None
     assert complete.criteria_validation.conjunction.satisfiable is False
     assert [
-        c.criterion_ids
-        for c in complete.criteria_validation.conjunction.contradictions
+        c.criterion_ids for c in complete.criteria_validation.conjunction.contradictions
     ] == [["AC-1", "AC-2"]]
 
 
@@ -587,6 +588,7 @@ def _criteria_round(scope_text: str) -> dict[str, object]:
 
 WRONG_BASELINE_FINDING = {
     "criterionId": "AC-1",
+    "verdict": "infeasible",
     "smallestRepair": "criterion_text",
     "refutation": (
         "the criterion measures scope with a bare `git diff` and names no base, "
@@ -674,8 +676,7 @@ async def test_the_drafter_is_told_which_base_the_lane_is_measured_against(
     assert "Never write `main` or `trunk` as the base" in drafter_prompts[0]
 
 
-async def test_the_refuter_reads_scope_against_the_same_base_the_drafter_was_given(
-) -> None:
+async def test_the_refuter_reads_scope_against_the_drafter_s_base() -> None:
     """One base per run, or the two surfaces grade different claims.
 
     The drafter is told which base to write criteria against and the refuter
@@ -736,6 +737,7 @@ PATTERN_5_BAD = (
 
 PATTERN_1_FINDING = {
     "criterionId": "AC-1",
+    "verdict": "infeasible",
     "smallestRepair": "criterion_text",
     "undeclaredSwitchArms": ["archived", "paused"],
     "refutation": (
@@ -745,6 +747,7 @@ PATTERN_1_FINDING = {
 }
 PATTERN_3_FINDING = {
     "criterionId": "AC-1",
+    "verdict": "infeasible",
     "smallestRepair": "criterion_text",
     "forbiddenClass": "execution_graded",
     "refutation": (
@@ -754,6 +757,7 @@ PATTERN_3_FINDING = {
 }
 PATTERN_5_FINDING = {
     "criterionId": "AC-1",
+    "verdict": "infeasible",
     "smallestRepair": "criterion_text",
     "undeclaredSwitchArms": ["rolled_back"],
     "refutation": (
@@ -880,6 +884,7 @@ async def test_a_literal_count_class_is_flagged_rather_than_regenerated() -> Non
                 "findings": [
                     {
                         "criterionId": "AC-1",
+                        "verdict": "feasible",
                         "smallestRepair": "none",
                         "forbiddenClass": "literal_count",
                     },

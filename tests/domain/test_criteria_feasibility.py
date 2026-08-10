@@ -1,9 +1,9 @@
-"""The feasibility sweep's arithmetic — verdicts computed from evidence.
+"""The sweep: reconciliation, the conjunction fold, and the persisted shape.
 
-Every classification case in this module is a row in a table.  That is a
-requirement, not a style: a sweep that needs a new branch per case has
-pattern-matched its examples instead of applying the fault-line test, and
-the second-domain rows below are what catches it.
+The refuter states each criterion's verdict, so nothing here asserts a
+verdict the harness computed.  What is asserted is what the harness still
+decides: which findings are accepted at all, which conflicts survive, and
+what the run persists and grades on.
 """
 
 import pytest
@@ -11,14 +11,13 @@ from pydantic import BaseModel, ValidationError
 
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
-    classify_finding,
     demands_regeneration,
     minimal_conflicting_subsets,
     reconcile,
     regeneration_targets,
     sweep,
 )
-from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
+from kodezart.domain.errors import CriteriaFanInError
 from kodezart.types.domain.criteria import (
     BaseDemonstration,
     Contradiction,
@@ -31,7 +30,6 @@ from kodezart.types.domain.criteria import (
     CriterionFlag,
     CriterionVerdict,
     DraftedCriterion,
-    ForbiddenCriterionClass,
     GeneratedCriterion,
     LimitArm,
     RepairKind,
@@ -47,6 +45,26 @@ def _criterion(id_: str, text: str) -> GeneratedCriterion:
     )
 
 
+def _feasible(id_: str, **evidence: object) -> CriterionFinding:
+    return CriterionFinding(
+        criterion_id=id_,
+        verdict=CriterionVerdict.feasible,
+        smallest_repair=RepairKind.none,
+        **evidence,
+    )
+
+
+def _swept(*findings: CriterionFinding) -> list:
+    """The verdicts the sweep records for *findings*, in dispatch order."""
+    criteria = tuple(
+        _criterion(finding.criterion_id, f"criterion {finding.criterion_id}")
+        for finding in findings
+    )
+    return list(
+        sweep(criteria, CriteriaValidationOutput(findings=list(findings))).verdicts
+    )
+
+
 # ---------------------------------------------------------------------------
 # The repair set is closed — waiting is not a member
 # (KOD-53/AC-12, KOD-66 item 1b)
@@ -54,236 +72,12 @@ def _criterion(id_: str, text: str) -> GeneratedCriterion:
 
 
 def test_repair_set_has_exactly_three_members() -> None:
-    """The gate ranges over one repair set and elapsed time is not in it.
-
-    An implementation that admits waiting as a third repair lets a lack
-    that clears with time read ``feasible`` here while the same case fails
-    against a runner in the loop — the gate and the loop returning
-    opposite readings on one criterion.
-    """
+    """The vocabulary the refuter is taught is closed; waiting is not in it."""
     assert {member.value for member in RepairKind} == {
         "none",
         "criterion_text",
         "environment_supply",
     }
-
-
-def test_a_lack_that_clears_with_time_does_not_reach_feasible() -> None:
-    """Waiting is the absence of a repair, so the lack is still a lack."""
-    finding = CriterionFinding(
-        criterion_id="AC-1",
-        smallest_repair=RepairKind.environment_supply,
-        missing_resource="the provider rate-limit window, which resets in 4 hours",
-    )
-    verdict = classify_finding(finding)
-    assert verdict.verdict is not CriterionVerdict.feasible
-    assert verdict.verdict is CriterionVerdict.unverifiable
-    assert verdict.missing_resource is not None
-    assert verdict.limit_arm is LimitArm.resource_absent
-
-
-# ---------------------------------------------------------------------------
-# Fault-line classification table — the six evidence classes and the
-# second-domain rows (KOD-53/AC-1 and KOD-53/AC-9, KOD-66 items 1a-1c)
-# ---------------------------------------------------------------------------
-
-_CLASSIFICATION_TABLE: list[
-    tuple[str, CriterionFinding, CriterionVerdict, LimitArm, list[CriterionFlag]]
-] = [
-    (
-        "class-1 structurally impossible: lint boundary forbids the export",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            refutation=(
-                "pyproject.toml lint boundary rules forbid every consumer from "
-                "importing the demanded export"
-            ),
-        ),
-        CriterionVerdict.infeasible,
-        LimitArm.not_a_limit,
-        [],
-    ),
-    (
-        "class-2 false premise: the named binding exists nowhere at base",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            refutation="no such binding is declared anywhere in the target repo",
-        ),
-        CriterionVerdict.infeasible,
-        LimitArm.not_a_limit,
-        [],
-    ),
-    (
-        "class-4 already satisfied at base",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.none,
-            base_demonstration=BaseDemonstration(
-                command="uv run pytest tests/api/v1/test_health.py -q",
-                satisfied_at_base=True,
-            ),
-        ),
-        CriterionVerdict.feasible,
-        LimitArm.not_a_limit,
-        [CriterionFlag.vacuous_at_base],
-    ),
-    (
-        "class-5 literal-count pinning",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.none,
-            pinned_literals=["src/kodezart/core/config.py", "exactly 3 occurrences"],
-        ),
-        CriterionVerdict.feasible,
-        LimitArm.not_a_limit,
-        [CriterionFlag.literal_pinning],
-    ),
-    (
-        "class-6 wrong-baseline scope criterion",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            refutation="measures scope against trunk rather than the recorded base",
-        ),
-        CriterionVerdict.infeasible,
-        LimitArm.not_a_limit,
-        [],
-    ),
-    (
-        "no repair needed",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.none,
-        ),
-        CriterionVerdict.feasible,
-        LimitArm.not_a_limit,
-        [],
-    ),
-    (
-        "premise holds, demonstration needs a database the runner lacks",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.environment_supply,
-            missing_resource="a PostgreSQL server reachable from the runner",
-        ),
-        CriterionVerdict.unverifiable,
-        LimitArm.resource_absent,
-        [],
-    ),
-    # --- second domain: a browser-automation lane, no code changed ---------
-    (
-        "second domain, criterion side: the demanded selector API does not exist",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            refutation="the vendored driver exposes no such selector API at base",
-        ),
-        CriterionVerdict.infeasible,
-        LimitArm.not_a_limit,
-        [],
-    ),
-    (
-        "second domain, environment side: no display server for the headed run",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.environment_supply,
-            missing_resource="an X display for the headed browser session",
-        ),
-        CriterionVerdict.unverifiable,
-        LimitArm.resource_absent,
-        [],
-    ),
-    # --- cost claims (item 1c) --------------------------------------------
-    (
-        "unmeasured cost assertion cannot stand as infeasible",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            cost_claim=CostClaim(
-                assertion="demonstrating this would take hours of compute",
-            ),
-        ),
-        CriterionVerdict.feasible,
-        LimitArm.not_a_limit,
-        [],
-    ),
-    (
-        "measured and affordable: the criterion text is untouched",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            cost_claim=CostClaim(
-                assertion="demonstrating this would take hours of compute",
-                measurement=CostMeasurement(observed="11s wall clock", affordable=True),
-            ),
-        ),
-        CriterionVerdict.feasible,
-        LimitArm.not_a_limit,
-        [],
-    ),
-    (
-        "a quota prevented the demonstration: environment side, resource named",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.environment_supply,
-            missing_resource="the daily API quota the demonstration consumes",
-        ),
-        CriterionVerdict.unverifiable,
-        LimitArm.resource_absent,
-        [],
-    ),
-    (
-        "the demonstration ran and is uneconomic: measured, so the other arm",
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.environment_supply,
-            missing_resource="a compute budget for the full sweep",
-            cost_claim=CostClaim(
-                assertion="the full sweep is uneconomic",
-                measurement=CostMeasurement(
-                    observed="9h of runner time",
-                    affordable=False,
-                ),
-            ),
-        ),
-        CriterionVerdict.unverifiable,
-        LimitArm.uneconomic,
-        [],
-    ),
-]
-
-
-@pytest.mark.parametrize(
-    ("label", "finding", "expected_verdict", "expected_arm", "expected_flags"),
-    _CLASSIFICATION_TABLE,
-    ids=[row[0] for row in _CLASSIFICATION_TABLE],
-)
-def test_classification_table(
-    label: str,
-    finding: CriterionFinding,
-    expected_verdict: CriterionVerdict,
-    expected_arm: LimitArm,
-    expected_flags: list[CriterionFlag],
-) -> None:
-    """Every row classifies from evidence alone — no per-case branch."""
-    verdict = classify_finding(finding)
-    assert verdict.verdict is expected_verdict, label
-    assert verdict.limit_arm is expected_arm, label
-    assert verdict.flags == expected_flags, label
-
-
-def test_unverifiable_is_never_coerced_to_a_pass() -> None:
-    """``unverifiable`` is its own outcome, not a degraded pass."""
-    finding = CriterionFinding(
-        criterion_id="AC-1",
-        smallest_repair=RepairKind.environment_supply,
-        missing_resource="a PostgreSQL server reachable from the runner",
-    )
-    verdict = classify_finding(finding)
-    assert verdict.verdict is CriterionVerdict.unverifiable
-    assert verdict.verdict is not CriterionVerdict.feasible
 
 
 # ---------------------------------------------------------------------------
@@ -300,53 +94,35 @@ def test_the_two_observation_classes_are_told_apart_by_their_own_evidence() -> N
     each is separated only by the evidence its own class supplies — a
     demonstration that ran at base, or the literals the criterion pins.
     """
-    shared = {"criterion_id": "AC-1", "smallest_repair": RepairKind.none}
-    satisfied_at_base = CriterionFinding(
-        **shared,
+    satisfied_at_base = _feasible(
+        "AC-1",
         base_demonstration=BaseDemonstration(
             command="rg -n 'class AppConfig' src/",
             satisfied_at_base=True,
         ),
     )
-    pinned = CriterionFinding(**shared, pinned_literals=["exactly 3 occurrences"])
-    bare = CriterionFinding(**shared)
+    pinned = _feasible("AC-2", pinned_literals=["exactly 3 occurrences"])
+    bare = _feasible("AC-3")
 
-    assert classify_finding(satisfied_at_base).flags == [CriterionFlag.vacuous_at_base]
-    assert classify_finding(pinned).flags == [CriterionFlag.literal_pinning]
-    assert classify_finding(bare).flags == []
+    assert [verdict.flags for verdict in _swept(satisfied_at_base, pinned, bare)] == [
+        [CriterionFlag.vacuous_at_base],
+        [CriterionFlag.literal_pinning],
+        [],
+    ]
 
 
 def test_a_demonstration_that_failed_at_base_flags_nothing() -> None:
     """Vacuity is the OBSERVED result, never the presence of a demonstration."""
-    verdict = classify_finding(
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.none,
+    (verdict,) = _swept(
+        _feasible(
+            "AC-1",
             base_demonstration=BaseDemonstration(
                 command="uv run pytest tests/chains/test_ralph_loop.py -q",
                 satisfied_at_base=False,
             ),
         )
     )
-    assert verdict.verdict is CriterionVerdict.feasible
     assert verdict.flags == []
-
-
-def test_satisfied_at_base_alongside_a_repair_demand_raises() -> None:
-    """A check that ran and passed cannot also ground a demand to repair it."""
-    with pytest.raises(UngroundedVerdictError) as excinfo:
-        classify_finding(
-            CriterionFinding(
-                criterion_id="AC-4",
-                smallest_repair=RepairKind.criterion_text,
-                refutation="the clause already holds at base before any work",
-                base_demonstration=BaseDemonstration(
-                    command="uv run pytest -q",
-                    satisfied_at_base=True,
-                ),
-            )
-        )
-    assert excinfo.value.criterion_id == "AC-4"
 
 
 def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> None:
@@ -370,15 +146,14 @@ def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> No
     )
     output = CriteriaValidationOutput(
         findings=[
-            CriterionFinding(
-                criterion_id="AC-1",
-                smallest_repair=RepairKind.none,
+            _feasible(
+                "AC-1",
                 base_demonstration=BaseDemonstration(
                     command="rg -n 'max_iterations' src/kodezart/core/config.py",
                     satisfied_at_base=True,
                 ),
             ),
-            CriterionFinding(criterion_id="AC-2", smallest_repair=RepairKind.none),
+            _feasible("AC-2"),
         ],
     )
 
@@ -409,13 +184,7 @@ def test_pinned_literals_downgrade_the_same_way() -> None:
     validation = sweep(
         criteria,
         CriteriaValidationOutput(
-            findings=[
-                CriterionFinding(
-                    criterion_id="AC-1",
-                    smallest_repair=RepairKind.none,
-                    pinned_literals=["4 public functions"],
-                )
-            ],
+            findings=[_feasible("AC-1", pinned_literals=["4 public functions"])],
         ),
     )
     artifact = build_artifact(criteria, validation)
@@ -430,108 +199,57 @@ def test_pinned_literals_downgrade_the_same_way() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _blocked(id_: str, cost_claim: CostClaim) -> CriterionFinding:
+    return CriterionFinding(
+        criterion_id=id_,
+        verdict=CriterionVerdict.unverifiable,
+        smallest_repair=RepairKind.environment_supply,
+        missing_resource="the sweep's compute allowance",
+        cost_claim=cost_claim,
+    )
+
+
 def test_a_limit_without_a_measurement_is_never_the_uneconomic_arm() -> None:
-    """The two fixtures differ in nothing but the presence of a measurement."""
-    shared = {
-        "criterion_id": "AC-1",
-        "smallest_repair": RepairKind.environment_supply,
-        "missing_resource": "the sweep's compute allowance",
-    }
-    quota_blocked = CriterionFinding(
-        **shared,
-        cost_claim=CostClaim(assertion="the demonstration did not complete"),
-    )
-    ran_and_priced = CriterionFinding(
-        **shared,
-        cost_claim=CostClaim(
-            assertion="the demonstration did not complete",
-            measurement=CostMeasurement(observed="9h of runner time", affordable=False),
-        ),
-    )
+    """The two fixtures differ in nothing but the presence of a measurement.
 
-    blocked = classify_finding(quota_blocked)
-    priced = classify_finding(ran_and_priced)
-
-    assert blocked.limit_arm is LimitArm.resource_absent
-    assert blocked.cost_measurement is None
-    assert blocked.missing_resource == "the sweep's compute allowance"
-
-    assert priced.limit_arm is LimitArm.uneconomic
-    assert priced.cost_measurement is not None
-
-
-# ---------------------------------------------------------------------------
-# Neither verdict is a resting place for an inconclusive refuter
-# (KOD-53/AC-1, KOD-66 item 3)
-# ---------------------------------------------------------------------------
-
-
-def test_criterion_side_repair_without_a_refutation_raises() -> None:
-    with pytest.raises(UngroundedVerdictError) as excinfo:
-        classify_finding(
-            CriterionFinding(
-                criterion_id="AC-3",
-                smallest_repair=RepairKind.criterion_text,
-            )
-        )
-    assert excinfo.value.criterion_id == "AC-3"
-
-
-def test_environment_side_repair_without_a_named_resource_raises() -> None:
-    with pytest.raises(UngroundedVerdictError) as excinfo:
-        classify_finding(
-            CriterionFinding(
-                criterion_id="AC-2",
-                smallest_repair=RepairKind.environment_supply,
-            )
-        )
-    assert excinfo.value.criterion_id == "AC-2"
-
-
-@pytest.mark.parametrize(
-    ("label", "finding"),
-    [
-        (
-            "a forbidden class with nothing behind it",
-            CriterionFinding(
-                criterion_id="AC-5",
-                smallest_repair=RepairKind.none,
-                forbidden_class=ForbiddenCriterionClass.ci_status,
-            ),
-        ),
-        (
-            "an undeclared arm with nothing behind it",
-            CriterionFinding(
-                criterion_id="AC-5",
-                smallest_repair=RepairKind.none,
-                undeclared_switch_arms=["archived"],
-            ),
-        ),
-    ],
-    ids=["forbidden-class", "undeclared-arm"],
-)
-def test_an_ungradeable_report_without_a_refutation_raises(
-    label: str,
-    finding: CriterionFinding,
-) -> None:
-    """The third arm of the same rule, asserted like its two siblings.
-
-    An ungradeable report is the strongest verdict this gate issues — it
-    halts a run before the loop — and it is reached without any repair
-    field being consulted, so a refuter that named a class and established
-    nothing would otherwise buy the whole halt for a word.
-
-    Both rows carry ``RepairKind.none`` deliberately.  A row demanding a
-    criterion-text repair raises for a second, older reason — the repair
-    has no refutation behind it — so it would keep passing with the
-    ungradeable guard deleted and would demonstrate that guard's absence
-    to nobody.  With no repair demanded, deleting the guard routes both
-    rows to ``_classify_no_repair`` and both return ``feasible``, which is
-    the removal this parametrisation is here to catch.
+    A demonstration a quota prevented from running produces no
+    measurement, so it cannot reach the arm that means "it ran and cost
+    too much" — the discriminator is the measurement, never the wording.
     """
-    with pytest.raises(UngroundedVerdictError) as excinfo:
-        classify_finding(finding)
-    assert excinfo.value.criterion_id == "AC-5", label
+    quota_blocked, ran_and_priced = _swept(
+        _blocked("AC-1", CostClaim(assertion="the demonstration did not complete")),
+        _blocked(
+            "AC-2",
+            CostClaim(
+                assertion="the demonstration did not complete",
+                measurement=CostMeasurement(
+                    observed="9h of runner time",
+                    affordable=False,
+                ),
+            ),
+        ),
+    )
+
+    assert quota_blocked.limit_arm is LimitArm.resource_absent
+    assert quota_blocked.cost_measurement is None
+    assert quota_blocked.missing_resource == "the sweep's compute allowance"
+
+    assert ran_and_priced.limit_arm is LimitArm.uneconomic
+    assert ran_and_priced.cost_measurement is not None
+
+
+def test_an_affordable_measurement_does_not_reach_the_uneconomic_arm() -> None:
+    """`uneconomic` means it ran and cost too much, not that it was priced."""
+    (verdict,) = _swept(
+        _blocked(
+            "AC-1",
+            CostClaim(
+                assertion="the full sweep is uneconomic",
+                measurement=CostMeasurement(observed="11s wall clock", affordable=True),
+            ),
+        )
+    )
+    assert verdict.limit_arm is LimitArm.resource_absent
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +281,7 @@ def _fault_line_pair() -> tuple[
         findings=[
             CriterionFinding(
                 criterion_id="AC-1",
+                verdict=CriterionVerdict.infeasible,
                 smallest_repair=RepairKind.criterion_text,
                 refutation=(
                     "the package's lint boundary forbids `app.api` from "
@@ -571,6 +290,7 @@ def _fault_line_pair() -> tuple[
             ),
             CriterionFinding(
                 criterion_id="AC-2",
+                verdict=CriterionVerdict.unverifiable,
                 smallest_repair=RepairKind.environment_supply,
                 missing_resource="a PostgreSQL server reachable from the runner",
             ),
@@ -613,13 +333,7 @@ def test_unverifiable_only_set_consumes_no_regeneration_round() -> None:
     """KOD-53/AC-8 — the bound is consumed by the infeasible arm alone."""
     criteria, output = _fault_line_pair()
     feasible_a = CriteriaValidationOutput(
-        findings=[
-            CriterionFinding(
-                criterion_id="AC-1",
-                smallest_repair=RepairKind.none,
-            ),
-            output.findings[1],
-        ],
+        findings=[_feasible("AC-1"), output.findings[1]],
     )
     validation = sweep(criteria, feasible_a)
 
@@ -654,9 +368,9 @@ def test_jointly_unsatisfiable_set_names_the_minimal_conflicting_subset() -> Non
     )
     output = CriteriaValidationOutput(
         findings=[
-            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none),
-            CriterionFinding(criterion_id="AC-2", smallest_repair=RepairKind.none),
-            CriterionFinding(criterion_id="AC-3", smallest_repair=RepairKind.none),
+            _feasible("AC-1"),
+            _feasible("AC-2"),
+            _feasible("AC-3"),
         ],
         contradictions=[
             Contradiction(
@@ -700,10 +414,7 @@ def test_two_disjoint_conflicts_are_both_carried_and_both_regenerated() -> None:
         ]
     )
     output = CriteriaValidationOutput(
-        findings=[
-            CriterionFinding(criterion_id=f"AC-{n}", smallest_repair=RepairKind.none)
-            for n in range(1, 7)
-        ],
+        findings=[_feasible(f"AC-{n}") for n in range(1, 7)],
         contradictions=[
             Contradiction(
                 criterion_ids=["AC-1", "AC-2"],
@@ -754,9 +465,7 @@ def test_a_superset_of_a_reported_conflict_is_dropped() -> None:
 def test_missing_finding_is_fail_closed_and_names_the_id() -> None:
     criteria = (_criterion("AC-1", "a"), _criterion("AC-2", "b"))
     output = CriteriaValidationOutput(
-        findings=[
-            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none)
-        ],
+        findings=[_feasible("AC-1")],
     )
     with pytest.raises(CriteriaFanInError) as excinfo:
         reconcile(criteria, output)
@@ -767,10 +476,7 @@ def test_missing_finding_is_fail_closed_and_names_the_id() -> None:
 def test_duplicate_finding_is_fail_closed_and_names_the_id() -> None:
     criteria = (_criterion("AC-1", "a"),)
     output = CriteriaValidationOutput(
-        findings=[
-            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none),
-            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none),
-        ],
+        findings=[_feasible("AC-1"), _feasible("AC-1")],
     )
     with pytest.raises(CriteriaFanInError) as excinfo:
         reconcile(criteria, output)
@@ -787,10 +493,7 @@ def test_an_undispatched_contradiction_id_is_fail_closed_and_named() -> None:
     """
     criteria = (_criterion("AC-1", "a"), _criterion("AC-2", "b"))
     output = CriteriaValidationOutput(
-        findings=[
-            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none),
-            CriterionFinding(criterion_id="AC-2", smallest_repair=RepairKind.none),
-        ],
+        findings=[_feasible("AC-1"), _feasible("AC-2")],
         contradictions=[
             Contradiction(
                 criterion_ids=["AC-1", "AC-99"],
@@ -807,10 +510,7 @@ def test_a_contradiction_over_dispatched_ids_reconciles() -> None:
     """The paired negative: a well-formed report is untouched by the guard."""
     criteria = (_criterion("AC-1", "a"), _criterion("AC-2", "b"))
     output = CriteriaValidationOutput(
-        findings=[
-            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none),
-            CriterionFinding(criterion_id="AC-2", smallest_repair=RepairKind.none),
-        ],
+        findings=[_feasible("AC-1"), _feasible("AC-2")],
         contradictions=[
             Contradiction(
                 criterion_ids=["AC-1", "AC-2"],
@@ -824,10 +524,7 @@ def test_a_contradiction_over_dispatched_ids_reconciles() -> None:
 def test_unknown_finding_id_is_fail_closed_and_named() -> None:
     criteria = (_criterion("AC-1", "a"),)
     output = CriteriaValidationOutput(
-        findings=[
-            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none),
-            CriterionFinding(criterion_id="AC-9", smallest_repair=RepairKind.none),
-        ],
+        findings=[_feasible("AC-1"), _feasible("AC-9")],
     )
     with pytest.raises(CriteriaFanInError) as excinfo:
         reconcile(criteria, output)
@@ -843,9 +540,7 @@ def test_unknown_finding_id_is_fail_closed_and_named() -> None:
 def test_ids_are_minted_in_emission_order() -> None:
     criteria = mint_criteria(
         [
-            DraftedCriterion(
-                text="a", criterion_class=CriterionClass.hard_gate
-            ),
+            DraftedCriterion(text="a", criterion_class=CriterionClass.hard_gate),
             DraftedCriterion(
                 text="b",
                 criterion_class=CriterionClass.soft_signal,
@@ -920,9 +615,7 @@ def test_a_payload_without_the_criterion_class_fails_validation(
     """
     with pytest.raises(ValidationError) as excinfo:
         record.model_validate(payload)
-    missing = [
-        error for error in excinfo.value.errors() if error["type"] == "missing"
-    ]
+    missing = [error for error in excinfo.value.errors() if error["type"] == "missing"]
     assert [error["loc"] for error in missing] == [("criterionClass",)]
 
 
@@ -936,9 +629,7 @@ def test_artifact_accepts_soft_signal_classification() -> None:
         ]
     )
     output = CriteriaValidationOutput(
-        findings=[
-            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none)
-        ],
+        findings=[_feasible("AC-1")],
     )
     artifact = build_artifact(criteria, sweep(criteria, output))
     restored = CriteriaArtifact.model_validate_json(

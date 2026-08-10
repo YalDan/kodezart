@@ -449,8 +449,16 @@ class FakeAgentExecutor:
                 session_id="fake",
                 structured_output={
                     "findings": [
-                        {"criterionId": "AC-1", "smallestRepair": "none"},
-                        {"criterionId": "AC-2", "smallestRepair": "none"},
+                        {
+                            "criterionId": "AC-1",
+                            "verdict": "feasible",
+                            "smallestRepair": "none",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "verdict": "feasible",
+                            "smallestRepair": "none",
+                        },
                     ],
                     "contradictions": [],
                 },
@@ -921,6 +929,7 @@ class ScriptedFakeExecutor:
                                 "findings": [
                                     {
                                         "criterionId": f"AC-{n}",
+                                        "verdict": "feasible",
                                         "smallestRepair": "none",
                                     }
                                     for n in (1, 2, 3)
@@ -994,9 +1003,7 @@ def make_criteria(
     criterion_class: CriterionClass = CriterionClass.hard_gate,
 ) -> list[ValidatedCriterion]:
     """The dispatch shape: minted, then carrying a sweep verdict."""
-    return as_validated(
-        make_minted_criteria(*texts, criterion_class=criterion_class)
-    )
+    return as_validated(make_minted_criteria(*texts, criterion_class=criterion_class))
 
 
 def make_dispatched_criteria() -> list[ValidatedCriterion]:

@@ -114,7 +114,9 @@ def _make_engine(
         git_base_url="https://github.com",
         git_remote="origin",
         git=(
-            git if git is not None else FakeGitService(
+            git
+            if git is not None
+            else FakeGitService(
                 remote_branch_shas={"main": "b" * 40},
             )
         ),
@@ -1095,10 +1097,12 @@ class _SequentialReviewExecutor:
                                 "findings": [
                                     {
                                         "criterionId": "AC-1",
+                                        "verdict": "feasible",
                                         "smallestRepair": "none",
                                     },
                                     {
                                         "criterionId": "AC-2",
+                                        "verdict": "feasible",
                                         "smallestRepair": "none",
                                     },
                                 ],

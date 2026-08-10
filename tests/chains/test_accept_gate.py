@@ -179,8 +179,7 @@ def test_an_ungraded_hard_gate_that_nobody_answered_does_not_reject() -> None:
     """
     criteria = [*_pair(), _ungraded("AC-3")]
     assert (
-        accept_verdict(criteria, _results(True, True))
-        is AcceptVerdict.ship_with_flags
+        accept_verdict(criteria, _results(True, True)) is AcceptVerdict.ship_with_flags
     )
 
 
@@ -574,8 +573,16 @@ class FlaggingEvaluator:
             yield _structured(
                 {
                     "findings": [
-                        {"criterionId": "AC-1", "smallestRepair": "none"},
-                        {"criterionId": "AC-2", "smallestRepair": "none"},
+                        {
+                            "criterionId": "AC-1",
+                            "verdict": "feasible",
+                            "smallestRepair": "none",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "verdict": "feasible",
+                            "smallestRepair": "none",
+                        },
                     ],
                     "contradictions": [],
                 }

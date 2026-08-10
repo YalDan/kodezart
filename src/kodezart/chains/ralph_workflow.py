@@ -644,7 +644,8 @@ class RalphWorkflowEngine:
     ) -> dict[str, object]:
         """Sweep the generated criteria for feasibility against the base ref.
 
-        The refuter reports evidence; :func:`sweep` computes the verdicts.
+        The refuter reports a verdict per criterion with its evidence;
+        :func:`sweep` reconciles the report against the dispatched ids.
         A set that still demands regeneration once the bound is spent halts
         the run here — before the loop, with the sweep as its report.
         """

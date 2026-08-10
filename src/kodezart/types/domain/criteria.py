@@ -11,12 +11,12 @@ LIES: an ``infeasible`` criterion is at fault in its own text and is
 routed to an amendment; an ``unverifiable`` criterion is untouched and
 names the resource whose absence blocks its demonstration.
 
-``RepairKind`` is the whole of that distinction, expressed as a closed
-set: the smallest repair that settles a criterion is either an edit to
-its own text or a supply to the environment, and there is no third
-member.  Elapsed time is not a repair — waiting is the absence of one —
-so a lack that clears by waiting is an absent resource here and clears
-empirically on a later grading rather than by a verdict issued now.
+``RepairKind`` is that distinction as a closed set, and it is the
+EVIDENCE the refuter files alongside its verdict: the smallest repair
+that settles a criterion is either an edit to its own text or a supply to
+the environment, and there is no third member.  Elapsed time is not a
+repair — waiting is the absence of one — so a lack that clears by waiting
+is an absent resource rather than a criterion nobody has to touch.
 """
 
 from enum import StrEnum
@@ -65,11 +65,12 @@ class CriterionVerdict(StrEnum):
 
 
 class RepairKind(StrEnum):
-    """The COMPLETE repair set the feasibility gate ranges over.
+    """The COMPLETE repair set a finding may name.
 
-    Exactly three members, and the count is a contract: an implementation
-    that admits a third repair — elapsed time, most temptingly — lets the
-    gate and the loop return opposite readings on one criterion.
+    Exactly three members, and the count is the point: a fourth — elapsed
+    time, most temptingly — would let a lack that clears by waiting be
+    filed as no lack at all, and the loop would then fail what the sweep
+    called settled.
     """
 
     none = "none"
@@ -113,10 +114,11 @@ class ForbiddenCriterionClass(StrEnum):
 
     The instruction is best-effort prose and the drafter is a model, so
     an instance reaching the sweep is expected rather than exceptional.
-    What must NOT happen is one reaching the loop: five of the six
-    describe criteria nothing in the run can grade, and a criterion the
-    loop cannot grade fails every iteration and burns the budget proving
-    a defect that existed before iteration one.
+    Five of the six describe criteria nothing in the run can grade, and
+    one of those reaching the loop fails every iteration and burns the
+    budget proving a defect that existed before iteration one — so the
+    refuter is instructed to return ``infeasible`` for them and the class
+    it named is recorded here.
 
     ``literal_count`` is the exception and is not a feasibility fault:
     the count can be hit.  It is brittle, so it is FLAGGED and forced to
@@ -164,7 +166,8 @@ class CostClaim(CamelCaseModel):
     """An assertion about the price of demonstrating a criterion.
 
     ``measurement`` is ``None`` when the cost was argued rather than
-    measured.  An argued cost may not produce ``infeasible``.
+    measured.  Only a measurement of a demonstration that ACTUALLY RAN
+    and proved unaffordable reaches the ``uneconomic`` limit arm.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
@@ -195,14 +198,17 @@ class DraftedCriterion(CamelCaseModel):
 class CriterionFinding(CamelCaseModel):
     """One refuter finding about one criterion — the validator's raw output.
 
-    The finding states the SMALLEST REPAIR that would settle the criterion
-    and the evidence supporting it.  The verdict is computed from this,
-    never asserted by the refuter.
+    The refuter states the ``verdict`` and the evidence behind it: the
+    smallest repair that would settle the criterion, and what it
+    established.  The evidence is carried because a human can audit
+    "supply a Postgres instance" and cannot audit "unverifiable" — not
+    because anything downstream re-derives the verdict from it.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
+    verdict: CriterionVerdict
     smallest_repair: RepairKind
     refutation: str | None = None
     missing_resource: str | None = None
@@ -230,7 +236,7 @@ class CriteriaValidationOutput(CamelCaseModel):
 
 
 class CriterionFeasibility(CamelCaseModel):
-    """The computed verdict for one criterion, with the evidence behind it."""
+    """One criterion's verdict as the run records it, with its evidence."""
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
