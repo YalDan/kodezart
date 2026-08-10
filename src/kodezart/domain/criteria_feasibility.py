@@ -13,7 +13,6 @@ from kodezart.domain.errors import CriteriaFanInError
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     Contradiction,
-    CostMeasurement,
     CriteriaValidation,
     CriteriaValidationOutput,
     CriterionFeasibility,
@@ -22,26 +21,7 @@ from kodezart.types.domain.criteria import (
     CriterionVerdict,
     ForbiddenCriterionClass,
     GeneratedCriterion,
-    LimitArm,
 )
-
-
-def _limit_arm(
-    verdict: CriterionVerdict,
-    measurement: CostMeasurement | None,
-) -> LimitArm:
-    """Which arm an ``unverifiable`` verdict falls on.
-
-    The discriminator is a measurement of a demonstration that ACTUALLY
-    RAN and proved unaffordable.  A demonstration a quota, a rate limit or
-    a budget prevented from running produces no measurement at all, so it
-    reaches the environment-side arm naming the resource.
-    """
-    if verdict is not CriterionVerdict.unverifiable:
-        return LimitArm.not_a_limit
-    if measurement is not None and not measurement.affordable:
-        return LimitArm.uneconomic
-    return LimitArm.resource_absent
 
 
 def _observed_flags(finding: CriterionFinding) -> list[CriterionFlag]:
@@ -71,7 +51,6 @@ def _feasibility(finding: CriterionFinding) -> CriterionFeasibility:
     return CriterionFeasibility(
         criterion_id=finding.criterion_id,
         verdict=finding.verdict,
-        limit_arm=_limit_arm(finding.verdict, measurement),
         refutation=finding.refutation,
         missing_resource=finding.missing_resource,
         cost_measurement=measurement,

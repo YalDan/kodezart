@@ -31,7 +31,6 @@ from kodezart.types.domain.criteria import (
     CriterionVerdict,
     DraftedCriterion,
     GeneratedCriterion,
-    LimitArm,
     RepairKind,
     ValidatedCriterion,
 )
@@ -374,7 +373,7 @@ def test_pinned_literals_downgrade_the_same_way() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Which arm a limit is — the discriminator is the measurement (KOD-53/AC-11)
+# A cost claim crosses the sweep verbatim, measured or argued
 # ---------------------------------------------------------------------------
 
 
@@ -388,12 +387,12 @@ def _blocked(id_: str, cost_claim: CostClaim) -> CriterionFinding:
     )
 
 
-def test_a_limit_without_a_measurement_is_never_the_uneconomic_arm() -> None:
+def test_an_argued_cost_reaches_the_record_carrying_no_measurement() -> None:
     """The two fixtures differ in nothing but the presence of a measurement.
 
     A demonstration a quota prevented from running produces no
-    measurement, so it cannot reach the arm that means "it ran and cost
-    too much" — the discriminator is the measurement, never the wording.
+    measurement, and the record says so rather than inventing one: what
+    a reader can tell apart is a priced demonstration from an argued one.
     """
     quota_blocked, ran_and_priced = _swept(
         _blocked("AC-1", CostClaim(assertion="the demonstration did not complete")),
@@ -409,26 +408,12 @@ def test_a_limit_without_a_measurement_is_never_the_uneconomic_arm() -> None:
         ),
     )
 
-    assert quota_blocked.limit_arm is LimitArm.resource_absent
     assert quota_blocked.cost_measurement is None
     assert quota_blocked.missing_resource == "the sweep's compute allowance"
 
-    assert ran_and_priced.limit_arm is LimitArm.uneconomic
     assert ran_and_priced.cost_measurement is not None
-
-
-def test_an_affordable_measurement_does_not_reach_the_uneconomic_arm() -> None:
-    """`uneconomic` means it ran and cost too much, not that it was priced."""
-    (verdict,) = _swept(
-        _blocked(
-            "AC-1",
-            CostClaim(
-                assertion="the full sweep is uneconomic",
-                measurement=CostMeasurement(observed="11s wall clock", affordable=True),
-            ),
-        )
-    )
-    assert verdict.limit_arm is LimitArm.resource_absent
+    assert ran_and_priced.cost_measurement.observed == "9h of runner time"
+    assert ran_and_priced.cost_measurement.affordable is False
 
 
 # ---------------------------------------------------------------------------
@@ -741,7 +726,7 @@ def test_artifact_round_trips_ids_verdicts_and_evidence() -> None:
     assert [c.id for c in restored.criteria] == ["AC-1", "AC-2"]
     assert restored.criteria[1].feasibility.missing_resource is not None
     assert '"missingResource"' in encoded
-    assert '"limitArm"' in encoded
+    assert '"limitArm"' not in encoded
 
 
 def test_criterion_class_round_trips_under_its_camel_case_alias() -> None:

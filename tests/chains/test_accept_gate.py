@@ -38,7 +38,6 @@ from kodezart.types.domain.criteria import (
     CriterionClass,
     CriterionFeasibility,
     CriterionVerdict,
-    LimitArm,
     ValidatedCriterion,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -93,7 +92,6 @@ def _ungraded(
         feasibility=CriterionFeasibility(
             criterion_id=identifier,
             verdict=CriterionVerdict.unverifiable,
-            limit_arm=LimitArm.resource_absent,
             missing_resource=resource,
         ),
     )

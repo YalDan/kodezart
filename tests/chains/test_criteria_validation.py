@@ -33,7 +33,6 @@ from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriterionClass,
     CriterionVerdict,
-    LimitArm,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.skills import SkillsSelection
@@ -382,7 +381,6 @@ async def test_unverifiable_only_set_neither_regenerates_nor_halts() -> None:
     assert sweep_event.regeneration_targets == []
     verdicts = {v.criterion_id: v for v in sweep_event.validation.verdicts}
     assert verdicts["AC-2"].verdict is CriterionVerdict.unverifiable
-    assert verdicts["AC-2"].limit_arm is LimitArm.resource_absent
     assert (
         verdicts["AC-2"].missing_resource
         == "a PostgreSQL server reachable from the runner"
@@ -432,7 +430,6 @@ async def test_the_loop_receives_the_verdict_and_the_named_resource() -> None:
     assert feasible.feasibility.verdict is CriterionVerdict.feasible
     assert feasible.feasibility.missing_resource is None
     assert unverifiable.feasibility.verdict is CriterionVerdict.unverifiable
-    assert unverifiable.feasibility.limit_arm is LimitArm.resource_absent
     assert (
         unverifiable.feasibility.missing_resource
         == "a PostgreSQL server reachable from the runner"

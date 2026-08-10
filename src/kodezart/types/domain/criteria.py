@@ -83,21 +83,6 @@ def _blank(value: str | None) -> bool:
     return value is None or not value.strip()
 
 
-class LimitArm(StrEnum):
-    """Which arm a limit falls on, discriminated by a measurement.
-
-    ``uneconomic`` requires a measurement of a demonstration that ACTUALLY
-    RAN and cost too much.  A quota, a rate limit or a budget that stopped
-    it running produces no measurement, so that case is always
-    ``resource_absent``: the discriminator is the measurement, never the
-    wording of the failure.
-    """
-
-    not_a_limit = "not_a_limit"
-    resource_absent = "resource_absent"
-    uneconomic = "uneconomic"
-
-
 class CriterionFlag(StrEnum):
     """An observation about a criterion that is NOT a feasibility fault.
 
@@ -173,8 +158,9 @@ class CostClaim(CamelCaseModel):
     """An assertion about the price of demonstrating a criterion.
 
     ``measurement`` is ``None`` when the cost was argued rather than
-    measured.  Only a measurement of a demonstration that ACTUALLY RAN
-    and proved unaffordable reaches the ``uneconomic`` limit arm.
+    measured, and the refuter is told an argued cost may not carry a
+    verdict.  Both cases cross the sweep verbatim; the distinction is
+    read by whoever audits the run, not by the harness.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
@@ -280,7 +266,6 @@ class CriterionFeasibility(CamelCaseModel):
 
     criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     verdict: CriterionVerdict
-    limit_arm: LimitArm = LimitArm.not_a_limit
     refutation: str | None = None
     missing_resource: str | None = None
     cost_measurement: CostMeasurement | None = None
