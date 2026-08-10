@@ -4,7 +4,10 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+from kodezart.adapters.host_skill_inventory import HostSkillInventory
+from kodezart.core.config import AppConfig
 from kodezart.core.errors import SkillPreflightError
+from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
     PromptProvider,
     SkillInventory,
@@ -64,3 +67,28 @@ def preflight_prompt_skill_loadouts(
             unresolvable=unresolvable,
             available=sorted(registered),
         )
+
+
+async def boot_skills(
+    *,
+    config: AppConfig,
+    prompts: PromptProvider,
+    log: BoundLogger,
+) -> SkillsSelection:
+    """Resolve the skills surface and hold it against the host and the sets.
+
+    Both preflights run before anything is served, because both failures
+    are silent at use time: the SDK filters an unprovisioned skill without
+    saying so, and a loadout naming an unregistered skill renders a prompt
+    that quietly loads nothing.
+    """
+    skills = config.skills_selection()
+    preflight_skills(skills, HostSkillInventory(home_dir=config.claude_home_dir))
+    preflight_prompt_skill_loadouts(skills, prompts)
+    await log.ainfo(
+        "skills_selection_resolved",
+        mode=skills.mode.value,
+        allowlist=list(skills.allowlist),
+        setting_sources=config.setting_sources,
+    )
+    return skills

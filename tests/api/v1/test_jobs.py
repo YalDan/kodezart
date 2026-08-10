@@ -1177,7 +1177,7 @@ def test_neither_service_nor_reader_branches_on_checkpointer_backend() -> None:
 # ---------------------------------------------------------------------------
 
 _ADAPTER_MODULE = "adapters/asyncio_job_queue.py"
-_WIRING_MODULE = "main.py"
+_WIRING_MODULE = "composition/jobs.py"
 
 
 def test_exactly_one_lane_queue_construction_site() -> None:

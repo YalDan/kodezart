@@ -6,48 +6,28 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
-from kodezart.adapters.git_artifact_persister import GitArtifactPersister
-from kodezart.adapters.git_branch_merger import GitBranchMerger
-from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
-from kodezart.adapters.github_api import GitHubAPIClient
-from kodezart.adapters.github_token_auth import GitHubTokenAuth
-from kodezart.adapters.host_skill_inventory import HostSkillInventory
-from kodezart.adapters.in_repo_prompt_registry import (
-    InRepoPromptRegistry,
-    default_sets_root,
-)
-from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
-from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
-from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
-from kodezart.chains.ticket_generation import TicketGenerationLoop
-from kodezart.composition.gating import outbound_scanners
-from kodezart.composition.passes import build_dispatch_passes
-from kodezart.composition.preflight import (
-    preflight_prompt_skill_loadouts,
-    preflight_skills,
-)
+from kodezart.composition.engine import build_workflow_engine
+from kodezart.composition.forge import build_forge_client
+from kodezart.composition.gating import build_outbound_gate
+from kodezart.composition.jobs import build_job_queue, build_job_service
+from kodezart.composition.passes import build_pass_scheduler
+from kodezart.composition.preflight import boot_skills
+from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.tracker import (
     boot_tracker,
 )
+from kodezart.composition.workspace import build_git_stack
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
-from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     TrackerPort,
 )
 from kodezart.services.agent_service import AgentService
-from kodezart.services.job_service import JobService
-from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 
 
 @asynccontextmanager
@@ -62,24 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     configure_logging(log_level=config.log_level, pretty=config.log_pretty)
     log: BoundLogger = get_logger(__name__)
 
-    auth = GitHubTokenAuth(token=config.github_token) if config.github_token else None
-    github_api: GitHubAPIClient | None = (
-        GitHubAPIClient(
-            token=config.github_token,
-            base_url=config.forge_api_base_url,
-            ci_poll_interval_seconds=config.ci_poll_interval_seconds,
-            ci_poll_max_attempts=config.ci_poll_max_attempts,
-            ci_no_checks_grace_polls=config.ci_no_checks_grace_polls,
-            ci_no_workflows_grace_polls=config.ci_no_workflows_grace_polls,
-            ci_grace_poll_interval_seconds=config.ci_grace_poll_interval_seconds,
-            ci_ref_not_found_grace_polls=config.ci_ref_not_found_grace_polls,
-            timeout_seconds=config.forge_api_timeout_seconds,
-            max_retries=config.forge_api_max_retries,
-            retry_backoff_factor=config.forge_api_retry_backoff_factor,
-        )
-        if config.github_token is not None
-        else None
-    )
+    github_api = build_forge_client(config=config)
     declared = (
         load_operation_config(Path(config.operation_config))
         if config.operation_config is not None
@@ -99,188 +62,76 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         None if dialled is None else dialled.caller
     )
     app.state.tracker = tracker
-    prompts = InRepoPromptRegistry.load(
-        sets_root=default_sets_root(),
-        default_set=config.prompt_set,
-        set_overrides=config.prompt_set_overrides,
-        template_overrides=config.prompt_template_overrides,
-        bindings=bindings_for(operation),
-    )
     app.state.operation_config = operation
-    await log.ainfo(
-        "prompt_resolution_table",
-        table={key.value: source for key, source in prompts.resolution_table().items()},
-    )
-    declared_engines = prompts.declared_engines()
-    if config.model not in declared_engines:
-        await log.ainfo(
-            "prompt_set_engine_mismatch",
-            prompt_set=config.prompt_set,
-            declared_engines=list(declared_engines),
-            model=config.model,
-        )
 
-    skills = config.skills_selection()
-    preflight_skills(skills, HostSkillInventory(home_dir=config.claude_home_dir))
-    preflight_prompt_skill_loadouts(skills, prompts)
+    prompts = await boot_prompts(config=config, operation=operation, log=log)
+    skills = await boot_skills(config=config, prompts=prompts, log=log)
     app.state.skills = skills
-    await log.ainfo(
-        "skills_selection_resolved",
-        mode=skills.mode.value,
-        allowlist=list(skills.allowlist),
-        setting_sources=config.setting_sources,
-    )
 
-    git = SubprocessGitService(remote=config.git_remote, auth=auth)
     executor = ClaudeClientExecutor(
         model=config.model,
         setting_sources=config.setting_sources,
     )
-    scanners, fragment_digest = outbound_scanners(
+    gate = await build_outbound_gate(
         config=config,
         operation=operation,
         executor=executor,
         prompts=prompts,
         skills=skills,
+        log=log,
     )
-    await log.ainfo(
-        "outbound_content_scanners_resolved",
-        scanners=[type(scanner).__name__ for scanner in scanners],
-        judgment_scanner_enabled=config.agentic_content_scanner_enabled,
-    )
-    gate = PatternOutboundContentGate(
-        scanners=scanners,
-        verdicts=config.deny_pattern_verdicts,
-        fragment_digest=fragment_digest,
-    )
-
-    cache = LocalBareRepoCache(git=git, base_dir=config.clone_cache_dir)
-    workspace = GitWorktreeProvider(
-        git=git,
-        cache=cache,
-        committer_name=config.git_committer_name,
-        committer_email=config.git_committer_email,
-    )
-    persister = GitChangePersister(
-        git=git,
-        committer_name=config.git_committer_name,
-        committer_email=config.git_committer_email,
-        remote=config.git_remote,
-        prompts=prompts,
-        gate=gate,
-    )
-    merger = GitBranchMerger(git=git, workspace=workspace, remote=config.git_remote)
-    artifact_persister = GitArtifactPersister(
-        git=git,
-        workspace=workspace,
-        committer_name=config.git_committer_name,
-        committer_email=config.git_committer_email,
-    )
+    stack = build_git_stack(config=config, prompts=prompts, gate=gate)
 
     agent_service = AgentService(
         executor=executor,
-        workspace=workspace,
-        persister=persister,
+        workspace=stack.workspace,
+        persister=stack.persister,
         git_base_url=config.git_base_url,
     )
     app.state.agent_service = agent_service
 
     async with make_checkpointer(config.checkpoint_url) as checkpointer:
         app.state.checkpointer = checkpointer
-        ralph_loop = RalphLoop(
-            service=agent_service,
-            max_iterations=config.max_iterations,
-            plateau_window=config.loop_plateau_window,
-            git=git,
-            cache=cache,
-            prompts=prompts,
-            skills=skills,
-            checkpointer=checkpointer,
-            retry_max_attempts=config.retry_max_attempts,
-            retry_initial_interval=config.retry_initial_interval,
-        )
-        ticket_generator = TicketGenerationLoop(
-            service=agent_service,
-            workspace=workspace,
-            prompts=prompts,
-            skills=skills,
-            max_reviews=config.max_reviews,
-            checkpointer=checkpointer,
-            retry_max_attempts=config.retry_max_attempts,
-            retry_initial_interval=config.retry_initial_interval,
-        )
-        workflow_engine = RalphWorkflowEngine(
-            service=agent_service,
-            quality_gate=ralph_loop,
-            ticket_generator=ticket_generator,
-            merger=merger,
-            git_base_url=config.git_base_url,
-            git_remote=config.git_remote,
-            git=git,
-            cache=cache,
+        workflow_engine = build_workflow_engine(
+            config=config,
+            agent_service=agent_service,
+            git=stack.git,
+            cache=stack.cache,
+            workspace=stack.workspace,
+            merger=stack.merger,
+            artifact_persister=stack.artifact_persister,
             prompts=prompts,
             skills=skills,
             gate=gate,
-            visibility_resolver=github_api,
+            github_api=github_api,
             checkpointer=checkpointer,
-            retry_max_attempts=config.retry_max_attempts,
-            retry_initial_interval=config.retry_initial_interval,
-            pr_creator=github_api,
-            ci_monitor=github_api,
-            max_fix_rounds=config.max_fix_rounds,
-            artifact_persister=artifact_persister,
         )
         app.state.workflow_engine = workflow_engine
 
-        job_queue = AsyncioJobQueue(
-            engine=workflow_engine,
-            max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
-            max_depth_per_lane=config.queue_max_depth_per_lane,
-            terminal_retention_seconds=config.queue_terminal_retention_seconds,
-            event_buffer_retention_seconds=(
-                config.queue_event_buffer_retention_seconds
-            ),
-            event_buffer_capacity=config.queue_event_buffer_capacity,
+        job_queue = build_job_queue(
+            config=config,
+            workflow_engine=workflow_engine,
         )
         app.state.job_queue = job_queue
         await job_queue.start()
 
-        run_state_reader = (
-            LangGraphRunStateReader(checkpointer=checkpointer)
-            if checkpointer is not None
-            else None
-        )
-        app.state.job_service = JobService(
+        app.state.job_service = build_job_service(
             registry=job_queue,
-            run_state_reader=run_state_reader,
+            checkpointer=checkpointer,
         )
 
-        # Cadence is scheduler configuration and nothing else. Three
-        # states, none silent: no tracker, or no delivery probe to answer
-        # "is this issue already delivered?", and the passes do not run —
-        # named, never inferred from an empty schedule.
-        scheduled: list[ScheduledPass] = []
-        if tracker is not None and operation is not None and github_api is not None:
-            scheduled = build_dispatch_passes(
-                config=config,
-                operation=operation,
-                tracker=tracker,
-                delivery=github_api,
-                queue=job_queue,
-                registry=job_queue,
-                gate=gate,
-                git=git,
-                cache=cache,
-                integration_workspace_dir=config.integration_workspace_dir,
-            )
-        else:
-            await log.ainfo(
-                "scheduled_passes_not_wired",
-                tracker_present=tracker is not None,
-                operation_config_present=operation is not None,
-                delivery_probe_present=github_api is not None,
-            )
-        scheduler = PassScheduler(passes=scheduled)
+        scheduler = await build_pass_scheduler(
+            config=config,
+            operation=operation,
+            tracker=tracker,
+            github_api=github_api,
+            queue=job_queue,
+            registry=job_queue,
+            gate=gate,
+            git=stack.git,
+            cache=stack.cache,
+            log=log,
+        )
         app.state.pass_scheduler = scheduler
         await scheduler.start()
 

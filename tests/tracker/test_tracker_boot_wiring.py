@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.composition.prompts import boot_prompts
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     TrackerBootValidationError,
@@ -171,9 +172,9 @@ def _call_name(node: ast.expr) -> str:
     return ""
 
 
-def _first_call_line(name: str) -> int:
-    """Where *name* is first called inside the shipped lifespan."""
-    tree = ast.parse(textwrap.dedent(inspect.getsource(lifespan)))
+def _first_call_line(name: str, *, inside: object = lifespan) -> int:
+    """Where *name* is first called inside *inside*, the shipped function."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(inside)))
     return next(
         node.lineno
         for node in ast.walk(tree)
@@ -190,8 +191,14 @@ def test_the_prompt_registry_is_bound_after_the_tracker_is_reconciled() -> None:
     boot and off every test's path. So this reads the composition root
     itself. Moving the dial back below the registry load reddens it, which
     is the only thing that would.
+
+    The registry load now lives in ``boot_prompts``, so the ordering is
+    read in two hops rather than one: the root dials before it loads, and
+    the load is what binds. Asserting only the first hop would let the
+    binding move out from under the ordering it depends on.
     """
-    assert _first_call_line("boot_tracker") < _first_call_line("bindings_for")
+    assert _first_call_line("boot_tracker") < _first_call_line("boot_prompts")
+    assert _first_call_line("bindings_for", inside=boot_prompts) > 0
 
 
 async def test_boot_wires_the_tracker_and_owns_its_session_lifetime(

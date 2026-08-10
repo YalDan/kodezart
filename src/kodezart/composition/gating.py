@@ -7,9 +7,11 @@ than defines.
 from pathlib import Path
 
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
+from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import ContentScannerBootError
+from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
     AgentExecutor,
     ContentScanner,
@@ -63,3 +65,38 @@ def outbound_scanners(
         ),
     )
     return scanners, content_digest(private_surface)
+
+
+async def build_outbound_gate(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    executor: AgentExecutor,
+    prompts: PromptProvider,
+    skills: SkillsSelection,
+    log: BoundLogger,
+) -> PatternOutboundContentGate:
+    """The gate every outbound path runs through, and the record of its shape.
+
+    Which scanners answered is logged at boot rather than inferred from a
+    verdict later: a gate running one scanner and a gate running two are
+    indistinguishable from the outside until the one that would have caught
+    something is the one that is missing.
+    """
+    scanners, fragment_digest = outbound_scanners(
+        config=config,
+        operation=operation,
+        executor=executor,
+        prompts=prompts,
+        skills=skills,
+    )
+    await log.ainfo(
+        "outbound_content_scanners_resolved",
+        scanners=[type(scanner).__name__ for scanner in scanners],
+        judgment_scanner_enabled=config.agentic_content_scanner_enabled,
+    )
+    return PatternOutboundContentGate(
+        scanners=scanners,
+        verdicts=config.deny_pattern_verdicts,
+        fragment_digest=fragment_digest,
+    )
