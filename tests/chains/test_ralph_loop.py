@@ -784,7 +784,7 @@ async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch()
 
 
 # ---------------------------------------------------------------------------
-# AC-31 / AC-35 — the digest's base is the lane's recorded base
+# KOD-53/AC-22 and KOD-53/AC-26 — the digest's base is the recorded base
 # ---------------------------------------------------------------------------
 
 _STACKED = BaseSpec(
@@ -826,7 +826,7 @@ def _one_passing_evaluation() -> FakeAgentExecutor:
 
 
 async def test_the_digest_of_a_stacked_lane_uses_its_recorded_base() -> None:
-    """AC-31: the stacked arm of the same selection the trunk test pins.
+    """KOD-53/AC-22: the stacked arm of the same selection the trunk test pins.
 
     Grading the digest against trunk is the defect KOD-36 reports: every
     line the lane inherited from its blocker enters the evaluator's
@@ -844,7 +844,7 @@ async def test_the_digest_of_a_stacked_lane_uses_its_recorded_base() -> None:
 
 
 async def test_the_first_iteration_is_dispatched_with_the_recorded_base() -> None:
-    """AC-35: ``stream_workflow``'s own ``"main"`` default is never consulted.
+    """KOD-53/AC-26: ``stream_workflow``'s ``"main"`` default is never consulted.
 
     The seam where the substitution would happen is the dispatch itself:
     the loop names the base on every call, so the literal default on
@@ -911,7 +911,7 @@ async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> N
 
 
 async def test_the_evaluation_prompt_states_each_criterion_verdict() -> None:
-    """AC-12: an unverifiable criterion is not dispatched as a plain one.
+    """KOD-53/AC-8: an unverifiable criterion is not dispatched as a plain one.
 
     The rendered prompt names the verdict and the resource whose absence
     blocks the demonstration, so the evaluator cannot read a deferred

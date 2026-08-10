@@ -1,4 +1,9 @@
-"""Grading is keyed by id and reconciled against the dispatched set."""
+"""Grading is keyed by id and reconciled against the dispatched set.
+
+KOD-53/AC-19 (a partial return grades fail-closed over the dispatched
+denominator) and KOD-53/AC-20 (an echoed-text mutation changes neither the
+keying nor the text carried forward) are demonstrated here.
+"""
 
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.criteria_grading import MISSING_RESULT_REASONING, grade_iteration
@@ -37,7 +42,7 @@ def _criteria(count: int) -> list[ValidatedCriterion]:
 def test_partial_return_grades_the_missing_ids_failed_and_keeps_the_denominator() -> (
     None
 ):
-    """3 of 10 dispatched ids answered → 7 fail, denominator stays 10."""
+    """KOD-53/AC-19 — 3 of 10 ids answered: 7 fail, denominator stays 10."""
     criteria = _criteria(10)
     output = AcceptanceCriteriaOutput(
         criteria_results=[
@@ -84,7 +89,7 @@ def test_a_full_pass_over_a_partial_return_is_not_acceptance() -> None:
 
 
 def test_echoed_text_mutation_changes_neither_keying_nor_reinjected_text() -> None:
-    """Whitespace and backslash mutations in the echo are inert."""
+    """KOD-53/AC-20 — whitespace and backslash mutations in the echo are inert."""
     criteria = as_validated(
         mint_criteria(
             [

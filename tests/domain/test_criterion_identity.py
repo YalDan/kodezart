@@ -1,5 +1,8 @@
 """Criterion identity is a type, not a string that happens to look like one.
 
+KOD-53/AC-5's identity half — the stable ``AC-n`` the persisted shape and
+every downstream consumer key off.
+
 The rule these checks hold is KOD-66 R4's: a criterion identity must not
 be assignable from an arbitrary ``str``.  A constrained alias would
 validate the format and still be ``str`` to the type checker, so a union

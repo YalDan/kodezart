@@ -229,7 +229,7 @@ async def _run(
 
 
 # ---------------------------------------------------------------------------
-# The bound is an AppConfig field, not a literal
+# The bound is an AppConfig field, not a literal (KOD-53/AC-3)
 # ---------------------------------------------------------------------------
 
 
@@ -248,7 +248,8 @@ def test_regeneration_bound_reads_from_the_environment(
 
 
 # ---------------------------------------------------------------------------
-# The permanent-infeasibility halt
+# The permanent-infeasibility halt — the bound spent, then the terminal
+# (KOD-53/AC-3 and KOD-53/AC-4)
 # ---------------------------------------------------------------------------
 
 
@@ -352,7 +353,7 @@ async def test_the_refutation_is_inlined_into_the_regeneration_prompt() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The fault line, end to end (KOD-66 item 1a-1b, bound accounting)
+# The fault line, end to end (KOD-53/AC-7 and KOD-53/AC-8)
 # ---------------------------------------------------------------------------
 
 
@@ -408,7 +409,7 @@ async def test_the_unverifiable_criterion_reaches_the_loop_byte_identical() -> N
 
 
 async def test_the_loop_receives_the_verdict_and_the_named_resource() -> None:
-    """AC-12's second half: the criterion arrives CARRYING its verdict.
+    """KOD-53/AC-8's second half: the criterion arrives CARRYING its verdict.
 
     An ``unverifiable`` criterion that reaches the loop indistinguishable
     from a ``feasible`` one is the collapse the three-state vocabulary
@@ -438,7 +439,7 @@ async def test_the_loop_receives_the_verdict_and_the_named_resource() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Conjunction failure routes like an infeasible criterion
+# Conjunction failure routes like an infeasible criterion (KOD-53/AC-2)
 # ---------------------------------------------------------------------------
 
 
@@ -481,7 +482,7 @@ async def test_an_unsatisfiable_conjunction_regenerates_then_halts() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Fan-in is fail-closed at the graph seam too
+# Fan-in is fail-closed at the graph seam too (KOD-53/AC-6)
 # ---------------------------------------------------------------------------
 
 
@@ -507,7 +508,7 @@ async def test_a_duplicate_validator_finding_fails_the_run_closed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The persisted artifact carries what the sweep found
+# The persisted artifact carries what the sweep found (KOD-53/AC-5)
 # ---------------------------------------------------------------------------
 
 
@@ -533,7 +534,11 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
 
 
 # ---------------------------------------------------------------------------
-# AC-32 — a scope criterion that names no base never reaches the loop
+# KOD-53/AC-23, harness half — a scope criterion that names no base never
+# reaches the loop.  The criterion's other half asserts a property of the
+# criteria a MODEL generates; KOD-36 R3 rules that unrunnable here and
+# forbids substituting a rendered-prompt assertion for it, so the criterion
+# stays UNMET (KOD-53 R5) and nothing below claims otherwise.
 # ---------------------------------------------------------------------------
 
 
@@ -689,7 +694,10 @@ async def test_the_refuter_reads_scope_against_the_same_base_the_drafter_was_giv
 
 
 # ---------------------------------------------------------------------------
-# AC-13 / AC-17 — the historical defect patterns, as behaviour, not as prose
+# KOD-53/AC-13 — the historical defect patterns, as behaviour, not as prose.
+# The criterion is UNMET (KOD-69 R2, KOD-53 R5): its subject is the criteria a
+# MODEL generates and this suite makes no model call, so what follows is an
+# honest report of an unverified claim rather than a demonstration of it.
 # ---------------------------------------------------------------------------
 
 # Each fixture is a ticket abstracted from a run that induced the pattern,
@@ -769,7 +777,7 @@ async def test_no_forbidden_class_or_non_domain_arm_reaches_the_loop(
     finding: dict[str, object],
     banned_arms: tuple[str, ...],
 ) -> None:
-    """AC-13: the fixture ticket's own run yields criteria that comply.
+    """KOD-53/AC-13: the fixture ticket's own run yields criteria that comply.
 
     The ticket is the run's prompt and the ticket generator's summary, so
     the drafter is rendered with it and the criteria under assertion are
@@ -824,12 +832,12 @@ async def test_no_forbidden_class_or_non_domain_arm_reaches_the_loop(
 
 
 def test_the_pattern_5_fixture_still_names_an_arm_its_type_lacks() -> None:
-    """AC-13's premise is read off the production type, never assumed.
+    """KOD-53/AC-13's premise is read off the production type, never assumed.
 
     ``PATTERN_5_BAD`` is a Pattern-5 instance only while ``rolled_back`` is
     absent from ``WorkflowOutcome`` and the arms it pairs that with are
     present.  Appending ``rolled_back`` to the enum would quietly turn the
-    fixture into a satisfiable criterion and leave AC-13 asserted over
+    fixture into a satisfiable criterion and leave KOD-53/AC-13 asserted over
     nothing, so the enum is consulted rather than trusted.
     """
     declared = {member.value for member in WorkflowOutcome}

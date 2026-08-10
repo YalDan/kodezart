@@ -1,5 +1,6 @@
 """The criteria oracle is byte-stable across every surface that reads it.
 
+KOD-53/AC-18 — the two-iteration integration run over all four surfaces.
 KOD-11's reproduction compares four sources: the ``workflow_criteria``
 event, the persisted ``.kodezart/criteria.json``, and each iteration's
 evaluation report.  This runs a real two-iteration ralph loop under the
@@ -244,7 +245,7 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
 
 
 async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
-    """Re-injection renders the harness's own criterion, looked up by id."""
+    """KOD-53/AC-20 — re-injection renders the harness's own text, by id."""
     executor = MutatingEchoExecutor()
     service = AgentService(
         executor=executor,

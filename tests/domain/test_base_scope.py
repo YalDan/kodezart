@@ -58,12 +58,12 @@ def _context(spec: BaseSpec) -> ExecutionContext:
 
 
 # ---------------------------------------------------------------------------
-# AC-31 — selection, stacked and non-stacked
+# KOD-53/AC-22 — base-ref selection, stacked and non-stacked
 # ---------------------------------------------------------------------------
 
 
 def test_a_trunk_fired_lane_computes_against_trunk() -> None:
-    """AC-26: the non-stacked case is not a special case, it is the trunk arm."""
+    """KOD-53/AC-22: the non-stacked case is not a special case, it is the trunk arm."""
     assert scope_base(trunk_base("main"), None) == "main"
     assert _context(trunk_base("main")).base_branch == "main"
 
@@ -81,7 +81,7 @@ def test_a_combined_base_is_read_exactly_like_a_single_one() -> None:
 
 
 def test_the_context_holds_no_base_of_its_own() -> None:
-    """AC-35: one place a base enters a run, so two surfaces cannot disagree.
+    """KOD-53/AC-26: one place a base enters a run, so two surfaces cannot disagree.
 
     ``base_branch`` is a property over the recorded base, not a field, so
     there is no constructor argument that could set it to something the
@@ -160,7 +160,7 @@ def test_the_ref_parsing_detector_fires_on_the_thing_it_is_looking_for() -> None
 
 
 def test_no_scope_surface_parses_a_branch_name_to_obtain_a_base() -> None:
-    """AC-35: the name is not the record — nothing derives a base from one.
+    """KOD-53/AC-26: the name is not the record — nothing derives a base from one.
 
     The list is the scope surfaces themselves, not only the modules that
     model a base: the changeset digest and the outer review diff are
@@ -186,7 +186,7 @@ def test_no_scope_surface_parses_a_branch_name_to_obtain_a_base() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-36 — a stale base is not a baseline
+# KOD-53/AC-27 — a stale base is not a baseline
 # ---------------------------------------------------------------------------
 
 

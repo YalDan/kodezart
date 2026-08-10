@@ -3168,7 +3168,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
 
 
 async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -> None:
-    """AC-31: the review diff's base is the lane's recorded base.
+    """KOD-53/AC-22: the review diff's base is the lane's recorded base.
 
     The stacked twin of the test above. A review taken against trunk sees
     everything the lane inherited from its blocker as this lane's own
@@ -3248,7 +3248,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
 
 
 async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
-    """AC-36: the refusal is the run's, not just the helper's.
+    """KOD-53/AC-27: the refusal is the run's, not just the helper's.
 
     ``scope_base`` refusing in isolation leaves the claim that MATTERS
     unpinned — that nothing is graded. This asserts the absence: no scope

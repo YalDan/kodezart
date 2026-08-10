@@ -219,7 +219,7 @@ async def _changed_against(bare: Path, base: str, head: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# AC-4 / AC-28 / AC-30 — a 3-level stack, run end to end
+# KOD-53/AC-21 — a 3-level stack, run end to end
 # ---------------------------------------------------------------------------
 
 
@@ -332,7 +332,7 @@ async def test_grading_the_same_stack_against_trunk_convicts_the_inheritance(
 
 
 # ---------------------------------------------------------------------------
-# AC-34 — the combined base: every input's files survive, none is flagged
+# KOD-53/AC-25 — the combined base: every input's files survive, none is flagged
 # ---------------------------------------------------------------------------
 
 
@@ -396,7 +396,7 @@ async def test_a_combined_base_keeps_every_input_intact(
 
 
 # ---------------------------------------------------------------------------
-# AC-29 / AC-33 — the base used is emitted, and AC-26's regression guard
+# KOD-53/AC-24 — the base used is emitted; and KOD-53/AC-22's regression guard
 # ---------------------------------------------------------------------------
 
 
@@ -438,7 +438,7 @@ async def test_a_trunk_fired_ticket_still_computes_against_trunk(
     trunk_repo: tuple[Path, Path],
     tmp_path: Path,
 ) -> None:
-    """AC-26: no regression for a lane with no blockers."""
+    """KOD-53/AC-22: no regression for a lane with no blockers."""
     repo, _bare = trunk_repo
 
     events = await _run(_engine(repo, tmp_path), repo, trunk_base("main"))

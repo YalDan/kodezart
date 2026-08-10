@@ -112,7 +112,7 @@ def _results(*passes: bool) -> list[CriterionResult]:
 
 
 # ---------------------------------------------------------------------------
-# AC-19 — the truth table
+# KOD-53/AC-15 — the truth table
 # ---------------------------------------------------------------------------
 
 
@@ -218,7 +218,7 @@ def test_only_a_rejection_fails_the_gate() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-20 — the schema
+# KOD-53/AC-16 — the schema: the alias, and the verdict on the wire
 # ---------------------------------------------------------------------------
 
 
@@ -256,7 +256,15 @@ def test_sherlock_flags_round_trip_through_the_camel_case_alias() -> None:
 
 
 def test_the_verdict_rides_the_iteration_event() -> None:
-    """Three-state on the wire, and the wire name is the verdict's own."""
+    """A schema claim only: the event carries a verdict, under its own name.
+
+    The verdict here is the one this test supplied, so nothing below is
+    evidence that the loop emits the verdict it computed — that is
+    asserted over runs, in the routing section and in
+    ``tests/chains/test_ralph_loop.py``.  What this fixes is the wire: the
+    field is present, its name is ``verdict``, and a three-state member
+    serialises to its own value rather than to a boolean.
+    """
     event = WorkflowIterationEvent(
         iteration=1,
         branch="kodezart/x-12345678-ralph-abcdef01",
@@ -313,7 +321,7 @@ def test_a_flag_without_a_criterion_keeps_its_line_unattributed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-21 — routing per state, through the graph
+# KOD-53/AC-15 (second half) — routing per state, through the graph
 # ---------------------------------------------------------------------------
 
 
@@ -405,7 +413,7 @@ _HARD_FAILURE = AcceptanceCriteriaOutput(
 
 
 async def test_a_soft_signal_only_failure_reaches_open_pr_with_its_flags() -> None:
-    """The run ships, and the thing that failed is legible in the PR body."""
+    """KOD-53/AC-17 — the run ships, and what failed is legible in the PR body."""
     pr_creator = FakePRCreator()
     events = await _run(_engine(evaluation=_SOFT_ONLY_FAILURE, pr_creator=pr_creator))
 

@@ -1353,7 +1353,7 @@ class BaseRecordingEngine:
 
 
 async def test_a_recorded_base_is_dispatched_and_the_trunk_default_is_not() -> None:
-    """AC-35: the request's ``"main"`` default never becomes the scope baseline.
+    """KOD-53/AC-26: the request's ``"main"`` default is never the baseline.
 
     The request leaves ``baseBranch`` at its default and carries a
     recorded base; what reaches the engine is the recorded base, and the
@@ -1387,7 +1387,7 @@ async def test_a_recorded_base_is_dispatched_and_the_trunk_default_is_not() -> N
 
 
 async def test_a_request_with_no_recorded_base_is_a_trunk_fired_lane() -> None:
-    """AC-26: the default IS the baseline exactly when there are no blockers."""
+    """KOD-53/AC-22: the default IS the baseline exactly when there are no blockers."""
     engine = BaseRecordingEngine()
     async for wired in _build_app(engine):
         fired = await wired.client.post("/api/v1/agent/fire", json=_BODY)

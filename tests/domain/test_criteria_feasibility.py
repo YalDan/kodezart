@@ -49,7 +49,8 @@ def _criterion(id_: str, text: str) -> GeneratedCriterion:
 
 
 # ---------------------------------------------------------------------------
-# The repair set is closed — waiting is not a member (KOD-66 item 1b)
+# The repair set is closed — waiting is not a member
+# (KOD-53/AC-12, KOD-66 item 1b)
 # ---------------------------------------------------------------------------
 
 
@@ -83,7 +84,8 @@ def test_a_lack_that_clears_with_time_does_not_reach_feasible() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Fault-line classification table (KOD-66 items 1a-1c, AC-13 generality)
+# Fault-line classification table — the six evidence classes and the
+# second-domain rows (KOD-53/AC-1 and KOD-53/AC-9, KOD-66 items 1a-1c)
 # ---------------------------------------------------------------------------
 
 _CLASSIFICATION_TABLE: list[
@@ -286,7 +288,8 @@ def test_unverifiable_is_never_coerced_to_a_pass() -> None:
 
 
 # ---------------------------------------------------------------------------
-# A criterion the base already satisfies is FEASIBLE and flagged (R1 on KOD-66)
+# A criterion the base already satisfies is FEASIBLE and flagged
+# (KOD-53/AC-1 evidence class 4, R1 on KOD-66)
 # ---------------------------------------------------------------------------
 
 
@@ -424,7 +427,7 @@ def test_pinned_literals_downgrade_the_same_way() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Which arm a limit is — the discriminator is the measurement (AC-15)
+# Which arm a limit is — the discriminator is the measurement (KOD-53/AC-11)
 # ---------------------------------------------------------------------------
 
 
@@ -457,6 +460,11 @@ def test_a_limit_without_a_measurement_is_never_the_uneconomic_arm() -> None:
 
     assert priced.limit_arm is LimitArm.uneconomic
     assert priced.cost_measurement is not None
+
+
+# ---------------------------------------------------------------------------
+# Cost is measured, not argued (KOD-53/AC-10, KOD-66 item 1c)
+# ---------------------------------------------------------------------------
 
 
 def test_unmeasured_cost_claim_is_struck_and_recorded() -> None:
@@ -554,7 +562,8 @@ def test_an_ungradeable_report_without_a_refutation_raises(
 
 
 # ---------------------------------------------------------------------------
-# The fault line as one fixture, both arms asserted together (AC-11, AC-12)
+# The fault line as one fixture, both arms asserted together
+# (KOD-53/AC-7, and KOD-53/AC-8 for the bound it does not spend)
 # ---------------------------------------------------------------------------
 
 
@@ -628,7 +637,7 @@ def test_fault_line_pair_routes_one_arm_and_leaves_the_other_untouched() -> None
 
 
 def test_unverifiable_only_set_consumes_no_regeneration_round() -> None:
-    """The bound is consumed by the infeasible arm alone (AC-12)."""
+    """KOD-53/AC-8 — the bound is consumed by the infeasible arm alone."""
     criteria, output = _fault_line_pair()
     feasible_a = CriteriaValidationOutput(
         findings=[
@@ -649,7 +658,7 @@ def test_unverifiable_only_set_consumes_no_regeneration_round() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Conjunction satisfiability (KOD-66 item 2 / evidence class 3)
+# Conjunction satisfiability (KOD-53/AC-2, KOD-66 item 2 / evidence class 3)
 # ---------------------------------------------------------------------------
 
 
@@ -704,7 +713,7 @@ def test_no_contradictions_yields_a_satisfiable_conjunction() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Fan-in is fail-closed and observable (KOD-66 output fan-in)
+# Fan-in is fail-closed and observable (KOD-53/AC-6)
 # ---------------------------------------------------------------------------
 
 
@@ -749,7 +758,8 @@ def test_unknown_finding_id_is_fail_closed_and_named() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Identity + persisted artifact (KOD-66 item 6, KOD-69 deliverable 2)
+# Identity + persisted artifact — the shape round-trips, and the
+# classification rides it (KOD-53/AC-5 and KOD-53/AC-14)
 # ---------------------------------------------------------------------------
 
 
