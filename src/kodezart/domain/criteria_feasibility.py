@@ -53,7 +53,6 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
     LimitArm,
     RepairKind,
-    StruckGround,
 )
 
 
@@ -63,15 +62,21 @@ def _blank(value: str | None) -> bool:
 
 def _weigh_cost(
     claim: CostClaim | None,
-) -> tuple[CostMeasurement | None, list[StruckGround]]:
-    """Split a cost claim into the part that survives and the part struck."""
+) -> tuple[CostMeasurement | None, bool]:
+    """Split a cost claim into the surviving measurement and whether it was struck.
+
+    A claim is struck when it was never measured and when the measurement
+    it carried proved affordable.  Nothing tells those two apart — the
+    only question anything asks is whether a claim was made and did not
+    survive — so the answer is the boolean it is read as.
+    """
     if claim is None:
-        return None, []
+        return None, False
     if claim.measurement is None:
-        return None, [StruckGround.unmeasured_cost]
+        return None, True
     if claim.measurement.affordable:
-        return None, [StruckGround.affordable_cost]
-    return claim.measurement, []
+        return None, True
+    return claim.measurement, False
 
 
 def _observe_flags(finding: CriterionFinding) -> list[CriterionFlag]:
@@ -128,7 +133,7 @@ def classify_finding(finding: CriterionFinding) -> CriterionFeasibility:
             verdict=CriterionVerdict.infeasible,
             limit_arm=LimitArm.not_a_limit,
             refutation=finding.refutation,
-            struck_grounds=struck,
+            cost_claim_struck=struck,
             flags=flags,
             forbidden_class=finding.forbidden_class,
             undeclared_switch_arms=list(finding.undeclared_switch_arms),
@@ -154,7 +159,7 @@ def classify_finding(finding: CriterionFinding) -> CriterionFeasibility:
 def _classify_criterion_side(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
-    struck: list[StruckGround],
+    struck: bool,
     flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if not _blank(finding.refutation):
@@ -163,7 +168,7 @@ def _classify_criterion_side(
             verdict=CriterionVerdict.infeasible,
             limit_arm=LimitArm.not_a_limit,
             refutation=finding.refutation,
-            struck_grounds=struck,
+            cost_claim_struck=struck,
             flags=flags,
         )
     if surviving_cost is not None:
@@ -181,7 +186,7 @@ def _classify_criterion_side(
         criterion_id=finding.criterion_id,
         verdict=CriterionVerdict.feasible,
         limit_arm=LimitArm.not_a_limit,
-        struck_grounds=struck,
+        cost_claim_struck=struck,
         flags=flags,
     )
 
@@ -189,7 +194,7 @@ def _classify_criterion_side(
 def _classify_environment_side(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
-    struck: list[StruckGround],
+    struck: bool,
     flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if _blank(finding.missing_resource):
@@ -204,7 +209,7 @@ def _classify_environment_side(
         limit_arm=arm,
         missing_resource=finding.missing_resource,
         cost_measurement=surviving_cost,
-        struck_grounds=struck,
+        cost_claim_struck=struck,
         flags=flags,
     )
 
@@ -212,7 +217,7 @@ def _classify_environment_side(
 def _classify_no_repair(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
-    struck: list[StruckGround],
+    struck: bool,
     flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if surviving_cost is not None:
@@ -225,7 +230,7 @@ def _classify_no_repair(
         criterion_id=finding.criterion_id,
         verdict=CriterionVerdict.feasible,
         limit_arm=LimitArm.not_a_limit,
-        struck_grounds=struck,
+        cost_claim_struck=struck,
         flags=flags,
     )
 

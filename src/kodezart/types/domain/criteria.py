@@ -83,13 +83,6 @@ class LimitArm(StrEnum):
     uneconomic = "uneconomic"
 
 
-class StruckGround(StrEnum):
-    """Why a stated ground was struck rather than acted on."""
-
-    unmeasured_cost = "unmeasured_cost"
-    affordable_cost = "affordable_cost"
-
-
 class CriterionFlag(StrEnum):
     """An observation about a criterion that is NOT a feasibility fault.
 
@@ -238,7 +231,7 @@ class CriterionFeasibility(CamelCaseModel):
     refutation: str | None = None
     missing_resource: str | None = None
     cost_measurement: CostMeasurement | None = None
-    struck_grounds: list[StruckGround] = Field(default_factory=list)
+    cost_claim_struck: bool = False
     flags: list[CriterionFlag] = Field(default_factory=list)
     forbidden_class: ForbiddenCriterionClass | None = None
     undeclared_switch_arms: list[str] = Field(default_factory=list)

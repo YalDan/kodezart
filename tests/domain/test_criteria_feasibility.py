@@ -35,7 +35,6 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
     LimitArm,
     RepairKind,
-    StruckGround,
     ValidatedCriterion,
 )
 
@@ -456,7 +455,7 @@ def test_a_limit_without_a_measurement_is_never_the_uneconomic_arm() -> None:
     assert blocked.limit_arm is LimitArm.resource_absent
     assert blocked.cost_measurement is None
     assert blocked.missing_resource == "the sweep's compute allowance"
-    assert StruckGround.unmeasured_cost in blocked.struck_grounds
+    assert blocked.cost_claim_struck
 
     assert priced.limit_arm is LimitArm.uneconomic
     assert priced.cost_measurement is not None
@@ -477,7 +476,7 @@ def test_unmeasured_cost_claim_is_struck_and_recorded() -> None:
         )
     )
     assert verdict.verdict is not CriterionVerdict.infeasible
-    assert verdict.struck_grounds == [StruckGround.unmeasured_cost]
+    assert verdict.cost_claim_struck
 
 
 def test_measured_affordable_cost_leaves_the_criterion_feasible() -> None:
@@ -492,7 +491,7 @@ def test_measured_affordable_cost_leaves_the_criterion_feasible() -> None:
         )
     )
     assert verdict.verdict is CriterionVerdict.feasible
-    assert verdict.struck_grounds == [StruckGround.affordable_cost]
+    assert verdict.cost_claim_struck
 
 
 # ---------------------------------------------------------------------------
