@@ -176,12 +176,12 @@ class TestBootValidation:
                     Principal(
                         tracker_user="ghost",
                         roles=frozenset(
-                    {
-                        PrincipalRole.APPROVER,
-                        PrincipalRole.PRINCIPAL,
-                        PrincipalRole.ASSIGNEE,
-                    },
-                ),
+                            {
+                                PrincipalRole.APPROVER,
+                                PrincipalRole.PRINCIPAL,
+                                PrincipalRole.ASSIGNEE,
+                            },
+                        ),
                         handle="@approver",
                     ),
                     Principal(

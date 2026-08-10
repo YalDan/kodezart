@@ -13,8 +13,8 @@ object, one per declared repository, carrying the configured cadence.
 
 import asyncio
 
+from kodezart.composition.passes import build_dispatch_passes
 from kodezart.core.config import AppConfig
-from kodezart.main import build_dispatch_passes
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler

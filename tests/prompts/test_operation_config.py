@@ -504,9 +504,7 @@ def template_placeholders() -> set[str]:
     referenced: set[str] = set()
     for key in PromptKey:
         referenced |= free_binding_names(registry.template_for(key).body)
-    return (
-        referenced - SET_FRAGMENT_NAMES - PER_CALL_VARIABLE_NAMES - ITEM_SCOPED_NAMES
-    )
+    return referenced - SET_FRAGMENT_NAMES - PER_CALL_VARIABLE_NAMES - ITEM_SCOPED_NAMES
 
 
 def test_placeholder_mapping_is_total_in_both_directions() -> None:

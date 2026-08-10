@@ -24,8 +24,8 @@ import asyncio
 from collections.abc import AsyncIterator
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.composition.passes import build_dispatch_passes
 from kodezart.core.config import AppConfig
-from kodezart.main import build_dispatch_passes
 from kodezart.types.domain.agent import (
     AgentEvent,
     WorkflowCompleteEvent,

@@ -2,12 +2,10 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI
 
-from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.git_artifact_persister import GitArtifactPersister
@@ -17,335 +15,39 @@ from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.adapters.github_token_auth import GitHubTokenAuth
 from kodezart.adapters.host_skill_inventory import HostSkillInventory
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.gating import outbound_scanners
+from kodezart.composition.passes import build_dispatch_passes
+from kodezart.composition.preflight import (
+    preflight_prompt_skill_loadouts,
+    preflight_skills,
+)
+from kodezart.composition.tracker import (
+    boot_tracker,
+)
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import ContentScannerBootError, SkillPreflightError
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import (
-    AgentExecutor,
-    ContentScanner,
-    DeliveryProbe,
-    GitService,
-    JobQueue,
-    JobRegistry,
     ManagedMcpToolCaller,
-    McpToolCaller,
-    OutboundContentGate,
-    PromptProvider,
-    RepoCache,
-    SkillInventory,
     TrackerPort,
 )
 from kodezart.services.agent_service import AgentService
-from kodezart.services.base_resolver import BaseResolver
-from kodezart.services.dispatch_pass import GatedDispatchPass
-from kodezart.services.fire_context import FireContextAssembler
-from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.services.job_service import JobService
-from kodezart.services.lifecycle_watcher import LifecycleWatcher
-from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
-from kodezart.services.tracker_boot import reconcile_tracker_mappings
-from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
-from kodezart.types.domain.gating import content_digest
-from kodezart.types.domain.operation import OperationConfig, QueueState
-from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.skills import SkillsMode, SkillsSelection
-from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
-
-
-def preflight_skills(
-    selection: SkillsSelection,
-    inventory: SkillInventory,
-) -> None:
-    """Fail loudly at boot when a configured skill name is not provisioned.
-
-    Only EXPLICIT mode names skills.  Under NONE and ALL there is nothing to
-    resolve, so nothing is checked.  The SDK forwards unknown names verbatim
-    and silently filters them, so this is the only place the gap can surface.
-    """
-    if selection.mode is not SkillsMode.EXPLICIT:
-        return
-    available = inventory.available()
-    unresolvable = [name for name in selection.allowlist if name not in available]
-    if unresolvable:
-        msg = "Configured skills are not provisioned on this host"
-        raise SkillPreflightError(
-            msg,
-            unresolvable=unresolvable,
-            available=sorted(available),
-        )
-
-
-def preflight_prompt_skill_loadouts(
-    selection: SkillsSelection,
-    prompts: PromptProvider,
-) -> None:
-    """Every per-key skills loadout must be a subset of the registered set.
-
-    Only meaningful under EXPLICIT, where the allowlist IS the registration
-    set.  Under NONE and ALL nothing is registered by name, so there is no
-    subset relation to check.
-    """
-    if selection.mode is not SkillsMode.EXPLICIT:
-        return
-    registered = set(selection.allowlist)
-    unresolvable = sorted(
-        {
-            name
-            for key in PromptKey
-            for name in prompts.declared_skills(key)
-            if name not in registered
-        }
-    )
-    if unresolvable:
-        msg = "Prompt-set skill loadouts name skills that are not registered"
-        raise SkillPreflightError(
-            msg,
-            unresolvable=unresolvable,
-            available=sorted(registered),
-        )
-
-
-def outbound_scanners(
-    *,
-    config: AppConfig,
-    operation: OperationConfig | None,
-    executor: AgentExecutor,
-    prompts: PromptProvider,
-    skills: SkillsSelection,
-) -> tuple[list[ContentScanner], str]:
-    """The gate's ORDERED scanner list, and the fragment digest keying its memo.
-
-    Deterministic first, always, and that ordering is the whole reason a
-    credential is still caught when the judgment path is degraded.
-
-    Three states, none silent.  Enabled with a private-surface description
-    registers the judgment scanner; enabled without one aborts boot rather
-    than registering a scanner whose every answer would be
-    ``NOT_CONFIGURED``; disabled runs the deterministic scanners alone.
-    """
-    scanners: list[ContentScanner] = [
-        RegexContentScanner(patterns=config.deny_patterns),
-    ]
-    if not config.agentic_content_scanner_enabled:
-        return scanners, ""
-
-    private_surface = None if operation is None else operation.private_surface
-    if private_surface is None or not private_surface.strip():
-        msg = "The judgment content scanner is enabled with nothing to judge against"
-        raise ContentScannerBootError(msg, missing="OperationConfig.private_surface")
-
-    working_dir = Path(config.content_audit_working_dir).expanduser()
-    working_dir.mkdir(parents=True, exist_ok=True)
-    scanners.append(
-        AgentContentScanner(
-            executor=executor,
-            prompts=prompts,
-            neutral_cwd=str(working_dir),
-            skills=skills,
-            retry_max_attempts=config.content_scan_retry_max_attempts,
-            retry_initial_interval=config.content_scan_retry_initial_interval,
-            timeout_seconds=config.content_scan_timeout_seconds,
-        ),
-    )
-    return scanners, content_digest(private_surface)
-
-
-def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
-    """The vendor MCP transport this deployment dials.
-
-    One server definition, two consumers (KOD-57's mechanism ruling): the
-    programmatic client on the deterministic path, and the same server
-    attached to judgment-pass sessions.
-    """
-    return HttpMcpToolCaller(
-        url=config.tracker_mcp_server_url,
-        server_name=config.tracker_mcp_server_name,
-        token=token,
-        timeout_seconds=config.tracker_timeout_seconds,
-        auth_header_name=config.tracker_mcp_auth_header,
-        auth_scheme=config.tracker_mcp_auth_scheme,
-    )
-
-
-def build_tracker(
-    *,
-    config: AppConfig,
-    operation: OperationConfig,
-    caller: McpToolCaller,
-) -> TrackerPort:
-    """The ``TrackerPort`` implementation ``config.tracker`` selects.
-
-    Adding a backend is a new adapter plus a member on ``TrackerBackend``.
-    Consumers hold the protocol and change by nothing at all.
-    """
-    match config.tracker:
-        case TrackerBackend.LINEAR:
-            return LinearMcpTracker(
-                caller=caller,
-                queue_state_labels=operation.queue_states,
-                workflow_state_names=operation.workflow_states,
-                team_identifiers=operation.teams,
-                max_retries=config.tracker_max_retries,
-                retry_backoff_factor=config.tracker_retry_backoff_factor,
-            )
-
-
-@dataclass(frozen=True)
-class DialledTracker:
-    """A reconciled tracker: the port, its session, and the config it left.
-
-    ``operation`` is the RECONCILED config and is the only copy anything
-    downstream may read.  A document this boot created carries an id no
-    operator could have declared, and a prompt bound to the pre-boot copy
-    would render a placeholder in its place (KOD-57 R9).
-    """
-
-    tracker: TrackerPort
-    caller: ManagedMcpToolCaller
-    operation: OperationConfig
-
-
-async def boot_tracker(
-    *,
-    config: AppConfig,
-    operation: OperationConfig | None,
-    log: BoundLogger,
-) -> DialledTracker | None:
-    """Dial the tracker and reconcile its configured mappings, or say why not.
-
-    Three states, none silent.  Both an operation config and a credential
-    present dials the backend and reconciles every declared mapping before
-    the process serves anything; either one absent logs exactly which is
-    absent and leaves the tracker unwired; an unreconcilable mapping aborts
-    boot with a typed error naming it.
-    """
-    if operation is None or config.tracker_token is None:
-        await log.ainfo(
-            "tracker_not_configured",
-            operation_config_present=operation is not None,
-            tracker_token_present=config.tracker_token is not None,
-        )
-        return None
-    caller = make_mcp_tool_caller(config=config, token=config.tracker_token)
-    await caller.open()
-    try:
-        tracker = build_tracker(config=config, operation=operation, caller=caller)
-        reconciliation = await reconcile_tracker_mappings(
-            tracker=tracker,
-            config=operation,
-        )
-    except BaseException:
-        await caller.close()
-        raise
-    await log.ainfo(
-        "tracker_mappings_reconciled",
-        backend=config.tracker.value,
-        adopted=[
-            item.ref.describe()
-            for item in reconciliation.outcomes
-            if item.action is EnsureAction.ADOPTED
-        ],
-        created=[
-            item.ref.describe()
-            for item in reconciliation.outcomes
-            if item.action is EnsureAction.CREATED
-        ],
-    )
-    return DialledTracker(
-        tracker=tracker,
-        caller=caller,
-        operation=reconciliation.config,
-    )
-
-
-def build_dispatch_passes(
-    *,
-    config: AppConfig,
-    operation: OperationConfig,
-    tracker: TrackerPort,
-    delivery: DeliveryProbe,
-    queue: JobQueue,
-    registry: JobRegistry,
-    gate: OutboundContentGate,
-    git: GitService,
-    cache: RepoCache,
-    integration_workspace_dir: str,
-) -> list[ScheduledPass]:
-    """One gated dispatch pass per repository the operation acts on.
-
-    Every repository in the config, not a chosen one: the dispatcher
-    claims per repository, and picking one would leave the rest of the
-    operation's declared surface unserved with nothing saying so.
-    """
-    assembler = FireContextAssembler(
-        tracker=tracker,
-        gate=gate,
-        max_count=config.tracker_asset_max_count,
-        max_bytes=config.tracker_asset_max_bytes,
-        fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,
-    )
-    # One writer and one watcher for every repository: the lifecycle it
-    # writes belongs to the ISSUE, and an issue is not a per-repository
-    # thing. A watcher per pass would be N watchers over one tracker.
-    lifecycle = LifecycleWatcher(
-        queue=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
-    )
-    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
-    passes: list[ScheduledPass] = []
-    for repo in operation.repos:
-        tick = GatedDispatchPass(
-            lifecycle=lifecycle,
-            gate=PassGate(
-                tracker=tracker,
-                queue_state=QueueState.APPROVED,
-                page_size=config.tracker_query_page_size,
-            ),
-            dispatcher=FireDispatcher(
-                tracker=tracker,
-                queue=queue,
-                registry=registry,
-                delivery=delivery,
-                operation=operation,
-                repo_url=repo.url,
-                lane=config.dispatch_lane,
-                holder=config.dispatch_holder,
-                claim_lease_seconds=config.tracker_claim_lease_seconds,
-                query_page_size=config.tracker_query_page_size,
-                assembler=assembler,
-                resolver=resolver,
-                cache=cache,
-                trunk=repo.trunk,
-                integration_workspace_dir=integration_workspace_dir,
-            ),
-        )
-        passes.append(
-            ScheduledPass(
-                name=f"dispatch:{repo.url}",
-                interval_seconds=config.tracker_scheduler_pass_interval_seconds,
-                run=tick.run,
-            ),
-        )
-    return passes
 
 
 @asynccontextmanager

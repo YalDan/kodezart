@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.host_skill_inventory import HostSkillInventory
+from kodezart.composition.preflight import preflight_skills
 from kodezart.core.errors import SkillInventoryError, SkillPreflightError
 from kodezart.core.protocols import SkillInventory
-from kodezart.main import preflight_skills
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 
 MARKETPLACE = "example-marketplace"

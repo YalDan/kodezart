@@ -137,7 +137,7 @@ def wired(
         assert token == TOKEN
         return server
 
-    monkeypatch.setattr("kodezart.main.make_mcp_tool_caller", factory)
+    monkeypatch.setattr("kodezart.composition.tracker.make_mcp_tool_caller", factory)
     yield server
 
 

@@ -27,11 +27,11 @@ from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.composition.gating import outbound_scanners
 from kodezart.core.config import AppConfig
 from kodezart.core.content_classification import ContentClassifier
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.protocols import ContentScanner
-from kodezart.main import outbound_scanners
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.gating import (
     ContentClass,
