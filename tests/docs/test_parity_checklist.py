@@ -32,6 +32,9 @@ BLOCKED = "BLOCKED"
 CLEAR = "CLEAR"
 
 
+WHY_SECTION = "## Why the undemonstrated rows are undemonstrated"
+
+
 def _rows() -> list[tuple[str, str, str, str]]:
     """``(obligation, source, behavior, evidence)`` for every table row."""
     rows: list[tuple[str, str, str, str]] = []
@@ -167,3 +170,29 @@ def test_an_open_row_names_why_it_is_open() -> None:
     assert "Why the undemonstrated rows are undemonstrated" in CHECKLIST.read_text(
         encoding="utf-8",
     )
+
+
+def _why_section() -> str:
+    """The prose that accounts for the open rows, and nothing else."""
+    body = CHECKLIST.read_text(encoding="utf-8")
+    rest = body[body.index(WHY_SECTION) + len(WHY_SECTION) :]
+    end = rest.find("\n## ")
+    return (rest if end == -1 else rest[:end]).lower()
+
+
+def test_every_obligation_the_prose_calls_open_is_an_open_row() -> None:
+    """The document may not disagree with itself where nothing can see it.
+
+    It did: the prose said the pre-promotion hygiene row stayed open while
+    the table gave that row a citation, and no assertion read the prose at
+    all.  This derives one from the other, so a row that moves and a
+    paragraph that does not are the same failure.
+    """
+    prose = _why_section()
+    contradicted = [
+        obligation
+        for obligation, _, _, evidence in _rows()
+        if obligation.lower() in prose and evidence != OPEN
+    ]
+
+    assert contradicted == []
