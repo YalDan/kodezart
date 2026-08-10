@@ -36,6 +36,7 @@ from kodezart.domain.accept_gate import (
     append_flagged_section,
     flagged_items,
     gate_cleared,
+    sherlock_items,
 )
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.base_scope import scope_base
@@ -1056,7 +1057,17 @@ class RalphWorkflowEngine:
             )
         )
 
-        return {"review_passed": passed, "review_feedback": feedback}
+        # The reviewer's own concerns ride to the pull request the prompt
+        # promises them to.  They are appended, not substituted: the loop's
+        # flagged items describe the work, these describe the review of it.
+        return {
+            "review_passed": passed,
+            "review_feedback": feedback,
+            "flagged_items": [
+                *state["flagged_items"],
+                *sherlock_items(grade.sherlock_flags),
+            ],
+        }
 
     def _route_after_review(self, state: WorkflowState) -> str:
         """Route based on review result, fix budget, and adapter preconditions."""

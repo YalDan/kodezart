@@ -510,6 +510,13 @@ async def test_a_flag_contradicting_the_verdict_does_not_move_the_route() -> Non
 
 _SHERLOCK_CONCERN = "Watson 2 read a mocked persister as a real write"
 
+#: Raised by the POST-MERGE reviewer only.  The loop's evaluator and the
+#: reviewer answer the same schema, so the fixture tells them apart by
+#: order — the loop grades first, the merged branch is reviewed second —
+#: and gives each its own concern, which is what makes the two paths to
+#: the pull-request body separately falsifiable.
+_REVIEW_CONCERN = "the merged branch reuses a helper the loop never exercised"
+
 _RUN_CRITERIA = [
     {"text": "The endpoint returns 204", "criterionClass": "hard_gate"},
     {"text": "No new lint warnings", "criterionClass": "soft_signal"},
@@ -598,7 +605,14 @@ class FlaggingEvaluator:
                         },
                     ],
                     "sherlockFlags": [
-                        {"criterionId": "AC-1", "concern": _SHERLOCK_CONCERN},
+                        {
+                            "criterionId": "AC-1",
+                            "concern": (
+                                _SHERLOCK_CONCERN
+                                if self.eval_calls == 1
+                                else _REVIEW_CONCERN
+                            ),
+                        },
                     ],
                 }
             )
@@ -681,6 +695,29 @@ async def test_a_flag_the_evaluator_raised_reaches_the_pull_request_body() -> No
     assert FLAGGED_HEADING in body
     assert f"AC-1: {_SHERLOCK_CONCERN}" in body
     assert executor.eval_calls >= 1, "the evaluator was really asked"
+
+
+async def test_a_flag_the_post_merge_reviewer_raised_reaches_the_body() -> None:
+    """KOD-71 deliverable 2 — the reviewer's concerns ship with the PR too.
+
+    The post-merge review grades the MERGED branch, and its prompt tells it
+    the ``sherlockFlags`` field is what carries a concern to the pull
+    request.  The node computed those flags and dropped them: only the
+    loop's reached the body.  ``_REVIEW_CONCERN`` is written nowhere but
+    the reviewer's own output, so the assertion below is on the rendered
+    body of a run that really travelled review → flagged items → PR.
+    """
+    executor = FlaggingEvaluator()
+    pr_creator = FakePRCreator()
+    events = await _run(_engine_over_a_real_loop(executor, pr_creator))
+
+    assert [e for e in events if isinstance(e, WorkflowPREvent)], "a PR was opened"
+    assert executor.eval_calls == 2, "the loop graded once, the review once"
+
+    body = str(
+        next(c for c in pr_creator.calls if c["method"] == "create_pr")["body"],
+    )
+    assert f"AC-1: {_REVIEW_CONCERN}" in body
 
 
 async def test_an_unflagged_pass_leaves_the_pr_body_untouched() -> None:

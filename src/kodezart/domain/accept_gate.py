@@ -107,6 +107,19 @@ def gate_cleared(verdict: AcceptVerdict) -> bool:
     return verdict is not AcceptVerdict.rejected
 
 
+def sherlock_items(sherlock_flags: Sequence[SherlockFlag]) -> list[FlaggedItem]:
+    """The evaluator's own concerns, as items a pull-request reader sees.
+
+    Every evaluation pass raises these — the loop's and the post-merge
+    review's alike — so the mapping lives here rather than at each call
+    site that has to carry a pass's flags to the body.
+    """
+    return [
+        FlaggedItem(criterion_id=flag.criterion_id, summary=flag.concern)
+        for flag in sherlock_flags
+    ]
+
+
 def flagged_items(
     criteria: Sequence[ValidatedCriterion],
     results: Sequence[CriterionResult],
@@ -139,10 +152,7 @@ def flagged_items(
         )
         for criterion in ungraded(criteria)
     )
-    items.extend(
-        FlaggedItem(criterion_id=flag.criterion_id, summary=flag.concern)
-        for flag in sherlock_flags
-    )
+    items.extend(sherlock_items(sherlock_flags))
     return items
 
 
