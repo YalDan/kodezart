@@ -1,10 +1,9 @@
 """Criterion identity — the ``AC-n`` scheme minted once, harness-side.
 
-Identity is assigned by the harness at generation time, never by a model:
-a stable id is exactly the thing an echoed string cannot be.  Everything
-downstream — the feasibility sweep, the persisted artifact, evaluator
-dispatch and grading, and the re-injected feedback text — keys off these
-ids and never off criterion text.
+Identity is assigned at generation time, never by a model.  The sweep, the
+persisted artifact, evaluator dispatch and grading, and the re-injected
+feedback text all key off these ids and never off criterion text: an
+echoed string drifts, and KOD-11 measured it drifting.
 """
 
 from collections.abc import Sequence
@@ -26,9 +25,8 @@ _ID_PREFIX = "AC-"
 def mint_criterion_id(index: int) -> CriterionId:
     """The identity of the criterion at 1-based *index*.
 
-    The single construction site for a ``CriterionId``: it formats the
-    ``AC-n`` shape, so no other surface needs to know the shape and none
-    may invent one.
+    The single construction site for a ``CriterionId``, so no other surface
+    knows the ``AC-n`` shape and none may invent one.
     """
     if index < 1:
         msg = f"Criterion positions are 1-based; got {index}"

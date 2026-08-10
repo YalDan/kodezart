@@ -32,13 +32,11 @@ KOD-11's fail-closed grading" once the retries are exhausted.  The
 detection half is retained TODAY on a scope boundary — KOD-11 assigns the
 retrying guard to KOD-91 — and not on a mechanism gap.
 
-``results`` carries a row for every dispatched id, because that is the
-report.  The ARITHMETIC is narrower: an ``unverifiable`` criterion is
-neither a pass nor a fail, so it seats in neither ``passed_count`` nor
-``failures`` — the second half is what keeps it out of the iteration
-feedback, where a criterion nothing can grade would otherwise recur every
-round and burn the budget.  Its presence clamps the verdict to
-``ship_with_flags``.
+``results`` carries a row for every dispatched id.  The ARITHMETIC is
+narrower: an ``unverifiable`` criterion seats in neither ``passed_count``
+nor ``failures``, which is what keeps a criterion nothing can grade out of
+the iteration feedback instead of recurring every round.  Its presence
+clamps the verdict to ``ship_with_flags``.
 """
 
 from collections.abc import Sequence

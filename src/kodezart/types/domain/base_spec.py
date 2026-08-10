@@ -1,29 +1,15 @@
 """The lane's recorded base — the one ref every scope check compares against.
 
-A scope or no-touch criterion asks *which files did this lane change*, and
-that question has no answer without a baseline.  Taking the repository's
-trunk as that baseline is wrong for any lane built on another lane's
-work: everything inherited from the base reads as this lane's own change,
-and a criterion that says "touch only these files" then convicts the lane
-of edits it never made — which is how correct, already-graded work gets
-reverted.
+A scope criterion asks *which files did this lane change*, and that has no
+answer without a baseline.  Measured: with trunk as the baseline, every
+file a stacked lane inherited read as its own change, so a "touch only
+these files" criterion convicted the lane of edits it never made and
+already-graded work was reverted.
 
-The baseline is therefore the lane's RECORDED base, and this module is
-the shape that value has when it reaches the check.  It is a value the
-lane is HANDED, never one the check derives: base resolution — reading
-the blockers, resolving each to its deliverable ref, reducing to the
-frontier and combining — belongs to the issue that owns the association,
-and a second derivation here would be a second source of truth with a
-shorter half-life than the graph it mirrors.
-
-Two things follow, and both are asserted rather than intended:
-
-* **A branch name is not a record.**  Nothing here parses a ref to learn
-  what it is; the role is carried, because only the association knows it.
-* **The inputs travel with the base.**  A base computed from blockers
-  that have since moved is stale, and staleness is decided by comparing
-  this value with the one the blockers imply now — which is possible only
-  because the inputs it was computed from are part of it.
+The base is HANDED to the check, never derived by it — resolving blockers
+to a ref belongs to the issue that owns the association.  The inputs it
+was computed from travel with it, which is what makes staleness a
+comparison rather than a judgement.
 """
 
 from enum import StrEnum
@@ -36,11 +22,9 @@ from kodezart.types.base import CamelCaseModel
 class BaseRefRole(StrEnum):
     """What the recorded base ref IS — carried, never inferred.
 
-    ``trunk`` is the scope's configured trunk, taken when the lane has no
-    blockers at all.  ``deliverable`` is a single blocker's own branch.
-    ``integration`` is a ref constructed to combine several blockers.
-    The scope check treats all three identically and reads the role only
-    in order to report it.
+    ``trunk`` when the lane has no blockers, ``deliverable`` for a single
+    blocker's own branch, ``integration`` for a ref combining several.
+    The scope check treats all three alike and reads the role to report it.
     """
 
     trunk = "trunk"
@@ -61,10 +45,8 @@ class BaseInput(CamelCaseModel):
 class BaseSpec(CamelCaseModel):
     """The recorded base ref, its role, and the inputs it was computed from.
 
-    ``inputs`` is empty exactly on the trunk arm — a trunk base is
-    computed from no blocker.  On every other arm it is the ordered tuple
-    the base was built from, which is what makes staleness arithmetic
-    rather than judgement.
+    ``inputs`` is empty exactly on the trunk arm; on every other arm it is
+    the ordered tuple the base was built from.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)

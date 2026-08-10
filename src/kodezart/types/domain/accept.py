@@ -1,16 +1,10 @@
 """The accept gate's three-state verdict and the items a flagged run carries.
 
-``AcceptVerdict`` replaces the boolean the loop used to compute.  The
-boolean could only say *every criterion passed* or *something did not*,
-which collapsed two decisions into one: whether the work is shippable,
-and whether anything about it needs saying.  A run whose only failures
-are soft signals is shippable AND has something to say, and there was no
-value that could carry both.
-
-Three members, and the count is a contract.  ``ship_with_flags`` is not a
-degraded ``accepted``: it routes to the same merge and pull request, and
-it carries the flagged items into the pull-request body so the thing that
-failed is legible to the human who reads it rather than lost in a log.
+The boolean this replaced carried two decisions in one value: whether the
+work ships, and whether anything about it needs saying.  A run whose only
+failures are soft signals is both.  ``ship_with_flags`` routes to the same
+merge and pull request as ``accepted`` and carries the flagged items into
+the pull-request body, where a human reads them.
 """
 
 from enum import StrEnum
@@ -32,14 +26,12 @@ class AcceptVerdict(StrEnum):
 class SherlockFlag(CamelCaseModel):
     """A reasoning concern the evaluator raised in its own name.
 
-    ``[sherlock]`` findings are the concerns no single Watson owns —
-    raised by the synthesis over their combined reports.  They used to
-    live inside ``reasoning`` prose, where nothing downstream could read
-    them; the field exists so they are carried as data.
+    ``[sherlock]`` findings are the concerns no single Watson owns, raised
+    by the synthesis over their combined reports.  They used to live inside
+    ``reasoning`` prose, where nothing downstream could read them.
 
-    ``criterion_id`` is ``None`` when the concern is about the set rather
-    than about one criterion, and that absence is meaningful — it is not
-    a missing value to be filled in.
+    ``criterion_id`` is ``None`` when the concern is about the SET rather
+    than one criterion; the absence is meaningful, not a value to fill in.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)

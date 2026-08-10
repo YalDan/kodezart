@@ -1,11 +1,10 @@
 """The baseline every scope surface compares against, and its refusal.
 
-One function answers *what do we diff against*, and every scope surface —
-the iteration changeset digest, the outer review diff, and the text of
-any generated scope criterion — calls it rather than reaching for a
-branch of its own.  That is the whole of the fix: the defect was never a
-hardcoded trunk anywhere, it was that each surface took whatever base it
-was handed and nothing established what that base should be.
+One function answers *what do we diff against*, and every scope surface
+calls it: the iteration changeset digest, the outer review diff, and any
+generated scope criterion.  No surface ever hardcoded a trunk — the defect
+was that each took whatever base it was handed and nothing established
+what that base should be.
 """
 
 from collections.abc import Sequence
@@ -21,9 +20,8 @@ def _named(inputs: Sequence[BaseInput]) -> list[str]:
 def changed_inputs(recorded: BaseSpec, implied: BaseSpec) -> list[str]:
     """The inputs present in exactly one of the two specs, named.
 
-    Symmetric difference over the ordered tuples: an edge added, an edge
-    removed, a deliverable ref replaced and an input sha advanced all
-    show up here, and nothing else does.
+    Symmetric difference over the ordered tuples, so an edge added or
+    removed, a ref replaced and a sha advanced all surface here.
     """
     before = _named(recorded.inputs)
     after = _named(implied.inputs)
@@ -36,10 +34,8 @@ def scope_base(recorded: BaseSpec, implied: BaseSpec | None) -> str:
     """The ref the scope check compares against. Raises when it has moved.
 
     *implied* is the base the lane's blockers imply RIGHT NOW, or ``None``
-    when the lane has no association to recompute from — a lane fired
-    directly against trunk carries no blockers, so there is nothing its
-    base could have drifted from.  Comparison is equality over two frozen
-    values: no tolerance, no heuristic, no partial match.
+    when there is no association to recompute from.  Comparison is
+    equality over two frozen values.
     """
     if implied is not None and implied != recorded:
         msg = (

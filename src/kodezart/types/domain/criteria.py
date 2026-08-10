@@ -1,22 +1,14 @@
 """Typed shapes for the acceptance-criteria lifecycle.
 
-A criterion stops being a bare string here.  It carries a stable identity
-(``AC-n``, minted once at generation time), the hard-gate/soft-signal
-``criterion_class`` the generator assigns, and — after the sweep —
-a three-state verdict with the evidence that produced it.
+A criterion carries a stable identity (``AC-n``, minted at generation
+time), the hard-gate/soft-signal ``criterion_class`` the generator
+assigns, and — after the sweep — a three-state verdict with its evidence.
 
-The three-state vocabulary is load-bearing and is never collapsed to a
-boolean.  ``infeasible`` and ``unverifiable`` differ in WHERE THE FAULT
-LIES: an ``infeasible`` criterion is at fault in its own text and is
-routed to an amendment; an ``unverifiable`` criterion is untouched and
-names the resource whose absence blocks its demonstration.
-
-``RepairKind`` is that distinction as a closed set, and it is the
-EVIDENCE the refuter files alongside its verdict: the smallest repair
-that settles a criterion is either an edit to its own text or a supply to
-the environment, and there is no third member.  Elapsed time is not a
-repair — waiting is the absence of one — so a lack that clears by waiting
-is an absent resource rather than a criterion nobody has to touch.
+``infeasible`` and ``unverifiable`` differ in WHERE THE FAULT LIES: an
+``infeasible`` criterion is at fault in its own text and is routed to an
+amendment; an ``unverifiable`` one is untouched and names the resource
+whose absence blocks its demonstration.  The vocabulary is never collapsed
+to a boolean.
 """
 
 from enum import StrEnum
@@ -31,21 +23,16 @@ CRITERION_ID_PATTERN = r"^AC-[1-9][0-9]*$"
 
 #: A criterion's identity, distinct from the strings it is spelled with.
 #:
-#: A ``NewType`` rather than a constrained ``str`` alias: an alias validates
-#: the format and remains ``str`` to the type checker, so a union that
-#: discriminates a criterion identity from another minted identity collapses
-#: to ``str`` and admits any loose string.  Only the minting function
-#: constructs one, so a value reaching a criterion-id annotation came from
-#: the harness and not from a model's echo.
+#: A ``NewType``: a constrained alias stays ``str`` to the type checker, so
+#: a union discriminating one minted identity from another collapses and
+#: admits any loose string.  Only the minting function constructs one.
 CriterionId = NewType("CriterionId", str)
 
 #: A criterion identity carried INSIDE a list, format-checked per element.
 #:
-#: ``list[CriterionId]`` constrains nothing: ``CriterionId`` is a ``NewType``
-#: over ``str``, so a list annotation validates as ``list[str]`` and a
-#: ``min_length`` on the field constrains the LIST rather than its members.
-#: Every scalar identity field carries the pattern; a list field carries it
-#: here, on the element.
+#: ``list[CriterionId]`` constrained nothing — the ``NewType`` validates as
+#: ``str`` and a field ``min_length`` constrains the LIST, not its members —
+#: so ``criterionIds: ["banana"]`` round-tripped intact.
 CriterionIdItem = Annotated[CriterionId, Field(pattern=CRITERION_ID_PATTERN)]
 
 
@@ -82,10 +69,10 @@ class LimitArm(StrEnum):
     """Which arm a limit falls on, discriminated by a measurement.
 
     ``uneconomic`` requires a measurement of a demonstration that ACTUALLY
-    RAN.  A demonstration a quota, a rate limit or a budget prevented from
-    running produces no such measurement and is therefore always
-    ``resource_absent`` — the discriminator is the presence of a
-    measurement, never the wording of a failure.
+    RAN and cost too much.  A quota, a rate limit or a budget that stopped
+    it running produces no measurement, so that case is always
+    ``resource_absent``: the discriminator is the measurement, never the
+    wording of the failure.
     """
 
     not_a_limit = "not_a_limit"
@@ -97,12 +84,10 @@ class CriterionFlag(StrEnum):
     """An observation about a criterion that is NOT a feasibility fault.
 
     A criterion the base already satisfies is satisfied by every
-    implementation, including the empty one, so it is ``feasible`` by the
-    vocabulary's own definition.  What it lacks is DISCRIMINATING POWER,
-    and that is what a flag records.  A flagged criterion consumes no
-    regeneration round, reaches no halt, and leaves the sweep with its
-    text byte-identical — but it can no longer sit in the hard-gate
-    partition the accept gate's arithmetic reads.
+    implementation, including the empty one, so it is ``feasible``; what it
+    lacks is DISCRIMINATING POWER.  A flagged criterion consumes no
+    regeneration round, reaches no halt and keeps its text byte-identical,
+    but leaves the hard-gate partition.
     """
 
     vacuous_at_base = "vacuous_at_base"
@@ -112,17 +97,14 @@ class CriterionFlag(StrEnum):
 class ForbiddenCriterionClass(StrEnum):
     """The classes the drafter is instructed never to emit.
 
-    The instruction is best-effort prose and the drafter is a model, so
-    an instance reaching the sweep is expected rather than exceptional.
-    Five of the six describe criteria nothing in the run can grade, and
-    one of those reaching the loop fails every iteration and burns the
-    budget proving a defect that existed before iteration one — so the
-    refuter is instructed to return ``infeasible`` for them and the class
-    it named is recorded here.
+    The instruction is prose addressed to a model, so instances reach the
+    sweep.  Five of the six describe criteria nothing in the run can
+    grade, and one of those reaching the loop fails every iteration and
+    burns the budget proving a defect that predates iteration one — the
+    refuter returns ``infeasible`` for them and the class is recorded here.
 
-    ``literal_count`` is the exception and is not a feasibility fault:
-    the count can be hit.  It is brittle, so it is FLAGGED and forced to
-    ``soft_signal`` rather than regenerated.
+    ``literal_count`` is the exception: the count can be hit, so it is not
+    a feasibility fault.  It is FLAGGED and forced to ``soft_signal``.
     """
 
     pull_request_body = "pull_request_body"
@@ -137,9 +119,8 @@ class BaseDemonstration(CamelCaseModel):
     """A demonstration of a criterion performed against the repo AT BASE.
 
     Its existence is the claim that the refuter ran the criterion's own
-    check before any work: ``satisfied_at_base`` is the observed result,
-    never a prediction.  Vacuity is computed from this and from nothing
-    else — a criterion is not called vacuous because it reads that way.
+    check before any work: ``satisfied_at_base`` is an observed result,
+    never a prediction, and vacuity is read from it and nothing else.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
@@ -200,9 +181,8 @@ class CriterionFinding(CamelCaseModel):
 
     The refuter states the ``verdict`` and the evidence behind it: the
     smallest repair that would settle the criterion, and what it
-    established.  The evidence is carried because a human can audit
-    "supply a Postgres instance" and cannot audit "unverifiable" — not
-    because anything downstream re-derives the verdict from it.
+    established.  Evidence is carried so a human can audit "supply a
+    Postgres instance"; nothing downstream re-derives the verdict from it.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
@@ -290,8 +270,8 @@ class CriteriaArtifact(CamelCaseModel):
     """The ``.kodezart/criteria.json`` document.
 
     Replaces the bare ``TypeAdapter[list[str]]`` the persister used to
-    dump: downstream consumers read identity, class and verdict
-    instead of guessing from position in a list.
+    dump, so a consumer reads identity, class and verdict rather than
+    guessing from position in a list.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -303,10 +283,10 @@ class CriteriaArtifact(CamelCaseModel):
 class CriterionFailure(CamelCaseModel):
     """A failed criterion as the HARNESS records it.
 
-    ``text`` is the harness's own stored criterion text looked up by id —
-    never the evaluator's echo.  Re-injecting the echo is what let a
-    whitespace-normalised or backslash-mangled criterion drift between
-    iterations while the loop believed it was re-asking the same question.
+    ``text`` is the harness's own stored text looked up by id, never the
+    evaluator's echo.  Re-injecting the echo let a whitespace-normalised or
+    backslash-mangled criterion drift between iterations while the loop
+    believed it was re-asking the same question.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)

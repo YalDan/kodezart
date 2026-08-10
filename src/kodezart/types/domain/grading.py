@@ -1,15 +1,13 @@
 """The graded outcome of one evaluation pass over a dispatched criteria set.
 
-Grading is reconciled against the DISPATCHED id set, never against
-whatever the evaluator chose to return.  The denominator is fixed by the
-harness, a missing id grades failed and is named, and no partial return
-can produce acceptance over a shorter list.
+Reconciled against the DISPATCHED id set, never against whatever the
+evaluator returned: the denominator is the harness's, a missing id grades
+failed and is named, and no partial return produces acceptance over a
+shorter list.
 
-One kind of criterion is exempt from that denominator and from the
-numerator alike: an ``unverifiable`` one, whose demonstration the sweep
-established the runner cannot perform.  It is never a pass and never a
-fail, so ``passed_count`` and ``failures`` pass over it, and its presence
-clamps the verdict ceiling to ``ship_with_flags``.
+An ``unverifiable`` criterion is exempt from numerator and denominator
+alike — never a pass, never a fail — and its presence clamps the verdict
+ceiling to ``ship_with_flags``.
 """
 
 from pydantic import ConfigDict, Field
