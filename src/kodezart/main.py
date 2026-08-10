@@ -414,6 +414,7 @@ def build_judgment_passes(
                 gate=gate,
                 repo=repo,
                 allowed_tools=tuple(config.grooming_pass_allowed_tools),
+                page_size=config.tracker_query_page_size,
             ).run,
         )
         for repo in operation.repos

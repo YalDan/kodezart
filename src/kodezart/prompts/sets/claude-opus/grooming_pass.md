@@ -20,6 +20,10 @@ Queue membership is moved by the calling process, never by you, and the shape of
 ## Lifecycle States
 Execution state is recorded separately from queue membership, and the two axes may not contradict each other. Work being executed is {{workflow_states.in_progress}}; work awaiting verification is {{workflow_states.in_review}}; verified work is {{workflow_states.done}}. An item cannot be {{workflow_states.done}} while sitting at {{queue_states.triage}}, so an item you would name as blocked in one axis and finished in the other is an observation worth reporting rather than a state to resolve.
 
+## Addressable Items
+A finding is addressed only to items the calling process read from the board and listed here, and a name that is not on this list is discarded by that process — exactly as a verification for a repository you are not standing in is dropped. The list is the open board as this tick began; it is not a list of items this repository blocks, because which of them a red chain blocks is the judgment being asked of you. An empty list means nothing is addressable this tick and the correct answer names none.{{#if addressable_items}}{{#each addressable_items}}
+- {{this.issue_key}} — {{this.title}}{{/each}}{{/if}}
+
 ## Reply Criteria
 A comment is written only where this pass produced a finding. A red chain produces exactly one comment on each item the failure blocks; a clean chain produces none at all, and there is no per-pass note saying the build is still green — that note is the noise this rule exists to prevent. So name the blocked items when there is a failure, and name none when there is not: an empty list is how this pass stays silent, and it is a complete answer.
 
@@ -35,7 +39,7 @@ For an initiative carrying a date, the distance to it is an observation and neve
 This pass sends no notification anywhere. The operation's escalation endpoint is {{endpoints.escalation}} and no other destination is ever substituted for it, but nothing you return is delivered there by this pass — so an observation that would be worth escalating belongs in what you return, not in a message you imagine sending.
 
 ## What To Return
-Return, for the repository you are standing in, the sha you verified at and the name of every declared step that failed — the names exactly as they are declared above, and no name that is not declared. Report what you observed running the commands; report nothing for a command you did not run. Name alongside them the items whose work this failure blocks, or none when it blocks nothing.
+Return, for the repository you are standing in, the sha you verified at and the name of every declared step that failed — the names exactly as they are declared above, and no name that is not declared. Report what you observed running the commands; report nothing for a command you did not run. Name alongside them, from the Addressable Items above, the items whose work this failure blocks — or none when it blocks nothing, which is an ordinary and complete answer. A name that is not on that list is discarded unread.
 
 Do not classify the failures yourself. Which of them is a root and which merely cascaded from a step above it is computed from the declared chain by the process that called you, so a raw list is the complete and correct answer, and a pre-classified one is discarded in favour of the computation.
 

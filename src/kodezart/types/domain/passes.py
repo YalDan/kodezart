@@ -82,7 +82,11 @@ class RepoVerification(PassModel):
     the classifier, so a session that invents one is visible rather than
     ignored.
 
-    ``issue_keys`` are the issues the groom found blocked by this failure.
+    ``issue_keys`` are the issues the groom found blocked by this failure,
+    chosen from the addressable set the SERVICE read off the board and
+    rendered into the prompt.  A key outside that set is dropped by the
+    service before any write (KOD-60 R13): the field is a selection from
+    what the pass supplied, never an address the session may originate.
     Empty is legitimate and common: a red chain that blocks no groomed item
     produces no comment, because grooming that produces no finding produces
     no comment.

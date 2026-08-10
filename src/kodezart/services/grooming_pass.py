@@ -19,6 +19,18 @@ routines carry: grooming that produces no finding produces no comment, and
 a per-tick "still green" note on every issue is the noise the rule exists
 to prevent.
 
+Where a finding IS written, the address is the service's and never the
+session's (KOD-60 R13).  This pass reads the open board once, renders that
+set into the prompt as the whole of what a finding may be addressed to,
+and drops any key the answer names outside it — the same shape as
+``FirePrepPass``'s frozen window, for the same reason: a session whose
+tools reach one checkout and nothing else cannot have read the board, so
+an unchecked address is one the model composed.  The set is the open
+board rather than "the items this repository blocks", because the domain
+carries no repository-to-issue edge and a guard claiming to be that
+filter would be a second invented fact.  Which of them a red chain blocks
+is the judgment; whether the item exists at all is arithmetic.
+
 Nothing that costs a checkout or a session runs before the pre-query.  The
 tick is gated on the repository's trunk tip (``services/trunk_gate.py``,
 KOD-60 R11): at an already-verified tip the classification is the one the
@@ -27,6 +39,8 @@ the same finding on the same issues.  The tip is recorded only by a tick
 that completed, so a session that did not answer is retried rather than
 counted as a verification.
 """
+
+from collections.abc import Sequence
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
@@ -51,6 +65,7 @@ from kodezart.types.domain.passes import (
     RepoVerification,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.tracker import IssueQuery, TrackerIssue, is_open
 
 
 def report_body(
@@ -88,6 +103,7 @@ class GroomingPass:
         gate: OutboundContentGate,
         repo: RepoEntry,
         allowed_tools: tuple[str, ...],
+        page_size: int,
     ) -> None:
         self._pre_query: TrunkGate = pre_query
         self._tracker: TrackerPort = tracker
@@ -96,6 +112,7 @@ class GroomingPass:
         self._gate: OutboundContentGate = gate
         self._repo: RepoEntry = repo
         self._allowed_tools: tuple[str, ...] = allowed_tools
+        self._page_size: int = page_size
         self._log: BoundLogger = get_logger(__name__)
 
     async def run(self) -> None:
@@ -107,7 +124,8 @@ class GroomingPass:
                 repo_url=self._repo.url,
             )
             return
-        answer = await self._verify()
+        addressable = await self._addressable()
+        answer = await self._verify(addressable)
         if isinstance(answer, PassSessionFailure):
             # The tip stays unrecorded: a build nobody performed is not a
             # build that came back green, and the next tick asks again.
@@ -129,10 +147,27 @@ class GroomingPass:
                     reported_repo_url=verification.repo_url,
                 )
                 continue
-            await self._report(verification)
+            await self._report(verification, addressable=addressable)
         self._pre_query.record(tip)
 
-    async def _verify(self) -> GroomingOutput | PassSessionFailure:
+    async def _addressable(self) -> tuple[TrackerIssue, ...]:
+        """The open items a finding from this tick may be addressed to.
+
+        One port call, made after the pre-query has already opened, so a
+        tick at an already-verified tip still costs nothing.  Closed items
+        are excluded because a build failure blocks work that is still
+        being done; a finding on a completed item is a notification nobody
+        can act on.
+        """
+        issues = await self._tracker.scan_issues(
+            query=IssueQuery(page_size=self._page_size),
+        )
+        return tuple(issue for issue in issues if is_open(issue.state_kind))
+
+    async def _verify(
+        self,
+        addressable: Sequence[TrackerIssue],
+    ) -> GroomingOutput | PassSessionFailure:
         """Run one verification session inside a checkout of this repository."""
         checkout = await self._workspace.acquire(
             repo_url=self._repo.url,
@@ -142,7 +177,7 @@ class GroomingPass:
         try:
             return await self._session.compose(
                 key=PromptKey.GROOMING_PASS,
-                variables={},
+                variables={"addressable_items": list(addressable)},
                 schema=GROOMING_SCHEMA,
                 model=GroomingOutput,
                 cwd=checkout,
@@ -151,7 +186,12 @@ class GroomingPass:
         finally:
             await self._workspace.release(checkout)
 
-    async def _report(self, verification: RepoVerification) -> None:
+    async def _report(
+        self,
+        verification: RepoVerification,
+        *,
+        addressable: Sequence[TrackerIssue],
+    ) -> None:
         """Classify the reds and write the finding onto every issue they block."""
         classification = classify_check_failures(
             self._repo.checks,
@@ -164,6 +204,18 @@ class GroomingPass:
                 head_sha=verification.head_sha,
             )
             return
+        known = {issue.issue_key for issue in addressable}
+        named = [key for key in verification.issue_keys if key in known]
+        invented = [key for key in verification.issue_keys if key not in known]
+        if invented:
+            # Not a failed verification: the reds are still real and still
+            # reported. Only the address is refused, and it is named so the
+            # drop is visible rather than a silently shorter list.
+            await self._log.awarning(
+                "grooming_finding_outside_addressable_set",
+                repo_url=self._repo.url,
+                issue_keys=invented,
+            )
         # Emitted whether or not any issue is named. The split is the
         # finding; an operator reading the log can tell root from cascade
         # even for a red chain that blocks nothing groomed this tick.
@@ -173,9 +225,9 @@ class GroomingPass:
             head_sha=verification.head_sha,
             roots=list(classification.roots),
             cascades=list(classification.cascades),
-            issue_keys=list(verification.issue_keys),
+            issue_keys=named,
         )
-        if not verification.issue_keys:
+        if not named:
             return
 
         try:
@@ -197,10 +249,10 @@ class GroomingPass:
                 categories=list(exc.categories),
             )
             return
-        for issue_key in verification.issue_keys:
+        for issue_key in named:
             await self._tracker.post_comment(issue_key=issue_key, body=body)
         await self._log.ainfo(
             "grooming_report_written",
             repo_url=self._repo.url,
-            issue_keys=list(verification.issue_keys),
+            issue_keys=named,
         )

@@ -27,6 +27,7 @@ from kodezart.services.pass_session import PassSession
 from kodezart.services.trunk_gate import TrunkGate
 from kodezart.types.domain.gating import OutboundDestination
 from kodezart.types.domain.operation import CheckStep, OperationConfig, RepoEntry
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeGitService,
@@ -48,6 +49,7 @@ TRUNK = "trunk"
 REMOTE = "origin"
 TIMEOUT_SECONDS = 30.0
 TOOLS = ("Bash", "Read")
+PAGE_SIZE = 50
 #: Two successive trunk tips, for the ticks that turn on whether the code
 #: moved.  A third value is never needed: the gate compares the tip to the
 #: last VERIFIED one, not to the previous tick's.
@@ -125,6 +127,7 @@ def make_pass(
         gate=gate or PassThroughGate(),
         repo=repo,
         allowed_tools=TOOLS,
+        page_size=PAGE_SIZE,
     )
 
 
@@ -226,6 +229,64 @@ async def test_the_finding_reaches_every_issue_the_failure_blocks() -> None:
         SECOND_ISSUE,
     ]
     assert gate.destinations == [OutboundDestination.TRACKER_COMMENT]
+
+
+async def test_a_finding_addressed_to_an_item_this_pass_never_read_is_dropped() -> None:
+    """KOD-60 R13: the address is the service's, never the session's.
+
+    The session names two items and the board holds one. A pass that
+    posted to both would be writing a public comment to an address no
+    port read produced — and this session's own template tells it its
+    tools reach the checkout and nothing else, so a key it invents is
+    the only kind of key it could invent.
+    """
+    tracker = tracker_with(ISSUE)
+    await make_pass(
+        tracker=tracker,
+        answers=[verification(failed=["lint"], issues=(ISSUE, SECOND_ISSUE))],
+    ).run()
+
+    assert [comment.issue_key for comment in tracker.comments] == [ISSUE]
+
+
+async def test_a_finding_is_not_addressed_to_a_closed_item() -> None:
+    """The addressable set is the OPEN board: a done item is not addressable."""
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(ISSUE),
+            make_tracker_issue(
+                SECOND_ISSUE,
+                state_name="Done",
+                state_kind=WorkflowStateKind.COMPLETED,
+            ),
+        ],
+    )
+    await make_pass(
+        tracker=tracker,
+        answers=[verification(failed=["lint"], issues=(ISSUE, SECOND_ISSUE))],
+    ).run()
+
+    assert [comment.issue_key for comment in tracker.comments] == [ISSUE]
+
+
+async def test_the_session_is_shown_the_items_it_may_name() -> None:
+    """Anti-vacuity for the guard: the list is supplied, not merely enforced.
+
+    A guard over a set the session was never shown would drop every key a
+    session ever names, which is a working pass only by accident.
+    """
+    executor = FakePassExecutor(answers=[verification(failed=["lint"])])
+    await make_pass(
+        tracker=tracker_with(ISSUE, SECOND_ISSUE),
+        answers=[],
+        executor=executor,
+    ).run()
+
+    (call,) = executor.calls
+    prompt = call["prompt"]
+    assert isinstance(prompt, str)
+    assert ISSUE in prompt
+    assert SECOND_ISSUE in prompt
 
 
 async def test_a_verification_naming_another_repository_is_dropped() -> None:

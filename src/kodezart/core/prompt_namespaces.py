@@ -46,6 +46,7 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "content",
         "destination",
         "work_set",
+        "addressable_items",
     }
 )
 
