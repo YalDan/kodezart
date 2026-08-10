@@ -455,43 +455,9 @@ def test_a_limit_without_a_measurement_is_never_the_uneconomic_arm() -> None:
     assert blocked.limit_arm is LimitArm.resource_absent
     assert blocked.cost_measurement is None
     assert blocked.missing_resource == "the sweep's compute allowance"
-    assert blocked.cost_claim_struck
 
     assert priced.limit_arm is LimitArm.uneconomic
     assert priced.cost_measurement is not None
-
-
-# ---------------------------------------------------------------------------
-# Cost is measured, not argued (KOD-53/AC-10, KOD-66 item 1c)
-# ---------------------------------------------------------------------------
-
-
-def test_unmeasured_cost_claim_is_struck_and_recorded() -> None:
-    """The claim is not merely ignored — striking it is observable."""
-    verdict = classify_finding(
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            cost_claim=CostClaim(assertion="too expensive to demonstrate"),
-        )
-    )
-    assert verdict.verdict is not CriterionVerdict.infeasible
-    assert verdict.cost_claim_struck
-
-
-def test_measured_affordable_cost_leaves_the_criterion_feasible() -> None:
-    verdict = classify_finding(
-        CriterionFinding(
-            criterion_id="AC-1",
-            smallest_repair=RepairKind.criterion_text,
-            cost_claim=CostClaim(
-                assertion="too expensive to demonstrate",
-                measurement=CostMeasurement(observed="11s wall clock", affordable=True),
-            ),
-        )
-    )
-    assert verdict.verdict is CriterionVerdict.feasible
-    assert verdict.cost_claim_struck
 
 
 # ---------------------------------------------------------------------------

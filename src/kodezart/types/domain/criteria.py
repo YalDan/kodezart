@@ -240,7 +240,6 @@ class CriterionFeasibility(CamelCaseModel):
     refutation: str | None = None
     missing_resource: str | None = None
     cost_measurement: CostMeasurement | None = None
-    cost_claim_struck: bool = False
     flags: list[CriterionFlag] = Field(default_factory=list)
     forbidden_class: ForbiddenCriterionClass | None = None
     undeclared_switch_arms: list[str] = Field(default_factory=list)

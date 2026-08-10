@@ -60,23 +60,15 @@ def _blank(value: str | None) -> bool:
     return value is None or not value.strip()
 
 
-def _weigh_cost(
-    claim: CostClaim | None,
-) -> tuple[CostMeasurement | None, bool]:
-    """Split a cost claim into the surviving measurement and whether it was struck.
+def _weigh_cost(claim: CostClaim | None) -> CostMeasurement | None:
+    """The surviving measurement: a measured, genuinely uneconomic one.
 
-    A claim is struck when it was never measured and when the measurement
-    it carried proved affordable.  Nothing tells those two apart — the
-    only question anything asks is whether a claim was made and did not
-    survive — so the answer is the boolean it is read as.
+    An unmeasured claim and an affordable measurement are both struck —
+    neither supports a repair — so neither survives weighing.
     """
-    if claim is None:
-        return None, False
-    if claim.measurement is None:
-        return None, True
-    if claim.measurement.affordable:
-        return None, True
-    return claim.measurement, False
+    if claim is None or claim.measurement is None:
+        return None
+    return None if claim.measurement.affordable else claim.measurement
 
 
 def _observe_flags(finding: CriterionFinding) -> list[CriterionFlag]:
@@ -118,7 +110,7 @@ def _ungradeable(finding: CriterionFinding) -> bool:
 
 def classify_finding(finding: CriterionFinding) -> CriterionFeasibility:
     """Compute one criterion's verdict from its finding. Raises when ungrounded."""
-    surviving_cost, struck = _weigh_cost(finding.cost_claim)
+    surviving_cost = _weigh_cost(finding.cost_claim)
     flags = _observe_flags(finding)
 
     if _ungradeable(finding):
@@ -133,7 +125,6 @@ def classify_finding(finding: CriterionFinding) -> CriterionFeasibility:
             verdict=CriterionVerdict.infeasible,
             limit_arm=LimitArm.not_a_limit,
             refutation=finding.refutation,
-            cost_claim_struck=struck,
             flags=flags,
             forbidden_class=finding.forbidden_class,
             undeclared_switch_arms=list(finding.undeclared_switch_arms),
@@ -150,16 +141,15 @@ def classify_finding(finding: CriterionFinding) -> CriterionFeasibility:
         raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
 
     if finding.smallest_repair is RepairKind.criterion_text:
-        return _classify_criterion_side(finding, surviving_cost, struck, flags)
+        return _classify_criterion_side(finding, surviving_cost, flags)
     if finding.smallest_repair is RepairKind.environment_supply:
-        return _classify_environment_side(finding, surviving_cost, struck, flags)
-    return _classify_no_repair(finding, surviving_cost, struck, flags)
+        return _classify_environment_side(finding, surviving_cost, flags)
+    return _classify_no_repair(finding, surviving_cost, flags)
 
 
 def _classify_criterion_side(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
-    struck: bool,
     flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if not _blank(finding.refutation):
@@ -168,7 +158,6 @@ def _classify_criterion_side(
             verdict=CriterionVerdict.infeasible,
             limit_arm=LimitArm.not_a_limit,
             refutation=finding.refutation,
-            cost_claim_struck=struck,
             flags=flags,
         )
     if surviving_cost is not None:
@@ -177,7 +166,7 @@ def _classify_criterion_side(
             "be filed as an environment supply naming the resource"
         )
         raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
-    if not struck:
+    if finding.cost_claim is None:
         msg = "A criterion-text repair was demanded with no refutation behind it"
         raise UngroundedVerdictError(msg, criterion_id=finding.criterion_id)
     # The only support was a cost claim, and it did not survive weighing:
@@ -186,7 +175,6 @@ def _classify_criterion_side(
         criterion_id=finding.criterion_id,
         verdict=CriterionVerdict.feasible,
         limit_arm=LimitArm.not_a_limit,
-        cost_claim_struck=struck,
         flags=flags,
     )
 
@@ -194,7 +182,6 @@ def _classify_criterion_side(
 def _classify_environment_side(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
-    struck: bool,
     flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if _blank(finding.missing_resource):
@@ -209,7 +196,6 @@ def _classify_environment_side(
         limit_arm=arm,
         missing_resource=finding.missing_resource,
         cost_measurement=surviving_cost,
-        cost_claim_struck=struck,
         flags=flags,
     )
 
@@ -217,7 +203,6 @@ def _classify_environment_side(
 def _classify_no_repair(
     finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
-    struck: bool,
     flags: list[CriterionFlag],
 ) -> CriterionFeasibility:
     if surviving_cost is not None:
@@ -230,7 +215,6 @@ def _classify_no_repair(
         criterion_id=finding.criterion_id,
         verdict=CriterionVerdict.feasible,
         limit_arm=LimitArm.not_a_limit,
-        cost_claim_struck=struck,
         flags=flags,
     )
 
