@@ -102,10 +102,18 @@ class CriterionFlag(StrEnum):
     """An observation about a criterion that is NOT a feasibility fault.
 
     A criterion the base already satisfies is satisfied by every
-    implementation, including the empty one, so it is ``feasible``; what it
-    lacks is DISCRIMINATING POWER.  A flagged criterion consumes no
-    regeneration round, reaches no halt and keeps its text byte-identical,
-    but leaves the hard-gate partition.
+    implementation, including the empty one; what it lacks is
+    DISCRIMINATING POWER, and that is what a flag records.
+
+    The one consequence the harness still draws from a flag is the forced
+    ``soft_signal`` downgrade: a flagged criterion leaves the hard-gate
+    partition.  It no longer follows that the criterion is ``feasible``,
+    that it consumes no regeneration round, or that its text survives —
+    the refuter states the verdict now, and a flagged criterion it calls
+    ``infeasible`` is regenerated and can reach the pre-loop halt like any
+    other.  The template does instruct it to report ``feasible`` there
+    ("a demonstration that ran and passed cannot also ground a repair
+    demand"); nothing checks that.
     """
 
     vacuous_at_base = "vacuous_at_base"

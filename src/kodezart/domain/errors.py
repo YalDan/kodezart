@@ -109,11 +109,19 @@ class CriteriaFanInError(Exception):
 
 
 class UngroundedVerdictError(Exception):
-    """Raised when a refuter demanded a repair but established nothing.
+    """Raised when an ungraded criterion reaches the accept gate naming nothing.
 
-    A ``criterion_text`` repair with no refutation, or an
-    ``environment_supply`` repair with no named resource, is not a verdict.
-    It never rests as ``unverifiable`` by default.
+    One raise site: ``accept_gate.named_resource``.  It also fired during
+    the feasibility sweep, over a repair demanded with no evidence behind
+    it, until that sweep-time check was deleted; the obligation now lives
+    on ``CriterionFinding`` as a ``model_validator`` and fails as a
+    ``ValidationError`` at the model boundary, so no sweep-time raise
+    remains and this class no longer describes one.
+
+    The gate's own check is the last one before a resource name reaches a
+    pull-request body.  ``CriterionFeasibility`` carries no validator of
+    its own, so what keeps the field filled is the finding it was
+    projected from.
     """
 
     def __init__(self, message: str, *, criterion_id: str) -> None:
