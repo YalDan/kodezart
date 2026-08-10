@@ -7,11 +7,9 @@ dispatch and grading, and the re-injected feedback text — keys off these
 ids and never off criterion text.
 """
 
-import re
 from collections.abc import Sequence
 
 from kodezart.types.domain.criteria import (
-    CRITERION_ID_PATTERN,
     CriteriaArtifact,
     CriteriaValidation,
     CriterionClass,
@@ -29,17 +27,13 @@ def mint_criterion_id(index: int) -> CriterionId:
     """The identity of the criterion at 1-based *index*.
 
     The single construction site for a ``CriterionId``: it formats the
-    ``AC-n`` shape and validates what it formatted, so no other surface
-    needs to know the shape and none may invent one.
+    ``AC-n`` shape, so no other surface needs to know the shape and none
+    may invent one.
     """
     if index < 1:
         msg = f"Criterion positions are 1-based; got {index}"
         raise ValueError(msg)
-    minted = f"{_ID_PREFIX}{index}"
-    if re.fullmatch(CRITERION_ID_PATTERN, minted) is None:
-        msg = f"Minted criterion identity does not match the scheme: {minted!r}"
-        raise ValueError(msg)
-    return CriterionId(minted)
+    return CriterionId(f"{_ID_PREFIX}{index}")
 
 
 def mint_criteria(
