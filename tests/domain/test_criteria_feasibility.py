@@ -81,6 +81,185 @@ def test_repair_set_has_exactly_three_members() -> None:
 
 
 # ---------------------------------------------------------------------------
+# A STATED verdict arrives complete — its repair, and the evidence it rests on
+# ---------------------------------------------------------------------------
+
+#: The pair the refuter's instructions declare, restated INDEPENDENTLY of the
+#: mapping under test so a wrong mapping cannot satisfy these cases.
+_DECLARED_PAIRS = [
+    (CriterionVerdict.feasible, RepairKind.none),
+    (CriterionVerdict.infeasible, RepairKind.criterion_text),
+    (CriterionVerdict.unverifiable, RepairKind.environment_supply),
+]
+
+_MISMATCHED_PAIRS = [
+    (verdict, repair)
+    for verdict, own in _DECLARED_PAIRS
+    for _, repair in _DECLARED_PAIRS
+    if repair is not own
+]
+
+
+def _finding_payload(
+    verdict: CriterionVerdict,
+    repair: RepairKind,
+    **evidence: object,
+) -> dict[str, object]:
+    """One finding as the validator agent puts it on the wire, aliases and all."""
+    return {
+        "criterionId": "AC-1",
+        "verdict": verdict.value,
+        "smallestRepair": repair.value,
+        **evidence,
+    }
+
+
+def _grounded(verdict: CriterionVerdict, repair: RepairKind) -> dict[str, object]:
+    """A finding carrying BOTH evidence fields, so only the pair can fail."""
+    return _finding_payload(
+        verdict,
+        repair,
+        refutation="src/kodezart/core/config.py declares no such setting",
+        missingResource="a PostgreSQL server reachable from the runner",
+    )
+
+
+@pytest.mark.parametrize(("verdict", "repair"), _MISMATCHED_PAIRS)
+def test_a_verdict_wearing_another_verdicts_repair_is_refused(
+    verdict: CriterionVerdict,
+    repair: RepairKind,
+) -> None:
+    """The declared pair is CHECKED, not merely requested of the model.
+
+    The refuter's instructions state the mapping in terms — "criterion_text
+    is infeasible, environment_supply is unverifiable, none is feasible" —
+    and then ask for it in a sentence.  Prose addressed to a model is not
+    enforcement: a `feasible` verdict carrying a `criterion_text` repair
+    swept clean and produced no regeneration target, so the criterion the
+    refuter said was at fault in its own text was never sent back.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        CriterionFinding.model_validate(_grounded(verdict, repair))
+    assert verdict.value in str(excinfo.value)
+    assert repair.value in str(excinfo.value)
+
+
+@pytest.mark.parametrize(("verdict", "repair"), _DECLARED_PAIRS)
+def test_each_verdict_admits_its_own_repair(
+    verdict: CriterionVerdict,
+    repair: RepairKind,
+) -> None:
+    """The paired positive: the consistency check admits every declared pair."""
+    finding = CriterionFinding.model_validate(_grounded(verdict, repair))
+    assert finding.verdict is verdict
+    assert finding.smallest_repair is repair
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [{}, {"refutation": None}, {"refutation": ""}, {"refutation": "   "}],
+    ids=["omitted", "null", "empty", "whitespace"],
+)
+def test_an_infeasible_verdict_with_nothing_established_is_refused(
+    evidence: dict[str, object],
+) -> None:
+    """An impossibility claim that shows nothing is an opinion, not a verdict.
+
+    Blank counts as absent: a refutation of spaces reaches the drafter
+    looking like evidence and carries none.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        CriterionFinding.model_validate(
+            _finding_payload(
+                CriterionVerdict.infeasible,
+                RepairKind.criterion_text,
+                **evidence,
+            ),
+        )
+    assert "refutation" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [{}, {"missingResource": None}, {"missingResource": ""}, {"missingResource": "  "}],
+    ids=["omitted", "null", "empty", "whitespace"],
+)
+def test_an_unverifiable_verdict_naming_no_resource_is_refused(
+    evidence: dict[str, object],
+) -> None:
+    """``unverifiable`` is a claim about a NAMED absent resource.
+
+    Unnamed, it is where an inconclusive pass came to rest: it clamped
+    the run's ceiling, took no seat in the arithmetic, was persisted with
+    ``missingResource: null``, and only then failed — at the accept gate,
+    a whole loop later, with the run's work already done.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        CriterionFinding.model_validate(
+            _finding_payload(
+                CriterionVerdict.unverifiable,
+                RepairKind.environment_supply,
+                **evidence,
+            ),
+        )
+    assert "missingResource" in str(excinfo.value)
+
+
+def test_both_failures_are_reported_together_not_whichever_came_first() -> None:
+    """A finding that is inconsistent AND ungrounded names both faults."""
+    with pytest.raises(ValidationError) as excinfo:
+        CriterionFinding.model_validate(
+            _finding_payload(CriterionVerdict.infeasible, RepairKind.none),
+        )
+    message = str(excinfo.value)
+    assert "criterion_text" in message
+    assert "refutation" in message
+
+
+def test_the_refusal_lands_on_the_call_the_validate_node_makes() -> None:
+    """Enforcement sits where the model's JSON becomes a Python object.
+
+    ``_validate_criteria_node`` turns the agent's output into a report
+    with ``CriteriaValidationOutput.model_validate`` and nothing else
+    inspects the payload, so that call is the whole of it — server-side
+    strict enforcement does not engage for any schema kodezart ships.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        CriteriaValidationOutput.model_validate(
+            {
+                "findings": [
+                    _finding_payload(
+                        CriterionVerdict.infeasible,
+                        RepairKind.criterion_text,
+                    ),
+                ],
+            },
+        )
+    assert [error["loc"] for error in excinfo.value.errors()] == [("findings", 0)]
+
+
+def test_an_infeasible_verdict_the_sweep_records_carries_its_refutation() -> None:
+    """The consequence: no reader of the sweep meets a blank refutation.
+
+    ``render_validation_findings`` interpolates the refutation into the
+    regeneration prompt with no guard of its own, so an ungrounded
+    ``infeasible`` finding put the literal text ``refutation: None`` in
+    front of the drafter.  What keeps it out is that the finding it would
+    have been projected from cannot be constructed.
+    """
+    refutation = "src/kodezart/core/config.py declares no such setting"
+    finding = CriterionFinding.model_validate(
+        _finding_payload(
+            CriterionVerdict.infeasible,
+            RepairKind.criterion_text,
+            refutation=refutation,
+        ),
+    )
+    (recorded,) = _swept(finding)
+    assert recorded.refutation == refutation
+
+
+# ---------------------------------------------------------------------------
 # A criterion the base already satisfies is FEASIBLE and flagged
 # (KOD-53/AC-1 evidence class 4, R1 on KOD-66)
 # ---------------------------------------------------------------------------

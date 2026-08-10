@@ -12,9 +12,9 @@ to a boolean.
 """
 
 from enum import StrEnum
-from typing import Annotated, NewType
+from typing import Annotated, NewType, Self
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 
@@ -63,6 +63,24 @@ class RepairKind(StrEnum):
     none = "none"
     criterion_text = "criterion_text"
     environment_supply = "environment_supply"
+
+
+#: The one repair each verdict names, and the only one it may name.
+#:
+#: The refuter's instructions state the mapping in terms — "``criterion_text``
+#: is ``infeasible``, ``environment_supply`` is ``unverifiable``, ``none`` is
+#: ``feasible``" — as prose addressed to a model.  Held here so the pair is
+#: checked rather than requested.
+_REPAIR_FOR_VERDICT: dict[CriterionVerdict, RepairKind] = {
+    CriterionVerdict.feasible: RepairKind.none,
+    CriterionVerdict.infeasible: RepairKind.criterion_text,
+    CriterionVerdict.unverifiable: RepairKind.environment_supply,
+}
+
+
+def _blank(value: str | None) -> bool:
+    """Whether an evidence field carries nothing a reader could act on."""
+    return value is None or not value.strip()
 
 
 class LimitArm(StrEnum):
@@ -197,6 +215,38 @@ class CriterionFinding(CamelCaseModel):
     pinned_literals: list[str] = Field(default_factory=list)
     forbidden_class: ForbiddenCriterionClass | None = None
     undeclared_switch_arms: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _verdict_carries_its_grounds(self) -> Self:
+        """A stated verdict must arrive complete: its repair and its evidence.
+
+        Nothing here derives a verdict from evidence — the refuter states
+        it.  What is checked is that the statement is finished, and it is
+        checked at construction because this validate call is the only
+        thing between the model's JSON and the run: server-side strict
+        enforcement does not engage for any schema kodezart ships, and the
+        template's own "report the pair consistently" is prose.
+
+        Both failures are collected, so a finding that is inconsistent AND
+        ungrounded reports both rather than whichever was tested first.
+        """
+        failures: list[str] = []
+        required = _REPAIR_FOR_VERDICT[self.verdict]
+        if self.smallest_repair is not required:
+            failures.append(
+                f"verdict {self.verdict.value} names {required.value} as its "
+                f"smallest repair, not {self.smallest_repair.value}"
+            )
+        if self.verdict is CriterionVerdict.infeasible and _blank(self.refutation):
+            failures.append("verdict infeasible requires a refutation")
+        if self.verdict is CriterionVerdict.unverifiable and _blank(
+            self.missing_resource
+        ):
+            failures.append("verdict unverifiable requires a missingResource")
+        if failures:
+            msg = "; ".join(failures)
+            raise ValueError(msg)
+        return self
 
 
 class Contradiction(CamelCaseModel):
