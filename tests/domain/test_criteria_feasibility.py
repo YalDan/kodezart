@@ -812,6 +812,49 @@ def test_duplicate_finding_is_fail_closed_and_names_the_id() -> None:
     assert "AC-1" in str(excinfo.value)
 
 
+def test_an_undispatched_contradiction_id_is_fail_closed_and_named() -> None:
+    """The second channel is reconciled too, and sweep never returns.
+
+    An id nobody dispatched, arriving through ``contradictions`` rather
+    than through ``findings``, reached the conjunction verdict, the
+    regeneration targets, the drafter's prompt and the pre-loop halt.
+    """
+    criteria = (_criterion("AC-1", "a"), _criterion("AC-2", "b"))
+    output = CriteriaValidationOutput(
+        findings=[
+            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none),
+            CriterionFinding(criterion_id="AC-2", smallest_repair=RepairKind.none),
+        ],
+        contradictions=[
+            Contradiction(
+                criterion_ids=["AC-1", "AC-99"],
+                explanation="a conflict with a criterion nobody dispatched",
+            ),
+        ],
+    )
+    with pytest.raises(CriteriaFanInError) as excinfo:
+        sweep(criteria, output)
+    assert excinfo.value.unknown_ids == ("AC-99",)
+
+
+def test_a_contradiction_over_dispatched_ids_reconciles() -> None:
+    """The paired negative: a well-formed report is untouched by the guard."""
+    criteria = (_criterion("AC-1", "a"), _criterion("AC-2", "b"))
+    output = CriteriaValidationOutput(
+        findings=[
+            CriterionFinding(criterion_id="AC-1", smallest_repair=RepairKind.none),
+            CriterionFinding(criterion_id="AC-2", smallest_repair=RepairKind.none),
+        ],
+        contradictions=[
+            Contradiction(
+                criterion_ids=["AC-1", "AC-2"],
+                explanation="one export cannot also be two",
+            ),
+        ],
+    )
+    assert sweep(criteria, output).conjunction.satisfiable is False
+
+
 def test_unknown_finding_id_is_fail_closed_and_named() -> None:
     criteria = (_criterion("AC-1", "a"),)
     output = CriteriaValidationOutput(

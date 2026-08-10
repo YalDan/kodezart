@@ -258,6 +258,13 @@ def reconcile(
 ) -> tuple[CriterionFinding, ...]:
     """Pair findings to dispatched ids 1:1. Raises on any correspondence hole.
 
+    Both of the validator's channels are guarded: one finding per
+    dispatched id, and no contradiction naming an id nobody dispatched.
+    An unreconciled contradiction id reaches the conjunction verdict, the
+    regeneration targets, the drafter's prompt and the pre-loop halt, so
+    two rounds of a hallucinated one end a run over criteria that were
+    never asked about.
+
     A KOD-91 workaround rather than architecture.  Server-side strict
     enforcement does not engage for any schema kodezart ships — every one
     uses keywords outside the strict allowlist — so nothing upstream
@@ -286,9 +293,13 @@ def reconcile(
             duplicates.append(finding.criterion_id)
             continue
         seen[finding.criterion_id] = finding
+    for contradiction in output.contradictions:
+        for id_ in contradiction.criterion_ids:
+            if id_ not in dispatched_set and id_ not in unknown:
+                unknown.append(id_)
     missing = [id_ for id_ in dispatched if id_ not in seen]
     if missing or duplicates or unknown:
-        msg = "Validator findings do not correspond 1:1 to the dispatched criteria"
+        msg = "Validator output does not correspond 1:1 to the dispatched criteria"
         raise CriteriaFanInError(
             msg,
             missing_ids=missing,
