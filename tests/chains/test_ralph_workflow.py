@@ -88,6 +88,7 @@ def _make_engine(
     max_fix_rounds: int = 2,
     artifact_persister: FakeArtifactPersister | None = None,
     prompts: RecordingPromptProvider | None = None,
+    git: FakeGitService | None = None,
 ) -> RalphWorkflowEngine:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -112,7 +113,11 @@ def _make_engine(
         merger=merger or FakeBranchMerger(),
         git_base_url="https://github.com",
         git_remote="origin",
-        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        git=(
+            git if git is not None else FakeGitService(
+                remote_branch_shas={"main": "b" * 40},
+            )
+        ),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
@@ -1932,6 +1937,76 @@ async def test_workflow_persists_artifacts_after_criteria() -> None:
 
     complete = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete) == 1
+
+
+#: The base handed to the artifact persister is NOT a scope surface and grades
+#: no criterion (KOD-36 R5): it neither compares nor measures anything.  It is
+#: the point the ralph branch is cut from when a persister is configured, which
+#: is why a trunk literal there deletes a stacked lane's inherited work.
+ARTIFACT_STACKED_BASE = BaseSpec(
+    base_ref="kodezart/blocker-a-11111111",
+    role=BaseRefRole.deliverable,
+    inputs=(
+        BaseInput(
+            blocker_issue_id="KOD-A",
+            branch="kodezart/blocker-a-11111111",
+            sha="c" * 40,
+        ),
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [trunk_base("main"), ARTIFACT_STACKED_BASE],
+    ids=["trunk-fired", "stacked"],
+)
+async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
+    spec: BaseSpec,
+) -> None:
+    """The persist call creates the ralph branch, so its base is load-bearing.
+
+    ``_persist_artifacts_node`` runs BEFORE the loop, and when a persister
+    is configured it is what first brings the ralph branch into existence.
+    Cut that branch from trunk for a lane whose recorded base is another
+    lane's branch and everything inherited is simply not there — the
+    failure the stacked fixtures exist to catch, on a path neither reaches
+    because both build the engine with ``artifact_persister=None``.
+
+    Two runs differing only in the base they were fired with.  A literal
+    pinned at the call site satisfies at most one of them: ``main`` passes
+    the trunk row and fails the stacked one, the blocker ref does the
+    reverse, and any third value fails both.  ``main`` is a live ref on the
+    fake remote in both rows, so it is a substitution the harness would
+    otherwise accept.
+    """
+    persister = FakeArtifactPersister()
+    engine = _make_engine(
+        artifact_persister=persister,
+        git=FakeGitService(
+            remote_branch_shas={
+                "main": "b" * 40,
+                ARTIFACT_STACKED_BASE.base_ref: "c" * 40,
+            },
+        ),
+    )
+
+    _ = [
+        e
+        async for e in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=spec,
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    assert len(persister.persist_calls) == 1
+    *_, base_branch = persister.persist_calls[0]
+    assert base_branch == spec.base_ref
 
 
 async def test_workflow_cleans_artifacts_before_pr() -> None:
