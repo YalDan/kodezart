@@ -87,6 +87,7 @@ reader can audit, whereas an undemonstrated one is an unknown.
 | cadence ownership | — | Pass scheduling reads exclusively from configuration; the driver holds no interval of its own. | `tests/services/test_pass_scheduler.py::test_the_driver_module_holds_no_numeric_literal` |
 | identity discipline | — | Rendering fails loudly on any unconditional placeholder without a config value, naming every missing name at once. | `tests/prompts/test_operation_config.py::test_an_unconditional_placeholder_without_a_config_value_fails_loudly` |
 | outbound legality | — | No ported template carries a resolved org-shaped value. | `tests/prompts/test_operation_config.py::test_ported_templates_pass_the_deny_pattern_engine` |
+| routine-text coverage | — | Parity is claimed against the routine text the templates replace, not against the templates rendering successfully. `KOD-112` measures the distilled set at 3,410 characters against the deployed routine's 26,717 — roughly a tenth — so the rows above map onto a text an order of magnitude shorter than the one they claim parity with. | not yet demonstrated |
 
 ## Why the undemonstrated rows are undemonstrated
 
@@ -109,6 +110,17 @@ hygiene, the mention scan window, the fire-body format, the exit-silently
 condition. These are open in a stronger sense: the instruction is not in the
 prompt set, so there is nothing for a session to follow. They are rows
 precisely so that this is visible.
+
+**The measurement the rows are silent about.** Routine-text coverage is a
+row of its own because every other row is a clause-to-clause claim, and a
+table of clause-to-clause claims cannot say how much of the source text it
+covers. `KOD-112` states the measurement — 3,410 characters of distilled
+template against 26,717 of deployed routine — and says in as many words that
+parity should be claimed against it rather than against the templates
+rendering. Until it is, a reader can check every row above and still not
+know that nine tenths of the routine's text has no row at all. This row is
+open because the gap is unmeasured per obligation, not because the number is
+unknown.
 
 The exit-silently condition was briefly recorded here as *not ported*, on the
 ground that a shipped `## Run Log` clause required a row from every pass. That
