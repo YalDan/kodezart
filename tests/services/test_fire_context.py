@@ -12,7 +12,9 @@ assembler built here holds the shipped gate, so the admission rule is
 exercised by every case in the module and not only by the ones about it.
 """
 
+import ast
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -393,3 +395,91 @@ async def test_one_refused_document_fails_the_whole_context() -> None:
         await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)
 
     assert excinfo.value.asset_key == NOTES_KEY
+
+
+# ---------------------------------------------------------------------------
+# No asset reaches a file — KOD-59 R2 as amended on the issue
+# ---------------------------------------------------------------------------
+
+
+ASSEMBLER_SOURCE = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "kodezart"
+    / "services"
+    / "fire_context.py"
+)
+
+#: Every module name that could put bytes on disk.  ``pathlib`` and ``os``
+#: are the obvious two; ``tempfile`` and ``shutil`` are the two a writer
+#: reaches for when the obvious two look too blunt.
+_FILESYSTEM_MODULES: tuple[str, ...] = (
+    "os",
+    "pathlib",
+    "shutil",
+    "tempfile",
+    "aiofiles",
+)
+
+#: Names that WRITE, as opposed to merely locating.  ``open`` is a builtin,
+#: so an import check alone would miss it.
+_WRITE_CALLS: tuple[str, ...] = ("open", "write_text", "write_bytes", "mkdir")
+
+
+def _module_imports(source: Path) -> set[str]:
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            imported.add(node.module.split(".")[0])
+    return imported
+
+
+def _called_names(source: Path) -> set[str]:
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            names.add(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            names.add(node.func.attr)
+    return names
+
+
+def test_the_write_probe_recognises_a_module_that_does_write() -> None:
+    """Guards the two assertions below: a probe that never fires proves nothing."""
+    probe = Path(__file__)
+
+    assert _module_imports(probe) & set(_FILESYSTEM_MODULES)
+    assert _called_names(ASSEMBLER_SOURCE)
+
+
+def test_an_asset_cannot_be_committed_because_it_is_never_written() -> None:
+    """KOD-59 R2's test requirement, under the layout amended on that issue.
+
+    R2 rules an on-disk layout plus a git-ignore, and asks for a test that
+    an asset cannot be committed by accident.  The layout is not shipped —
+    the amendment on KOD-59 records why: there is no workspace at dispatch
+    time, because the fire is enqueued and not run.  The obligation is
+    discharged more strongly instead: an asset cannot be committed because
+    no code path writes one, asserted over the module rather than over a
+    `.gitignore` line that a later writer could satisfy while still
+    writing files somewhere else.
+    """
+    assert _module_imports(ASSEMBLER_SOURCE) & set(_FILESYSTEM_MODULES) == set()
+    assert _called_names(ASSEMBLER_SOURCE) & set(_WRITE_CALLS) == set()
+
+
+def test_the_assembler_holds_no_collaborator_that_could_write_a_file() -> None:
+    """The import check is about the module; this one is about the object."""
+    subject = assembler(FakeTrackerPort())
+
+    assert [
+        value
+        for value in vars(subject).values()
+        if any(hasattr(value, name) for name in ("persist", "acquire", "write"))
+    ] == []
