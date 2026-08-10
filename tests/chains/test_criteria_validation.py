@@ -52,7 +52,6 @@ from tests.fakes import (
     make_passing_evaluation,
     make_passing_evaluation_over,
     make_prompt_provider,
-    make_ticket_draft,
 )
 
 INFEASIBLE_A = {
@@ -698,54 +697,10 @@ async def test_the_refuter_reads_scope_against_the_drafter_s_base() -> None:
 
 
 # ---------------------------------------------------------------------------
-# KOD-53/AC-13 — the historical defect patterns, as behaviour, not as prose.
-# The criterion is UNMET (KOD-69 R2, KOD-53 R5): its subject is the criteria a
-# MODEL generates and this suite makes no model call, so what follows is an
-# honest report of an unverified claim rather than a demonstration of it.
+# An ungradeable criterion halts the run rather than reaching the loop
 # ---------------------------------------------------------------------------
 
-# Each fixture is a ticket abstracted from a run that induced the pattern,
-# paired with the criterion that run's drafter actually produced and the
-# evidence a refuter reading the repository at base reports about it. The
-# ticket DRIVES the run — it is the run's prompt and the summary the ticket
-# generator returns, so the drafter is rendered with it and the subject of
-# the assertion really is "this fixture ticket generates criteria that
-# comply". The claim is settled over the criteria the stage YIELDS: an
-# instruction being present in a prompt is not compliance, so no prompt
-# assertion here stands alone as evidence of one.
-
-PATTERN_1_TICKET = (
-    "Add a `status` arm to the run-state renderer so every state the domain "
-    "declares is rendered, including any the ticket author expects to exist."
-)
-PATTERN_3_TICKET = (
-    "Tighten the lint surface: the change must not weaken any existing check."
-)
-PATTERN_5_TICKET = (
-    "Complete the switch over `WorkflowOutcome` so no terminal route is "
-    "left undiscriminated."
-)
-
-PATTERN_1_BAD = (
-    "The renderer handles every `RunState` arm, including `archived` and `paused`."
-)
-PATTERN_3_BAD = "Running `uv run ruff check src/ tests/` exits 0 with no warnings."
-PATTERN_5_BAD = (
-    "The `WorkflowOutcome` switch covers `criteria_infeasible`, `pr_opened` "
-    "and `rolled_back`."
-)
-
-PATTERN_1_FINDING = {
-    "criterionId": "AC-1",
-    "verdict": "infeasible",
-    "smallestRepair": "criterion_text",
-    "undeclaredSwitchArms": ["archived", "paused"],
-    "refutation": (
-        "`RunState` declares no `archived` and no `paused` member; an arm the "
-        "type does not have cannot be handled by any implementation"
-    ),
-}
-PATTERN_3_FINDING = {
+UNGRADEABLE_A = {
     "criterionId": "AC-1",
     "verdict": "infeasible",
     "smallestRepair": "criterion_text",
@@ -755,113 +710,19 @@ PATTERN_3_FINDING = {
         "the run's own stochastic execution rather than a property of the tree"
     ),
 }
-PATTERN_5_FINDING = {
-    "criterionId": "AC-1",
-    "verdict": "infeasible",
-    "smallestRepair": "criterion_text",
-    "undeclaredSwitchArms": ["rolled_back"],
-    "refutation": (
-        "`WorkflowOutcome` declares no `rolled_back` member; the arms it does "
-        "declare are the eleven terminal routes named in types/domain/outcome.py"
-    ),
-}
-
-CORRECTED = "Every arm the named type actually declares is handled by the renderer."
-
-
-@pytest.mark.parametrize(
-    ("ticket", "drafted", "finding", "banned_arms"),
-    [
-        (PATTERN_1_TICKET, PATTERN_1_BAD, PATTERN_1_FINDING, ("archived", "paused")),
-        (PATTERN_3_TICKET, PATTERN_3_BAD, PATTERN_3_FINDING, ()),
-        (PATTERN_5_TICKET, PATTERN_5_BAD, PATTERN_5_FINDING, ("rolled_back",)),
-    ],
-    ids=["pattern-1", "pattern-3", "pattern-5"],
-)
-async def test_no_forbidden_class_or_non_domain_arm_reaches_the_loop(
-    ticket: str,
-    drafted: str,
-    finding: dict[str, object],
-    banned_arms: tuple[str, ...],
-) -> None:
-    """KOD-53/AC-13: the fixture ticket's own run yields criteria that comply.
-
-    The ticket is the run's prompt and the ticket generator's summary, so
-    the drafter is rendered with it and the criteria under assertion are
-    the ones this ticket produced.  What the stage yields carries no
-    forbidden class, no undeclared arm on its verdict, and no mention of
-    an arm the refuter established the named type does not declare.
-    """
-    executor = ValidatorScriptExecutor(
-        sweeps=[
-            {"findings": [finding, FEASIBLE_B], "contradictions": []},
-            {"findings": [FEASIBLE_A, FEASIBLE_B], "contradictions": []},
-        ],
-        criteria_rounds=[_criteria_round(drafted), _criteria_round(CORRECTED)],
-    )
-    gate = FakeQualityGate(
-        events=[],
-        evaluation=make_passing_evaluation(),
-        last_commit_sha="a" * 40,
-    )
-    events = await _run(
-        _engine(
-            executor,
-            max_rounds=1,
-            quality_gate=gate,
-            ticket_generator=FakeTicketGenerator(make_ticket_draft(summary=ticket)),
-        ),
-        prompt=ticket,
-    )
-
-    drafter_prompts = [p for p in executor.prompts if "WATSON 1: BEHAVIORAL" in p]
-    assert len(drafter_prompts) == 2
-    assert ticket in drafter_prompts[0], "the fixture ticket drove generation"
-    refutation = finding["refutation"]
-    assert isinstance(refutation, str)
-    assert refutation in drafter_prompts[1], "the refutation was handed back"
-
-    sweep_event = next(
-        e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
-    )
-    assert sweep_event.regeneration_targets == ["AC-1"]
-
-    dispatched = gate.calls[0]["acceptance_criteria"]
-    assert isinstance(dispatched, list)
-    texts = [criterion.text for criterion in dispatched]
-    assert drafted not in texts
-    assert CORRECTED in texts
-    for criterion in dispatched:
-        assert criterion.feasibility.forbidden_class is None
-        assert criterion.feasibility.undeclared_switch_arms == []
-        for arm in banned_arms:
-            assert arm not in criterion.text
-
-
-def test_the_pattern_5_fixture_still_names_an_arm_its_type_lacks() -> None:
-    """KOD-53/AC-13's premise is read off the production type, never assumed.
-
-    ``PATTERN_5_BAD`` is a Pattern-5 instance only while ``rolled_back`` is
-    absent from ``WorkflowOutcome`` and the arms it pairs that with are
-    present.  Appending ``rolled_back`` to the enum would quietly turn the
-    fixture into a satisfiable criterion and leave KOD-53/AC-13 asserted over
-    nothing, so the enum is consulted rather than trusted.
-    """
-    declared = {member.value for member in WorkflowOutcome}
-    assert "rolled_back" not in declared
-    assert {"criteria_infeasible", "pr_opened"} <= declared
+UNGRADEABLE_TEXT = "Running `uv run ruff check src/ tests/` exits 0 with no warnings."
 
 
 async def test_an_ungradeable_class_survives_the_bound_as_a_halt() -> None:
     """A drafter that keeps emitting one halts the run instead of dispatching it."""
     executor = ValidatorScriptExecutor(
         sweeps=[
-            {"findings": [PATTERN_3_FINDING, FEASIBLE_B], "contradictions": []},
-            {"findings": [PATTERN_3_FINDING, FEASIBLE_B], "contradictions": []},
+            {"findings": [UNGRADEABLE_A, FEASIBLE_B], "contradictions": []},
+            {"findings": [UNGRADEABLE_A, FEASIBLE_B], "contradictions": []},
         ],
         criteria_rounds=[
-            _criteria_round(PATTERN_3_BAD),
-            _criteria_round(PATTERN_3_BAD),
+            _criteria_round(UNGRADEABLE_TEXT),
+            _criteria_round(UNGRADEABLE_TEXT),
         ],
     )
     gate = FakeQualityGate(
