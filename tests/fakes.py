@@ -67,6 +67,7 @@ from kodezart.types.domain.tracker import (
     IssueQuery,
     IssueRelation,
     IssueRelationKind,
+    MappingKind,
     MappingOutcome,
     MappingRef,
     StateTransition,
@@ -1458,6 +1459,24 @@ class FakeMcpAsset:
 
 
 @dataclass
+class FakeMcpDocument:
+    """One document the fake workspace holds: server id, title, body.
+
+    Three fields rather than an id-to-body mapping, because the ensure
+    path addresses a document by TITLE and the read path by id, and a
+    registry that carried only one of them would make one of the two
+    untestable.
+    """
+
+    id: str
+    title: str
+    content: str
+
+    def summary(self) -> dict[str, object]:
+        return {"id": self.id, "title": self.title}
+
+
+@dataclass
 class FakeMcpIssue:
     """One issue in the fake workspace, in the vendor's own shape."""
 
@@ -1550,7 +1569,7 @@ class FakeLinearMcpServer:
         self,
         *,
         issues: Sequence[FakeMcpIssue] = (),
-        documents: Mapping[str, str] | None = None,
+        documents: Sequence[FakeMcpDocument] = (),
         history: Mapping[str, Sequence[FakeMcpHistoryEntry]] | None = None,
         users: Sequence[str] = (),
         teams: Sequence[str] = (),
@@ -1564,7 +1583,9 @@ class FakeLinearMcpServer:
     ) -> None:
         self.issues: dict[str, FakeMcpIssue] = {issue.id: issue for issue in issues}
         self.comments: list[FakeMcpComment] = []
-        self.documents: dict[str, str] = dict(documents or {})
+        self.documents: dict[str, FakeMcpDocument] = {
+            document.id: document for document in documents
+        }
         self.history: dict[str, list[FakeMcpHistoryEntry]] = {
             key: list(entries) for key, entries in (history or {}).items()
         }
@@ -1730,7 +1751,37 @@ class FakeLinearMcpServer:
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
         document_id = str(arguments["id"])
-        return {"id": document_id, "content": self.documents[document_id]}
+        document = self.documents[document_id]
+        return {"id": document.id, "content": document.content}
+
+    def _tool_list_documents(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return {
+            "documents": [document.summary() for document in self.documents.values()],
+        }
+
+    def _tool_save_document(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Create a document under the given title, with a server id.
+
+        Creation only, because that is the whole of what the adapter asks
+        for: a call naming an existing id would be an update, and an
+        ensure that updated a document would be the rename the refusal
+        exists to prevent.
+        """
+        title = str(arguments["title"])
+        self._sequence += 1
+        document = FakeMcpDocument(
+            id=f"fake-document-{self._sequence:04d}",
+            title=title,
+            content="",
+        )
+        self.documents[document.id] = document
+        return document.summary()
 
     def _named(self, names: Sequence[str]) -> Mapping[str, object]:
         return {"entries": [{"name": name} for name in names]}
@@ -1838,6 +1889,7 @@ class FakeTrackerPort:
         provenance: Mapping[tuple[str, QueueState], StateTransition] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
+        document_titles: Mapping[str, str] | None = None,
         known_identifiers: Sequence[str] = (),
         recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         recorded_base_specs: Mapping[str, BaseSpec] | None = None,
@@ -1862,6 +1914,11 @@ class FakeTrackerPort:
             key: tuple(value) for key, value in (assets or {}).items()
         }
         self._documents: dict[str, str] = dict(documents or {})
+        #: Title per document id, for the ensure path.  Separate from the
+        #: body registry above because a consumer reads a document by key
+        #: and an ensure addresses it by title; a fixture that seeded only
+        #: one of them would leave the other untestable.
+        self.document_titles: dict[str, str] = dict(document_titles or {})
         self.known_identifiers: set[str] = set(known_identifiers)
         #: The container each INSTATED value was created in.  Seeded empty,
         #: because a value the fixture merely knows about reports no
@@ -2085,8 +2142,18 @@ class FakeTrackerPort:
                     "this kind belongs to no field the operation owns",
                     entry=ref.describe(),
                 )
-            if ref.identifier in self.known_identifiers:
-                container = self.mapping_containers.get(ref.identifier)
+            if ref.kind is MappingKind.DOCUMENT:
+                outcomes.append(self._ensure_document(ref))
+                continue
+            identifier = ref.identifier
+            if identifier is None:
+                raise TrackerEnsureConflictError(
+                    "this kind is declared by its own identifier and this ref "
+                    "carries none",
+                    entry=ref.describe(),
+                )
+            if identifier in self.known_identifiers:
+                container = self.mapping_containers.get(identifier)
                 if container is not None and container != ref.scope:
                     raise TrackerEnsureConflictError(
                         "the workspace defines this value in another container; "
@@ -2094,13 +2161,75 @@ class FakeTrackerPort:
                         entry=ref.describe(),
                     )
                 outcomes.append(
-                    MappingOutcome(ref=ref, action=EnsureAction.ADOPTED),
+                    MappingOutcome(
+                        ref=ref,
+                        action=EnsureAction.ADOPTED,
+                        identifier=identifier,
+                    ),
                 )
                 continue
-            self.known_identifiers.add(ref.identifier)
-            self.mapping_containers[ref.identifier] = ref.scope
-            outcomes.append(MappingOutcome(ref=ref, action=EnsureAction.CREATED))
+            self.known_identifiers.add(identifier)
+            self.mapping_containers[identifier] = ref.scope
+            outcomes.append(
+                MappingOutcome(
+                    ref=ref,
+                    action=EnsureAction.CREATED,
+                    identifier=identifier,
+                ),
+            )
         return tuple(outcomes)
+
+    def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
+        """The document arm of the ensure contract, held identically here.
+
+        Same three refusals as the adapter, for the same reasons: an id the
+        workspace does not hold, an id whose document carries another
+        title, and a title two documents share.
+        """
+        if ref.identifier is not None:
+            title = self.document_titles.get(ref.identifier)
+            if title is None:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds no document with this identifier",
+                    entry=ref.describe(),
+                )
+            if title != ref.name:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds this document under another title; "
+                    f"declared {ref.name!r}, found {title!r}",
+                    entry=ref.describe(),
+                )
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=ref.identifier,
+            )
+        held = sorted(
+            identifier
+            for identifier, title in self.document_titles.items()
+            if title == ref.name
+        )
+        if len(held) > 1:
+            raise TrackerEnsureConflictError(
+                "the workspace holds several documents under this title",
+                entry=ref.describe(),
+            )
+        if held:
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=held[0],
+            )
+        self._sequence += 1
+        identifier = f"fake-document-{self._sequence:04d}"
+        self.document_titles[identifier] = ref.name
+        self._documents[identifier] = ""
+        self.known_identifiers.add(identifier)
+        return MappingOutcome(
+            ref=ref,
+            action=EnsureAction.CREATED,
+            identifier=identifier,
+        )
 
 
 class FakeDeliveryProbe:

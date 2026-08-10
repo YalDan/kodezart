@@ -18,7 +18,7 @@ from enum import StrEnum
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.operation import QueueState
+from kodezart.types.domain.operation import OperationConfig, QueueState
 
 
 class TrackerBackend(StrEnum):
@@ -96,12 +96,13 @@ class IssueRelationKind(StrEnum):
 
 
 class MappingKind(StrEnum):
-    """The four configured-mapping categories boot validation resolves."""
+    """The configured-mapping categories boot validation resolves or instates."""
 
     USER = "user"
     TEAM = "team"
     QUEUE_STATE = "queue_state"
     WORKFLOW_STATE = "workflow_state"
+    DOCUMENT = "document"
 
 
 #: The mapping kinds an ensure can instate, in ANY backend.  A kind absent
@@ -111,7 +112,7 @@ class MappingKind(StrEnum):
 #: a ref outside this set is ``TrackerEnsureConflictError`` everywhere, which
 #: is what keeps an adapter and a test double from disagreeing about it.
 INSTATABLE_MAPPING_KINDS: frozenset[MappingKind] = frozenset(
-    {MappingKind.QUEUE_STATE},
+    {MappingKind.QUEUE_STATE, MappingKind.DOCUMENT},
 )
 
 
@@ -222,13 +223,21 @@ class MappingRef(TrackerModel):
     """One configured mapping entry, resolved against the workspace at boot.
 
     ``name`` is the semantic name the configuration addresses (a role's
-    user, a team key, a queue-state member, a lifecycle stage);
+    user, a team key, a queue-state member, a lifecycle stage, a document);
     ``identifier`` is the backend identifier the configuration binds it to.
+
+    ``identifier`` is ``None`` only where the WORKSPACE assigns the value —
+    a document, whose id exists once it does — and there it means "not
+    adopted yet": the config can name the thing without being able to name
+    its identifier.  An ensure over such a ref reports the identifier it
+    adopted or created.  For every other kind the identifier IS the
+    declared value, so a ref without one names nothing and every port
+    refuses it rather than guessing.
     """
 
     kind: MappingKind
     name: str = Field(min_length=1)
-    identifier: str = Field(min_length=1)
+    identifier: str | None = None
     #: Backend identifier of the container an INSTATED value is created in,
     #: or ``None`` for one that belongs to the workspace rather than to a
     #: container.  Read only on the ensure path: resolution never creates.
@@ -236,14 +245,40 @@ class MappingRef(TrackerModel):
 
     def describe(self) -> str:
         """Human-readable one-line description used in boot failures."""
-        return f"{self.kind.value} {self.name!r} -> {self.identifier!r}"
+        target = (
+            "(assigned by the workspace)"
+            if self.identifier is None
+            else repr(self.identifier)
+        )
+        return f"{self.kind.value} {self.name!r} -> {target}"
 
 
 class MappingOutcome(TrackerModel):
-    """What ensuring one OWNED mapping did, reported in the startup record."""
+    """What ensuring one OWNED mapping did, reported in the startup record.
+
+    ``identifier`` is what the workspace holds for this mapping AFTER the
+    ensure, which is the ref's own identifier for every kind that declares
+    one and the adopted or created id for the kinds that do not.  Without
+    it a server-assigned id is lost at the boundary and the config it
+    belongs in can never be made true.
+    """
 
     ref: MappingRef
     action: EnsureAction
+    identifier: str = Field(min_length=1)
+
+
+class MappingReconciliation(TrackerModel):
+    """What boot instated, and the operation config that is true afterwards.
+
+    Two fields because the outcomes are the record and the config is the
+    thing every later consumer reads.  An adopted document id exists only
+    in an outcome until it is written back, and a prompt rendered from the
+    config boot started with would name an id the workspace does not hold.
+    """
+
+    config: OperationConfig
+    outcomes: tuple[MappingOutcome, ...] = ()
 
 
 class IssueQuery(TrackerModel):

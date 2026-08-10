@@ -1,15 +1,25 @@
 """Boot validation: one bad mapping aborts startup naming exactly that entry."""
 
+from pathlib import Path
+
 import pytest
 
-from kodezart.core.errors import TrackerBootValidationError
+from kodezart.adapters.in_repo_prompt_registry import (
+    InRepoPromptRegistry,
+    default_sets_root,
+)
+from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.core.errors import PromptRenderError, TrackerBootValidationError
+from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.services.tracker_boot import (
     OWNED_REF_BUILDERS,
     configured_mappings,
     owned_mappings,
+    reconcile_tracker_mappings,
     validate_tracker_mappings,
 )
 from kodezart.types.domain.operation import (
+    CHECKPOINT_DOCUMENT_KEY,
     FIELD_OWNERSHIP,
     CheckStep,
     ConfigOwnership,
@@ -23,6 +33,7 @@ from kodezart.types.domain.operation import (
     RecordDestination,
     RepoEntry,
 )
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     MappingKind,
@@ -38,6 +49,8 @@ from tests.tracker.conftest import (
     fixture_server,
     linear_over_fake_mcp,
 )
+
+EXAMPLE_CONFIG = Path(__file__).resolve().parents[2] / "docs" / "operation.example.toml"
 
 
 def operation_config() -> OperationConfig:
@@ -77,6 +90,7 @@ def operation_config() -> OperationConfig:
         documents={
             "checkpoint": DocumentEntry(
                 system=DocumentSystem.TRACKER,
+                name="checkpoint",
                 id="doc-1",
             ),
         },
@@ -97,9 +111,21 @@ class TestConfiguredMappings:
     """Every configured identity, team and state becomes a ref."""
 
     def test_every_category_is_covered(self) -> None:
-        refs = configured_mappings(operation_config())
-        kinds = {ref.kind for ref in refs}
-        assert kinds == set(MappingKind)
+        """Across both passes, because the two carry different categories.
+
+        A document is INSTATED and never resolved: the ensure reports the
+        identifier the workspace holds, so a resolution pass over the same
+        value would re-ask the tool that just answered. Asserting over the
+        union keeps the check derived from ``MappingKind`` — a new member
+        reddens this until some pass carries it.
+        """
+        config = operation_config()
+        refs = (*configured_mappings(config), *owned_mappings(config))
+
+        assert {ref.kind for ref in refs} == set(MappingKind)
+        assert MappingKind.DOCUMENT not in {
+            ref.kind for ref in configured_mappings(config)
+        }
 
     def test_each_principal_contributes_a_user_ref(self) -> None:
         refs = configured_mappings(operation_config())
@@ -253,7 +279,13 @@ class TestOwnershipPartition:
         assert owned == set(OWNED_REF_BUILDERS)
 
         config = operation_config()
-        assert {ref.name for ref in owned_mappings(config)} == set(config.queue_states)
+        assert {ref.name for ref in owned_mappings(config)} == set(
+            config.queue_states,
+        ) | {
+            entry.name
+            for entry in config.documents.values()
+            if entry.system is DocumentSystem.TRACKER
+        }
 
     def test_every_owned_ref_is_of_a_kind_an_ensure_may_instate(self) -> None:
         """The two halves of instatability cannot drift apart silently.
@@ -279,11 +311,117 @@ class TestOwnershipPartition:
         Written as a failing case rather than a comment because the whole
         point of reading the partition is that a field promoted to OWNED
         with no ensure behind it must not boot into quietly owning nothing.
-        This is the state `documents` is in today, held one step away by its
-        EXTERNAL classification alone.
+        `records` is the field in that position now: EXTERNAL, no builder,
+        and one line away from a boot that owns a destination it cannot
+        instate.
         """
-        monkeypatch.setitem(FIELD_OWNERSHIP, "documents", ConfigOwnership.OWNED)
+        monkeypatch.setitem(FIELD_OWNERSHIP, "records", ConfigOwnership.OWNED)
 
         with pytest.raises(TrackerBootValidationError) as caught:
             owned_mappings(operation_config())
-        assert caught.value.unresolved == ("documents",)
+        assert caught.value.unresolved == ("records",)
+
+
+class TestReconciledConfig:
+    """The config reconciliation leaves behind, and why boot must bind to it.
+
+    KOD-57 R9.4.  An adopted document id exists only in an outcome until it
+    is written back, so this is the seam between "boot created the
+    document" and "every later reader knows which document that is".  The
+    shipped example is the subject rather than a hand-built fixture,
+    because what has to keep working is the file an operator copies.
+    """
+
+    def _fresh(self) -> OperationConfig:
+        """The example, in the shape a fresh workspace is configured with."""
+        config = load_operation_config(EXAMPLE_CONFIG)
+        checkpoint = config.documents[CHECKPOINT_DOCUMENT_KEY]
+        return config.model_copy(
+            update={
+                "documents": {
+                    **config.documents,
+                    CHECKPOINT_DOCUMENT_KEY: checkpoint.model_copy(
+                        update={"id": None},
+                    ),
+                },
+            },
+        )
+
+    def _workspace(self, config: OperationConfig) -> FakeTrackerPort:
+        """A workspace holding every external entity and no documents."""
+        return FakeTrackerPort(
+            known_identifiers=[
+                *(principal.tracker_user for principal in config.principals),
+                *config.agent_identities,
+                *config.teams.values(),
+                *config.queue_states.values(),
+                *config.workflow_states.values(),
+            ],
+        )
+
+    async def test_the_adopted_document_id_is_written_back_into_the_config(
+        self,
+    ) -> None:
+        config = self._fresh()
+        tracker = self._workspace(config)
+
+        reconciliation = await reconcile_tracker_mappings(
+            tracker=tracker,
+            config=config,
+        )
+
+        adopted = reconciliation.config.documents[CHECKPOINT_DOCUMENT_KEY].id
+        assert adopted is not None
+        assert adopted in tracker.document_titles
+        # Nothing else moved: the knowledge document declares its own id and
+        # no ensure touches it.
+        assert (
+            reconciliation.config.documents["house_rules"]
+            == (config.documents["house_rules"])
+        )
+
+    def test_a_registry_bound_before_reconciliation_cannot_render_a_pass(
+        self,
+    ) -> None:
+        """The ordering has a consequence, and this is it, stated as a failure.
+
+        Binding the declared copy is not merely untidy: the placeholder has
+        no value, so every pass prompt naming the checkpoint document
+        fails to render at all, and a scheduled tick becomes a typed
+        rendering failure once per interval.
+        """
+        registry = InRepoPromptRegistry.load(
+            sets_root=default_sets_root(),
+            default_set="claude-opus",
+            set_overrides={},
+            template_overrides={},
+            bindings=dict(bindings_for(self._fresh())),
+        )
+
+        with pytest.raises(PromptRenderError) as caught:
+            registry.template_for(PromptKey.FIRE_PREP_PASS).render({})
+
+        assert "documents.checkpoint.id" in caught.value.missing
+
+    async def test_a_registry_bound_after_reconciliation_names_the_adopted_id(
+        self,
+    ) -> None:
+        """The paired positive: the same render, from the reconciled copy."""
+        config = self._fresh()
+        reconciliation = await reconcile_tracker_mappings(
+            tracker=self._workspace(config),
+            config=config,
+        )
+        registry = InRepoPromptRegistry.load(
+            sets_root=default_sets_root(),
+            default_set="claude-opus",
+            set_overrides={},
+            template_overrides={},
+            bindings=dict(bindings_for(reconciliation.config)),
+        )
+
+        rendered = registry.template_for(PromptKey.FIRE_PREP_PASS).render({})
+
+        adopted = reconciliation.config.documents[CHECKPOINT_DOCUMENT_KEY].id
+        assert adopted is not None
+        assert adopted in rendered

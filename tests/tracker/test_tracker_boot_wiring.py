@@ -7,7 +7,10 @@ that would otherwise need a live workspace.  Delete the wiring from
 ``main`` and every assertion below fails.
 """
 
+import ast
+import inspect
 import json
+import textwrap
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -26,6 +29,8 @@ from tests.fakes import ManagedFakeLinearMcpServer
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
+    DOCUMENT_KEY,
+    DOCUMENT_TITLE,
     QUEUE_STATE_LABELS,
     fixture_server,
 )
@@ -43,10 +48,18 @@ def _operation_toml(
     *,
     approver: str = APPROVER,
     queue_states: dict[str, str] | None = None,
+    document_title: str = DOCUMENT_TITLE,
+    document_id: str | None = DOCUMENT_KEY,
 ) -> str:
-    """An operation config naming the fixture workspace's own entities."""
+    """An operation config naming the fixture workspace's own entities.
+
+    ``document_id`` at ``None`` is the fresh-workspace shape: the operation
+    names the checkpoint document and boot adopts whatever id the workspace
+    assigns it.
+    """
     labels = dict(QUEUE_STATE_LABELS if queue_states is None else queue_states)
     rendered = "\n".join(f'{name} = "{label}"' for name, label in labels.items())
+    declared_id = "" if document_id is None else f'\nid = "{document_id}"'
     return f"""
 operation_name = "fixture"
 workspace = "fixture-workspace"
@@ -84,7 +97,7 @@ command = "make check"
 
 [documents.checkpoint]
 system = "tracker"
-id = "doc-1"
+name = "{document_title}"{declared_id}
 
 [records.run_log]
 system = "knowledge"
@@ -150,6 +163,37 @@ def _events(captured: str) -> list[dict[str, object]]:
         for line in captured.splitlines()
         if line.strip().startswith("{")
     ]
+
+
+def _call_name(node: ast.expr) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def _first_call_line(name: str) -> int:
+    """Where *name* is first called inside the shipped lifespan."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(lifespan)))
+    return next(
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _call_name(node.func) == name
+    )
+
+
+def test_the_prompt_registry_is_bound_after_the_tracker_is_reconciled() -> None:
+    """KOD-57 R9.4's ordering, held against the source that has to carry it.
+
+    Every other case here observes an OUTCOME, and the ordering has none
+    that a test can see: a registry bound to the declared copy renders a
+    placeholder only when a pass ticks, which is one interval away from
+    boot and off every test's path. So this reads the composition root
+    itself. Moving the dial back below the registry load reddens it, which
+    is the only thing that would.
+    """
+    assert _first_call_line("boot_tracker") < _first_call_line("bindings_for")
 
 
 async def test_boot_wires_the_tracker_and_owns_its_session_lifetime(
@@ -233,6 +277,75 @@ async def test_a_second_boot_over_the_same_workspace_adopts_and_writes_nothing(
     ]
     assert reconciled[0]["created"] == []
     assert "queue_state 'done' -> 'queue:terminal'" in reconciled[0]["adopted"]
+
+
+async def test_a_declared_document_the_workspace_lacks_is_created_at_boot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """AC-4 arm (b): the read-side document half, and the manual step it removes.
+
+    The operation names its checkpoint document and declares no id, which
+    is the only shape a FRESH workspace can be configured with — a
+    server-assigned id cannot be written down before the document exists.
+    Boot creates it, adopts the id it is given, and writes that id back
+    into the config every later consumer reads.
+    """
+    title = "Fire run checkpoint"
+    assert title not in {document.title for document in wired.documents.values()}
+    _configure(
+        monkeypatch,
+        tmp_path,
+        _operation_toml(document_title=title, document_id=None),
+    )
+    app = create_app()
+    async with lifespan(app):
+        adopted = app.state.operation_config.documents["checkpoint"].id
+
+    assert wired.tool_calls("save_document") == [{"title": title}]
+    assert wired.documents[adopted].title == title
+    reconciled = [
+        event
+        for event in _events(capsys.readouterr().out)
+        if event.get("event") == "tracker_mappings_reconciled"
+    ]
+    assert (
+        f"document '{title}' -> (assigned by the workspace)" in reconciled[0]["created"]
+    )
+
+
+async def test_a_document_the_workspace_already_carries_is_adopted_not_duplicated(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """A second boot over an established workspace writes no document at all."""
+    _configure(monkeypatch, tmp_path, _operation_toml(document_id=None))
+    app = create_app()
+    async with lifespan(app):
+        adopted = app.state.operation_config.documents["checkpoint"].id
+
+    assert adopted == DOCUMENT_KEY
+    assert wired.tool_calls("save_document") == []
+
+
+async def test_a_declared_document_id_the_workspace_lacks_aborts_boot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """A pinned id that resolves to nothing is named, never quietly replaced."""
+    _configure(monkeypatch, tmp_path, _operation_toml(document_id="ghost-document"))
+
+    with pytest.raises(TrackerEnsureConflictError) as caught:
+        async with lifespan(create_app()):
+            pass
+
+    assert "ghost-document" in caught.value.entry
+    assert wired.tool_calls("save_document") == []
+    assert wired.closes == 1
 
 
 async def test_a_label_the_workspace_holds_elsewhere_aborts_boot_and_writes_nothing(

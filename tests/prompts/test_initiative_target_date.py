@@ -64,10 +64,12 @@ command = "make check"
 
 [documents.checkpoint]
 system = "tracker"
+name = "checkpoint"
 id = "doc-1"
 
 [documents.house_rules]
 system = "knowledge"
+name = "house rules"
 id = "doc-2"
 
 [records.run_log]

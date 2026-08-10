@@ -97,7 +97,11 @@ def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationCo
             for url in repos
         ],
         documents={
-            "checkpoint": DocumentEntry(system=DocumentSystem.TRACKER, id="doc-1"),
+            "checkpoint": DocumentEntry(
+                system=DocumentSystem.TRACKER,
+                name="checkpoint",
+                id="doc-1",
+            ),
         },
         records={
             "run_log": RecordDestination(

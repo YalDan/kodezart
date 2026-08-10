@@ -110,15 +110,29 @@ depends_on = "type-check"
 # is required: the scan-window marker is addressed by key rather than by name
 # so the later writer never has to match on a title.
 #
-# `system` is REQUIRED alongside `id`. An id on its own renders into a prompt
-# as an opaque token, and a session given only that prompt cannot tell which
-# system to open. Legal values: "tracker", "knowledge".
+# `system` and `name` are REQUIRED. An id on its own renders into a prompt as
+# an opaque token, and a session given only that prompt cannot tell which
+# system to open. Legal values for `system`: "tracker", "knowledge".
+#
+# `id` is OPTIONAL for a "tracker" document and required for a "knowledge"
+# one. Boot instates the tracker documents this operation owns: it looks for
+# one carrying `name`, creates it when the workspace has none, and adopts the
+# id it is given — so a fresh workspace needs nothing made by hand. Declaring
+# an `id` pins the entry to that exact document instead, and boot refuses when
+# the workspace does not hold it or holds it under another title. DELETE the
+# `id` line below when copying this file: the value is a placeholder, and boot
+# will name it as an entry it cannot resolve rather than quietly creating a
+# second document beside it.
 [documents.checkpoint]
 system = "tracker"
+name = "Fire run checkpoint"
 id = "example-checkpoint-document-id"
 
+# A knowledge-store document is not this operation's to create, so its id is
+# declared rather than adopted.
 [documents.house_rules]
 system = "knowledge"
+name = "House rules"
 id = "example-house-rules-document-id"
 
 # WRITE-side destination registry — where a pass records a row, as opposed to

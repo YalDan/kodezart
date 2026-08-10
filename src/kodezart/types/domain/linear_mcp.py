@@ -143,3 +143,22 @@ class LinearDocumentWire(LinearWireModel):
 
     id: str
     content: str
+
+
+class LinearDocumentSummaryWire(LinearWireModel):
+    """One entry of ``list_documents``, and what ``save_document`` returns.
+
+    Separate from :class:`LinearNamedWire` because a document is addressed
+    by a server-assigned ``id`` and named by a ``title``, while a label is
+    addressed by the name itself.  Folding the two would make the ensure
+    path read one field and mean the other.
+    """
+
+    id: str
+    title: str
+
+
+class LinearDocumentListWire(LinearWireModel):
+    """The ``list_documents`` envelope."""
+
+    documents: list[LinearDocumentSummaryWire]

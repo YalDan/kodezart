@@ -21,6 +21,7 @@ from kodezart.types.domain.operation import CheckStep, OperationConfig
 _MINIMAL_TAIL = """
 [documents.checkpoint]
 system = "tracker"
+name = "checkpoint"
 id = "doc-1"
 
 [records.run_log]

@@ -19,6 +19,7 @@ from kodezart.types.domain.tracker import IssueQuery, StateTransition
 from tests.fakes import (
     FakeLinearMcpServer,
     FakeMcpAsset,
+    FakeMcpDocument,
     FakeMcpHistoryEntry,
     FakeMcpIssue,
     FakeTrackerPort,
@@ -57,6 +58,7 @@ APPROVED_ISSUE = "FIX-2"
 ASSET_ISSUE = "FIX-3"
 
 DOCUMENT_KEY = "doc-1"
+DOCUMENT_TITLE = "checkpoint"
 DOCUMENT_CONTENT = "fixture document body"
 PAGE_SIZE = 50
 
@@ -109,7 +111,7 @@ def fixture_server() -> FakeLinearMcpServer:
                 documents=[
                     FakeMcpAsset(
                         id=DOCUMENT_KEY,
-                        title="checkpoint",
+                        title=DOCUMENT_TITLE,
                         url="https://tracker.invalid/doc-1",
                     ),
                 ],
@@ -117,7 +119,13 @@ def fixture_server() -> FakeLinearMcpServer:
                 updated_at=FIXTURE_NOW,
             ),
         ],
-        documents={DOCUMENT_KEY: DOCUMENT_CONTENT},
+        documents=[
+            FakeMcpDocument(
+                id=DOCUMENT_KEY,
+                title=DOCUMENT_TITLE,
+                content=DOCUMENT_CONTENT,
+            ),
+        ],
         history={
             APPROVED_ISSUE: [
                 FakeMcpHistoryEntry(

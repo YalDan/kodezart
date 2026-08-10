@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -214,12 +215,27 @@ def build_tracker(
             )
 
 
+@dataclass(frozen=True)
+class DialledTracker:
+    """A reconciled tracker: the port, its session, and the config it left.
+
+    ``operation`` is the RECONCILED config and is the only copy anything
+    downstream may read.  A document this boot created carries an id no
+    operator could have declared, and a prompt bound to the pre-boot copy
+    would render a placeholder in its place (KOD-57 R9).
+    """
+
+    tracker: TrackerPort
+    caller: ManagedMcpToolCaller
+    operation: OperationConfig
+
+
 async def boot_tracker(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
     log: BoundLogger,
-) -> tuple[TrackerPort, ManagedMcpToolCaller] | None:
+) -> DialledTracker | None:
     """Dial the tracker and reconcile its configured mappings, or say why not.
 
     Three states, none silent.  Both an operation config and a credential
@@ -239,7 +255,7 @@ async def boot_tracker(
     await caller.open()
     try:
         tracker = build_tracker(config=config, operation=operation, caller=caller)
-        outcomes = await reconcile_tracker_mappings(
+        reconciliation = await reconcile_tracker_mappings(
             tracker=tracker,
             config=operation,
         )
@@ -251,16 +267,20 @@ async def boot_tracker(
         backend=config.tracker.value,
         adopted=[
             item.ref.describe()
-            for item in outcomes
+            for item in reconciliation.outcomes
             if item.action is EnsureAction.ADOPTED
         ],
         created=[
             item.ref.describe()
-            for item in outcomes
+            for item in reconciliation.outcomes
             if item.action is EnsureAction.CREATED
         ],
     )
-    return tracker, caller
+    return DialledTracker(
+        tracker=tracker,
+        caller=caller,
+        operation=reconciliation.config,
+    )
 
 
 def build_dispatch_passes(
@@ -452,11 +472,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if config.github_token is not None
         else None
     )
-    operation = (
+    declared = (
         load_operation_config(Path(config.operation_config))
         if config.operation_config is not None
         else None
     )
+    # Reconciliation comes FIRST, because everything below binds to the
+    # config it produces (KOD-57 R9). A document the operation owns has no
+    # id until boot adopts one, so a registry bound to the declared copy
+    # would carry a placeholder into every rendered pass prompt. With no
+    # tracker there is nothing to reconcile against, the declared copy is
+    # the whole truth, and the passes that read an unadopted id are not
+    # scheduled at all.
+    dialled = await boot_tracker(config=config, operation=declared, log=log)
+    operation = declared if dialled is None else dialled.operation
+    tracker: TrackerPort | None = None if dialled is None else dialled.tracker
+    mcp_caller: ManagedMcpToolCaller | None = (
+        None if dialled is None else dialled.caller
+    )
+    app.state.tracker = tracker
     prompts = InRepoPromptRegistry.load(
         sets_root=default_sets_root(),
         default_set=config.prompt_set,
@@ -488,11 +522,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         allowlist=list(skills.allowlist),
         setting_sources=config.setting_sources,
     )
-
-    dialled = await boot_tracker(config=config, operation=operation, log=log)
-    tracker: TrackerPort | None = None if dialled is None else dialled[0]
-    mcp_caller: ManagedMcpToolCaller | None = None if dialled is None else dialled[1]
-    app.state.tracker = tracker
 
     git = SubprocessGitService(remote=config.git_remote, auth=auth)
     executor = ClaudeClientExecutor(

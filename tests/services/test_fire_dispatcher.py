@@ -135,6 +135,7 @@ def operation_config() -> OperationConfig:
         documents={
             "checkpoint": DocumentEntry(
                 system=DocumentSystem.TRACKER,
+                name="checkpoint",
                 id="doc-1",
             ),
         },

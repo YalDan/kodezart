@@ -161,10 +161,38 @@ class DocumentEntry(OperationModel):
     ``system`` is required because an id alone is unresolvable: a rendered
     prompt saying "the marker in <opaque-id>" names no system a session can
     open, and a session given only the rendered prompt cannot recover one.
+
+    ``name`` is what an ensure keys on, and it is what makes this field
+    OWNED rather than EXTERNAL (KOD-57 R2, amendment 3, and R9).  A
+    document's id is assigned by the system that holds it, so a config
+    could never declare the id of a document that does not exist yet — the
+    reason the whole field was classed EXTERNAL and a first boot needed the
+    checkpoint document made by hand.  Naming it instead closes that: boot
+    creates the document by name when the workspace has none and ADOPTS the
+    id it is given.
+
+    ``id`` is therefore three-state and each state is a different fact.
+    Absent means "not adopted yet"; present means "this exact document",
+    and boot refuses rather than creating a second one when the workspace
+    does not hold it.  A document in the KNOWLEDGE system must declare its
+    id at load, because nothing in this process can create one there and an
+    unadopted id would render as a placeholder no session can open.
     """
 
     system: DocumentSystem
-    id: str
+    name: str = Field(min_length=1)
+    id: str | None = None
+
+    @model_validator(mode="after")
+    def _knowledge_documents_declare_an_id(self) -> Self:
+        if self.system is DocumentSystem.KNOWLEDGE and self.id is None:
+            msg = (
+                f"document {self.name!r} lives in the "
+                f"{DocumentSystem.KNOWLEDGE.value} system, which this operation "
+                f"cannot instate, so its id must be declared"
+            )
+            raise ValueError(msg)
+        return self
 
 
 class RecordDestination(OperationModel):
@@ -345,18 +373,19 @@ class OperationConfig(OperationModel):
 #: because a flag makes ownership operator-editable data: an operator could
 #: mark ``principals`` ensurable and the adapter would try to create a user.
 #:
-#: ``documents`` and ``records`` are EXTERNAL rather than OWNED, which
-#: deviates from the ruled partition.  OWNED means ensured at boot and
-#: created if absent, KEYED BY THE CONFIG'S DECLARED NAME — and neither
-#: :class:`DocumentEntry` nor :class:`RecordDestination` carries a name.
-#: Their declared value is a server-assigned identifier, so a document
-#: absent from the workspace cannot be created *with the id the config
-#: names* and "create it if absent" has no implementation that leaves the
-#: config true.  Closing it means a declared name per entry with the id
-#: ADOPTED rather than declared, which is a change to THIS model, not to an
-#: adapter.  The amendment and its ground are recorded on KOD-57; a boot
-#: whose OWNED set names a field with no way to instate it fails loudly
-#: rather than skipping it, so this cannot go quiet.
+#: ``documents`` is OWNED, as KOD-57 R2 ruled and amendment 3 deferred:
+#: :class:`DocumentEntry` now carries the declared ``name`` an ensure keys
+#: on, with the id ADOPTED rather than declared, so "create it if absent"
+#: has an implementation that leaves the config true.  A document in the
+#: KNOWLEDGE system is not this operation's to create and produces no ref;
+#: it declares its id at load instead, so nothing about it is silent.
+#:
+#: ``records`` stays EXTERNAL and the ground is its own rather than
+#: inherited.  It is the WRITE-side registry, no pass writes to it in this
+#: arrangement (both templates say so), and R7(b) names a read-side
+#: document.  Giving it a name and an ensure would instate a destination
+#: nothing writes to.  The day a writer exists, the shape :class:`DocumentEntry`
+#: now has is the shape it takes.
 #:
 #: Totality over ``OperationConfig.model_fields`` is asserted by a test
 #: derived from ``model_fields``, never from a hand-written list.
@@ -369,7 +398,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "queue_states": ConfigOwnership.OWNED,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "repos": ConfigOwnership.LOCAL,
-    "documents": ConfigOwnership.EXTERNAL,
+    "documents": ConfigOwnership.OWNED,
     "records": ConfigOwnership.EXTERNAL,
     "knowledge": ConfigOwnership.LOCAL,
     "endpoints": ConfigOwnership.LOCAL,

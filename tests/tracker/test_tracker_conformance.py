@@ -402,15 +402,7 @@ class TestMappingResolution:
         )
         assert unresolved == ()
 
-    @pytest.mark.parametrize(
-        "kind",
-        [
-            MappingKind.USER,
-            MappingKind.TEAM,
-            MappingKind.QUEUE_STATE,
-            MappingKind.WORKFLOW_STATE,
-        ],
-    )
+    @pytest.mark.parametrize("kind", sorted(MappingKind))
     async def test_an_unknown_identifier_is_reported_for_every_kind(
         self,
         tracker: TrackerPort,
@@ -538,6 +530,115 @@ class TestMappingEnsure:
             await tracker.ensure_mappings(refs=[ref])
 
         assert await tracker.resolve_mappings(refs=[ref]) == (ref,)
+
+
+class TestDocumentEnsure:
+    """The document arm of the ensure contract, over EVERY port.
+
+    A document is the one owned value whose identifier the WORKSPACE
+    assigns, which is why it has its own class: every row here is about a
+    ref that names a title and may or may not know an id yet, and none of
+    them is expressible over a queue-state ref.
+    """
+
+    TITLE = "conformance checkpoint"
+    OTHER_TITLE = "conformance elsewhere"
+
+    def _ref(self, title: str, identifier: str | None = None) -> MappingRef:
+        return MappingRef(
+            kind=MappingKind.DOCUMENT,
+            name=title,
+            identifier=identifier,
+        )
+
+    async def _adopted_id(self, tracker: TrackerPort, title: str) -> str:
+        (outcome,) = await tracker.ensure_mappings(refs=[self._ref(title)])
+        return outcome.identifier
+
+    async def test_a_document_the_workspace_lacks_is_created_and_its_id_reported(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The founder's measured manual step, closed: nothing made by hand."""
+        (outcome,) = await tracker.ensure_mappings(refs=[self._ref(self.TITLE)])
+
+        assert outcome.action is EnsureAction.CREATED
+        assert outcome.identifier
+        assert outcome.ref.identifier is None
+
+    async def test_a_second_boot_adopts_the_document_it_created(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Two boots over one workspace leave ONE document, not two."""
+        created = await self._adopted_id(tracker, self.TITLE)
+
+        (outcome,) = await tracker.ensure_mappings(refs=[self._ref(self.TITLE)])
+
+        assert outcome.action is EnsureAction.ADOPTED
+        assert outcome.identifier == created
+
+    async def test_a_config_carrying_the_adopted_id_is_adopted_unchanged(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The state after one reconciliation: the id is written back and pins."""
+        created = await self._adopted_id(tracker, self.TITLE)
+
+        (outcome,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.TITLE, created)],
+        )
+
+        assert outcome.action is EnsureAction.ADOPTED
+        assert outcome.identifier == created
+
+    async def test_a_declared_id_the_workspace_does_not_hold_is_refused(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Creating a second document would leave the config naming neither."""
+        with pytest.raises(TrackerEnsureConflictError) as caught:
+            await tracker.ensure_mappings(
+                refs=[self._ref(self.TITLE, "never-existed")],
+            )
+
+        assert self.TITLE in caught.value.entry
+
+    async def test_a_declared_id_whose_document_has_another_title_is_refused(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """R8's rule on this arm: serving the ref would rename a document."""
+        created = await self._adopted_id(tracker, self.TITLE)
+
+        with pytest.raises(TrackerEnsureConflictError) as caught:
+            await tracker.ensure_mappings(
+                refs=[self._ref(self.OTHER_TITLE, created)],
+            )
+
+        assert self.OTHER_TITLE in caught.value.entry
+        # The refusal wrote nothing: the document is still the one created,
+        # still under the title it was created with.
+        (again,) = await tracker.ensure_mappings(refs=[self._ref(self.TITLE)])
+        assert again.action is EnsureAction.ADOPTED
+        assert again.identifier == created
+
+    async def test_a_ref_of_another_kind_carrying_no_identifier_is_refused(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Only a workspace-assigned kind may omit it; the rest name nothing."""
+        ref = MappingRef(
+            kind=MappingKind.QUEUE_STATE,
+            name="conformance",
+            identifier=None,
+            scope=TEAM,
+        )
+
+        with pytest.raises(TrackerEnsureConflictError) as caught:
+            await tracker.ensure_mappings(refs=[ref])
+
+        assert "conformance" in caught.value.entry
 
 
 class TestSubstitutability:

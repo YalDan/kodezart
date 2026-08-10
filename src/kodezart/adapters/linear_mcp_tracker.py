@@ -33,6 +33,8 @@ from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.linear_mcp import (
     LinearCommentListWire,
     LinearCommentWire,
+    LinearDocumentListWire,
+    LinearDocumentSummaryWire,
     LinearDocumentWire,
     LinearHistoryWire,
     LinearIssueListWire,
@@ -68,6 +70,8 @@ _TOOL_LIST_COMMENTS = "list_comments"
 _TOOL_DELETE_COMMENT = "delete_comment"
 _TOOL_LIST_ISSUE_HISTORY = "list_issue_history"
 _TOOL_GET_DOCUMENT = "get_document"
+_TOOL_LIST_DOCUMENTS = "list_documents"
+_TOOL_SAVE_DOCUMENT = "save_document"
 _TOOL_LIST_USERS = "list_users"
 _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
@@ -156,7 +160,7 @@ def _work_ref_marker(ref: WorkRef) -> str:
 _RETRY_BACKOFF_BASE = 2.0
 
 
-def _label_arguments(ref: MappingRef) -> dict[str, object]:
+def _label_arguments(ref: MappingRef, identifier: str) -> dict[str, object]:
     """Create-arguments for one queue-state label.
 
     A ref carrying a scope creates the label on that team; one carrying
@@ -164,7 +168,7 @@ def _label_arguments(ref: MappingRef) -> dict[str, object]:
     spanning several configured teams requires — a per-team label would
     leave the same state unaddressable on another team's issues.
     """
-    arguments: dict[str, object] = {"name": ref.identifier}
+    arguments: dict[str, object] = {"name": identifier}
     if ref.scope is not None:
         arguments["teamId"] = ref.scope
     return arguments
@@ -556,13 +560,18 @@ class LinearMcpTracker:
         *,
         refs: Sequence[MappingRef],
     ) -> Sequence[MappingRef]:
-        """The subset of *refs* the workspace does not resolve."""
+        """The subset of *refs* the workspace does not resolve.
+
+        A ref carrying no identifier resolves to nothing by construction —
+        it names something the workspace has not assigned a value to yet —
+        so it is reported rather than looked up.
+        """
         known: dict[MappingKind, frozenset[str]] = {}
         unresolved: list[MappingRef] = []
         for ref in refs:
             if ref.kind not in known:
-                known[ref.kind] = await self._names_of(ref.kind)
-            if ref.identifier not in known[ref.kind]:
+                known[ref.kind] = await self._identifiers_of(ref.kind)
+            if ref.identifier is None or ref.identifier not in known[ref.kind]:
                 unresolved.append(ref)
         return tuple(unresolved)
 
@@ -586,17 +595,38 @@ class LinearMcpTracker:
         aborts.  A listing that reports NO container has said nothing to
         differ from and the label is adopted: refusing on the backend's
         silence would read absence as a positive fact about the workspace.
+
+        Documents are instated by TITLE and carry a server-assigned id, so
+        their arm of R8's definition is ``(title, id)`` and the outcome
+        reports the id the workspace holds.  The document listing is read
+        only when a document ref is present: a boot that declares none pays
+        for none.
         """
         outcomes: list[MappingOutcome] = []
         definitions = await self._label_definitions()
+        documents = (
+            await self._document_definitions()
+            if any(ref.kind is MappingKind.DOCUMENT for ref in refs)
+            else {}
+        )
         for ref in refs:
             if ref.kind not in INSTATABLE_MAPPING_KINDS:
                 raise TrackerEnsureConflictError(
                     "this kind belongs to no field the operation owns",
                     entry=ref.describe(),
                 )
-            if ref.identifier in definitions:
-                container = definitions[ref.identifier]
+            if ref.kind is MappingKind.DOCUMENT:
+                outcomes.append(await self._ensure_document(ref, documents))
+                continue
+            identifier = ref.identifier
+            if identifier is None:
+                raise TrackerEnsureConflictError(
+                    "this kind is declared by its own identifier and this ref "
+                    "carries none",
+                    entry=ref.describe(),
+                )
+            if identifier in definitions:
+                container = definitions[identifier]
                 if container is not None and container != ref.scope:
                     raise TrackerEnsureConflictError(
                         "the workspace defines this value in another container; "
@@ -604,22 +634,96 @@ class LinearMcpTracker:
                         entry=ref.describe(),
                     )
                 outcomes.append(
-                    MappingOutcome(ref=ref, action=EnsureAction.ADOPTED),
+                    MappingOutcome(
+                        ref=ref,
+                        action=EnsureAction.ADOPTED,
+                        identifier=identifier,
+                    ),
                 )
                 continue
             await self._call(
                 _TOOL_CREATE_ISSUE_LABEL,
-                _label_arguments(ref),
+                _label_arguments(ref, identifier),
             )
-            definitions[ref.identifier] = ref.scope
-            outcomes.append(MappingOutcome(ref=ref, action=EnsureAction.CREATED))
+            definitions[identifier] = ref.scope
+            outcomes.append(
+                MappingOutcome(
+                    ref=ref,
+                    action=EnsureAction.CREATED,
+                    identifier=identifier,
+                ),
+            )
             await self._log.ainfo(
                 "tracker_queue_label_created",
                 name=ref.name,
-                label=ref.identifier,
+                label=identifier,
                 team=ref.scope,
             )
         return tuple(outcomes)
+
+    async def _ensure_document(
+        self,
+        ref: MappingRef,
+        definitions: dict[str, str],
+    ) -> MappingOutcome:
+        """Adopt the declared document, or create one carrying its title.
+
+        Three refusals, and each names a different workspace fact: a
+        declared id the workspace does not hold (creating a second document
+        would leave the config pointing at neither), a declared id whose
+        document carries another title (serving this ref would rename
+        somebody's document), and a title two documents share (adopting
+        either one is a coin toss the operator did not ask for).
+        """
+        if ref.identifier is not None:
+            title = definitions.get(ref.identifier)
+            if title is None:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds no document with this identifier",
+                    entry=ref.describe(),
+                )
+            if title != ref.name:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds this document under another title; "
+                    f"declared {ref.name!r}, found {title!r}",
+                    entry=ref.describe(),
+                )
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=ref.identifier,
+            )
+        held = sorted(
+            identifier for identifier, title in definitions.items() if title == ref.name
+        )
+        if len(held) > 1:
+            raise TrackerEnsureConflictError(
+                "the workspace holds several documents under this title",
+                entry=ref.describe(),
+            )
+        if held:
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=held[0],
+            )
+        payload = await self._call(_TOOL_SAVE_DOCUMENT, {"title": ref.name})
+        created = self._validate(
+            LinearDocumentSummaryWire,
+            payload,
+            _TOOL_SAVE_DOCUMENT,
+        )
+        definitions[created.id] = created.title
+        await self._log.ainfo(
+            "tracker_document_created",
+            title=ref.name,
+            document=created.id,
+        )
+        return MappingOutcome(
+            ref=ref,
+            action=EnsureAction.CREATED,
+            identifier=created.id,
+        )
 
     async def _label_definitions(self) -> dict[str, str | None]:
         """Every queue-state label the workspace holds, with its container."""
@@ -628,7 +732,24 @@ class LinearMcpTracker:
         listing = self._validate(LinearNamedListWire, payload, tool)
         return {entry.name: entry.team_id for entry in listing.entries}
 
-    async def _names_of(self, kind: MappingKind) -> frozenset[str]:
+    async def _document_definitions(self) -> dict[str, str]:
+        """Every document the workspace holds, id to title."""
+        payload = await self._call(_TOOL_LIST_DOCUMENTS, {})
+        listing = self._validate(
+            LinearDocumentListWire,
+            payload,
+            _TOOL_LIST_DOCUMENTS,
+        )
+        return {entry.id: entry.title for entry in listing.documents}
+
+    async def _identifiers_of(self, kind: MappingKind) -> frozenset[str]:
+        """Every identifier the workspace resolves for *kind*.
+
+        A document is addressed by its id and everything else by its name,
+        which is why this is not one listing read one way.
+        """
+        if kind is MappingKind.DOCUMENT:
+            return frozenset(await self._document_definitions())
         tool = _MAPPING_TOOL_BY_KIND[kind]
         payload = await self._call(tool, {})
         listing = self._validate(LinearNamedListWire, payload, tool)
