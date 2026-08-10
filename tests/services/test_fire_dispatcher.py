@@ -76,10 +76,10 @@ RAW_PRIORITY_FIXTURE: dict[str, tuple[int, IssuePriority]] = {
     "RAW-LOW": (4, IssuePriority.LOW),
 }
 
-# The ordering tokens the defect shows up as.  Stated here and mirrored in
-# ``make verify-no-raw-priority-sort`` so the two cannot disagree about what
-# they forbid; the arrow is stripped first because ``-> int`` on a signature
-# mentioning priority is not a comparison.
+# The ordering tokens the defect shows up as.  Stated once, here, and read
+# by both the predicate test below and the repository scan; the arrow is
+# stripped first because ``-> int`` on a signature mentioning priority is
+# not a comparison.
 _ORDERING_TOKENS = re.compile(r"[0-9]|sort|key\s*=|min\(|max\(|<|>|cmp")
 
 
@@ -472,9 +472,9 @@ class TestPriorityRanking:
     ) -> None:
         """The guard is shown to fail before it is trusted to pass.
 
-        The predicate this shares with ``make verify-no-raw-priority-sort``
-        was a digit test, and the natural form of the defect carries no
-        digit at all — so the check passed the exact line it names.  Every
+        The predicate the repository scan below runs on was a digit test,
+        and the natural form of the defect carries no digit at all — so the
+        check passed the exact line it names.  Every
         form below is asserted to trip it, and the two legitimate forms are
         asserted not to, because a predicate that flags the domain order
         would be turned off rather than obeyed.
