@@ -20,7 +20,7 @@ empirically on a later grading rather than by a verdict issued now.
 """
 
 from enum import StrEnum
-from typing import NewType
+from typing import Annotated, NewType
 
 from pydantic import ConfigDict, Field
 
@@ -38,6 +38,15 @@ CRITERION_ID_PATTERN = r"^AC-[1-9][0-9]*$"
 #: constructs one, so a value reaching a criterion-id annotation came from
 #: the harness and not from a model's echo.
 CriterionId = NewType("CriterionId", str)
+
+#: A criterion identity carried INSIDE a list, format-checked per element.
+#:
+#: ``list[CriterionId]`` constrains nothing: ``CriterionId`` is a ``NewType``
+#: over ``str``, so a list annotation validates as ``list[str]`` and a
+#: ``min_length`` on the field constrains the LIST rather than its members.
+#: Every scalar identity field carries the pattern; a list field carries it
+#: here, on the element.
+CriterionIdItem = Annotated[CriterionId, Field(pattern=CRITERION_ID_PATTERN)]
 
 
 class CriterionClass(StrEnum):
@@ -209,7 +218,7 @@ class Contradiction(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_ids: list[CriterionId] = Field(min_length=2)
+    criterion_ids: list[CriterionIdItem] = Field(min_length=2)
     explanation: str = Field(min_length=1)
 
 

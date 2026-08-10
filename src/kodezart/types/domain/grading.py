@@ -17,7 +17,7 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
 from kodezart.types.domain.agent import CriterionResult
-from kodezart.types.domain.criteria import CriterionFailure, CriterionId
+from kodezart.types.domain.criteria import CriterionFailure, CriterionIdItem
 
 
 class IterationGrade(CamelCaseModel):
@@ -27,9 +27,9 @@ class IterationGrade(CamelCaseModel):
 
     results: list[CriterionResult] = Field(min_length=1)
     failures: list[CriterionFailure] = Field(default_factory=list)
-    missing_ids: list[CriterionId] = Field(default_factory=list)
-    unknown_ids: list[CriterionId] = Field(default_factory=list)
-    duplicate_ids: list[CriterionId] = Field(default_factory=list)
+    missing_ids: list[CriterionIdItem] = Field(default_factory=list)
+    unknown_ids: list[CriterionIdItem] = Field(default_factory=list)
+    duplicate_ids: list[CriterionIdItem] = Field(default_factory=list)
     dispatched_count: int = Field(ge=1)
     passed_count: int = Field(ge=0)
     verdict: AcceptVerdict

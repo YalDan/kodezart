@@ -19,14 +19,19 @@ import ast
 import importlib
 import pkgutil
 from pathlib import Path
-from typing import NewType, Union, get_args, get_origin
+from typing import Annotated, NewType, Union, get_args, get_origin
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from kodezart.domain.criteria import mint_criterion_id
-from kodezart.types.domain.criteria import CRITERION_ID_PATTERN, CriterionId
+from kodezart.types.domain.criteria import (
+    CRITERION_ID_PATTERN,
+    Contradiction,
+    CriterionId,
+)
+from kodezart.types.domain.grading import IterationGrade
 
 _IDENTITY_FIELD_SUFFIXES = ("criterion_id", "criterion_ids")
 _MINTING_MODULE = Path("src/kodezart/domain/criteria.py")
@@ -55,6 +60,8 @@ def _mentions_identity(annotation: object) -> bool:
     origin = get_origin(annotation)
     if origin is None:
         return False
+    if origin is Annotated:
+        return _mentions_identity(get_args(annotation)[0])
     if origin is Union or origin is list or origin is tuple or origin is set:
         return any(_mentions_identity(arg) for arg in get_args(annotation))
     return False
@@ -128,6 +135,52 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
             ):
                 offenders.append(f"{path}:{node.lineno}")
     assert offenders == []
+
+
+@pytest.mark.parametrize(
+    ("record", "field", "payload"),
+    [
+        (
+            Contradiction,
+            "criterionIds",
+            {"criterionIds": ["banana", "AC-99"], "explanation": "conflict"},
+        ),
+        (
+            IterationGrade,
+            "missingIds",
+            {
+                "results": [
+                    {
+                        "criterionId": "AC-1",
+                        "criterion": "c",
+                        "passed": True,
+                        "reasoning": "r",
+                    }
+                ],
+                "missingIds": ["not-an-id"],
+                "dispatchedCount": 1,
+                "passedCount": 1,
+                "verdict": "accepted",
+            },
+        ),
+    ],
+    ids=["contradiction", "iteration-grade"],
+)
+def test_a_malformed_element_of_an_identity_list_fails_closed(
+    record: type[BaseModel],
+    field: str,
+    payload: dict[str, object],
+) -> None:
+    """The pattern is on the ELEMENT, so the list cannot smuggle one in.
+
+    ``Field(min_length=...)`` constrains the list; the members went
+    unchecked, so a payload naming ``banana`` validated and the id reached
+    the regenerator's prompt and the pre-loop halt intact.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        record.model_validate(payload)
+    locations = [error["loc"] for error in excinfo.value.errors()]
+    assert (field, 0) in locations
 
 
 def test_a_minted_identity_matches_the_scheme() -> None:
