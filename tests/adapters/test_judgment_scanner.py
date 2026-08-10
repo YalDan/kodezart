@@ -351,7 +351,7 @@ async def test_a_derived_evaluator_cadence_payload_costs_nothing() -> None:
     assert scanner.calls == []
 
 
-async def test_an_authored_prose_pull_request_body_costs_exactly_one() -> None:
+async def test_an_authored_pull_request_body_costs_exactly_one() -> None:
     """R: one call."""
     scanner = FakeContentScanner(hits=[])
     await gate_once(
@@ -573,9 +573,13 @@ def test_the_declared_class_can_never_be_omitted() -> None:
 
     A default would be a silent cheap path — the caller that forgot to think
     about provenance would get the unaudited answer and no diagnostic.  This
-    asserts the static property directly: the parameter exists, it is
-    keyword-only, and it carries no default, at each of the four surfaces a
-    caller can reach the gate through.
+    asserts the static property that matters, at each of the five surfaces a
+    caller can reach the gate through: the parameter exists, it is annotated
+    ``ContentClass``, and it carries NO DEFAULT.  Calling convention is not
+    asserted and deliberately so -- four of the five are keyword-only while
+    ``GitChangePersister._gated_message`` is positional-or-keyword, matching
+    its neighbours, and that difference cannot produce the silent cheap path
+    this test exists to prevent.
     """
     surfaces = (
         OutboundContentGate.gate,

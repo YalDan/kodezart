@@ -278,7 +278,11 @@ MUST_PASS: list[tuple[str, str, OutboundDestination, ContentClass]] = [
         "criteria artifact whose leaves are identifiers and enum members",
         '{"criteria": ["AC-1", "AC-2"], "verdict": "passed", "sha": "9f2c1ab"}',
         OutboundDestination.ARTIFACT_CRITERIA_JSON,
-        ContentClass.DERIVED,
+        # AUTHORED, mirroring the shipped call site: a JSON envelope does not
+        # make its leaves derived, and this row exists to model production.
+        # A corpus row that declares a different class from the production
+        # writer for its own destination measures a posture nothing ships.
+        ContentClass.AUTHORED,
     ),
     (
         "prose naming the private-surface categories without an instance",
