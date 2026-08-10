@@ -115,7 +115,14 @@ def test_a_principal_is_recognisable_on_the_forge_as_well_as_the_tracker() -> No
 
 
 def test_both_identifiers_reach_a_rendered_pass() -> None:
-    """The two-surface sweep is renderable, not merely representable."""
+    """Recognition and authority both reach the sweep, and are distinguished.
+
+    The forge handle is not asserted here: the clauses that rendered it were
+    written into a template this branch does not own, for an identifier no
+    issue body names, and they are reverted.  The field is still asserted on
+    the model above; what is gone is the claim that a shipped prompt carries
+    it.
+    """
     config = example_config()
     registry = load_registry()
     rendered = registry.template_for(PromptKey.FIRE_PREP_PASS).render(
@@ -133,8 +140,6 @@ def test_both_identifiers_reach_a_rendered_pass() -> None:
         assert principal.tracker_user in rendered
         for role in principal.roles:
             assert role.value in rendered
-        if principal.forge_handle is not None:
-            assert principal.forge_handle in rendered
 
 
 def test_a_second_approver_is_refused_rather_than_silently_ranked(

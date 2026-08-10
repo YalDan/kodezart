@@ -103,11 +103,6 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                 "tracker_user": p.tracker_user,
                 "roles": ", ".join(sorted(role.value for role in p.roles)),
                 "handle": p.handle,
-                # Two surfaces name one principal, so both identifiers are
-                # rendered and the absent case is named rather than blank —
-                # same three-state discipline as ``target_date`` above.
-                "forge_handle": p.forge_handle,
-                "forge_handle_absent": True if p.forge_handle is None else None,
             }
             for p in config.principals
         ],
