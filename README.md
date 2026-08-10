@@ -389,13 +389,15 @@ declared under `[endpoints]` in the operation config (step 5), because an
 endpoint is a place and a role is a person.
 
 **4. Documents and records.** Create or designate the checkpoint document the
-passes read their scan window from, and collect its id. A document id is
-declared with the system it belongs to, because an opaque id with no system is
-unresolvable by anyone holding only the rendered prompt:
+passes read their scan window from, and collect its name and its id. A
+document is declared with the system it belongs to, because an opaque id with
+no system is unresolvable by anyone holding only the rendered prompt, and with
+the name boot ensures it under:
 
 ```toml
 [documents.checkpoint]
 system = "tracker"
+name = "<the document name>"
 id = "<the document id>"
 ```
 

@@ -8,11 +8,19 @@ a service that no longer behaves that way.
 """
 
 import re
+import tomllib
 from pathlib import Path
 
 from kodezart.core import errors
 from kodezart.types.domain.dispatch import DispatchOutcome
-from kodezart.types.domain.operation import Principal, PrincipalRole, QueueState
+from kodezart.types.domain.operation import (
+    DocumentEntry,
+    OperationModel,
+    Principal,
+    PrincipalRole,
+    QueueState,
+    RecordDestination,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README = REPO_ROOT / "README.md"
@@ -51,6 +59,15 @@ CITED_VARIABLES: frozenset[str] = frozenset(
     },
 )
 
+#: The model that owns each config section the guide prints a block for.
+#: A block declaring a section absent here fails rather than going
+#: unvalidated, so a new section cannot be shown to an operator without
+#: naming the model it has to satisfy.
+SECTION_MODELS: dict[str, type[OperationModel]] = {
+    "documents": DocumentEntry,
+    "records": RecordDestination,
+}
+
 
 def _guide() -> str:
     """The setup section only, so a match elsewhere in the README is not one."""
@@ -59,6 +76,11 @@ def _guide() -> str:
     rest = body[start + len(GUIDE_HEADING) :]
     end = rest.find("\n## ")
     return rest if end == -1 else rest[:end]
+
+
+def _guide_toml_blocks() -> list[str]:
+    """Every fenced TOML block the guide prints for an operator to copy."""
+    return re.findall(r"```toml\n(.*?)```", _guide(), flags=re.DOTALL)
 
 
 def _emitted_events() -> set[str]:
@@ -93,6 +115,29 @@ def test_every_event_the_guide_tells_an_operator_to_watch_for_is_emitted() -> No
     assert CITED_EVENTS <= emitted, CITED_EVENTS - emitted
     for event in CITED_EVENTS:
         assert event in _guide(), event
+
+
+def test_every_toml_block_the_guide_prints_satisfies_the_shipped_model() -> None:
+    """A block an operator copies must load, not merely look like config.
+
+    Step 4's block declared ``system`` and ``id`` and no ``name``, which
+    ``DocumentEntry`` requires — so an operator following only the guide
+    wrote a checkpoint entry that fails validation at load, while
+    ``docs/operation.example.toml`` two steps later was right. Parsed here
+    through the model itself rather than checked against a transcribed
+    field list, so the guide cannot drift from the shape it instructs
+    against.
+    """
+    blocks = _guide_toml_blocks()
+
+    assert blocks, "the guide prints no TOML at all"
+    for block in blocks:
+        parsed = tomllib.loads(block)
+        assert parsed, block
+        for section, entries in parsed.items():
+            model = SECTION_MODELS[section]
+            for entry in entries.values():
+                model.model_validate(entry)
 
 
 def test_every_failure_class_the_guide_names_exists() -> None:
