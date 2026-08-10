@@ -15,8 +15,10 @@ Agent SDK.
 - **Quality gate (Ralph loop)** that re-executes until criteria pass or max
   iterations
 - **Workspace isolation** via bare-repo caching and disposable Git worktrees
-- **SSE streaming** of 18 event types for real-time progress visibility
-- **Hexagonal architecture** with 12 protocol-based ports and swappable adapters
+- **SSE streaming** of typed workflow events for real-time progress
+  visibility — the whole set is tabulated in [docs/api.md](docs/api.md),
+  derived from the shipped event models
+- **Hexagonal architecture** with protocol-based ports and swappable adapters
 - **Structured output** via JSON schema for branch names, commit messages,
   tickets, and evaluations
 
@@ -462,7 +464,7 @@ Then bake the resolved answers into the kodezart ticket prompt before invoking t
 
 ### Invoking kodezart
 
-`POST /api/v1/agent/workflow` — see [API Endpoints](#api-endpoints) above for the request shape, [`docs/api.md`](docs/api.md) for the full SSE event schema (18 event types), and [`docs/architecture.md`](docs/architecture.md) for the workflow internals (Ralph loop, ticket generation, quality gates).
+`POST /api/v1/agent/workflow` — see [API Endpoints](#api-endpoints) above for the request shape, [`docs/api.md`](docs/api.md) for the full SSE event schema, and [`docs/architecture.md`](docs/architecture.md) for the workflow internals (Ralph loop, ticket generation, quality gates).
 
 Stream the response and watch for `result` / error events; treat the eventual PR URL as the deliverable to hand back to your user.
 

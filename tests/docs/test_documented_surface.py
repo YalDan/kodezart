@@ -305,3 +305,94 @@ def test_every_shipped_protocol_has_a_row_in_the_protocol_map() -> None:
 def test_no_documented_protocol_is_absent_from_the_port_module() -> None:
     """A row for a deleted protocol reads as a port the system still has."""
     assert _documented_protocols() - _shipped_protocols() == set()
+
+
+# ---------------------------------------------------------------------------
+# The class behind the "all 12 protocols" and "18 event types" instances
+# ---------------------------------------------------------------------------
+
+#: Sets whose size a shipped test above already derives from the code. A
+#: number quantifying one of these in prose is a SECOND statement of a
+#: value that already has a source of truth, and the second statement is
+#: the one that goes stale — silently, because no test reads prose.
+#:
+#: A list of CLASSES, not of instances. `ead78c3` fixed the two instances a
+#: findings list named and left the class in the file it named first; three
+#: survived at head. What is enumerated here is the kind of noun a count may
+#: not attach to, so a fourth instance fails rather than being rediscovered.
+_DERIVED_SET_NOUNS: tuple[str, ...] = (
+    "event types?",
+    "protocol-based ports?",
+    "protocols?",
+    "ports?",
+    "config(?:uration)? fields?",
+    "fields?",
+    "environment variables?",
+    "endpoints?",
+    "adapters?",
+    "criteria",
+)
+
+#: A digit, then up to two adjectives, then one of those nouns. The window
+#: is what makes "12 protocol-based ports" and "18 SSE event types" both
+#: reachable without the pattern degenerating into "any number near any
+#: word".  A hyphen separates as a space does, because the attributive form
+#: — "a 15-field reference" — is the one this lane shipped and then had to
+#: delete, and a pattern that could not see it would be a guard written
+#: after the defect it cannot match.
+_COUNTED_CLAIM = re.compile(
+    r"\b\d[\d,]*[\s-]+(?:[A-Za-z][A-Za-z-]*[\s-]+){0,2}(?:"
+    + "|".join(_DERIVED_SET_NOUNS)
+    + r")\b",
+    re.IGNORECASE,
+)
+
+#: Every prose file a reader is pointed at. Not `rglob`: the check is about
+#: authored prose, and a fixture or a golden that happens to contain a
+#: number is not a claim anyone reads as documentation.
+_PROSE_FILES: tuple[Path, ...] = (
+    README,
+    REPO_ROOT / "CONTRIBUTING.md",
+    REPO_ROOT / "SECURITY.md",
+    *sorted((REPO_ROOT / "docs").glob("*.md")),
+)
+
+
+def test_no_prose_file_asserts_a_count_of_something_the_code_owns() -> None:
+    """A count in prose is an assertion nothing recomputes."""
+    claims = [
+        f"{path.relative_to(REPO_ROOT).as_posix()}:{number}: {match.group(0)!r}"
+        for path in _PROSE_FILES
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        for match in _COUNTED_CLAIM.finditer(line)
+    ]
+
+    assert claims == []
+
+
+def test_the_counted_claim_pattern_matches_the_instances_it_was_written_for() -> None:
+    """The three sentences that were live at `f7ce6cc`, plus the one before them.
+
+    A guard that cannot match the defect it names demonstrates nothing, so
+    the shapes are stated rather than assumed — including the two-adjective
+    form, which is why the window exists.
+    """
+    for claim in (
+        "SSE streaming of 18 event types for real-time progress visibility",
+        "Hexagonal architecture with 12 protocol-based ports",
+        "the full SSE event schema (18 event types)",
+        "a 15-field reference",
+        "All 12 protocols are listed below",
+    ):
+        assert _COUNTED_CLAIM.search(claim) is not None, claim
+
+
+def test_the_counted_claim_pattern_leaves_ordinary_prose_alone() -> None:
+    """A gate that flags ordinary writing gets turned off, and then protects nothing."""
+    for innocent in (
+        "Python 3.12+ is required",
+        "released after 15 minutes against 24 hours by default",
+        "retries 3 times before giving up",
+        "the event types are tabulated below",
+    ):
+        assert _COUNTED_CLAIM.search(innocent) is None, innocent
