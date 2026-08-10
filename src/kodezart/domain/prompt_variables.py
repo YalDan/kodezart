@@ -48,7 +48,6 @@ def render_validation_findings(
     if validation is None:
         return None
     texts = {criterion.id: criterion.text for criterion in criteria}
-    conflicting = set(validation.conjunction.conflicting_ids)
     lines: list[str] = []
     for verdict in validation.verdicts:
         if verdict.verdict is not CriterionVerdict.infeasible:
@@ -58,12 +57,11 @@ def render_validation_findings(
             f"{verdict.criterion_id} infeasible: {text}\n"
             f"  refutation: {verdict.refutation}"
         )
-    if conflicting:
-        named = ", ".join(validation.conjunction.conflicting_ids)
-        lines.append(
-            f"conjunction unsatisfiable over {named}: "
-            f"{validation.conjunction.explanation}"
-        )
+    lines.extend(
+        f"conjunction unsatisfiable over "
+        f"{', '.join(contradiction.criterion_ids)}: {contradiction.explanation}"
+        for contradiction in validation.conjunction.contradictions
+    )
     if not lines:
         return None
     return "\n".join(lines)

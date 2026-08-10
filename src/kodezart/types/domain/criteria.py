@@ -238,13 +238,18 @@ class CriterionFeasibility(CamelCaseModel):
 
 
 class ConjunctionVerdict(CamelCaseModel):
-    """Whether the whole set is jointly satisfiable, and by whom it is not."""
+    """Whether the whole set is jointly satisfiable, and by whom it is not.
+
+    Every retained conflict is carried, each keeping its own ids and its
+    own explanation: a set can be unsatisfiable in two unrelated ways at
+    once, and folding them into one id list and one joined sentence loses
+    which ids belong to which conflict.
+    """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     satisfiable: bool
-    conflicting_ids: list[CriterionId] = Field(default_factory=list)
-    explanation: str | None = None
+    contradictions: list[Contradiction] = Field(default_factory=list)
 
 
 class CriteriaValidation(CamelCaseModel):

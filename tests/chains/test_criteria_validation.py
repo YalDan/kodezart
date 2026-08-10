@@ -478,7 +478,10 @@ async def test_an_unsatisfiable_conjunction_regenerates_then_halts() -> None:
     assert complete.outcome is WorkflowOutcome.criteria_infeasible
     assert complete.criteria_validation is not None
     assert complete.criteria_validation.conjunction.satisfiable is False
-    assert complete.criteria_validation.conjunction.conflicting_ids == ["AC-1", "AC-2"]
+    assert [
+        c.criterion_ids
+        for c in complete.criteria_validation.conjunction.contradictions
+    ] == [["AC-1", "AC-2"]]
 
 
 # ---------------------------------------------------------------------------

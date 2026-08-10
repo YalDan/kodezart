@@ -13,7 +13,7 @@ from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
     classify_finding,
     demands_regeneration,
-    minimal_conflicting_subset,
+    minimal_conflicting_subsets,
     reconcile,
     regeneration_targets,
     sweep,
@@ -710,54 +710,74 @@ def test_jointly_unsatisfiable_set_names_the_minimal_conflicting_subset() -> Non
         "each criterion is individually feasible"
     )
     assert validation.conjunction.satisfiable is False
-    assert validation.conjunction.conflicting_ids == ["AC-1", "AC-2"]
-    assert validation.conjunction.explanation is not None
+    assert [c.criterion_ids for c in validation.conjunction.contradictions] == [
+        ["AC-1", "AC-2"]
+    ]
     assert set(regeneration_targets(validation)) == {"AC-1", "AC-2"}
 
 
 def test_no_contradictions_yields_a_satisfiable_conjunction() -> None:
-    assert minimal_conflicting_subset([]) is None
+    assert minimal_conflicting_subsets([]) == ()
 
 
-def test_the_named_subset_is_the_smallest_then_the_lexicographically_first() -> None:
-    """KOD-53/AC-2 — the tie-break, over a report that can expose it.
+def test_two_disjoint_conflicts_are_both_carried_and_both_regenerated() -> None:
+    """A report naming two unrelated conflicts loses neither.
 
-    The sibling test above reports one conflict and one superset of it, so
-    the inclusion filter leaves a single candidate and every ordering rule
-    agrees by construction.  Here three of the four contradictions survive
-    that filter and no two of the three contain each other, so the answer
-    is decided by size and then lexicographically or not at all.  The
-    same-sized rival is listed FIRST, so a selection that dropped the
-    lexicographic component and fell back on report order names it.
-
-    Falsifiers, each run against this fixture: ``min`` → ``max`` names the
-    three-id set; a key of ``len`` alone names ``AC-4``/``AC-5``; a key of
-    the sorted ids alone names the three-id set.
+    Collapsing to one named subset discarded the second conflict entirely:
+    its ids never reached the regenerator, so a set unsatisfiable in two
+    ways came back amended in one.
     """
-    named = minimal_conflicting_subset(
+    criteria = mint_criteria(
+        [
+            DraftedCriterion(text=f"c{n}", criterion_class=CriterionClass.hard_gate)
+            for n in range(1, 7)
+        ]
+    )
+    output = CriteriaValidationOutput(
+        findings=[
+            CriterionFinding(criterion_id=f"AC-{n}", smallest_repair=RepairKind.none)
+            for n in range(1, 7)
+        ],
+        contradictions=[
+            Contradiction(
+                criterion_ids=["AC-1", "AC-2"],
+                explanation="one public export cannot also be two",
+            ),
+            Contradiction(
+                criterion_ids=["AC-5", "AC-6"],
+                explanation="the module cannot be both frozen and mutable",
+            ),
+        ],
+    )
+
+    validation = sweep(criteria, output)
+
+    assert validation.conjunction.satisfiable is False
+    assert [
+        (c.criterion_ids, c.explanation) for c in validation.conjunction.contradictions
+    ] == [
+        (["AC-1", "AC-2"], "one public export cannot also be two"),
+        (["AC-5", "AC-6"], "the module cannot be both frozen and mutable"),
+    ]
+    assert set(regeneration_targets(validation)) == {"AC-1", "AC-2", "AC-5", "AC-6"}
+
+
+def test_a_superset_of_a_reported_conflict_is_dropped() -> None:
+    """Minimality is per conflict: the pair survives, the triple does not."""
+    retained = minimal_conflicting_subsets(
         [
             Contradiction(
-                criterion_ids=["AC-4", "AC-5"],
-                explanation="the same size as the answer, and reported first",
-            ),
-            Contradiction(
-                criterion_ids=["AC-1", "AC-4", "AC-6"],
-                explanation="lexicographically earlier, and larger",
-            ),
-            Contradiction(
-                criterion_ids=["AC-2", "AC-3"],
-                explanation="one exported symbol cannot also be two",
-            ),
-            Contradiction(
-                criterion_ids=["AC-2", "AC-3", "AC-6"],
+                criterion_ids=["AC-1", "AC-2", "AC-5"],
                 explanation="a strict superset of the real conflict",
+            ),
+            Contradiction(
+                criterion_ids=["AC-1", "AC-2"],
+                explanation="one exported symbol cannot also be two",
             ),
         ]
     )
 
-    assert named is not None
-    assert named.criterion_ids == ["AC-2", "AC-3"]
-    assert named.explanation == "one exported symbol cannot also be two"
+    assert [c.criterion_ids for c in retained] == [["AC-1", "AC-2"]]
 
 
 # ---------------------------------------------------------------------------
