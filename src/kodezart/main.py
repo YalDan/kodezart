@@ -51,16 +51,21 @@ from kodezart.core.protocols import (
     RepoCache,
     SkillInventory,
     TrackerPort,
+    WorkspaceProvider,
 )
 from kodezart.services.agent_service import AgentService
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.services.fire_prep_pass import FirePrepPass
+from kodezart.services.grooming_pass import GroomingPass
+from kodezart.services.hygiene_scan import HygieneScan
 from kodezart.services.job_service import JobService
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
+from kodezart.services.pass_session import PassSession
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.gating import content_digest
@@ -328,6 +333,73 @@ def build_dispatch_passes(
     return passes
 
 
+def build_judgment_passes(
+    *,
+    config: AppConfig,
+    operation: OperationConfig,
+    tracker: TrackerPort,
+    executor: AgentExecutor,
+    prompts: PromptProvider,
+    skills: SkillsSelection,
+    workspace: WorkspaceProvider,
+    gate: OutboundContentGate,
+) -> list[ScheduledPass]:
+    """The two judgment passes: one preparation tick, one groom per repository.
+
+    Preparation is per OPERATION — the entry queue is one queue and an item
+    on it is not a per-repository thing — while verification is per
+    REPOSITORY, because a session runs a chain inside one checkout and can
+    only stand in one.
+
+    This is where the pre-promotion hygiene scan is constructed, and the
+    only place it is: its subject is the frozen body the preparation pass
+    promotes, so the scan, its destination member and its writer arrived
+    together and a construction anywhere else would be a scan with nothing
+    to inspect.
+    """
+    session = PassSession(
+        executor=executor,
+        prompts=prompts,
+        skills=skills,
+        timeout_seconds=config.pass_session_timeout_seconds,
+    )
+    working_dir = Path(config.pass_session_working_dir).expanduser()
+    working_dir.mkdir(parents=True, exist_ok=True)
+    prep = FirePrepPass(
+        tracker=tracker,
+        session=session,
+        scan=HygieneScan(
+            scanner=RegexContentScanner(patterns=config.hygiene_patterns),
+        ),
+        gate=gate,
+        page_size=config.tracker_query_page_size,
+        working_dir=str(working_dir),
+    )
+    passes: list[ScheduledPass] = [
+        ScheduledPass(
+            name="fire-prep",
+            interval_seconds=config.prep_pass_interval_seconds,
+            run=prep.run,
+        ),
+    ]
+    passes.extend(
+        ScheduledPass(
+            name=f"grooming:{repo.url}",
+            interval_seconds=config.grooming_pass_interval_seconds,
+            run=GroomingPass(
+                tracker=tracker,
+                workspace=workspace,
+                session=session,
+                gate=gate,
+                repo=repo,
+                allowed_tools=tuple(config.grooming_pass_allowed_tools),
+            ).run,
+        )
+        for repo in operation.repos
+    )
+    return passes
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle.
@@ -423,13 +495,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         fragment_digest=fragment_digest,
     )
 
-    # The hygiene scan is deliberately NOT constructed here. Its subject is
-    # a frozen fire body on its way onto the tracker, which is the fire-prep
-    # pass's write — and that writer does not exist yet, so no
-    # OutboundDestination member names its surface and the scan has no
-    # honest destination to be called with. Constructing it at boot and
-    # attaching it to app.state, as this module previously did, made an
-    # unreachable capability read as a wired one. A test holds the absence.
     cache = LocalBareRepoCache(git=git, base_dir=config.clone_cache_dir)
     workspace = GitWorktreeProvider(
         git=git,
@@ -548,6 +613,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 git=git,
                 cache=cache,
                 integration_workspace_dir=config.integration_workspace_dir,
+            )
+            scheduled.extend(
+                build_judgment_passes(
+                    config=config,
+                    operation=operation,
+                    tracker=tracker,
+                    executor=executor,
+                    prompts=prompts,
+                    skills=skills,
+                    workspace=workspace,
+                    gate=gate,
+                ),
             )
         else:
             await log.ainfo(

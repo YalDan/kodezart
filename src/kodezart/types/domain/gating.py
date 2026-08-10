@@ -146,6 +146,11 @@ class OutboundDestination(StrEnum):
     ARTIFACT_TICKET_JSON = "artifact_ticket_json"
     ARTIFACT_CRITERIA_JSON = "artifact_criteria_json"
     TRACKER_COMMENT = "tracker_comment"
+    #: The frozen fire body the preparation pass writes onto an issue.
+    #: Registered when ``services/fire_prep_pass.py`` landed and not before;
+    #: it is the one surface the pre-promotion hygiene scan inspects, and
+    #: with no writer it had no honest call site.
+    PREPARED_FIRE_BODY = "prepared_fire_body"
 
 
 #: Total over :class:`OutboundDestination`; a test asserts the totality so a
@@ -160,6 +165,7 @@ DESTINATION_SURFACE: Mapping[OutboundDestination, OutboundSurface] = {
     OutboundDestination.ARTIFACT_TICKET_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.ARTIFACT_CRITERIA_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.TRACKER_COMMENT: OutboundSurface.TRACKER,
+    OutboundDestination.PREPARED_FIRE_BODY: OutboundSurface.TRACKER,
 }
 
 

@@ -45,6 +45,7 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "changeset_has_commits",
         "content",
         "destination",
+        "work_set",
     }
 )
 

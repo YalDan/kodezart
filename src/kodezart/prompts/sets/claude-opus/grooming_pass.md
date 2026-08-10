@@ -32,5 +32,12 @@ Compose each update's health from every item groomed under that initiative in th
 ## Escalation Endpoint
 Escalations and out-of-band notifications go to {{endpoints.escalation}} and nowhere else.
 
+## What To Return
+Return, for the repository you are standing in, the sha you verified at and the name of every declared step that failed — the names exactly as they are declared above, and no name that is not declared. Report what you observed running the commands; report nothing for a command you did not run. Name alongside them the items whose work this failure blocks, or none when it blocks nothing groomed in this window.
+
+Do not classify the failures yourself. Which of them is a root and which merely cascaded from a step above it is computed from the declared chain by the process that called you, so a raw list is the complete and correct answer, and a pre-classified one is discarded in favour of the computation.
+
+You write nothing yourself. What you return is gated and then written by the process that called you.
+
 ## Run Log
 Close the pass by appending exactly one row to the run log — id {{records.run_log.id}} in the {{records.run_log.system}} system. The row states which pass ran, the window it covered, what it changed, and the single most load-bearing reason for the level it recorded. Append the row; never rewrite an earlier one, because a run log that can be edited cannot evidence what a pass did. A pass that aborted still writes its row, saying it aborted and where — an absent row is indistinguishable from a pass that never ran.

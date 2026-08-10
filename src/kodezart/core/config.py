@@ -343,6 +343,51 @@ class AppConfig(BaseSettings):
             "bound is what stops a loaded queue sitting idle for a working day."
         ),
     )
+    prep_pass_interval_seconds: float = Field(
+        default=900.0,
+        ge=10.0,
+        le=86400.0,
+        description=(
+            "Seconds between fire-preparation passes. A separate knob from "
+            "the dispatch interval because the two passes cost differently: "
+            "dispatch is a free port call on a quiet board, preparation "
+            "spends a session on every window that is not empty."
+        ),
+    )
+    grooming_pass_interval_seconds: float = Field(
+        default=3600.0,
+        ge=10.0,
+        le=86400.0,
+        description=(
+            "Seconds between grooming passes. Each one runs a repository's "
+            "whole declared check chain, so the interval is the cost."
+        ),
+    )
+    pass_session_timeout_seconds: float = Field(
+        default=1800.0,
+        ge=1.0,
+        description=(
+            "Wall-clock bound on one judgment-pass session. Exceeding it is "
+            "TIMEOUT, and a pass that timed out writes nothing at all."
+        ),
+    )
+    pass_session_working_dir: str = Field(
+        default="/tmp/kodezart-pass-session",
+        description=(
+            "Working directory a preparation session runs in. It composes "
+            "from a work set already rendered into its prompt and reaches "
+            "nothing, so this is deliberately not a repository checkout."
+        ),
+    )
+    grooming_pass_allowed_tools: list[str] = Field(
+        default_factory=lambda: ["Bash", "Glob", "Grep", "Read"],
+        description=(
+            "Tools a grooming session may use inside the repository checkout "
+            "it verifies. Non-empty by design: a verification session that "
+            "cannot run the repository's own commands would be reporting a "
+            "build it did not perform."
+        ),
+    )
     dispatch_lane: str = Field(
         default="tracker",
         description="Fire-queue lane tracker-originated dispatches are enqueued on.",
