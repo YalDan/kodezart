@@ -6,10 +6,12 @@ result takes, and no test asks a model anything.
 """
 
 import uuid
+from collections.abc import AsyncGenerator
 from inspect import signature
 
 import pytest
 
+from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.domain.accept_gate import (
     FLAGGED_HEADING,
@@ -23,7 +25,10 @@ from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem, SherlockFlag
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
+    AgentEvent,
+    AssistantTextEvent,
     CriterionResult,
+    ResultEvent,
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
     WorkflowPREvent,
@@ -37,6 +42,7 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -482,6 +488,191 @@ async def test_a_flag_contradicting_the_verdict_does_not_move_the_route() -> Non
 
     create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
     assert "this run should be rejected" in str(create["body"])
+
+
+# ---------------------------------------------------------------------------
+# KOD-53/AC-17 — a flag the RUN carried, from the evaluator to the PR body
+# ---------------------------------------------------------------------------
+
+# Every graph test above hands its flags to the workflow already made: the
+# quality gate is faked, so the chain from the evaluator's structured output
+# through grading and into the pull request is never travelled.  This section
+# travels it.  The only place the concern below is written is the evaluator's
+# own output, so every hop between there and the body is production code.
+
+_SHERLOCK_CONCERN = "Watson 2 read a mocked persister as a real write"
+
+_RUN_CRITERIA = [
+    {"text": "The endpoint returns 204", "criterionClass": "hard_gate"},
+    {"text": "No new lint warnings", "criterionClass": "soft_signal"},
+]
+
+
+def _structured(payload: dict[str, object]) -> ResultEvent:
+    return ResultEvent(
+        subtype="result",
+        duration_ms=1,
+        duration_api_ms=1,
+        is_error=False,
+        num_turns=1,
+        session_id="flagging",
+        structured_output=payload,
+    )
+
+
+class FlaggingEvaluator:
+    """Answers every schema one run needs; the evaluator raises one flag.
+
+    Nothing here fails: both criteria pass and the sweep is clean, so the
+    flag is the only thing the run has to say.  A gate that dropped it
+    would produce a green run, a merged branch and a pull request that
+    never mentions the concern — which is the failure this fixture exists
+    to make visible.
+    """
+
+    def __init__(self) -> None:
+        self.eval_calls = 0
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        props: dict[str, object] = {}
+        if output_format is not None:
+            schema = output_format.get("schema")
+            if isinstance(schema, dict):
+                raw = schema.get("properties", {})
+                if isinstance(raw, dict):
+                    props = raw
+
+        if "slug" in props:
+            yield _structured({"slug": "flagged"})
+            return
+        if "findings" in props:
+            yield _structured(
+                {
+                    "findings": [
+                        {"criterionId": "AC-1", "smallestRepair": "none"},
+                        {"criterionId": "AC-2", "smallestRepair": "none"},
+                    ],
+                    "contradictions": [],
+                }
+            )
+            return
+        if "criteria" in props and "criteriaResults" not in props:
+            yield _structured(
+                {"criteria": _RUN_CRITERIA, "reasoning": "Read off the tree."},
+            )
+            return
+        if "criteriaResults" in props:
+            self.eval_calls += 1
+            yield _structured(
+                {
+                    "criteriaResults": [
+                        {
+                            "criterionId": "AC-1",
+                            "criterion": "The endpoint returns 204",
+                            "passed": True,
+                            "reasoning": "the response code is asserted",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "criterion": "No new lint warnings",
+                            "passed": True,
+                            "reasoning": "ruff is clean",
+                        },
+                    ],
+                    "sherlockFlags": [
+                        {"criterionId": "AC-1", "concern": _SHERLOCK_CONCERN},
+                    ],
+                }
+            )
+            return
+        if "title" in props and "description" in props:
+            yield _structured(
+                {"title": "feat: flagged run", "description": "Original PR body."},
+            )
+            return
+
+        yield AssistantTextEvent(text="implemented", model="scripted")
+        yield ResultEvent(
+            subtype="result",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="flagging",
+            commit_sha="c" * 40,
+        )
+
+
+def _engine_over_a_real_loop(
+    executor: FlaggingEvaluator,
+    pr_creator: FakePRCreator,
+) -> RalphWorkflowEngine:
+    """The workflow with the REAL ralph loop, so grading actually happens."""
+    service = AgentService(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    prompts = make_prompt_provider()
+    return RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=prompts,
+        service=service,
+        quality_gate=RalphLoop(
+            service=service,
+            max_iterations=2,
+            plateau_window=5,
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            prompts=prompts,
+            skills=SUPPRESS_ALL_SKILLS,
+        ),
+        ticket_generator=FakeTicketGenerator(),
+        merger=FakeBranchMerger(),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        pr_creator=pr_creator,
+    )
+
+
+async def test_a_flag_the_evaluator_raised_reaches_the_pull_request_body() -> None:
+    """The concern is carried by the run, not handed to the composer.
+
+    ``sherlockFlags`` is the field this issue is named for, and its whole
+    purpose is to reach a reader.  The path asserted here is evaluator
+    output → grading → the iteration event → the flagged items → the body,
+    every hop of it production code; severing any one of them, including
+    dropping the flags where the grade is assembled, fails this test while
+    every hand-composed flag assertion elsewhere stays green.
+    """
+    executor = FlaggingEvaluator()
+    pr_creator = FakePRCreator()
+    events = await _run(_engine_over_a_real_loop(executor, pr_creator))
+
+    iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
+    assert iteration.verdict is AcceptVerdict.accepted, "nothing failed in this run"
+    assert [f.concern for f in iteration.evaluation.sherlock_flags] == [
+        _SHERLOCK_CONCERN
+    ]
+
+    create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
+    body = str(create["body"])
+    assert FLAGGED_HEADING in body
+    assert f"AC-1: {_SHERLOCK_CONCERN}" in body
+    assert executor.eval_calls >= 1, "the evaluator was really asked"
 
 
 async def test_an_unflagged_pass_leaves_the_pr_body_untouched() -> None:
