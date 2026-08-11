@@ -62,6 +62,15 @@ class GitService(Protocol):
 
     async def has_changes(self, cwd: str) -> bool: ...
 
+    async def is_path_ignored(self, cwd: str, path: str) -> bool:
+        """True iff *path* is excluded by the repository's ignore rules.
+
+        Maps to ``git check-ignore --quiet <path>`` (exit 0 → True,
+        exit 1 → False, any other exit raises).  A path already tracked
+        in the index is reported as not ignored.
+        """
+        ...
+
     async def add_all(self, cwd: str) -> None: ...
 
     async def commit(
