@@ -161,13 +161,36 @@ Resolution runs per function key with strict precedence:
    to a filesystem path of a template file.
 2. `KODEZART_PROMPT_SET_OVERRIDES` — JSON object mapping a function key to the
    set that serves it.
-3. `KODEZART_PROMPT_SET` — the default set (`claude-opus`), which must supply
+3. `KODEZART_PROMPT_SET` — the default set (`anthropic_v5`), which must supply
    every function key.
 
 The whole table is validated at boot and logged as one `prompt_resolution_table`
 event. A broken override — unknown set, key missing from the named set,
 unreadable template — is a typed boot failure; the default is never silently
 substituted for a configured override.
+
+### Two sets ship, and rolling back takes two lines
+
+`anthropic_v5` is the shipped default: de-prescribed templates, typed lens
+definitions dispatched as their own sessions, and per-role session policy read
+from set metadata. `claude-opus` is the **legacy configuration** — complete,
+still selectable, and held byte-identical by a content-hash manifest, so any
+change to it fails the suite rather than drifting.
+
+Roll back with both lines, not one:
+
+```bash
+KODEZART_PROMPT_SET=claude-opus
+KODEZART_TICKET_REVIEW_MODE=reviewed
+```
+
+The second line is not optional bookkeeping. `create_only` — the shipped ticket
+mode — is reviewed by the set's `draft-critic` lens, and the legacy set declares
+no lens at all, so the pair `claude-opus` + `create_only` is refused at boot with
+a typed error naming both settings. That refusal is the design working: the two
+defaults moved together and they roll back together. Setting only the prompt set
+still restores the corpus — the resolution table logs 100% `claude-opus` — but
+the application will not finish starting until the mode goes back too.
 
 `KODEZART_MODEL` is a deliberately separate axis. The set decides which words
 are sent; the model decides which engine receives them. Prompt resolution never
