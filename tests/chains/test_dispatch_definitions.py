@@ -20,9 +20,11 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.errors import NoStructuredOutputError
-from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.agent import AgentEvent, ResultEvent
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -32,7 +34,12 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-from tests.fakes import SUPPRESS_ALL_SKILLS
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeGitService,
+    FakeRepoCache,
+    make_criteria,
+)
 from tests.prompts.test_claude_opus_goldens import V5_SET
 
 LENS_NAMES = ("doc-verifier", "draft-critic", "explorer")
@@ -54,18 +61,42 @@ class RecordedDispatch:
     """One dispatch, reduced to what the role rule is about."""
 
     agent_names: tuple[str, ...]
+    method: str = "stream"
 
 
 @dataclass
 class RecordingRunner:
-    """``AgentRunner`` double that records the definitions of every dispatch."""
+    """``AgentRunner`` double that records the definitions of every dispatch.
+
+    ``structured_output``, when set, is streamed back from ``stream`` as a
+    result: a node that must survive its own dispatch to be observed twice
+    needs an answer, and one that only has to dispatch does not.
+    """
 
     dispatches: list[RecordedDispatch] = field(default_factory=list)
+    structured_output: dict[str, object] | None = None
 
-    def _record(self, agents: Sequence[AgentDefinition]) -> None:
+    def _record(self, agents: Sequence[AgentDefinition], method: str) -> None:
         self.dispatches.append(
             RecordedDispatch(
                 agent_names=tuple(definition.name for definition in agents),
+                method=method,
+            ),
+        )
+
+    def _answer(self) -> tuple[AgentEvent, ...]:
+        """What ``stream`` yields back — nothing unless an answer was configured."""
+        if self.structured_output is None:
+            return ()
+        return (
+            ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="recording",
+                structured_output=self.structured_output,
             ),
         )
 
@@ -86,9 +117,9 @@ class RecordingRunner:
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
-        """Record the dispatch and stream nothing."""
-        self._record(agents)
-        for event in ():
+        """Record the dispatch and stream the configured answer, if any."""
+        self._record(agents, "stream")
+        for event in self._answer():
             yield event
 
     async def stream_in_workspace(
@@ -106,7 +137,7 @@ class RecordingRunner:
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream nothing."""
-        self._record(agents)
+        self._record(agents, "stream_in_workspace")
         for event in ():
             yield event
 
@@ -130,7 +161,7 @@ class RecordingRunner:
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream nothing."""
-        self._record(agents)
+        self._record(agents, "stream_workflow")
         for event in ():
             yield event
 
@@ -170,23 +201,51 @@ def dispatch_block(source: str, schema_name: str) -> str:
     return source[start:end]
 
 
+def evaluative_guarantee_holds(block: str) -> bool:
+    """Whether one dispatch block names the empty definition set and nothing else."""
+    return "agents=NO_SUBAGENTS" in block and "definitions()" not in block
+
+
+def post_merge_review_block() -> str:
+    """The post-merge review dispatch, as text — its own site, found by name."""
+    source = chain_source("ralph_workflow.py")
+    review = source.index('site="post_merge_review"')
+    return source[source.rindex("self._service.stream", 0, review) : review]
+
+
 @pytest.mark.parametrize(("module", "schema"), EVALUATIVE_SITES)
 def test_every_evaluative_dispatch_declares_the_empty_definition_set(
     module: str,
     schema: str,
 ) -> None:
     """Named, so the guarantee is visible at the call site it binds."""
-    block = dispatch_block(chain_source(module), schema)
-    assert "agents=NO_SUBAGENTS" in block
-    assert "definitions()" not in block
+    assert evaluative_guarantee_holds(dispatch_block(chain_source(module), schema))
 
 
 def test_the_post_merge_review_dispatch_declares_the_empty_definition_set() -> None:
     """Its own site, asserted separately: it is a second evaluative call."""
-    source = chain_source("ralph_workflow.py")
-    review = source.index('site="post_merge_review"')
-    start = source.rindex("self._service.stream", 0, review)
-    assert "agents=NO_SUBAGENTS" in source[start:review]
+    assert evaluative_guarantee_holds(post_merge_review_block())
+
+
+def test_injecting_definitions_into_an_evaluative_path_fails_the_guard() -> None:
+    """KOD-87-AC-4, second clause — the check detects the injection it forbids.
+
+    A guard that passes on the shipped source proves nothing until it is
+    shown to reject the violation it exists to catch: the same blocks are
+    re-read with the lenses injected, and every one of them must fail.
+    """
+    injected_blocks = [
+        dispatch_block(chain_source(module), schema)
+        for module, schema in EVALUATIVE_SITES
+    ] + [post_merge_review_block()]
+
+    for block in injected_blocks:
+        injected = block.replace(
+            "agents=NO_SUBAGENTS",
+            "agents=self._prompts.definitions()",
+        )
+        assert injected != block, "the injection changed nothing — guard is vacuous"
+        assert not evaluative_guarantee_holds(injected)
 
 
 @pytest.mark.parametrize(("module", "schema"), GENERATIVE_SITES)
@@ -262,6 +321,74 @@ async def test_a_set_with_no_definitions_dispatches_none() -> None:
     """The lenses are set content: a set declaring none hands over none."""
     runner = await creator_dispatches(legacy_provider())
     assert runner.dispatches[0].agent_names == ()
+
+
+async def evaluator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunner:
+    """Run the ralph loop once against a recording runner and return it.
+
+    The evaluator is answered with a passing verdict over the dispatched
+    id, so the loop reaches its end rather than dying inside the node —
+    what the evaluate dispatch CARRIED is the subject, and a crashed run
+    would leave that observation resting on an error path.
+    """
+    criteria = make_criteria("Tests pass")
+    runner = RecordingRunner(
+        structured_output={
+            "criteriaResults": [
+                {
+                    "criterionId": criteria[0].id,
+                    "criterion": criteria[0].text,
+                    "passed": True,
+                    "reasoning": "Observed by reading the code.",
+                },
+            ],
+        },
+    )
+    loop = RalphLoop(
+        runner,
+        max_iterations=1,
+        plateau_window=2,
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        prompts=provider,
+        skills=SUPPRESS_ALL_SKILLS,
+    )
+    async for _event in loop.run(
+        prompt="fix it",
+        repo_path="/tmp/dispatch-fixture",
+        repo_url=None,
+        feature_branch="kodezart/test-12345678",
+        ralph_branch="kodezart/test-12345678-ralph-abcdef01",
+        base_spec=trunk_base("main"),
+        permission_mode="bypassPermissions",
+        allowed_tools=["Bash"],
+        acceptance_criteria=criteria,
+        cache_key="dispatch-fixture",
+        repo_visibility=RepoVisibility.UNKNOWN,
+    ):
+        pass
+    assert runner.dispatches, "the loop never dispatched"
+    return runner
+
+
+async def test_the_evaluator_dispatches_none_of_the_sets_lenses() -> None:
+    """KOD-87-AC-4, measured rather than read: the evaluate session gets none.
+
+    The set under test declares three lenses and hands all three to the
+    creator, so an empty list here is the role rule operating and not an
+    empty fixture.
+    """
+    runner = await evaluator_dispatches(v5_provider())
+    evaluations = [d for d in runner.dispatches if d.method == "stream"]
+    assert evaluations, "the evaluate node never dispatched"
+    for dispatch in evaluations:
+        assert dispatch.agent_names == ()
+
+
+async def test_no_dispatch_of_the_ralph_loop_carries_a_lens() -> None:
+    """The loop's other session is implementation, and it spawns nothing either."""
+    runner = await evaluator_dispatches(v5_provider())
+    assert [d.agent_names for d in runner.dispatches] == [()] * len(runner.dispatches)
 
 
 class NullWorkspace:
