@@ -15,7 +15,7 @@ from enum import StrEnum
 
 
 class WorkflowOutcome(StrEnum):
-    """Thirteen-way partition of the terminal routes reaching ``complete``.
+    """Fourteen-way partition of the terminal routes reaching ``complete``.
 
     ``criteria_infeasible`` is the pre-loop halt: the feasibility sweep
     exhausted its regeneration bound, so the run terminates BEFORE the
@@ -27,6 +27,11 @@ class WorkflowOutcome(StrEnum):
     exit by whether the run produced anything to land.  They are the
     machine-readable incompleteness marker a base-branch resolver checks
     before building on a run's output — a title prefix is not one.
+
+    ``remediation_budget_exhausted`` outranks both fix-budget members,
+    which are consequently unreachable at any valid configuration.  They
+    stay: a member is a wire contract and events already carry those
+    values, so a consumer must still be able to parse what it has seen.
     """
 
     merge_divergent = "merge_divergent"
@@ -42,3 +47,4 @@ class WorkflowOutcome(StrEnum):
     criteria_infeasible = "criteria_infeasible"
     stalled_pr_opened = "stalled_pr_opened"
     zero_commit_no_pr = "zero_commit_no_pr"
+    remediation_budget_exhausted = "remediation_budget_exhausted"
