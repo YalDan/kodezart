@@ -16,8 +16,14 @@ from kodezart.core.error_egress import (
     build_error_event,
     redact_credentials,
 )
-from kodezart.core.errors import NoStructuredOutputError
-from kodezart.domain.errors import AgentSDKError
+from kodezart.core.errors import (
+    NoStructuredOutputError,
+    RateLimitedSoftFailureError,
+    soft_failure,
+)
+from kodezart.core.retry import should_retry
+from kodezart.domain.errors import AgentSDKError, TransientAPIError
+from kodezart.types.domain.agent import ResultEvent
 
 # Construct token-like fixtures via concatenation; binding a "ghp_..."
 # literal to a variable named ``token`` would trip ruff S105
@@ -122,3 +128,133 @@ def test_build_error_event_preserves_non_secret_message() -> None:
     """Non-secret operator text round-trips through redaction unchanged."""
     event = build_error_event(ValueError("plain operator text"))
     assert event.error == "plain operator text"
+
+
+# ---------------------------------------------------------------------------
+# KOD-65/AC-2 — the variant fields, and the signature that named the cause
+# ---------------------------------------------------------------------------
+
+
+def _result(*, result: str | None) -> ResultEvent:
+    return ResultEvent(
+        subtype="success",
+        duration_ms=7000,
+        duration_api_ms=0,
+        is_error=False,
+        num_turns=1,
+        session_id="resumed-session",
+        result=result,
+    )
+
+
+def test_the_no_response_requested_signature_round_trips_to_the_wire() -> None:
+    """Both fires' fatal turn said so in words, and no consumer could see it.
+
+    The auto-continue turn made zero API calls and answered
+    ``"No response requested."``; the terminal frame carried a raise site
+    and a boolean, so the two deaths were indistinguishable on the wire
+    from any other empty output.  The answer now rides the frame.
+    """
+    exc = NoStructuredOutputError(
+        "Creator produced no structured output.",
+        raise_site="ticket_creator",
+        result_event=_result(result="No response requested."),
+    )
+    event = build_error_event(exc)
+
+    assert event.result_tail == "No response requested."
+    assert event.result_event_observed is True
+    assert event.subtype == "success"
+    assert event.num_turns == 1
+    assert event.duration_ms == 7000
+    assert event.raise_site == "ticket_creator"
+    assert event.rate_limit_rejected is False
+
+
+def test_a_stream_with_no_result_event_is_a_distinct_wire_shape() -> None:
+    """The variant the two fires' events could not tell from the other one."""
+    exc = NoStructuredOutputError(
+        "Creator produced no structured output.",
+        raise_site="ticket_creator",
+        result_event=None,
+    )
+    event = build_error_event(exc)
+
+    assert event.result_event_observed is False
+    assert event.result_tail is None
+    assert event.subtype is None
+    assert event.num_turns is None
+    assert event.duration_ms is None
+
+
+def test_the_result_tail_is_redacted_at_egress() -> None:
+    """A credential in the agent's own result text never reaches the wire."""
+    exc = NoStructuredOutputError(
+        "no structured output",
+        raise_site="commit_message",
+        result_event=_result(result=f"remote said: {_FAKE_URL}"),
+    )
+    event = build_error_event(exc)
+
+    assert event.result_tail is not None
+    assert _FAKE_GHP_BODY not in event.result_tail
+    assert _REDACTION_SENTINEL in event.result_tail
+
+
+# ---------------------------------------------------------------------------
+# KOD-43/AC-2..AC-4 — which class a rate-limit rejection is carried by
+# ---------------------------------------------------------------------------
+
+
+def test_a_rate_limit_rejection_is_built_as_the_retryable_variant() -> None:
+    """KOD-43/AC-2: the rejection reaches the node's RetryPolicy as retryable."""
+    exc = soft_failure(
+        "Agent did not produce structured output for acceptance criteria",
+        raise_site="acceptance_criteria",
+        result_event=_result(result="rate limit"),
+        rate_limit_rejected=True,
+    )
+
+    assert isinstance(exc, RateLimitedSoftFailureError)
+    assert isinstance(exc, TransientAPIError)
+    assert should_retry(exc) is True
+
+
+def test_a_deterministic_empty_output_stays_non_retryable() -> None:
+    """KOD-43/AC-3: only the rate-limit case changes; the empty output does not."""
+    exc = soft_failure(
+        "Agent did not produce structured output for acceptance criteria",
+        raise_site="acceptance_criteria",
+        result_event=_result(result=""),
+        rate_limit_rejected=False,
+    )
+
+    assert type(exc) is NoStructuredOutputError
+    assert not isinstance(exc, TransientAPIError)
+    assert should_retry(exc) is False
+
+
+def test_an_exhausted_rate_limit_retry_still_reaches_the_wire_intact() -> None:
+    """KOD-43/AC-4: observability is unchanged when the back-off runs out.
+
+    The variant is a ``NoStructuredOutputError``, so the egress branch
+    that carries ``raiseSite``/``rateLimitRejected`` still matches it —
+    which is why the retryability change costs no wire field.
+    """
+    exc = soft_failure(
+        "Agent did not produce structured output for acceptance criteria",
+        raise_site="acceptance_criteria",
+        result_event=_result(result="Claude AI usage limit reached"),
+        rate_limit_rejected=True,
+    )
+    event = build_error_event(exc)
+
+    assert event.raise_site == "acceptance_criteria"
+    assert event.rate_limit_rejected is True
+    assert event.error_kind == "RateLimitedSoftFailureError"
+    assert event.result_tail == "Claude AI usage limit reached"
+
+    payload = event.model_dump(by_alias=True, exclude_none=True)
+    assert payload["raiseSite"] == "acceptance_criteria"
+    assert payload["rateLimitRejected"] is True
+    assert payload["resultTail"] == "Claude AI usage limit reached"

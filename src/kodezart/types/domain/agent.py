@@ -268,6 +268,16 @@ class ErrorEvent(AgentEvent):
     rate_limit_rejected: bool | None = None
     exit_code: int | None = None
     stderr_tail: str | None = None
+    # The soft-failure variant slots.  Two recorded deaths reported the
+    # same wire event for two different failures — no result event at
+    # all, versus a result carrying no structured output — and the
+    # result text held the answer in plain words.  A reader holding only
+    # this frame can now tell them apart.
+    result_event_observed: bool | None = None
+    subtype: str | None = None
+    num_turns: int | None = None
+    duration_ms: int | None = None
+    result_tail: str | None = None
 
 
 class RateLimitWarningEvent(AgentEvent):

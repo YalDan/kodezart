@@ -174,7 +174,14 @@ Leading frame of a queued `/workflow` stream; carries the reconnect handle.
 
 | Event Type | Key Fields |
 | ---------- | ---------- |
-| `error`    | `error`    |
+| `error`    | `error`, `errorKind`, `raiseSite`, `rateLimitRejected`, `resultEventObserved`, `subtype`, `numTurns`, `durationMs`, `resultTail` |
+
+A soft failure (`errorKind` `NoStructuredOutputError`, or
+`RateLimitedSoftFailureError` when the provider rejected the stream on a
+rate limit) is identified by this frame alone: `resultEventObserved`
+separates "no result arrived" from "a result arrived carrying no
+structured output", and `resultTail` carries the end of the agent's own
+result text, credential-redacted.
 
 ## Error Handling
 

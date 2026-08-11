@@ -3,8 +3,8 @@
 from collections import Counter
 from collections.abc import AsyncIterator
 
-from kodezart.core.constants import RESULT_TAIL_CHARS
 from kodezart.core.error_egress import redact_credentials
+from kodezart.core.errors import result_tail
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -13,18 +13,6 @@ from kodezart.types.domain.agent import (
     RateLimitWarningEvent,
     ResultEvent,
 )
-
-
-def result_tail(result: str | None) -> str | None:
-    """The last ``RESULT_TAIL_CHARS`` of a result payload, or ``None``.
-
-    The tail rather than the head: the two recorded soft failures put the
-    answer at the end (``"No response requested."``), and a truncated head
-    would have shown the prompt echo instead.
-    """
-    if result is None:
-        return None
-    return result[-RESULT_TAIL_CHARS:]
 
 
 async def drain(

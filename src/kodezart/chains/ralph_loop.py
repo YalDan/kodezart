@@ -9,7 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
-from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
@@ -258,7 +258,7 @@ class RalphLoop:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Evaluator produced no structured output."
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="ralph_evaluator",
                 result_event=result_event,
