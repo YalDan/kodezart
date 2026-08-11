@@ -14,7 +14,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
-    PromptProvider,
+    PromptSetProvider,
     RepoCache,
 )
 from kodezart.core.redispatch import until_permutation
@@ -59,7 +59,7 @@ class RalphLoop:
         plateau_window: int,
         git: GitService,
         cache: RepoCache,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         skills: SkillsSelection,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
@@ -76,7 +76,7 @@ class RalphLoop:
         # merger does that internally).
         self._git: GitService = git
         self._cache: RepoCache = cache
-        self._prompts: PromptProvider = prompts
+        self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
@@ -205,6 +205,7 @@ class RalphLoop:
             allowed_tools=ctx.allowed_tools,
             skills=self._skills,
             session_type=SessionType.TICKET_FIRE,
+            session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
             create_branch=is_first,
             cache_key=ctx.cache_key,
@@ -260,6 +261,9 @@ class RalphLoop:
                     # template not to fan out is a request; an empty
                     # definition list is a guarantee.
                     agents=NO_SUBAGENTS,
+                    session_policy=self._prompts.session_policy(
+                        PromptKey.EVALUATION,
+                    ),
                     output_format={
                         "type": "json_schema",
                         "schema": ACCEPTANCE_CRITERIA_SCHEMA,

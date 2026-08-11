@@ -232,6 +232,11 @@ class TicketGenerationLoop:
                 session_type=SessionType.TICKET_FIRE,
                 # Generative: the set's lenses are dispatchable from here.
                 agents=self._prompts.definitions(),
+                session_policy=self._prompts.session_policy(
+                    PromptKey.TICKET_CREATE
+                    if iteration == 1
+                    else PromptKey.TICKET_REVISION,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_DRAFT_SCHEMA,
@@ -301,6 +306,9 @@ class TicketGenerationLoop:
                 allowed_tools=TICKET_TOOLS,
                 skills=self._skills,
                 session_type=SessionType.TICKET_FIRE,
+                session_policy=self._prompts.session_policy(
+                    PromptKey.TICKET_REVIEW,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_REVIEW_SCHEMA,

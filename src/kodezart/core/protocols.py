@@ -905,6 +905,16 @@ class PromptSetProvider(PromptProvider, Protocol):
         """The set's system-prompt append, or ``None`` when it declares none."""
         ...
 
+    def session_policy(self, key: PromptKey) -> SessionPolicy:
+        """What *key*'s dispatch declares about its session.
+
+        Read from the set, never decided at the call site: a dispatch site
+        asks the provider what this role runs at and passes the answer on.
+        Set content, so it lives on the extending port beside the lens
+        definitions and the house rules rather than on the keyed one.
+        """
+        ...
+
 
 @runtime_checkable
 class SkillInventory(Protocol):

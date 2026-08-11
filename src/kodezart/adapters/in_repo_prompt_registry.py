@@ -32,7 +32,7 @@ from kodezart.types.domain.prompts import (
     PromptKey,
     PromptSetMetadata,
 )
-from kodezart.types.domain.subagents import AgentDefinition
+from kodezart.types.domain.subagents import AgentDefinition, SessionPolicy
 
 _METADATA_FILE = "set.toml"
 _MEMBER_SUFFIX = ".md"
@@ -69,10 +69,12 @@ class InRepoPromptRegistry:
         *,
         templates: Mapping[PromptKey, PromptTemplate],
         default_metadata: PromptSetMetadata,
+        fallback_model: str | None = None,
         definitions: Sequence[AgentDefinition] = (),
     ) -> None:
         self._templates: Mapping[PromptKey, PromptTemplate] = templates
         self._default_metadata: PromptSetMetadata = default_metadata
+        self._fallback_model: str | None = fallback_model
         self._definitions: tuple[AgentDefinition, ...] = tuple(definitions)
 
     @classmethod
@@ -85,6 +87,7 @@ class InRepoPromptRegistry:
         template_overrides: Mapping[str, str],
         bindings: Mapping[str, object],
         investigation_cap: int,
+        fallback_model: str | None = None,
     ) -> Self:
         """Resolve every function key or raise ``PromptResolutionError``."""
         available = _discover_sets(sets_root)
@@ -108,7 +111,7 @@ class InRepoPromptRegistry:
             failures=failures,
         )
         for key in PromptKey:
-            if key.value not in default_metadata.skills:
+            if default_metadata.skill_names(key.value) is None:
                 failures.append(key.value)
 
         templates: dict[PromptKey, PromptTemplate] = {}
@@ -163,6 +166,7 @@ class InRepoPromptRegistry:
         return cls(
             templates=templates,
             default_metadata=default_metadata,
+            fallback_model=fallback_model,
             definitions=_load_definitions(available[default_set], default_metadata),
         )
 
@@ -180,7 +184,22 @@ class InRepoPromptRegistry:
 
     def declared_skills(self, key: PromptKey) -> Sequence[str]:
         """Skill names the default set declares for *key*."""
-        return tuple(self._default_metadata.skills[key.value])
+        return tuple(self._default_metadata.skill_names(key.value) or ())
+
+    def session_policy(self, key: PromptKey) -> SessionPolicy:
+        """What *key*'s dispatch declares about its session.
+
+        One object per dispatch rather than four parallel parameters: the
+        house rules the set appends, the effort its role runs at, and the
+        configured refusal fallback all arrive together, and a set that
+        declares no roles produces exactly the policy every dispatch
+        expressed before this existed.
+        """
+        return SessionPolicy(
+            system_prompt_append=self._default_metadata.fragments.house_rules,
+            effort=self._default_metadata.effort_of(key.value),
+            fallback_model=self._fallback_model,
+        )
 
     def definitions(self) -> Sequence[AgentDefinition]:
         """Typed lens definitions the default set declares, name-ordered."""
@@ -332,7 +351,7 @@ def _load_definitions(
 
 
 def _skills_fragment(metadata: PromptSetMetadata, key: PromptKey) -> str:
-    names = metadata.skills.get(key.value, [])
+    names = metadata.skill_names(key.value) or []
     if not names:
         return ""
     listed = "".join(f"\n- {name}" for name in names)

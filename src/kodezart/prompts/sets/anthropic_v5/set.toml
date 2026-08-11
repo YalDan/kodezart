@@ -150,28 +150,50 @@ it must serve.\
 """
 tools = ["Read", "Glob", "Grep"]
 
-# Function key -> skill names the role should reach for. Declared for every
-# key because the registry's contract requires it; the VALUES are the
-# session-policy deliverable's to decide, and an explicit empty list is
-# this set saying the role loads no skill yet. No template of this set
-# names a skill or when to invoke one — a skill's own description is its
-# trigger.
-[skills]
-branch_name = []
-ticket_create = []
-ticket_review = []
-ticket_revision = []
-acceptance_criteria = []
-criteria_validation = []
-implementation = []
-evaluation = []
-iteration_feedback = []
-post_merge_review = []
-fix = []
-remediation_ticket = []
-commit_message = []
-pr_description = []
-fire_prep_pass = []
-grooming_pass = []
-content_audit = []
-knowledge_map = []
+# Per-ROLE session policy. Effort, skills and the roster of keys that run
+# under each role, in one place: changing what judgment costs is an edit
+# here, not an edit per key. Effort is NAMED at every role, including the
+# ones that run at the harness default, because "one level below the
+# default" is only a testable relation if the default has a name — and the
+# harness exposes no way to ask what it resolved. Per-key skill loadouts
+# are deliberately absent from this set: a loadout has one source, and for
+# this set that source is the role. No template of this set names a skill
+# or when to invoke one — a skill's own description is its trigger.
+
+[session_roles.generative]
+effort = "xhigh"
+skills = ["code-review"]
+keys = [
+    "ticket_create",
+    "ticket_revision",
+    "acceptance_criteria",
+    "iteration_feedback",
+    "remediation_ticket",
+    "fire_prep_pass",
+    "grooming_pass",
+]
+
+# One level below the generative roles: grading a changeset against explicit
+# criteria is cheaper work than authoring one.
+[session_roles.evaluative]
+effort = "high"
+skills = ["code-review", "security-review"]
+keys = [
+    "evaluation",
+    "criteria_validation",
+    "ticket_review",
+    "post_merge_review",
+    "content_audit",
+]
+
+[session_roles.implementation]
+effort = "xhigh"
+skills = ["code-review"]
+keys = ["implementation", "fix"]
+
+# The roster here and utility_keys above are the same roster, and the
+# metadata model refuses a set where they disagree.
+[session_roles.utility]
+effort = "low"
+skills = []
+keys = ["branch_name", "commit_message", "pr_description", "knowledge_map"]

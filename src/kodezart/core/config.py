@@ -209,6 +209,15 @@ class AppConfig(BaseSettings):
         default=None,
         description="Claude model override. None uses SDK default.",
     )
+    fallback_model: str | None = Field(
+        default=None,
+        description=(
+            "Engine a session falls back to when the primary declines a "
+            "request. None declares no fallback, which is not a default "
+            "naming an engine: an installation that has not decided which "
+            "second engine it may reach sends none."
+        ),
+    )
     remediation_max_rounds: int = Field(
         default=1,
         ge=1,

@@ -24,7 +24,7 @@ from kodezart.core.protocols import (
     AgentExecutor,
     GitService,
     OutboundContentGate,
-    PromptProvider,
+    PromptSetProvider,
 )
 from kodezart.core.stream_drain import drain
 from kodezart.types.domain.agent import (
@@ -57,14 +57,14 @@ class GitChangePersister:
         committer_email: str,
         *,
         remote: str,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         gate: OutboundContentGate,
     ) -> None:
         self._git = git
         self._committer_name = committer_name
         self._committer_email = committer_email
         self._remote = remote
-        self._prompts: PromptProvider = prompts
+        self._prompts: PromptSetProvider = prompts
         self._gate: OutboundContentGate = gate
         self._log: BoundLogger = get_logger(__name__)
 
@@ -318,6 +318,9 @@ class GitChangePersister:
                 allowed_tools=["Read", "Glob", "Grep", "Bash"],
                 skills=skills,
                 session_type=SessionType.COMMIT_MESSAGE,
+                session_policy=self._prompts.session_policy(
+                    PromptKey.COMMIT_MESSAGE,
+                ),
                 output_format=output_format,
             ),
             site="commit_message",

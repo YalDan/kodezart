@@ -535,6 +535,7 @@ class RalphWorkflowEngine:
                 allowed_tools=[],
                 skills=self._skills,
                 session_type=SessionType.TICKET_FIRE,
+                session_policy=self._prompts.session_policy(PromptKey.BRANCH_NAME),
                 output_format={
                     "type": "json_schema",
                     "schema": BRANCH_NAME_SCHEMA,
@@ -629,6 +630,9 @@ class RalphWorkflowEngine:
                 session_type=SessionType.TICKET_FIRE,
                 # Generative: the set's lenses are dispatchable from here.
                 agents=self._prompts.definitions(),
+                session_policy=self._prompts.session_policy(
+                    PromptKey.ACCEPTANCE_CRITERIA,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": GENERATED_CRITERIA_SCHEMA,
@@ -699,6 +703,9 @@ class RalphWorkflowEngine:
                     skills=self._skills,
                     session_type=SessionType.TICKET_FIRE,
                     agents=NO_SUBAGENTS,
+                    session_policy=self._prompts.session_policy(
+                        PromptKey.CRITERIA_VALIDATION,
+                    ),
                     output_format={
                         "type": "json_schema",
                         "schema": CRITERIA_VALIDATION_SCHEMA,
@@ -1265,6 +1272,9 @@ class RalphWorkflowEngine:
                     skills=self._skills,
                     session_type=SessionType.TICKET_FIRE,
                     agents=NO_SUBAGENTS,
+                    session_policy=self._prompts.session_policy(
+                        PromptKey.POST_MERGE_REVIEW,
+                    ),
                     output_format={
                         "type": "json_schema",
                         "schema": ACCEPTANCE_CRITERIA_SCHEMA,
@@ -1566,6 +1576,9 @@ class RalphWorkflowEngine:
                 allowed_tools=[],
                 skills=self._skills,
                 session_type=SessionType.TICKET_FIRE,
+                session_policy=self._prompts.session_policy(
+                    PromptKey.PR_DESCRIPTION,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": PR_DESCRIPTION_SCHEMA,

@@ -6,8 +6,11 @@ a directory of data files, never Python.
 """
 
 from enum import StrEnum
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from kodezart.types.domain.subagents import SessionEffort
 
 
 class PromptKey(StrEnum):
@@ -82,6 +85,41 @@ class PromptSetFragments(BaseModel):
     orchestration_agents: str | None = None
 
 
+class SessionRole(StrEnum):
+    """What kind of work a prompt key's session does.
+
+    Session policy attaches to the ROLE, not to the key: changing what a
+    judgment session costs is then one edit in a data file rather than an
+    edit per key, and a new key inherits a decision instead of needing one.
+    """
+
+    #: Authors a new artifact from a task.
+    GENERATIVE = "generative"
+    #: Grades an artifact against stated criteria and returns a verdict.
+    EVALUATIVE = "evaluative"
+    #: Emits a name, a message, a description, or a prelude.
+    UTILITY = "utility"
+    #: Changes the workspace.
+    IMPLEMENTATION = "implementation"
+
+
+class SessionRolePolicy(BaseModel):
+    """What one role's sessions run at, and which keys belong to it.
+
+    ``effort`` is NAMED rather than left absent even where it equals the
+    engine default: the harness exposes no read-back of the level it
+    resolved, so a policy that says "the default" cannot be compared with
+    one that says "one below the default", and the relation between the
+    two is the point of the declaration.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    effort: SessionEffort
+    skills: list[str] = Field(default_factory=list)
+    keys: list[str]
+
+
 class AgentDefinitionSpec(BaseModel):
     """What ``set.toml`` declares about one lens; its prompt is a data file."""
 
@@ -103,7 +141,12 @@ class PromptSetMetadata(BaseModel):
 
     name: str
     engines: list[str]
-    skills: dict[str, list[str]]
+    #: Per-KEY skill loadouts.  A set declares these OR session roles, never
+    #: both: two tables deciding one loadout is two answers that can differ.
+    skills: dict[str, list[str]] = Field(default_factory=dict)
+    #: Per-ROLE session policy, keyed by role.  Empty means the set declares
+    #: none and its dispatches carry no session-scoped decision at all.
+    session_roles: dict[SessionRole, SessionRolePolicy] = Field(default_factory=dict)
     fragments: PromptSetFragments
     #: Roles that carry no reasoning-depth instruction. A set that names
     #: none has no utility roster, which is a statement about the set and
@@ -115,3 +158,60 @@ class PromptSetMetadata(BaseModel):
     #: the set declares no orchestration at all, and no member of it may
     #: carry the orchestration slot.
     orchestration_primitive: OrchestrationPrimitive | None = None
+
+    @model_validator(mode="after")
+    def _check_one_loadout_source(self) -> Self:
+        """One mechanism decides a loadout, and a key belongs to one role."""
+        if self.skills and self.session_roles:
+            msg = (
+                f"prompt set {self.name!r} declares both per-key skills and "
+                "session roles; a loadout has one source"
+            )
+            raise ValueError(msg)
+
+        seen: set[str] = set()
+        for role, policy in self.session_roles.items():
+            duplicated = sorted(seen.intersection(policy.keys))
+            if duplicated:
+                msg = (
+                    f"prompt set {self.name!r} assigns {duplicated} to more "
+                    f"than one session role, including {role.value!r}"
+                )
+                raise ValueError(msg)
+            seen.update(policy.keys)
+
+        utility = self.session_roles.get(SessionRole.UTILITY)
+        if utility is not None and set(utility.keys) != set(self.utility_keys):
+            msg = (
+                f"prompt set {self.name!r} declares a utility roster that "
+                "disagrees with the utility role's keys"
+            )
+            raise ValueError(msg)
+        return self
+
+    def role_of(self, key: str) -> SessionRole | None:
+        """The role *key* belongs to, or ``None`` when it belongs to none."""
+        return next(
+            (role for role, policy in self.session_roles.items() if key in policy.keys),
+            None,
+        )
+
+    def effort_of(self, key: str) -> SessionEffort | None:
+        """The effort *key*'s role declares, or ``None`` without roles."""
+        role = self.role_of(key)
+        return None if role is None else self.session_roles[role].effort
+
+    def skill_names(self, key: str) -> list[str] | None:
+        """*key*'s declared loadout, from whichever mechanism this set uses.
+
+        ``None`` means the set decides nothing for this key — a per-key
+        table that omits it, or a role roster that never claims it.  Both
+        are the same boot failure to the caller, which is what makes an
+        unassigned key loud instead of defaulted.
+        """
+        role = self.role_of(key)
+        if role is not None:
+            return list(self.session_roles[role].skills)
+        if key in self.skills:
+            return list(self.skills[key])
+        return None
