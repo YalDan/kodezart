@@ -55,6 +55,7 @@ from tests.fakes import (
     FakeGitService,
     FakePRCreator,
     FakeQualityGate,
+    FakeRefPublisher,
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
@@ -85,6 +86,7 @@ def _make_engine(
     ticket_generator: TicketGenerator | None = None,
     pr_creator: FakePRCreator | None = None,
     ci_monitor: FakeCIMonitor | None = None,
+    ref_publisher: FakeRefPublisher | None = None,
     max_fix_rounds: int = 2,
     artifact_persister: FakeArtifactPersister | None = None,
     prompts: RecordingPromptProvider | None = None,
@@ -123,6 +125,7 @@ def _make_engine(
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
+        ref_publisher=ref_publisher or FakeRefPublisher(),
         max_fix_rounds=max_fix_rounds,
         artifact_persister=artifact_persister,
     )
@@ -1418,8 +1421,13 @@ async def test_workflow_no_ci_monitor_skips_ci() -> None:
     assert complete_events[0].ci_passed is None
 
 
-async def test_workflow_rejected_skips_review_and_pr() -> None:
-    """Rejected workflow goes to complete — no review or PR events."""
+async def test_workflow_rejected_skips_review() -> None:
+    """Rejected workflow is never reviewed — unaccepted work is not merged.
+
+    The PR half of this test's original claim was the defect KOD-40
+    removes ("an unsatisfied run opens no PR"); it now lives, inverted,
+    in the KOD-40 tests below. The review claim is untouched and stands.
+    """
     pr_creator = FakePRCreator()
     ci_monitor = FakeCIMonitor(passed=True)
     gate = FakeQualityGate(
@@ -1450,7 +1458,6 @@ async def test_workflow_rejected_skips_review_and_pr() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is False
-    assert complete_events[0].pr_url is None
 
     review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
     assert len(review_events) == 0
@@ -4038,3 +4045,254 @@ async def test_terminal_totals_are_cumulative_and_last_round_wins() -> None:
         c for c in merger.calls if c.get("method") == "cleanup_backup_branches"
     ]
     assert len(cleanup_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# KOD-40/AC-2, AC-3: the loop exit lands its best iteration
+# ---------------------------------------------------------------------------
+
+_PEAK_SHA = "2" * 40
+_TIP_SHA = "4" * 40
+
+
+def _peaked_then_slipped() -> LoopTrajectory:
+    """8 → 11 → 10 → 11 folded: the peak is iteration 2, the tip is 4."""
+    return fold_trajectory(
+        [
+            IterationRecord(
+                iteration=1,
+                passed_count=8,
+                failing_criterion_ids=["AC-1"],
+                commit_sha="1" * 40,
+            ),
+            IterationRecord(
+                iteration=2,
+                passed_count=11,
+                failing_criterion_ids=["AC-1"],
+                commit_sha=_PEAK_SHA,
+            ),
+            IterationRecord(
+                iteration=3,
+                passed_count=10,
+                failing_criterion_ids=["AC-1", "AC-2"],
+                commit_sha="3" * 40,
+            ),
+            IterationRecord(
+                iteration=4,
+                passed_count=11,
+                failing_criterion_ids=["AC-1"],
+                commit_sha=_TIP_SHA,
+            ),
+        ],
+        plateau_window=2,
+    )
+
+
+def _stalled_gate(trajectory: LoopTrajectory | None = None) -> FakeQualityGate:
+    return FakeQualityGate(
+        events=[],
+        evaluation=make_failing_evaluation(),
+        total_iterations=4,
+        last_commit_sha=_TIP_SHA,
+        trajectory=trajectory if trajectory is not None else _peaked_then_slipped(),
+    )
+
+
+async def _stalled_run(
+    *,
+    pr_creator: FakePRCreator | None = None,
+    ref_publisher: FakeRefPublisher | None = None,
+    merger: FakeBranchMerger | None = None,
+    trajectory: LoopTrajectory | None = None,
+    repo_url: str | None = "https://github.com/owner/repo",
+) -> list[AgentEvent]:
+    engine = _make_engine(
+        quality_gate=_stalled_gate(trajectory),
+        pr_creator=pr_creator,
+        ref_publisher=ref_publisher,
+        merger=merger,
+    )
+    return [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=repo_url,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+
+async def test_a_stalled_run_lands_a_do_not_merge_pr_from_the_best_iteration() -> None:
+    """AC-2: the head is the peak's commit, not the loop branch's tip."""
+    pr_creator = FakePRCreator()
+    publisher = FakeRefPublisher()
+
+    events = await _stalled_run(pr_creator=pr_creator, ref_publisher=publisher)
+
+    published = publisher.calls[0]
+    assert published["commit_sha"] == _PEAK_SHA
+    assert published["commit_sha"] != _TIP_SHA
+    create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
+    assert str(create["title"]).startswith("[do-not-merge]")
+    assert _PEAK_SHA in str(create["body"])
+    assert create["base"] == "main"
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.stalled_pr_opened
+    assert complete.pr_url == "https://github.com/o/r/pull/1"
+    assert complete.accepted is False
+
+
+async def test_the_stalled_pr_is_opened_from_the_feature_branch_once_integrated() -> (
+    None
+):
+    """The passing and non-passing paths stay symmetrical when they can."""
+    pr_creator = FakePRCreator()
+    events = await _stalled_run(
+        pr_creator=pr_creator,
+        ref_publisher=FakeRefPublisher(),
+    )
+
+    create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
+    pr_event = next(e for e in events if isinstance(e, WorkflowPREvent))
+    assert str(create["head"]).endswith("-12345678") or "-best" not in str(
+        create["head"]
+    )
+    assert create["head"] == pr_event.feature_branch
+
+
+async def test_a_divergent_consolidation_opens_the_pr_from_the_published_ref() -> None:
+    """AC-2: there is no no-PR fallback — the ref itself becomes the head.
+
+    A request needs a head and a base sharing an ancestor, not a
+    fast-forward, so a divergent branch state is landed rather than
+    stranded.
+    """
+    pr_creator = FakePRCreator()
+    publisher = FakeRefPublisher()
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT,
+                feature_tip_sha="0" * 40,
+            ),
+        ],
+    )
+
+    events = await _stalled_run(
+        pr_creator=pr_creator,
+        ref_publisher=publisher,
+        merger=merger,
+    )
+
+    create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
+    assert str(create["head"]).endswith("-best")
+    assert create["head"] == publisher.calls[0]["ref"]
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.stalled_pr_opened
+    assert complete.pr_url is not None
+
+
+async def test_a_zero_commit_run_opens_no_pr_and_says_it_did_no_work() -> None:
+    """AC-2: the one honest no-PR terminal, scoped to the literal case."""
+    pr_creator = FakePRCreator()
+    publisher = FakeRefPublisher()
+    trajectory = fold_trajectory(
+        [
+            IterationRecord(
+                iteration=iteration,
+                passed_count=1,
+                failing_criterion_ids=["AC-1"],
+                commit_sha=None,
+            )
+            for iteration in (1, 2, 3)
+        ],
+        plateau_window=2,
+    )
+
+    events = await _stalled_run(
+        pr_creator=pr_creator,
+        ref_publisher=publisher,
+        trajectory=trajectory,
+    )
+
+    assert publisher.calls == []
+    assert [c for c in pr_creator.calls if c["method"] == "create_pr"] == []
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.zero_commit_no_pr
+    assert complete.pr_url is None
+
+
+async def test_the_stalled_terminal_carries_the_incompleteness_as_typed_data() -> None:
+    """AC-3: never-passed ids, the pass-count trajectory, and the best ref.
+
+    A base-branch resolver checks these fields; it does not read the note.
+    """
+    events = await _stalled_run(
+        pr_creator=FakePRCreator(),
+        ref_publisher=FakeRefPublisher(),
+    )
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    trajectory = complete.trajectory
+    assert trajectory is not None
+    assert trajectory.never_passed_ids == ["AC-1"]
+    assert [r.passed_count for r in trajectory.records] == [8, 11, 10, 11]
+    assert trajectory.best_iteration == 2
+    assert trajectory.best_commit_sha == _PEAK_SHA
+    payload = complete.model_dump(by_alias=True, exclude_none=True)
+    assert payload["outcome"] == "stalled_pr_opened"
+    assert payload["trajectory"]["bestCommitSha"] == _PEAK_SHA
+
+
+async def test_a_stalled_run_with_no_forge_keeps_its_existing_terminal() -> None:
+    """The zero-commit member stays literal on a deployment with no forge."""
+    publisher = FakeRefPublisher()
+    events = await _stalled_run(ref_publisher=publisher, repo_url=None)
+
+    assert publisher.calls == []
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.loop_plateaued
+    assert complete.pr_url is None
+
+
+async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_path() -> (
+    None
+):
+    """No silent fallback: a run that produced commits always lands a PR."""
+    engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=AgentService(
+            executor=FakeAgentExecutor(events=[]),
+            workspace=FakeWorkspaceProvider(),
+            persister=FakeChangePersister(),
+        ),
+        quality_gate=_stalled_gate(),
+        ticket_generator=FakeTicketGenerator(),
+        merger=FakeBranchMerger(),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        pr_creator=FakePRCreator(),
+    )
+
+    with pytest.raises(RuntimeError, match="requires ref_publisher"):
+        _ = [
+            e
+            async for e in engine.run(
+                prompt="fix it",
+                repo_path="/tmp/fake",
+                repo_url="https://github.com/owner/repo",
+                base_spec=trunk_base("main"),
+                permission_mode="bypassPermissions",
+                allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
+            )
+        ]
