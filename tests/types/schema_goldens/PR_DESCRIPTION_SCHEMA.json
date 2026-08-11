@@ -3,10 +3,12 @@
   "description": "Structured output for agent-generated PR descriptions.",
   "properties": {
     "description": {
+      "description": "Pull-request body: what changed and why, how each acceptance criterion is met, and what a reviewer should scrutinize first.",
       "title": "Description",
       "type": "string"
     },
     "title": {
+      "description": "Pull-request title: what changed, in one line.",
       "title": "Title",
       "type": "string"
     }

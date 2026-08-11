@@ -3,11 +3,13 @@
   "description": "Structured output of the validator agent.",
   "properties": {
     "contradictions": {
+      "description": "Subsets of individually feasible criteria that cannot hold together.",
       "items": {
         "additionalProperties": false,
         "description": "A subset of criterion ids whose conjunction admits no implementation.",
         "properties": {
           "criterionIds": {
+            "description": "The minimal subset of criterion ids that cannot all hold at once.",
             "items": {
               "type": "string"
             },
@@ -15,6 +17,7 @@
             "type": "array"
           },
           "explanation": {
+            "description": "Why no single implementation satisfies that subset.",
             "title": "Explanation",
             "type": "string"
           }
@@ -30,6 +33,7 @@
       "type": "array"
     },
     "findings": {
+      "description": "Exactly one finding per dispatched criterion id, covering every id.",
       "items": {
         "additionalProperties": false,
         "description": "One refuter finding about one criterion \u2014 the validator's raw output.\n\nThe refuter states the ``verdict`` and the evidence behind it: the\nsmallest repair that would settle the criterion, and what it\nestablished.  Evidence is carried so a human can audit \"supply a\nPostgres instance\", and so the sweep can ground the statement:\n``classify_finding`` derives its own verdict from the evidence alone,\nand a stated verdict the evidence does not derive is refused.",
@@ -41,10 +45,12 @@
                 "description": "A demonstration of a criterion performed against the repo AT BASE.\n\nIts existence is the claim that the refuter ran the criterion's own\ncheck before any work: ``satisfied_at_base`` is an observed result,\nnever a prediction, and vacuity is read from it and nothing else.",
                 "properties": {
                   "command": {
+                    "description": "The command you ran at the base ref to establish this.",
                     "title": "Command",
                     "type": "string"
                   },
                   "satisfiedAtBase": {
+                    "description": "Whether the criterion already holds before any work is done.",
                     "title": "Satisfiedatbase",
                     "type": "boolean"
                   }
@@ -59,7 +65,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Evidence that the criterion already holds at the base ref."
           },
           "costClaim": {
             "anyOf": [
@@ -68,6 +75,7 @@
                 "description": "An assertion about the price of demonstrating a criterion.\n\n``measurement`` is ``None`` when the cost was argued rather than\nmeasured, and the refuter is told an argued cost may not carry a\nverdict.  The sweep's derivation weighs the claim rather than reading\nit past: an unmeasured claim and an affordable measurement are both\nstruck and support no repair; only a measured, uneconomic one\nsurvives, and it is environment-side.",
                 "properties": {
                   "assertion": {
+                    "description": "The cost the criterion is claimed to impose.",
                     "title": "Assertion",
                     "type": "string"
                   },
@@ -78,10 +86,12 @@
                         "description": "A measurement of a demonstration that ACTUALLY RAN.\n\nIts existence is the claim that the demonstration completed; a\ndemonstration a limit prevented from running has no instance of this\ntype at all.",
                         "properties": {
                           "affordable": {
+                            "description": "Whether the measured cost is one an implementer can pay.",
                             "title": "Affordable",
                             "type": "boolean"
                           },
                           "observed": {
+                            "description": "What the measurement returned, quoted from the output you ran.",
                             "title": "Observed",
                             "type": "string"
                           }
@@ -96,7 +106,8 @@
                       {
                         "type": "null"
                       }
-                    ]
+                    ],
+                    "description": "The measurement backing the assertion; absent when none was taken."
                   }
                 },
                 "required": [
@@ -108,9 +119,11 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "A cost the criterion imposes, with the measurement behind it."
           },
           "criterionId": {
+            "description": "The dispatched criterion's id, echoed exactly. Return one finding per dispatched id and invent none.",
             "title": "Criterionid",
             "type": "string"
           },
@@ -132,7 +145,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The forbidden criterion class this one falls into, when it does."
           },
           "missingResource": {
             "anyOf": [
@@ -143,9 +157,11 @@
                 "type": "null"
               }
             ],
+            "description": "The file, symbol, binding or rule the criterion depends on and that does not exist.",
             "title": "Missingresource"
           },
           "pinnedLiterals": {
+            "description": "Exact counts, paths or formatting the criterion pins that a correct refactor may change.",
             "items": {
               "type": "string"
             },
@@ -161,10 +177,11 @@
                 "type": "null"
               }
             ],
+            "description": "Evidence an implementer could not overturn, for an infeasible verdict. An unproven suspicion is not a refutation.",
             "title": "Refutation"
           },
           "smallestRepair": {
-            "description": "The COMPLETE repair set a finding may name.\n\nExactly three members, and the count is the point: a fourth \u2014 elapsed\ntime, most temptingly \u2014 would let a lack that clears by waiting be\nfiled as no lack at all, and the loop would then fail what the sweep\ncalled settled.",
+            "description": "The least change to the criterion text that would resolve the verdict.",
             "enum": [
               "none",
               "criterion_text",
@@ -174,6 +191,7 @@
             "type": "string"
           },
           "undeclaredSwitchArms": {
+            "description": "Enum members or branches the criterion leaves unspecified.",
             "items": {
               "type": "string"
             },
@@ -181,7 +199,7 @@
             "type": "array"
           },
           "verdict": {
-            "description": "Three-state feasibility outcome. Never collapsed to a boolean.",
+            "description": "Feasible, infeasible, or unverifiable \u2014 never folded into each other.",
             "enum": [
               "feasible",
               "infeasible",

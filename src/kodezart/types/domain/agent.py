@@ -62,17 +62,37 @@ RaiseSite = Literal[
 class CodeReference(CamelCaseModel):
     """A reference to a specific location in the codebase."""
 
-    location: str = Field(min_length=1)
-    note: str = Field(min_length=1)
+    location: str = Field(
+        min_length=1,
+        description=(
+            "Where in the repository this points: a file path, optionally "
+            "with a line range or a symbol name."
+        ),
+    )
+    note: str = Field(
+        min_length=1,
+        description="What the implementer needs to know about this location.",
+    )
 
 
 class FileChange(CamelCaseModel):
     """A single file-level change required to implement the ticket."""
 
-    file_path: str = Field(min_length=1)
-    change_type: Literal["create", "modify", "delete"]
-    description: str = Field(min_length=1)
-    rationale: str = Field(min_length=1)
+    file_path: str = Field(
+        min_length=1,
+        description="Repository-relative path of the file this change touches.",
+    )
+    change_type: Literal["create", "modify", "delete"] = Field(
+        description="Whether the file is created, modified or deleted.",
+    )
+    description: str = Field(
+        min_length=1,
+        description="What changes in this file, stated as an observable outcome.",
+    )
+    rationale: str = Field(
+        min_length=1,
+        description="Why this change is required by the task, not merely useful.",
+    )
 
 
 class TicketDraftOutput(CamelCaseModel):
@@ -82,21 +102,59 @@ class TicketDraftOutput(CamelCaseModel):
     observable acceptance criteria from the full formatted ticket.
     """
 
-    title: str = Field(min_length=1, max_length=120)
-    summary: str = Field(min_length=1)
-    context: str = Field(min_length=1)
-    references: list[CodeReference] = Field(default_factory=list)
-    required_changes: list[FileChange] = Field(min_length=1)
-    out_of_scope: list[str] = Field(default_factory=list)
-    open_questions: list[str] = Field(default_factory=list)
+    title: str = Field(
+        min_length=1,
+        max_length=120,
+        description="One line naming what the ticket delivers.",
+    )
+    summary: str = Field(
+        min_length=1,
+        description=(
+            "What the change accomplishes, for a reader with no other context."
+        ),
+    )
+    context: str = Field(
+        min_length=1,
+        description=(
+            "The repository facts the implementation rests on, including the "
+            "documentation sources consulted."
+        ),
+    )
+    references: list[CodeReference] = Field(
+        default_factory=list,
+        description="Locations in the repository the implementer starts from.",
+    )
+    required_changes: list[FileChange] = Field(
+        min_length=1,
+        description="Every file the change must touch, one entry per file.",
+    )
+    out_of_scope: list[str] = Field(
+        default_factory=list,
+        description="Work this ticket deliberately excludes.",
+    )
+    open_questions: list[str] = Field(
+        default_factory=list,
+        description="Questions the ticket could not settle from the repository.",
+    )
 
 
 class TicketReviewOutput(CamelCaseModel):
     """Structured output for a ticket review."""
 
-    approved: bool
-    feedback: str = Field(min_length=1)
-    suggestions: list[str] = Field(default_factory=list)
+    approved: bool = Field(
+        description=(
+            "Whether the draft is fit to implement: false while any blocking "
+            "or significant finding remains."
+        ),
+    )
+    feedback: str = Field(
+        min_length=1,
+        description="Every finding, with its severity and your confidence in it.",
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Concrete revisions that would resolve the findings.",
+    )
 
 
 class AgentEvent(CamelCaseModel):
@@ -319,8 +377,18 @@ class RateLimitWarningEvent(AgentEvent):
 class CommitMessageOutput(CamelCaseModel):
     """Structured output schema for agent-generated commit messages."""
 
-    title: str = Field(min_length=1, max_length=72)
-    body: str = Field(default="")
+    title: str = Field(
+        min_length=1,
+        max_length=72,
+        description=(
+            "Conventional-commit summary line saying what the change does, "
+            "in the imperative."
+        ),
+    )
+    body: str = Field(
+        default="",
+        description="Why the change was made; empty when the why is obvious.",
+    )
 
 
 class CriterionResult(CamelCaseModel):
@@ -348,10 +416,30 @@ class CriterionResult(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
-    criterion: str = Field(min_length=1)
-    passed: bool
-    reasoning: str = Field(min_length=1)
+    criterion_id: CriterionId = Field(
+        pattern=CRITERION_ID_PATTERN,
+        description=(
+            "The dispatched criterion's id, echoed exactly. Return one result "
+            "per dispatched id and invent none."
+        ),
+    )
+    criterion: str = Field(
+        min_length=1,
+        description="The criterion's text as dispatched.",
+    )
+    passed: bool = Field(
+        description=(
+            "Whether the changeset satisfies this criterion. Insufficient "
+            "evidence is a fail."
+        ),
+    )
+    reasoning: str = Field(
+        min_length=1,
+        description=(
+            "The evidence for the verdict, citing output you ran: file paths "
+            "with line numbers, test names, lint rule identifiers."
+        ),
+    )
 
 
 class AcceptanceCriteriaOutput(CamelCaseModel):
@@ -363,14 +451,32 @@ class AcceptanceCriteriaOutput(CamelCaseModel):
     rides the iteration event and reaches the pull-request body.
     """
 
-    criteria_results: list[CriterionResult] = Field(min_length=1)
-    sherlock_flags: list[SherlockFlag] = Field(default_factory=list)
+    criteria_results: list[CriterionResult] = Field(
+        min_length=1,
+        description=(
+            "Exactly one result per dispatched criterion id, covering every id."
+        ),
+    )
+    sherlock_flags: list[SherlockFlag] = Field(
+        default_factory=list,
+        description=(
+            "Reasoning concerns raised in your own name rather than against "
+            "one criterion's verdict."
+        ),
+    )
 
 
 class BranchNameOutput(CamelCaseModel):
     """Agent-generated branch name slug."""
 
-    slug: str = Field(min_length=1, max_length=50)
+    slug: str = Field(
+        min_length=1,
+        max_length=50,
+        description=(
+            "Lowercase hyphen-separated branch slug saying what the change "
+            "does. No prefix."
+        ),
+    )
 
 
 class ContentAuditFinding(CamelCaseModel):
@@ -381,15 +487,37 @@ class ContentAuditFinding(CamelCaseModel):
     excise, and the gate blocks rather than redacting such a finding.
     """
 
-    start: int | None = Field(default=None, ge=0)
-    end: int | None = Field(default=None, ge=0)
-    rationale: str = Field(min_length=1)
+    start: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Character offset where the leaking span starts, counted from the "
+            "start of the payload. Absent when the leak is carried by a "
+            "passage rather than a substring."
+        ),
+    )
+    end: int | None = Field(
+        default=None,
+        ge=0,
+        description="Character offset just past the leaking span, on the same terms.",
+    )
+    rationale: str = Field(
+        min_length=1,
+        description=(
+            "One sentence saying what a stranger would learn, and why it matters."
+        ),
+    )
 
 
 class ContentAuditOutput(CamelCaseModel):
     """The audit session's whole verdict: every finding, or none."""
 
-    findings: list[ContentAuditFinding] = Field(default_factory=list)
+    findings: list[ContentAuditFinding] = Field(
+        default_factory=list,
+        description=(
+            "One finding per distinct thing a stranger would learn; empty when none."
+        ),
+    )
 
 
 class GeneratedCriteriaOutput(CamelCaseModel):
@@ -406,15 +534,34 @@ class GeneratedCriteriaOutput(CamelCaseModel):
     third, not round one's ``AC-3``.
     """
 
-    criteria: list[DraftedCriterion] = Field(min_length=1)
-    reasoning: str = Field(min_length=1)
+    criteria: list[DraftedCriterion] = Field(
+        min_length=1,
+        description=(
+            "The smallest set of falsifiable checks that, all passing, "
+            "establish the ticket is done."
+        ),
+    )
+    reasoning: str = Field(
+        min_length=1,
+        description="How the set was derived from the ticket and the repository.",
+    )
 
 
 class PRDescriptionOutput(CamelCaseModel):
     """Structured output for agent-generated PR descriptions."""
 
-    title: str = Field(min_length=1, max_length=120)
-    description: str = Field(min_length=1)
+    title: str = Field(
+        min_length=1,
+        max_length=120,
+        description="Pull-request title: what changed, in one line.",
+    )
+    description: str = Field(
+        min_length=1,
+        description=(
+            "Pull-request body: what changed and why, how each acceptance "
+            "criterion is met, and what a reviewer should scrutinize first."
+        ),
+    )
 
 
 class WorkflowReviewEvent(AgentEvent):

@@ -3,23 +3,28 @@
   "description": "Structured output for acceptance criteria evaluation.\n\n``sherlock_flags`` carries the synthesis's own concerns as data.  A\nreasoning error the evaluator noticed but could only write into prose\nis invisible to every consumer downstream of it; as a typed field it\nrides the iteration event and reaches the pull-request body.",
   "properties": {
     "criteriaResults": {
+      "description": "Exactly one result per dispatched criterion id, covering every id.",
       "items": {
         "additionalProperties": false,
         "description": "Per-criterion evaluation result, keyed by the harness's stable id.\n\n``criterion`` is two different things on the two directions this model\ntravels, and only one of them has a defence.\n\nOUTBOUND it carries the HARNESS's text, looked up by id:\n``grade_iteration`` overwrites the field on both the answered and the\nunanswered path, and the result reaches a human in the\n``workflow_iteration`` and ``workflow_review`` SSE frames, where a\nreader sees which criterion a verdict is about without joining the\nframe against the criteria set.  Measured on the handler's own\n``model_dump(by_alias=True, exclude_none=True)``.\n\nINBOUND it is the evaluator's ECHO, and that has no defence: nothing\never reads it, so requiring it costs a full reproduction of every\ncriterion's text on every iteration and every post-merge review and\nbuys nothing.  Dropping the inbound obligation without dropping the\noutbound field means splitting this model in two; KOD-91 deliverable 3\nis already rewriting these field descriptions and removes it there,\nwith the two prompt lines that demand it.",
         "properties": {
           "criterion": {
+            "description": "The criterion's text as dispatched.",
             "title": "Criterion",
             "type": "string"
           },
           "criterionId": {
+            "description": "The dispatched criterion's id, echoed exactly. Return one result per dispatched id and invent none.",
             "title": "Criterionid",
             "type": "string"
           },
           "passed": {
+            "description": "Whether the changeset satisfies this criterion. Insufficient evidence is a fail.",
             "title": "Passed",
             "type": "boolean"
           },
           "reasoning": {
+            "description": "The evidence for the verdict, citing output you ran: file paths with line numbers, test names, lint rule identifiers.",
             "title": "Reasoning",
             "type": "string"
           }
@@ -37,11 +42,13 @@
       "type": "array"
     },
     "sherlockFlags": {
+      "description": "Reasoning concerns raised in your own name rather than against one criterion's verdict.",
       "items": {
         "additionalProperties": false,
         "description": "A reasoning concern the evaluator raised in its own name.\n\n``[sherlock]`` findings are the concerns no single Watson owns, raised\nby the synthesis over their combined reports.  They used to live inside\n``reasoning`` prose, where nothing downstream could read them.\n\n``criterion_id`` is ``None`` when the concern is about the SET rather\nthan one criterion; the absence is meaningful, not a value to fill in.",
         "properties": {
           "concern": {
+            "description": "The reasoning concern, stated so a downstream reader can act on it.",
             "title": "Concern",
             "type": "string"
           },
@@ -54,6 +61,7 @@
                 "type": "null"
               }
             ],
+            "description": "The criterion this concern is about; absent when the concern is about the set rather than one criterion.",
             "title": "Criterionid"
           }
         },

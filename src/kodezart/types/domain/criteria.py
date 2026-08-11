@@ -173,8 +173,13 @@ class BaseDemonstration(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    command: str = Field(min_length=1)
-    satisfied_at_base: bool
+    command: str = Field(
+        min_length=1,
+        description="The command you ran at the base ref to establish this.",
+    )
+    satisfied_at_base: bool = Field(
+        description="Whether the criterion already holds before any work is done.",
+    )
 
 
 class CostMeasurement(CamelCaseModel):
@@ -187,8 +192,13 @@ class CostMeasurement(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    observed: str = Field(min_length=1)
-    affordable: bool
+    observed: str = Field(
+        min_length=1,
+        description="What the measurement returned, quoted from the output you ran.",
+    )
+    affordable: bool = Field(
+        description="Whether the measured cost is one an implementer can pay.",
+    )
 
 
 class CostClaim(CamelCaseModel):
@@ -204,8 +214,16 @@ class CostClaim(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    assertion: str = Field(min_length=1)
-    measurement: CostMeasurement | None = None
+    assertion: str = Field(
+        min_length=1,
+        description="The cost the criterion is claimed to impose.",
+    )
+    measurement: CostMeasurement | None = Field(
+        default=None,
+        description=(
+            "The measurement backing the assertion; absent when none was taken."
+        ),
+    )
 
 
 class GeneratedCriterion(CamelCaseModel):
@@ -223,8 +241,16 @@ class DraftedCriterion(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    text: str = Field(min_length=1)
-    criterion_class: CriterionClass
+    text: str = Field(
+        min_length=1,
+        description=(
+            "The criterion, stated so a later reviewer who sees only this "
+            "text, the repository and a changeset can decide it."
+        ),
+    )
+    criterion_class: CriterionClass = Field(
+        description="Whether failing this criterion blocks the run or only flags it.",
+    )
 
 
 class CriterionFinding(CamelCaseModel):
@@ -240,16 +266,60 @@ class CriterionFinding(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
-    verdict: CriterionVerdict
-    smallest_repair: RepairKind
-    refutation: str | None = None
-    missing_resource: str | None = None
-    cost_claim: CostClaim | None = None
-    base_demonstration: BaseDemonstration | None = None
-    pinned_literals: list[str] = Field(default_factory=list)
-    forbidden_class: ForbiddenCriterionClass | None = None
-    undeclared_switch_arms: list[str] = Field(default_factory=list)
+    criterion_id: CriterionId = Field(
+        pattern=CRITERION_ID_PATTERN,
+        description=(
+            "The dispatched criterion's id, echoed exactly. Return one finding "
+            "per dispatched id and invent none."
+        ),
+    )
+    verdict: CriterionVerdict = Field(
+        description=(
+            "Feasible, infeasible, or unverifiable — never folded into each other."
+        ),
+    )
+    smallest_repair: RepairKind = Field(
+        description=(
+            "The least change to the criterion text that would resolve the verdict."
+        ),
+    )
+    refutation: str | None = Field(
+        default=None,
+        description=(
+            "Evidence an implementer could not overturn, for an infeasible "
+            "verdict. An unproven suspicion is not a refutation."
+        ),
+    )
+    missing_resource: str | None = Field(
+        default=None,
+        description=(
+            "The file, symbol, binding or rule the criterion depends on and that "
+            "does not exist."
+        ),
+    )
+    cost_claim: CostClaim | None = Field(
+        default=None,
+        description="A cost the criterion imposes, with the measurement behind it.",
+    )
+    base_demonstration: BaseDemonstration | None = Field(
+        default=None,
+        description="Evidence that the criterion already holds at the base ref.",
+    )
+    pinned_literals: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact counts, paths or formatting the criterion pins that a correct "
+            "refactor may change."
+        ),
+    )
+    forbidden_class: ForbiddenCriterionClass | None = Field(
+        default=None,
+        description="The forbidden criterion class this one falls into, when it does.",
+    )
+    undeclared_switch_arms: list[str] = Field(
+        default_factory=list,
+        description="Enum members or branches the criterion leaves unspecified.",
+    )
 
     @model_validator(mode="after")
     def _verdict_carries_its_grounds(self) -> Self:
@@ -289,15 +359,31 @@ class Contradiction(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_ids: list[CriterionIdItem] = Field(min_length=2)
-    explanation: str = Field(min_length=1)
+    criterion_ids: list[CriterionIdItem] = Field(
+        min_length=2,
+        description="The minimal subset of criterion ids that cannot all hold at once.",
+    )
+    explanation: str = Field(
+        min_length=1,
+        description="Why no single implementation satisfies that subset.",
+    )
 
 
 class CriteriaValidationOutput(CamelCaseModel):
     """Structured output of the validator agent."""
 
-    findings: list[CriterionFinding] = Field(min_length=1)
-    contradictions: list[Contradiction] = Field(default_factory=list)
+    findings: list[CriterionFinding] = Field(
+        min_length=1,
+        description=(
+            "Exactly one finding per dispatched criterion id, covering every id."
+        ),
+    )
+    contradictions: list[Contradiction] = Field(
+        default_factory=list,
+        description=(
+            "Subsets of individually feasible criteria that cannot hold together."
+        ),
+    )
 
 
 class CriterionFeasibility(CamelCaseModel):

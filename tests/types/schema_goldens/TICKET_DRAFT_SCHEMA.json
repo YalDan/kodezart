@@ -3,10 +3,12 @@
   "description": "Structured output for a generated implementation ticket.\n\nThe downstream generate_criteria agent has its own job \u2014 it derives\nobservable acceptance criteria from the full formatted ticket.",
   "properties": {
     "context": {
+      "description": "The repository facts the implementation rests on, including the documentation sources consulted.",
       "title": "Context",
       "type": "string"
     },
     "openQuestions": {
+      "description": "Questions the ticket could not settle from the repository.",
       "items": {
         "type": "string"
       },
@@ -14,6 +16,7 @@
       "type": "array"
     },
     "outOfScope": {
+      "description": "Work this ticket deliberately excludes.",
       "items": {
         "type": "string"
       },
@@ -21,15 +24,18 @@
       "type": "array"
     },
     "references": {
+      "description": "Locations in the repository the implementer starts from.",
       "items": {
         "additionalProperties": false,
         "description": "A reference to a specific location in the codebase.",
         "properties": {
           "location": {
+            "description": "Where in the repository this points: a file path, optionally with a line range or a symbol name.",
             "title": "Location",
             "type": "string"
           },
           "note": {
+            "description": "What the implementer needs to know about this location.",
             "title": "Note",
             "type": "string"
           }
@@ -45,11 +51,13 @@
       "type": "array"
     },
     "requiredChanges": {
+      "description": "Every file the change must touch, one entry per file.",
       "items": {
         "additionalProperties": false,
         "description": "A single file-level change required to implement the ticket.",
         "properties": {
           "changeType": {
+            "description": "Whether the file is created, modified or deleted.",
             "enum": [
               "create",
               "modify",
@@ -59,14 +67,17 @@
             "type": "string"
           },
           "description": {
+            "description": "What changes in this file, stated as an observable outcome.",
             "title": "Description",
             "type": "string"
           },
           "filePath": {
+            "description": "Repository-relative path of the file this change touches.",
             "title": "Filepath",
             "type": "string"
           },
           "rationale": {
+            "description": "Why this change is required by the task, not merely useful.",
             "title": "Rationale",
             "type": "string"
           }
@@ -84,10 +95,12 @@
       "type": "array"
     },
     "summary": {
+      "description": "What the change accomplishes, for a reader with no other context.",
       "title": "Summary",
       "type": "string"
     },
     "title": {
+      "description": "One line naming what the ticket delivers.",
       "title": "Title",
       "type": "string"
     }

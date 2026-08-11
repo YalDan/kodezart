@@ -3,6 +3,7 @@
   "description": "The audit session's whole verdict: every finding, or none.",
   "properties": {
     "findings": {
+      "description": "One finding per distinct thing a stranger would learn; empty when none.",
       "items": {
         "additionalProperties": false,
         "description": "One finding from the judgment scanner's audit session.\n\n``start``/``end`` are absent when the finding localizes to no span \u2014\n\"this paragraph implies an unreleased capability\" has nothing to\nexcise, and the gate blocks rather than redacting such a finding.",
@@ -16,9 +17,11 @@
                 "type": "null"
               }
             ],
+            "description": "Character offset just past the leaking span, on the same terms.",
             "title": "End"
           },
           "rationale": {
+            "description": "One sentence saying what a stranger would learn, and why it matters.",
             "title": "Rationale",
             "type": "string"
           },
@@ -31,6 +34,7 @@
                 "type": "null"
               }
             ],
+            "description": "Character offset where the leaking span starts, counted from the start of the payload. Absent when the leak is carried by a passage rather than a substring.",
             "title": "Start"
           }
         },

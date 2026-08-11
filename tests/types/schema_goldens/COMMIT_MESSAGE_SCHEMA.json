@@ -3,10 +3,12 @@
   "description": "Structured output schema for agent-generated commit messages.",
   "properties": {
     "body": {
+      "description": "Why the change was made; empty when the why is obvious.",
       "title": "Body",
       "type": "string"
     },
     "title": {
+      "description": "Conventional-commit summary line saying what the change does, in the imperative.",
       "title": "Title",
       "type": "string"
     }

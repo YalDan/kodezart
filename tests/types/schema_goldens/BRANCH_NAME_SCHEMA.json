@@ -3,6 +3,7 @@
   "description": "Agent-generated branch name slug.",
   "properties": {
     "slug": {
+      "description": "Lowercase hyphen-separated branch slug saying what the change does. No prefix.",
       "title": "Slug",
       "type": "string"
     }

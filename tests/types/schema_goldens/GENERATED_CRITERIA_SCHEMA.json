@@ -3,12 +3,13 @@
   "description": "Agent-generated acceptance criteria from ticket + codebase analysis.\n\nIdentity is NOT part of this shape \u2014 ``AC-n`` ids are minted\nharness-side from emission order, so nothing a model echoes can\nrenumber a criterion WITHIN one dispatch.\n\nThe guarantee stops at the dispatch boundary and does not hold across\na regeneration round: ``mint_criteria`` always enumerates from 1 and\n``DraftedCriterion`` carries no id, so a regenerator cannot return an\nidentity even in principle.  Round two's ``AC-3`` is whatever landed\nthird, not round one's ``AC-3``.",
   "properties": {
     "criteria": {
+      "description": "The smallest set of falsifiable checks that, all passing, establish the ticket is done.",
       "items": {
         "additionalProperties": false,
         "description": "One criterion as the generator emits it \u2014 identity is minted later.",
         "properties": {
           "criterionClass": {
-            "description": "Whether a criterion is a behavior contract or a shape signal.",
+            "description": "Whether failing this criterion blocks the run or only flags it.",
             "enum": [
               "hard_gate",
               "soft_signal"
@@ -17,6 +18,7 @@
             "type": "string"
           },
           "text": {
+            "description": "The criterion, stated so a later reviewer who sees only this text, the repository and a changeset can decide it.",
             "title": "Text",
             "type": "string"
           }
@@ -32,6 +34,7 @@
       "type": "array"
     },
     "reasoning": {
+      "description": "How the set was derived from the ticket and the repository.",
       "title": "Reasoning",
       "type": "string"
     }
