@@ -16,8 +16,8 @@ from kodezart.main import create_app, lifespan
 from kodezart.types.domain.session import SessionType
 
 _CREDENTIAL: Final[str] = "ntn_" + ("Q" * 44)
-_GRANTS_VAR: Final[str] = "KODEZART_NOTION_SESSION_GRANTS"
-_TOKEN_VAR: Final[str] = "KODEZART_NOTION_TOKEN"
+_GRANTS_VAR: Final[str] = "KODEZART_KNOWLEDGE_SESSION_GRANTS"
+_TOKEN_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_TOKEN"
 #: Any non-empty map: the model refuses a grant that names a session type
 #: and carries none, so the builder has to be handed one.
 _MAP: Final[str] = "── fixture map ──"
@@ -25,7 +25,7 @@ _MAP: Final[str] = "── fixture map ──"
 
 def test_the_shipped_grant_names_no_session_type() -> None:
     """The mechanism ships; the grant is operator configuration."""
-    assert AppConfig().notion_session_grants == []
+    assert AppConfig().knowledge_session_grants == []
     assert AppConfig().knowledge_grant(knowledge_map="").granted == ()
 
 

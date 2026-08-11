@@ -31,13 +31,15 @@ async def boot_knowledge_grant(
     from an operation that legitimately declares none — the shipped grant
     list is empty, so that is the ordinary case, not the exception.
     """
-    if not config.notion_session_grants:
+    if not config.knowledge_session_grants:
         return config.knowledge_grant(knowledge_map="")
 
     knowledge_map = prompts.template_for(PromptKey.KNOWLEDGE_MAP).render({})
     await log.ainfo(
         "knowledge_map_rendered",
-        granted=[session_type.value for session_type in config.notion_session_grants],
+        granted=[
+            session_type.value for session_type in config.knowledge_session_grants
+        ],
         characters=len(knowledge_map),
     )
     return config.knowledge_grant(knowledge_map=knowledge_map)

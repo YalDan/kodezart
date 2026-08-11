@@ -82,18 +82,18 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_TRACKER_MCP_SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
 | `KODEZART_TRACKER_TOKEN` | `str \| None` | `None` |  | Tracker credential for the MCP server. Environment only. |
-| `KODEZART_NOTION_TOKEN` | `str \| None` | `None` |  | Knowledge-base credential for the Notion MCP server. Environment only. |
-| `KODEZART_NOTION_SESSION_GRANTS` | `list[SessionType]` | `[]` |  | Session types the Notion knowledge server is attached to, named one by one. No wildcard value. |
-| `KODEZART_NOTION_MCP_SERVER_NAME` | `str` | `notion` | min length 1 | Identity the knowledge MCP server carries in a granted session. |
-| `KODEZART_NOTION_MCP_SERVER_URL` | `str` | `https://mcp.notion.com/mcp` |  | Endpoint of the vendor MCP server a granted session dials. |
-| `KODEZART_NOTION_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the knowledge credential is presented in. |
-| `KODEZART_NOTION_MCP_AUTH_SCHEME` | `str` | `Bearer` | min length 1 | Scheme prefixing the knowledge credential in its auth header. |
+| `KODEZART_KNOWLEDGE_MCP_TOKEN` | `str \| None` | `None` |  | Credential for the knowledge MCP server. Environment only. |
+| `KODEZART_KNOWLEDGE_SESSION_GRANTS` | `list[SessionType]` | `[]` |  | Session types the knowledge MCP server is attached to, named one by one. No wildcard value. |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_NAME` | `str` | `notion` | min length 1 | Identity the knowledge MCP server carries in a granted session. |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_URL` | `str` | `https://mcp.notion.com/mcp` |  | Endpoint of the knowledge MCP server a granted session dials. |
+| `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the knowledge credential is presented in. |
+| `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` | `str` | `Bearer` | min length 1 | Scheme prefixing the knowledge credential in its auth header. |
 
 ## The knowledge-server grant
 
-`KODEZART_NOTION_SESSION_GRANTS` names, one by one, the kinds of agent session
-that are configured with the Notion MCP server. The vocabulary is the
-`SessionType` enum, and it is closed:
+`KODEZART_KNOWLEDGE_SESSION_GRANTS` names, one by one, the kinds of agent
+session that are configured with the knowledge MCP server. The vocabulary is
+the `SessionType` enum, and it is closed:
 
 | Value | The session it names |
 | -- | -- |
@@ -108,19 +108,25 @@ Three rules, each enforced at boot rather than documented and hoped for:
   every session, so no configuration can widen silently as members are added.
 - **An unknown entry aborts boot**, naming the offending entry and the values
   that are legal — never a silent no-grant.
-- **A non-empty grant with `KODEZART_NOTION_TOKEN` unset aborts boot**, naming
-  the missing variable. An empty grant with an unset credential boots clean.
+- **A non-empty grant with `KODEZART_KNOWLEDGE_MCP_TOKEN` unset aborts boot**,
+  naming the missing variable. An empty grant with an unset credential boots
+  clean.
 
 The shipped default is the empty list: the mechanism ships and the grant is
 operator configuration. The intended first grant is `["ticket_fire"]` — the
 ticket-driven fire sessions and nothing else.
 
-## Private knowledge base — the Notion credential
+The knowledge knobs are role-named, and the vendor appears only in their
+default values (`notion`, `https://mcp.notion.com/mcp`). Putting a different
+knowledge store behind the MCP mechanism is a change of values — never a
+schema migration, and never an edit to a consumer.
 
-`KODEZART_NOTION_TOKEN` is a credential, and it is configured **only** through
-the environment (or the `.env` file the environment is loaded from). It is
-never written to the file-based operation config: that model forbids extra
-keys, so a secret placed there aborts boot rather than being read.
+## Private knowledge base — the knowledge credential
+
+`KODEZART_KNOWLEDGE_MCP_TOKEN` is a credential, and it is configured **only**
+through the environment (or the `.env` file the environment is loaded from).
+It is never written to the file-based operation config: that model forbids
+extra keys, so a secret placed there aborts boot rather than being read.
 
 Three properties hold for the value, and each is a test rather than a promise:
 

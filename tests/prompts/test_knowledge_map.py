@@ -173,8 +173,8 @@ async def test_a_granted_boot_renders_the_map_into_the_resolved_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The map is resolved once, at boot, and rides the grant from there."""
-    monkeypatch.setenv("KODEZART_NOTION_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_NOTION_TOKEN", "ntn_" + ("M" * 44))
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("M" * 44))
     config = example_config()
 
     grant = await boot_knowledge_grant(
@@ -210,8 +210,8 @@ async def test_a_missing_destination_aborts_a_granted_boot_naming_it(
     missing: str,
 ) -> None:
     """AC-4: the unresolvable reference is named at startup, not in a prompt."""
-    monkeypatch.setenv("KODEZART_NOTION_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_NOTION_TOKEN", "ntn_" + ("N" * 44))
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("N" * 44))
     config = example_config()
     incomplete = config.model_copy(
         update={
@@ -233,8 +233,8 @@ async def test_every_missing_destination_is_named_at_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """One error listing all four, so an operator fixes them in one pass."""
-    monkeypatch.setenv("KODEZART_NOTION_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_NOTION_TOKEN", "ntn_" + ("O" * 44))
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("O" * 44))
     config = example_config()
     stripped = config.model_copy(update={"knowledge": {}})
 

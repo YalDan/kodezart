@@ -382,40 +382,40 @@ class AppConfig(BaseSettings):
         le=300.0,
         description="Time one asset fetch may take before the fire fails to build.",
     )
-    notion_token: str | None = Field(
+    knowledge_mcp_token: str | None = Field(
         default=None,
         exclude=True,
         description=(
-            "Knowledge-base credential for the Notion MCP server. "
+            "Credential for the knowledge MCP server. "
             "Environment only, and excluded from serialization: a dumped "
             "config is copied into logs, fixtures and error payloads."
         ),
     )
-    notion_session_grants: list[SessionType] = Field(
+    knowledge_session_grants: list[SessionType] = Field(
         default_factory=list,
         description=(
-            "Session types the Notion knowledge server is attached to, "
+            "Session types the knowledge MCP server is attached to, "
             "named one by one. There is no wildcard value. Ships empty: "
             "the mechanism ships and the grant is operator configuration. "
-            "A non-empty list with KODEZART_NOTION_TOKEN unset aborts boot "
-            "rather than attaching an unauthenticated server."
+            "A non-empty list with KODEZART_KNOWLEDGE_MCP_TOKEN unset aborts "
+            "boot rather than attaching an unauthenticated server."
         ),
     )
-    notion_mcp_server_name: str = Field(
+    knowledge_mcp_server_name: str = Field(
         default="notion",
         min_length=1,
         description="Identity the knowledge MCP server carries in a granted session.",
     )
-    notion_mcp_server_url: str = Field(
+    knowledge_mcp_server_url: str = Field(
         default="https://mcp.notion.com/mcp",
-        description="Endpoint of the vendor MCP server a granted session dials.",
+        description="Endpoint of the knowledge MCP server a granted session dials.",
     )
-    notion_mcp_auth_header: str = Field(
+    knowledge_mcp_auth_header: str = Field(
         default="Authorization",
         min_length=1,
         description="Request header the knowledge credential is presented in.",
     )
-    notion_mcp_auth_scheme: str = Field(
+    knowledge_mcp_auth_scheme: str = Field(
         default="Bearer",
         min_length=1,
         description="Scheme prefixing the knowledge credential in its auth header.",
@@ -643,13 +643,13 @@ class AppConfig(BaseSettings):
         cannot authenticate against, which fails at the first tool call
         with a vendor error rather than at boot with a configuration one.
         """
-        if self.notion_session_grants and self.notion_token is None:
+        if self.knowledge_session_grants and self.knowledge_mcp_token is None:
             granted = ", ".join(
-                session_type.value for session_type in self.notion_session_grants
+                session_type.value for session_type in self.knowledge_session_grants
             )
             msg = (
-                f"KODEZART_NOTION_SESSION_GRANTS names {granted} but "
-                f"KODEZART_NOTION_TOKEN is unset: a granted session would "
+                f"KODEZART_KNOWLEDGE_SESSION_GRANTS names {granted} but "
+                f"KODEZART_KNOWLEDGE_MCP_TOKEN is unset: a granted session would "
                 f"attach an unauthenticated knowledge server. Set the "
                 f"credential, or empty the grant list."
             )
@@ -674,12 +674,12 @@ class AppConfig(BaseSettings):
         the session nothing about what it reaches.
         """
         return KnowledgeGrant(
-            granted=tuple(self.notion_session_grants),
-            server_name=self.notion_mcp_server_name,
-            server_url=self.notion_mcp_server_url,
-            auth_header=self.notion_mcp_auth_header,
-            auth_scheme=self.notion_mcp_auth_scheme,
-            credential=self.notion_token,
+            granted=tuple(self.knowledge_session_grants),
+            server_name=self.knowledge_mcp_server_name,
+            server_url=self.knowledge_mcp_server_url,
+            auth_header=self.knowledge_mcp_auth_header,
+            auth_scheme=self.knowledge_mcp_auth_scheme,
+            credential=self.knowledge_mcp_token,
             knowledge_map=knowledge_map,
         )
 

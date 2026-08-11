@@ -166,8 +166,8 @@ async def test_the_grant_reaching_the_options_is_the_one_app_config_resolved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AppConfig is the origin: one configuration change, one decision."""
-    monkeypatch.setenv("KODEZART_NOTION_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_NOTION_TOKEN", "ntn_" + ("R" * 44))
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("R" * 44))
     config = AppConfig()
 
     grant = config.knowledge_grant(knowledge_map="── fixture map ──")
@@ -176,9 +176,9 @@ async def test_the_grant_reaching_the_options_is_the_one_app_config_resolved(
         knowledge_grant=grant,
     )
 
-    assert grant.server_name == config.notion_mcp_server_name
-    assert grant.server_url == config.notion_mcp_server_url
-    assert grant.credential == config.notion_token
+    assert grant.server_name == config.knowledge_mcp_server_name
+    assert grant.server_url == config.knowledge_mcp_server_url
+    assert grant.credential == config.knowledge_mcp_token
     assert grant.grants(SessionType.TICKET_FIRE) is True
     assert executor is not None
 
