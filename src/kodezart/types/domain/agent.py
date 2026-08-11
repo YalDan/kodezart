@@ -12,7 +12,7 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
-from kodezart.types.domain.base_spec import BaseInput, BaseRefRole
+from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
@@ -334,6 +334,25 @@ class BranchNameOutput(CamelCaseModel):
     slug: str = Field(min_length=1, max_length=50)
 
 
+class ContentAuditFinding(CamelCaseModel):
+    """One finding from the judgment scanner's audit session.
+
+    ``start``/``end`` are absent when the finding localizes to no span —
+    "this paragraph implies an unreleased capability" has nothing to
+    excise, and the gate blocks rather than redacting such a finding.
+    """
+
+    start: int | None = Field(default=None, ge=0)
+    end: int | None = Field(default=None, ge=0)
+    rationale: str = Field(min_length=1)
+
+
+class ContentAuditOutput(CamelCaseModel):
+    """The audit session's whole verdict: every finding, or none."""
+
+    findings: list[ContentAuditFinding] = Field(default_factory=list)
+
+
 class GeneratedCriteriaOutput(CamelCaseModel):
     """Agent-generated acceptance criteria from ticket + codebase analysis.
 
@@ -491,8 +510,8 @@ class WorkflowScopeBaseEvent(AgentEvent):
     """
 
     type: Literal["workflow_scope_base"] = "workflow_scope_base"
-    base_ref: str
-    role: BaseRefRole
+    base_branch: str
+    base_role: WorkRefRole | None
     inputs: list[BaseInput] = Field(default_factory=list)
 
 
@@ -576,3 +595,5 @@ TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
 # Schema for structured ticket review output
 TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
 PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
+# Schema for the judgment scanner's structured audit verdict
+CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()

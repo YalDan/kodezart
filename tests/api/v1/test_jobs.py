@@ -34,10 +34,10 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     WorkflowCompleteEvent,
 )
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
 from kodezart.types.domain.gating import RepoVisibility
@@ -1212,7 +1212,7 @@ def test_neither_service_nor_reader_branches_on_checkpointer_backend() -> None:
 # ---------------------------------------------------------------------------
 
 _ADAPTER_MODULE = "adapters/asyncio_job_queue.py"
-_WIRING_MODULE = "main.py"
+_WIRING_MODULE = "composition/jobs.py"
 
 
 def test_exactly_one_lane_queue_construction_site() -> None:
@@ -1361,8 +1361,8 @@ async def test_a_recorded_base_is_dispatched_and_the_trunk_default_is_not() -> N
     """
     engine = BaseRecordingEngine()
     recorded = BaseSpec(
-        base_ref="kodezart/blocker-a-11111111",
-        role=BaseRefRole.deliverable,
+        base_branch="kodezart/blocker-a-11111111",
+        base_role=WorkRefRole.DELIVERABLE,
         inputs=(
             BaseInput(
                 blocker_issue_id="KOD-A",
@@ -1381,7 +1381,7 @@ async def test_a_recorded_base_is_dispatched_and_the_trunk_default_is_not() -> N
 
     assert engine.base_specs == [recorded]
     assert (
-        engine.base_specs[0].base_ref
+        engine.base_specs[0].base_branch
         != WorkflowRequest.model_fields["base_branch"].get_default()
     )
 
@@ -1394,5 +1394,5 @@ async def test_a_request_with_no_recorded_base_is_a_trunk_fired_lane() -> None:
         await _wait_terminal(wired.queue, fired.json()["jobId"])
 
     assert engine.base_specs == [trunk_base("main")]
-    assert engine.base_specs[0].role is BaseRefRole.trunk
+    assert engine.base_specs[0].base_role is None
     assert engine.implied == [None]

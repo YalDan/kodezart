@@ -6,11 +6,14 @@ import pytest
 
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.composition.preflight import (
+    preflight_prompt_skill_loadouts,
+    preflight_skills,
+)
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, SkillPreflightError
-from kodezart.main import preflight_prompt_skill_loadouts, preflight_skills
 from kodezart.services.agent_service import AgentService
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
@@ -39,6 +42,7 @@ UTILITY_KEYS = (
     PromptKey.PR_DESCRIPTION,
     PromptKey.FIRE_PREP_PASS,
     PromptKey.GROOMING_PASS,
+    PromptKey.CONTENT_AUDIT,
 )
 
 

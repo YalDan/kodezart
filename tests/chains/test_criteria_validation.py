@@ -23,10 +23,10 @@ from kodezart.types.domain.agent import (
     WorkflowCriteriaValidationEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
 from kodezart.types.domain.criteria import (
@@ -543,8 +543,8 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
 
 
 STACKED_BASE = BaseSpec(
-    base_ref="kodezart/blocker-a-11111111",
-    role=BaseRefRole.deliverable,
+    base_branch="kodezart/blocker-a-11111111",
+    base_role=WorkRefRole.DELIVERABLE,
     inputs=(
         BaseInput(
             blocker_issue_id="KOD-101",
@@ -635,13 +635,13 @@ async def test_a_scope_criterion_with_no_stated_base_is_regenerated() -> None:
     # the run. What the run supplies is this line.
     regeneration = [p for p in executor.prompts if "<validation_findings>" in p]
     assert len(regeneration) == 1
-    assert _base_line(STACKED_BASE.base_ref) in regeneration[0]
+    assert _base_line(STACKED_BASE.base_branch) in regeneration[0]
 
 
 @pytest.mark.parametrize(
     ("spec", "other_base"),
     [
-        (trunk_base("main"), STACKED_BASE.base_ref),
+        (trunk_base("main"), STACKED_BASE.base_branch),
         (STACKED_BASE, "main"),
     ],
     ids=["trunk-fired", "stacked"],
@@ -667,7 +667,7 @@ async def test_the_drafter_is_told_which_base_the_lane_is_measured_against(
         p for p in executor.prompts if "SCOPE CRITERIA NAME THEIR BASE" in p
     ]
     assert len(drafter_prompts) == 1
-    assert _base_line(spec.base_ref) in drafter_prompts[0]
+    assert _base_line(spec.base_branch) in drafter_prompts[0]
     assert _base_line(other_base) not in drafter_prompts[0]
     assert "Never write `main` or `trunk` as the base" in drafter_prompts[0]
 
@@ -687,8 +687,9 @@ async def test_the_refuter_reads_scope_against_the_drafter_s_base() -> None:
 
     drafter = next(p for p in executor.prompts if "SCOPE CRITERIA NAME THEIR BASE" in p)
     refuter = next(p for p in executor.prompts if "ADVERSARIAL REFUTER" in p)
-    assert _base_line(STACKED_BASE.base_ref) in drafter
-    assert f"you hold the repository at base ref `{STACKED_BASE.base_ref}`" in refuter
+    assert _base_line(STACKED_BASE.base_branch) in drafter
+    stacked = STACKED_BASE.base_branch
+    assert f"you hold the repository at base ref `{stacked}`" in refuter
     assert _base_line("main") not in drafter
     assert "repository at base ref `main`" not in refuter
 

@@ -18,7 +18,7 @@ from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,

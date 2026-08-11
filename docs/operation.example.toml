@@ -19,15 +19,50 @@ workspace = "example-workspace"
 # Identities the agent posts under. Must not collide with a principal.
 agent_identities = ["example-agent"]
 
+# Prose describing the CLASS of thing this operation treats as private, read
+# by the judgment half of the outbound gate. A CLASS, never a list of
+# instances: an instance list stops at what the operator remembered to
+# enumerate, and writing the instances down here would publish the very
+# strings the gate exists to withhold. Omitting the field is legal and means
+# the operator has supplied no description; enabling
+# KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED without one aborts boot.
+private_surface = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
+
 # Authority is enforced by ROLE, never by name in code or templates.
-# EXACTLY ONE principal carries the approver role; validated at load.
+# EXACTLY ONE principal carries `approver` and EXACTLY ONE carries `assignee`;
+# every principal carries `principal`. All three are validated at load.
+#
+# Three roles, because the passes route three things differently:
+#   approver  — holds the approval flip
+#   principal — their word creates a reply obligation the queue does not record
+#   assignee  — prepared fires, triage filings and decision flags are assigned here
+#
+# `roles` is a SET, not one value: one principal routinely holds two, and a
+# single-valued field would force either a duplicate entry or a lost routing.
+#
+# `tracker_user` is the identifier AUTHORITY is checked against; `handle` is the
+# identifier a MENTION is recognised by — the string a person writes when
+# addressing this principal. They are routinely different, and the mention sweep
+# is text matching with nothing but `handle` to match on. Handles are unique and
+# must not collide with an agent identity. `forge_handle` is the same principal's
+# name on the FORGE, where review-borne mentions are answered; omit it for a
+# principal who never appears there.
 [[principals]]
 tracker_user = "example-approver"
-role = "approver"
+roles = ["approver", "principal", "assignee"]
+handle = "@example-approver"
+forge_handle = "example-approver-on-forge"
 
 [[principals]]
 tracker_user = "example-contributor"
-role = "principal"
+roles = ["principal"]
+handle = "@example-contributor"
+forge_handle = "example-contributor-on-forge"
+
+[[principals]]
+tracker_user = "example-oncall"
+roles = ["principal"]
+handle = "@example-oncall"
 
 # Teams addressed from templates by key.
 [teams]
@@ -49,30 +84,84 @@ in_progress = "In Progress"
 in_review = "In Review"
 done = "Done"
 
-# Repositories the operation acts on plus the commands that verify them.
+# Repositories the operation acts on plus the chain that verifies them.
+# Each step names itself and what it depends on. A step with no `depends_on`
+# is a GATE: its failure is a root cause. A step whose named predecessor also
+# failed is a CASCADE and is reported as one, never as an independent red.
 [[repos]]
 url = "https://example.invalid/example-org/example-repo"
-check_commands = ["make check"]
+trunk = "main"
+
+[[repos.checks]]
+name = "lint"
+command = "make lint"
+
+[[repos.checks]]
+name = "type-check"
+command = "make type-check"
+depends_on = "lint"
+
+[[repos.checks]]
+name = "test"
+command = "make test"
+depends_on = "type-check"
 
 # Read-side document registry, addressed by stable key. The "checkpoint" key
 # is required: the scan-window marker is addressed by key rather than by name
 # so the later writer never has to match on a title.
+#
+# `system` and `name` are REQUIRED. An id on its own renders into a prompt as
+# an opaque token, and a session given only that prompt cannot tell which
+# system to open. Legal values for `system`: "tracker", "knowledge".
+#
+# `id` is OPTIONAL for a "tracker" document and required for a "knowledge"
+# one. Boot instates the tracker documents this operation owns: it looks for
+# one carrying `name`, creates it when the workspace has none, and adopts the
+# id it is given — so a fresh workspace needs nothing made by hand. Declaring
+# an `id` pins the entry to that exact document instead, and boot refuses when
+# the workspace does not hold it or holds it under another title. DELETE the
+# `id` line below when copying this file: the value is a placeholder, and boot
+# will name it as an entry it cannot resolve rather than quietly creating a
+# second document beside it.
 [documents.checkpoint]
+system = "tracker"
+name = "Fire run checkpoint"
 id = "example-checkpoint-document-id"
 
+# A knowledge-store document is not this operation's to create, so its id is
+# declared rather than adopted.
 [documents.house_rules]
+system = "knowledge"
+name = "House rules"
 id = "example-house-rules-document-id"
 
-# Reference material addressed from templates by key.
+# WRITE-side destination registry — where a pass records a row, as opposed to
+# where it reads. Deliberately separate from `documents`: that registry is
+# read-side, and a write flag on it would make it silently write-capable while
+# still not saying what is written. The "run_log" key is required.
+[records.run_log]
+system = "knowledge"
+id = "example-run-log-destination-id"
+append_only = true
+
+# Reference material held in the knowledge store, addressed by key. Every
+# value here belongs to the knowledge system by construction, which is what
+# a template naming it must say.
 [knowledge]
-house_rules = "example-house-rules-document-id"
+house_rules = "example-house-rules-knowledge-entry"
 
 # Named infrastructure endpoints. No endpoint string ever appears in a
 # template — templates reference the key.
 [endpoints]
 escalation = "https://example.invalid/escalation"
 
-# Initiatives the operation is steering toward.
+# Initiatives the operation is steering toward. `target_date` is OPTIONAL and
+# omitting it is the ordinary case: most real initiatives carry none, and a
+# config that had to invent one would make its passes report a distance to a
+# commitment the tracker does not hold.
 [[initiatives]]
 id = "example-initiative"
 target_date = 2026-12-31
+
+[[initiatives]]
+id = "example-initiative-without-a-target-date"

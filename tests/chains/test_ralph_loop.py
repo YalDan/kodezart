@@ -22,10 +22,10 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
 from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
@@ -788,8 +788,8 @@ async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch()
 # ---------------------------------------------------------------------------
 
 _STACKED = BaseSpec(
-    base_ref="kodezart/blocker-a-11111111",
-    role=BaseRefRole.deliverable,
+    base_branch="kodezart/blocker-a-11111111",
+    base_role=WorkRefRole.DELIVERABLE,
     inputs=(
         BaseInput(
             blocker_issue_id="KOD-A",
@@ -839,7 +839,7 @@ async def test_the_digest_of_a_stacked_lane_uses_its_recorded_base() -> None:
 
     diff_calls = [c for c in git.calls if c[0] == "diff_summary"]
     assert len(diff_calls) >= 1
-    assert diff_calls[0][2] == _STACKED.base_ref
+    assert diff_calls[0][2] == _STACKED.base_branch
     assert diff_calls[0][2] != "main"
 
 
@@ -868,7 +868,7 @@ async def test_the_first_iteration_is_dispatched_with_the_recorded_base() -> Non
 
     dispatches = [c for c in runner.calls if c["method"] == "stream_workflow"]
     assert dispatches, "the execute node never dispatched"
-    assert dispatches[0]["base_branch"] == _STACKED.base_ref
+    assert dispatches[0]["base_branch"] == _STACKED.base_branch
     service_default = inspect.signature(
         AgentService.stream_workflow,
     ).parameters["base_branch"]

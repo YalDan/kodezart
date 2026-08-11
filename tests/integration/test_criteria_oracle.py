@@ -23,7 +23,7 @@ from kodezart.types.domain.agent import (
     WorkflowCriteriaEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriterionClass,

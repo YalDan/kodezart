@@ -28,10 +28,10 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowScopeBaseEvent,
 )
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
 from tests.fakes import (
@@ -250,8 +250,8 @@ async def test_a_three_level_stack_keeps_the_inherited_lines(
         body=B_LINES,
     )
     recorded = BaseSpec(
-        base_ref=BLOCKER_B_BRANCH,
-        role=BaseRefRole.deliverable,
+        base_branch=BLOCKER_B_BRANCH,
+        base_role=WorkRefRole.DELIVERABLE,
         inputs=(
             BaseInput(
                 blocker_issue_id="KOD-B",
@@ -306,8 +306,8 @@ async def test_grading_the_same_stack_against_trunk_convicts_the_inheritance(
         body=B_LINES,
     )
     recorded = BaseSpec(
-        base_ref=BLOCKER_B_BRANCH,
-        role=BaseRefRole.deliverable,
+        base_branch=BLOCKER_B_BRANCH,
+        base_role=WorkRefRole.DELIVERABLE,
         inputs=(
             BaseInput(
                 blocker_issue_id="KOD-B",
@@ -369,8 +369,8 @@ async def test_a_combined_base_keeps_every_input_intact(
     await _git(["git", "checkout", "main"], cwd=repo)
 
     recorded = BaseSpec(
-        base_ref=INTEGRATION_BRANCH,
-        role=BaseRefRole.integration,
+        base_branch=INTEGRATION_BRANCH,
+        base_role=WorkRefRole.INTEGRATION,
         inputs=(
             BaseInput(blocker_issue_id="KOD-A", branch=BLOCKER_A_BRANCH, sha=a_sha),
             BaseInput(blocker_issue_id="KOD-B", branch=BLOCKER_B_BRANCH, sha=b_sha),
@@ -413,8 +413,8 @@ async def test_the_emitted_event_names_the_ref_that_was_compared(
         body=A_LINES,
     )
     recorded = BaseSpec(
-        base_ref=BLOCKER_A_BRANCH,
-        role=BaseRefRole.deliverable,
+        base_branch=BLOCKER_A_BRANCH,
+        base_role=WorkRefRole.DELIVERABLE,
         inputs=(
             BaseInput(blocker_issue_id="KOD-A", branch=BLOCKER_A_BRANCH, sha=b_sha),
         ),
@@ -425,12 +425,12 @@ async def test_the_emitted_event_names_the_ref_that_was_compared(
     scope_events = [e for e in events if isinstance(e, WorkflowScopeBaseEvent)]
     assert len(scope_events) == 1
     emitted = scope_events[0]
-    assert emitted.base_ref == BLOCKER_A_BRANCH
-    assert emitted.role is BaseRefRole.deliverable
+    assert emitted.base_branch == BLOCKER_A_BRANCH
+    assert emitted.base_role is WorkRefRole.DELIVERABLE
     assert [item.blocker_issue_id for item in emitted.inputs] == ["KOD-A"]
 
     payload = emitted.model_dump(by_alias=True, mode="json")
-    assert payload["baseRef"] == BLOCKER_A_BRANCH
+    assert payload["baseBranch"] == BLOCKER_A_BRANCH
     assert payload["inputs"][0]["blockerIssueId"] == "KOD-A"
 
 
@@ -444,8 +444,8 @@ async def test_a_trunk_fired_ticket_still_computes_against_trunk(
     events = await _run(_engine(repo, tmp_path), repo, trunk_base("main"))
 
     emitted = next(e for e in events if isinstance(e, WorkflowScopeBaseEvent))
-    assert emitted.base_ref == "main"
-    assert emitted.role is BaseRefRole.trunk
+    assert emitted.base_branch == "main"
+    assert emitted.base_role is None
     assert emitted.inputs == []
     complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
     assert complete.merged is True

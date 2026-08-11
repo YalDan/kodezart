@@ -16,6 +16,7 @@ from kodezart.core.constants import (
 )
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
@@ -47,7 +48,6 @@ from kodezart.domain.criteria_feasibility import (
     sweep,
 )
 from kodezart.domain.criteria_grading import grade_iteration
-from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.prompt_variables import (
@@ -81,7 +81,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
     WorkflowVisibilityEvent,
 )
-from kodezart.types.domain.base_spec import BaseRefRole, BaseSpec
+from kodezart.types.domain.branch import BaseSpec, WorkRefRole
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
@@ -89,7 +89,8 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import (
-    GateVerdict,
+    ContentClass,
+    OutboundDestination,
     RepoVisibility,
     WriterShape,
 )
@@ -455,15 +456,19 @@ class RalphWorkflowEngine:
         # Stated once, before any surface compares anything against it.
         writer(
             WorkflowScopeBaseEvent(
-                base_ref=ctx.base_spec.base_ref,
-                role=ctx.base_spec.role,
+                base_branch=ctx.base_spec.base_branch,
+                base_role=ctx.base_spec.base_role,
                 inputs=list(ctx.base_spec.inputs),
             )
         )
         await self._log.ainfo(
             "scope_base_resolved",
-            base_ref=ctx.base_spec.base_ref,
-            role=ctx.base_spec.role.value,
+            base_branch=ctx.base_spec.base_branch,
+            base_role=(
+                None
+                if ctx.base_spec.base_role is None
+                else ctx.base_spec.base_role.value
+            ),
             input_count=len(ctx.base_spec.inputs),
         )
         return {"repo_visibility": visibility}
@@ -474,29 +479,19 @@ class RalphWorkflowEngine:
         content: str,
         visibility: RepoVisibility,
         shape: WriterShape,
-        writer_name: str,
+        destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> str:
-        """Route one outbound payload through the gate. BLOCKED raises."""
-        decision = self._gate.gate(
+        """Route one outbound payload through the one gated-write path."""
+        return await gated_write(
+            gate=self._gate,
+            log=self._log,
             content=content,
             visibility=visibility,
             shape=shape,
+            destination=destination,
+            content_class=content_class,
         )
-        await self._log.ainfo(
-            "outbound_content_gated",
-            writer=writer_name,
-            verdict=decision.verdict.value,
-            visibility=visibility.value,
-            categories=[c.value for c in decision.categories],
-        )
-        if decision.verdict is GateVerdict.BLOCKED:
-            msg = "Outbound content blocked before write"
-            raise OutboundContentBlockedError(
-                msg,
-                writer=writer_name,
-                categories=[c.value for c in decision.categories],
-            )
-        return decision.content
 
     async def _generate_branch_node(
         self,
@@ -534,11 +529,14 @@ class RalphWorkflowEngine:
             )
 
         output = BranchNameOutput.model_validate(result_event.structured_output)
+        # AUTHORED: a model's summary of the raw task text. BRANCH_NAME is a
+        # mandatory destination, so the class does not change the routing.
         slug = await self._gated(
             content=output.slug,
             visibility=state["repo_visibility"],
             shape=WriterShape.IDENTIFIER,
-            writer_name="branch_name",
+            destination=OutboundDestination.BRANCH_NAME,
+            content_class=ContentClass.AUTHORED,
         )
         feature_branch = f"kodezart/{slug}-{uuid.uuid4().hex[:8]}"
         ralph_branch = generate_ralph_branch_name(feature_branch)
@@ -844,18 +842,22 @@ class RalphWorkflowEngine:
 
         criteria_artifact = _validated_artifact(state)
 
+        # AUTHORED, both: a JSON container does not make its leaves derived,
+        # and every leaf here was written by the model.
         artifacts: dict[str, str] = {
             "ticket.json": await self._gated(
                 content=ticket.model_dump_json(indent=2, by_alias=True),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="artifact_ticket_json",
+                destination=OutboundDestination.ARTIFACT_TICKET_JSON,
+                content_class=ContentClass.AUTHORED,
             ),
             "criteria.json": await self._gated(
                 content=criteria_artifact.model_dump_json(indent=2, by_alias=True),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="artifact_criteria_json",
+                destination=OutboundDestination.ARTIFACT_CRITERIA_JSON,
+                content_class=ContentClass.AUTHORED,
             ),
         }
 
@@ -1139,8 +1141,9 @@ class RalphWorkflowEngine:
             # The fix round measures itself against this lane's own
             # deliverable ref, which is what the feature branch IS.
             base_spec=BaseSpec(
-                base_ref=state["feature_branch"],
-                role=BaseRefRole.deliverable,
+                inputs=(),
+                base_branch=state["feature_branch"],
+                base_role=WorkRefRole.DELIVERABLE,
             ),
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
@@ -1303,7 +1306,8 @@ class RalphWorkflowEngine:
                 content=pr_output.title,
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="pr_title",
+                destination=OutboundDestination.PR_TITLE,
+                content_class=ContentClass.AUTHORED,
             ),
             body=await self._gated(
                 content=append_flagged_section(
@@ -1312,7 +1316,8 @@ class RalphWorkflowEngine:
                 ),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="pr_body",
+                destination=OutboundDestination.PR_BODY,
+                content_class=ContentClass.AUTHORED,
             ),
             head=state["feature_branch"],
             base=ctx.base_branch,
@@ -1413,11 +1418,15 @@ class RalphWorkflowEngine:
         if state["ci_summary"] is not None:
             comment_parts.append(f"\n### CI Summary\n{state['ci_summary']}\n")
 
+        # AUTHORED: the counters above are derived, but review_feedback is
+        # the evaluator's own reasoning per failed criterion. One authored
+        # part makes the assembled body authored.
         comment_body = await self._gated(
             content="".join(comment_parts),
             visibility=state["repo_visibility"],
             shape=WriterShape.PROSE,
-            writer_name="pr_comment",
+            destination=OutboundDestination.PR_COMMENT,
+            content_class=ContentClass.AUTHORED,
         )
 
         try:

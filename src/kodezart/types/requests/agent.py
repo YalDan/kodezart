@@ -5,7 +5,7 @@ from typing import Literal, Self
 from pydantic import Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.branch import BaseSpec
 
 
 class RepoSourceRequest(CamelCaseModel):

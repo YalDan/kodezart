@@ -15,8 +15,10 @@ Agent SDK.
 - **Quality gate (Ralph loop)** that re-executes until criteria pass or max
   iterations
 - **Workspace isolation** via bare-repo caching and disposable Git worktrees
-- **SSE streaming** of 18 event types for real-time progress visibility
-- **Hexagonal architecture** with 12 protocol-based ports and swappable adapters
+- **SSE streaming** of typed workflow events for real-time progress
+  visibility — the whole set is tabulated in [docs/api.md](docs/api.md),
+  derived from the shipped event models
+- **Hexagonal architecture** with protocol-based ports and swappable adapters
 - **Structured output** via JSON schema for branch names, commit messages,
   tickets, and evaluations
 
@@ -126,14 +128,17 @@ magnitude larger than the record. Once released, the job still answers at
 replay, and that is stated rather than served as an empty stream. See
 [docs/configuration.md](docs/configuration.md#queue-retention--two-independent-windows).
 
-See [docs/api.md](docs/api.md) for the full API reference including all 18 SSE
-event types.
+See [docs/api.md](docs/api.md) for the full API reference, including the table
+of SSE event types — derived from the shipped event models, so no count is
+written down here to go stale.
 
 ## Configuration
 
 All settings use the `KODEZART_` environment variable prefix. Copy
 `.env.example` for the most commonly customized variables. See
-[docs/configuration.md](docs/configuration.md) for the full 15-field reference.
+[docs/configuration.md](docs/configuration.md), which documents every field
+`AppConfig` ships — a test derives both sides and fails if the two disagree,
+so no count is written down here to go stale.
 
 Every entry in `.env.example` carries its own shipped default, so copying the
 file changes no behaviour. Entries that are **commented out** are deliberately
@@ -249,6 +254,43 @@ Pattern sets ship **empty except the credential category**, so an unconfigured
 deployment behaves exactly as it did before the gate existed, apart from the
 two new events.
 
+#### The judgment half
+
+The gate runs an **ordered list** of scanners and the patterns are only the
+first of them. A credential is arithmetic — `gh[posu]_` either matches or it
+does not — and stays deterministic so a token is caught with no network call.
+Whether a stranger would learn something from a payload that this operation
+did not choose to publish is not arithmetic: the set of private things is
+open-ended, a deny pattern naming an organisation *contains* the string it
+protects, and the same string can be unremarkable on one surface and a
+disclosure on another. `org_private` is therefore **rejected as a
+`KODEZART_DENY_PATTERNS` key** at boot, and answered by an audit session
+instead — a different session from the writer whose output it grades, with no
+shared context, no tools, and a neutral working directory.
+
+`KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` has three states and none of them
+is silent:
+
+| Knob | `OperationConfig.private_surface` | Result |
+| --- | --- | --- |
+| `false` (default) | anything | The deterministic scanners run alone. |
+| `true` | present | The audit scanner is registered **after** the patterns. |
+| `true` | absent or empty | Startup aborts with `ContentScannerBootError`. |
+
+The mechanism ships and the policy is operator configuration. `private_surface`
+is prose describing the **class** of thing this operation treats as private —
+never a list of instances, which would stop at what the operator remembered to
+enumerate and would publish those instances by writing them down. Every way of
+having no answer (`timeout`, `refusal`, `malformed_verdict`, `rate_limited`,
+`transport_error`, `empty_response`, `spans_unresolvable`, `budget_exhausted`,
+`not_configured`) resolves to `blocked` and is named on the event: "did not
+answer" and "said it is clean" stay two distinct observable states.
+
+Cost routing is deterministic and made once: the audit runs only on authored
+prose bound for a publication or tracker surface, plus the branch name. A
+criterion tick, a sha or a state transition classifies as structured and takes
+the cheap path by classification rather than by exemption.
+
 ### Operation config
 
 `KODEZART_OPERATION_CONFIG` points at a TOML file (parsed with stdlib
@@ -280,6 +322,132 @@ live workspace belongs to the tracker adapter, not to config load.
 - [`docs/cutover_mapping.md`](docs/cutover_mapping.md) — which routine behavior
   maps to which kodezart component, plus the behavior-parity dimension and
   placeholder mapping tables.
+
+### Setting up the self-running service
+
+Executable start to finish — no step assumes knowledge that is not on this
+page. Linear is the reference adapter and the worked example here; the tracker
+port is vendor-neutral, and another adapter passing the same conformance suite
+gets its own appendix rather than changes to these steps.
+
+**1. Tracker account and token.** Designate a tracker account for the service —
+its own, not a person's, because every write it makes is attributed and
+attribution to a human makes the approval record unreadable. Issue an API token
+for that account and give it access to every team the operation names under
+`[teams]`. The token needs to read issues, comments, labels, users, teams and
+documents, and to write issue state, labels, comments and claims. Put it in
+`KODEZART_TRACKER_TOKEN` and nowhere else: the operation config is
+`extra="forbid"`, so a token key in that file fails the load rather than
+sitting in a repository.
+
+The forge token is separate. `KODEZART_GITHUB_TOKEN` is a fine-grained PAT and
+its required permissions are listed under [Configuration](#configuration).
+
+**2. Queue labels.** Create one label per queue state. The names are yours —
+code never contains a literal label string and resolves every one of them
+through `[queue_states]`. What must exist is one label per member the code
+addresses by name: `triage`, `proposed`, `approved`, `done`, `decision`. You
+do not have to create them by hand: a label the operation *owns* and that does
+not exist yet is created at boot and adopted unchanged if it is already there.
+A label that exists with a conflicting definition aborts boot rather than being
+altered underneath you.
+
+**3. Principals and their ids.** Authority binds to a role, never to a name in
+code or in a template. There are three roles and `roles` is a **set**, because
+one principal routinely holds two:
+
+- `approver` — holds the approval flip. Nothing else in the system may set the
+  approved state.
+- `principal` — their word creates a reply obligation the queue does not
+  otherwise record. **Every** principal carries this one.
+- `assignee` — prepared fires, triage filings and decision flags are assigned
+  here.
+
+Two counts are validated at load and each names the field it failed on:
+**exactly one** principal carries `approver`, and **exactly one** carries
+`assignee`. Zero or two of either is a load failure, not a warning. A principal
+missing `principal` is also rejected, by index.
+
+For each principal, collect up to three identifiers, because they are three
+different things:
+
+- `tracker_user` — the id the tracker records as the actor of a state change.
+  Authority is checked against this one.
+- `handle` — the string a person writes when addressing that principal. The
+  mention sweep is text matching, so this is what it matches on. Handles must
+  be non-empty, unique, and must not collide with an agent identity.
+- `forge_handle` — the same person's name on the forge, where review-borne
+  mentions are answered. Optional: omit it for a principal who never appears
+  there. Two surfaces name one person, and recognising them across both needs
+  two identifiers.
+
+`tracker_user` and `handle` are routinely different, and swapping them silently
+breaks either authority checking or the mention sweep.
+
+Escalation is **not** a role. Out-of-band notifications go to an address
+declared under `[endpoints]` in the operation config (step 5), because an
+endpoint is a place and a role is a person.
+
+**4. Documents and records.** Create or designate the checkpoint document the
+passes read their scan window from, and collect its name and its id. A
+document is declared with the system it belongs to, because an opaque id with
+no system is unresolvable by anyone holding only the rendered prompt, and with
+the name boot ensures it under:
+
+```toml
+[documents.checkpoint]
+system = "tracker"
+name = "<the document name>"
+id = "<the document id>"
+```
+
+Do the same for the run-log destination under `[records.run_log]`. A record
+declared `append_only` is never rewritten, only added to.
+
+**5. Write the operation config.** Copy
+[`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
+field by field and covers every one — fill in the values from steps 2–4, and
+point `KODEZART_OPERATION_CONFIG` at the file.
+
+**6. Boot and verify.** Start the service and read the startup log. Validation
+is fail-loud and collects every failure at once, so one boot tells you
+everything that is wrong rather than the first thing:
+
+| What you see | What it means | What to do |
+| --- | --- | --- |
+| `tracker_not_configured` with `tracker_token_present: false` | No credential, so no tracker is wired. The service still serves HTTP. | Set `KODEZART_TRACKER_TOKEN`. |
+| `tracker_not_configured` with `operation_config_present: false` | No operation config, so there is nothing to reconcile. | Set `KODEZART_OPERATION_CONFIG`. |
+| `OperationConfigError` listing several failures | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. | Fix every listed failure; the list is exhaustive. |
+| `TrackerBootValidationError` naming entries | A principal, team or state mapping the operation does *not* own could not be resolved in the live workspace. | Correct the id, or grant the token access to that team. |
+| `TrackerEnsureConflictError` | A value the operation *owns* exists with a conflicting definition. | Reconcile the workspace or the config by hand; boot will not alter it for you. |
+| `tracker_mappings_reconciled` with `created` / `adopted` lists | Success. Everything the operation owns now exists; everything it does not own resolved. | Nothing. |
+| `scheduled_passes_not_wired` | The tracker is up but no dispatch pass is scheduled, and the event names which half is missing. | Supply the named half — usually the forge token, which the delivery probe needs. |
+
+A successful boot logs `tracker_mappings_reconciled` and then
+`pass_scheduler_started`, listing each pass and its interval.
+
+**7. Smoke test.** File one small, self-contained issue on a team the config
+names, then, **as the approver account**, add the approved label. Watch for this
+sequence in the log:
+
+1. `pass_gate_delta` — the pre-query saw the issue move.
+2. `dispatch_pass_completed` with `outcome: fire_enqueued` and the issue key —
+   the claim was granted and a job was enqueued.
+3. `lifecycle_in_progress`, then `lifecycle_in_review` once the run opens its
+   pull request, then `lifecycle_done` — the write-back walking the issue
+   through the states `[workflow_states]` binds those stages to. The service
+   follows the job's own event stream, so `lifecycle_in_progress` appears when
+   the run *starts*, not when it was enqueued, and `lifecycle_done` only on a
+   verified merge. A run that ends without one keeps its review state.
+4. `lifecycle_outcome_comment` — the terminal outcome comment on the issue,
+   naming the job id and the run's outcome. It is posted for every terminal
+   route, including the ones that did not merge.
+
+Approval is the only human act in that sequence. kodezart never sets or removes
+the approved state — if it could, the one gate in the loop would not be a gate.
+If the pass never wakes, the issue's queue state or its approver is wrong; if it
+wakes and reports `empty_eligible_set`, the report names the clause that
+excluded the issue.
 
 ## Development
 
@@ -321,7 +489,7 @@ Then bake the resolved answers into the kodezart ticket prompt before invoking t
 
 ### Invoking kodezart
 
-`POST /api/v1/agent/workflow` — see [API Endpoints](#api-endpoints) above for the request shape, [`docs/api.md`](docs/api.md) for the full SSE event schema (18 event types), and [`docs/architecture.md`](docs/architecture.md) for the workflow internals (Ralph loop, ticket generation, quality gates).
+`POST /api/v1/agent/workflow` — see [API Endpoints](#api-endpoints) above for the request shape, [`docs/api.md`](docs/api.md) for the full SSE event schema, and [`docs/architecture.md`](docs/architecture.md) for the workflow internals (Ralph loop, ticket generation, quality gates).
 
 Stream the response and watch for `result` / error events; treat the eventual PR URL as the deliverable to hand back to your user.
 

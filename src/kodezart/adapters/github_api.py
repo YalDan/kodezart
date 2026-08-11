@@ -1,6 +1,7 @@
 """GitHub REST API adapter — implements PRCreator and CIMonitor protocols."""
 
 import asyncio
+import re
 import secrets
 from enum import StrEnum
 
@@ -13,6 +14,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.github import (
     CheckRunsResponse,
     PullRequestResponse,
+    PullRequestSummary,
     RepositoryResponse,
     WorkflowsResponse,
 )
@@ -51,6 +53,7 @@ class GitHubAPIClient:
     _ACTIVE_WORKFLOW_STATE = "active"
     _NOT_FOUND_STATUS = 404
     _PAGE_SIZE = 100
+    _OPEN_STATE = "open"
     _NO_WORKFLOWS_SUMMARY = (
         "No CI checks configured: repository has no active workflows."
     )
@@ -261,6 +264,35 @@ class GitHubAPIClient:
             f"/repos/{owner}/{repo}/issues/{pr_number}/comments",
             json={"body": body},
         )
+
+    # -- DeliveryProbe -------------------------------------------------------
+
+    async def open_delivery_exists(
+        self,
+        *,
+        repo_url: str,
+        issue_key: str,
+    ) -> bool:
+        """True iff an OPEN pull request references *issue_key*.
+
+        Matching lives here, not in the caller: the reference convention is
+        a property of this forge's pull requests.  The key is matched as a
+        whole token in the title or body, so ``KOD-5`` never matches
+        ``KOD-58``.  A branch name is never parsed — an issue identity is
+        not derivable from one.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        response = await self._request_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            params={"state": self._OPEN_STATE, "per_page": self._PAGE_SIZE},
+        )
+        pattern = re.compile(rf"(?<![\w-]){re.escape(issue_key)}(?![\w-])")
+        for entry in response.json():
+            summary = PullRequestSummary.model_validate(entry)
+            if pattern.search(summary.title) or pattern.search(summary.body or ""):
+                return True
+        return False
 
     # -- CIMonitor -----------------------------------------------------------
 

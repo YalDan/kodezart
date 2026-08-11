@@ -8,7 +8,7 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
-from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriteriaValidation,
@@ -76,7 +76,7 @@ class ExecutionContext(WorkflowContext):
     @property
     def base_branch(self) -> str:
         """The ref every scope surface compares against."""
-        return self.base_spec.base_ref
+        return self.base_spec.base_branch
 
 
 class RalphLoopContext(ExecutionContext):

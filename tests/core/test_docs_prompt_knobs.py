@@ -9,7 +9,9 @@ from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateVerdict,
+    OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     WriterShape,
@@ -145,7 +147,7 @@ def test_env_example_is_indistinguishable_from_shipping_no_env_file_at_all() -> 
 
 
 @pytest.mark.usefixtures("_pristine_environment")
-def test_credential_gating_survives_a_copy_of_the_example_file() -> None:
+async def test_credential_gating_survives_a_copy_of_the_example_file() -> None:
     """The concrete leak: a token-bearing URL on a PUBLIC target is blocked."""
     config = config_from_env_example()
     gate = PatternOutboundContentGate(
@@ -153,10 +155,12 @@ def test_credential_gating_survives_a_copy_of_the_example_file() -> None:
         verdicts=config.deny_pattern_verdicts,
     )
 
-    decision = gate.gate(
+    decision = await gate.gate(
         content=TOKEN_BEARING_URL,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
 
     assert decision.verdict is GateVerdict.BLOCKED

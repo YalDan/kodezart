@@ -1,6 +1,6 @@
 [project]
 name = "kodezart"
-version = "0.1.5"
+version = "0.2.0"
 description = "kodezart — music-inspired AI assistant"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,6 +19,10 @@ dependencies = [
     # cwd/permission_mode/allowed_tools/resume/output_format/model (types.py),
     # and RateLimitEvent/StreamEvent are in claude_agent_sdk.__all__.
     "claude-agent-sdk~=0.2.128",
+    # The MCP client the tracker transport speaks. Already present
+    # transitively under claude-agent-sdk; declared directly because
+    # adapters/http_mcp_tool_caller.py imports it.
+    "mcp>=1.26.0",
     "langchain>=0.3.0",
     "langgraph>=0.2.0",
     "structlog>=24.4.0",

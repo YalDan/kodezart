@@ -1,8 +1,10 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
-from collections.abc import AsyncGenerator, Mapping, Sequence
+import asyncio
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,11 +14,17 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
-from kodezart.domain.errors import WorkspaceError
+from kodezart.domain.errors import (
+    DuplicateWorkRefError,
+    MergeConflictError,
+    TransientAPIError,
+    WorkspaceError,
+)
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
@@ -29,7 +37,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowTicketEvent,
 )
-from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -44,18 +52,46 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import (
+    JUDGMENT_ROUTING,
+    ContentClass,
     GateDecision,
     GateVerdict,
+    OutboundDestination,
     RepoVisibility,
+    ScanFailureKind,
     ScanHit,
+    ScannerRouting,
+    ScanResult,
     WriterShape,
 )
+from kodezart.types.domain.job import JobRecord, JobState
+from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.tracker import (
+    INSTATABLE_MAPPING_KINDS,
+    ClaimResult,
+    ClaimStatus,
+    EnsureAction,
+    IssuePriority,
+    IssueQuery,
+    IssueRelation,
+    IssueRelationKind,
+    MappingKind,
+    MappingOutcome,
+    MappingRef,
+    StateTransition,
+    TrackerAsset,
+    TrackerComment,
+    TrackerIssue,
+    WorkflowStateKind,
+)
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
+from kodezart.types.requests.agent import WorkflowRequest
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
+FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
 DEFAULT_SETTING_SOURCES: list[SettingSource] = [
     SettingSource.USER,
     SettingSource.PROJECT,
@@ -79,8 +115,10 @@ class FakeGitService:
         trees: dict[str, str] | None = None,
         commit_tree_result: str = "c" * 40,
         push_error: Exception | None = None,
+        merge_conflicts: dict[str, tuple[str, ...]] | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
+        self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
         self.has_changes_result: bool = has_changes_result
         self._remote_branches: list[str] = remote_branches or []
         self._remote_branch_shas: dict[str, str | None] = (
@@ -157,6 +195,13 @@ class FakeGitService:
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None:
         self.calls.append(("merge_branch", cwd, source_branch))
+        paths = self._merge_conflicts.get(source_branch)
+        if paths is not None:
+            raise MergeConflictError(
+                f"merge of {source_branch} could not be completed",
+                source_branch=source_branch,
+                paths=paths,
+            )
 
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
@@ -1128,7 +1173,7 @@ class FakeQualityGate:
                 "feature_branch": feature_branch,
                 "ralph_branch": ralph_branch,
                 "base_spec": base_spec,
-                "base_branch": base_spec.base_ref,
+                "base_branch": base_spec.base_branch,
                 "permission_mode": permission_mode,
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
@@ -1420,15 +1465,21 @@ class PassThroughGate:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, RepoVisibility, WriterShape]] = []
+        self.destinations: list[OutboundDestination] = []
+        self.content_classes: list[ContentClass] = []
 
-    def gate(
+    async def gate(
         self,
         *,
         content: str,
         visibility: RepoVisibility,
         shape: WriterShape,
+        destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
         self.calls.append((content, visibility, shape))
+        self.destinations.append(destination)
+        self.content_classes.append(content_class)
         return GateDecision(verdict=GateVerdict.CLEAN, content=content)
 
 
@@ -1453,15 +1504,50 @@ class FakeVisibilityResolver:
 
 
 class FakeContentScanner:
-    """ContentScanner that reports scripted hits, for scanner-ordering tests."""
+    """ContentScanner that reports a scripted result, and counts its calls.
 
-    def __init__(self, hits: list[ScanHit]) -> None:
-        self._hits = hits
+    Scripted rather than intelligent on purpose: what the corpus measures
+    under this double is the MECHANISM around a verdict — that a reported
+    hit reaches the fold, is applied at its reported span, and resolves to
+    the right verdict for its destination.  The model itself is measured by
+    the separately-marked live target, never here.
+    """
+
+    def __init__(
+        self,
+        hits: list[ScanHit] | None = None,
+        *,
+        failure: ScanFailureKind | None = None,
+        routing: ScannerRouting | None = None,
+        hits_by_destination: dict[OutboundDestination, list[ScanHit]] | None = None,
+    ) -> None:
+        self._hits = list(hits or [])
+        self._failure = failure
+        self._hits_by_destination = hits_by_destination
+        self._routing = routing or JUDGMENT_ROUTING
         self.calls: list[str] = []
+        self.destinations: list[OutboundDestination] = []
 
-    def scan(self, content: str) -> list[ScanHit]:
+    @property
+    def routing(self) -> ScannerRouting:
+        """The routing this double declares to the gate."""
+        return self._routing
+
+    async def scan(
+        self,
+        *,
+        content: str,
+        destination: OutboundDestination,
+    ) -> ScanResult:
         self.calls.append(content)
-        return list(self._hits)
+        self.destinations.append(destination)
+        if self._failure is not None:
+            return ScanResult(failure=self._failure)
+        if self._hits_by_destination is not None:
+            return ScanResult(
+                hits=tuple(self._hits_by_destination.get(destination, [])),
+            )
+        return ScanResult(hits=tuple(self._hits))
 
 
 @asynccontextmanager
@@ -1495,3 +1581,935 @@ async def attached_job_queue(
         yield queue
     finally:
         await queue.stop()
+
+
+# --------------------------------------------------------------------------
+# Tracker test doubles
+#
+# Two levels, deliberately.  ``FakeLinearMcpServer`` is an in-process MCP
+# SERVER: it satisfies ``McpToolCaller`` and serves the vendor tool contract,
+# so the real Linear adapter runs against it unmodified and the conformance
+# suite needs no live workspace.  ``FakeTrackerPort`` satisfies ``TrackerPort``
+# directly and is what consumers of the port (the dispatcher, the passes) are
+# tested against — a consumer test that had to know the vendor's tool names
+# would have a vendor dependency the port exists to remove.
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class FakeMcpAsset:
+    """One attachment or document reference the fake server serves."""
+
+    id: str
+    title: str
+    url: str
+    content_type: str | None = None
+    size: int | None = None
+
+    def wire(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "url": self.url,
+            "contentType": self.content_type,
+            "size": self.size,
+        }
+
+
+@dataclass
+class FakeMcpDocument:
+    """One document the fake workspace holds: server id, title, body.
+
+    Three fields rather than an id-to-body mapping, because the ensure
+    path addresses a document by TITLE and the read path by id, and a
+    registry that carried only one of them would make one of the two
+    untestable.
+    """
+
+    id: str
+    title: str
+    content: str
+
+    def summary(self) -> dict[str, object]:
+        return {"id": self.id, "title": self.title}
+
+
+@dataclass
+class FakeMcpIssue:
+    """One issue in the fake workspace, in the vendor's own shape."""
+
+    id: str
+    title: str = "fixture issue"
+    description: str = ""
+    priority_raw: int = 0
+    status: str = "Backlog"
+    status_type: str = "backlog"
+    labels: list[str] = field(default_factory=list)
+    relations: list[tuple[str, str]] = field(default_factory=list)
+    attachments: list[FakeMcpAsset] = field(default_factory=list)
+    documents: list[FakeMcpAsset] = field(default_factory=list)
+    parent_id: str | None = None
+    assignee: str | None = None
+    created_at: datetime = FIXTURE_EPOCH
+    updated_at: datetime = FIXTURE_EPOCH
+    url: str = ""
+
+    def wire(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "priority": {"value": self.priority_raw},
+            "status": self.status,
+            "statusType": self.status_type,
+            "labels": list(self.labels),
+            "relations": [
+                {"type": kind, "identifier": key} for kind, key in self.relations
+            ],
+            "attachments": [asset.wire() for asset in self.attachments],
+            "documents": [asset.wire() for asset in self.documents],
+            "parentId": self.parent_id,
+            "assignee": self.assignee,
+            "createdAt": self.created_at.isoformat(),
+            "updatedAt": self.updated_at.isoformat(),
+            "url": self.url or f"https://tracker.invalid/issue/{self.id}",
+        }
+
+
+@dataclass
+class FakeMcpComment:
+    """One comment in the fake workspace's append-only log."""
+
+    id: str
+    issue_id: str
+    user: str
+    body: str
+    created_at: datetime
+
+    def wire(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "issueId": self.issue_id,
+            "user": self.user,
+            "body": self.body,
+            "createdAt": self.created_at.isoformat(),
+        }
+
+
+@dataclass
+class FakeMcpHistoryEntry:
+    """One label-change history entry — the provenance record."""
+
+    actor: str
+    created_at: datetime
+    added_labels: list[str] = field(default_factory=list)
+    removed_labels: list[str] = field(default_factory=list)
+
+    def wire(self) -> dict[str, object]:
+        return {
+            "actor": self.actor,
+            "addedLabels": list(self.added_labels),
+            "removedLabels": list(self.removed_labels),
+            "createdAt": self.created_at.isoformat(),
+        }
+
+
+class FakeLinearMcpServer:
+    """In-process MCP server satisfying ``McpToolCaller``.
+
+    Serves the exact tool contract ``LinearMcpTracker`` speaks.  Comment
+    creation is append-only with server-assigned identifiers and timestamps,
+    which is what the adapter's atomic claim is built on: ``comment_instants``
+    can be set to a repeated value to force the same-instant tie-break path.
+    """
+
+    def __init__(
+        self,
+        *,
+        issues: Sequence[FakeMcpIssue] = (),
+        documents: Sequence[FakeMcpDocument] = (),
+        history: Mapping[str, Sequence[FakeMcpHistoryEntry]] | None = None,
+        users: Sequence[str] = (),
+        teams: Sequence[str] = (),
+        labels: Sequence[str] = (),
+        label_containers: Mapping[str, str] | None = None,
+        statuses: Sequence[str] = (),
+        state_types: Mapping[str, str] | None = None,
+        actor: str = "fixture-actor",
+        comment_instants: Sequence[datetime] = (),
+        transient_failures: Mapping[str, int] | None = None,
+    ) -> None:
+        self.issues: dict[str, FakeMcpIssue] = {issue.id: issue for issue in issues}
+        self.comments: list[FakeMcpComment] = []
+        self.documents: dict[str, FakeMcpDocument] = {
+            document.id: document for document in documents
+        }
+        self.history: dict[str, list[FakeMcpHistoryEntry]] = {
+            key: list(entries) for key, entries in (history or {}).items()
+        }
+        self.users: list[str] = list(users)
+        self.teams: list[str] = list(teams)
+        self.labels: list[str] = list(labels)
+        self.label_containers: dict[str, str] = dict(label_containers or {})
+        self.statuses: list[str] = list(statuses)
+        self.state_types: dict[str, str] = dict(state_types or {})
+        self.actor: str = actor
+        self.calls: list[tuple[str, Mapping[str, object]]] = []
+        self.comment_instants: list[datetime] = list(comment_instants)
+        self._transient_failures: dict[str, int] = dict(transient_failures or {})
+        self._sequence: int = 0
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        handler = getattr(self, f"_tool_{name}", None)
+        if handler is None:
+            msg = f"fake MCP server exposes no tool named {name!r}"
+            raise LookupError(msg)
+        result: Mapping[str, object] = handler(arguments)
+        return result
+
+    def tool_calls(self, name: str) -> list[Mapping[str, object]]:
+        """Every argument mapping the named tool was invoked with."""
+        return [args for tool, args in self.calls if tool == name]
+
+    def _next_instant(self) -> datetime:
+        if self.comment_instants:
+            return self.comment_instants[
+                min(self._sequence, len(self.comment_instants) - 1)
+            ]
+        return FIXTURE_EPOCH + timedelta(seconds=self._sequence)
+
+    def _issue(self, arguments: Mapping[str, object], key: str) -> FakeMcpIssue:
+        issue_key = str(arguments[key])
+        issue = self.issues.get(issue_key)
+        if issue is None:
+            msg = f"fake workspace has no issue {issue_key!r}"
+            raise LookupError(msg)
+        return issue
+
+    def _tool_list_issues(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        label = arguments.get("label")
+        selected = [
+            issue
+            for issue in self.issues.values()
+            if label is None or label in issue.labels
+        ]
+        limit = int(str(arguments.get("limit", len(selected))))
+        return {"issues": [issue.wire() for issue in selected[:limit]]}
+
+    def _tool_get_issue(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._issue(arguments, "id").wire()
+
+    def _tool_save_issue(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        if "id" not in arguments:
+            self._sequence += 1
+            created = FakeMcpIssue(
+                id=f"NEW-{self._sequence}",
+                title=str(arguments.get("title", "")),
+                description=str(arguments.get("description", "")),
+                priority_raw=int(str(arguments.get("priority", 0))),
+            )
+            self.issues[created.id] = created
+            return created.wire()
+        issue = self._issue(arguments, "id")
+        if "title" in arguments:
+            issue.title = str(arguments["title"])
+        if "description" in arguments:
+            issue.description = str(arguments["description"])
+        if "state" in arguments:
+            issue.status = str(arguments["state"])
+            issue.status_type = self.state_types[issue.status]
+        if "labels" in arguments:
+            raw_labels = arguments["labels"]
+            assert isinstance(raw_labels, list)
+            new_labels = [str(entry) for entry in raw_labels]
+            self.history.setdefault(issue.id, []).append(
+                FakeMcpHistoryEntry(
+                    actor=self.actor,
+                    created_at=self._next_instant(),
+                    added_labels=[
+                        label for label in new_labels if label not in issue.labels
+                    ],
+                    removed_labels=[
+                        label for label in issue.labels if label not in new_labels
+                    ],
+                )
+            )
+            issue.labels = new_labels
+        return issue.wire()
+
+    def _tool_save_comment(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        created_at = self._next_instant()
+        self._sequence += 1
+        comment = FakeMcpComment(
+            id=f"comment-{self._sequence:04d}",
+            issue_id=str(arguments["issueId"]),
+            user=self.actor,
+            body=str(arguments["body"]),
+            created_at=created_at,
+        )
+        self.comments.append(comment)
+        return comment.wire()
+
+    def _tool_list_comments(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        issue_id = str(arguments["issueId"])
+        return {
+            "comments": [
+                comment.wire()
+                for comment in self.comments
+                if comment.issue_id == issue_id
+            ]
+        }
+
+    def _tool_delete_comment(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        comment_id = str(arguments["id"])
+        self.comments = [c for c in self.comments if c.id != comment_id]
+        return {}
+
+    def _tool_list_issue_history(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        entries = self.history.get(str(arguments["id"]), [])
+        return {"history": [entry.wire() for entry in entries]}
+
+    def _tool_get_document(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        document_id = str(arguments["id"])
+        document = self.documents[document_id]
+        return {"id": document.id, "content": document.content}
+
+    def _tool_list_documents(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return {
+            "documents": [document.summary() for document in self.documents.values()],
+        }
+
+    def _tool_save_document(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Create a document under the given title, with a server id.
+
+        Creation only, because that is the whole of what the adapter asks
+        for: a call naming an existing id would be an update, and an
+        ensure that updated a document would be the rename the refusal
+        exists to prevent.
+        """
+        title = str(arguments["title"])
+        self._sequence += 1
+        document = FakeMcpDocument(
+            id=f"fake-document-{self._sequence:04d}",
+            title=title,
+            content="",
+        )
+        self.documents[document.id] = document
+        return document.summary()
+
+    def _named(self, names: Sequence[str]) -> Mapping[str, object]:
+        return {"entries": [{"name": name} for name in names]}
+
+    def _tool_list_users(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._named(self.users)
+
+    def _tool_list_teams(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._named(self.teams)
+
+    def _tool_list_issue_labels(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Labels with the container the workspace holds each one in.
+
+        A label seeded into the fixture reports NO container, exactly as a
+        listing that does not carry the field would: the fake states what
+        the workspace knows and never invents workspace scope for a label
+        nobody said anything about.
+        """
+        return {
+            "entries": [
+                {"name": name}
+                if self.label_containers.get(name) is None
+                else {"name": name, "teamId": self.label_containers[name]}
+                for name in self.labels
+            ],
+        }
+
+    def _tool_create_issue_label(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        name = str(arguments["name"])
+        if name in self.labels:
+            msg = f"fake workspace already carries the label {name!r}"
+            raise LookupError(msg)
+        self.labels.append(name)
+        team = arguments.get("teamId")
+        if team is not None:
+            self.label_containers[name] = str(team)
+        return {"name": name}
+
+    def _tool_list_issue_statuses(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._named(self.statuses)
+
+
+class ManagedFakeLinearMcpServer(FakeLinearMcpServer):
+    """The fake MCP server plus the session lifetime the composition root drives.
+
+    Satisfies ``ManagedMcpToolCaller``, so the lifespan opens and closes it
+    exactly as it opens and closes the real HTTP transport, and the real
+    adapter runs above it.  Counts rather than flags: an unbalanced
+    open/close is visible.
+    """
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self.opens: int = 0
+        self.closes: int = 0
+
+    async def open(self) -> None:
+        await asyncio.sleep(0)
+        self.opens += 1
+
+    async def close(self) -> None:
+        await asyncio.sleep(0)
+        self.closes += 1
+
+
+#: What a lifecycle stage means as a workflow-state KIND.  The fake owns the
+#: mapping because the conformance suite asks the port what the write did,
+#: and a double that recorded the write without applying it would answer for
+#: a state the issue is not in.
+_STAGE_KIND: Mapping[LifecycleStage, WorkflowStateKind] = {
+    LifecycleStage.IN_PROGRESS: WorkflowStateKind.STARTED,
+    LifecycleStage.IN_REVIEW: WorkflowStateKind.STARTED,
+    LifecycleStage.DONE: WorkflowStateKind.COMPLETED,
+}
+
+
+class FakeTrackerPort:
+    """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
+
+    Holds domain objects directly, so a consumer test states its fixture in
+    the same vocabulary the consumer reads.  The claim is genuinely
+    first-writer-wins: concurrent claimants on one issue produce exactly one
+    ``GRANTED``.
+    """
+
+    def __init__(
+        self,
+        *,
+        issues: Sequence[TrackerIssue] = (),
+        provenance: Mapping[tuple[str, QueueState], StateTransition] | None = None,
+        assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
+        documents: Mapping[str, str] | None = None,
+        document_titles: Mapping[str, str] | None = None,
+        known_identifiers: Sequence[str] = (),
+        recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
+        recorded_base_specs: Mapping[str, BaseSpec] | None = None,
+        clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
+    ) -> None:
+        self.issues: dict[str, TrackerIssue] = {
+            issue.issue_key: issue for issue in issues
+        }
+        self.recorded_work_refs: dict[str, list[WorkRef]] = {
+            key: list(value) for key, value in (recorded_work_refs or {}).items()
+        }
+        self.recorded_base_specs: dict[str, BaseSpec] = dict(recorded_base_specs or {})
+        self.claims: dict[str, ClaimResult] = {}
+        self.comments: list[TrackerComment] = []
+        self.workflow_writes: list[tuple[str, LifecycleStage]] = []
+        self.queue_writes: list[tuple[str, QueueState]] = []
+        self.scans: list[IssueQuery] = []
+        self._provenance: dict[tuple[str, QueueState], StateTransition] = dict(
+            provenance or {}
+        )
+        self._assets: dict[str, tuple[TrackerAsset, ...]] = {
+            key: tuple(value) for key, value in (assets or {}).items()
+        }
+        self._documents: dict[str, str] = dict(documents or {})
+        #: Title per document id, for the ensure path.  Separate from the
+        #: body registry above because a consumer reads a document by key
+        #: and an ensure addresses it by title; a fixture that seeded only
+        #: one of them would leave the other untestable.
+        self.document_titles: dict[str, str] = dict(document_titles or {})
+        self.known_identifiers: set[str] = set(known_identifiers)
+        #: The container each INSTATED value was created in.  Seeded empty,
+        #: because a value the fixture merely knows about reports no
+        #: container — the same state a listing that omits the field is in.
+        self.mapping_containers: dict[str, str | None] = {}
+        self._clock: Callable[[], datetime] = clock
+        self._sequence: int = 0
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        await asyncio.sleep(0)
+        self.scans.append(query)
+        matched = [
+            issue
+            for issue in self.issues.values()
+            if (query.queue_state is None or query.queue_state in issue.queue_states)
+            and (query.updated_since is None or issue.updated_at > query.updated_since)
+        ]
+        return tuple(matched[: query.page_size])
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        await asyncio.sleep(0)
+        return self.issues[issue_key]
+
+    async def create_issue(
+        self,
+        *,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        self._sequence += 1
+        issue = TrackerIssue(
+            issue_key=f"FAKE-{self._sequence}",
+            title=title,
+            body=body,
+            priority=priority,
+            state_name="Backlog",
+            state_kind=WorkflowStateKind.BACKLOG,
+            queue_states=frozenset(),
+            created_at=self._clock(),
+            updated_at=self._clock(),
+            url=f"https://tracker.invalid/issue/FAKE-{self._sequence}",
+        )
+        self.issues[issue.issue_key] = issue
+        return issue
+
+    async def update_issue(
+        self,
+        *,
+        issue_key: str,
+        title: str | None = None,
+        body: str | None = None,
+    ) -> TrackerIssue:
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(
+            update={
+                "title": issue.title if title is None else title,
+                "body": issue.body if body is None else body,
+            }
+        )
+        self.issues[issue_key] = updated
+        return updated
+
+    async def set_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        stage: LifecycleStage,
+    ) -> TrackerIssue:
+        self.workflow_writes.append((issue_key, stage))
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(
+            update={
+                "state_name": stage.value,
+                "state_kind": _STAGE_KIND[stage],
+            },
+        )
+        self.issues[issue_key] = updated
+        return updated
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        self.queue_writes.append((issue_key, state))
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(update={"queue_states": frozenset({state})})
+        self.issues[issue_key] = updated
+        return updated
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        self._sequence += 1
+        comment = TrackerComment(
+            comment_key=f"comment-{self._sequence:04d}",
+            issue_key=issue_key,
+            author_key="kodezart",
+            body=body,
+            created_at=self._clock(),
+        )
+        self.comments.append(comment)
+        return comment
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        return tuple(c for c in self.comments if c.issue_key == issue_key)
+
+    async def claim_issue(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult:
+        # The scheduling point is BEFORE the check-and-set, never inside it:
+        # a fake whose claim is not genuinely atomic proves nothing about
+        # exactly-once semantics.
+        await asyncio.sleep(0)
+        expires_at = self._clock() + timedelta(seconds=lease_seconds)
+        held = self.claims.get(issue_key)
+        if held is not None and held.expires_at > self._clock():
+            return ClaimResult(
+                issue_key=issue_key,
+                status=ClaimStatus.LOST,
+                holder=holder,
+                expires_at=expires_at,
+            )
+        granted = ClaimResult(
+            issue_key=issue_key,
+            status=ClaimStatus.GRANTED,
+            holder=holder,
+            expires_at=expires_at,
+        )
+        self.claims[issue_key] = granted
+        return granted
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        held = self.claims.get(issue_key)
+        if held is not None and held.holder == holder:
+            del self.claims[issue_key]
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        await asyncio.sleep(0)
+        held = self.claims.get(issue_key)
+        if held is None or held.expires_at <= self._clock():
+            return None
+        return held
+
+    async def queue_state_provenance(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> StateTransition | None:
+        await asyncio.sleep(0)
+        return self._provenance.get((issue_key, state))
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        return self._assets.get(issue_key, ())
+
+    async def read_document(self, *, document_key: str) -> str:
+        return self._documents[document_key]
+
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
+        await asyncio.sleep(0)
+        held = self.recorded_work_refs.setdefault(ref.issue_id, [])
+        for existing in held:
+            if existing.identity() == ref.identity():
+                return
+            if existing.role is WorkRefRole.DELIVERABLE is ref.role:
+                raise DuplicateWorkRefError(
+                    "an issue carries at most one deliverable ref",
+                    issue_id=ref.issue_id,
+                    role=ref.role.value,
+                    existing_branch=existing.branch,
+                    offered_branch=ref.branch,
+                )
+        held.append(ref)
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        await asyncio.sleep(0)
+        return tuple(self.recorded_work_refs.get(issue_key, ()))
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        await asyncio.sleep(0)
+        self.recorded_base_specs[issue_key] = spec
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        await asyncio.sleep(0)
+        return self.recorded_base_specs.get(issue_key)
+
+    async def resolve_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingRef]:
+        await asyncio.sleep(0)
+        return tuple(
+            ref for ref in refs if ref.identifier not in self.known_identifiers
+        )
+
+    async def ensure_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingOutcome]:
+        """The port's ensure contract, held to the same rule the adapter is.
+
+        The double refused nothing before this: it accepted every kind and
+        created every ref, so a consumer could pass over behaviour the port
+        does not have.  R8's rule is the domain's, not a vendor's, so it
+        lives here identically — kinds outside ``INSTATABLE_MAPPING_KINDS``
+        and reported-container disagreements both raise and write nothing.
+        """
+        await asyncio.sleep(0)
+        outcomes: list[MappingOutcome] = []
+        for ref in refs:
+            if ref.kind not in INSTATABLE_MAPPING_KINDS:
+                raise TrackerEnsureConflictError(
+                    "this kind belongs to no field the operation owns",
+                    entry=ref.describe(),
+                )
+            if ref.kind is MappingKind.DOCUMENT:
+                outcomes.append(self._ensure_document(ref))
+                continue
+            identifier = ref.identifier
+            if identifier is None:
+                raise TrackerEnsureConflictError(
+                    "this kind is declared by its own identifier and this ref "
+                    "carries none",
+                    entry=ref.describe(),
+                )
+            if identifier in self.known_identifiers:
+                container = self.mapping_containers.get(identifier)
+                if container is not None and container != ref.scope:
+                    raise TrackerEnsureConflictError(
+                        "the workspace defines this value in another container; "
+                        f"declared {ref.scope!r}, found {container!r}",
+                        entry=ref.describe(),
+                    )
+                outcomes.append(
+                    MappingOutcome(
+                        ref=ref,
+                        action=EnsureAction.ADOPTED,
+                        identifier=identifier,
+                    ),
+                )
+                continue
+            self.known_identifiers.add(identifier)
+            self.mapping_containers[identifier] = ref.scope
+            outcomes.append(
+                MappingOutcome(
+                    ref=ref,
+                    action=EnsureAction.CREATED,
+                    identifier=identifier,
+                ),
+            )
+        return tuple(outcomes)
+
+    def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
+        """The document arm of the ensure contract, held identically here.
+
+        Same three refusals as the adapter, for the same reasons: an id the
+        workspace does not hold, an id whose document carries another
+        title, and a title two documents share.
+        """
+        if ref.identifier is not None:
+            title = self.document_titles.get(ref.identifier)
+            if title is None:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds no document with this identifier",
+                    entry=ref.describe(),
+                )
+            if title != ref.name:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds this document under another title; "
+                    f"declared {ref.name!r}, found {title!r}",
+                    entry=ref.describe(),
+                )
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=ref.identifier,
+            )
+        held = sorted(
+            identifier
+            for identifier, title in self.document_titles.items()
+            if title == ref.name
+        )
+        if len(held) > 1:
+            raise TrackerEnsureConflictError(
+                "the workspace holds several documents under this title",
+                entry=ref.describe(),
+            )
+        if held:
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=held[0],
+            )
+        self._sequence += 1
+        identifier = f"fake-document-{self._sequence:04d}"
+        self.document_titles[identifier] = ref.name
+        self._documents[identifier] = ""
+        self.known_identifiers.add(identifier)
+        return MappingOutcome(
+            ref=ref,
+            action=EnsureAction.CREATED,
+            identifier=identifier,
+        )
+
+
+class FakeDeliveryProbe:
+    """``DeliveryProbe`` over a fixed set of issue keys with an open delivery."""
+
+    def __init__(self, *, delivered: Sequence[str] = ()) -> None:
+        self.delivered: set[str] = set(delivered)
+        self.calls: list[str] = []
+
+    async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
+        self.calls.append(issue_key)
+        return issue_key in self.delivered
+
+
+def make_tracker_issue(
+    issue_key: str,
+    *,
+    priority: IssuePriority = IssuePriority.NONE,
+    state_name: str = "Todo",
+    state_kind: WorkflowStateKind = WorkflowStateKind.UNSTARTED,
+    queue_states: Sequence[QueueState] = (QueueState.APPROVED,),
+    blocked_by: Sequence[str] = (),
+    parent_key: str | None = None,
+    created_at: datetime = FIXTURE_EPOCH,
+    body: str = "fixture body",
+) -> TrackerIssue:
+    """A domain issue for port-consumer fixtures."""
+    return TrackerIssue(
+        issue_key=issue_key,
+        parent_key=parent_key,
+        title=issue_key,
+        body=body,
+        priority=priority,
+        state_name=state_name,
+        state_kind=state_kind,
+        queue_states=frozenset(queue_states),
+        relations=tuple(
+            IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=key)
+            for key in blocked_by
+        ),
+        created_at=created_at,
+        updated_at=created_at,
+        url=f"https://tracker.invalid/issue/{issue_key}",
+    )
+
+
+def approved_by(
+    issue_key: str,
+    actor_key: str,
+    *,
+    occurred_at: datetime = FIXTURE_EPOCH,
+) -> tuple[tuple[str, QueueState], StateTransition]:
+    """One provenance entry for ``FakeTrackerPort(provenance=dict([...]))``."""
+    return (
+        (issue_key, QueueState.APPROVED),
+        StateTransition(
+            issue_key=issue_key,
+            queue_state=QueueState.APPROVED,
+            actor_key=actor_key,
+            occurred_at=occurred_at,
+        ),
+    )
+
+
+class FakeJobQueue:
+    """``JobQueue`` and ``JobRegistry`` over an in-memory submission list.
+
+    One queue, two producers: this double is what proves the dispatcher
+    enqueues onto the same surface HTTP submissions use.
+    """
+
+    def __init__(
+        self,
+        *,
+        states: Mapping[str, JobState] | None = None,
+        events: Sequence[AgentEvent] = (),
+    ) -> None:
+        self.submissions: list[tuple[str, WorkflowRequest]] = []
+        self.records: dict[str, JobRecord] = {}
+        self.attached: list[str] = []
+        self._states: dict[str, JobState] = dict(states or {})
+        self._events: tuple[AgentEvent, ...] = tuple(events)
+        self._sequence: int = 0
+
+    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+        await asyncio.sleep(0)
+        self._sequence += 1
+        job_id = f"job-{self._sequence:04d}"
+        record = JobRecord(
+            job_id=job_id,
+            lane=lane,
+            state=self._states.get(job_id, JobState.QUEUED),
+            queue_position=len(self.submissions) + 1,
+            submitted_at=FIXTURE_EPOCH,
+        )
+        self.submissions.append((lane, request))
+        self.records[job_id] = record
+        return record
+
+    def attach(self, *, job_id: str) -> AsyncGenerator[AgentEvent, None]:
+        """Replay the scripted run, exactly as the real queue's stream does.
+
+        The frames the real queue publishes begin only once the worker has
+        dequeued the job, so a scripted stream that starts empty and then
+        yields is the same shape a consumer sees in production.
+        """
+        self.attached.append(job_id)
+        scripted = self._events
+
+        async def _replay() -> AsyncGenerator[AgentEvent, None]:
+            for event in scripted:
+                await asyncio.sleep(0)
+                yield event
+
+        return _replay()
+
+    async def get(self, *, job_id: str) -> JobRecord | None:
+        await asyncio.sleep(0)
+        return self.records.get(job_id)
+
+    def mark(self, job_id: str, state: JobState) -> None:
+        """Move a submitted job to *state*, as the dispatcher would observe."""
+        self.records[job_id] = self.records[job_id].model_copy(
+            update={"state": state},
+        )

@@ -24,13 +24,16 @@ from kodezart.core.prompt_namespaces import (
 )
 from kodezart.core.prompt_rendering import binding_names, free_binding_names
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateVerdict,
+    OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     WriterShape,
 )
 from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
+    RUN_LOG_RECORD_KEY,
     LifecycleStage,
     OperationConfig,
     PrincipalRole,
@@ -44,6 +47,13 @@ EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
 CUTOVER = REPO_ROOT / "docs" / "cutover_mapping.md"
 SET_DIR = REPO_ROOT / "src" / "kodezart" / "prompts" / "sets" / "claude-opus"
 PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+
+# Names a shipped template references from inside an ``{{#each}}`` frame
+# WITHOUT the ``this.`` root, so the renderer resolves them off the current
+# item while the static reader cannot tell them from a free binding. They are
+# members of a per-call value, never OperationConfig paths, and every helper
+# that reads templates statically has to discount them the same way.
+ITEM_SCOPED_NAMES = frozenset({"criterion", "reasoning"})
 
 # Frequency words a cadence-agnostic template may not contain: scheduling
 # lives exclusively in scheduler configuration.
@@ -104,8 +114,15 @@ def markdown_rows(heading: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
-    """Field-by-field: the eight specced fields plus the four added ones."""
+def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
+    """Field-by-field census: exact equality, never a subset check.
+
+    Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
+    registry) and by ``private_surface`` under KOD-106 R2 (the operator's
+    prose description of what this operation treats as private).  The
+    census stays total and stays ``==``; a census loosened to a containment
+    check stops being one.
+    """
     fields = OperationConfig.model_fields
     assert set(fields) == {
         "operation_name",
@@ -117,9 +134,11 @@ def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
         "workflow_states",
         "repos",
         "documents",
+        "records",
         "knowledge",
         "endpoints",
         "initiatives",
+        "private_surface",
     }
     config = example_config()
     assert isinstance(config.operation_name, str)
@@ -127,7 +146,8 @@ def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
     assert isinstance(config.queue_states, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
     assert config.initiatives[0].target_date == date(2026, 12, 31)
-    assert config.repos[0].check_commands
+    assert config.repos[0].checks
+    assert config.records[RUN_LOG_RECORD_KEY].append_only is True
 
 
 def test_unknown_field_is_rejected(tmp_path: Path) -> None:
@@ -147,7 +167,7 @@ def test_unknown_field_is_rejected(tmp_path: Path) -> None:
 def test_authority_is_read_from_the_role_never_a_name() -> None:
     """The approver is found by role, not by matching a literal."""
     config = example_config()
-    assert config.approver().role is PrincipalRole.APPROVER
+    assert PrincipalRole.APPROVER in config.approver().roles
 
 
 def test_no_principal_name_literal_appears_in_code_or_templates() -> None:
@@ -167,10 +187,17 @@ def test_exactly_one_approver_is_enforced_at_config_load(
 ) -> None:
     """Zero approvers and two approvers each raise the typed error."""
     raw = raw_example()
-    principals = [
-        {"tracker_user": f"user-{i}", "role": "approver"} for i in range(approver_count)
+    principals: list[dict[str, str]] = [
+        {
+            "tracker_user": f"user-{i}",
+            "roles": ["approver", "principal", "assignee"],
+            "handle": f"@user-{i}",
+        }
+        for i in range(approver_count)
     ]
-    principals.append({"tracker_user": "user-x", "role": "principal"})
+    principals.append(
+        {"tracker_user": "user-x", "roles": ["principal"], "handle": "@user-x"},
+    )
     raw["principals"] = principals
     path = _write_toml(tmp_path, raw)
     with pytest.raises(OperationConfigError) as excinfo:
@@ -246,7 +273,9 @@ def test_multiple_distinct_structural_failures_land_in_one_error(
 ) -> None:
     """Collect-all, not fail-on-first."""
     raw = raw_example()
-    raw["principals"] = [{"tracker_user": "u", "role": "principal"}]
+    raw["principals"] = [
+        {"tracker_user": "u", "roles": ["principal"], "handle": "@u"},
+    ]
     del raw["queue_states"][QueueState.TRIAGE.value]
     del raw["workflow_states"][LifecycleStage.DONE.value]
     del raw["documents"][CHECKPOINT_DOCUMENT_KEY]
@@ -359,7 +388,6 @@ def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
     """The declared per-call set is not allowed to drift from the templates."""
     registry = load_registry()
     operation_names = set(bindings_for(example_config()))
-    declared_item_scoped = {"criterion", "reasoning"}
     for key in PromptKey:
         names = binding_names(registry.template_for(key).body)
         unaccounted = (
@@ -367,7 +395,7 @@ def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
             - operation_names
             - PER_CALL_VARIABLE_NAMES
             - SET_FRAGMENT_NAMES
-            - declared_item_scoped
+            - ITEM_SCOPED_NAMES
         )
         unaccounted = {n for n in unaccounted if "." not in n}
         assert unaccounted == set(), f"{key.value} references {unaccounted}"
@@ -391,9 +419,9 @@ def test_pass_templates_resolve_through_the_port_and_render(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_passes_at_fifteen_keys() -> None:
+def test_claude_opus_completeness_passes_at_sixteen_keys() -> None:
     """KOD-63's completeness rule obliges the default set to supply both."""
-    assert len(PromptKey) == 15
+    assert len(PromptKey) == 16
     members = {path.stem for path in SET_DIR.glob("*.md")}
     assert members == {key.value for key in PromptKey}
 
@@ -404,7 +432,7 @@ def test_claude_opus_completeness_passes_at_fifteen_keys() -> None:
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)
-def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
+async def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
     """Zero resolved org-shaped values in repository content."""
     config = AppConfig()
     gate = PatternOutboundContentGate(
@@ -415,10 +443,12 @@ def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
         verdicts=config.deny_pattern_verdicts,
     )
     body = (SET_DIR / f"{key.value}.md").read_text(encoding="utf-8")
-    decision = gate.gate(
+    decision = await gate.gate(
         content=body,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN, decision.categories
 
@@ -460,16 +490,23 @@ def test_all_six_named_dimensions_are_covered() -> None:
 
 
 def template_placeholders() -> set[str]:
-    """Every free name the two pass templates reference, fragments excluded.
+    """Every OPERATION-namespace name the shipped templates reference.
 
     Free: a reference an enclosing ``{{#each}}`` frame supplies is a member of
     the iterated item, not a placeholder resolving to an OperationConfig path.
+
+    Every key, not only the two pass keys: KOD-106's content-audit template
+    is the sole reader of ``private_surface``, and a mapping scoped to the
+    pass templates would call a field unreachable that a shipped template
+    demonstrably reaches.  Per-call variables, set fragments and item-scoped
+    member names are removed because none of them resolves to an
+    OperationConfig path.
     """
     registry = load_registry()
     referenced: set[str] = set()
-    for key in PASS_KEYS:
+    for key in PromptKey:
         referenced |= free_binding_names(registry.template_for(key).body)
-    return referenced - SET_FRAGMENT_NAMES
+    return referenced - SET_FRAGMENT_NAMES - PER_CALL_VARIABLE_NAMES - ITEM_SCOPED_NAMES
 
 
 def test_placeholder_mapping_is_total_in_both_directions() -> None:
@@ -556,8 +593,29 @@ def _to_toml(raw: dict[str, object]) -> str:
         elif isinstance(value, list) and value and isinstance(value[0], dict):
             for item in value:
                 lines.append(f"\n[[{key}]]")
-                lines.extend(f"{k} = {_scalar(v)}" for k, v in item.items())
+                lines.extend(
+                    f"{k} = {_scalar(v)}"
+                    for k, v in item.items()
+                    if not _is_table_array(v)
+                )
+                for sub_key, sub_value in item.items():
+                    if not _is_table_array(sub_value):
+                        continue
+                    sub_items: list[dict[str, object]] = sub_value
+                    for sub_item in sub_items:
+                        lines.append(f"\n[[{key}.{sub_key}]]")
+                        lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_item.items())
     return "\n".join(lines) + "\n"
+
+
+def write_toml(tmp_path: Path, raw: dict[str, object]) -> Path:
+    """Public name for the serialiser, for sibling modules to reuse."""
+    return _write_toml(tmp_path, raw)
+
+
+def _is_table_array(value: object) -> bool:
+    """A nested array-of-tables, such as ``repos[].checks``."""
+    return isinstance(value, list) and bool(value) and isinstance(value[0], dict)
 
 
 def _scalar(value: object) -> str:

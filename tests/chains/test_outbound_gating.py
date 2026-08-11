@@ -15,7 +15,7 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
     WorkflowVisibilityEvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import (
     RedactionCategory,
     RepoVisibility,
@@ -195,9 +195,15 @@ async def test_every_workflow_writer_routes_through_the_gate() -> None:
     seen: list[str] = []
 
     class RecordingGate(PassThroughGate):
-        def gate(self, *, content, visibility, shape):
+        async def gate(self, *, content, visibility, shape, destination, content_class):
             seen.append(content)
-            return super().gate(content=content, visibility=visibility, shape=shape)
+            return await super().gate(
+                content=content,
+                visibility=visibility,
+                shape=shape,
+                destination=destination,
+                content_class=content_class,
+            )
 
     engine = make_engine(
         gate=RecordingGate(),

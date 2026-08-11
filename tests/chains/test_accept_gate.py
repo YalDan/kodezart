@@ -33,7 +33,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowPREvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import (
     CriterionClass,
     CriterionFeasibility,

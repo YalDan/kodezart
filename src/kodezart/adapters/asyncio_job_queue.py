@@ -24,7 +24,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import WorkflowEngine
 from kodezart.domain.errors import QueueFullError
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.requests.agent import WorkflowRequest

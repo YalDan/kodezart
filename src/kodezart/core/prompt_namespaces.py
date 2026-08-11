@@ -45,6 +45,8 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "commit_subjects",
         "changeset_is_empty",
         "changeset_has_commits",
+        "content",
+        "destination",
     }
 )
 
@@ -63,20 +65,62 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
             stage.value: label for stage, label in config.workflow_states.items()
         },
         "teams": dict(config.teams),
-        "documents": {key: entry.id for key, entry in config.documents.items()},
+        # An id alone renders as an opaque token no reader can resolve, so
+        # every document and record reference carries its system beside it.
+        "documents": {
+            key: {"system": entry.system.value, "id": entry.id}
+            for key, entry in config.documents.items()
+        },
+        "records": {
+            key: {
+                "system": entry.system.value,
+                "id": entry.id,
+                "append_only": entry.append_only,
+            }
+            for key, entry in config.records.items()
+        },
         "knowledge": dict(config.knowledge),
+        "private_surface": config.private_surface,
         "endpoints": dict(config.endpoints),
+        # ``target_date`` is absent on a real initiative more often than not.
+        # ``{{#if}}`` treats ``None`` as absent, so the two renderings are
+        # selected by two mutually exclusive bindings rather than by an
+        # else-branch the renderer does not have: exactly one of the pair is
+        # ever non-``None``.
         "initiatives": [
-            {"id": item.id, "target_date": item.target_date.isoformat()}
+            {
+                "id": item.id,
+                "target_date": (
+                    None if item.target_date is None else item.target_date.isoformat()
+                ),
+                "target_date_absent": True if item.target_date is None else None,
+            }
             for item in config.initiatives
         ],
+        # ``handle`` is the identifier a MENTION is recognised by and
+        # ``tracker_user`` the one authority is checked against. A sweep
+        # given only the second has nothing to match on.
         "principals": [
-            {"tracker_user": p.tracker_user, "role": p.role.value}
+            {
+                "tracker_user": p.tracker_user,
+                "roles": ", ".join(sorted(role.value for role in p.roles)),
+                "handle": p.handle,
+            }
             for p in config.principals
         ],
         "agent_identities": list(config.agent_identities),
         "repos": [
-            {"url": repo.url, "check_commands": repo.check_commands}
+            {
+                "url": repo.url,
+                "checks": [
+                    {
+                        "name": step.name,
+                        "command": step.command,
+                        "depends_on": step.depends_on,
+                    }
+                    for step in repo.checks
+                ],
+            }
             for repo in config.repos
         ],
     }

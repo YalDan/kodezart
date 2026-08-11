@@ -29,10 +29,10 @@ from kodezart.types.domain.agent import (
     WorkflowScopeBaseEvent,
     WorkflowTicketEvent,
 )
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
 from kodezart.types.domain.consolidation import (
@@ -1948,8 +1948,8 @@ async def test_workflow_persists_artifacts_after_criteria() -> None:
 #: the point the ralph branch is cut from when a persister is configured, which
 #: is why a trunk literal there deletes a stacked lane's inherited work.
 ARTIFACT_STACKED_BASE = BaseSpec(
-    base_ref="kodezart/blocker-a-11111111",
-    role=BaseRefRole.deliverable,
+    base_branch="kodezart/blocker-a-11111111",
+    base_role=WorkRefRole.DELIVERABLE,
     inputs=(
         BaseInput(
             blocker_issue_id="KOD-A",
@@ -1990,7 +1990,7 @@ async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
         git=FakeGitService(
             remote_branch_shas={
                 "main": "b" * 40,
-                ARTIFACT_STACKED_BASE.base_ref: "c" * 40,
+                ARTIFACT_STACKED_BASE.base_branch: "c" * 40,
             },
         ),
     )
@@ -2010,7 +2010,7 @@ async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
 
     assert len(persister.persist_calls) == 1
     *_, base_branch = persister.persist_calls[0]
-    assert base_branch == spec.base_ref
+    assert base_branch == spec.base_branch
 
 
 async def test_workflow_cleans_artifacts_before_pr() -> None:
@@ -2999,7 +2999,7 @@ class _SequentialQualityGate:
                 "repo_url": repo_url,
                 "feature_branch": feature_branch,
                 "ralph_branch": ralph_branch,
-                "base_branch": base_spec.base_ref,
+                "base_branch": base_spec.base_branch,
                 "permission_mode": permission_mode,
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
@@ -3301,8 +3301,8 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=BaseSpec(
-                base_ref=blocker_ref,
-                role=BaseRefRole.deliverable,
+                base_branch=blocker_ref,
+                base_role=WorkRefRole.DELIVERABLE,
                 inputs=(
                     BaseInput(
                         blocker_issue_id="KOD-A",
@@ -3335,8 +3335,8 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
     there is no verdict anywhere about a tree that has moved.
     """
     recorded = BaseSpec(
-        base_ref="kodezart/blocker-a-11111111",
-        role=BaseRefRole.deliverable,
+        base_branch="kodezart/blocker-a-11111111",
+        base_role=WorkRefRole.DELIVERABLE,
         inputs=(
             BaseInput(
                 blocker_issue_id="KOD-A",
@@ -3388,7 +3388,7 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         ):
             events.append(event)
 
-    assert excinfo.value.recorded_ref == recorded.base_ref
+    assert excinfo.value.recorded_ref == recorded.base_branch
     assert events == []
     assert [e for e in events if isinstance(e, WorkflowScopeBaseEvent)] == []
     assert [c for c in git.calls if c[0] == "diff_summary"] == []

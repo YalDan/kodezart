@@ -55,11 +55,11 @@ def test_pass_templates_resolve_by_key_under_default_configuration(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_check_passes_at_fifteen_keys() -> None:
+def test_claude_opus_completeness_check_passes_at_sixteen_keys() -> None:
     """Loading succeeds only because the default set supplies every key."""
     registry = default_registry()
     table = registry.resolution_table()
-    assert len(table) == 15
+    assert len(table) == 16
     assert set(table) == set(PromptKey)
 
 
@@ -240,17 +240,23 @@ def test_every_writer_in_the_corrected_inventory_names_the_gate() -> None:
     ).read_text(encoding="utf-8")
 
     for writer in (
-        'writer_name="branch_name"',
-        'writer_name="artifact_ticket_json"',
-        'writer_name="artifact_criteria_json"',
-        'writer_name="pr_title"',
-        'writer_name="pr_body"',
-        'writer_name="pr_comment"',
+        "destination=OutboundDestination.BRANCH_NAME",
+        "destination=OutboundDestination.ARTIFACT_TICKET_JSON",
+        "destination=OutboundDestination.ARTIFACT_CRITERIA_JSON",
+        "destination=OutboundDestination.PR_TITLE",
+        "destination=OutboundDestination.PR_BODY",
+        "destination=OutboundDestination.PR_COMMENT",
     ):
         assert writer in workflow, f"{writer} does not route through the gate"
 
-    assert '"commit_message"' in persister
-    assert '"commit_message_divergence_replay"' in persister
+    assert "OutboundDestination.COMMIT_MESSAGE," in persister
+    assert "OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY," in persister
+
+    # KOD-106 deliverable 2: the free-form writer_name strings are GONE, so
+    # the event vocabulary and the error's writer field are typed rather
+    # than prose. A bare string at a gate call site is the defect.
+    assert "writer_name=" not in workflow
+    assert "writer_name=" not in persister
 
 
 # ---------------------------------------------------------------------------

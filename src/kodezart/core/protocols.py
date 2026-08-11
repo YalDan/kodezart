@@ -5,34 +5,39 @@ from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
-from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
 from kodezart.types.domain.criteria import ValidatedCriterion
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateDecision,
+    OutboundDestination,
     RepoVisibility,
-    ScanHit,
+    ScannerRouting,
+    ScanResult,
     WriterShape,
 )
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.tracker import (
+    ClaimResult,
+    IssuePriority,
+    IssueQuery,
+    MappingOutcome,
+    MappingRef,
+    StateTransition,
+    TrackerAsset,
+    TrackerComment,
+    TrackerIssue,
+)
 from kodezart.types.requests.agent import WorkflowRequest
-
-
-@runtime_checkable
-class LogEmitter(Protocol):
-    """Structured logging port — structlog.stdlib.BoundLogger satisfies this."""
-
-    async def ainfo(self, event: str, **kwargs: object) -> None: ...
-    async def adebug(self, event: str, **kwargs: object) -> None: ...
-    async def awarning(self, event: str, **kwargs: object) -> None: ...
-    async def aerror(self, event: str, **kwargs: object) -> None: ...
 
 
 @runtime_checkable
@@ -331,6 +336,239 @@ class CIMonitor(Protocol):
 
 
 @runtime_checkable
+class DeliveryProbe(Protocol):
+    """Answers whether an open pull request already delivers an issue.
+
+    The forge side of the delivered-in-review / crashed discrimination:
+    workflow state alone conflates the two, and the open pull request is
+    the mechanical discriminator.  Matching a pull request to an issue is
+    adapter-owned — no consumer parses a branch name or a body.
+    """
+
+    async def open_delivery_exists(
+        self,
+        *,
+        repo_url: str,
+        issue_key: str,
+    ) -> bool:
+        """True iff an OPEN pull request on *repo_url* delivers *issue_key*."""
+        ...
+
+
+@runtime_checkable
+class McpToolCaller(Protocol):
+    """Speaks MCP to one server: a tool name plus arguments, in, result out.
+
+    The transport seam under every MCP-backed adapter.  No model is in
+    this loop — the caller names the tool, so the deterministic path stays
+    deterministic.  An in-process fake server satisfies this protocol,
+    which is what keeps CI free of live-workspace access.
+    """
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Invoke the named tool and return its structured result."""
+        ...
+
+
+@runtime_checkable
+class ManagedMcpToolCaller(McpToolCaller, Protocol):
+    """An ``McpToolCaller`` whose connection has a lifetime the host owns.
+
+    The composition root opens one at boot and closes it at shutdown, so a
+    session handshake is not re-run per tool call.  Separate from
+    ``McpToolCaller`` because a consumer never opens or closes anything —
+    it names a tool and reads a result.
+    """
+
+    async def open(self) -> None:
+        """Establish the session. Opening an open caller is an error."""
+        ...
+
+    async def close(self) -> None:
+        """Close the session. Closing a closed caller is a no-op."""
+        ...
+
+
+@runtime_checkable
+class TrackerPort(Protocol):
+    """The whole capability surface the passes and the runner need.
+
+    Vendor-neutral by construction: every parameter and every return type
+    is domain vocabulary.  Substitutability is total — an adapter
+    implements ALL of this or it is not an adapter.  There are no
+    capability flags and no feature detection, so no consumer ever
+    branches on which backend is configured.
+    """
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        """Issues matching *query*, in backend order."""
+        ...
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        """The full issue — body, state, relations, parent, assignee."""
+        ...
+
+    async def create_issue(
+        self,
+        *,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        """Create an issue on *team_key* and return it as stored."""
+        ...
+
+    async def update_issue(
+        self,
+        *,
+        issue_key: str,
+        title: str | None = None,
+        body: str | None = None,
+    ) -> TrackerIssue:
+        """Update the given fields; ``None`` leaves a field untouched."""
+        ...
+
+    async def set_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        stage: LifecycleStage,
+    ) -> TrackerIssue:
+        """Move the issue to the state the configuration binds *stage* to."""
+        ...
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        """Set the semantic queue state, replacing any other member."""
+        ...
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        """Post a comment and return it as stored."""
+        ...
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
+        ...
+
+    async def claim_issue(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult:
+        """Attempt an exactly-once claim.
+
+        Concurrent claimants on one issue produce exactly one
+        ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
+        value, never an exception.
+        """
+        ...
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        """Release a claim held by *holder*. A claim it does not hold is a no-op."""
+        ...
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        """The unexpired claim on the issue, or ``None`` when unclaimed."""
+        ...
+
+    async def queue_state_provenance(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> StateTransition | None:
+        """Who most recently set *state*, or ``None`` if it never was set."""
+        ...
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        ...
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
+        ...
+
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
+        """Record *ref* against its issue; ``work_refs`` is the read.
+
+        At most one ``DELIVERABLE`` ref exists per issue: a second raises
+        ``DuplicateWorkRefError`` and is never a silent replacement.
+        Recording the same ref twice is idempotent.
+        """
+        ...
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        """Every ref recorded against the issue, oldest first.
+
+        This is the read D2 requires: *which refs deliver issue X, in which
+        roles, at which shas* is answerable through the port, so no code
+        anywhere derives an issue identity, a role or a parent from a
+        branch name.
+        """
+        ...
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        """Record the base *issue_key*'s lane was dispatched on.
+
+        KOD-67 R3: the spec is written THROUGH the port, on the dependent
+        issue.  Staleness compares a recorded spec against the one the
+        blockers imply now, and with nothing recorded there is nothing to
+        compare — the arithmetic would only ever compare a value with
+        itself.  Recording the same spec twice is idempotent; recording a
+        different one supersedes, because a lane dispatched again was
+        dispatched on the base of that dispatch.
+        """
+        ...
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        """The base most recently recorded for *issue_key*, or ``None``.
+
+        ``None`` means no dispatch ever recorded one — a first dispatch,
+        not a stale base.  The two are different states and no caller may
+        conflate them.
+        """
+        ...
+
+    async def resolve_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingRef]:
+        """The subset of *refs* that does NOT resolve in the workspace.
+
+        Empty means every configured mapping exists.  The adapter resolves;
+        deciding what an unresolvable entry means is the caller's.
+        """
+        ...
+
+    async def ensure_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingOutcome]:
+        """Instate every ref the operation OWNS, and say what that did.
+
+        Creates only.  A value already present is adopted unchanged and
+        never renamed, recoloured or repurposed; an ensure that would alter
+        an existing definition raises ``TrackerEnsureConflictError`` and
+        performs no write.  One outcome per ref, in the order given.
+        """
+        ...
+
+
+@runtime_checkable
 class ArtifactPersister(Protocol):
     """Persists and cleans named files under .kodezart/ on a branch."""
 
@@ -577,10 +815,32 @@ class RepoVisibilityResolver(Protocol):
 
 @runtime_checkable
 class ContentScanner(Protocol):
-    """Finds deny-pattern matches in an outbound payload."""
+    """Finds outbound-content findings in one payload.
 
-    def scan(self, content: str) -> Sequence[ScanHit]:
-        """Every match, with its category and span."""
+    ``async`` because a judgment scanner cannot answer behind a ``def``; a
+    scanner that needs no I/O conforms with an ``async def`` awaiting
+    nothing, which is the honest shape rather than a concession.
+
+    ``destination`` is an input because the same string can be unremarkable
+    on one surface and a leak on another — a verdict that depends on where
+    the payload is going cannot be computed from the payload alone.
+
+    Returns a :class:`ScanResult`: hits or a typed failure, never an
+    exception crossing the port and never ``None``.
+    """
+
+    @property
+    def routing(self) -> ScannerRouting:
+        """When this scanner must be consulted."""
+        ...
+
+    async def scan(
+        self,
+        *,
+        content: str,
+        destination: OutboundDestination,
+    ) -> ScanResult:
+        """Every finding, or the typed reason there is no answer."""
         ...
 
 
@@ -588,12 +848,20 @@ class ContentScanner(Protocol):
 class OutboundContentGate(Protocol):
     """Assigns an explicit, observable verdict to every outbound payload."""
 
-    def gate(
+    async def gate(
         self,
         *,
         content: str,
         visibility: RepoVisibility,
         shape: WriterShape,
+        destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
-        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted."""
+        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted.
+
+        ``content_class`` is declared by the caller and has no default: the
+        writer is the only party that knows where its bytes came from, and a
+        default would let a payload take the cheap path without anyone
+        saying so.
+        """
         ...

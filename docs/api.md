@@ -22,7 +22,7 @@ Health check endpoint.
   "timestamp": "2026-01-01T00:00:00Z",
   "data": {
     "healthy": true,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "service": "kodezart"
   },
   "error": null
@@ -90,7 +90,69 @@ curl -N http://localhost:8000/api/v1/agent/workflow \
   -d '{"prompt": "Add input validation", "repoUrl": "owner/repo", "baseBranch": "main"}'
 ```
 
+## POST /api/v1/agent/fire
+
+Queue a workflow run and return immediately. Same request body as
+`POST /api/v1/agent/workflow` (`WorkflowRequest`); no stream is opened.
+
+### Response — `202 Accepted` (`FireAcceptedResponse`)
+
+```json
+{
+  "jobId": "job_01H...",
+  "lane": "default",
+  "state": "queued",
+  "queuePosition": 0,
+  "submittedAt": "2026-01-01T00:00:00Z",
+  "statusUrl": "/api/v1/jobs/job_01H...",
+  "streamUrl": "/api/v1/jobs/job_01H.../stream"
+}
+```
+
+`queuePosition` is `null` once the run has left the queue. A lane at
+`KODEZART_QUEUE_MAX_DEPTH_PER_LANE` rejects the submission with `429`.
+
+### Example
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agent/fire \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Add input validation", "repoUrl": "owner/repo"}'
+```
+
+## GET /api/v1/jobs/{jobId}
+
+Registry facts for a queued or running job, plus the checkpointed run state.
+`404` with a `BaseResponse` error body when the job id is unknown or its
+record has been released (`KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS`).
+
+### Example
+
+```bash
+curl http://localhost:8000/api/v1/jobs/job_01H...
+```
+
+## GET /api/v1/jobs/{jobId}/stream
+
+Attach to a job's event stream. Replays the job's bounded event buffer
+(`KODEZART_QUEUE_EVENT_BUFFER_CAPACITY`) and then goes live, in the same SSE
+format as `/agent/query` and `/agent/workflow`. `404` when the job id is
+unknown. A job whose buffer has been released
+(`KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS`) is marked `truncated` on its
+record and replays nothing.
+
+### Example
+
+```bash
+curl -N http://localhost:8000/api/v1/jobs/job_01H.../stream
+```
+
 ## SSE Event Types
+
+Every frame type the stream can carry is in one of the tables below.
+A test compares them against `types/domain/agent.py` in both directions, so an
+event added to the code with no row fails the suite, and each heading's count
+is checked against the rows beneath it rather than being trusted.
 
 All responses from `/query` and `/workflow` are Server-Sent Event streams.
 Each frame follows the format:
@@ -146,7 +208,7 @@ field or a stale heading count reddens that test.
 | `workflow_ticket_draft`        | `iteration`, `draft`                            |
 | `workflow_ticket_review`       | `iteration`, `approved`, `feedback`, `suggestions` |
 | `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`            |
-| `workflow_scope_base`          | `baseRef`, `role`, `inputs`                     |
+| `workflow_scope_base`          | `baseBranch`, `baseRole`, `inputs`              |
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
 | `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets` |

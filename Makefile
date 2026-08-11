@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := check
-.PHONY: install format lint lint-fix type-check test check clean verify-no-origin-literal
+.PHONY: install format lint lint-fix type-check test check clean \
+	verify-no-origin-literal
 
 install:
 	uv sync --all-groups
