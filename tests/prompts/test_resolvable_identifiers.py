@@ -104,7 +104,8 @@ def test_every_rendered_id_carries_its_configured_name(key: PromptKey) -> None:
         for name, entry in config.records.items()
     ]
     addressed += [
-        (f"knowledge.{name}", value, value) for name, value in config.knowledge.items()
+        (f"knowledge.{name}", value, value)
+        for name, value in config.knowledge.items()
     ]
 
     for path, identifier, display in addressed:
