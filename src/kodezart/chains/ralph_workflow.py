@@ -353,6 +353,11 @@ class RalphWorkflowEngine:
 
         if self._artifact_persister is not None:
             graph.add_node(
+                "persist_ticket",
+                self._persist_ticket_node,
+                retry_policy=self._retry,
+            )
+            graph.add_node(
                 "persist_artifacts",
                 self._persist_artifacts_node,
                 retry_policy=self._retry,
@@ -361,7 +366,11 @@ class RalphWorkflowEngine:
         graph.add_edge(START, "resolve_visibility")
         graph.add_edge("resolve_visibility", "generate_branch")
         graph.add_edge("generate_branch", "generate_ticket")
-        graph.add_edge("generate_ticket", "generate_criteria")
+        if self._artifact_persister is not None:
+            graph.add_edge("generate_ticket", "persist_ticket")
+            graph.add_edge("persist_ticket", "generate_criteria")
+        else:
+            graph.add_edge("generate_ticket", "generate_criteria")
         graph.add_edge("generate_criteria", "validate_criteria")
         proceed = (
             "persist_artifacts"
@@ -827,12 +836,67 @@ class RalphWorkflowEngine:
             "trajectory": last_iteration_event.trajectory,
         }
 
+    async def _persist_ticket_node(
+        self,
+        state: WorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Persist the finished ticket the moment it exists, before criteria.
+
+        The drafter's output — draft plus its review rounds — is the most
+        expensive artefact the pipeline produces, and it lived only in
+        graph state until a node downstream of criteria generation wrote
+        it.  A transient failure at criteria generation therefore
+        discarded a finished, reviewed ticket and forced a re-run to
+        redraft from scratch.  Writing it here bounds that loss to the
+        node that actually failed.
+
+        The criteria are NOT written here — they do not exist yet, which
+        is the whole reason the combined write sat downstream.
+        """
+        ctx = ExecutionContext.from_configurable(config)
+
+        if self._artifact_persister is None:
+            msg = "persist_ticket node requires artifact_persister"
+            raise RuntimeError(msg)
+
+        ticket: TicketDraftOutput = current_ticket(state)
+
+        await self._artifact_persister.persist(
+            repo_path=ctx.repo_path,
+            repo_url=ctx.repo_url,
+            branch=state["ralph_branch"],
+            base_branch=ctx.base_branch,
+            artifacts={
+                "ticket.json": await self._gated(
+                    content=ticket.model_dump_json(indent=2, by_alias=True),
+                    visibility=state["repo_visibility"],
+                    shape=WriterShape.PROSE,
+                    writer_name="artifact_ticket_json",
+                ),
+            },
+            cache_key=ctx.cache_key,
+        )
+        await self._log.ainfo(
+            "ticket_persisted",
+            branch=state["ralph_branch"],
+            title=ticket.title,
+        )
+        return {}
+
     async def _persist_artifacts_node(
         self,
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Persist ticket and criteria to .kodezart/ on the ralph branch."""
+        """Persist ticket and criteria to .kodezart/ on the ralph branch.
+
+        Writes the ticket again rather than only the criteria: a
+        remediation round replaces the run's working ticket, and this is
+        the write that reaches the branch after that happens.  A branch
+        carrying the original ticket while the loop implements the
+        remediation one would be a document that contradicts the work.
+        """
         ctx = ExecutionContext.from_configurable(config)
 
         if self._artifact_persister is None:
