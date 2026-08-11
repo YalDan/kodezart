@@ -306,12 +306,19 @@ configuration — prompt templates carry no frequency words. Per-fire parameters
 are request fields. Nothing org-shaped hides in code, prompts, or per-request
 defaults.
 
-Authority binds to a **role**, never to a name: exactly one principal carries
-the approver role, validated at load. Queue states are an open mapping — the
-members code addresses by name are required present, and any additional member
-is a pure configuration entry addressable from templates with no type or
-consumer change. Secrets are excluded structurally: the model is
-`extra="forbid"`, so a stray token key fails the load.
+Authority binds to a **role**, never to a name: when principals are declared,
+exactly one carries the approver role, validated at load. Queue states are an
+open mapping — when the mapping is non-empty, the members code addresses by
+name are required present, and any additional member is a pure configuration
+entry addressable from templates with no type or consumer change. Secrets are
+excluded structurally: the model is `extra="forbid"`, so a stray token key
+fails the load.
+
+Only `operation_name` and `workspace` are required. Every collection defaults
+empty and an empty board boots; a consumer that needs an absent member — a
+role, a queue key, the checkpoint document — refuses at the point of need with
+a typed error naming what is missing and what stops working, never as a boot
+failure. Structural validation applies to what IS present.
 
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the
@@ -363,10 +370,14 @@ one principal routinely holds two:
 - `assignee` — prepared fires, triage filings and decision flags are assigned
   here.
 
-Two counts are validated at load and each names the field it failed on:
-**exactly one** principal carries `approver`, and **exactly one** carries
-`assignee`. Zero or two of either is a load failure, not a warning. A principal
-missing `principal` is also rejected, by index.
+Two counts are validated over the principals you declare, and each names the
+field it failed on: **exactly one** principal carries `approver`, and
+**at most one** carries `assignee`. Zero or two approvers, or two assignees, is a load
+failure, not a warning. An absent `assignee` loads — a pass that assigns
+prepared work refuses to run naming the missing role, at the point of need
+rather than at boot. A principal missing `principal` is rejected, by index. An
+empty `[[principals]]` list also loads: nothing can be dispatched from it, and
+the dispatcher's refusal names the missing `approver` when it tries.
 
 For each principal, collect up to three identifiers, because they are three
 different things:

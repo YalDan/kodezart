@@ -232,20 +232,30 @@ def test_the_guide_names_every_identifier_a_principal_carries() -> None:
         assert field in guide, field
 
 
-def test_the_guide_states_the_two_exactly_one_invariants_the_loader_enforces() -> None:
+def test_the_guide_states_the_count_invariants_the_loader_enforces() -> None:
     """A count the loader rejects on must be a count the guide asked for.
 
-    Both arms are read out of the validator, so a third `exactly one` rule
-    added to the model fails here until the guide carries it.
+    Both count forms are read out of the validator, so a count rule added
+    to or reshaped in the model fails here until the guide carries it.
+    The at-most-one arm exists because assignee absence is legal at load
+    and refused at the point of need — a guide stating `exactly one` for
+    it would send an operator inventing a principal the operation does
+    not have.
     """
     invariants = _structural_invariants()
-    required = re.findall(
+    exactly_one = re.findall(
         r"exactly one (\w+) principal is required",
+        invariants,
+    )
+    at_most_one = re.findall(
+        r"at most one (\w+) principal may be declared",
         invariants,
     )
     guide = _guide().lower()
 
-    assert sorted(required) == ["APPROVER", "ASSIGNEE"], required
-    for role in required:
+    assert exactly_one == ["APPROVER"], exactly_one
+    assert at_most_one == ["ASSIGNEE"], at_most_one
+    for role in exactly_one + at_most_one:
         assert f"`{role.lower()}`" in guide, role
     assert "exactly one" in guide
+    assert "at most one" in guide

@@ -6,9 +6,14 @@
 # configuration, and per-fire parameters are request fields. Secrets NEVER
 # appear here: the model is extra="forbid", so a stray token key fails at load.
 #
-# Every field below is required. Validation is structural and collects every
+# This is the COMPLETE example: every field the model carries, annotated.
+# Only operation_name and workspace are required — every collection defaults
+# empty and an empty board boots (docs/operation.minimal.toml is that floor).
+# Validation is structural, applies to what IS present, and collects every
 # failure into one typed error; existence resolution against the live
-# workspace belongs to the tracker adapter, not to config load.
+# workspace belongs to the tracker adapter, not to config load. A consumer
+# needing a member an empty collection cannot supply refuses at the point of
+# need, naming the missing role or key and what stops working.
 
 # Human-readable name of the operation these settings describe.
 operation_name = "example-operation"
@@ -29,8 +34,10 @@ agent_identities = ["example-agent"]
 private_surface = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
 
 # Authority is enforced by ROLE, never by name in code or templates.
-# EXACTLY ONE principal carries `approver` and EXACTLY ONE carries `assignee`;
-# every principal carries `principal`. All three are validated at load.
+# When principals are declared, EXACTLY ONE carries `approver` and AT MOST
+# ONE carries `assignee`; every principal carries `principal`. All three are
+# validated at load over what is present. An absent `assignee` loads — the
+# pass that assigns prepared work refuses at the point of need instead.
 #
 # Three roles, because the passes route three things differently:
 #   approver  — holds the approval flip

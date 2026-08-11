@@ -16,6 +16,24 @@ CHECKPOINT_DOCUMENT_KEY = "checkpoint"
 RUN_LOG_RECORD_KEY = "run_log"
 
 
+class OperationMemberAbsentError(Exception):
+    """Raised at the point of need when an absent config member is required.
+
+    Absence is legal at load — an empty board boots — so nothing about an
+    empty collection fails until a consumer actually needs a member of it.
+    The refusal then happens at the call site that needed the member, and
+    it carries two facts: ``missing`` names the role or key the config does
+    not declare, and ``stops`` names what cannot work without it.  A boot
+    error would blame the config for a decision it legitimately made; a
+    blank render or an exhausted iterator would report nothing at all.
+    """
+
+    def __init__(self, *, missing: str, stops: str) -> None:
+        super().__init__(f"operation config declares no {missing}; {stops}")
+        self.missing: str = missing
+        self.stops: str = stops
+
+
 class DocumentSystem(StrEnum):
     """The system a document or record id belongs to.
 
@@ -268,21 +286,32 @@ def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
 
 
 class OperationConfig(OperationModel):
-    """The whole operation configuration, validated structurally at load."""
+    """The whole operation configuration, validated structurally at load.
+
+    Two scalars are required — a config that names no operation and no
+    workspace describes nothing.  Every collection defaults empty, because
+    each one's absence is a real operation: an empty board boots.  What an
+    empty collection costs is paid at the point of need — the consumer that
+    requires a member refuses with :class:`OperationMemberAbsentError`
+    naming the missing role or key and what stops working — never at load.
+    Structural validation applies to what IS present: a populated registry
+    missing the member code addresses by name is a typo and fails loudly,
+    while an empty one is a decision and loads.
+    """
 
     operation_name: str
     workspace: str
-    principals: list[Principal]
-    agent_identities: list[str]
-    teams: dict[str, str]
-    queue_states: dict[str, str]
-    workflow_states: dict[LifecycleStage, str]
-    repos: list[RepoEntry]
-    documents: dict[str, DocumentEntry]
-    records: dict[str, RecordDestination]
-    knowledge: dict[str, str]
-    endpoints: dict[str, str]
-    initiatives: list[Initiative]
+    principals: list[Principal] = Field(default_factory=list)
+    agent_identities: list[str] = Field(default_factory=list)
+    teams: dict[str, str] = Field(default_factory=dict)
+    queue_states: dict[str, str] = Field(default_factory=dict)
+    workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
+    repos: list[RepoEntry] = Field(default_factory=list)
+    documents: dict[str, DocumentEntry] = Field(default_factory=dict)
+    records: dict[str, RecordDestination] = Field(default_factory=dict)
+    knowledge: dict[str, str] = Field(default_factory=dict)
+    endpoints: dict[str, str] = Field(default_factory=dict)
+    initiatives: list[Initiative] = Field(default_factory=list)
     # Prose describing the CLASS of thing this operation treats as private,
     # never a list of instances. Prose generalizes to instances the operator
     # never enumerated, and it lives operator-side, which together is the
@@ -296,41 +325,50 @@ class OperationConfig(OperationModel):
         """Collect EVERY structural failure into one error, never the first."""
         failures: list[str] = []
 
-        approvers = [p for p in self.principals if PrincipalRole.APPROVER in p.roles]
-        if len(approvers) != 1:
-            failures.append(
-                f"exactly one APPROVER principal is required, found {len(approvers)}",
-            )
-        assignees = [p for p in self.principals if PrincipalRole.ASSIGNEE in p.roles]
-        if len(assignees) != 1:
-            failures.append(
-                f"exactly one ASSIGNEE principal is required, found {len(assignees)}",
-            )
+        if self.principals:
+            approvers = [
+                p for p in self.principals if PrincipalRole.APPROVER in p.roles
+            ]
+            if len(approvers) != 1:
+                failures.append(
+                    f"exactly one APPROVER principal is required, "
+                    f"found {len(approvers)}",
+                )
+            assignees = [
+                p for p in self.principals if PrincipalRole.ASSIGNEE in p.roles
+            ]
+            if len(assignees) > 1:
+                failures.append(
+                    f"at most one ASSIGNEE principal may be declared, "
+                    f"found {len(assignees)}",
+                )
         failures.extend(
             f"principals[{index}] must carry the PRINCIPAL role"
             for index, principal in enumerate(self.principals)
             if PrincipalRole.PRINCIPAL not in principal.roles
         )
 
-        for member in QueueState:
-            if member.value not in self.queue_states:
-                failures.append(
-                    f"queue_states is missing required key {member.value!r}"
-                )
+        if self.queue_states:
+            for member in QueueState:
+                if member.value not in self.queue_states:
+                    failures.append(
+                        f"queue_states is missing required key {member.value!r}"
+                    )
 
-        for stage in LifecycleStage:
-            if stage not in self.workflow_states:
-                failures.append(
-                    f"workflow_states is missing required stage {stage.value!r}",
-                )
+        if self.workflow_states:
+            for stage in LifecycleStage:
+                if stage not in self.workflow_states:
+                    failures.append(
+                        f"workflow_states is missing required stage {stage.value!r}",
+                    )
 
-        if CHECKPOINT_DOCUMENT_KEY not in self.documents:
+        if self.documents and CHECKPOINT_DOCUMENT_KEY not in self.documents:
             failures.append(
                 f"documents is missing the stable checkpoint key "
                 f"{CHECKPOINT_DOCUMENT_KEY!r}",
             )
 
-        if RUN_LOG_RECORD_KEY not in self.records:
+        if self.records and RUN_LOG_RECORD_KEY not in self.records:
             failures.append(
                 f"records is missing the stable run-log key {RUN_LOG_RECORD_KEY!r}",
             )
@@ -375,8 +413,86 @@ class OperationConfig(OperationModel):
         return self
 
     def approver(self) -> Principal:
-        """The single principal holding APPROVER authority."""
-        return next(p for p in self.principals if PrincipalRole.APPROVER in p.roles)
+        """The single principal holding APPROVER authority.
+
+        Refuses when no principal carries the role — an empty board loads,
+        and the cost lands here, on the consumer that needs the approval
+        act attributed.
+        """
+        for principal in self.principals:
+            if PrincipalRole.APPROVER in principal.roles:
+                return principal
+        raise OperationMemberAbsentError(
+            missing="principal carrying the APPROVER role",
+            stops=(
+                "approval provenance cannot be attributed, "
+                "so nothing can be dispatched"
+            ),
+        )
+
+    def assignee(self) -> Principal:
+        """The single principal prepared work is assigned to.
+
+        Refuses when no principal carries the role.  Its reader is the
+        reinstated pass path (KOD-60): a fire-prep pass that assigns
+        prepared fires, triage filings and decision flags calls this at
+        the point of assignment and refuses to run on the error, rather
+        than failing boot for an operation that never prepares fires.
+        Defined here because this model file has exactly one writer in the
+        lane (KOD-56 R3) and it is not the pass reinstatement.
+        """
+        for principal in self.principals:
+            if PrincipalRole.ASSIGNEE in principal.roles:
+                return principal
+        raise OperationMemberAbsentError(
+            missing="principal carrying the ASSIGNEE role",
+            stops=(
+                "prepared fires, triage filings and decision flags have "
+                "no target, so a pass that assigns them refuses to run"
+            ),
+        )
+
+    def checkpoint_document(self) -> DocumentEntry:
+        """The read-side document the scan-window marker lives in.
+
+        Refuses when the registry declares no checkpoint entry.  Its
+        reader is the reinstated pass path (KOD-60): a scheduled pass
+        establishes its scan window from this document and refuses to run
+        without one.  Defined here for the same one-writer reason as
+        :meth:`assignee`.
+        """
+        entry = self.documents.get(CHECKPOINT_DOCUMENT_KEY)
+        if entry is None:
+            raise OperationMemberAbsentError(
+                missing=(
+                    f"documents entry under the {CHECKPOINT_DOCUMENT_KEY!r} key"
+                ),
+                stops=(
+                    "the scan-window marker cannot be read, so a scheduled "
+                    "pass cannot establish its window and refuses to run"
+                ),
+            )
+        return entry
+
+    def run_log_record(self) -> RecordDestination:
+        """The write-side destination a pass records its run-log row to.
+
+        Refuses when the registry declares no run-log entry.  Its reader
+        is the reinstated pass path (KOD-60): a pass that records a run-log
+        row calls this at the point of writing and refuses without a
+        destination.  Defined here for the same one-writer reason as
+        :meth:`assignee`.
+        """
+        entry = self.records.get(RUN_LOG_RECORD_KEY)
+        if entry is None:
+            raise OperationMemberAbsentError(
+                missing=f"records entry under the {RUN_LOG_RECORD_KEY!r} key",
+                stops=(
+                    "a pass has no destination for its run-log row and "
+                    "refuses to record one"
+                ),
+            )
+        return entry
 
 
 #: Which class every declared field belongs to, and therefore what boot does
