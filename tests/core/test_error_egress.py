@@ -28,6 +28,7 @@ _FAKE_PAT_BODY: Final[str] = ("B" * 22) + "_" + ("C" * 59)
 _FAKE_URL: Final[str] = (
     f"https://x-access-token:ghp_{_FAKE_GHP_BODY}@github.com/o/r.git"
 )
+_FAKE_NOTION_BODY: Final[str] = "D" * 44
 
 
 def test_redact_credentials_redacts_embedded_url_token() -> None:
@@ -60,12 +61,26 @@ def test_redact_credentials_redacts_fine_grained_pat() -> None:
     assert _REDACTION_SENTINEL in redacted
 
 
+@pytest.mark.parametrize("prefix", ["ntn_", "secret_"])
+def test_redact_credentials_redacts_notion_tokens(prefix: str) -> None:
+    """Each published Notion prefix is scrubbed; surrounding text survives."""
+    src = f"knowledge call failed: {prefix}{_FAKE_NOTION_BODY} rejected"
+    redacted = redact_credentials(src)
+    assert _FAKE_NOTION_BODY not in redacted
+    assert _REDACTION_SENTINEL in redacted
+    assert "knowledge call failed:" in redacted
+    assert "rejected" in redacted
+
+
 @pytest.mark.parametrize(
     "src",
     [
         "hello world",
         "feature/ghp-thing",
         "ghp_short",
+        "ntn_short",
+        "the secret_key operators supply",
+        "set secret_value before boot",
     ],
 )
 def test_redact_credentials_preserves_non_secret_text(src: str) -> None:

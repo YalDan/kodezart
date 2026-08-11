@@ -29,16 +29,26 @@ _GH_TOKEN_PATTERN: re.Pattern[str] = re.compile(r"\bgh[posu]_[A-Za-z0-9]{36,}")
 _GH_FINEGRAINED_PAT_PATTERN: re.Pattern[str] = re.compile(
     r"\bgithub_pat_[A-Za-z0-9_]{20,}"
 )
+# Notion token taxonomy (prefixes per the published format spec):
+#   ntn_ current integration and OAuth tokens, secret_ legacy internal
+#   integration secrets.  ``secret_`` is an ordinary English word with an
+#   underscore, so the body lower bound carries the whole anchoring load
+#   here: 40 alphanumerics is below both published lengths and far above
+#   anything operator prose puts after that prefix.
+_NOTION_TOKEN_PATTERN: re.Pattern[str] = re.compile(
+    r"\b(?:ntn_|secret_)[A-Za-z0-9]{40,}"
+)
 
 
 def redact_credentials(s: str) -> str:
-    """Replace GitHub credential patterns with the redaction sentinel.
+    """Replace vendor credential patterns with the redaction sentinel.
 
     Applied at the two ErrorEvent egress fields below and at both
     Claude-SDK adapter ``claude_sdk_process_error`` log calls.  Patterns
-    are tightly scoped to the credential URL form and the five published
-    GitHub token prefixes — wider matches risk scrubbing non-secret
-    operator text, which the ticket explicitly forbids.
+    are tightly scoped to the credential URL form, the five published
+    GitHub token prefixes and the two published Notion token prefixes —
+    wider matches risk scrubbing non-secret operator text, which the
+    ticket explicitly forbids.
 
     LEAK ORIGIN vs. egress redaction: the upstream LEAK ORIGIN is
     ``adapters/subprocess_git_service.py`` — specifically ``_run``,
@@ -59,6 +69,7 @@ def redact_credentials(s: str) -> str:
     s = _CREDENTIAL_URL_PATTERN.sub(rf"\1{_REDACTION_SENTINEL}\2", s)
     s = _GH_TOKEN_PATTERN.sub(_REDACTION_SENTINEL, s)
     s = _GH_FINEGRAINED_PAT_PATTERN.sub(_REDACTION_SENTINEL, s)
+    s = _NOTION_TOKEN_PATTERN.sub(_REDACTION_SENTINEL, s)
     return s
 
 

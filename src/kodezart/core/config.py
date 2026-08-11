@@ -22,6 +22,7 @@ _SHIPPED_CREDENTIAL_PATTERNS: list[str] = [
     r"https?://x-access-token:[^@\s/]+@",
     r"\bgh[posu]_[A-Za-z0-9]{36,}",
     r"\bgithub_pat_[A-Za-z0-9_]{20,}",
+    r"\b(?:ntn_|secret_)[A-Za-z0-9]{40,}",
 ]
 
 # The quality-vocabulary set the pre-promotion hygiene scan runs through the
@@ -379,6 +380,15 @@ class AppConfig(BaseSettings):
         ge=1.0,
         le=300.0,
         description="Time one asset fetch may take before the fire fails to build.",
+    )
+    notion_token: str | None = Field(
+        default=None,
+        exclude=True,
+        description=(
+            "Knowledge-base credential for the Notion MCP server. "
+            "Environment only, and excluded from serialization: a dumped "
+            "config is copied into logs, fixtures and error payloads."
+        ),
     )
     checkpoint_url: str | None = Field(
         default=None,

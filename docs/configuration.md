@@ -82,6 +82,23 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_TRACKER_MCP_SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
 | `KODEZART_TRACKER_TOKEN` | `str \| None` | `None` |  | Tracker credential for the MCP server. Environment only. |
+| `KODEZART_NOTION_TOKEN` | `str \| None` | `None` |  | Knowledge-base credential for the Notion MCP server. Environment only. |
+
+## Private knowledge base — the Notion credential
+
+`KODEZART_NOTION_TOKEN` is a credential, and it is configured **only** through
+the environment (or the `.env` file the environment is loaded from). It is
+never written to the file-based operation config: that model forbids extra
+keys, so a secret placed there aborts boot rather than being read.
+
+Three properties hold for the value, and each is a test rather than a promise:
+
+- **never serialized** — the field is excluded from `model_dump()` and
+  `model_dump_json()`, so a dumped configuration carries no copy of it;
+- **never logged** — no structured event emits it, boot included;
+- **redacted at egress** — if the value ever reaches adapter stderr or an
+  exception message it is replaced with the redaction sentinel by
+  `redact_credentials`, alongside the GitHub credential forms.
 
 ## Queue retention — two independent windows
 
