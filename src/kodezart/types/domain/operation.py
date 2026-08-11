@@ -448,7 +448,8 @@ class OperationConfig(OperationModel):
         raise OperationMemberAbsentError(
             missing="principal carrying the APPROVER role",
             stops=(
-                "approval provenance cannot be attributed, so nothing can be dispatched"
+                "approval provenance cannot be attributed, "
+                "so nothing can be dispatched"
             ),
         )
 
@@ -486,7 +487,9 @@ class OperationConfig(OperationModel):
         entry = self.documents.get(CHECKPOINT_DOCUMENT_KEY)
         if entry is None:
             raise OperationMemberAbsentError(
-                missing=(f"documents entry under the {CHECKPOINT_DOCUMENT_KEY!r} key"),
+                missing=(
+                    f"documents entry under the {CHECKPOINT_DOCUMENT_KEY!r} key"
+                ),
                 stops=(
                     "the scan-window marker cannot be read, so a scheduled "
                     "pass cannot establish its window and refuses to run"
