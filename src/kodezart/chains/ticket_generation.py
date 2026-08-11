@@ -11,7 +11,7 @@ from langgraph.types import RetryPolicy
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
 from kodezart.core.error_egress import build_error_event
-from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptProvider, WorkspaceProvider
 from kodezart.core.retry import should_retry
@@ -225,7 +225,7 @@ class TicketGenerationLoop:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Creator produced no structured output."
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="ticket_creator",
                 result_event=result_event,
@@ -287,7 +287,7 @@ class TicketGenerationLoop:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Reviewer produced no structured output."
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="ticket_reviewer",
                 result_event=result_event,

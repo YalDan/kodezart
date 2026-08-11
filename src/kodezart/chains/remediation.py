@@ -11,7 +11,7 @@ remember to route through, because there is no second path.
 from collections.abc import AsyncIterator
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS_WITH_AGENT
-from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptProvider
 from kodezart.core.stream_drain import drain
@@ -88,7 +88,7 @@ class RemediationChain:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for remediation ticket"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="remediation_ticket",
                 result_event=result_event,

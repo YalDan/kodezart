@@ -14,7 +14,7 @@ from kodezart.core.constants import (
     EVAL_TOOLS,
     EVAL_TOOLS_WITH_AGENT,
 )
-from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
@@ -530,7 +530,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for branch name"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="branch_name",
                 result_event=result_event,
@@ -618,7 +618,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for acceptance criteria"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="acceptance_criteria",
                 result_event=result_event,
@@ -685,7 +685,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for criteria validation"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="criteria_validation",
                 result_event=result_event,
@@ -1165,7 +1165,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for review"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="post_merge_review",
                 result_event=result_event,
@@ -1446,7 +1446,7 @@ class RalphWorkflowEngine:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for PR description"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="pr_description",
                 result_event=result_event,

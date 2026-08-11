@@ -17,7 +17,7 @@ divergence-recovery path fails — in that case no state has been
 mutated (no reset, no commit-tree, no follow-up push).
 """
 
-from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentExecutor,
@@ -325,7 +325,7 @@ class GitChangePersister:
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for commit message"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="commit_message",
                 result_event=result_event,
