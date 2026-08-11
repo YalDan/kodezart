@@ -28,6 +28,15 @@ jobs:
         with:
           enable-cache: true
 
+        # The workflow-script fan-in guard executes the shipped
+        # .claude/workflows JavaScript under Node.  That test fails rather
+        # than skips when no interpreter is present, so the dependency is
+        # declared here instead of resting on whatever the runner image
+        # happens to ship.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - run: make install
 
       - run: make check
