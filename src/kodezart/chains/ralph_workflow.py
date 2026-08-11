@@ -14,7 +14,7 @@ from kodezart.core.constants import (
     EVAL_TOOLS,
     EVAL_TOOLS_WITH_AGENT,
 )
-from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import (
@@ -27,6 +27,8 @@ from kodezart.core.protocols import (
     PRCreator,
     PromptProvider,
     QualityGate,
+    RefPublisher,
+    Remediator,
     RepoCache,
     RepoVisibilityResolver,
     TicketGenerator,
@@ -38,7 +40,7 @@ from kodezart.domain.accept_gate import (
     gate_cleared,
     sherlock_items,
 )
-from kodezart.domain.agent import generate_ralph_branch_name
+from kodezart.domain.agent import best_iteration_ref, generate_ralph_branch_name
 from kodezart.domain.base_scope import scope_base
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
@@ -52,9 +54,16 @@ from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.pr_body import append_flagged_section
 from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.stall_report import stall_pr_body, stall_pr_title
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.ticket import format_ticket_as_task
-from kodezart.domain.workflow_state import validated_artifact, validated_criteria
+from kodezart.domain.trajectory import landable_commit
+from kodezart.domain.workflow_state import (
+    current_ticket,
+    original_ticket,
+    validated_artifact,
+    validated_criteria,
+)
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
@@ -75,12 +84,13 @@ from kodezart.types.domain.agent import (
     WorkflowCriteriaValidationEvent,
     WorkflowIterationEvent,
     WorkflowPREvent,
+    WorkflowRemediationEvent,
     WorkflowReviewEvent,
     WorkflowScopeBaseEvent,
     WorkflowTicketEvent,
     WorkflowVisibilityEvent,
 )
-from kodezart.types.domain.branch import BaseSpec, WorkRefRole
+from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
@@ -93,8 +103,13 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
+from kodezart.types.domain.workflow import (
+    ExecutionContext,
+    RemediationRequest,
+    WorkflowState,
+)
 
 
 class RalphWorkflowEngine:
@@ -124,7 +139,9 @@ class RalphWorkflowEngine:
         retry_initial_interval: float = 1.0,
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
-        max_fix_rounds: int = 2,
+        ref_publisher: RefPublisher | None = None,
+        remediator: Remediator | None = None,
+        remediation_max_rounds: int = 1,
         criteria_max_regeneration_rounds: int = 1,
         artifact_persister: ArtifactPersister | None = None,
     ) -> None:
@@ -145,7 +162,9 @@ class RalphWorkflowEngine:
         self._visibility_resolver: RepoVisibilityResolver | None = visibility_resolver
         self._pr_creator: PRCreator | None = pr_creator
         self._ci_monitor: CIMonitor | None = ci_monitor
-        self._max_fix_rounds: int = max_fix_rounds
+        self._ref_publisher: RefPublisher | None = ref_publisher
+        self._remediator: Remediator | None = remediator
+        self._remediation_max_rounds: int = remediation_max_rounds
         self._criteria_max_regeneration_rounds: int = criteria_max_regeneration_rounds
         self._artifact_persister: ArtifactPersister | None = artifact_persister
         self._retry: RetryPolicy = RetryPolicy(
@@ -235,7 +254,10 @@ class RalphWorkflowEngine:
             "merge_error": None,
             "review_passed": False,
             "review_feedback": None,
-            "fix_rounds_used": 0,
+            "remediation_rounds_used": 0,
+            "remediation_ticket": None,
+            "remediation_entry": None,
+            "best_iteration_sha": None,
             "pr_url": None,
             "pr_number": None,
             "ci_passed": None,
@@ -299,13 +321,18 @@ class RalphWorkflowEngine:
             retry_policy=self._retry,
         )
         graph.add_node(
+            "land_best_iteration",
+            self._land_best_iteration_node,
+            retry_policy=self._retry,
+        )
+        graph.add_node(
             "review_against_ticket",
             self._review_against_ticket_node,
             retry_policy=self._retry,
         )
         graph.add_node(
-            "fix_code",
-            self._fix_code_node,
+            "remediate",
+            self._remediate_node,
             retry_policy=self._retry,
         )
         graph.add_node(
@@ -327,6 +354,11 @@ class RalphWorkflowEngine:
 
         if self._artifact_persister is not None:
             graph.add_node(
+                "persist_ticket",
+                self._persist_ticket_node,
+                retry_policy=self._retry,
+            )
+            graph.add_node(
                 "persist_artifacts",
                 self._persist_artifacts_node,
                 retry_policy=self._retry,
@@ -335,7 +367,11 @@ class RalphWorkflowEngine:
         graph.add_edge(START, "resolve_visibility")
         graph.add_edge("resolve_visibility", "generate_branch")
         graph.add_edge("generate_branch", "generate_ticket")
-        graph.add_edge("generate_ticket", "generate_criteria")
+        if self._artifact_persister is not None:
+            graph.add_edge("generate_ticket", "persist_ticket")
+            graph.add_edge("persist_ticket", "generate_criteria")
+        else:
+            graph.add_edge("generate_ticket", "generate_criteria")
         graph.add_edge("generate_criteria", "validate_criteria")
         proceed = (
             "persist_artifacts"
@@ -357,28 +393,26 @@ class RalphWorkflowEngine:
         graph.add_conditional_edges(
             "merge_to_feature",
             self._route_after_merge,
-            {"review_against_ticket": "review_against_ticket", "complete": "complete"},
+            {
+                "review_against_ticket": "review_against_ticket",
+                "remediate": "remediate",
+                "land_best_iteration": "land_best_iteration",
+                "complete": "complete",
+            },
         )
+        graph.add_edge("land_best_iteration", "complete")
         graph.add_conditional_edges(
             "review_against_ticket",
             self._route_after_review,
             {
                 "open_pr": "open_pr",
                 "monitor_ci": "monitor_ci",
-                "fix_code": "fix_code",
+                "remediate": "remediate",
                 "complete": "complete",
                 "comment_failure": "comment_failure",
             },
         )
-        graph.add_conditional_edges(
-            "fix_code",
-            self._route_after_fix,
-            {
-                "review_against_ticket": "review_against_ticket",
-                "comment_failure": "comment_failure",
-                "complete": "complete",
-            },
-        )
+        graph.add_edge("remediate", "generate_criteria")
         graph.add_conditional_edges(
             "open_pr",
             self._route_after_pr,
@@ -389,7 +423,7 @@ class RalphWorkflowEngine:
             self._route_after_ci,
             {
                 "complete": "complete",
-                "fix_code": "fix_code",
+                "remediate": "remediate",
                 "comment_failure": "comment_failure",
             },
         )
@@ -494,12 +528,13 @@ class RalphWorkflowEngine:
                     "schema": BRANCH_NAME_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="branch_name",
         )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for branch name"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="branch_name",
                 result_event=result_event,
@@ -557,10 +592,7 @@ class RalphWorkflowEngine:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        ticket = state["ticket"]
-        if ticket is None:
-            msg = "generate_criteria requires a ticket but state['ticket'] is None."
-            raise RuntimeError(msg)
+        ticket = current_ticket(state)
 
         prompt = self._prompts.template_for(PromptKey.ACCEPTANCE_CRITERIA).render(
             {
@@ -587,12 +619,13 @@ class RalphWorkflowEngine:
                     "schema": GENERATED_CRITERIA_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="acceptance_criteria",
         )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for acceptance criteria"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="acceptance_criteria",
                 result_event=result_event,
@@ -628,10 +661,7 @@ class RalphWorkflowEngine:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        ticket = state["ticket"]
-        if ticket is None:
-            msg = "validate_criteria requires a ticket but state['ticket'] is None."
-            raise RuntimeError(msg)
+        ticket = current_ticket(state)
 
         criteria = state["acceptance_criteria"]
         prompt = self._prompts.template_for(PromptKey.CRITERIA_VALIDATION).render(
@@ -656,12 +686,13 @@ class RalphWorkflowEngine:
                     "schema": CRITERIA_VALIDATION_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="criteria_validation",
         )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for criteria validation"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="criteria_validation",
                 result_event=result_event,
@@ -764,10 +795,7 @@ class RalphWorkflowEngine:
         """Delegate to the quality gate for iterative execution."""
         ctx = ExecutionContext.from_configurable(config)
 
-        ticket = state["ticket"]
-        if ticket is None:
-            msg = "run_ralph_loop requires a ticket but state['ticket'] is None."
-            raise RuntimeError(msg)
+        ticket = current_ticket(state)
 
         implementation_prompt = self._prompts.template_for(
             PromptKey.IMPLEMENTATION,
@@ -796,27 +824,85 @@ class RalphWorkflowEngine:
                 last_iteration_event.evaluation.criteria_results,
                 last_iteration_event.evaluation.sherlock_flags,
             ),
-            "total_iterations": last_iteration_event.iteration,
+            # A SUM, not a replacement: a remediation round runs its own
+            # loop, and a terminal reporting only the last round's count
+            # would understate what the run actually spent.
+            "total_iterations": (
+                state["total_iterations"] + last_iteration_event.iteration
+            ),
             "feature_tip_sha": None,
             "trajectory": last_iteration_event.trajectory,
         }
+
+    async def _persist_ticket_node(
+        self,
+        state: WorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Persist the finished ticket the moment it exists, before criteria.
+
+        The drafter's output — draft plus its review rounds — is the most
+        expensive artefact the pipeline produces, and it lived only in
+        graph state until a node downstream of criteria generation wrote
+        it.  A transient failure at criteria generation therefore
+        discarded a finished, reviewed ticket and forced a re-run to
+        redraft from scratch.  Writing it here bounds that loss to the
+        node that actually failed.
+
+        The criteria are NOT written here — they do not exist yet, which
+        is the whole reason the combined write sat downstream.
+        """
+        ctx = ExecutionContext.from_configurable(config)
+
+        if self._artifact_persister is None:
+            msg = "persist_ticket node requires artifact_persister"
+            raise RuntimeError(msg)
+
+        ticket: TicketDraftOutput = current_ticket(state)
+
+        await self._artifact_persister.persist(
+            repo_path=ctx.repo_path,
+            repo_url=ctx.repo_url,
+            branch=state["ralph_branch"],
+            base_branch=ctx.base_branch,
+            artifacts={
+                "ticket.json": await self._gated(
+                    content=ticket.model_dump_json(indent=2, by_alias=True),
+                    visibility=state["repo_visibility"],
+                    shape=WriterShape.PROSE,
+                    destination=OutboundDestination.ARTIFACT_TICKET_JSON,
+                    content_class=ContentClass.AUTHORED,
+                ),
+            },
+            cache_key=ctx.cache_key,
+        )
+        await self._log.ainfo(
+            "ticket_persisted",
+            branch=state["ralph_branch"],
+            title=ticket.title,
+        )
+        return {}
 
     async def _persist_artifacts_node(
         self,
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Persist ticket and criteria to .kodezart/ on the ralph branch."""
+        """Persist ticket and criteria to .kodezart/ on the ralph branch.
+
+        Writes the ticket again rather than only the criteria: a
+        remediation round replaces the run's working ticket, and this is
+        the write that reaches the branch after that happens.  A branch
+        carrying the original ticket while the loop implements the
+        remediation one would be a document that contradicts the work.
+        """
         ctx = ExecutionContext.from_configurable(config)
 
         if self._artifact_persister is None:
             msg = "persist_artifacts node requires artifact_persister"
             raise RuntimeError(msg)
 
-        ticket: TicketDraftOutput | None = state["ticket"]
-        if ticket is None:
-            msg = "persist_artifacts requires a ticket but state['ticket'] is None."
-            raise RuntimeError(msg)
+        ticket: TicketDraftOutput = current_ticket(state)
 
         criteria_artifact = validated_artifact(state)
 
@@ -870,13 +956,22 @@ class RalphWorkflowEngine:
         writer = get_stream_writer()
 
         if not gate_cleared(state["accept_verdict"]):
-            return {
+            trajectory = state["trajectory"]
+            best = None if trajectory is None else landable_commit(trajectory)
+            exit_state: dict[str, object] = {
                 "merged": False,
                 "merge_error": None,
                 "feature_tip_sha": None,
                 "review_base_sha": None,
                 "review_head_sha": None,
             }
+            # A round that committed nothing writes nothing: omitting the
+            # key leaves the previously recorded best standing, so a run
+            # whose LAST round was empty is not reported as having done
+            # no work at all.
+            if best is not None:
+                exit_state["best_iteration_sha"] = best
+            return exit_state
 
         outcome = await self._merger.consolidate(
             repo_path=ctx.repo_path,
@@ -937,10 +1032,145 @@ class RalphWorkflowEngine:
         }
 
     def _route_after_merge(self, state: WorkflowState) -> str:
-        """Guard: only review merged code — skip to complete if not merged."""
+        """Only review merged code; land what a loop exit produced.
+
+        The three arms are the three ways the consolidation node can end.
+        Unmerged WITH an error is a divergent accepted run — its work is
+        already on the feature branch and the terminal reports the
+        divergence.  Unmerged with NO error is the loop exit, which is
+        the run this lane exists to stop stranding.
+        """
         if state["merged"]:
             return "review_against_ticket"
-        return "complete"
+        if state["merge_error"] is not None:
+            return "complete"
+        if self._rounds_remain(state):
+            return "remediate"
+        return "land_best_iteration"
+
+    async def _land_best_iteration_node(
+        self,
+        state: WorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Open the do-not-merge pull request from the run's BEST iteration.
+
+        Consolidation is attempted first, so the passing and non-passing
+        paths stay symmetrical — but it is not a precondition.  A pull
+        request needs a head and a base sharing an ancestor, not a
+        fast-forward, so a non-integrating consolidation opens the request
+        from the published ref instead of ending the run without one.  A
+        conflicted request on that path is expected: the work is most
+        tangled exactly where human review matters most, and an orphan
+        branch nobody knows about is the worse outcome.
+
+        Artifacts are NOT cleaned from the branch here.  The passing path
+        cleans because it merges; this head exists to show the best state
+        the run reached, and rewriting it to remove files would make it
+        something the run never produced.
+        """
+        ctx = ExecutionContext.from_configurable(config)
+        writer = get_stream_writer()
+
+        trajectory = state["trajectory"]
+        best_sha = state["best_iteration_sha"]
+        if trajectory is None or best_sha is None:
+            await self._log.ainfo(
+                "stall_exit_no_commit_to_land",
+                feature_branch=state["feature_branch"],
+                total_iterations=state["total_iterations"],
+            )
+            return {}
+
+        repo_url = ctx.repo_url
+        if self._pr_creator is None or repo_url is None:
+            await self._log.awarning(
+                "stall_exit_no_forge_configured",
+                feature_branch=state["feature_branch"],
+                best_commit_sha=best_sha,
+            )
+            return {}
+
+        if self._ref_publisher is None:
+            msg = (
+                "land_best_iteration requires ref_publisher when a forge is "
+                "configured — a run that produced commits never terminates "
+                "without a pull request"
+            )
+            raise RuntimeError(msg)
+
+        ticket = current_ticket(state)
+
+        best_ref = best_iteration_ref(state["feature_branch"])
+        await self._ref_publisher.publish(
+            repo_path=ctx.repo_path,
+            repo_url=ctx.repo_url,
+            commit_sha=best_sha,
+            ref=best_ref,
+            cache_key=ctx.cache_key,
+        )
+
+        outcome = await self._merger.consolidate(
+            repo_path=ctx.repo_path,
+            repo_url=ctx.repo_url,
+            base_branch=ctx.base_branch,
+            feature_branch=state["feature_branch"],
+            source_branch=best_ref,
+            cache_key=ctx.cache_key,
+        )
+        writer(
+            WorkflowConsolidationEvent(
+                status=outcome.status,
+                feature_branch=state["feature_branch"],
+                source_branch=best_ref,
+                feature_tip_sha=outcome.feature_tip_sha,
+            )
+        )
+        integrated = outcome.status in (
+            ConsolidationStatus.FAST_FORWARDED,
+            ConsolidationStatus.ALREADY_INTEGRATED,
+        )
+        head = state["feature_branch"] if integrated else best_ref
+
+        pr_url, pr_number = await self._pr_creator.create_pr(
+            repo_url=repo_url,
+            title=await self._gated(
+                content=stall_pr_title(ticket.title),
+                visibility=state["repo_visibility"],
+                shape=WriterShape.PROSE,
+                destination=OutboundDestination.PR_TITLE,
+                content_class=ContentClass.AUTHORED,
+            ),
+            body=await self._gated(
+                content=stall_pr_body(
+                    trajectory,
+                    validated_criteria(state),
+                    landed_commit=best_sha,
+                ),
+                visibility=state["repo_visibility"],
+                shape=WriterShape.PROSE,
+                destination=OutboundDestination.PR_BODY,
+                content_class=ContentClass.AUTHORED,
+            ),
+            head=head,
+            base=ctx.base_branch,
+        )
+        writer(
+            WorkflowPREvent(
+                pr_url=pr_url,
+                pr_number=pr_number,
+                feature_branch=head,
+                base_branch=ctx.base_branch,
+            )
+        )
+        await self._log.ainfo(
+            "stall_exit_pr_opened",
+            pr_number=pr_number,
+            head=head,
+            consolidation_status=outcome.status.value,
+            best_commit_sha=best_sha,
+        )
+        return {"pr_url": pr_url, "pr_number": pr_number}
 
     async def _resolve_cwd(self, ctx: ExecutionContext) -> str:
         """Resolve a usable cwd for GitService calls in the outer engine."""
@@ -998,12 +1228,13 @@ class RalphWorkflowEngine:
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="post_merge_review",
         )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for review"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="post_merge_review",
                 result_event=result_event,
@@ -1034,7 +1265,7 @@ class RalphWorkflowEngine:
             WorkflowReviewEvent(
                 passed=passed,
                 evaluation=AcceptanceCriteriaOutput(criteria_results=grade.results),
-                fix_round=state["fix_rounds_used"],
+                fix_round=state["remediation_rounds_used"],
             )
         )
 
@@ -1062,8 +1293,8 @@ class RalphWorkflowEngine:
             if can_pr:
                 return "open_pr"
             return "complete"
-        if state["fix_rounds_used"] < self._max_fix_rounds:
-            return "fix_code"
+        if self._rounds_remain(state):
+            return "remediate"
         if state["pr_url"] is not None and can_pr:
             return "comment_failure"
         return "complete"
@@ -1074,136 +1305,155 @@ class RalphWorkflowEngine:
             return "monitor_ci"
         return "complete"
 
-    async def _fix_code_node(
+    def _rounds_remain(self, state: WorkflowState) -> bool:
+        """Whether the run may spend another remediation round.
+
+        ONE counter, read by all three routes.  Two counters would make
+        the worst case twice the budget, and the routes are not
+        independent — a remediation loop that ends unaccepted and then
+        opens a request whose CI fails is one run failing twice, not two
+        separate failures.
+        """
+        return (
+            self._remediator is not None
+            and state["remediation_rounds_used"] < self._remediation_max_rounds
+        )
+
+    async def _remediate_node(
         self,
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Create a fix branch, run the agent, consolidate into feature.
+        """Draft one targeted remediation ticket and re-enter the pipeline.
 
-        Key correctness fix: the consolidation's ``base_branch`` is the
-        feature branch (not ``ctx.base_branch``) so the worktree is
-        acquired atop the feature tip — closing the bug where the fix
-        attempted to merge atop ``main``.  No ``try/except`` around the
-        merger.  Routing decisions live in ``_route_after_fix``.
+        Every failure route lands here.  What the round is answering is
+        carried as a value on the request, so the component never asks
+        who called it — a question it could only answer with a second
+        code path.
+
+        The node produces a TICKET and nothing else.  Resetting the
+        criteria fields hands the round back to the criteria generator
+        and the validation gate that already exist, which is what keeps
+        the gate un-bypassable: there is no second criteria path to
+        remember to route through.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        fix_branch = generate_ralph_branch_name(state["feature_branch"])
-
-        ticket = state["ticket"]
-        if ticket is None:
-            msg = "fix_code requires a ticket but state['ticket'] is None."
+        remediator = self._remediator
+        if remediator is None:
+            msg = "remediate requires a remediator but self._remediator is None"
             raise RuntimeError(msg)
 
-        pre_fix_head_sha = state["feature_tip_sha"]
-        if pre_fix_head_sha is None:
-            msg = "fix_code requires feature_tip_sha to be set."
-            raise RuntimeError(msg)
-
-        fix_prompt = self._prompts.template_for(PromptKey.FIX).render(
-            {
-                "task_md": format_ticket_as_task(ticket),
-                "review_feedback": state["review_feedback"],
-                "ci_summary": state["ci_summary"],
-            },
+        entry = self._remediation_entry(state)
+        work_base_ref = self._remediation_base_ref(state, entry)
+        request = RemediationRequest(
+            entry=entry,
+            round_index=state["remediation_rounds_used"],
+            original_ticket=original_ticket(state),
+            work_branch=state["feature_branch"],
+            work_base_ref=work_base_ref,
+            pr_url=state["pr_url"],
+            total_iterations=state["total_iterations"],
+            trajectory=state["trajectory"],
+            criteria=validated_criteria(state),
+            failure_evidence=self._failure_evidence(state, entry),
         )
 
-        gate_event = await self._run_quality_gate(
-            prompt=fix_prompt,
+        remediation_event: WorkflowRemediationEvent | None = None
+        async for event in remediator.run(
+            request,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
-            feature_branch=state["feature_branch"],
-            ralph_branch=fix_branch,
-            # The fix round measures itself against this lane's own
-            # deliverable ref, which is what the feature branch IS.
-            base_spec=BaseSpec(
-                inputs=(),
-                base_branch=state["feature_branch"],
-                base_role=WorkRefRole.DELIVERABLE,
-            ),
-            permission_mode=ctx.permission_mode,
-            allowed_tools=ctx.allowed_tools,
-            acceptance_criteria=validated_criteria(state),
             cache_key=ctx.cache_key,
-            repo_visibility=state["repo_visibility"],
-        )
-
-        outcome = await self._merger.consolidate(
-            repo_path=ctx.repo_path,
-            repo_url=ctx.repo_url,
-            base_branch=state["feature_branch"],
-            feature_branch=state["feature_branch"],
-            source_branch=fix_branch,
-            cache_key=ctx.cache_key,
-        )
-        writer(
-            WorkflowConsolidationEvent(
-                status=outcome.status,
-                feature_branch=state["feature_branch"],
-                source_branch=fix_branch,
-                feature_tip_sha=outcome.feature_tip_sha,
-            )
-        )
-
-        # Terminal totals are cumulative across rounds: total_iterations is a
-        # SUM, accepted is last-round-wins, trajectory is the most recent gate
-        # invocation's.
-        cumulative: dict[str, object] = {
-            "fix_rounds_used": state["fix_rounds_used"] + 1,
-            "accept_verdict": gate_event.verdict,
-            "flagged_items": flagged_items(
-                validated_criteria(state),
-                gate_event.evaluation.criteria_results,
-                gate_event.evaluation.sherlock_flags,
-            ),
-            "total_iterations": state["total_iterations"] + gate_event.iteration,
-            "trajectory": gate_event.trajectory,
-        }
-
-        if outcome.status in (
-            ConsolidationStatus.DIVERGENT,
-            ConsolidationStatus.SOURCE_MISSING,
         ):
-            return {
-                **cumulative,
-                "feature_tip_sha": pre_fix_head_sha,
-                "merged": False,
-                "merge_error": (
-                    f"fix consolidation failed: status={outcome.status.value}"
-                ),
-                "review_base_sha": None,
-                "review_head_sha": None,
-                "ci_passed": False,
-                "ci_summary": None,
-            }
+            writer(event)
+            if isinstance(event, WorkflowRemediationEvent):
+                remediation_event = event
 
-        # FAST_FORWARDED or ALREADY_INTEGRATED — both yield a fresh
-        # tip the reviewer can evaluate against the pre-fix tip.
+        if remediation_event is None:
+            msg = "Remediator did not emit a WorkflowRemediationEvent."
+            raise RuntimeError(msg)
+
+        await self._log.ainfo(
+            "remediation_round_opened",
+            entry=entry.value,
+            round_index=state["remediation_rounds_used"],
+            base_ref=work_base_ref,
+            rounds_remaining=(
+                self._remediation_max_rounds - state["remediation_rounds_used"] - 1
+            ),
+        )
         return {
-            **cumulative,
-            "feature_tip_sha": outcome.feature_tip_sha,
-            "merged": True,
+            "remediation_rounds_used": state["remediation_rounds_used"] + 1,
+            "remediation_ticket": remediation_event.ticket,
+            "remediation_entry": entry,
+            "ralph_branch": generate_ralph_branch_name(state["feature_branch"]),
+            "acceptance_criteria": [],
+            "criteria_artifact": None,
+            "criteria_validation": None,
+            "criteria_regeneration_rounds": 0,
+            "accept_verdict": AcceptVerdict.rejected,
+            "review_passed": False,
+            "merged": False,
             "merge_error": None,
-            "review_base_sha": pre_fix_head_sha,
-            "review_head_sha": outcome.feature_tip_sha,
-            "ci_summary": None,
         }
 
-    def _route_after_fix(self, state: WorkflowState) -> str:
-        """Route after fix_code: review on success, comment_failure on diverge.
+    def _remediation_entry(self, state: WorkflowState) -> RemediationEntry:
+        """Which failure opened this round — computed from state, not routing.
 
-        Empty-changeset (ALREADY_INTEGRATED) reviews are allowed to
-        proceed — the prompt's escape clause fires and the reviewer
-        returns ``passed=False``, advancing fix_rounds_used.  This is
-        intentional truth-telling.
+        The three routes share a join point, so the node a run arrived
+        from carries less information than the state it arrived with —
+        the same reason the terminal outcome is computed rather than
+        judged from routing provenance.
         """
-        if state["merge_error"] is None:
-            return "review_against_ticket"
-        if state["pr_url"] is not None and self._pr_creator is not None:
-            return "comment_failure"
-        return "complete"
+        if state["ci_passed"] is False:
+            return RemediationEntry.ci_failure
+        if state["merged"] and state["review_passed"] is False:
+            return RemediationEntry.review_failure
+        return RemediationEntry.loop_not_accepted
+
+    def _remediation_base_ref(
+        self,
+        state: WorkflowState,
+        entry: RemediationEntry,
+    ) -> str:
+        """The ref the round's loop is built on top of.
+
+        The CI and review entries have their work consolidated onto the
+        feature branch already.  The loop entry does not — its feature
+        branch was never fast-forwarded — so the round builds on the ref
+        carrying the run's best iteration instead.
+        """
+        if entry is RemediationEntry.loop_not_accepted:
+            return best_iteration_ref(state["feature_branch"])
+        return state["feature_branch"]
+
+    def _failure_evidence(
+        self,
+        state: WorkflowState,
+        entry: RemediationEntry,
+    ) -> str:
+        """The evidence for the entry that fired, never a generic summary."""
+        if entry is RemediationEntry.ci_failure:
+            return state["ci_summary"] or "CI reported a failure with no summary."
+        if entry is RemediationEntry.review_failure:
+            return (
+                state["review_feedback"]
+                or "The post-merge review rejected the work with no feedback."
+            )
+        trajectory = state["trajectory"]
+        if trajectory is None:
+            return "The loop ended without acceptance and recorded no iterations."
+        never_passed = ", ".join(trajectory.never_passed_ids) or "none"
+        plateau = "; the run plateaued" if trajectory.plateaued else ""
+        return (
+            "The loop ended without acceptance after "
+            f"{state['total_iterations']} iterations. Best pass count "
+            f"{trajectory.best_passed_count} at iteration "
+            f"{trajectory.best_iteration}{plateau}. "
+            f"Criteria that passed in no iteration: {never_passed}."
+        )
 
     async def _open_pr_node(
         self,
@@ -1228,10 +1478,7 @@ class RalphWorkflowEngine:
             msg = "open_pr requires pr_creator but self._pr_creator is None"
             raise RuntimeError(msg)
 
-        ticket = state["ticket"]
-        if ticket is None:
-            msg = "open_pr requires a ticket but state['ticket'] is None."
-            raise RuntimeError(msg)
+        ticket = current_ticket(state)
 
         if self._artifact_persister is not None:
             await self._artifact_persister.clean(
@@ -1262,12 +1509,13 @@ class RalphWorkflowEngine:
                     "schema": PR_DESCRIPTION_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="pr_description",
         )
 
         if result_event is None or result_event.structured_output is None:
             msg = "Agent did not produce structured output for PR description"
-            raise NoStructuredOutputError(
+            raise soft_failure(
                 msg,
                 raise_site="pr_description",
                 result_event=result_event,
@@ -1353,8 +1601,8 @@ class RalphWorkflowEngine:
             return "complete"
         if state["ci_passed"] is None:
             return "complete"
-        if state["fix_rounds_used"] < self._max_fix_rounds:
-            return "fix_code"
+        if self._rounds_remain(state):
+            return "remediate"
         can_comment = (
             state["pr_number"] is not None
             and self._pr_creator is not None
@@ -1388,8 +1636,11 @@ class RalphWorkflowEngine:
             raise RuntimeError(msg)
 
         comment_parts = [
-            "## kodezart: automated fix budget exhausted\n",
-            f"Fix rounds used: {state['fix_rounds_used']}/{self._max_fix_rounds}\n",
+            "## kodezart: remediation budget exhausted\n",
+            (
+                f"Remediation rounds used: {state['remediation_rounds_used']}"
+                f"/{self._remediation_max_rounds}\n"
+            ),
         ]
         if state["review_feedback"] is not None:
             comment_parts.append(f"\n### Review Failures\n{state['review_feedback']}\n")

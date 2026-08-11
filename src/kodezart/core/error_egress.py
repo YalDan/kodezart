@@ -81,11 +81,21 @@ def build_error_event(exc: Exception) -> ErrorEvent:
     rate_limit_rejected: bool | None = None
     exit_code: int | None = None
     stderr_tail: str | None = None
+    result_event_observed: bool | None = None
+    subtype: str | None = None
+    num_turns: int | None = None
+    duration_ms: int | None = None
+    result_tail: str | None = None
 
     if isinstance(exc, NoStructuredOutputError):
         raise_site = exc.raise_site
         stop_reason = exc.stop_reason
         rate_limit_rejected = exc.rate_limit_rejected
+        result_event_observed = exc.result_event_observed
+        subtype = exc.subtype
+        num_turns = exc.num_turns
+        duration_ms = exc.duration_ms
+        result_tail = exc.result_tail
     elif isinstance(exc, AgentSDKError):
         exit_code = exc.exit_code
         stderr_tail = exc.stderr_tail
@@ -100,5 +110,12 @@ def build_error_event(exc: Exception) -> ErrorEvent:
         exit_code=exit_code,
         stderr_tail=(
             redact_credentials(stderr_tail) if stderr_tail is not None else None
+        ),
+        result_event_observed=result_event_observed,
+        subtype=subtype,
+        num_turns=num_turns,
+        duration_ms=duration_ms,
+        result_tail=(
+            redact_credentials(result_tail) if result_tail is not None else None
         ),
     )

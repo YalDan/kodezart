@@ -29,6 +29,7 @@ class PromptKey(StrEnum):
     ITERATION_FEEDBACK = "iteration_feedback"
     POST_MERGE_REVIEW = "post_merge_review"
     FIX = "fix"
+    REMEDIATION_TICKET = "remediation_ticket"
     COMMIT_MESSAGE = "commit_message"
     PR_DESCRIPTION = "pr_description"
     FIRE_PREP_PASS = "fire_prep_pass"

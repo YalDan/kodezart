@@ -116,6 +116,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             workspace=stack.workspace,
             merger=stack.merger,
             artifact_persister=stack.artifact_persister,
+            ref_publisher=stack.ref_publisher,
             prompts=prompts,
             skills=skills,
             gate=gate,

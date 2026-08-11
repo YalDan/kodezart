@@ -194,11 +194,20 @@ class AppConfig(BaseSettings):
         default=None,
         description="Claude model override. None uses SDK default.",
     )
-    max_fix_rounds: int = Field(
-        default=2,
-        ge=0,
-        le=10,
-        description="Maximum automatic fix attempts after review feedback.",
+    remediation_max_rounds: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+        description=(
+            "Remediation rounds a run may spend, counted ONCE across every "
+            "entry. A round costs roughly a whole baseline run — one "
+            "generation session, the validation gate, and a full ralph loop "
+            "- so the budget multiplies worst-case run cost by one plus its "
+            "value. Zero is not offered: remediation replaces the failure "
+            "path rather than supplementing it, so a budget of zero would "
+            "delete that path and make the exhaustion outcome mean two "
+            "different things."
+        ),
     )
     ci_poll_interval_seconds: float = Field(
         default=30.0,

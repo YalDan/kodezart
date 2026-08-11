@@ -130,6 +130,7 @@ class AgentContentScanner:
                             "schema": CONTENT_AUDIT_SCHEMA,
                         },
                     ),
+                    site="content_audit",
                 )
         except TimeoutError:
             return ScanResult(failure=ScanFailureKind.TIMEOUT)

@@ -12,3 +12,14 @@ def generate_ralph_branch_name(feature_branch: str) -> str:
     """Append ``-ralph-{8-char-hex}`` to *feature_branch*."""
     short_hash = uuid.uuid4().hex[:8]
     return f"{feature_branch}-ralph-{short_hash}"
+
+
+def best_iteration_ref(feature_branch: str) -> str:
+    """Append ``-best`` to *feature_branch*.
+
+    Deterministic, unlike the ralph branch name: the ref names the run
+    that produced it rather than an occasion, so publishing twice within
+    a run targets one ref instead of littering the remote.  The feature
+    branch already carries a per-run suffix, so two runs never collide.
+    """
+    return f"{feature_branch}-best"

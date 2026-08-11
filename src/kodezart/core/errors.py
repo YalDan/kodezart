@@ -3,6 +3,8 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from kodezart.core.constants import RESULT_TAIL_CHARS
+from kodezart.domain.errors import TransientAPIError
 from kodezart.types.domain.agent import ResultEvent
 
 if TYPE_CHECKING:
@@ -13,18 +15,41 @@ if TYPE_CHECKING:
     from kodezart.types.domain.agent import RaiseSite
 
 
+def result_tail(result: str | None) -> str | None:
+    """The last ``RESULT_TAIL_CHARS`` of a result payload, or ``None``.
+
+    The tail rather than the head: the two recorded soft failures put the
+    answer at the end (``"No response requested."``), and a truncated head
+    would have shown the prompt echo instead.  Lives beside the failure
+    snapshot that carries it, so the drain summary and the exception
+    report the same bytes.
+    """
+    if result is None:
+        return None
+    return result[-RESULT_TAIL_CHARS:]
+
+
 class NoStructuredOutputError(Exception):
     """Raised when an agent stream completes without producing usable output.
 
     Peer of ``AgentSDKError`` — deliberately NOT a subclass of
     ``TransientAPIError``/``RateLimitError``/``AgentSDKError`` so that
-    ``core.retry.should_retry`` falls through to ``False``.  Soft
-    failures are deterministic (agent finished but emitted no
-    structured output) and not worth retrying.
+    ``core.retry.should_retry`` falls through to ``False``.  A
+    deterministic soft failure (the agent finished and emitted no
+    structured output) does not become likelier on a second attempt.
+
+    That ground holds for an empty output and NOT for a stream the
+    provider rejected on a rate limit, which is transient and clears on
+    its own.  ``RateLimitedSoftFailureError`` below is the variant for
+    that case, and ``soft_failure`` is the only place either is built.
 
     Carries primitive scalars only — no ``ResultEvent`` reference
     survives construction (mirrors ``RateLimitError``'s primitive-only
-    shape and resolves the hexagonal cross-layer concern).
+    shape and resolves the hexagonal cross-layer concern).  The variant
+    fields exist because the two recorded fire deaths produced wire
+    events that could not distinguish "no result event at all" from
+    "a result carrying no structured output" — and the result text
+    itself held the answer.
     """
 
     def __init__(
@@ -52,6 +77,58 @@ class NoStructuredOutputError(Exception):
         self.total_cost_usd: float | None = (
             result_event.total_cost_usd if result_event is not None else None
         )
+        self.subtype: str | None = (
+            result_event.subtype if result_event is not None else None
+        )
+        self.num_turns: int | None = (
+            result_event.num_turns if result_event is not None else None
+        )
+        self.duration_ms: int | None = (
+            result_event.duration_ms if result_event is not None else None
+        )
+        self.result_tail: str | None = (
+            result_tail(result_event.result) if result_event is not None else None
+        )
+
+
+class RateLimitedSoftFailureError(NoStructuredOutputError, TransientAPIError):
+    """A soft failure whose cause was a provider rate-limit rejection.
+
+    Both bases, and each one is load-bearing.  ``TransientAPIError``
+    makes ``core.retry.should_retry`` return True with its source
+    untouched, so the rejection reaches the node's existing
+    ``RetryPolicy`` back-off instead of terminating the run.
+    ``NoStructuredOutputError`` keeps ``build_error_event``'s existing
+    branch matching, so an exhausted retry still reaches the wire
+    carrying ``raiseSite`` and ``rateLimitRejected``.
+
+    Never raised directly — ``soft_failure`` decides between this and
+    its plain parent from the flag ``drain`` returns.
+    """
+
+
+def soft_failure(
+    message: str,
+    *,
+    raise_site: "RaiseSite",
+    result_event: ResultEvent | None,
+    rate_limit_rejected: bool,
+) -> NoStructuredOutputError:
+    """Build the exception a drained stream with no usable output must raise.
+
+    ONE construction site decides retryability for every soft-failure
+    raise site in the codebase.  A per-site conditional would be a list,
+    and the next raise site joins a list by being forgotten.
+    """
+    variant = (
+        RateLimitedSoftFailureError if rate_limit_rejected else NoStructuredOutputError
+    )
+    return variant(
+        message,
+        raise_site=raise_site,
+        result_event=result_event,
+        rate_limit_rejected=rate_limit_rejected,
+    )
 
 
 class PromptResolutionError(Exception):

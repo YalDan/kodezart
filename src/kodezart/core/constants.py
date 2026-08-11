@@ -12,6 +12,12 @@ TICKET_TOOLS: list[str] = [*EVAL_TOOLS, "Agent", "WebSearch", "WebFetch"]
 # tunable, so it lives next to the slice site rather than in AppConfig.
 STDERR_TAIL_BYTES: int = 4096
 
+# Sibling of STDERR_TAIL_BYTES and bounded on the same ground: the tail
+# rides an SSE payload and a structured log line, both of which are
+# framed upstream.  A wire-shape invariant, not a deployment tunable, so
+# it lives next to the slice site rather than in AppConfig.
+RESULT_TAIL_CHARS: int = 2048
+
 # The one lane that ships.  Lanes are open strings, never an enum — a
 # later producer declares its own lane without a code change here.
 DEFAULT_LANE: str = "workflow"

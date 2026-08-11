@@ -2,7 +2,9 @@
 
 import ast
 import inspect
+import re
 from collections.abc import AsyncGenerator
+from itertools import pairwise
 from pathlib import Path
 from typing import TypedDict
 
@@ -10,8 +12,9 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.ralph_loop import RalphLoop
+from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor
-from kodezart.domain.trajectory import fold_trajectory
+from kodezart.domain.trajectory import fold_trajectory, landable_commit
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
@@ -1188,6 +1191,125 @@ def test_fold_trajectory_is_pure_over_empty_records() -> None:
     assert trajectory.plateaued is False
 
 
+# ---------------------------------------------------------------------------
+# KOD-40/AC-1: the stop rule, over the issue's own illustrative scenarios
+# ---------------------------------------------------------------------------
+
+
+def _stops_at(passed_counts: list[int], *, window: int = 2) -> int | None:
+    """The 1-based iteration at which the stop rule first fires.
+
+    Folded at every prefix, because "stops on the second consecutive
+    no-new-best" is a claim about WHEN the rule fires, not merely that it
+    eventually does — a rule that fires two iterations late still ends
+    every one of these runs.
+    """
+    for length in range(1, len(passed_counts) + 1):
+        records = [
+            _record(index + 1, count)
+            for index, count in enumerate(passed_counts[:length])
+        ]
+        if fold_trajectory(records, plateau_window=window).plateaued:
+            return length
+    return None
+
+
+def test_stop_rule_oscillation_after_a_peak_stops_on_the_second_no_new_best() -> None:
+    """The issue's worked example: 8 → 11 → 10 → 11 → 10 stops at iteration 4.
+
+    Iteration 3 misses the peak of 11, and iteration 4 only TIES it — a
+    tie is not a new best — so the second consecutive miss lands there.
+    """
+    assert _stops_at([8, 11, 10, 11, 10]) == 4
+
+
+def test_stop_rule_measures_against_best_so_far_not_the_previous_iteration() -> None:
+    """The crux the issue argues, stated as the difference it makes.
+
+    Against the PREVIOUS iteration the same run reads -1, +1, -1: never
+    two decreases in a row, so a previous-iteration rule never fires on
+    exactly the stuck run it exists to catch. Against best-so-far it does.
+    """
+    counts = [8, 11, 10, 11, 10]
+    deltas = [later - earlier for earlier, later in pairwise(counts)]
+    assert not any(first < 0 and second < 0 for first, second in pairwise(deltas))
+    assert _stops_at(counts) == 4
+
+
+def test_stop_rule_a_monotone_climb_is_never_stopped_early() -> None:
+    """A run setting a new best every iteration resets the counter each time."""
+    assert _stops_at([8, 9, 10, 11, 12]) is None
+
+
+def test_stop_rule_a_collapse_and_recovery_resets_on_the_new_best() -> None:
+    """The issue's contrast case: 6 → 9 → 4 → 10 climbs back out uncut."""
+    assert _stops_at([6, 9, 4, 10]) is None
+
+
+def test_stop_rule_a_single_pause_before_a_new_best_is_not_cut_off() -> None:
+    """One non-improving iteration is not the signal; two in a row is."""
+    assert _stops_at([8, 11, 11, 12]) is None
+    assert _stops_at([8, 11, 11, 11]) == 4
+
+
+# ---------------------------------------------------------------------------
+# KOD-40: which commit the terminal lands
+# ---------------------------------------------------------------------------
+
+
+def test_landable_commit_is_the_peak_not_the_tip() -> None:
+    """KOD-40's example: 8-11-10-11 lands the 11 at iteration 2."""
+    trajectory = fold_trajectory(
+        [
+            _record(1, 8, commit_sha="1" * 40),
+            _record(2, 11, commit_sha="2" * 40),
+            _record(3, 10, commit_sha="3" * 40),
+            _record(4, 11, commit_sha="4" * 40),
+        ],
+        plateau_window=2,
+    )
+    assert landable_commit(trajectory) == "2" * 40
+
+
+def test_landable_commit_carries_forward_when_the_peak_committed_nothing() -> None:
+    """An iteration that changed no tree has the previous commit's state."""
+    trajectory = fold_trajectory(
+        [
+            _record(1, 5, commit_sha="1" * 40),
+            _record(2, 9, commit_sha=None),
+            _record(3, 6, commit_sha="3" * 40),
+        ],
+        plateau_window=2,
+    )
+    assert trajectory.best_iteration == 2
+    assert trajectory.best_commit_sha is None
+    assert landable_commit(trajectory) == "1" * 40
+
+
+def test_landable_commit_picks_a_later_commit_when_the_peak_has_none() -> None:
+    """A peak whose state is the untouched base is not what the run produced."""
+    trajectory = fold_trajectory(
+        [
+            _record(1, 9, commit_sha=None),
+            _record(2, 4, commit_sha="2" * 40),
+            _record(3, 6, commit_sha="3" * 40),
+        ],
+        plateau_window=2,
+    )
+    assert trajectory.best_iteration == 1
+    assert landable_commit(trajectory) == "3" * 40
+
+
+def test_landable_commit_is_none_only_when_no_iteration_committed() -> None:
+    """The zero-commit terminal has exactly one shape."""
+    trajectory = fold_trajectory(
+        [_record(1, 3), _record(2, 2), _record(3, 3)],
+        plateau_window=2,
+    )
+    assert landable_commit(trajectory) is None
+    assert landable_commit(fold_trajectory([], plateau_window=2)) is None
+
+
 _SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "kodezart"
 _PLATEAU_MODULE = "kodezart.domain.trajectory"
 _TYPES_IMPORT = (
@@ -1327,3 +1449,87 @@ async def test_loop_plateau_window_is_configurable_not_hardcoded() -> None:
     # With plateau_window=2 this same script stops after three iterations.
     assert len(iteration_events) == 4
     assert iteration_events[2].trajectory.plateaued is False
+
+
+# ---------------------------------------------------------------------------
+# KOD-40/AC-4, AC-5: one configured threshold, three stops that stay distinct
+# ---------------------------------------------------------------------------
+
+_ACCEPT_ON_SECOND_MASKS = [
+    [True, False, False],
+    [True, True, True],
+]
+
+
+def test_the_stall_threshold_is_an_app_config_knob_with_no_literal_in_loop_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KOD-40/AC-4: read from ``AppConfig``, never written into loop code.
+
+    One knob, not two.  A second threshold for the same arithmetic could
+    disagree with the first, and the loop would then have no answer to
+    which one governs it.
+    """
+    monkeypatch.delenv("KODEZART_LOOP_PLATEAU_WINDOW", raising=False)
+    assert AppConfig().loop_plateau_window == 2
+    monkeypatch.setenv("KODEZART_LOOP_PLATEAU_WINDOW", "4")
+    assert AppConfig().loop_plateau_window == 4
+
+    loop_source = _module_source("kodezart.chains.ralph_loop")
+    assert re.search(r"plateau_window\s*=\s*\d", loop_source) is None
+    assert loop_source.count("plateau_window=self._plateau_window") == 2
+    wiring = _module_source("kodezart.composition.engine")
+    assert "plateau_window=config.loop_plateau_window" in wiring
+
+
+async def test_the_three_stops_stay_distinct_and_none_shadows_another() -> None:
+    """KOD-40/AC-5: acceptance and the hard ceiling are unchanged by the stall.
+
+    Each stop is identified by what the run looks like when it ends, so a
+    stall rule that had swallowed either of the other two would show up
+    here as a run ending for the wrong reason.
+    """
+    accepted_loop = _make_loop(
+        executor=_ScriptedLoopExecutor(_THREE_CRITERIA, _ACCEPT_ON_SECOND_MASKS),
+        max_iterations=5,
+    )
+    accepted = [
+        e
+        async for e in accepted_loop.run(
+            **_run_kwargs(acceptance_criteria=_THREE_CRITERIA)
+        )
+        if isinstance(e, WorkflowIterationEvent)
+    ]
+    assert accepted[-1].verdict is AcceptVerdict.accepted
+    assert accepted[-1].iteration == 2 < 5
+    assert accepted[-1].trajectory.plateaued is False
+
+    ceiling_loop = _make_loop(
+        executor=_ScriptedLoopExecutor(_FIVE_CRITERIA, _IMPROVING_MASKS),
+        max_iterations=4,
+    )
+    ceiling = [
+        e
+        async for e in ceiling_loop.run(
+            **_run_kwargs(acceptance_criteria=_FIVE_CRITERIA)
+        )
+        if isinstance(e, WorkflowIterationEvent)
+    ]
+    assert ceiling[-1].verdict is AcceptVerdict.rejected
+    assert ceiling[-1].iteration == 4
+    assert ceiling[-1].trajectory.plateaued is False
+
+    stalled_loop = _make_loop(
+        executor=_ScriptedLoopExecutor(_THREE_CRITERIA, _PLATEAU_MASKS),
+        max_iterations=5,
+    )
+    stalled = [
+        e
+        async for e in stalled_loop.run(
+            **_run_kwargs(acceptance_criteria=_THREE_CRITERIA)
+        )
+        if isinstance(e, WorkflowIterationEvent)
+    ]
+    assert stalled[-1].verdict is AcceptVerdict.rejected
+    assert stalled[-1].iteration == 3 < 5
+    assert stalled[-1].trajectory.plateaued is True

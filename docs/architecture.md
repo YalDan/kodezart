@@ -64,6 +64,8 @@ does not exist.
 | ContentScanner    | RegexContentScanner      | The deterministic pattern half of the outbound gate  |
 | ContentScanner    | AgentContentScanner      | The judgment half, ordered after the patterns        |
 | OutboundContentGate | PatternOutboundContentGate | CLEAN / REDACTED / BLOCKED over N scanners      |
+| RefPublisher      | GitRefPublisher          | Points a named ref at an existing commit on the remote |
+| Remediator        | RemediationChain         | One remediation round: failure evidence in, one targeted ticket out |
 
 ## Workflow Pipeline
 

@@ -40,6 +40,7 @@ from kodezart.types.domain.operation import (
     QueueState,
 )
 from kodezart.types.domain.prompts import PromptKey
+from tests.prompt_census import PROMPT_FUNCTION_COUNT
 from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -423,9 +424,9 @@ def test_pass_templates_resolve_through_the_port_and_render(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_passes_at_sixteen_keys() -> None:
+def test_claude_opus_completeness_passes_at_the_full_census() -> None:
     """KOD-63's completeness rule obliges the default set to supply both."""
-    assert len(PromptKey) == 16
+    assert len(PromptKey) == PROMPT_FUNCTION_COUNT
     members = {path.stem for path in SET_DIR.glob("*.md")}
     assert members == {key.value for key in PromptKey}
 

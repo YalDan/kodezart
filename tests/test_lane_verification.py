@@ -16,6 +16,7 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.config import AppConfig
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.prompts import PromptKey
+from tests.prompt_census import PROMPT_FUNCTION_COUNT
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GOLDENS_DIR = REPO_ROOT / "tests" / "prompts" / "goldens"
@@ -55,11 +56,11 @@ def test_pass_templates_resolve_by_key_under_default_configuration(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_check_passes_at_sixteen_keys() -> None:
+def test_claude_opus_completeness_check_passes_at_the_full_census() -> None:
     """Loading succeeds only because the default set supplies every key."""
     registry = default_registry()
     table = registry.resolution_table()
-    assert len(table) == 16
+    assert len(table) == PROMPT_FUNCTION_COUNT
     assert set(table) == set(PromptKey)
 
 

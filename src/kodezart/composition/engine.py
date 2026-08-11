@@ -9,6 +9,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import (
@@ -17,6 +18,7 @@ from kodezart.core.protocols import (
     GitService,
     OutboundContentGate,
     PromptProvider,
+    RefPublisher,
     RepoCache,
     WorkspaceProvider,
 )
@@ -33,17 +35,18 @@ def build_workflow_engine(
     workspace: WorkspaceProvider,
     merger: BranchMerger,
     artifact_persister: ArtifactPersister,
+    ref_publisher: RefPublisher,
     prompts: PromptProvider,
     skills: SkillsSelection,
     gate: OutboundContentGate,
     github_api: GitHubAPIClient | None,
     checkpointer: BaseCheckpointSaver[str] | None,
 ) -> RalphWorkflowEngine:
-    """The engine, with the quality gate and ticket generator it runs.
+    """The engine, with the loops and the remediation component it runs.
 
-    Both loops are built here rather than by the engine, because both are
-    ports to it: substituting either is a wiring decision and the engine
-    holds them by protocol.  ``github_api`` answers three of those
+    All three are built here rather than by the engine, because all three
+    are ports to it: substituting any of them is a wiring decision and the
+    engine holds them by protocol.  ``github_api`` answers three of those
     protocols at once, and passing it three times is what the engine's
     signature asks for rather than a duplication this could remove.
     """
@@ -69,6 +72,11 @@ def build_workflow_engine(
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,
     )
+    remediator = RemediationChain(
+        service=agent_service,
+        prompts=prompts,
+        skills=skills,
+    )
     return RalphWorkflowEngine(
         service=agent_service,
         quality_gate=ralph_loop,
@@ -87,7 +95,9 @@ def build_workflow_engine(
         retry_initial_interval=config.retry_initial_interval,
         pr_creator=github_api,
         ci_monitor=github_api,
-        max_fix_rounds=config.max_fix_rounds,
+        ref_publisher=ref_publisher,
+        remediator=remediator,
+        remediation_max_rounds=config.remediation_max_rounds,
         criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
         artifact_persister=artifact_persister,
     )
