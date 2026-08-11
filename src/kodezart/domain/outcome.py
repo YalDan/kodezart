@@ -11,11 +11,18 @@ PR, saw CI fail, then hit a DIVERGENT fix consolidation matches both
 ``fix_consolidation_failed`` and ``ci_failed_fix_budget_exhausted``;
 ordering picks the former.
 
+Within the loop exit the sub-ordering is forced rather than chosen.  A
+stalled run that landed its do-not-merge PR also plateaued, and a run
+that produced no commits never moved its passed-count so it plateaued by
+construction; classifying the plateau first would leave both newer
+members unreachable at any default configuration.
+
 There is no default arm.  An unclassifiable state raises, so a new
 terminal route cannot ship undiscriminated.
 """
 
 from kodezart.domain.accept_gate import gate_cleared
+from kodezart.domain.trajectory import landable_commit
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.workflow import WorkflowState
 
@@ -42,6 +49,10 @@ def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
         return WorkflowOutcome.merge_divergent
     if merge_failed and fix_rounds_used > 0:
         return WorkflowOutcome.fix_consolidation_failed
+    if loop_exit and pr_url is not None:
+        return WorkflowOutcome.stalled_pr_opened
+    if loop_exit and trajectory is not None and landable_commit(trajectory) is None:
+        return WorkflowOutcome.zero_commit_no_pr
     if loop_exit and trajectory is not None and trajectory.plateaued is True:
         return WorkflowOutcome.loop_plateaued
     if loop_exit and (trajectory is None or trajectory.plateaued is False):

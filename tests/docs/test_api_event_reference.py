@@ -84,9 +84,7 @@ def documented_sections() -> list[tuple[str, int, list[tuple[str, list[str]]]]]:
 def documented_events() -> dict[str, list[str]]:
     """Every documented event type mapped to the fields its row names."""
     return {
-        event: fields
-        for _, _, rows in documented_sections()
-        for event, fields in rows
+        event: fields for _, _, rows in documented_sections() for event, fields in rows
     }
 
 
