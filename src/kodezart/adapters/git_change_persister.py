@@ -319,7 +319,8 @@ class GitChangePersister:
                 allowed_tools=["Read", "Glob", "Grep", "Bash"],
                 skills=skills,
                 output_format=output_format,
-            )
+            ),
+            site="commit_message",
         )
 
         if result_event is None or result_event.structured_output is None:

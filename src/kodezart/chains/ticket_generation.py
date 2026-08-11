@@ -219,7 +219,8 @@ class TicketGenerationLoop:
                     "schema": TICKET_DRAFT_SCHEMA,
                 },
                 session_id=state["creator_session_id"],
-            )
+            ),
+            site="ticket_creator",
         )
 
         if result_event is None or result_event.structured_output is None:
@@ -280,7 +281,8 @@ class TicketGenerationLoop:
                     "schema": TICKET_REVIEW_SCHEMA,
                 },
                 session_id=state["reviewer_session_id"],
-            )
+            ),
+            site="ticket_reviewer",
         )
 
         if result_event is None or result_event.structured_output is None:

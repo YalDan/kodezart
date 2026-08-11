@@ -252,7 +252,8 @@ class RalphLoop:
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="ralph_evaluator",
         )
 
         if result_event is None or result_event.structured_output is None:
