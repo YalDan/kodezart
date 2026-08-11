@@ -15,29 +15,41 @@ if TYPE_CHECKING:
     from kodezart.types.domain.agent import RaiseSite
 
 
-# GitHub token taxonomy (prefixes per the published format spec):
-#   ghp_ classic PAT, gho_ OAuth, ghu_ user-to-server, ghs_ server-to-server
-#   github_pat_ fine-grained PAT.
-# Body lower-bounds anchor on documented lengths so short-suffix prose
+_REDACTION_SENTINEL: Final[str] = "***REDACTED***"
+
+# Credential shapes to scrub, keyed by the vendor whose published token
+# taxonomy each entry encodes.  Adding a vendor is one entry; a sunset never
+# removes one, because historical logs still carry historical tokens.  Each
+# pattern carries its own replacement template, so the URL form can keep the
+# scheme and host either side of the secret it replaces.
+#
+# Body lower bounds anchor on documented lengths so short-suffix prose
 # matches (e.g. "ghp_abc") are not scrubbed.  No upper bound — the literal
 # prefix anchors prevent runaway backtracking.
-_REDACTION_SENTINEL: Final[str] = "***REDACTED***"
-_CREDENTIAL_URL_PATTERN: re.Pattern[str] = re.compile(
-    r"(https?://x-access-token:)[^@\s/]+(@)"
-)
-_GH_TOKEN_PATTERN: re.Pattern[str] = re.compile(r"\bgh[posu]_[A-Za-z0-9]{36,}")
-_GH_FINEGRAINED_PAT_PATTERN: re.Pattern[str] = re.compile(
-    r"\bgithub_pat_[A-Za-z0-9_]{20,}"
-)
-# Notion token taxonomy (prefixes per the published format spec):
-#   ntn_ current integration and OAuth tokens, secret_ legacy internal
-#   integration secrets.  ``secret_`` is an ordinary English word with an
-#   underscore, so the body lower bound carries the whole anchoring load
-#   here: 40 alphanumerics is below both published lengths and far above
-#   anything operator prose puts after that prefix.
-_NOTION_TOKEN_PATTERN: re.Pattern[str] = re.compile(
-    r"\b(?:ntn_|secret_)[A-Za-z0-9]{40,}"
-)
+#
+#   github: ghp_ classic PAT, gho_ OAuth, ghu_ user-to-server, ghs_
+#     server-to-server, github_pat_ fine-grained PAT; plus the tokenized
+#     remote URL the forge auth adapter constructs.
+#   notion: ntn_ current integration and OAuth tokens, secret_ legacy
+#     internal integration secrets.  ``secret_`` is an ordinary English word
+#     with an underscore, so the body lower bound carries the whole anchoring
+#     load there: 40 alphanumerics is below both published lengths and far
+#     above anything operator prose puts after that prefix.
+_VENDOR_CREDENTIAL_PATTERNS: Final[
+    dict[str, tuple[tuple[re.Pattern[str], str], ...]]
+] = {
+    "github": (
+        (
+            re.compile(r"(https?://x-access-token:)[^@\s/]+(@)"),
+            rf"\1{_REDACTION_SENTINEL}\2",
+        ),
+        (re.compile(r"\bgh[posu]_[A-Za-z0-9]{36,}"), _REDACTION_SENTINEL),
+        (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), _REDACTION_SENTINEL),
+    ),
+    "notion": (
+        (re.compile(r"\b(?:ntn_|secret_)[A-Za-z0-9]{40,}"), _REDACTION_SENTINEL),
+    ),
+}
 
 
 def redact_credentials(s: str) -> str:
@@ -45,10 +57,11 @@ def redact_credentials(s: str) -> str:
 
     Applied at the two ErrorEvent egress fields below and at both
     Claude-SDK adapter ``claude_sdk_process_error`` log calls.  Patterns
-    are tightly scoped to the credential URL form, the five published
-    GitHub token prefixes and the two published Notion token prefixes —
-    wider matches risk scrubbing non-secret operator text, which the
-    ticket explicitly forbids.
+    are tightly scoped to the shapes each vendor publishes — wider matches
+    risk scrubbing non-secret operator text, which the ticket explicitly
+    forbids.  A vendor's taxonomy is one entry in
+    ``_VENDOR_CREDENTIAL_PATTERNS``, so covering the next one adds an entry
+    rather than editing this function.
 
     LEAK ORIGIN vs. egress redaction: the upstream LEAK ORIGIN is
     ``adapters/subprocess_git_service.py`` — specifically ``_run``,
@@ -66,10 +79,9 @@ def redact_credentials(s: str) -> str:
     future hardening pass MAY scrub at the source as defense-in-depth
     but is not required for the wire-visible fields to be safe.
     """
-    s = _CREDENTIAL_URL_PATTERN.sub(rf"\1{_REDACTION_SENTINEL}\2", s)
-    s = _GH_TOKEN_PATTERN.sub(_REDACTION_SENTINEL, s)
-    s = _GH_FINEGRAINED_PAT_PATTERN.sub(_REDACTION_SENTINEL, s)
-    s = _NOTION_TOKEN_PATTERN.sub(_REDACTION_SENTINEL, s)
+    for patterns in _VENDOR_CREDENTIAL_PATTERNS.values():
+        for pattern, replacement in patterns:
+            s = pattern.sub(replacement, s)
     return s
 
 
