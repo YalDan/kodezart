@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "description": "The audit session's whole verdict: every finding, or none.",
+  "properties": {
+    "findings": {
+      "items": {
+        "additionalProperties": false,
+        "description": "One finding from the judgment scanner's audit session.\n\n``start``/``end`` are absent when the finding localizes to no span \u2014\n\"this paragraph implies an unreleased capability\" has nothing to\nexcise, and the gate blocks rather than redacting such a finding.",
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "rationale"
+        ],
+        "title": "ContentAuditFinding",
+        "type": "object"
+      },
+      "title": "Findings",
+      "type": "array"
+    }
+  },
+  "title": "ContentAuditOutput",
+  "type": "object"
+}

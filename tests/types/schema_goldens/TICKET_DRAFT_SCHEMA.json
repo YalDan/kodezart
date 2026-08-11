@@ -1,0 +1,103 @@
+{
+  "additionalProperties": false,
+  "description": "Structured output for a generated implementation ticket.\n\nThe downstream generate_criteria agent has its own job \u2014 it derives\nobservable acceptance criteria from the full formatted ticket.",
+  "properties": {
+    "context": {
+      "title": "Context",
+      "type": "string"
+    },
+    "openQuestions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Openquestions",
+      "type": "array"
+    },
+    "outOfScope": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Outofscope",
+      "type": "array"
+    },
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "description": "A reference to a specific location in the codebase.",
+        "properties": {
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "note"
+        ],
+        "title": "CodeReference",
+        "type": "object"
+      },
+      "title": "References",
+      "type": "array"
+    },
+    "requiredChanges": {
+      "items": {
+        "additionalProperties": false,
+        "description": "A single file-level change required to implement the ticket.",
+        "properties": {
+          "changeType": {
+            "enum": [
+              "create",
+              "modify",
+              "delete"
+            ],
+            "title": "Changetype",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "filePath": {
+            "title": "Filepath",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filePath",
+          "changeType",
+          "description",
+          "rationale"
+        ],
+        "title": "FileChange",
+        "type": "object"
+      },
+      "title": "Requiredchanges",
+      "type": "array"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "summary",
+    "context",
+    "requiredChanges"
+  ],
+  "title": "TicketDraftOutput",
+  "type": "object"
+}

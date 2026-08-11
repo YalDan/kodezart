@@ -1,0 +1,27 @@
+{
+  "additionalProperties": false,
+  "description": "Structured output for a ticket review.",
+  "properties": {
+    "approved": {
+      "title": "Approved",
+      "type": "boolean"
+    },
+    "feedback": {
+      "title": "Feedback",
+      "type": "string"
+    },
+    "suggestions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Suggestions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "approved",
+    "feedback"
+  ],
+  "title": "TicketReviewOutput",
+  "type": "object"
+}

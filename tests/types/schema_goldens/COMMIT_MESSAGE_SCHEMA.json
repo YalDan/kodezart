@@ -1,0 +1,19 @@
+{
+  "additionalProperties": false,
+  "description": "Structured output schema for agent-generated commit messages.",
+  "properties": {
+    "body": {
+      "title": "Body",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "title": "CommitMessageOutput",
+  "type": "object"
+}

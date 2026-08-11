@@ -1,0 +1,20 @@
+{
+  "additionalProperties": false,
+  "description": "Structured output for agent-generated PR descriptions.",
+  "properties": {
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "description"
+  ],
+  "title": "PRDescriptionOutput",
+  "type": "object"
+}

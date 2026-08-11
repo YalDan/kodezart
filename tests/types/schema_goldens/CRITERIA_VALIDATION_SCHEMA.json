@@ -1,0 +1,211 @@
+{
+  "additionalProperties": false,
+  "description": "Structured output of the validator agent.",
+  "properties": {
+    "contradictions": {
+      "items": {
+        "additionalProperties": false,
+        "description": "A subset of criterion ids whose conjunction admits no implementation.",
+        "properties": {
+          "criterionIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Criterionids",
+            "type": "array"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "criterionIds",
+          "explanation"
+        ],
+        "title": "Contradiction",
+        "type": "object"
+      },
+      "title": "Contradictions",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "additionalProperties": false,
+        "description": "One refuter finding about one criterion \u2014 the validator's raw output.\n\nThe refuter states the ``verdict`` and the evidence behind it: the\nsmallest repair that would settle the criterion, and what it\nestablished.  Evidence is carried so a human can audit \"supply a\nPostgres instance\", and so the sweep can ground the statement:\n``classify_finding`` derives its own verdict from the evidence alone,\nand a stated verdict the evidence does not derive is refused.",
+        "properties": {
+          "baseDemonstration": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "description": "A demonstration of a criterion performed against the repo AT BASE.\n\nIts existence is the claim that the refuter ran the criterion's own\ncheck before any work: ``satisfied_at_base`` is an observed result,\nnever a prediction, and vacuity is read from it and nothing else.",
+                "properties": {
+                  "command": {
+                    "title": "Command",
+                    "type": "string"
+                  },
+                  "satisfiedAtBase": {
+                    "title": "Satisfiedatbase",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "command",
+                  "satisfiedAtBase"
+                ],
+                "title": "BaseDemonstration",
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costClaim": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "description": "An assertion about the price of demonstrating a criterion.\n\n``measurement`` is ``None`` when the cost was argued rather than\nmeasured, and the refuter is told an argued cost may not carry a\nverdict.  The sweep's derivation weighs the claim rather than reading\nit past: an unmeasured claim and an affordable measurement are both\nstruck and support no repair; only a measured, uneconomic one\nsurvives, and it is environment-side.",
+                "properties": {
+                  "assertion": {
+                    "title": "Assertion",
+                    "type": "string"
+                  },
+                  "measurement": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "description": "A measurement of a demonstration that ACTUALLY RAN.\n\nIts existence is the claim that the demonstration completed; a\ndemonstration a limit prevented from running has no instance of this\ntype at all.",
+                        "properties": {
+                          "affordable": {
+                            "title": "Affordable",
+                            "type": "boolean"
+                          },
+                          "observed": {
+                            "title": "Observed",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "observed",
+                          "affordable"
+                        ],
+                        "title": "CostMeasurement",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "assertion"
+                ],
+                "title": "CostClaim",
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "criterionId": {
+            "title": "Criterionid",
+            "type": "string"
+          },
+          "forbiddenClass": {
+            "anyOf": [
+              {
+                "description": "The classes the drafter is instructed never to emit.\n\nThe instruction is prose addressed to a model, so instances reach the\nsweep.  Five of the six describe criteria nothing in the run can\ngrade, and one of those reaching the loop fails every iteration and\nburns the budget proving a defect that predates iteration one \u2014 the\nrefuter returns ``infeasible`` for them and the class is recorded here.\n\n``literal_count`` is the exception: the count can be hit, so it is not\na feasibility fault.  It is FLAGGED and forced to ``soft_signal``.",
+                "enum": [
+                  "pull_request_body",
+                  "ci_status",
+                  "merge_state",
+                  "execution_graded",
+                  "literal_count",
+                  "transient_pipeline_state"
+                ],
+                "title": "ForbiddenCriterionClass",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingResource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missingresource"
+          },
+          "pinnedLiterals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pinnedliterals",
+            "type": "array"
+          },
+          "refutation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refutation"
+          },
+          "smallestRepair": {
+            "description": "The COMPLETE repair set a finding may name.\n\nExactly three members, and the count is the point: a fourth \u2014 elapsed\ntime, most temptingly \u2014 would let a lack that clears by waiting be\nfiled as no lack at all, and the loop would then fail what the sweep\ncalled settled.",
+            "enum": [
+              "none",
+              "criterion_text",
+              "environment_supply"
+            ],
+            "title": "RepairKind",
+            "type": "string"
+          },
+          "undeclaredSwitchArms": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Undeclaredswitcharms",
+            "type": "array"
+          },
+          "verdict": {
+            "description": "Three-state feasibility outcome. Never collapsed to a boolean.",
+            "enum": [
+              "feasible",
+              "infeasible",
+              "unverifiable"
+            ],
+            "title": "CriterionVerdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "criterionId",
+          "verdict",
+          "smallestRepair"
+        ],
+        "title": "CriterionFinding",
+        "type": "object"
+      },
+      "title": "Findings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "findings"
+  ],
+  "title": "CriteriaValidationOutput",
+  "type": "object"
+}

@@ -1,0 +1,15 @@
+{
+  "additionalProperties": false,
+  "description": "Agent-generated branch name slug.",
+  "properties": {
+    "slug": {
+      "title": "Slug",
+      "type": "string"
+    }
+  },
+  "required": [
+    "slug"
+  ],
+  "title": "BranchNameOutput",
+  "type": "object"
+}

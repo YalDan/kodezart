@@ -1,0 +1,75 @@
+{
+  "additionalProperties": false,
+  "description": "Structured output for acceptance criteria evaluation.\n\n``sherlock_flags`` carries the synthesis's own concerns as data.  A\nreasoning error the evaluator noticed but could only write into prose\nis invisible to every consumer downstream of it; as a typed field it\nrides the iteration event and reaches the pull-request body.",
+  "properties": {
+    "criteriaResults": {
+      "items": {
+        "additionalProperties": false,
+        "description": "Per-criterion evaluation result, keyed by the harness's stable id.\n\n``criterion`` is two different things on the two directions this model\ntravels, and only one of them has a defence.\n\nOUTBOUND it carries the HARNESS's text, looked up by id:\n``grade_iteration`` overwrites the field on both the answered and the\nunanswered path, and the result reaches a human in the\n``workflow_iteration`` and ``workflow_review`` SSE frames, where a\nreader sees which criterion a verdict is about without joining the\nframe against the criteria set.  Measured on the handler's own\n``model_dump(by_alias=True, exclude_none=True)``.\n\nINBOUND it is the evaluator's ECHO, and that has no defence: nothing\never reads it, so requiring it costs a full reproduction of every\ncriterion's text on every iteration and every post-merge review and\nbuys nothing.  Dropping the inbound obligation without dropping the\noutbound field means splitting this model in two; KOD-91 deliverable 3\nis already rewriting these field descriptions and removes it there,\nwith the two prompt lines that demand it.",
+        "properties": {
+          "criterion": {
+            "title": "Criterion",
+            "type": "string"
+          },
+          "criterionId": {
+            "title": "Criterionid",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "reasoning": {
+            "title": "Reasoning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "criterionId",
+          "criterion",
+          "passed",
+          "reasoning"
+        ],
+        "title": "CriterionResult",
+        "type": "object"
+      },
+      "title": "Criteriaresults",
+      "type": "array"
+    },
+    "sherlockFlags": {
+      "items": {
+        "additionalProperties": false,
+        "description": "A reasoning concern the evaluator raised in its own name.\n\n``[sherlock]`` findings are the concerns no single Watson owns, raised\nby the synthesis over their combined reports.  They used to live inside\n``reasoning`` prose, where nothing downstream could read them.\n\n``criterion_id`` is ``None`` when the concern is about the SET rather\nthan one criterion; the absence is meaningful, not a value to fill in.",
+        "properties": {
+          "concern": {
+            "title": "Concern",
+            "type": "string"
+          },
+          "criterionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criterionid"
+          }
+        },
+        "required": [
+          "concern"
+        ],
+        "title": "SherlockFlag",
+        "type": "object"
+      },
+      "title": "Sherlockflags",
+      "type": "array"
+    }
+  },
+  "required": [
+    "criteriaResults"
+  ],
+  "title": "AcceptanceCriteriaOutput",
+  "type": "object"
+}

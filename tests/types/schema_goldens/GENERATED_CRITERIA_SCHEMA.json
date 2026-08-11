@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "Agent-generated acceptance criteria from ticket + codebase analysis.\n\nIdentity is NOT part of this shape \u2014 ``AC-n`` ids are minted\nharness-side from emission order, so nothing a model echoes can\nrenumber a criterion WITHIN one dispatch.\n\nThe guarantee stops at the dispatch boundary and does not hold across\na regeneration round: ``mint_criteria`` always enumerates from 1 and\n``DraftedCriterion`` carries no id, so a regenerator cannot return an\nidentity even in principle.  Round two's ``AC-3`` is whatever landed\nthird, not round one's ``AC-3``.",
+  "properties": {
+    "criteria": {
+      "items": {
+        "additionalProperties": false,
+        "description": "One criterion as the generator emits it \u2014 identity is minted later.",
+        "properties": {
+          "criterionClass": {
+            "description": "Whether a criterion is a behavior contract or a shape signal.",
+            "enum": [
+              "hard_gate",
+              "soft_signal"
+            ],
+            "title": "CriterionClass",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "criterionClass"
+        ],
+        "title": "DraftedCriterion",
+        "type": "object"
+      },
+      "title": "Criteria",
+      "type": "array"
+    },
+    "reasoning": {
+      "title": "Reasoning",
+      "type": "string"
+    }
+  },
+  "required": [
+    "criteria",
+    "reasoning"
+  ],
+  "title": "GeneratedCriteriaOutput",
+  "type": "object"
+}
