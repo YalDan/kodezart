@@ -46,8 +46,13 @@ from kodezart.types.domain.prompts import (
     PromptSetMetadata,
 )
 from tests.fakes import as_validated
+from tests.prompt_census import configured_investigation_cap
 
 DEFAULT_SET = "claude-opus"
+#: The configured fan-out cap, read off the field declaration rather than a
+#: constructed config: the suite must not depend on the ambient environment
+#: to know what the application ships.
+CONFIGURED_INVESTIGATION_CAP: int = configured_investigation_cap()
 GOLDENS = Path(__file__).parent / "goldens" / "claude_opus_empty_skills"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -248,6 +253,7 @@ def load_registry(
     set_overrides: dict[str, str] | None = None,
     template_overrides: dict[str, str] | None = None,
     bindings: dict[str, object] | None = None,
+    investigation_cap: int | None = None,
 ) -> InRepoPromptRegistry:
     """Load a registry addressing the set BY NAME (never via environment)."""
     return InRepoPromptRegistry.load(
@@ -256,6 +262,11 @@ def load_registry(
         set_overrides=set_overrides or {},
         template_overrides=template_overrides or {},
         bindings=bindings or {},
+        investigation_cap=(
+            investigation_cap
+            if investigation_cap is not None
+            else CONFIGURED_INVESTIGATION_CAP
+        ),
     )
 
 

@@ -22,8 +22,16 @@ from pathlib import Path
 from typing import Self
 
 from kodezart.core.errors import PromptResolutionError
-from kodezart.core.prompt_rendering import PromptTemplate, compose_set_member
-from kodezart.types.domain.prompts import PromptKey, PromptSetMetadata
+from kodezart.core.prompt_rendering import (
+    PromptTemplate,
+    compose_set_member,
+    free_binding_names,
+)
+from kodezart.types.domain.prompts import (
+    OrchestrationPrimitive,
+    PromptKey,
+    PromptSetMetadata,
+)
 from kodezart.types.domain.subagents import AgentDefinition
 
 _METADATA_FILE = "set.toml"
@@ -31,6 +39,10 @@ _MEMBER_SUFFIX = ".md"
 _DEFINITIONS_DIR = "definitions"
 _SKILLS_FRAGMENT = "skills_reference"
 _SUPPRESSION_FRAGMENT = "suppression_proxy"
+_ORCHESTRATION_SLOT = "orchestration_block"
+_INVESTIGATION_SPEC_FRAGMENT = "investigation_spec"
+_INVESTIGATION_CAP_NAME = "investigation_cap"
+_ULTRACODE_FRAGMENT = "ultracode_instruction"
 _TEMPLATE_SOURCE_PREFIX = "template:"
 
 
@@ -72,6 +84,7 @@ class InRepoPromptRegistry:
         set_overrides: Mapping[str, str],
         template_overrides: Mapping[str, str],
         bindings: Mapping[str, object],
+        investigation_cap: int,
     ) -> Self:
         """Resolve every function key or raise ``PromptResolutionError``."""
         available = _discover_sets(sets_root)
@@ -113,13 +126,29 @@ class InRepoPromptRegistry:
                 continue
             body, source, owning_set = resolved
             owning_metadata = metadata.get(owning_set, default_metadata)
+            composed = _composed(owning_metadata, key.value, body)
+            slotted = _ORCHESTRATION_SLOT in free_binding_names(composed)
+            orchestration = (
+                _orchestration_block(owning_metadata, investigation_cap)
+                if slotted
+                else None
+            )
+            if slotted and orchestration is None:
+                if key.value not in failures:
+                    failures.append(key.value)
+                continue
             templates[key] = PromptTemplate(
                 key=key,
                 source=source,
-                body=_composed(owning_metadata, key.value, body),
+                body=composed,
                 bindings={
                     **bindings,
                     _SKILLS_FRAGMENT: _skills_fragment(owning_metadata, key),
+                    **(
+                        {}
+                        if orchestration is None
+                        else {_ORCHESTRATION_SLOT: orchestration}
+                    ),
                 },
             )
 
@@ -241,6 +270,45 @@ def _composed(metadata: PromptSetMetadata, name: str, body: str) -> str:
         None if name in metadata.utility_keys else fragments.ultrathink_instruction
     )
     return compose_set_member(body, substitutions=substitutions, appendix=appendix)
+
+
+def _orchestration_block(metadata: PromptSetMetadata, cap: int) -> str | None:
+    """The block that fills a member's orchestration slot for this set.
+
+    Which fragment fills the slot is read from the set's declared
+    primitive — the value the harness enumeration measured — never judged
+    by an engine reading a conditional instruction.  ``None`` means the set
+    cannot fill the slot at all: either it declares no primitive, or the
+    fragment the primitive selects is absent.  Both are boot failures for
+    any member that asks for the slot, which is why the caller reports the
+    key rather than rendering an empty block.
+
+    The cap is substituted here rather than at render time because the
+    renderer substitutes into a template body, not into a value it has
+    just bound: a bound value carrying a tag would reach the session with
+    the tag intact.
+    """
+    fragments = metadata.fragments
+    selected = {
+        OrchestrationPrimitive.WORKFLOW: fragments.orchestration_workflow,
+        OrchestrationPrimitive.AGENT: fragments.orchestration_agents,
+    }
+    if metadata.orchestration_primitive is None:
+        return None
+    body = selected[metadata.orchestration_primitive]
+    spec = fragments.investigation_spec
+    if body is None or spec is None:
+        return None
+    substitutions = {
+        _INVESTIGATION_SPEC_FRAGMENT: compose_set_member(
+            spec,
+            substitutions={_INVESTIGATION_CAP_NAME: str(cap)},
+            appendix=None,
+        ),
+    }
+    if fragments.ultracode_instruction is not None:
+        substitutions[_ULTRACODE_FRAGMENT] = fragments.ultracode_instruction
+    return compose_set_member(body, substitutions=substitutions, appendix=None)
 
 
 def _load_definitions(

@@ -42,6 +42,21 @@ class PromptKey(StrEnum):
     KNOWLEDGE_MAP = "knowledge_map"
 
 
+class OrchestrationPrimitive(StrEnum):
+    """How a generative role is told to fan its investigation out.
+
+    Deterministic configuration, never a model judgement: the value is set
+    from what the harness enumeration measured, and it selects which
+    fragment fills the orchestration slot.
+    """
+
+    #: A named repo-owned workflow script coordinates the fan-out and
+    #: merges the evidence in code.
+    WORKFLOW = "workflow"
+    #: Parallel agent dispatches in a single turn, merged by the session.
+    AGENT = "agent"
+
+
 class PromptSetFragments(BaseModel):
     """Set-level fragment content bound into every member of the set.
 
@@ -60,6 +75,11 @@ class PromptSetFragments(BaseModel):
     suppression_proxy: str | None = None
     ultrathink_instruction: str | None = None
     ultracode_instruction: str | None = None
+    #: The shared fan-out spec both orchestration fragments carry, and the
+    #: two primitive-specific blocks one of which fills the slot.
+    investigation_spec: str | None = None
+    orchestration_workflow: str | None = None
+    orchestration_agents: str | None = None
 
 
 class AgentDefinitionSpec(BaseModel):
@@ -91,3 +111,7 @@ class PromptSetMetadata(BaseModel):
     utility_keys: list[str] = Field(default_factory=list)
     #: Typed lens definitions the set contributes, keyed by lens name.
     definitions: dict[str, AgentDefinitionSpec] = Field(default_factory=dict)
+    #: How this set's generative roles are told to fan out. ``None`` means
+    #: the set declares no orchestration at all, and no member of it may
+    #: carry the orchestration slot.
+    orchestration_primitive: OrchestrationPrimitive | None = None

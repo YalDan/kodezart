@@ -40,6 +40,7 @@ from tests.fakes import (
     FakeRepoCache,
     make_criteria,
 )
+from tests.prompt_census import configured_investigation_cap
 from tests.prompts.test_claude_opus_goldens import V5_SET
 
 LENS_NAMES = ("doc-verifier", "draft-critic", "explorer")
@@ -53,6 +54,7 @@ def v5_provider() -> InRepoPromptRegistry:
         set_overrides={},
         template_overrides={},
         bindings={},
+        investigation_cap=configured_investigation_cap(),
     )
 
 
@@ -413,4 +415,5 @@ def legacy_provider() -> InRepoPromptRegistry:
         set_overrides={},
         template_overrides={},
         bindings={},
+        investigation_cap=configured_investigation_cap(),
     )

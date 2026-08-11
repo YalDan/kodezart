@@ -7,6 +7,21 @@ this session, rewrite it until it stands alone. Ground every criterion in the
 repository as it is now: verify a file, symbol, binding, or boundary rule exists before
 a criterion depends on it.
 
+Ground the work before drafting: execute this spec with parallel Agent
+dispatches in a single turn:
+
+GOAL:     answer every open question this draft depends on — one bounded
+          question per agent, defined input, schema-shaped output
+FAN OUT:  one explorer agent per repository question, one doc-verifier agent
+          per external claim, all in parallel
+CAP:      at most 5 agents on this run
+ON FAIL:  an agent that returns nothing marks its question unanswered — never
+          silently skipped, never treated as settled
+REPORT:   the merged evidence, counted against the questions dispatched
+
+Merge the returned evidence yourself and count results against dispatches
+before drafting.
+
 Constraints on the criteria:
 - Behavioral and falsifiable: name the observable outcome, not the implementation shape.
 - Jointly satisfiable: one implementation must be able to satisfy all of them at once.

@@ -105,6 +105,7 @@ from kodezart.types.domain.tracker import (
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest
 from kodezart.types.requests.agent import WorkflowRequest
+from tests.prompt_census import configured_investigation_cap
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
 #: The kind a fake session reports when a test does not care which kind it
@@ -1688,6 +1689,7 @@ def make_prompt_provider() -> InRepoPromptRegistry:
         set_overrides={},
         template_overrides={},
         bindings={},
+        investigation_cap=configured_investigation_cap(),
     )
 
 

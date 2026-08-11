@@ -13,6 +13,15 @@ engines = ["opus-5", "fable-5", "sonnet-5"]
 # one inside the prompt it joins.
 utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map"]
 
+# Which fan-out primitive this set's generative roles are told to use. Set
+# from the harness enumeration's measured verdict, never model-judged: the
+# agent primitive is live under the production session configuration as it
+# stands, while the workflow primitive additionally needs a non-plan
+# permission mode and an allowlist entry that no judgment session in this
+# system has by design. Flipping this value is the whole change if that
+# session-policy ruling ever moves; both fragments are authored below.
+orchestration_primitive = "agent"
+
 # Set-level fragment content, bound or composed into members when the set
 # is resolved. A set that declares none of these is composed unchanged.
 [fragments]
@@ -72,6 +81,48 @@ as the task warrants before you act.\
 ultracode_instruction = """\
 Ultracode. This work opts into multi-agent orchestration — use the Workflow tool to
 fulfill the investigation, following the spec above.\
+"""
+
+# The fan-out contract itself, shared by both primitives so the two blocks
+# below differ only in HOW the work is coordinated. The cap is a
+# configuration value substituted when the set is resolved; no template of
+# this set contains a literal number here.
+investigation_spec = """\
+GOAL:     answer every open question this draft depends on — one bounded
+          question per agent, defined input, schema-shaped output
+FAN OUT:  one explorer agent per repository question, one doc-verifier agent
+          per external claim, all in parallel
+CAP:      at most {{investigation_cap}} agents on this run
+ON FAIL:  an agent that returns nothing marks its question unanswered — never
+          silently skipped, never treated as settled
+REPORT:   the merged evidence, counted against the questions dispatched\
+"""
+
+# Primitive = workflow. The coordination is repo-owned code, so the reduce
+# happens in the script and the dispatching session's context never fills
+# with raw agent transcripts.
+orchestration_workflow = """\
+Ground the work before drafting: run the /kodezart-investigate workflow with
+your question list, following this spec:
+
+{{investigation_spec}}
+
+The workflow coordinates the fan-out as code — results merge in the script,
+never in your context — and returns one counted evidence report.
+
+{{ultracode_instruction}}\
+"""
+
+# Primitive = agent. The session does its own merge, so the counting rule is
+# stated as an obligation rather than delegated to a script.
+orchestration_agents = """\
+Ground the work before drafting: execute this spec with parallel Agent
+dispatches in a single turn:
+
+{{investigation_spec}}
+
+Merge the returned evidence yourself and count results against dispatches
+before drafting.\
 """
 
 # Typed lens definitions the set contributes. Prompt bodies are data files

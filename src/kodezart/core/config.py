@@ -459,6 +459,21 @@ class AppConfig(BaseSettings):
             "Deliberately independent of the model knob."
         ),
     )
+    investigation_cap: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description=(
+            "Read-only investigator sessions one generative dispatch may fan "
+            "out to. The default is the width the prose dispatch protocol "
+            "this set replaces actually instructed — five parallel dispatches "
+            "— so the migration changes how the fan-out is coordinated and "
+            "counted, not how wide it runs. The floor of one keeps the "
+            "rendered spec coherent; the ceiling of ten is twice that "
+            "measured width, because every unit above it is another whole "
+            "session charged against one draft."
+        ),
+    )
     prompt_set_overrides: dict[str, str] = Field(
         default_factory=dict,
         description=(

@@ -41,6 +41,7 @@ from kodezart.types.domain.tracker import (
     MappingRef,
 )
 from tests.fakes import FakeTrackerPort
+from tests.prompt_census import configured_investigation_cap
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
@@ -405,6 +406,7 @@ class TestReconciledConfig:
             set_overrides={},
             template_overrides={},
             bindings=dict(bindings_for(self._fresh())),
+            investigation_cap=configured_investigation_cap(),
         )
 
         with pytest.raises(PromptRenderError) as caught:
@@ -427,6 +429,7 @@ class TestReconciledConfig:
             set_overrides={},
             template_overrides={},
             bindings=dict(bindings_for(reconciliation.config)),
+            investigation_cap=configured_investigation_cap(),
         )
 
         rendered = registry.template_for(PromptKey.FIRE_PREP_PASS).render({})

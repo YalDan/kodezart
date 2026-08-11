@@ -33,6 +33,7 @@ def default_registry() -> InRepoPromptRegistry:
         set_overrides=config.prompt_set_overrides,
         template_overrides=config.prompt_template_overrides,
         bindings=dict(bindings_for(operation)),
+        investigation_cap=config.investigation_cap,
     )
 
 
@@ -129,6 +130,25 @@ def template_for_golden(golden: Path) -> Path:
     return default_sets_root() / set_for_golden_dir(golden.parent) / f"{key}.md"
 
 
+def metadata_for_golden(golden: Path) -> Path:
+    """The set metadata the golden's render composes from.
+
+    A rendered member is assembled from TWO authored inputs: its own
+    template and its set's metadata — the fragments substituted into it,
+    the depth block appended to it, the skills reference and the
+    orchestration block bound into it.  A licence read from the template
+    alone models half the render, so the metadata of the golden's OWN set
+    is the second half.  Still per-set: nothing here lets one set's edit
+    license another set's golden.
+    """
+    return default_sets_root() / set_for_golden_dir(golden.parent) / "set.toml"
+
+
+def licences_for_golden(golden: Path) -> tuple[Path, ...]:
+    """The authored files whose movement licenses this golden's rewrite."""
+    return (template_for_golden(golden), metadata_for_golden(golden))
+
+
 def test_a_golden_suite_resolves_to_the_set_it_was_rendered_from(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -173,7 +193,9 @@ def test_no_golden_diverges_from_its_baseline_unless_its_own_template_did() -> N
     abandoned that evidence, and the only thing that licenses abandoning it
     is the template it renders having genuinely moved since the same commit.
     Editing prompt A while re-baselining golden B is an offender here, because
-    the licence is read from B's own template, not from the set as a whole.
+    the licence is read from B's own sources — its template and its set's
+    metadata, the two authored inputs its render composes from — and never
+    from another member of the set.
     """
     goldens = sorted(GOLDENS_DIR.rglob("*.txt"))
     assert goldens, "no golden files found"
@@ -184,11 +206,19 @@ def test_no_golden_diverges_from_its_baseline_unless_its_own_template_did() -> N
         introducing = git("log", "--format=%H", "--", relative).split()[-1]
         if golden.read_text(encoding="utf-8") == blob_at(introducing, relative):
             continue
-        template = template_for_golden(golden).relative_to(REPO_ROOT).as_posix()
-        if blob_at("HEAD", template) != blob_at(introducing, template):
+        licences = [
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in licences_for_golden(golden)
+        ]
+        if any(
+            blob_at("HEAD", licence) != blob_at(introducing, licence)
+            for licence in licences
+        ):
             continue
-        offenders.append(f"{relative}: re-baselined, {template} unchanged")
-    assert offenders == [], f"goldens re-baselined off their own template: {offenders}"
+        offenders.append(
+            f"{relative}: re-baselined, {' and '.join(licences)} unchanged"
+        )
+    assert offenders == [], f"goldens re-baselined off their own sources: {offenders}"
 
 
 def test_every_golden_rewrite_commit_also_changed_that_goldens_template() -> None:
@@ -205,15 +235,23 @@ def test_every_golden_rewrite_commit_also_changed_that_goldens_template() -> Non
     offenders: list[str] = []
     for golden in goldens:
         relative = golden.relative_to(REPO_ROOT).as_posix()
-        template = template_for_golden(golden).relative_to(REPO_ROOT).as_posix()
-        template_commits = set(git("log", "--format=%H", "--", template).split())
+        licences = [
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in licences_for_golden(golden)
+        ]
+        licensing_commits = {
+            commit
+            for licence in licences
+            for commit in git("log", "--format=%H", "--", licence).split()
+        }
         rewrites = git("log", "--format=%H", "--", relative).split()[:-1]
         offenders.extend(
-            f"{relative}: rewritten at {commit[:8]} with {template} untouched"
+            f"{relative}: rewritten at {commit[:8]} with "
+            f"{' and '.join(licences)} untouched"
             for commit in rewrites
-            if commit not in template_commits
+            if commit not in licensing_commits
         )
-    assert offenders == [], f"goldens rewritten off their own template: {offenders}"
+    assert offenders == [], f"goldens rewritten off their own sources: {offenders}"
 
 
 def test_both_golden_suites_exist_and_cover_the_relocated_keys() -> None:
