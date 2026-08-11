@@ -38,6 +38,16 @@ class TicketGenerationLoop:
     """Iterates ticket drafting and review until approved or max reviews.
 
     Graph: START -> create -> review -> [conditional: create or finalize] -> END
+
+    NO node resumes a session.  Two runs died identically at the creator
+    raise site because a revision resumed the draft session: the draft's
+    background subagents append a task notification to the transcript
+    AFTER the result, and a resumed CLI answers that dangling tail with a
+    zero-API-call turn whose ``ResultMessage`` ends the SDK's receive
+    loop before the revision prompt is dequeued.  The revision prompt
+    already carries the full previous draft, the reviewer's feedback and
+    every suggestion, and instructs the creator to re-investigate, so the
+    resume bought nothing the prompt does not already hand over.
     """
 
     def __init__(
@@ -85,18 +95,17 @@ class TicketGenerationLoop:
         # TODO(time-travel): workspace is acquired here before the graph
         # and stored in frozen WorkflowContext configurable — NOT in
         # checkpointed state. On checkpoint resume the worktree is gone
-        # (/tmp ephemeral) and session_ids reference dead cwd paths.
+        # (/tmp ephemeral).
         # Fix requires:
         # 1. Re-derive workspace inside each node from configurable
         #    (repo_path, repo_url, cache_key) — do NOT checkpoint the
         #    path itself (it's a dead /tmp artifact on resume).
         #    WorkflowContext is frozen=True so ctx.workspace_path
         #    cannot be mutated; pass the path directly instead.
-        # 2. Invalidate session_ids when workspace is re-acquired
-        #    (is_new → session=None) — the old session's conversation
-        #    history references files in the dead worktree.
-        # 3. Accept resume flag from outer workflow; pass None instead
+        # 2. Accept resume flag from outer workflow; pass None instead
         #    of initial_state to astream() (see ralph_workflow.py TODO).
+        # The session-invalidation item this list used to carry is gone:
+        # no node resumes a session, so none can reference a dead cwd.
         try:
             workspace_path = await self._workspace.acquire(
                 repo_path=repo_path,
@@ -145,8 +154,6 @@ class TicketGenerationLoop:
                 "review_feedback": None,
                 "review_suggestions": [],
                 "approved": False,
-                "creator_session_id": None,
-                "reviewer_session_id": None,
             }
 
             async for event in self._compiled.astream(
@@ -207,6 +214,13 @@ class TicketGenerationLoop:
             msg = "workspace_path must be set before entering create node"
             raise RuntimeError(msg)
 
+        await self._log.ainfo(
+            "ticket_create_attempt",
+            iteration=iteration,
+            resumed_session_id=None,
+            prompt_chars=len(body),
+            suggestion_count=len(state["review_suggestions"]),
+        )
         result_event, rate_limit_rejected = await drain(
             self._service.stream_in_workspace(
                 prompt=body,
@@ -218,7 +232,7 @@ class TicketGenerationLoop:
                     "type": "json_schema",
                     "schema": TICKET_DRAFT_SCHEMA,
                 },
-                session_id=state["creator_session_id"],
+                session_id=None,
             ),
             site="ticket_creator",
         )
@@ -241,7 +255,6 @@ class TicketGenerationLoop:
         return {
             "draft_iteration": iteration,
             "current_draft": draft,
-            "creator_session_id": result_event.session_id,
         }
 
     async def _review_node(
@@ -269,6 +282,13 @@ class TicketGenerationLoop:
             msg = "workspace_path must be set before entering review node"
             raise RuntimeError(msg)
 
+        await self._log.ainfo(
+            "ticket_review_attempt",
+            iteration=count,
+            resumed_session_id=None,
+            prompt_chars=len(body),
+            draft_iteration=state["draft_iteration"],
+        )
         result_event, rate_limit_rejected = await drain(
             self._service.stream_in_workspace(
                 prompt=body,
@@ -280,7 +300,7 @@ class TicketGenerationLoop:
                     "type": "json_schema",
                     "schema": TICKET_REVIEW_SCHEMA,
                 },
-                session_id=state["reviewer_session_id"],
+                session_id=None,
             ),
             site="ticket_reviewer",
         )
@@ -310,7 +330,6 @@ class TicketGenerationLoop:
             "approved": output.approved,
             "review_feedback": output.feedback,
             "review_suggestions": output.suggestions,
-            "reviewer_session_id": result_event.session_id,
         }
 
     async def _finalize_node(

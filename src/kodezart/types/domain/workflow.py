@@ -126,8 +126,6 @@ class TicketGenerationState(TypedDict):
     review_feedback: str | None
     review_suggestions: list[str]
     approved: bool
-    creator_session_id: str | None
-    reviewer_session_id: str | None
 
 
 class RalphLoopState(TypedDict):
