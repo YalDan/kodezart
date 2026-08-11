@@ -145,13 +145,15 @@ class AppConfig(BaseSettings):
         description="Maximum ticket review rounds before accepting.",
     )
     ticket_review_mode: TicketReviewMode = Field(
-        default=TicketReviewMode.REVIEWED,
+        default=TicketReviewMode.CREATE_ONLY,
         description=(
             "Whether the ticket loop runs a harness-level reviewer session "
             "(reviewed) or one creator session that critiques its own draft "
             "in-session (create_only). Under create_only the review budget "
             "above compiles nothing, so configuring both is refused rather "
-            "than resolved."
+            "than resolved. The shipped default requires a prompt set "
+            "declaring a draft-critic lens; reviewed is the legacy pairing "
+            "and the mode half of the rollback."
         ),
     )
     retry_max_attempts: int = Field(
@@ -476,10 +478,12 @@ class AppConfig(BaseSettings):
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
     )
     prompt_set: str = Field(
-        default="claude-opus",
+        default="anthropic_v5",
         description=(
             "Default prompt set name (a directory under prompts/sets/). "
-            "Deliberately independent of the model knob."
+            "Deliberately independent of the model knob. claude-opus is the "
+            "legacy set, kept complete and byte-frozen, and remains fully "
+            "selectable as the corpus half of the rollback."
         ),
     )
     investigation_cap: int = Field(
