@@ -81,7 +81,7 @@ def _trajectory(
 
 
 def test_wire_values_are_pinned_verbatim() -> None:
-    """The thirteen values are a wire contract — a re-point must break the build.
+    """The fourteen values are a wire contract — a re-point must break the build.
 
     The order is the module's stated extension convention: later work
     APPENDS, so ``criteria_infeasible`` sits last rather than first and
@@ -101,6 +101,7 @@ def test_wire_values_are_pinned_verbatim() -> None:
         "criteria_infeasible",
         "stalled_pr_opened",
         "zero_commit_no_pr",
+        "remediation_budget_exhausted",
     ]
 
 
