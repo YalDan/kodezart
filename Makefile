@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := check
-.PHONY: install format lint lint-fix type-check test check clean verify-no-origin-literal
+.PHONY: install format lint lint-fix type-check test check clean verify-no-origin-literal verify-no-ref-parsing
 
 install:
 	uv sync --all-groups
@@ -26,7 +26,10 @@ verify-no-origin-literal:
 		exit 1 ; \
 	fi
 
-check: verify-no-origin-literal lint type-check test
+verify-no-ref-parsing:
+	@uv run python scripts/check_ref_parsing.py
+
+check: verify-no-origin-literal verify-no-ref-parsing lint type-check test
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
