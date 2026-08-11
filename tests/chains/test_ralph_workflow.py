@@ -67,6 +67,11 @@ from kodezart.types.domain.subagents import (
 )
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
+from tests.chains.test_dispatch_definitions import (
+    chain_source,
+    dispatch_block,
+    v5_provider,
+)
 from tests.fakes import (
     FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
@@ -4394,3 +4399,21 @@ async def test_a_conforming_review_is_dispatched_once_and_carries_no_report() ->
     assert len(review_events) == 1
     assert review_events[0].passed is True
     assert review_events[0].fan_in is None
+
+
+def test_the_post_merge_review_dispatch_passes_an_empty_definition_set() -> None:
+    """KOD-87-AC-5, first half — the second evaluative site, asserted here."""
+    source = chain_source("ralph_workflow.py")
+    review = source.index('site="post_merge_review"')
+    start = source.rindex("self._service.stream", 0, review)
+    assert "agents=NO_SUBAGENTS" in source[start:review]
+    assert "self._prompts.definitions()" not in source[start:review]
+
+
+def test_the_criteria_dispatch_passes_exactly_the_sets_three_definitions() -> None:
+    """KOD-87-AC-5, second half — the lenses come from the set, not from code."""
+    block = dispatch_block(
+        chain_source("ralph_workflow.py"), "GENERATED_CRITERIA_SCHEMA"
+    )
+    assert "agents=self._prompts.definitions()" in block
+    assert len(v5_provider().definitions()) == 3

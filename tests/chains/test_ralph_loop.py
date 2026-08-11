@@ -47,6 +47,7 @@ from kodezart.types.domain.subagents import (
     SessionPolicy,
 )
 from kodezart.types.domain.trajectory import IterationRecord
+from tests.chains.test_dispatch_definitions import chain_source, dispatch_block
 from tests.fakes import (
     FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
@@ -1788,3 +1789,17 @@ async def test_the_guard_costs_nothing_when_the_set_is_a_permutation() -> None:
     assert len(executor.evaluations) == 1
     assert iterations[0].verdict is AcceptVerdict.accepted
     assert iterations[0].fan_in is None
+
+
+def test_the_evaluate_dispatch_passes_an_empty_definition_set() -> None:
+    """KOD-87-AC-4 — the evaluative guarantee, at the site it binds.
+
+    Injecting definitions into this path is what fails: the site names
+    the empty sequence, so a set that declares three lenses reaches the
+    evaluator with none of them. The whole-set proof is in
+    ``tests/chains/test_dispatch_definitions.py``; this is its assertion
+    on the module the criterion names.
+    """
+    block = dispatch_block(chain_source("ralph_loop.py"), "ACCEPTANCE_CRITERIA_SCHEMA")
+    assert "agents=NO_SUBAGENTS" in block
+    assert "self._prompts.definitions()" not in block

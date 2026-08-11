@@ -24,6 +24,12 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from tests.chains.test_dispatch_definitions import (
+    LENS_NAMES,
+    chain_source,
+    dispatch_block,
+    v5_provider,
+)
 from tests.fakes import (
     FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
@@ -756,3 +762,10 @@ async def test_run_forwards_base_branch_to_acquire() -> None:
 
     acquire_calls = [c for c in workspace.calls if c[0] == "acquire"]
     assert acquire_calls == [("acquire", "/tmp/fake", "develop")]
+
+
+def test_the_create_dispatch_passes_exactly_the_sets_three_definitions() -> None:
+    """KOD-87-AC-6 — the creator is the generative site of this loop."""
+    block = dispatch_block(chain_source("ticket_generation.py"), "TICKET_DRAFT_SCHEMA")
+    assert "agents=self._prompts.definitions()" in block
+    assert tuple(d.name for d in v5_provider().definitions()) == LENS_NAMES
