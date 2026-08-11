@@ -1,0 +1,126 @@
+# Prompt set metadata. Parsed with stdlib tomllib by InRepoPromptRegistry.
+# Unknown top-level keys and unknown sections are a typed boot error;
+# new sections are added by extending PromptSetMetadata additively.
+
+name = "anthropic_v5"
+engines = ["opus-5", "fable-5", "sonnet-5"]
+
+# Roles that carry no reasoning-depth instruction: they emit a name, a
+# message, a description, or a prelude composed into another session's
+# prompt. Which roles those are is a property of THIS set, decided per
+# key at authoring time — the knowledge map is here because it is a
+# prelude, and a prelude carrying its own depth block would put a second
+# one inside the prompt it joins.
+utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map"]
+
+# Set-level fragment content, bound or composed into members when the set
+# is resolved. A set that declares none of these is composed unchanged.
+[fragments]
+skills_reference_header = """\
+── SKILLS AVAILABLE FOR THIS ROLE ──
+Load each skill below when its subject matter is in play; ignore the ones \
+that do not apply.\
+"""
+
+# Delivered as the session's system-prompt append, never inside a template
+# body. The last paragraph is load-bearing: ending a turn without the
+# structured output IS early stopping in this harness, and that is the
+# failure class behind every no-structured-output raise site.
+house_rules = """\
+kodezart house rules:
+
+Engineering standard: SOLID, DRY, KISS. Prefer the simplest design that satisfies the
+requirement. YAGNI: add no code, parameters, abstractions, or files beyond what the task
+directly requires — if removing an addition would not break the feature, leave it out.
+
+Hard prohibitions: no mocked or hardcoded values outside tests, no silent fallbacks, no
+backwards-compatibility shims, no fabricated success signals (returning OK without doing
+the work, swallowing errors, catching exceptions to pretend nothing happened). The linter
+and type checker are never disabled or suppressed.
+
+Cross-component conventions (naming patterns, branch formats, message schemas) belong in
+typed domain models, never in string literals or implicit contracts between files.
+
+Act as soon as you have enough information. Your turn is complete only when you have
+produced the required structured output — if you notice yourself ending with a plan or a
+promise about work not yet done, do that work now.\
+"""
+
+# One source, composed into the three templates that need the shared
+# vocabulary for lint and type-safety concerns.
+suppression_proxy = """\
+The linter-never-disabled policy is checked deterministically: grep the changed lines of
+the diff for newly introduced suppression tokens. The token set: `# type: ignore` (with or
+without an error code), `# noqa` (with or without a code), `# ruff: noqa`,
+`pytest.mark.skip`, `pytest.mark.skipif`, `pytest.skip(...)`, `pytest.importorskip(...)`,
+removed `def test_` declarations, removed `assert ` lines, and any Pydantic `model_config`
+whose `extra` value changes from `forbid` or `ignore` to `allow`. This grep is the
+deterministic proxy for the policy; claims of the form "the tool exits 0" require execution
+and are not a substitute for it.\
+"""
+
+# Appended as the final block of every member outside the utility roster,
+# and of every lens definition.
+ultrathink_instruction = """\
+Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly
+as the task warrants before you act.\
+"""
+
+# The orchestration opt-in's expansion. Declared here so the token exists
+# in exactly one place in the set; which templates carry it, and the graph
+# spec it accompanies, belong to the orchestration deliverable.
+ultracode_instruction = """\
+Ultracode. This work opts into multi-agent orchestration — use the Workflow tool to
+fulfill the investigation, following the spec above.\
+"""
+
+# Typed lens definitions the set contributes. Prompt bodies are data files
+# under definitions/; only the mandate and the reach live here. The tool
+# lists are read-only by construction: a definition's tools and the
+# session allowlist are two independent bounds, either of which can bind.
+[definitions.explorer]
+description = """\
+Read-only repository investigation: finds the code, config, and tests \
+relevant to one question and returns concrete evidence.\
+"""
+tools = ["Read", "Glob", "Grep"]
+
+[definitions.doc-verifier]
+description = """\
+Verifies claims about external APIs, libraries, and frameworks against \
+first-party documentation.\
+"""
+tools = ["WebSearch", "WebFetch", "Read"]
+
+[definitions.draft-critic]
+description = """\
+Fresh-context adversarial critique of a drafted artifact against the task \
+it must serve.\
+"""
+tools = ["Read", "Glob", "Grep"]
+
+# Function key -> skill names the role should reach for. Declared for every
+# key because the registry's contract requires it; the VALUES are the
+# session-policy deliverable's to decide, and an explicit empty list is
+# this set saying the role loads no skill yet. No template of this set
+# names a skill or when to invoke one — a skill's own description is its
+# trigger.
+[skills]
+branch_name = []
+ticket_create = []
+ticket_review = []
+ticket_revision = []
+acceptance_criteria = []
+criteria_validation = []
+implementation = []
+evaluation = []
+iteration_feedback = []
+post_merge_review = []
+fix = []
+remediation_ticket = []
+commit_message = []
+pr_description = []
+fire_prep_pass = []
+grooming_pass = []
+content_audit = []
+knowledge_map = []

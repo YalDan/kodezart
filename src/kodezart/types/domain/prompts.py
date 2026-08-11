@@ -7,7 +7,7 @@ a directory of data files, never Python.
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PromptKey(StrEnum):
@@ -46,11 +46,29 @@ class PromptSetFragments(BaseModel):
     """Set-level fragment content bound into every member of the set.
 
     Authored as data in ``set.toml`` so no prompt prose lives in code.
+
+    Every field beyond the skills header is three-state by absence:
+    ``None`` means the set declares no such fragment and contributes
+    nothing of that kind, which is how a set authored before a fragment
+    existed stays composed exactly as it was.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     skills_reference_header: str
+    house_rules: str | None = None
+    suppression_proxy: str | None = None
+    ultrathink_instruction: str | None = None
+    ultracode_instruction: str | None = None
+
+
+class AgentDefinitionSpec(BaseModel):
+    """What ``set.toml`` declares about one lens; its prompt is a data file."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    description: str
+    tools: list[str]
 
 
 class PromptSetMetadata(BaseModel):
@@ -67,3 +85,9 @@ class PromptSetMetadata(BaseModel):
     engines: list[str]
     skills: dict[str, list[str]]
     fragments: PromptSetFragments
+    #: Roles that carry no reasoning-depth instruction. A set that names
+    #: none has no utility roster, which is a statement about the set and
+    #: not a default standing in for one.
+    utility_keys: list[str] = Field(default_factory=list)
+    #: Typed lens definitions the set contributes, keyed by lens name.
+    definitions: dict[str, AgentDefinitionSpec] = Field(default_factory=dict)

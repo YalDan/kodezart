@@ -22,12 +22,15 @@ from pathlib import Path
 from typing import Self
 
 from kodezart.core.errors import PromptResolutionError
-from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.core.prompt_rendering import PromptTemplate, compose_set_member
 from kodezart.types.domain.prompts import PromptKey, PromptSetMetadata
+from kodezart.types.domain.subagents import AgentDefinition
 
 _METADATA_FILE = "set.toml"
 _MEMBER_SUFFIX = ".md"
+_DEFINITIONS_DIR = "definitions"
 _SKILLS_FRAGMENT = "skills_reference"
+_SUPPRESSION_FRAGMENT = "suppression_proxy"
 _TEMPLATE_SOURCE_PREFIX = "template:"
 
 
@@ -54,9 +57,11 @@ class InRepoPromptRegistry:
         *,
         templates: Mapping[PromptKey, PromptTemplate],
         default_metadata: PromptSetMetadata,
+        definitions: Sequence[AgentDefinition] = (),
     ) -> None:
         self._templates: Mapping[PromptKey, PromptTemplate] = templates
         self._default_metadata: PromptSetMetadata = default_metadata
+        self._definitions: tuple[AgentDefinition, ...] = tuple(definitions)
 
     @classmethod
     def load(
@@ -111,7 +116,7 @@ class InRepoPromptRegistry:
             templates[key] = PromptTemplate(
                 key=key,
                 source=source,
-                body=body,
+                body=_composed(owning_metadata, key.value, body),
                 bindings={
                     **bindings,
                     _SKILLS_FRAGMENT: _skills_fragment(owning_metadata, key),
@@ -126,7 +131,11 @@ class InRepoPromptRegistry:
                 available_sets=sorted(available),
             )
 
-        return cls(templates=templates, default_metadata=default_metadata)
+        return cls(
+            templates=templates,
+            default_metadata=default_metadata,
+            definitions=_load_definitions(available[default_set], default_metadata),
+        )
 
     def template_for(self, key: PromptKey) -> PromptTemplate:
         """Return the unrendered template registered for *key*."""
@@ -143,6 +152,14 @@ class InRepoPromptRegistry:
     def declared_skills(self, key: PromptKey) -> Sequence[str]:
         """Skill names the default set declares for *key*."""
         return tuple(self._default_metadata.skills[key.value])
+
+    def definitions(self) -> Sequence[AgentDefinition]:
+        """Typed lens definitions the default set declares, name-ordered."""
+        return self._definitions
+
+    def system_prompt_append(self) -> str | None:
+        """The default set's house rules, delivered as a system-prompt append."""
+        return self._default_metadata.fragments.house_rules
 
 
 def _discover_sets(sets_root: Path) -> dict[str, Path]:
@@ -204,6 +221,46 @@ def _resolve_key(
     if not member.is_file():
         return None
     return (_read_member(member), set_name, set_name)
+
+
+def _composed(metadata: PromptSetMetadata, name: str, body: str) -> str:
+    """One member, assembled from *body* plus the set's fragment content.
+
+    Which fragments a member receives is a property of the SET: the
+    suppression proxy where a member asks for it by name, and the
+    reasoning-depth block appended to every role outside the declared
+    utility roster.  A set that declares neither composes unchanged.
+    """
+    fragments = metadata.fragments
+    substitutions = (
+        {_SUPPRESSION_FRAGMENT: fragments.suppression_proxy}
+        if fragments.suppression_proxy is not None
+        else {}
+    )
+    appendix = (
+        None if name in metadata.utility_keys else fragments.ultrathink_instruction
+    )
+    return compose_set_member(body, substitutions=substitutions, appendix=appendix)
+
+
+def _load_definitions(
+    set_dir: Path,
+    metadata: PromptSetMetadata,
+) -> tuple[AgentDefinition, ...]:
+    """Build every declared lens from its metadata plus its prompt file."""
+    return tuple(
+        AgentDefinition(
+            name=name,
+            description=spec.description,
+            prompt=_composed(
+                metadata,
+                name,
+                _read_member(set_dir / _DEFINITIONS_DIR / f"{name}{_MEMBER_SUFFIX}"),
+            ),
+            tools=tuple(spec.tools),
+        )
+        for name, spec in sorted(metadata.definitions.items())
+    )
 
 
 def _skills_fragment(metadata: PromptSetMetadata, key: PromptKey) -> str:
