@@ -116,21 +116,36 @@ class Arm:
     review_mode: TicketReviewMode
 
 
+#: What an arm that never reached its terminal event reports for the
+#: observations only a terminal event can answer.
+NOT_REACHED = "not reached"
+
+
 @dataclass(frozen=True)
 class ArmObservation:
-    """What one arm's run emitted, read off its events."""
+    """What one arm's run emitted, read off its events.
+
+    ``failure`` carries the exception that ended a run before its terminal
+    event, and every field a terminal event would have answered then reads
+    ``not reached``.  An arm that dies still produces a ROW: a paired
+    summary missing the column that failed would report the comparison as
+    if only the surviving arm had been asked, which is the one reading the
+    evidence must never support.
+    """
 
     arm: Arm
     resolution_table_sets: tuple[str, ...]
-    iterations: int
+    reached_nodes: tuple[str, ...]
+    iterations: str
     iteration_verdicts: tuple[str, ...]
-    accepted: bool
-    merged: bool
-    ticket_review_rounds: int | None
+    accepted: str
+    merged: str
+    ticket_review_rounds: str
     review_passed: str
     outcome: str
     structured_output_failures: tuple[str, ...]
     error_kinds: tuple[str, ...]
+    failure: str | None
     seconds: float
 
 
@@ -235,31 +250,39 @@ def observe(
     arm: Arm,
     events: Sequence[AgentEvent],
     resolution_sets: tuple[str, ...],
+    failure: str | None,
     seconds: float,
 ) -> ArmObservation:
     """One arm's observations, every one of them read off the events."""
     completes = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
-    if len(completes) != 1:
+    if len(completes) > 1:
         msg = f"{arm.label}: expected one terminal event, saw {len(completes)}"
         raise AssertionError(msg)
-    complete = completes[0]
+    if not completes and failure is None:
+        msg = f"{arm.label}: the run ended with neither a terminal event nor a failure"
+        raise AssertionError(msg)
+    complete = completes[0] if completes else None
     iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     tickets = [e for e in events if isinstance(e, WorkflowTicketEvent)]
     errors = [e for e in events if isinstance(e, ErrorEvent)]
     return ArmObservation(
         arm=arm,
         resolution_table_sets=resolution_sets,
-        iterations=complete.total_iterations,
+        reached_nodes=tuple(dict.fromkeys(event.type for event in events)),
+        iterations=str(complete.total_iterations) if complete else NOT_REACHED,
         iteration_verdicts=tuple(str(event.verdict) for event in iterations),
-        accepted=complete.accepted,
-        merged=complete.merged,
-        ticket_review_rounds=tickets[-1].review_rounds if tickets else None,
+        accepted=str(complete.accepted) if complete else NOT_REACHED,
+        merged=str(complete.merged) if complete else NOT_REACHED,
+        ticket_review_rounds=(
+            str(tickets[-1].review_rounds) if tickets else NOT_REACHED
+        ),
         review_passed=_classify_review(events),
-        outcome=str(complete.outcome),
+        outcome=str(complete.outcome) if complete else NOT_REACHED,
         structured_output_failures=tuple(
             event.error for event in errors if event.error_kind is not None
         ),
         error_kinds=tuple(event.error_kind or "unclassified" for event in errors),
+        failure=failure,
         seconds=seconds,
     )
 
@@ -328,17 +351,21 @@ async def run_arm(
     repo = await fixture_repo(root)
     request = WorkflowRequest(prompt=TICKET, repo_path=str(repo))
     events: list[AgentEvent] = []
+    failure: str | None = None
     started = time.monotonic()
-    async for event in engine.run(
-        prompt=request.prompt,
-        repo_path=request.repo_path,
-        repo_url=request.repo_url,
-        base_spec=trunk_base(request.base_branch),
-        permission_mode=request.permission_mode,
-        allowed_tools=request.allowed_tools,
-        cache_key=uuid.uuid4().hex,
-    ):
-        events.append(event)
+    try:
+        async for event in engine.run(
+            prompt=request.prompt,
+            repo_path=request.repo_path,
+            repo_url=request.repo_url,
+            base_spec=trunk_base(request.base_branch),
+            permission_mode=request.permission_mode,
+            allowed_tools=request.allowed_tools,
+            cache_key=uuid.uuid4().hex,
+        ):
+            events.append(event)
+    except Exception as raised:
+        failure = f"{type(raised).__name__}: {raised}".splitlines()[0]
     seconds = time.monotonic() - started
     await log.ainfo(
         "ab_smoke_arm_finished",
@@ -352,6 +379,7 @@ async def run_arm(
         arm=arm,
         events=events,
         resolution_sets=resolution_sets,
+        failure=failure,
         seconds=seconds,
     )
 
@@ -365,17 +393,14 @@ def render_pair(observations: Sequence[ArmObservation]) -> str:
             "boot resolution table",
             [", ".join(o.resolution_table_sets) for o in observations],
         ),
-        ("iterations to acceptance", [str(o.iterations) for o in observations]),
+        ("iterations to acceptance", [o.iterations for o in observations]),
         (
             "iteration verdicts",
             [", ".join(o.iteration_verdicts) or "none" for o in observations],
         ),
-        ("accepted", [str(o.accepted) for o in observations]),
-        ("merged", [str(o.merged) for o in observations]),
-        (
-            "ticket review rounds",
-            [str(o.ticket_review_rounds) for o in observations],
-        ),
+        ("accepted", [o.accepted for o in observations]),
+        ("merged", [o.merged for o in observations]),
+        ("ticket review rounds", [o.ticket_review_rounds for o in observations]),
         ("post-merge review", [o.review_passed for o in observations]),
         ("terminal outcome", [o.outcome for o in observations]),
         (
@@ -385,6 +410,11 @@ def render_pair(observations: Sequence[ArmObservation]) -> str:
         (
             "error events",
             [", ".join(o.error_kinds) or "none" for o in observations],
+        ),
+        ("run ended by", [o.failure or "its terminal event" for o in observations]),
+        (
+            "event types seen",
+            [str(len(o.reached_nodes)) for o in observations],
         ),
         ("wall clock (s)", [str(round(o.seconds)) for o in observations]),
     ]
@@ -403,12 +433,13 @@ async def test_ab_smoke_runs_one_ticket_through_both_shipped_pairs(
 ) -> None:
     """One ticket, both coherent pairs, four observations each.
 
-    The assertions are deliberately thin — that each arm reached a single
-    terminal event (``observe`` refuses otherwise) and ran under the
-    corpus its arm names.  Everything else is RECORDED: the issue body
-    makes this evidence rather than a gate, so an arm that ends
-    unaccepted produces a row to carry to the tracker rather than a
-    failure to hide behind.
+    The assertions are deliberately thin — that each arm ran under the
+    corpus its arm names, and that every arm ended either at a terminal
+    event or at a named failure (``observe`` refuses a run that did
+    neither).  Everything else is RECORDED: the issue body makes this
+    evidence rather than a gate, so an arm that ends unaccepted, or that
+    does not end at all, produces a row to carry to the tracker rather
+    than a failure to hide behind.
     """
     observations = [
         await run_arm(
@@ -436,9 +467,10 @@ async def test_ab_smoke_runs_one_ticket_through_both_shipped_pairs(
                 f"post-merge review={observation.review_passed}; "
                 f"outcome={observation.outcome}; "
                 f"structured-output failures="
-                f"{len(observation.structured_output_failures)}"
+                f"{len(observation.structured_output_failures)}; "
+                f"ended by={observation.failure or 'its terminal event'}"
             ),
-            verdict="recorded",
+            verdict="recorded" if observation.failure is None else "incomplete",
         )
     reporter = request.config.pluginmanager.get_plugin("terminalreporter")
     if reporter is not None:
