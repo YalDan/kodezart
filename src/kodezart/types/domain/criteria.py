@@ -11,6 +11,7 @@ whose absence blocks its demonstration.  The vocabulary is never collapsed
 to a boolean.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated, NewType, Self
 
@@ -90,19 +91,48 @@ class CriterionFlag(StrEnum):
     implementation, including the empty one; what it lacks is
     DISCRIMINATING POWER, and that is what a flag records.
 
-    The one consequence the harness still draws from a flag is the forced
+    The consequence the harness draws from a flag is the forced
     ``soft_signal`` downgrade: a flagged criterion leaves the hard-gate
-    partition.  It no longer follows that the criterion is ``feasible``,
-    that it consumes no regeneration round, or that its text survives —
-    the refuter states the verdict now, and a flagged criterion it calls
-    ``infeasible`` is regenerated and can reach the pre-loop halt like any
-    other.  The template does instruct it to report ``feasible`` there
-    ("a demonstration that ran and passed cannot also ground a repair
-    demand"); nothing checks that.
+    partition.  The template's instruction that a demonstration which ran
+    and passed cannot also ground a repair demand is checked, not merely
+    requested: the sweep's derivation raises on a ``vacuous_at_base``
+    observation paired with any repair, so a criterion the base satisfies
+    consumes no regeneration round and reaches no halt.
     """
 
     vacuous_at_base = "vacuous_at_base"
     literal_pinning = "literal_pinning"
+
+
+class LimitArm(StrEnum):
+    """Which kind of limit blocks a demonstration — or that none does.
+
+    ``resource_absent`` and ``uneconomic`` partition the environment-side
+    arm by the presence of a measurement: a demonstration a limit stopped
+    from running has no measurement of its cost, a demonstration that ran
+    and priced itself uneconomic has one.  A derivation component, never a
+    persisted field — the wire carries the same distinction as
+    ``costMeasurement``'s presence.
+    """
+
+    not_a_limit = "not_a_limit"
+    resource_absent = "resource_absent"
+    uneconomic = "uneconomic"
+
+
+@dataclass(frozen=True, slots=True)
+class DerivedFeasibility:
+    """What one finding's evidence alone derives.
+
+    The harness's own classification, computed beside the stated verdict
+    and never from it.  The sweep refuses any finding whose stated verdict
+    its evidence does not derive, so the record a run proceeds on always
+    carries the pair in agreement.
+    """
+
+    verdict: CriterionVerdict
+    limit_arm: LimitArm
+    flags: tuple[CriterionFlag, ...]
 
 
 class ForbiddenCriterionClass(StrEnum):
@@ -159,8 +189,10 @@ class CostClaim(CamelCaseModel):
 
     ``measurement`` is ``None`` when the cost was argued rather than
     measured, and the refuter is told an argued cost may not carry a
-    verdict.  Both cases cross the sweep verbatim; the distinction is
-    read by whoever audits the run, not by the harness.
+    verdict.  The sweep's derivation weighs the claim rather than reading
+    it past: an unmeasured claim and an affordable measurement are both
+    struck and support no repair; only a measured, uneconomic one
+    survives, and it is environment-side.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
@@ -194,7 +226,9 @@ class CriterionFinding(CamelCaseModel):
     The refuter states the ``verdict`` and the evidence behind it: the
     smallest repair that would settle the criterion, and what it
     established.  Evidence is carried so a human can audit "supply a
-    Postgres instance"; nothing downstream re-derives the verdict from it.
+    Postgres instance", and so the sweep can ground the statement:
+    ``classify_finding`` derives its own verdict from the evidence alone,
+    and a stated verdict the evidence does not derive is refused.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)

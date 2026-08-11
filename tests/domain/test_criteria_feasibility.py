@@ -1,9 +1,14 @@
-"""The sweep: reconciliation, the conjunction fold, and the persisted shape.
+"""The sweep: the derivation beside the stated verdict, and the record.
 
-The refuter states each criterion's verdict, so nothing here asserts a
-verdict the harness computed.  What is asserted is what the harness still
-decides: which findings are accepted at all, which conflicts survive, and
-what the run persists and grades on.
+The refuter states each criterion's verdict; the harness derives its own
+from the evidence alone (``classify_finding``) and refuses a statement
+the evidence does not derive.  Every classification case here is a row in
+a table — a requirement, not a style: a sweep that needs a new branch per
+case has pattern-matched its examples instead of applying the fault-line
+test, and the second-domain rows are what catches it.  The rest asserts
+what the harness decides around the derivation: which findings are
+accepted at all, which conflicts survive, and what the run persists and
+grades on.
 """
 
 import json
@@ -13,13 +18,14 @@ from pydantic import BaseModel, ValidationError
 
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
+    classify_finding,
     demands_regeneration,
     minimal_conflicting_subsets,
     reconcile,
     regeneration_targets,
     sweep,
 )
-from kodezart.domain.errors import CriteriaFanInError
+from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
 from kodezart.types.domain.agent import WorkflowCriteriaValidationEvent
 from kodezart.types.domain.criteria import (
     BaseDemonstration,
@@ -35,6 +41,7 @@ from kodezart.types.domain.criteria import (
     DraftedCriterion,
     ForbiddenCriterionClass,
     GeneratedCriterion,
+    LimitArm,
     RepairKind,
     ValidatedCriterion,
 )
@@ -68,6 +75,26 @@ def _swept(*findings: CriterionFinding) -> list:
     )
 
 
+def _refuted(id_: str, refutation: str, **evidence: object) -> CriterionFinding:
+    return CriterionFinding(
+        criterion_id=id_,
+        verdict=CriterionVerdict.infeasible,
+        smallest_repair=RepairKind.criterion_text,
+        refutation=refutation,
+        **evidence,
+    )
+
+
+def _lacking(id_: str, resource: str, **evidence: object) -> CriterionFinding:
+    return CriterionFinding(
+        criterion_id=id_,
+        verdict=CriterionVerdict.unverifiable,
+        smallest_repair=RepairKind.environment_supply,
+        missing_resource=resource,
+        **evidence,
+    )
+
+
 # ---------------------------------------------------------------------------
 # The repair set is closed — waiting is not a member
 # (KOD-53/AC-12, KOD-66 item 1b)
@@ -81,6 +108,21 @@ def test_repair_set_has_exactly_three_members() -> None:
         "criterion_text",
         "environment_supply",
     }
+
+
+def test_a_lack_that_clears_with_time_does_not_reach_feasible() -> None:
+    """KOD-53/AC-12 — waiting is the absence of a repair, so the lack is a lack.
+
+    The verdict is derived from the two-member repair set alone: the
+    window is an absent resource, and an implementation admitting elapsed
+    time as a third repair fails ``test_repair_set_has_exactly_three_members``.
+    """
+    derived = classify_finding(
+        _lacking("AC-1", "the provider rate-limit window, which resets in 4 hours")
+    )
+    assert derived.verdict is not CriterionVerdict.feasible
+    assert derived.verdict is CriterionVerdict.unverifiable
+    assert derived.limit_arm is LimitArm.resource_absent
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +305,217 @@ def test_an_infeasible_verdict_the_sweep_records_carries_its_refutation() -> Non
 
 
 # ---------------------------------------------------------------------------
+# Fault-line classification table — the six evidence classes and the
+# second-domain rows (KOD-53/AC-1 and KOD-53/AC-9, KOD-66 items 1a-1c)
+# ---------------------------------------------------------------------------
+
+#: Class 3 (criterion-vs-criterion contradiction) is the conjunction fold's
+#: subject and is exercised in the conjunction section below; every other
+#: evidence class is a row here.  The second-domain rows are a
+#: browser-automation lane, classified with no implementation change.
+_CLASSIFICATION_TABLE: list[
+    tuple[str, CriterionFinding, CriterionVerdict, LimitArm, list[CriterionFlag]]
+] = [
+    (
+        "class-1 structurally impossible: lint boundary forbids the export",
+        _refuted(
+            "AC-1",
+            "pyproject.toml lint boundary rules forbid every consumer from "
+            "importing the demanded export",
+        ),
+        CriterionVerdict.infeasible,
+        LimitArm.not_a_limit,
+        [],
+    ),
+    (
+        "class-2 false premise: the named binding exists nowhere at base",
+        _refuted("AC-1", "no such binding is declared anywhere in the target repo"),
+        CriterionVerdict.infeasible,
+        LimitArm.not_a_limit,
+        [],
+    ),
+    (
+        "class-4 already satisfied at base",
+        _feasible(
+            "AC-1",
+            base_demonstration=BaseDemonstration(
+                command="uv run pytest tests/api/v1/test_health.py -q",
+                satisfied_at_base=True,
+            ),
+        ),
+        CriterionVerdict.feasible,
+        LimitArm.not_a_limit,
+        [CriterionFlag.vacuous_at_base],
+    ),
+    (
+        "class-5 literal-count pinning",
+        _feasible(
+            "AC-1",
+            pinned_literals=["src/kodezart/core/config.py", "exactly 3 occurrences"],
+        ),
+        CriterionVerdict.feasible,
+        LimitArm.not_a_limit,
+        [CriterionFlag.literal_pinning],
+    ),
+    (
+        "class-6 wrong-baseline scope criterion",
+        _refuted(
+            "AC-1",
+            "measures scope against trunk rather than the recorded base",
+        ),
+        CriterionVerdict.infeasible,
+        LimitArm.not_a_limit,
+        [],
+    ),
+    (
+        "no repair needed",
+        _feasible("AC-1"),
+        CriterionVerdict.feasible,
+        LimitArm.not_a_limit,
+        [],
+    ),
+    (
+        "premise holds, demonstration needs a database the runner lacks",
+        _lacking("AC-1", "a PostgreSQL server reachable from the runner"),
+        CriterionVerdict.unverifiable,
+        LimitArm.resource_absent,
+        [],
+    ),
+    (
+        "second domain, criterion side: the demanded selector API does not exist",
+        _refuted(
+            "AC-1",
+            "the vendored driver exposes no such selector API at base",
+        ),
+        CriterionVerdict.infeasible,
+        LimitArm.not_a_limit,
+        [],
+    ),
+    (
+        "second domain, environment side: no display server for the headed run",
+        _lacking("AC-1", "an X display for the headed browser session"),
+        CriterionVerdict.unverifiable,
+        LimitArm.resource_absent,
+        [],
+    ),
+    (
+        "unmeasured cost claim on a bare finding leaves the criterion feasible",
+        _feasible(
+            "AC-1",
+            cost_claim=CostClaim(
+                assertion="demonstrating this would take hours of compute",
+            ),
+        ),
+        CriterionVerdict.feasible,
+        LimitArm.not_a_limit,
+        [],
+    ),
+    (
+        "measured and affordable: the criterion text is untouched",
+        _feasible(
+            "AC-1",
+            cost_claim=CostClaim(
+                assertion="demonstrating this would take hours of compute",
+                measurement=CostMeasurement(observed="11s wall clock", affordable=True),
+            ),
+        ),
+        CriterionVerdict.feasible,
+        LimitArm.not_a_limit,
+        [],
+    ),
+    (
+        "a quota prevented the demonstration: environment side, resource named",
+        _lacking("AC-1", "the daily API quota the demonstration consumes"),
+        CriterionVerdict.unverifiable,
+        LimitArm.resource_absent,
+        [],
+    ),
+    (
+        "the demonstration ran and is uneconomic: measured, so the other arm",
+        _lacking(
+            "AC-1",
+            "a compute budget for the full sweep",
+            cost_claim=CostClaim(
+                assertion="the full sweep is uneconomic",
+                measurement=CostMeasurement(
+                    observed="9h of runner time",
+                    affordable=False,
+                ),
+            ),
+        ),
+        CriterionVerdict.unverifiable,
+        LimitArm.uneconomic,
+        [],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "finding", "expected_verdict", "expected_arm", "expected_flags"),
+    _CLASSIFICATION_TABLE,
+    ids=[row[0] for row in _CLASSIFICATION_TABLE],
+)
+def test_classification_table(
+    label: str,
+    finding: CriterionFinding,
+    expected_verdict: CriterionVerdict,
+    expected_arm: LimitArm,
+    expected_flags: list[CriterionFlag],
+) -> None:
+    """KOD-53/AC-1, KOD-53/AC-9 — every row classifies from evidence alone.
+
+    The verdict asserted is the one ``classify_finding`` derives, not the
+    one the fixture states — the two ungrounded-statement tests below are
+    what catches a derivation that reads the statement back.
+    """
+    derived = classify_finding(finding)
+    assert derived.verdict is expected_verdict, label
+    assert derived.limit_arm is expected_arm, label
+    assert derived.flags == tuple(expected_flags), label
+
+
+def test_unverifiable_is_never_coerced_to_a_pass() -> None:
+    """KOD-53/AC-1 — ``unverifiable`` is its own outcome, not a degraded pass."""
+    derived = classify_finding(
+        _lacking("AC-1", "a PostgreSQL server reachable from the runner")
+    )
+    assert derived.verdict is CriterionVerdict.unverifiable
+    assert derived.verdict is not CriterionVerdict.feasible
+
+
+@pytest.mark.parametrize(
+    ("label", "finding"),
+    [
+        (
+            "a forbidden class stated feasible",
+            _feasible("AC-5", forbidden_class=ForbiddenCriterionClass.ci_status),
+        ),
+        (
+            "an undeclared arm stated feasible",
+            _feasible("AC-5", undeclared_switch_arms=["archived"]),
+        ),
+    ],
+    ids=["forbidden-class", "undeclared-arm"],
+)
+def test_an_ungradeable_report_stated_feasible_does_not_stand(
+    label: str,
+    finding: CriterionFinding,
+) -> None:
+    """KOD-53/AC-1 — the statement is checked against the derivation.
+
+    An ungradeable report derives ``infeasible`` whatever verdict arrived
+    with it, so a refuter that named a class and stated ``feasible``
+    anyway is refused rather than recorded.  A derivation that reads the
+    stated verdict back agrees with every statement and cannot raise
+    here, which is what makes this pair the table's non-circularity
+    check.
+    """
+    with pytest.raises(UngroundedVerdictError) as excinfo:
+        _swept(finding)
+    assert excinfo.value.criterion_id == "AC-5", label
+
+
+# ---------------------------------------------------------------------------
 # A criterion the base already satisfies is FEASIBLE and flagged
 # (KOD-53/AC-1 evidence class 4, R1 on KOD-66)
 # ---------------------------------------------------------------------------
@@ -305,6 +558,22 @@ def test_a_demonstration_that_failed_at_base_flags_nothing() -> None:
         )
     )
     assert verdict.flags == []
+
+
+def test_satisfied_at_base_alongside_a_repair_demand_raises() -> None:
+    """KOD-53/AC-1 — a check that ran and passed cannot ground a repair demand."""
+    with pytest.raises(UngroundedVerdictError) as excinfo:
+        classify_finding(
+            _refuted(
+                "AC-4",
+                "the clause already holds at base before any work",
+                base_demonstration=BaseDemonstration(
+                    command="uv run pytest -q",
+                    satisfied_at_base=True,
+                ),
+            )
+        )
+    assert excinfo.value.criterion_id == "AC-4"
 
 
 def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> None:
@@ -418,6 +687,150 @@ def test_an_argued_cost_reaches_the_record_carrying_no_measurement() -> None:
     assert ran_and_priced.cost_measurement is not None
     assert ran_and_priced.cost_measurement.observed == "9h of runner time"
     assert ran_and_priced.cost_measurement.affordable is False
+
+
+# ---------------------------------------------------------------------------
+# Which arm a limit is — the discriminator is the measurement (KOD-53/AC-11)
+# ---------------------------------------------------------------------------
+
+
+def test_a_limit_without_a_measurement_is_never_the_uneconomic_arm() -> None:
+    """KOD-53/AC-11 — the two fixtures differ only in the presence of a measurement.
+
+    A quota-blocked demonstration never ran, so it carries no measurement
+    and reaches the environment-side arm naming the resource; an
+    implementation classifying by the shape of the failure rather than by
+    the presence of a measurement fails, because the two fixtures differ
+    in nothing else.
+    """
+    blocked = classify_finding(
+        _blocked("AC-1", CostClaim(assertion="the demonstration did not complete"))
+    )
+    priced = classify_finding(
+        _blocked(
+            "AC-1",
+            CostClaim(
+                assertion="the demonstration did not complete",
+                measurement=CostMeasurement(
+                    observed="9h of runner time",
+                    affordable=False,
+                ),
+            ),
+        )
+    )
+
+    assert blocked.limit_arm is LimitArm.resource_absent
+    assert blocked.limit_arm is not LimitArm.uneconomic
+    assert priced.limit_arm is LimitArm.uneconomic
+
+
+# ---------------------------------------------------------------------------
+# A cost claim is measured, not argued (KOD-53/AC-10, KOD-66 item 1c)
+# ---------------------------------------------------------------------------
+
+
+def test_an_infeasible_verdict_resting_on_an_unmeasured_cost_does_not_stand() -> None:
+    """KOD-53/AC-10 — an unmeasured cost assertion supports no repair.
+
+    The claim's typed presence on the criterion-text arm is the whole
+    test: the derivation strikes it, derives ``feasible``, and the stated
+    ``infeasible`` is refused rather than routed to an amendment — the
+    criterion's text was never at fault.
+    """
+    with pytest.raises(UngroundedVerdictError) as excinfo:
+        _swept(
+            _refuted(
+                "AC-1",
+                "demonstrating this would take nine hours of runner time",
+                cost_claim=CostClaim(assertion="too expensive to demonstrate"),
+            )
+        )
+    assert excinfo.value.criterion_id == "AC-1"
+
+
+def test_a_measured_affordable_cost_does_not_stand_as_infeasible() -> None:
+    """KOD-53/AC-10 — the demonstration ran and priced itself affordable."""
+    with pytest.raises(UngroundedVerdictError):
+        _swept(
+            _refuted(
+                "AC-1",
+                "the demonstration is too expensive",
+                cost_claim=CostClaim(
+                    assertion="the demonstration is too expensive",
+                    measurement=CostMeasurement(
+                        observed="11s wall clock",
+                        affordable=True,
+                    ),
+                ),
+            )
+        )
+
+
+def test_a_measured_affordable_cost_leaves_the_criterion_text_untouched() -> None:
+    """KOD-53/AC-10 — the paired fixture: measured, affordable, ``feasible``."""
+    criteria = mint_criteria(
+        [
+            DraftedCriterion(
+                text="The suite's slowest module completes inside the gate.",
+                criterion_class=CriterionClass.hard_gate,
+            )
+        ]
+    )
+    text_before = criteria[0].text
+    validation = sweep(
+        criteria,
+        CriteriaValidationOutput(
+            findings=[
+                _feasible(
+                    "AC-1",
+                    cost_claim=CostClaim(
+                        assertion="demonstrating this would take hours of compute",
+                        measurement=CostMeasurement(
+                            observed="11s wall clock",
+                            affordable=True,
+                        ),
+                    ),
+                )
+            ],
+        ),
+    )
+
+    assert validation.verdicts[0].verdict is CriterionVerdict.feasible
+    assert regeneration_targets(validation) == ()
+    artifact = build_artifact(criteria, validation)
+    assert artifact.criteria[0].text == text_before
+    assert artifact.criteria[0].text.encode() == text_before.encode()
+
+
+def test_a_measured_uneconomic_cost_filed_off_the_environment_arm_raises() -> None:
+    """A surviving measurement is environment-side evidence and nothing else."""
+    with pytest.raises(UngroundedVerdictError):
+        classify_finding(
+            _refuted(
+                "AC-1",
+                "the demonstration is uneconomic",
+                cost_claim=CostClaim(
+                    assertion="the demonstration is uneconomic",
+                    measurement=CostMeasurement(
+                        observed="9h of runner time",
+                        affordable=False,
+                    ),
+                ),
+            )
+        )
+    with pytest.raises(UngroundedVerdictError):
+        classify_finding(
+            _feasible(
+                "AC-1",
+                cost_claim=CostClaim(
+                    assertion="the demonstration is uneconomic",
+                    measurement=CostMeasurement(
+                        observed="9h of runner time",
+                        affordable=False,
+                    ),
+                ),
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
