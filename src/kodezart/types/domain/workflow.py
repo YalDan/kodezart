@@ -17,6 +17,7 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
 
@@ -77,6 +78,29 @@ class ExecutionContext(WorkflowContext):
     def base_branch(self) -> str:
         """The ref every scope surface compares against."""
         return self.base_spec.base_ref
+
+
+class RemediationRequest(CamelCaseModel):
+    """Everything one remediation round is given, and nothing else.
+
+    The three parts the component's contract names are separate fields
+    rather than one pre-rendered blob: the original ticket, the summary
+    of what has already been done, and the evidence of how it failed.
+    Kept apart, a caller that forgets one cannot construct the request.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    entry: RemediationEntry
+    round_index: int = Field(ge=0)
+    original_ticket: TicketDraftOutput
+    work_branch: str = Field(min_length=1)
+    work_base_ref: str = Field(min_length=1)
+    pr_url: str | None = None
+    total_iterations: int = Field(ge=0)
+    trajectory: LoopTrajectory | None = None
+    criteria: list[ValidatedCriterion]
+    failure_evidence: str = Field(min_length=1)
 
 
 class RalphLoopContext(ExecutionContext):

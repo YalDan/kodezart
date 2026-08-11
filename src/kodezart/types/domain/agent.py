@@ -25,6 +25,7 @@ from kodezart.types.domain.criteria import (
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
+from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.trajectory import LoopTrajectory
 
 # ---------------------------------------------------------------------------
@@ -48,6 +49,7 @@ RaiseSite = Literal[
     "post_merge_review",
     "pr_description",
     "commit_message",
+    "remediation_ticket",
 ]
 
 # ---------------------------------------------------------------------------
@@ -435,6 +437,22 @@ class WorkflowConsolidationEvent(AgentEvent):
     feature_branch: str = Field(min_length=1)
     source_branch: str = Field(min_length=1)
     feature_tip_sha: str = Field(min_length=40, max_length=40)
+
+
+class WorkflowRemediationEvent(AgentEvent):
+    """Emitted once per remediation round, when its ticket exists.
+
+    ``entry`` is on the event because three failure routes reach one
+    component: without it a reader watching the stream could not tell
+    which failure the round is answering, and the round would look the
+    same whichever way the run got there.
+    """
+
+    type: Literal["workflow_remediation"] = "workflow_remediation"
+    entry: RemediationEntry
+    round_index: int
+    ticket: TicketDraftOutput
+    base_ref: str
 
 
 class WorkflowArtifactsEvent(AgentEvent):

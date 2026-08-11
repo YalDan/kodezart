@@ -22,6 +22,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.workflow import RemediationRequest
 from kodezart.types.requests.agent import WorkflowRequest
 
 
@@ -508,6 +509,27 @@ class TicketGenerator(Protocol):
         base_branch: str,
     ) -> AsyncIterator[AgentEvent]:
         """Draft/review loop until approved or max reviews."""
+        ...
+
+
+@runtime_checkable
+class Remediator(Protocol):
+    """Turns failure evidence into one targeted follow-up ticket.
+
+    Every failure route in the pipeline reaches this port — the entry is
+    a field on the request, never a second method, so no caller can be
+    served by a path the others do not share.
+    """
+
+    def run(
+        self,
+        request: RemediationRequest,
+        *,
+        repo_path: str | None,
+        repo_url: str | None,
+        cache_key: str,
+    ) -> AsyncIterator[AgentEvent]:
+        """Draft the remediation ticket for one round."""
         ...
 
 
