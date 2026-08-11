@@ -11,6 +11,7 @@ from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.git_artifact_persister import GitArtifactPersister
 from kodezart.adapters.git_branch_merger import GitBranchMerger
 from kodezart.adapters.git_change_persister import GitChangePersister
+from kodezart.adapters.git_ref_publisher import GitRefPublisher
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.adapters.github_token_auth import GitHubTokenAuth
@@ -187,6 +188,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         gate=gate,
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote=config.git_remote)
+    ref_publisher = GitRefPublisher(git=git, workspace=workspace)
     artifact_persister = GitArtifactPersister(
         git=git,
         workspace=workspace,
@@ -244,6 +246,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             retry_initial_interval=config.retry_initial_interval,
             pr_creator=github_api,
             ci_monitor=github_api,
+            ref_publisher=ref_publisher,
             max_fix_rounds=config.max_fix_rounds,
             criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
             artifact_persister=artifact_persister,

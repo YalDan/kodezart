@@ -26,6 +26,7 @@ from kodezart.core.protocols import (
     PRCreator,
     PromptProvider,
     QualityGate,
+    RefPublisher,
     RepoCache,
     RepoVisibilityResolver,
     TicketGenerator,
@@ -37,7 +38,7 @@ from kodezart.domain.accept_gate import (
     gate_cleared,
     sherlock_items,
 )
-from kodezart.domain.agent import generate_ralph_branch_name
+from kodezart.domain.agent import best_iteration_ref, generate_ralph_branch_name
 from kodezart.domain.base_scope import scope_base
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
@@ -52,8 +53,10 @@ from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.pr_body import append_flagged_section
 from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.stall_report import stall_pr_body, stall_pr_title
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.domain.trajectory import landable_commit
 from kodezart.domain.workflow_state import validated_artifact, validated_criteria
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
@@ -124,6 +127,7 @@ class RalphWorkflowEngine:
         retry_initial_interval: float = 1.0,
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
+        ref_publisher: RefPublisher | None = None,
         max_fix_rounds: int = 2,
         criteria_max_regeneration_rounds: int = 1,
         artifact_persister: ArtifactPersister | None = None,
@@ -145,6 +149,7 @@ class RalphWorkflowEngine:
         self._visibility_resolver: RepoVisibilityResolver | None = visibility_resolver
         self._pr_creator: PRCreator | None = pr_creator
         self._ci_monitor: CIMonitor | None = ci_monitor
+        self._ref_publisher: RefPublisher | None = ref_publisher
         self._max_fix_rounds: int = max_fix_rounds
         self._criteria_max_regeneration_rounds: int = criteria_max_regeneration_rounds
         self._artifact_persister: ArtifactPersister | None = artifact_persister
@@ -299,6 +304,11 @@ class RalphWorkflowEngine:
             retry_policy=self._retry,
         )
         graph.add_node(
+            "land_best_iteration",
+            self._land_best_iteration_node,
+            retry_policy=self._retry,
+        )
+        graph.add_node(
             "review_against_ticket",
             self._review_against_ticket_node,
             retry_policy=self._retry,
@@ -357,8 +367,13 @@ class RalphWorkflowEngine:
         graph.add_conditional_edges(
             "merge_to_feature",
             self._route_after_merge,
-            {"review_against_ticket": "review_against_ticket", "complete": "complete"},
+            {
+                "review_against_ticket": "review_against_ticket",
+                "land_best_iteration": "land_best_iteration",
+                "complete": "complete",
+            },
         )
+        graph.add_edge("land_best_iteration", "complete")
         graph.add_conditional_edges(
             "review_against_ticket",
             self._route_after_review,
@@ -943,10 +958,144 @@ class RalphWorkflowEngine:
         }
 
     def _route_after_merge(self, state: WorkflowState) -> str:
-        """Guard: only review merged code — skip to complete if not merged."""
+        """Only review merged code; land what a loop exit produced.
+
+        The three arms are the three ways the consolidation node can end.
+        Unmerged WITH an error is a divergent accepted run — its work is
+        already on the feature branch and the terminal reports the
+        divergence.  Unmerged with NO error is the loop exit, which is
+        the run this lane exists to stop stranding.
+        """
         if state["merged"]:
             return "review_against_ticket"
-        return "complete"
+        if state["merge_error"] is not None:
+            return "complete"
+        return "land_best_iteration"
+
+    async def _land_best_iteration_node(
+        self,
+        state: WorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Open the do-not-merge pull request from the run's BEST iteration.
+
+        Consolidation is attempted first, so the passing and non-passing
+        paths stay symmetrical — but it is not a precondition.  A pull
+        request needs a head and a base sharing an ancestor, not a
+        fast-forward, so a non-integrating consolidation opens the request
+        from the published ref instead of ending the run without one.  A
+        conflicted request on that path is expected: the work is most
+        tangled exactly where human review matters most, and an orphan
+        branch nobody knows about is the worse outcome.
+
+        Artifacts are NOT cleaned from the branch here.  The passing path
+        cleans because it merges; this head exists to show the best state
+        the run reached, and rewriting it to remove files would make it
+        something the run never produced.
+        """
+        ctx = ExecutionContext.from_configurable(config)
+        writer = get_stream_writer()
+
+        trajectory = state["trajectory"]
+        best_sha = None if trajectory is None else landable_commit(trajectory)
+        if trajectory is None or best_sha is None:
+            await self._log.ainfo(
+                "stall_exit_no_commit_to_land",
+                feature_branch=state["feature_branch"],
+                total_iterations=state["total_iterations"],
+            )
+            return {}
+
+        repo_url = ctx.repo_url
+        if self._pr_creator is None or repo_url is None:
+            await self._log.awarning(
+                "stall_exit_no_forge_configured",
+                feature_branch=state["feature_branch"],
+                best_commit_sha=best_sha,
+            )
+            return {}
+
+        if self._ref_publisher is None:
+            msg = (
+                "land_best_iteration requires ref_publisher when a forge is "
+                "configured — a run that produced commits never terminates "
+                "without a pull request"
+            )
+            raise RuntimeError(msg)
+
+        ticket = state["ticket"]
+        if ticket is None:
+            msg = "land_best_iteration requires a ticket but state['ticket'] is None."
+            raise RuntimeError(msg)
+
+        best_ref = best_iteration_ref(state["feature_branch"])
+        await self._ref_publisher.publish(
+            repo_path=ctx.repo_path,
+            repo_url=ctx.repo_url,
+            commit_sha=best_sha,
+            ref=best_ref,
+            cache_key=ctx.cache_key,
+        )
+
+        outcome = await self._merger.consolidate(
+            repo_path=ctx.repo_path,
+            repo_url=ctx.repo_url,
+            base_branch=ctx.base_branch,
+            feature_branch=state["feature_branch"],
+            source_branch=best_ref,
+            cache_key=ctx.cache_key,
+        )
+        writer(
+            WorkflowConsolidationEvent(
+                status=outcome.status,
+                feature_branch=state["feature_branch"],
+                source_branch=best_ref,
+                feature_tip_sha=outcome.feature_tip_sha,
+            )
+        )
+        integrated = outcome.status in (
+            ConsolidationStatus.FAST_FORWARDED,
+            ConsolidationStatus.ALREADY_INTEGRATED,
+        )
+        head = state["feature_branch"] if integrated else best_ref
+
+        pr_url, pr_number = await self._pr_creator.create_pr(
+            repo_url=repo_url,
+            title=await self._gated(
+                content=stall_pr_title(ticket.title),
+                visibility=state["repo_visibility"],
+                shape=WriterShape.PROSE,
+                writer_name="stall_pr_title",
+            ),
+            body=await self._gated(
+                content=stall_pr_body(
+                    trajectory,
+                    validated_criteria(state),
+                    landed_commit=best_sha,
+                ),
+                visibility=state["repo_visibility"],
+                shape=WriterShape.PROSE,
+                writer_name="stall_pr_body",
+            ),
+            head=head,
+            base=ctx.base_branch,
+        )
+        writer(
+            WorkflowPREvent(
+                pr_url=pr_url,
+                pr_number=pr_number,
+                feature_branch=head,
+                base_branch=ctx.base_branch,
+            )
+        )
+        await self._log.ainfo(
+            "stall_exit_pr_opened",
+            pr_number=pr_number,
+            head=head,
+            consolidation_status=outcome.status.value,
+            best_commit_sha=best_sha,
+        )
+        return {"pr_url": pr_url, "pr_number": pr_number}
 
     async def _resolve_cwd(self, ctx: ExecutionContext) -> str:
         """Resolve a usable cwd for GitService calls in the outer engine."""
