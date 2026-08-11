@@ -54,29 +54,38 @@ def _state(
     )
 
 
-def _trajectory(*, plateaued: bool) -> LoopTrajectory:
+def _trajectory(
+    *, plateaued: bool, commit_sha: str | None = "c" * 40
+) -> LoopTrajectory:
+    """A one-record trajectory.
+
+    ``commit_sha`` defaults to a real commit: a run that plateaued while
+    DOING work is what the plateau member is about, and a record with no
+    commit now names the zero-commit terminal instead (KOD-40).
+    """
     return LoopTrajectory(
         records=[
             IterationRecord(
                 iteration=1,
                 passed_count=1,
                 failing_criterion_ids=["Tests pass"],
-                commit_sha=None,
+                commit_sha=commit_sha,
             ),
         ],
         never_passed_ids=["Tests pass"],
         best_passed_count=1,
         best_iteration=1,
-        best_commit_sha=None,
+        best_commit_sha=commit_sha,
         plateaued=plateaued,
     )
 
 
 def test_wire_values_are_pinned_verbatim() -> None:
-    """The eleven values are a wire contract — a re-point must break the build.
+    """The thirteen values are a wire contract — a re-point must break the build.
 
     The order is the module's stated extension convention: later work
-    APPENDS, so ``criteria_infeasible`` sits last rather than first.
+    APPENDS, so ``criteria_infeasible`` sits last rather than first and
+    KOD-40's two members sit after it.
     """
     assert [member.value for member in WorkflowOutcome] == [
         "merge_divergent",
@@ -90,6 +99,8 @@ def test_wire_values_are_pinned_verbatim() -> None:
         "ci_not_configured",
         "ci_failed_fix_budget_exhausted",
         "criteria_infeasible",
+        "stalled_pr_opened",
+        "zero_commit_no_pr",
     ]
 
 
@@ -138,6 +149,65 @@ def test_loop_not_accepted_when_no_trajectory() -> None:
         verdict=AcceptVerdict.rejected, merged=False, merge_error=None, trajectory=None
     )
     assert classify_outcome(state) is WorkflowOutcome.loop_not_accepted
+
+
+def test_stalled_pr_opened_when_the_loop_exit_landed_a_pull_request() -> None:
+    """KOD-40/AC-2: a loop exit carrying a PR is the stall terminal."""
+    state = _state(
+        verdict=AcceptVerdict.rejected,
+        merged=False,
+        merge_error=None,
+        pr_url="https://github.com/o/r/pull/7",
+        pr_number=7,
+        trajectory=_trajectory(plateaued=True),
+    )
+    assert classify_outcome(state) is WorkflowOutcome.stalled_pr_opened
+
+
+def test_stalled_pr_opened_outranks_the_plateau_it_also_matches() -> None:
+    """The sub-ordering is forced: every stall that lands a PR plateaued too.
+
+    Classifying the plateau first would make the stall member unreachable.
+    """
+    plateaued_with_pr = _state(
+        verdict=AcceptVerdict.rejected,
+        merged=False,
+        merge_error=None,
+        pr_url="https://github.com/o/r/pull/7",
+        pr_number=7,
+        trajectory=_trajectory(plateaued=True),
+    )
+    assert plateaued_with_pr["trajectory"] is not None
+    assert plateaued_with_pr["trajectory"].plateaued is True
+    assert classify_outcome(plateaued_with_pr) is WorkflowOutcome.stalled_pr_opened
+
+
+def test_zero_commit_no_pr_when_no_iteration_produced_a_commit() -> None:
+    """KOD-40/AC-2: the literal no-work terminal, and only that."""
+    state = _state(
+        verdict=AcceptVerdict.rejected,
+        merged=False,
+        merge_error=None,
+        pr_url=None,
+        trajectory=_trajectory(plateaued=True, commit_sha=None),
+    )
+    assert classify_outcome(state) is WorkflowOutcome.zero_commit_no_pr
+
+
+def test_a_run_with_commits_and_no_pr_is_never_the_zero_commit_terminal() -> None:
+    """The zero-commit member stays strictly literal.
+
+    A run that produced work but had no forge to open a PR on keeps the
+    existing loop-exit member — it is not folded into the no-work one.
+    """
+    state = _state(
+        verdict=AcceptVerdict.rejected,
+        merged=False,
+        merge_error=None,
+        pr_url=None,
+        trajectory=_trajectory(plateaued=True),
+    )
+    assert classify_outcome(state) is WorkflowOutcome.loop_plateaued
 
 
 def test_review_passed_no_pr_adapter() -> None:

@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import AgentExecutor
-from kodezart.domain.trajectory import fold_trajectory
+from kodezart.domain.trajectory import fold_trajectory, landable_commit
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
@@ -1186,6 +1186,64 @@ def test_fold_trajectory_is_pure_over_empty_records() -> None:
     assert trajectory.best_iteration == 0
     assert trajectory.best_commit_sha is None
     assert trajectory.plateaued is False
+
+
+# ---------------------------------------------------------------------------
+# KOD-40: which commit the terminal lands
+# ---------------------------------------------------------------------------
+
+
+def test_landable_commit_is_the_peak_not_the_tip() -> None:
+    """KOD-40's example: 8-11-10-11 lands the 11 at iteration 2."""
+    trajectory = fold_trajectory(
+        [
+            _record(1, 8, commit_sha="1" * 40),
+            _record(2, 11, commit_sha="2" * 40),
+            _record(3, 10, commit_sha="3" * 40),
+            _record(4, 11, commit_sha="4" * 40),
+        ],
+        plateau_window=2,
+    )
+    assert landable_commit(trajectory) == "2" * 40
+
+
+def test_landable_commit_carries_forward_when_the_peak_committed_nothing() -> None:
+    """An iteration that changed no tree has the previous commit's state."""
+    trajectory = fold_trajectory(
+        [
+            _record(1, 5, commit_sha="1" * 40),
+            _record(2, 9, commit_sha=None),
+            _record(3, 6, commit_sha="3" * 40),
+        ],
+        plateau_window=2,
+    )
+    assert trajectory.best_iteration == 2
+    assert trajectory.best_commit_sha is None
+    assert landable_commit(trajectory) == "1" * 40
+
+
+def test_landable_commit_picks_a_later_commit_when_the_peak_has_none() -> None:
+    """A peak whose state is the untouched base is not what the run produced."""
+    trajectory = fold_trajectory(
+        [
+            _record(1, 9, commit_sha=None),
+            _record(2, 4, commit_sha="2" * 40),
+            _record(3, 6, commit_sha="3" * 40),
+        ],
+        plateau_window=2,
+    )
+    assert trajectory.best_iteration == 1
+    assert landable_commit(trajectory) == "3" * 40
+
+
+def test_landable_commit_is_none_only_when_no_iteration_committed() -> None:
+    """The zero-commit terminal has exactly one shape."""
+    trajectory = fold_trajectory(
+        [_record(1, 3), _record(2, 2), _record(3, 3)],
+        plateau_window=2,
+    )
+    assert landable_commit(trajectory) is None
+    assert landable_commit(fold_trajectory([], plateau_window=2)) is None
 
 
 _SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "kodezart"
