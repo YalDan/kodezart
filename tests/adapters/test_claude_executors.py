@@ -1,7 +1,7 @@
 """Tests for ClaudeAgentExecutor and ClaudeClientExecutor SDK exception wrapping."""
 
 import inspect
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import patch
@@ -19,6 +19,12 @@ from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
     EXECUTOR_MODULES,
@@ -265,6 +271,8 @@ async def _options_for(
     *,
     grant: KnowledgeGrant,
     session_type: SessionType,
+    agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+    session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
 ) -> ClaudeAgentOptions:
     """The options *module*'s adapter constructs for one session."""
     recorded, patcher = _capture(module)

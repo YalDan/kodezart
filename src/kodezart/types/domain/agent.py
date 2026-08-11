@@ -1,5 +1,6 @@
 """Agent event domain models for SSE streaming."""
 
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import (
@@ -154,6 +155,101 @@ class TicketReviewOutput(CamelCaseModel):
     suggestions: list[str] = Field(
         default_factory=list,
         description="Concrete revisions that would resolve the findings.",
+    )
+
+
+class CritiqueSeverity(StrEnum):
+    """How much a critique finding costs if it ships unaddressed."""
+
+    BLOCKING = "blocking"
+    SIGNIFICANT = "significant"
+    MINOR = "minor"
+
+
+class CritiqueFinding(CamelCaseModel):
+    """One defect the fresh-context critic found in a drafted artifact."""
+
+    quoted_passage: str = Field(
+        min_length=1,
+        description=(
+            "The offending passage, quoted from the draft so the reader can "
+            "locate it without re-deriving the finding."
+        ),
+    )
+    defect: str = Field(
+        min_length=1,
+        description="What is wrong with that passage, stated as a defect.",
+    )
+    severity: CritiqueSeverity = Field(
+        description=(
+            "blocking: the draft cannot be acted on. significant: it can, but "
+            "the result will miss the task. minor: everything else."
+        ),
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "How sure you are the defect is real, from 0 to 1. Report low "
+            "confidence rather than filtering — routing downstream decides."
+        ),
+    )
+
+
+class CritiqueFlag(CamelCaseModel):
+    """One thing the critic flags for a supervisor's attention.
+
+    The channel the persona rewrite had to preserve: a finding about WHY a
+    component exists rather than whether it works — over-implementation,
+    machinery no measured failure justifies, a goal quietly substituted.
+    It is a typed, routable item because a flag that cannot be routed is a
+    persona artefact with a new name.
+
+    Distinct from the accept gate's ``SherlockFlag``, which anchors to a
+    criterion id: this one anchors to a passage of a drafted artifact,
+    which has no criteria yet.  Same wire field name on two producers,
+    two anchors, one definition each.
+    """
+
+    subject: str = Field(
+        min_length=1,
+        description=(
+            "What is flagged: the component, claim, or decision the "
+            "supervisor should look at, named precisely enough to find."
+        ),
+    )
+    reason: str = Field(
+        min_length=1,
+        description=(
+            "Why it is flagged: the measured failure that would justify it "
+            "and is absent, or the goal it serves that the task never asked "
+            "for."
+        ),
+    )
+
+
+class DraftCritiqueOutput(CamelCaseModel):
+    """The draft-critic lens's whole verdict on one drafted artifact."""
+
+    sound: bool = Field(
+        description=(
+            "Whether the draft satisfies the task as it stands: true only "
+            "when no blocking or significant finding remains."
+        ),
+    )
+    findings: list[CritiqueFinding] = Field(
+        default_factory=list,
+        description=(
+            "Every defect found, unfiltered by severity or confidence; "
+            "empty when the draft is sound."
+        ),
+    )
+    sherlock_flags: list[CritiqueFlag] = Field(
+        default_factory=list,
+        description=(
+            "Findings about why the draft's parts exist rather than whether "
+            "they work; empty when nothing warrants a supervisor's attention."
+        ),
     )
 
 
@@ -815,6 +911,10 @@ PR_DESCRIPTION_SCHEMA: dict[str, object] = sanitize_schema(
 CONTENT_AUDIT_SCHEMA: dict[str, object] = sanitize_schema(
     ContentAuditOutput.model_json_schema()
 )
+# Schema for the draft-critic lens's verdict on a drafted artifact
+DRAFT_CRITIQUE_SCHEMA: dict[str, object] = sanitize_schema(
+    DraftCritiqueOutput.model_json_schema()
+)
 
 #: Every wire schema this system dispatches, by constant name. The
 #: sanitizer test and the dispatch-site guard both read this rather than
@@ -829,4 +929,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
+    "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
 }

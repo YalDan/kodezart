@@ -59,6 +59,7 @@ does not exist.
 | JobRegistry       | AsyncioJobQueue          | The same queue read as a record store                |
 | RunStateReader    | LangGraphRunStateReader  | Reads a run's checkpointed state                     |
 | PromptProvider    | InRepoPromptRegistry     | Prompt sets as directories of templates              |
+| PromptSetProvider | InRepoPromptRegistry     | Set content belonging to no key: lens definitions, the system-prompt append |
 | SkillInventory    | HostSkillInventory       | What the host provisions; kodezart installs nothing  |
 | RepoVisibilityResolver | GitHubAPIClient     | Resolves PRIVATE / PUBLIC / UNKNOWN once per run     |
 | ContentScanner    | RegexContentScanner      | The deterministic pattern half of the outbound gate  |

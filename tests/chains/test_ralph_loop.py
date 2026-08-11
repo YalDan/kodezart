@@ -3,7 +3,7 @@
 import ast
 import inspect
 import re
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from itertools import pairwise
 from pathlib import Path
 from typing import TypedDict
@@ -40,6 +40,12 @@ from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from kodezart.types.domain.trajectory import IterationRecord
 from tests.fakes import (
     FAKE_SESSION_TYPE,
@@ -228,6 +234,8 @@ async def test_loop_second_iteration_succeeds() -> None:
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -535,6 +543,8 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -683,6 +693,8 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -991,6 +1003,8 @@ async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> 
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -1056,6 +1070,8 @@ class _ScriptedLoopExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -1600,6 +1616,8 @@ class _NonPermutationExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:

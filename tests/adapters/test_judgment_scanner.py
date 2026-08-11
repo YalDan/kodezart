@@ -19,7 +19,7 @@ test that needed the model to be right would be measuring the wrong thing.
 
 import asyncio
 import inspect
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -49,6 +49,12 @@ from kodezart.types.domain.gating import (
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from tests.fakes import FAKE_SESSION_TYPE, FakeContentScanner
 from tests.prompts.test_prompt_wiring import load_registry
 
@@ -106,6 +112,8 @@ class ScriptedAuditExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:

@@ -6,7 +6,7 @@ to it, how many regeneration rounds were spent, and what the completion
 event says happened.
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 
 import pytest
 
@@ -37,6 +37,12 @@ from kodezart.types.domain.criteria import (
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from tests.fakes import (
     FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
@@ -97,6 +103,8 @@ class ValidatorScriptExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:

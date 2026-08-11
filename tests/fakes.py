@@ -74,6 +74,12 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -153,10 +159,16 @@ EXECUTOR_MODULES: list[str] = [
 ]
 
 
-def executor_for(module: str, grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT):
+def executor_for(
+    module: str,
+    grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT,
+    *,
+    model: str | None = None,
+):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("claude_client_executor"):
         return ClaudeClientExecutor(
+            model=model,
             setting_sources=DEFAULT_SETTING_SOURCES,
             knowledge_grant=grant,
         )
@@ -225,6 +237,9 @@ async def recorded_session(
     prompt: str = "p",
     cwd: str = "/tmp/fake",
     skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+    agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+    session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+    model: str | None = None,
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -234,7 +249,7 @@ async def recorded_session(
         if target == "ClaudeSDKClient"
         else _recording_query(recorded)
     )
-    executor = executor_for(module, grant)
+    executor = executor_for(module, grant, model=model)
 
     with patch(f"{module}.{target}", replacement):
         async for _event in executor.stream(
@@ -244,6 +259,8 @@ async def recorded_session(
             allowed_tools=[],
             skills=skills,
             session_type=session_type,
+            agents=agents,
+            session_policy=session_policy,
         ):
             pass
 
@@ -560,6 +577,8 @@ class FakeAgentExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -728,6 +747,8 @@ class FakeRaisingExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -793,6 +814,8 @@ class FakeChangePersister:
         backup_ref_id_prefix: str,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> PersistResult | None:
         self.calls.append(
@@ -888,6 +911,8 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -916,6 +941,8 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         create_branch: bool = True,
         cache_key: str | None = None,
@@ -941,6 +968,8 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -989,6 +1018,8 @@ class ScriptedFakeExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:

@@ -1,6 +1,6 @@
 """Claude Agent SDK adapter — wraps query(), yields AgentEvent stream."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -10,6 +10,14 @@ from claude_agent_sdk import (
     query,
 )
 
+from kodezart.adapters._agents_mapping import (
+    map_agents,
+    map_effort,
+    map_model,
+    map_system_prompt,
+    map_workflow_env,
+    map_workflow_settings,
+)
 from kodezart.adapters._mcp_mapping import (
     map_knowledge_mcp,
     prompt_with_knowledge_map,
@@ -23,6 +31,12 @@ from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 
 
 class ClaudeAgentExecutor:
@@ -52,6 +66,8 @@ class ClaudeAgentExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -64,6 +80,7 @@ class ClaudeAgentExecutor:
             has_output_format=output_format is not None,
             skills_mode=skills.mode.value,
             session_type=session_type.value,
+            agent_count=len(agents),
         )
         knowledge = map_knowledge_mcp(self._knowledge_grant, session_type)
         options = ClaudeAgentOptions(
@@ -74,6 +91,13 @@ class ClaudeAgentExecutor:
             output_format=output_format,
             skills=map_skills(skills),
             setting_sources=map_setting_sources(self._setting_sources),
+            agents=map_agents(agents),
+            system_prompt=map_system_prompt(session_policy),
+            effort=map_effort(session_policy.effort),
+            model=map_model(session_policy, None),
+            fallback_model=session_policy.fallback_model,
+            env=map_workflow_env(session_policy.workflow_access),
+            settings=map_workflow_settings(session_policy.workflow_access),
             **knowledge,
         )
         session_prompt = prompt_with_knowledge_map(
