@@ -16,7 +16,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.job import JobRecord
-from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.skills import SkillsSelection
@@ -350,8 +350,13 @@ class ArtifactPersister(Protocol):
         base_branch: str,
         artifacts: Mapping[str, str],
         cache_key: str | None = None,
-    ) -> None:
-        """Write artifacts to .kodezart/, commit, push."""
+    ) -> ArtifactPersistStatus:
+        """Write artifacts to .kodezart/, commit, push.
+
+        Returns which of the three outcomes occurred; a caller that only
+        knows "it did not raise" cannot tell a successful push from a
+        target that ignores the artifact directory.
+        """
         ...
 
     async def clean(
