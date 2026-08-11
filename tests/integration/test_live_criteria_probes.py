@@ -462,20 +462,22 @@ STACKED_LIVE_TICKET = (
 )
 
 BARE_DIFF_QUESTION = (
-    "Does this criterion call for a diff — `git diff`, a changed-file "
-    "comparison, a scope check against a baseline — WITHOUT naming "
-    f"`{STACKED_BASE_REF}` as the base of THAT comparison?\n\n"
+    "Does this criterion INVOKE a diff — `git diff`, or an explicit "
+    "equivalent diff command over the repository — WITHOUT naming "
+    f"`{STACKED_BASE_REF}` as the base of THAT invocation?\n\n"
     "The situation the criteria were generated over: the lane's resolved "
     f"comparison base is the branch `{STACKED_BASE_REF}`, which already "
     "carries inherited work. A diff taken against anything else, or against "
-    "an unstated baseline, convicts the lane of work it inherited.\n\n"
-    "Answer true if the criterion invokes any such comparison and that "
-    "comparison's base is unstated, or is stated as something other than "
-    f"`{STACKED_BASE_REF}`. The base must be named for the comparison "
+    "an unstated base, convicts the lane of work it inherited.\n\n"
+    "Answer true if the criterion invokes such a diff and that invocation's "
+    "base is unstated, or is stated as something other than "
+    f"`{STACKED_BASE_REF}`. The base must be named for the invocation "
     "itself: a mention of the base elsewhere in the criterion, for an "
     "unrelated purpose, does not settle it. Answer false if the criterion "
-    "invokes no comparison at all, or if every comparison it invokes names "
-    "that base as its own baseline."
+    "invokes no diff at all, or if every diff it invokes names that base. "
+    "A criterion that merely describes a change in prose — 'added lines', "
+    "'gains an import', 'is unchanged' — invokes no diff and is not the "
+    "subject of this question."
 )
 
 
@@ -487,12 +489,17 @@ async def test_live_scope_criteria_state_the_resolved_stacked_base(
     The run is fired against a stacked base — a blocker branch carrying
     inherited work — and the ticket's no-touch clause invites scope
     criteria.  The generated criteria must contain the resolved base
-    ref, and no criterion may invoke a diff without stating that base as
-    that diff's own baseline: a bare diff, or a diff against a base other
-    than the resolved one, leaves the lane convicted of the work it
-    inherited.  The per-criterion half is the judge's call — a base ref
-    named anywhere in a criterion no longer exculpates a bare invocation
-    elsewhere in it.
+    ref, and no criterion may invoke a diff without naming that base for
+    that invocation: a bare diff, or a diff against a base other than the
+    resolved one, leaves the lane convicted of the work it inherited.  The
+    per-criterion half is the judge's call — a base ref named anywhere in a
+    criterion no longer exculpates a bare invocation elsewhere in it.
+
+    The judged question is the criterion's own subject and no wider: a
+    diff INVOCATION.  A criterion that describes a delta in prose — "added
+    lines", "gains an import", "is unchanged" — while naming no base is
+    outside what this criterion states, and is recorded as an integrity
+    finding rather than graded here (KOD-53 R10, INTEGRITY-8).
     """
     repo = tmp_path / "repo"
     await _init_repo(repo)
