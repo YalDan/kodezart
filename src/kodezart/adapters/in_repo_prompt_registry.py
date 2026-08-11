@@ -34,6 +34,7 @@ from kodezart.types.domain.prompts import (
 )
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import AgentDefinition, SessionPolicy
+from kodezart.types.domain.ticket_review import TicketReviewMode
 
 _METADATA_FILE = "set.toml"
 _MEMBER_SUFFIX = ".md"
@@ -41,6 +42,7 @@ _DEFINITIONS_DIR = "definitions"
 _SKILLS_FRAGMENT = "skills_reference"
 _SUPPRESSION_FRAGMENT = "suppression_proxy"
 _ORCHESTRATION_SLOT = "orchestration_block"
+_CRITIQUE_SLOT = "ticket_create_critique"
 _INVESTIGATION_SPEC_FRAGMENT = "investigation_spec"
 _INVESTIGATION_CAP_NAME = "investigation_cap"
 _ULTRACODE_FRAGMENT = "ultracode_instruction"
@@ -88,6 +90,7 @@ class InRepoPromptRegistry:
         template_overrides: Mapping[str, str],
         bindings: Mapping[str, object],
         investigation_cap: int,
+        ticket_review_mode: TicketReviewMode,
         fallback_model: str | None = None,
     ) -> Self:
         """Resolve every function key or raise ``PromptResolutionError``."""
@@ -141,6 +144,12 @@ class InRepoPromptRegistry:
                 if key.value not in failures:
                     failures.append(key.value)
                 continue
+            critique = _critique_block(owning_metadata, ticket_review_mode)
+            critique_slotted = _CRITIQUE_SLOT in free_binding_names(composed)
+            if critique_slotted and _critique_is_owed(ticket_review_mode, critique):
+                if key.value not in failures:
+                    failures.append(key.value)
+                continue
             templates[key] = PromptTemplate(
                 key=key,
                 source=source,
@@ -153,6 +162,7 @@ class InRepoPromptRegistry:
                         if orchestration is None
                         else {_ORCHESTRATION_SLOT: orchestration}
                     ),
+                    **({} if critique is None else {_CRITIQUE_SLOT: critique}),
                 },
             )
 
@@ -345,6 +355,34 @@ def _orchestration_block(metadata: PromptSetMetadata, cap: int) -> str | None:
     if fragments.ultracode_instruction is not None:
         substitutions[_ULTRACODE_FRAGMENT] = fragments.ultracode_instruction
     return compose_set_member(body, substitutions=substitutions, appendix=None)
+
+
+def _critique_block(
+    metadata: PromptSetMetadata,
+    mode: TicketReviewMode,
+) -> str | None:
+    """The in-session critique this MODE composes into a slotted member.
+
+    Read from the mode rather than from a sentence the session evaluates:
+    whether a draft is critiqued before it ships is a property of how the
+    loop was compiled, and a template that asks the session to decide
+    would make it a judgement call in the one place the mode removed the
+    judge.
+    """
+    if mode is not TicketReviewMode.CREATE_ONLY:
+        return None
+    return metadata.fragments.ticket_create_critique
+
+
+def _critique_is_owed(mode: TicketReviewMode, critique: str | None) -> bool:
+    """Whether a member asked for the critique slot and the set cannot fill it.
+
+    A boot failure rather than an empty render, for the reason the mode
+    exists: under create-only that fragment is the only review the artifact
+    receives, so a set that declares none must not resolve into a run that
+    reports success with nothing having read the draft.
+    """
+    return mode is TicketReviewMode.CREATE_ONLY and critique is None
 
 
 def _load_definitions(

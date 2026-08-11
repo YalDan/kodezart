@@ -125,6 +125,21 @@ Merge the returned evidence yourself and count results against dispatches
 before drafting.\
 """
 
+# Composed into the ticket author's member when the loop is compiled without
+# a review arm, and only then. The mode selects it at set resolution, so the
+# session is never asked to decide whether it is being critiqued; what the
+# critic receives is stated exhaustively because a critic handed a summary
+# judges the summary.
+ticket_create_critique = """\
+Before emitting the ticket, dispatch a draft-critic agent with the task, the tracker
+content, and your draft — nothing else: not your reasoning about the draft and not a
+summary of it, because the critic must judge exactly what downstream consumers will
+see. Revise the draft to resolve every blocking and significant finding, re-dispatching
+the critic when the revision is substantial; record minor findings you deliberately
+leave unaddressed in the ticket's open-questions section. This critique is the only
+review this ticket receives; it is not optional.\
+"""
+
 # Typed lens definitions the set contributes. Prompt bodies are data files
 # under definitions/; only the mandate and the reach live here. The tool
 # lists are read-only by construction: a definition's tools and the

@@ -10,16 +10,26 @@ Asserted on RENDERED output, not on the template body: a tag that survives
 authoring but not rendering protects nothing.
 """
 
+import tomllib
+
 import pytest
 
+from kodezart.adapters.in_repo_prompt_registry import (
+    InRepoPromptRegistry,
+    default_sets_root,
+)
+from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.prompt_rendering import free_binding_names
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.prompts.style_detectors import (
     artifact_tag_names,
     data_boundary_sentences,
     unbalanced_artifact_tags,
 )
-from tests.prompts.test_claude_opus_goldens import ALL_CASES
+from tests.prompts.test_claude_opus_goldens import ALL_CASES, EXAMPLE_OPERATION, V5_SET
+from tests.prompts.test_prompt_wiring import load_registry
 from tests.prompts.test_v5_goldens import render_case, v5_registry
 
 #: Which named tag each injected artifact must arrive inside. Keyed by the
@@ -125,3 +135,79 @@ def test_the_orchestration_slot_is_declared_and_unfilled() -> None:
 def test_the_rendered_evaluator_is_under_the_size_bound() -> None:
     """AC-7, informational: an upper bound, never an equality."""
     assert len(render_case("evaluation").split()) < EVALUATION_WORD_BOUND
+
+
+# ---------------------------------------------------------------------------
+# KOD-90-AC-6 — the create-only critique: composed by the MODE, into one member
+# ---------------------------------------------------------------------------
+
+CRITIQUE_FRAGMENT_NAME = "ticket_create_critique"
+
+
+def declared_critique() -> str:
+    """The fragment as the SET declares it — read here, never restated."""
+    raw = (default_sets_root() / V5_SET / "set.toml").read_text(encoding="utf-8")
+    fragments = tomllib.loads(raw)["fragments"]
+    assert isinstance(fragments, dict)
+    return str(fragments[CRITIQUE_FRAGMENT_NAME])
+
+
+def registry_under(mode: TicketReviewMode) -> InRepoPromptRegistry:
+    """The new set resolved under *mode*, with the goldens' own bindings."""
+    return load_registry(
+        default_set=V5_SET,
+        bindings=dict(operation_bindings(load_operation_config(EXAMPLE_OPERATION))),
+        ticket_review_mode=mode,
+    )
+
+
+def render_under(golden_name: str, registry: InRepoPromptRegistry) -> str:
+    """One shared fixture case, rendered against an already-resolved set."""
+    key, variables = ALL_CASES[golden_name]
+    return registry.template_for(key).render({**variables, "skills_reference": ""})
+
+
+def test_the_critique_is_composed_under_create_only_and_only_then() -> None:
+    """Present under one mode, absent under the other, and nothing else moves."""
+    critique = declared_critique()
+    create_only = render_under(
+        "ticket_create", registry_under(TicketReviewMode.CREATE_ONLY)
+    )
+    reviewed = render_under("ticket_create", registry_under(TicketReviewMode.REVIEWED))
+
+    assert critique in create_only
+    assert critique not in reviewed
+    # The reviewed render is the frozen one: "absent" means unchanged, not
+    # merely missing the string.
+    assert reviewed == render_case("ticket_create")
+    assert create_only.replace(f"{critique}\n\n", "", 1) == reviewed
+
+
+def test_the_critique_reaches_exactly_one_member_of_the_set() -> None:
+    """One consumer: a critique composed into the reviewer would review twice."""
+    critique = declared_critique()
+    registry = registry_under(TicketReviewMode.CREATE_ONLY)
+    carriers = sorted(
+        name for name in ALL_CASES if critique in render_under(name, registry)
+    )
+
+    assert carriers == ["ticket_create"]
+
+
+def test_the_critique_hands_the_critic_the_task_the_content_and_the_draft() -> None:
+    """What the critic receives is enumerated, and the enumeration is closed."""
+    rendered = " ".join(
+        render_under(
+            "ticket_create", registry_under(TicketReviewMode.CREATE_ONLY)
+        ).split()
+    )
+
+    assert (
+        "dispatch a draft-critic agent with the task, the tracker content, "
+        "and your draft — nothing else" in rendered
+    )
+    assert "not your reasoning about the draft and not a summary of it" in rendered
+    assert (
+        "This critique is the only review this ticket receives; it is not optional."
+        in rendered
+    )

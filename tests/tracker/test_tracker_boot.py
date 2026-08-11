@@ -35,6 +35,7 @@ from kodezart.types.domain.operation import (
     TeamEntry,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     MappingKind,
@@ -407,6 +408,7 @@ class TestReconciledConfig:
             template_overrides={},
             bindings=dict(bindings_for(self._fresh())),
             investigation_cap=configured_investigation_cap(),
+            ticket_review_mode=TicketReviewMode.REVIEWED,
         )
 
         with pytest.raises(PromptRenderError) as caught:
@@ -430,6 +432,7 @@ class TestReconciledConfig:
             template_overrides={},
             bindings=dict(bindings_for(reconciliation.config)),
             investigation_cap=configured_investigation_cap(),
+            ticket_review_mode=TicketReviewMode.REVIEWED,
         )
 
         rendered = registry.template_for(PromptKey.FIRE_PREP_PASS).render({})

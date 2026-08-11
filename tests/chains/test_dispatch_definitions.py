@@ -34,6 +34,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeGitService,
@@ -55,6 +56,7 @@ def v5_provider() -> InRepoPromptRegistry:
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
+        ticket_review_mode=TicketReviewMode.REVIEWED,
     )
 
 
@@ -429,4 +431,5 @@ def legacy_provider() -> InRepoPromptRegistry:
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
+        ticket_review_mode=TicketReviewMode.REVIEWED,
     )

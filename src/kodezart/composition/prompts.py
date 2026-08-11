@@ -35,6 +35,7 @@ async def boot_prompts(
         template_overrides=config.prompt_template_overrides,
         bindings=bindings_for(operation),
         investigation_cap=config.investigation_cap,
+        ticket_review_mode=config.ticket_review_mode,
         fallback_model=config.fallback_model,
     )
     await log.ainfo(

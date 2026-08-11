@@ -1700,6 +1700,7 @@ def make_prompt_provider() -> InRepoPromptRegistry:
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
+        ticket_review_mode=TicketReviewMode.REVIEWED,
     )
 
 

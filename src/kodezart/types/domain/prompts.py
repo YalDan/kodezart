@@ -83,6 +83,11 @@ class PromptSetFragments(BaseModel):
     investigation_spec: str | None = None
     orchestration_workflow: str | None = None
     orchestration_agents: str | None = None
+    #: The in-session critique the create-only ticket mode composes into the
+    #: creator's member.  Declared by the set and selected by the mode, so
+    #: whether a session critiques its draft is never a conditional the
+    #: session evaluates for itself.
+    ticket_create_critique: str | None = None
 
 
 class SessionRole(StrEnum):
