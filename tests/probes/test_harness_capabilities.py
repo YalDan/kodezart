@@ -67,7 +67,9 @@ STALL_GUARD_DISALLOWED_TOOLS: list[str] = ["ScheduleWakeup"]
 
 ENUMERATION_TURNS = 1
 DISPATCH_TURNS = 6
-WORKFLOW_TURNS = 6
+# A plan-mode session spends turns surveying the workspace before it decides
+# what it is willing to do, so the workflow probes carry the wider bound.
+WORKFLOW_TURNS = 16
 
 TRIVIAL_WORKFLOW_NAME = "kod86-trivial"
 TYPED_WORKFLOW_NAME = "kod86-typed"
