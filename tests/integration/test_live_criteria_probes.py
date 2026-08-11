@@ -146,8 +146,9 @@ _CLAUSE_BOUNDARY = re.compile(r"[.;:!?]+(?=\s|$)")
 _INLINE_CODE = re.compile(r"`[^`]+`")
 
 _NEGATED = re.compile(
-    r"\b(?:no|not|never|without|nor|none|nothing|neither|cannot)\b|n't\b"
+    r"\b(?:no|not|never|without|nor|none|nothing|neither|cannot|zero)\b|n't\b"
 )
+_ABBREVIATION = re.compile(r"\b(?:e\.g\.|i\.e\.|etc\.|cf\.|vs\.)", re.IGNORECASE)
 _PUNISHED = re.compile(
     r"\b(?:is|are)\s+(?:an?\s+)?(?:hard\s+)?"
     r"(?:fail|failure|violation|regression|defect)s?\b"
@@ -165,15 +166,20 @@ _PRESERVED = re.compile(
 def _clauses(text: str) -> list[str]:
     """Sentence-level clauses, with inline code opaque to the splitter.
 
-    Punctuation inside an inline-code span is part of the code — the dot
-    in ``RunOutcome.rolled_back`` and the colon in ``case ...:`` never
-    end a clause — and outside code a boundary needs trailing whitespace,
+    Punctuation inside an inline-code span or an abbreviation ("e.g.",
+    "i.e.") is not a clause boundary — the dot in
+    ``RunOutcome.rolled_back`` and the colon in ``case ...:`` never end
+    a clause — and outside those a boundary needs trailing whitespace,
     so an attribute dot never severs a token from the clause that
     governs it.
     """
     masked = _INLINE_CODE.sub(
         lambda match: re.sub(r"[.;:!?]", " ", match.group(0)),
         text,
+    )
+    masked = _ABBREVIATION.sub(
+        lambda match: match.group(0).replace(".", " "),
+        masked,
     )
     return [clause for clause in _CLAUSE_BOUNDARY.split(masked) if clause.strip()]
 
@@ -184,7 +190,7 @@ def _guarded(clause: str) -> bool:
     Three guard families, each judged over the whole governing clause:
 
     - **negated** — the clause denies the token's presence ("contains no
-      occurrence of", "does NOT gain a case for");
+      occurrence of", "does NOT gain a case for", "zero matches");
     - **preserved** — the clause pins existing state ("stays
       byte-identical", "still carrying ... for wire compatibility"); the
       probe's premise pins the completion surfaces free of the token, so
