@@ -13,7 +13,7 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, PromptProvider, WorkspaceProvider
+from kodezart.core.protocols import AgentRunner, PromptSetProvider, WorkspaceProvider
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WorkspaceError
@@ -56,7 +56,7 @@ class TicketGenerationLoop:
         service: AgentRunner,
         workspace: WorkspaceProvider,
         *,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         skills: SkillsSelection,
         max_reviews: int = 2,
         checkpointer: BaseCheckpointSaver[str] | None = None,
@@ -65,7 +65,7 @@ class TicketGenerationLoop:
     ) -> None:
         self._service = service
         self._workspace = workspace
-        self._prompts: PromptProvider = prompts
+        self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._max_reviews = max_reviews
         self._retry = RetryPolicy(
@@ -230,6 +230,8 @@ class TicketGenerationLoop:
                 allowed_tools=TICKET_TOOLS,
                 skills=self._skills,
                 session_type=SessionType.TICKET_FIRE,
+                # Generative: the set's lenses are dispatchable from here.
+                agents=self._prompts.definitions(),
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_DRAFT_SCHEMA,

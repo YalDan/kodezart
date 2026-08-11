@@ -40,6 +40,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.trajectory import IterationRecord
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
 
@@ -255,6 +256,10 @@ class RalphLoop:
                     allowed_tools=EVAL_TOOLS,
                     skills=self._skills,
                     session_type=SessionType.TICKET_FIRE,
+                    # Evaluative: no lens is dispatched from here. Asking a
+                    # template not to fan out is a request; an empty
+                    # definition list is a guarantee.
+                    agents=NO_SUBAGENTS,
                     output_format={
                         "type": "json_schema",
                         "schema": ACCEPTANCE_CRITERIA_SCHEMA,

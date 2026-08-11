@@ -19,7 +19,11 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.prompt_rendering import PromptTemplate
-from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
+from kodezart.core.protocols import (
+    AgentExecutor,
+    PromptSetProvider,
+    WorkflowEngine,
+)
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import (
@@ -1699,10 +1703,10 @@ class _RecordingTemplate(PromptTemplate):
 
 
 class RecordingPromptProvider:
-    """PromptProvider that records the key and variables of every render."""
+    """PromptSetProvider that records the key and variables of every render."""
 
-    def __init__(self, inner: PromptProvider) -> None:
-        self._inner = inner
+    def __init__(self, inner: PromptSetProvider) -> None:
+        self._inner: PromptSetProvider = inner
         self.renders: list[tuple[PromptKey, dict[str, object]]] = []
 
     def template_for(self, key: PromptKey) -> PromptTemplate:
@@ -1720,6 +1724,12 @@ class RecordingPromptProvider:
 
     def declared_skills(self, key: PromptKey) -> Sequence[str]:
         return self._inner.declared_skills(key)
+
+    def definitions(self) -> Sequence[AgentDefinition]:
+        return self._inner.definitions()
+
+    def system_prompt_append(self) -> str | None:
+        return self._inner.system_prompt_append()
 
     def variables_for(self, key: PromptKey) -> list[dict[str, object]]:
         """Every recorded variable mapping rendered under *key*."""

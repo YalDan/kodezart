@@ -25,7 +25,7 @@ from kodezart.core.protocols import (
     GitService,
     OutboundContentGate,
     PRCreator,
-    PromptProvider,
+    PromptSetProvider,
     QualityGate,
     RefPublisher,
     Remediator,
@@ -113,6 +113,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.workflow import (
     ExecutionContext,
     RemediationRequest,
@@ -138,7 +139,7 @@ class RalphWorkflowEngine:
         git_remote: str,
         git: GitService,
         cache: RepoCache,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         skills: SkillsSelection,
         gate: OutboundContentGate,
         visibility_resolver: RepoVisibilityResolver | None = None,
@@ -165,7 +166,7 @@ class RalphWorkflowEngine:
         # query canonical SHAs without leaking shell into the workflow body.
         self._git: GitService = git
         self._cache: RepoCache = cache
-        self._prompts: PromptProvider = prompts
+        self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._gate: OutboundContentGate = gate
         self._visibility_resolver: RepoVisibilityResolver | None = visibility_resolver
@@ -626,6 +627,8 @@ class RalphWorkflowEngine:
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
                 skills=self._skills,
                 session_type=SessionType.TICKET_FIRE,
+                # Generative: the set's lenses are dispatchable from here.
+                agents=self._prompts.definitions(),
                 output_format={
                     "type": "json_schema",
                     "schema": GENERATED_CRITERIA_SCHEMA,
@@ -695,6 +698,7 @@ class RalphWorkflowEngine:
                     allowed_tools=EVAL_TOOLS,
                     skills=self._skills,
                     session_type=SessionType.TICKET_FIRE,
+                    agents=NO_SUBAGENTS,
                     output_format={
                         "type": "json_schema",
                         "schema": CRITERIA_VALIDATION_SCHEMA,
@@ -1260,6 +1264,7 @@ class RalphWorkflowEngine:
                     allowed_tools=EVAL_TOOLS,
                     skills=self._skills,
                     session_type=SessionType.TICKET_FIRE,
+                    agents=NO_SUBAGENTS,
                     output_format={
                         "type": "json_schema",
                         "schema": ACCEPTANCE_CRITERIA_SCHEMA,
