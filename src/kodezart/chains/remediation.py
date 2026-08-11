@@ -24,6 +24,7 @@ from kodezart.types.domain.agent import (
     WorkflowRemediationEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RemediationRequest
 
@@ -77,6 +78,7 @@ class RemediationChain:
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
                 skills=self._skills,
+                session_type=SessionType.TICKET_FIRE,
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_DRAFT_SCHEMA,

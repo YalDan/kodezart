@@ -104,8 +104,7 @@ def test_every_rendered_id_carries_its_configured_name(key: PromptKey) -> None:
         for name, entry in config.records.items()
     ]
     addressed += [
-        (f"knowledge.{name}", value, value)
-        for name, value in config.knowledge.items()
+        (f"knowledge.{name}", value, value) for name, value in config.knowledge.items()
     ]
 
     for path, identifier, display in addressed:
@@ -196,10 +195,14 @@ def test_a_config_without_the_run_log_key_is_rejected_at_load(
 def test_the_run_log_destination_is_rendered_rather_than_hardcoded() -> None:
     """No shipped source file names a record id of its own.
 
-    A template that speaks of a run log must address a record destination
-    through the config namespace — any ``records.*`` placeholder, since the
-    grooming routine writes to its own log entry (KOD-60 R20(e)) — and no
-    shipped file may carry a destination id literal.
+    A template that speaks of a run log must address its destination
+    through a config namespace — any ``records.*`` placeholder, since the
+    grooming routine writes to its own log entry (KOD-60 R20(e)), or any
+    ``knowledge.*`` placeholder, since the what-lives-where prelude
+    addresses the same class of destination from the knowledge registry
+    (KOD-84 D-2) — and no shipped file may carry a destination id literal.
+    The banned thing is the literal; which registry answers for a
+    destination is configuration.
     """
     for destination in example_config().records.values():
         for path in SRC.rglob("*.py"):
@@ -209,7 +212,7 @@ def test_the_run_log_destination_is_rendered_rather_than_hardcoded() -> None:
     for path in SRC.rglob("*.md"):
         body = path.read_text(encoding="utf-8")
         if "run log" in body.lower():
-            assert "{{records." in body, path
+            assert "{{records." in body or "{{knowledge." in body, path
 
 
 def test_documents_stays_read_side_with_no_write_flag() -> None:

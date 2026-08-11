@@ -309,14 +309,15 @@ def test_claude_opus_render_is_byte_identical_to_baseline(golden_name: str) -> N
     assert rendered == expected
 
 
-# The two pass keys, the content-audit key and the remediation ticket are
-# net-new content with no 92597c0 baseline to be byte-identical to; every
-# RELOCATED key is covered by the goldens.
+# The two pass keys, the content-audit key, the remediation ticket and the
+# knowledge-map prelude are net-new content with no 92597c0 baseline to be
+# byte-identical to; every RELOCATED key is covered by the goldens.
 RELOCATED_KEYS = frozenset(PromptKey) - {
     PromptKey.FIRE_PREP_PASS,
     PromptKey.GROOMING_PASS,
     PromptKey.CONTENT_AUDIT,
     PromptKey.REMEDIATION_TICKET,
+    PromptKey.KNOWLEDGE_MAP,
 }
 
 

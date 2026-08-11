@@ -17,6 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The additivity guard measures "unchanged" against a recorded base
+          # commit and a trunk anchor.  Under the default depth-1 checkout
+          # neither is an object in the runner's clone, so every merge-base,
+          # show and ls-tree against them dies and the guard cannot grade.
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v6
         with:

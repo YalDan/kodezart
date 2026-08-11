@@ -9,6 +9,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, JobQueue
 from kodezart.types.domain.agent import JobAcceptedEvent
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.requests.agent import QueryRequest
 
@@ -90,6 +91,7 @@ class AgentHandler:
                 permission_mode=request.permission_mode,
                 allowed_tools=request.allowed_tools,
                 skills=self._skills,
+                session_type=SessionType.API_QUERY,
                 session_id=request.session_id,
                 output_format=output_format,
                 cache_key=cache_key,

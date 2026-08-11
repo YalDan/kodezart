@@ -40,6 +40,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -316,6 +317,7 @@ class GitChangePersister:
                 permission_mode="plan",
                 allowed_tools=["Read", "Glob", "Grep", "Bash"],
                 skills=skills,
+                session_type=SessionType.COMMIT_MESSAGE,
                 output_format=output_format,
             ),
             site="commit_message",

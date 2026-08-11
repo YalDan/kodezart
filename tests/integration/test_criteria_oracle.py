@@ -30,8 +30,10 @@ from kodezart.types.domain.criteria import (
     DraftedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeArtifactPersister,
     FakeBranchMerger,
@@ -77,6 +79,7 @@ class MutatingEchoExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:

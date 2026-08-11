@@ -54,10 +54,12 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeArtifactPersister,
@@ -595,6 +597,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -1048,6 +1051,7 @@ class _SequentialReviewExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -2140,6 +2144,7 @@ class _ScriptedCriteriaExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -2150,6 +2155,7 @@ class _ScriptedCriteriaExecutor:
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
                 skills=skills,
+                session_type=session_type,
                 session_id=session_id,
                 output_format=output_format,
             ):
@@ -2168,6 +2174,7 @@ class _ScriptedCriteriaExecutor:
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
                 skills=skills,
+                session_type=session_type,
                 session_id=session_id,
                 output_format=output_format,
             ):
@@ -3148,6 +3155,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:

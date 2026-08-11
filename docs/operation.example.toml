@@ -222,6 +222,13 @@ append_only = true
 [knowledge]
 house_rules = "example-house-rules-knowledge-entry"
 constitution = "Example — Operating Constitution"
+# The four content classes the what-lives-where fragment maps. Each is one
+# entry and one rendered line: a fifth class is configuration, never a
+# template rewrite and never a code change.
+run_logs = "Example — Run Log Index"
+memories = "Example — Cross-Run Memories"
+personas = "Example — Personas"
+notes = "Example — Private Notes"
 
 # Named infrastructure endpoints. No endpoint string ever appears in a
 # template — templates reference the key. Beside addresses this covers the

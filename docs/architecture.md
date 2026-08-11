@@ -233,6 +233,20 @@ Uses one-shot `query()` from the Claude Agent SDK. Each call is an independent
 conversation with no session persistence. **Not wired in the default
 composition root** (`main.py:32` uses `ClaudeClientExecutor`).
 
+### Working-directory MCP injection guard
+
+A session runs with `cwd` set to a worktree holding an arbitrary cloned
+repository, so a `.mcp.json` committed into that repository would otherwise be
+loaded into a session that already holds credentials — attacker-authored tool
+injection. The invariant that closes it: **wherever a session is configured
+with `mcp_servers`, the same option source also sets
+`strict_mcp_config=True`**, which is why the two are built together by one
+mapping helper rather than passed separately at each construction site.
+`tests/adapters/test_mcp_strictness.py` enforces the pairing over every
+`ClaudeAgentOptions` construction in `src/kodezart/`, resolving `**`-unpacked
+option sources and failing on any it cannot read, so a future site cannot
+quietly escape it.
+
 ### Permission Modes
 
 - `plan` - Read-only tools, agent cannot modify files

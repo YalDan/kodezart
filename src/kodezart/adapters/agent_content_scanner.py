@@ -38,6 +38,7 @@ from kodezart.types.domain.gating import (
     ScanResult,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
 _AUDIT_PERMISSION_MODE = "default"
@@ -125,6 +126,7 @@ class AgentContentScanner:
                         permission_mode=_AUDIT_PERMISSION_MODE,
                         allowed_tools=[],
                         skills=self._skills,
+                        session_type=SessionType.CONTENT_AUDIT,
                         output_format={
                             "type": "json_schema",
                             "schema": CONTENT_AUDIT_SCHEMA,
