@@ -39,8 +39,9 @@ tracker_user = "user-a"
 roles = ["approver", "principal", "assignee"]
 handle = "@user-a"
 
-[teams]
-primary = "team-1"
+[teams.primary]
+name = "team-1"
+key = "T1"
 
 [queue_states]
 triage = "queue:triage"
@@ -74,6 +75,7 @@ id = "doc-2"
 
 [records.run_log]
 system = "knowledge"
+name = "Run log"
 id = "record-1"
 append_only = true
 

@@ -136,6 +136,7 @@ def test_a_populated_records_registry_still_requires_the_run_log_key() -> None:
             records={
                 "audit": RecordDestination(
                     system=DocumentSystem.KNOWLEDGE,
+                    name="Run log",
                     id="destination-1",
                     append_only=True,
                 ),
@@ -212,6 +213,7 @@ def test_the_accessors_return_the_member_when_it_is_declared() -> None:
         records={
             RUN_LOG_RECORD_KEY: RecordDestination(
                 system=DocumentSystem.KNOWLEDGE,
+                name="Run log",
                 id="destination-1",
                 append_only=True,
             ),

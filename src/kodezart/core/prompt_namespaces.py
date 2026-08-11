@@ -96,7 +96,15 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         {stage.value: label for stage, label in config.workflow_states.items()},
         absent=not config.workflow_states,
     )
-    _bind_absentable(bindings, "teams", dict(config.teams), absent=not config.teams)
+    _bind_absentable(
+        bindings,
+        "teams",
+        {
+            team_key: {"name": entry.name, "key": entry.key}
+            for team_key, entry in config.teams.items()
+        },
+        absent=not config.teams,
+    )
     # An id alone renders as an opaque token no reader can resolve, so
     # every document and record reference carries its system beside it.
     # A TRACKER document's id is three-state on the model — absent means
@@ -121,6 +129,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         {
             key: {
                 "system": entry.system.value,
+                "name": entry.name,
                 "id": entry.id,
                 "append_only": entry.append_only,
             }

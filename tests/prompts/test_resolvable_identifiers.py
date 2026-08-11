@@ -197,10 +197,15 @@ def test_the_run_log_destination_is_rendered_rather_than_hardcoded() -> None:
 def test_documents_stays_read_side_with_no_write_flag() -> None:
     """The write capability did not leak back onto the read registry.
 
-    ``name`` joined the read-side entry when documents became OWNED — it is
-    what an ensure keys on — and it is not a write flag: nothing about it
-    says a pass records anything there. ``append_only`` remains the write
+    ``name`` is a display title on both registries — what an ensure keys on
+    read-side, what a routine addresses its log by write-side (KOD-60 R17)
+    — and it is not a write flag. ``append_only`` remains the write
     registry's alone, which is the property this holds.
     """
     assert set(DocumentEntry.model_fields) == {"system", "name", "id"}
-    assert set(RecordDestination.model_fields) == {"system", "id", "append_only"}
+    assert set(RecordDestination.model_fields) == {
+        "system",
+        "name",
+        "id",
+        "append_only",
+    }

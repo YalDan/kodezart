@@ -54,7 +54,10 @@ def build_tracker(
                 caller=caller,
                 queue_state_labels=operation.queue_states,
                 workflow_state_names=operation.workflow_states,
-                team_identifiers=operation.teams,
+                team_identifiers={
+                    team_key: entry.name
+                    for team_key, entry in operation.teams.items()
+                },
                 max_retries=config.tracker_max_retries,
                 retry_backoff_factor=config.tracker_retry_backoff_factor,
             )

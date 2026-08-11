@@ -75,8 +75,9 @@ tracker_user = "{BYSTANDER}"
 roles = ["principal"]
 handle = "@bystander"
 
-[teams]
-engineering = "fixture-team"
+[teams.engineering]
+name = "fixture-team"
+key = "ENG"
 
 [queue_states]
 {rendered}
@@ -100,6 +101,7 @@ name = "{document_title}"{declared_id}
 
 [records.run_log]
 system = "knowledge"
+name = "Run log"
 id = "record-1"
 append_only = true
 

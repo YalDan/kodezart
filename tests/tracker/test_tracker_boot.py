@@ -32,6 +32,7 @@ from kodezart.types.domain.operation import (
     PrincipalRole,
     RecordDestination,
     RepoEntry,
+    TeamEntry,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.tracker import (
@@ -77,7 +78,10 @@ def operation_config() -> OperationConfig:
             ),
         ],
         agent_identities=[],
-        teams=dict(TEAM_IDENTIFIERS),
+        teams={
+            team_key: TeamEntry(name=team_name, key="ENG")
+            for team_key, team_name in TEAM_IDENTIFIERS.items()
+        },
         queue_states=dict(QUEUE_STATE_LABELS),
         workflow_states=dict(WORKFLOW_STATE_NAMES),
         repos=[
@@ -97,6 +101,7 @@ def operation_config() -> OperationConfig:
         records={
             "run_log": RecordDestination(
                 system=DocumentSystem.KNOWLEDGE,
+                name="Run log",
                 id="record-1",
                 append_only=True,
             ),
@@ -203,7 +208,11 @@ class TestBootValidation:
         self,
     ) -> None:
         config = operation_config().model_copy(
-            update={"teams": {"engineering": "no-such-team"}},
+            update={
+                "teams": {
+                    "engineering": TeamEntry(name="no-such-team", key="ENG"),
+                },
+            },
         )
         tracker = linear_over_fake_mcp(fixture_server())
         with pytest.raises(TrackerBootValidationError) as caught:
@@ -213,7 +222,7 @@ class TestBootValidation:
     async def test_every_failure_is_named_at_once_not_the_first(self) -> None:
         config = operation_config().model_copy(
             update={
-                "teams": {"engineering": "no-such-team"},
+                "teams": {"engineering": TeamEntry(name="no-such-team", key="ENG")},
                 "workflow_states": {
                     **WORKFLOW_STATE_NAMES,
                     LifecycleStage.DONE: "Shipped",
@@ -353,7 +362,7 @@ class TestReconciledConfig:
             known_identifiers=[
                 *(principal.tracker_user for principal in config.principals),
                 *config.agent_identities,
-                *config.teams.values(),
+                *(entry.name for entry in config.teams.values()),
                 *config.queue_states.values(),
                 *config.workflow_states.values(),
             ],

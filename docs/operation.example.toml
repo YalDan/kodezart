@@ -71,9 +71,17 @@ tracker_user = "example-oncall"
 roles = ["principal"]
 handle = "@example-oncall"
 
-# Teams addressed from templates by key.
-[teams]
-primary = "EXA"
+# Teams addressed from templates by key. Each entry carries the team's
+# display name and its short tracker key — the identifier issues are
+# prefixed with. A rendered prompt that names one cannot derive the other,
+# so both are declared.
+[teams.primary]
+name = "Example Team"
+key = "EXA"
+
+[teams.agent]
+name = "example-agent-team"
+key = "EXG"
 
 # Queue states. An OPEN mapping: the five members code addresses by name are
 # required present, and any additional member is legal as a pure configuration
@@ -145,9 +153,11 @@ id = "example-house-rules-document-id"
 # WRITE-side destination registry — where a pass records a row, as opposed to
 # where it reads. Deliberately separate from `documents`: that registry is
 # read-side, and a write flag on it would make it silently write-capable while
-# still not saying what is written. The "run_log" key is required.
+# still not saying what is written. The "run_log" key is required. `name` is
+# the destination's display title — what a routine addresses its log by.
 [records.run_log]
 system = "knowledge"
+name = "Example Run Log"
 id = "example-run-log-destination-id"
 append_only = true
 

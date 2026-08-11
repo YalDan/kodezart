@@ -149,6 +149,22 @@ class Principal(OperationModel):
     forge_handle: str | None = None
 
 
+class TeamEntry(OperationModel):
+    """A tracker team: its display name and its short key.
+
+    Two identifiers because the routines use both, in one sentence: the
+    display name is what a human reads and what boot resolves against the
+    live workspace; the key is the short identifier the tracker prefixes
+    issues with, and a rendered prompt that names the first cannot derive
+    the second.  Added under KOD-60 R17 — the verbatim routine texts carry
+    the key as its own token, and a mapping of key -> name had no home
+    for it.
+    """
+
+    name: str = Field(min_length=1)
+    key: str = Field(min_length=1)
+
+
 class CheckStep(OperationModel):
     """One command in a repository's check chain, and what gates it.
 
@@ -230,9 +246,16 @@ class RecordDestination(OperationModel):
     Deliberately not a flag on :class:`DocumentEntry`: ``documents`` is a
     read-side registry, and a boolean there would make it silently
     write-capable while still not saying what is written.
+
+    ``name`` is the destination's display title — what a routine addresses
+    its log by in prose.  Added under KOD-60 R17: the verbatim routine
+    texts carry the title as its own token, and rendering ``id`` where the
+    text carries a name is the substitution error the byte-identity gate
+    caught.
     """
 
     system: DocumentSystem
+    name: str = Field(min_length=1)
     id: str
     append_only: bool
 
@@ -303,7 +326,7 @@ class OperationConfig(OperationModel):
     workspace: str
     principals: list[Principal] = Field(default_factory=list)
     agent_identities: list[str] = Field(default_factory=list)
-    teams: dict[str, str] = Field(default_factory=dict)
+    teams: dict[str, TeamEntry] = Field(default_factory=dict)
     queue_states: dict[str, str] = Field(default_factory=dict)
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     repos: list[RepoEntry] = Field(default_factory=list)
