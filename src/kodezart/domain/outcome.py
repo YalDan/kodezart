@@ -17,12 +17,20 @@ that produced no commits never moved its passed-count so it plateaued by
 construction; classifying the plateau first would leave both newer
 members unreachable at any default configuration.
 
+``remediation_budget_exhausted`` sits AFTER the two loop-exit members
+that describe a run's OUTPUT and before the ones that describe only its
+failure.  Order it any earlier and a stalled run that landed its
+do-not-merge request could never say so, because at the default budget
+every such run has spent a round by the time it lands.  Its predicate is
+a spent round at an unaccepted terminal: the routers only reach the
+terminal on a failure path when no round remains, so a round used is a
+budget spent.
+
 There is no default arm.  An unclassifiable state raises, so a new
 terminal route cannot ship undiscriminated.
 """
 
 from kodezart.domain.accept_gate import gate_cleared
-from kodezart.domain.trajectory import landable_commit
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.workflow import WorkflowState
 
@@ -32,7 +40,7 @@ def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
     accepted = gate_cleared(state["accept_verdict"])
     merged = state["merged"]
     merge_error = state["merge_error"]
-    fix_rounds_used = state["fix_rounds_used"]
+    remediation_rounds_used = state["remediation_rounds_used"]
     review_passed = state["review_passed"]
     pr_url = state["pr_url"]
     ci_passed = state["ci_passed"]
@@ -45,14 +53,16 @@ def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
     merge_failed = merged is False and merge_error is not None
     loop_exit = accepted is False and merged is False and merge_error is None
 
-    if merge_failed and fix_rounds_used == 0:
+    if merge_failed and remediation_rounds_used == 0:
         return WorkflowOutcome.merge_divergent
-    if merge_failed and fix_rounds_used > 0:
+    if merge_failed and remediation_rounds_used > 0:
         return WorkflowOutcome.fix_consolidation_failed
     if loop_exit and pr_url is not None:
         return WorkflowOutcome.stalled_pr_opened
-    if loop_exit and trajectory is not None and landable_commit(trajectory) is None:
+    if loop_exit and state["best_iteration_sha"] is None and trajectory is not None:
         return WorkflowOutcome.zero_commit_no_pr
+    if remediation_rounds_used > 0 and not accepted:
+        return WorkflowOutcome.remediation_budget_exhausted
     if loop_exit and trajectory is not None and trajectory.plateaued is True:
         return WorkflowOutcome.loop_plateaued
     if loop_exit and (trajectory is None or trajectory.plateaued is False):

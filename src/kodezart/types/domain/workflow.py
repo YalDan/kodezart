@@ -160,6 +160,12 @@ class WorkflowState(TypedDict):
     ``trajectory`` carries the most recent quality-gate invocation's
     ``LoopTrajectory``; ``None`` until the first gate invocation projects
     one.
+
+    ``best_iteration_sha`` is the best commit the run has produced across
+    every remediation round — recorded ON THE RUN rather than recomputed
+    from whichever trajectory happens to be last, because a round that
+    commits nothing would otherwise make a run that plainly did work look
+    as though it had done none.
     """
 
     feature_branch: str
@@ -180,7 +186,10 @@ class WorkflowState(TypedDict):
     merge_error: str | None
     review_passed: bool
     review_feedback: str | None
-    fix_rounds_used: int
+    remediation_rounds_used: int
+    remediation_ticket: TicketDraftOutput | None
+    remediation_entry: RemediationEntry | None
+    best_iteration_sha: str | None
     pr_url: str | None
     pr_number: int | None
     ci_passed: bool | None

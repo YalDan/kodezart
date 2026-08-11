@@ -29,6 +29,7 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
@@ -228,6 +229,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             retry_max_attempts=config.retry_max_attempts,
             retry_initial_interval=config.retry_initial_interval,
         )
+        remediator = RemediationChain(
+            service=agent_service,
+            prompts=prompts,
+            skills=skills,
+        )
         workflow_engine = RalphWorkflowEngine(
             service=agent_service,
             quality_gate=ralph_loop,
@@ -247,7 +253,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             pr_creator=github_api,
             ci_monitor=github_api,
             ref_publisher=ref_publisher,
-            max_fix_rounds=config.max_fix_rounds,
+            remediator=remediator,
+            remediation_max_rounds=config.remediation_max_rounds,
             criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
             artifact_persister=artifact_persister,
         )
