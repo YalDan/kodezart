@@ -525,7 +525,8 @@ class RalphWorkflowEngine:
                     "schema": BRANCH_NAME_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="branch_name",
         )
 
         if result_event is None or result_event.structured_output is None:
@@ -612,7 +613,8 @@ class RalphWorkflowEngine:
                     "schema": GENERATED_CRITERIA_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="acceptance_criteria",
         )
 
         if result_event is None or result_event.structured_output is None:
@@ -678,7 +680,8 @@ class RalphWorkflowEngine:
                     "schema": CRITERIA_VALIDATION_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="criteria_validation",
         )
 
         if result_event is None or result_event.structured_output is None:
@@ -1164,7 +1167,8 @@ class RalphWorkflowEngine:
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="post_merge_review",
         )
 
         if result_event is None or result_event.structured_output is None:
@@ -1444,7 +1448,8 @@ class RalphWorkflowEngine:
                     "schema": PR_DESCRIPTION_SCHEMA,
                 },
                 cache_key=ctx.cache_key,
-            )
+            ),
+            site="pr_description",
         )
 
         if result_event is None or result_event.structured_output is None:

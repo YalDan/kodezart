@@ -82,7 +82,8 @@ class RemediationChain:
                     "schema": TICKET_DRAFT_SCHEMA,
                 },
                 cache_key=cache_key,
-            )
+            ),
+            site="remediation_ticket",
         )
 
         if result_event is None or result_event.structured_output is None:
