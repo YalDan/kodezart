@@ -31,14 +31,18 @@ live with the cutover work itself.
 Each dimension names the template and the section carrying it. A test asserts
 every referenced section exists in the referenced template.
 
+The templates carry the routines' verbatim prose (KOD-60, byte-identity
+gate), so a section cell names a distinctive clause of that prose rather
+than a markdown heading the condensation invented.
+
 | Dimension | Template | Section |
 | --- | --- | --- |
-| scan-window checkpointing | fire_prep_pass | ## Scan Window |
-| atomicity/race guards | fire_prep_pass | ## Atomicity Guards |
-| bundle-first grouping | fire_prep_pass | ## Bundle-First Grouping |
-| queue-state transitions | grooming_pass | ## Queue State Transitions |
-| reply criteria | grooming_pass | ## Reply Criteria |
-| health mapping | grooming_pass | ## Health Mapping |
+| scan-window checkpointing | fire_prep_pass | read the run checkpoint first |
+| atomicity/race guards | fire_prep_pass | Write it only after completion |
+| bundle-first grouping | fire_prep_pass | bundle FIRST |
+| queue-state transitions | grooming_pass | Queue-state machine — workflow states follow the queue |
+| reply criteria | fire_prep_pass | it joins the response set when its latest relevant comment/thread meets all three of |
+| health mapping | grooming_pass | <health> |
 
 ## Placeholder → OperationConfig field
 
@@ -48,22 +52,26 @@ reachable from at least one template. A test asserts both directions, and the
 second one is derived from `OperationConfig.model_fields` rather than from the
 rows below, so the table can never be checked against itself.
 
-A reference introduced by an enclosing `{{#each}}` — `{{this.tracker_user}}`,
-`{{this.url}}`, `{{this.checks}}`, `{{this.name}}`, `{{this.command}}`,
-`{{this.depends_on}}`, `{{this.id}}`, `{{this.target_date}}`,
-`{{this.target_date_absent}}`
-— is a member of the iterated item, not a placeholder in its own right. The
-block's own name is the mapped placeholder, and that is what the rows carry.
+The verbatim templates address every sequence-shaped collection by FLAT
+dotted path (KOD-60 R16): a role for a principal, a decimal position for
+everything ordered. No pass template loops over the operation namespace, so
+every reference below is a placeholder in its own right.
 
 | Placeholder | OperationConfig path |
 | --- | --- |
 | operation_name | operation_name |
 | workspace | workspace |
-| principals | principals |
-| agent_identities | agent_identities |
-| repos | repos |
-| initiatives | initiatives |
-| teams.primary | teams |
+| agent_identities.0 | agent_identities |
+| agent_identities.1 | agent_identities |
+| principals.approver.tracker_user | principals |
+| principals.approver.forge_handle | principals |
+| principals.assignee.tracker_user | principals |
+| principals.1.tracker_user | principals |
+| principals.2.tracker_user | principals |
+| principals.2.handle | principals |
+| teams.primary.name | teams |
+| teams.primary.key | teams |
+| teams.agent.name | teams |
 | queue_states.triage | queue_states |
 | queue_states.proposed | queue_states |
 | queue_states.approved | queue_states |
@@ -72,12 +80,32 @@ block's own name is the mapped placeholder, and that is what the rows carry.
 | workflow_states.in_progress | workflow_states |
 | workflow_states.in_review | workflow_states |
 | workflow_states.done | workflow_states |
-| documents.checkpoint.system | documents |
+| repos.0.name | repos |
+| repos.0.slug | repos |
+| repos.0.checks.0.command | repos |
+| repos.0.checks.1.name | repos |
+| repos.0.checks.2.name | repos |
+| repos.0.checks.3.name | repos |
+| repos.0.checks.4.name | repos |
+| repos.0.checks.5.name | repos |
+| repos.1.name | repos |
+| repos.1.slug | repos |
+| repos.1.checks.0.command | repos |
+| repos.1.checks.1.name | repos |
+| repos.1.checks.2.name | repos |
+| repos.1.checks.3.name | repos |
 | documents.checkpoint.id | documents |
-| records.run_log.system | records |
-| records.run_log.id | records |
-| knowledge.house_rules | knowledge |
-| endpoints.escalation | endpoints |
+| documents.constitution.id | documents |
+| records.run_log.name | records |
+| records.grooming_log.name | records |
+| records.grooming_log.id | records |
+| knowledge.constitution | knowledge |
+| endpoints.host_runner | endpoints |
+| endpoints.cloudflare_docs_mcp | endpoints |
+| endpoints.notion_connector | endpoints |
+| initiatives.0.id | initiatives |
+| initiatives.0.target_date | initiatives |
+| initiatives.1.id | initiatives |
 | private_surface | private_surface |
 
 ## What this lane does not claim

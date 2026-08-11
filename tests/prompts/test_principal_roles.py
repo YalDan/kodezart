@@ -115,13 +115,13 @@ def test_a_principal_is_recognisable_on_the_forge_as_well_as_the_tracker() -> No
 
 
 def test_both_identifiers_reach_a_rendered_pass() -> None:
-    """Recognition and authority both reach the sweep, and are distinguished.
+    """Recognition and authority both reach the sweep, as the routine states.
 
-    The forge handle is not asserted here: the clauses that rendered it were
-    written into a template this branch does not own, for an identifier no
-    issue body names, and they are reverted.  The field is still asserted on
-    the model above; what is gone is the claim that a shipped prompt carries
-    it.
+    Reshaped to the verbatim template under KOD-60 R20(b): the routine's
+    roster carries every principal's authority identifier and role word,
+    the mention sweep recognises the ACCOUNT by its own identities, and the
+    forge handle's promised reader — the clause naming one principal two
+    ways across two surfaces — is restored with the verbatim text.
     """
     config = example_config()
     registry = load_registry()
@@ -136,10 +136,12 @@ def test_both_identifiers_reach_a_rendered_pass() -> None:
     ]
     assert obliging
     for principal in obliging:
-        assert principal.handle in rendered
         assert principal.tracker_user in rendered
-        for role in principal.roles:
-            assert role.value in rendered
+    for identity in config.agent_identities:
+        assert identity in rendered
+    approver = config.approver()
+    assert approver.forge_handle is not None
+    assert approver.forge_handle in rendered
 
 
 def test_a_second_approver_is_refused_rather_than_silently_ranked(

@@ -36,6 +36,7 @@ from kodezart.types.domain.operation import (
     QueueState,
     RecordDestination,
     RepoEntry,
+    TeamEntry,
 )
 from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
@@ -118,7 +119,7 @@ def operation_config() -> OperationConfig:
             ),
         ],
         agent_identities=[],
-        teams={"engineering": "fixture-team"},
+        teams={"engineering": TeamEntry(name="fixture-team", key="ENG")},
         queue_states={member.value: f"queue:{member.value}" for member in QueueState},
         workflow_states={
             LifecycleStage.IN_PROGRESS: "In Progress",
@@ -142,6 +143,7 @@ def operation_config() -> OperationConfig:
         records={
             "run_log": RecordDestination(
                 system=DocumentSystem.KNOWLEDGE,
+                name="Run log",
                 id="record-1",
                 append_only=True,
             ),

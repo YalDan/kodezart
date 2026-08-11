@@ -62,8 +62,8 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
         for identity in config.agent_identities
     )
     refs.extend(
-        MappingRef(kind=MappingKind.TEAM, name=name, identifier=identifier)
-        for name, identifier in sorted(config.teams.items())
+        MappingRef(kind=MappingKind.TEAM, name=team_key, identifier=entry.name)
+        for team_key, entry in sorted(config.teams.items())
     )
     refs.extend(
         MappingRef(kind=MappingKind.QUEUE_STATE, name=name, identifier=identifier)
@@ -154,7 +154,7 @@ def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
     when it declares several, because one queue state addressed on several
     teams' issues cannot be a label private to one of them.
     """
-    identifiers = sorted(set(config.teams.values()))
+    identifiers = sorted({entry.name for entry in config.teams.values()})
     scope = identifiers[0] if len(identifiers) == 1 else None
     owned = sorted(
         field

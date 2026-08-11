@@ -35,6 +35,7 @@ from kodezart.types.domain.operation import (
     QueueState,
     RecordDestination,
     RepoEntry,
+    TeamEntry,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
 from tests.fakes import (
@@ -81,7 +82,7 @@ def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationCo
             ),
         ],
         agent_identities=[],
-        teams={"engineering": "fixture-team"},
+        teams={"engineering": TeamEntry(name="fixture-team", key="ENG")},
         queue_states={member.value: f"queue:{member.value}" for member in QueueState},
         workflow_states={
             LifecycleStage.IN_PROGRESS: "In Progress",
@@ -106,6 +107,7 @@ def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationCo
         records={
             "run_log": RecordDestination(
                 system=DocumentSystem.KNOWLEDGE,
+                name="Run log",
                 id="record-1",
                 append_only=True,
             ),

@@ -1,9 +1,14 @@
-"""The declared check chain, loaded from TOML and validated at load.
+"""KOD-112 defect 5 — the check chain carries gate-versus-cascade structure.
 
-A step may name the step it depends on, and the loader rejects a chain that
-cannot be read: a dependency on an undeclared step, a cycle, a duplicate
-name.  These are load-time failures rather than report-time ones, so a
-malformed chain fails loudly at boot.
+The passes carry an honesty rule: report one root failure plus its cascades,
+never a list of independent-looking reds.  A flat ``list[str]`` cannot say
+which command the rule is about, so the rule was unfollowable for any repo
+whose chain has more than one step.  These tests exercise the structure end
+to end — TOML on disk, through ``OperationConfig``, into the classifier a
+consumer calls — because the criterion is about a ROUND TRIP, not about a
+model field existing.  The loader's own rejections (unknown dependency,
+cycle, duplicate name) are load-time failures rather than report-time ones,
+so a malformed chain fails loudly at boot.
 """
 
 from pathlib import Path
@@ -12,7 +17,8 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.errors import OperationConfigError
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.domain.check_chain import classify_check_failures
+from kodezart.types.domain.operation import CheckStep, OperationConfig
 
 _MINIMAL_TAIL = """
 [documents.checkpoint]
@@ -22,6 +28,7 @@ id = "doc-1"
 
 [records.run_log]
 system = "knowledge"
+name = "Run log"
 id = "record-1"
 append_only = true
 
@@ -43,8 +50,9 @@ tracker_user = "user-a"
 roles = ["approver", "principal", "assignee"]
 handle = "@user-a"
 
-[teams]
-primary = "team-1"
+[teams.primary]
+name = "team-1"
+key = "T1"
 
 [queue_states]
 triage = "queue:triage"
@@ -96,6 +104,70 @@ def test_a_gate_plus_dependents_round_trips_through_the_model(
     steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
     assert [step.name for step in steps] == ["lint", "type-check", "test"]
     assert [step.depends_on for step in steps] == [None, "lint", "type-check"]
+
+
+def test_a_consumer_can_tell_the_root_failure_from_its_cascades(
+    tmp_path: Path,
+) -> None:
+    """The whole point: three reds, one problem."""
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
+    classification = classify_check_failures(
+        steps,
+        ["lint", "type-check", "test"],
+    )
+    assert classification.roots == ("lint",)
+    assert classification.cascades == ("type-check", "test")
+
+
+def test_two_independent_gates_failing_are_two_roots(tmp_path: Path) -> None:
+    """The paired negative: not everything collapses to one root."""
+    chain = """
+[[repos.checks]]
+name = "lint"
+command = "make lint"
+
+[[repos.checks]]
+name = "docs"
+command = "make docs"
+"""
+    steps = _config(chain, tmp_path).repos[0].checks
+    classification = classify_check_failures(steps, ["lint", "docs"])
+    assert classification.roots == ("lint", "docs")
+    assert classification.cascades == ()
+
+
+def test_a_dependent_failing_alone_is_its_own_root(tmp_path: Path) -> None:
+    """A cascade is a cascade only when its ancestor actually failed."""
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
+    classification = classify_check_failures(steps, ["test"])
+    assert classification.roots == ("test",)
+    assert classification.cascades == ()
+
+
+def test_a_cascade_two_levels_below_a_failed_gate_is_still_a_cascade(
+    tmp_path: Path,
+) -> None:
+    """Reachability, not adjacency: ``test`` cascades from ``lint``."""
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
+    classification = classify_check_failures(steps, ["lint", "test"])
+    assert classification.roots == ("lint",)
+    assert classification.cascades == ("test",)
+
+
+def test_classification_is_ordered_by_the_declared_chain(tmp_path: Path) -> None:
+    """Two runs over one chain and one failure set produce one report."""
+    steps = _config(_GATE_PLUS_DEPENDENTS, tmp_path).repos[0].checks
+    first = classify_check_failures(steps, ["test", "lint", "type-check"])
+    second = classify_check_failures(steps, ["lint", "type-check", "test"])
+    assert first == second
+
+
+def test_a_failure_naming_no_declared_step_is_reported_as_a_root() -> None:
+    """Never silently dropped: an undeclared failure has no ancestor to blame."""
+    steps = [CheckStep(name="lint", command="make lint")]
+    classification = classify_check_failures(steps, ["lint", "mystery"])
+    assert classification.roots == ("lint", "mystery")
+    assert classification.cascades == ()
 
 
 def test_a_chain_depending_on_an_unknown_step_is_rejected_at_load(

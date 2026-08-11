@@ -4,6 +4,7 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
@@ -12,6 +13,7 @@ from kodezart.core.protocols import (
     JobQueue,
     JobRegistry,
     OutboundContentGate,
+    PromptProvider,
     RepoCache,
     TrackerPort,
 )
@@ -19,11 +21,36 @@ from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.services.fire_prep_pass import FirePrepPass
+from kodezart.services.hygiene_scan import HygieneScan
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.operation import OperationConfig, QueueState
+
+
+def build_fire_prep_pass(
+    *,
+    config: AppConfig,
+    operation: OperationConfig,
+    prompts: PromptProvider,
+) -> FirePrepPass:
+    """The fire-prep pass path: prompt composition plus the gates it owns.
+
+    One scanner engine, a second pattern set: the hygiene scan is the
+    shipped ``RegexContentScanner`` constructed over ``hygiene_patterns``,
+    reaching every body through the same ``ContentScanner.scan`` entry
+    point the deny set uses.  A second scanner implementation here is a
+    failed review by KOD-60's own words.
+    """
+    return FirePrepPass(
+        prompts=prompts,
+        scan=HygieneScan(
+            scanner=RegexContentScanner(patterns=config.hygiene_patterns),
+        ),
+        operation=operation,
+    )
 
 
 def build_dispatch_passes(

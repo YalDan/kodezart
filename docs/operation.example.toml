@@ -6,9 +6,14 @@
 # configuration, and per-fire parameters are request fields. Secrets NEVER
 # appear here: the model is extra="forbid", so a stray token key fails at load.
 #
-# Every field below is required. Validation is structural and collects every
+# This is the COMPLETE example: every field the model carries, annotated.
+# Only operation_name and workspace are required — every collection defaults
+# empty and an empty board boots (docs/operation.minimal.toml is that floor).
+# Validation is structural, applies to what IS present, and collects every
 # failure into one typed error; existence resolution against the live
-# workspace belongs to the tracker adapter, not to config load.
+# workspace belongs to the tracker adapter, not to config load. A consumer
+# needing a member an empty collection cannot supply refuses at the point of
+# need, naming the missing role or key and what stops working.
 
 # Human-readable name of the operation these settings describe.
 operation_name = "example-operation"
@@ -16,8 +21,10 @@ operation_name = "example-operation"
 # The tracker workspace the operation acts within. A slug, not a URL.
 workspace = "example-workspace"
 
-# Identities the agent posts under. Must not collide with a principal.
-agent_identities = ["example-agent"]
+# Identities the agent posts under, in the order the pass templates address
+# them: the mention handle first, the account's plain name second. Must not
+# collide with a principal.
+agent_identities = ["@example-agent", "example-agent"]
 
 # Prose describing the CLASS of thing this operation treats as private, read
 # by the judgment half of the outbound gate. A CLASS, never a list of
@@ -29,8 +36,10 @@ agent_identities = ["example-agent"]
 private_surface = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
 
 # Authority is enforced by ROLE, never by name in code or templates.
-# EXACTLY ONE principal carries `approver` and EXACTLY ONE carries `assignee`;
-# every principal carries `principal`. All three are validated at load.
+# When principals are declared, EXACTLY ONE carries `approver` and AT MOST
+# ONE carries `assignee`; every principal carries `principal`. All three are
+# validated at load over what is present. An absent `assignee` loads — the
+# pass that assigns prepared work refuses at the point of need instead.
 #
 # Three roles, because the passes route three things differently:
 #   approver  — holds the approval flip
@@ -64,9 +73,17 @@ tracker_user = "example-oncall"
 roles = ["principal"]
 handle = "@example-oncall"
 
-# Teams addressed from templates by key.
-[teams]
-primary = "EXA"
+# Teams addressed from templates by key. Each entry carries the team's
+# display name and its short tracker key — the identifier issues are
+# prefixed with. A rendered prompt that names one cannot derive the other,
+# so both are declared.
+[teams.primary]
+name = "Example Team"
+key = "EXA"
+
+[teams.agent]
+name = "example-agent-team"
+key = "EXG"
 
 # Queue states. An OPEN mapping: the five members code addresses by name are
 # required present, and any additional member is legal as a pure configuration
@@ -93,18 +110,56 @@ url = "https://example.invalid/example-org/example-repo"
 trunk = "main"
 
 [[repos.checks]]
-name = "lint"
-command = "make lint"
+name = "install"
+command = "make install"
 
 [[repos.checks]]
-name = "type-check"
+name = "typecheck"
 command = "make type-check"
+depends_on = "install"
+
+[[repos.checks]]
+name = "lint"
+command = "make lint"
+depends_on = "install"
+
+[[repos.checks]]
+name = "build"
+command = "make build"
+depends_on = "typecheck"
+
+[[repos.checks]]
+name = "test"
+command = "make test"
+depends_on = "build"
+
+[[repos.checks]]
+name = "test-integration"
+command = "make test-integration"
+depends_on = "build"
+
+[[repos]]
+url = "https://example.invalid/example-org/second-repo"
+trunk = "main"
+
+[[repos.checks]]
+name = "format"
+command = "make format-check"
+
+[[repos.checks]]
+name = "lint"
+command = "make lint"
+depends_on = "format"
+
+[[repos.checks]]
+name = "build"
+command = "make build"
 depends_on = "lint"
 
 [[repos.checks]]
 name = "test"
 command = "make test"
-depends_on = "type-check"
+depends_on = "build"
 
 # Read-side document registry, addressed by stable key. The "checkpoint" key
 # is required: the scan-window marker is addressed by key rather than by name
@@ -125,7 +180,7 @@ depends_on = "type-check"
 # second document beside it.
 [documents.checkpoint]
 system = "tracker"
-name = "Fire run checkpoint"
+name = "Example Run Log"
 id = "example-checkpoint-document-id"
 
 # A knowledge-store document is not this operation's to create, so its id is
@@ -135,13 +190,30 @@ system = "knowledge"
 name = "House rules"
 id = "example-house-rules-document-id"
 
+# The operation's standing-protocol document, read by both passes. Its name
+# matches the knowledge entry addressing the same document by title.
+[documents.constitution]
+system = "knowledge"
+name = "Example — Operating Constitution"
+id = "example-constitution-document-id"
+
 # WRITE-side destination registry — where a pass records a row, as opposed to
 # where it reads. Deliberately separate from `documents`: that registry is
 # read-side, and a write flag on it would make it silently write-capable while
-# still not saying what is written. The "run_log" key is required.
+# still not saying what is written. The "run_log" key is required. `name` is
+# the destination's display title — what a routine addresses its log by.
 [records.run_log]
 system = "knowledge"
+name = "Example Run Log"
 id = "example-run-log-destination-id"
+append_only = true
+
+# The grooming pass writes to a log of its own — a second entry in the same
+# registry, no type or consumer change.
+[records.grooming_log]
+system = "knowledge"
+name = "Example Grooming Log"
+id = "example-grooming-log-destination-id"
 append_only = true
 
 # Reference material held in the knowledge store, addressed by key. Every
@@ -149,11 +221,17 @@ append_only = true
 # a template naming it must say.
 [knowledge]
 house_rules = "example-house-rules-knowledge-entry"
+constitution = "Example — Operating Constitution"
 
 # Named infrastructure endpoints. No endpoint string ever appears in a
-# template — templates reference the key.
+# template — templates reference the key. Beside addresses this covers the
+# endpoint-shaped identifiers a rendered prompt needs: the host runner's
+# local address, a public documentation MCP, a connector instance id.
 [endpoints]
 escalation = "https://example.invalid/escalation"
+host_runner = "localhost:8000"
+cloudflare_docs_mcp = "https://example.invalid/docs-mcp"
+notion_connector = "example-notion-connector-id"
 
 # Initiatives the operation is steering toward. `target_date` is OPTIONAL and
 # omitting it is the ordinary case: most real initiatives carry none, and a
