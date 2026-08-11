@@ -36,11 +36,12 @@ EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
 SRC = REPO_ROOT / "src" / "kodezart"
 PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
 
-# A sentence, for the purpose of "carries its system alongside its id": the
-# run of text between hard stops.  Nothing numeric is chosen here — the
-# boundary is the punctuation the templates are authored with, not a window
-# width someone picked.
-_SENTENCE = re.compile(r"[^.\n]+")
+# A sentence, for the purpose of "carries its addressable name alongside its
+# id": the run of text between full stops.  Nothing numeric is chosen here —
+# the boundary is the punctuation the templates are authored with, not a
+# window width someone picked.  Newlines are not boundaries: the verbatim
+# routine prose wraps a reference across a line break (KOD-60 R20(c)).
+_SENTENCE = re.compile(r"[^.]+")
 
 
 def example_config() -> OperationConfig:
@@ -78,57 +79,67 @@ def test_rendered_pass_carries_no_unresolved_placeholder(key: PromptKey) -> None
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)
-def test_every_rendered_id_carries_its_system_token(key: PromptKey) -> None:
+def test_every_rendered_id_carries_its_configured_name(key: PromptKey) -> None:
     """AC-41, second half: no emitted id is resolvable-to-nothing.
 
     Every occurrence of every configured document or record id in the
-    rendered prompt must sit in a sentence that also names the system it
-    belongs to.  A reader — human or session — given only this prompt can
-    then open the thing it is instructed to read or write.
+    rendered prompt must sit in a sentence that also carries the entry's
+    configured display NAME.  Reshaped under KOD-60 R20(c): the verbatim
+    routine prose names the artifact and its vendor beside an id, never the
+    config-model enum token — the resolvability a reader needs is the name,
+    and the name is config-derived, so the check stays mechanical.  A
+    ``knowledge`` entry's value IS its name, so its occurrences satisfy the
+    rule by construction and pin the sentence boundary instead.
     """
     config = example_config()
     rendered = rendered_passes()[key]
 
     addressed: list[tuple[str, str, str]] = [
-        (f"documents.{name}", entry.id, entry.system.value)
+        (f"documents.{name}", entry.id, entry.name)
         for name, entry in config.documents.items()
+        if entry.id is not None
     ]
     addressed += [
-        (f"records.{name}", entry.id, entry.system.value)
+        (f"records.{name}", entry.id, entry.name)
         for name, entry in config.records.items()
     ]
-    # Every ``knowledge`` value belongs to the knowledge store by
-    # construction, so the token a template must name for it is fixed.
     addressed += [
-        (f"knowledge.{name}", value, DocumentSystem.KNOWLEDGE.value)
+        (f"knowledge.{name}", value, value)
         for name, value in config.knowledge.items()
     ]
 
-    for path, identifier, system in addressed:
+    for path, identifier, display in addressed:
         for sentence in sentences_containing(rendered, identifier):
-            assert system in sentence, (
+            assert display in sentence, (
                 f"{key.value}: {path} id {identifier!r} is emitted in a sentence "
-                f"that never names its system ({system!r}): {sentence.strip()!r}"
+                f"that never carries its configured name ({display!r}): "
+                f"{sentence.strip()!r}"
             )
 
 
 def test_both_pass_templates_actually_emit_an_addressed_reference() -> None:
-    """The system-token assertion is not vacuously true.
+    """The configured-name assertion is not vacuously true.
 
-    A test that only checks "every occurrence carries its system" passes
+    A test that only checks "every occurrence carries its name" passes
     trivially when there are no occurrences, so the occurrences themselves
-    are asserted present.  The checkpoint is read by both passes and so is
-    asserted in both; the run-log destination is addressed once, which is
-    all the reachability rule asks and all a template a run does not own
-    should be made to carry.
+    are asserted present — per pass, as each routine actually addresses its
+    artifacts (KOD-60 R20(d)): the fire-prep routine reads the checkpoint
+    data source and writes the run log it names; the grooming routine's
+    checkpoint is the initiative status update, and what it addresses by id
+    is its own log destination.
     """
     config = example_config()
     checkpoint = config.documents[CHECKPOINT_DOCUMENT_KEY]
     run_log = config.records[RUN_LOG_RECORD_KEY]
+    grooming_log = config.records["grooming_log"]
     rendered = rendered_passes()
-    for key, body in rendered.items():
-        assert checkpoint.id in body, key.value
-    assert any(run_log.id in body for body in rendered.values())
+    fire = rendered[PromptKey.FIRE_PREP_PASS]
+    grooming = rendered[PromptKey.GROOMING_PASS]
+    assert checkpoint.id is not None
+    assert checkpoint.id in fire
+    assert run_log.name in fire
+    assert grooming_log.id in grooming
+    assert grooming_log.name in grooming
 
 
 def test_a_document_entry_without_a_system_is_unconstructable() -> None:
@@ -183,15 +194,22 @@ def test_a_config_without_the_run_log_key_is_rejected_at_load(
 
 
 def test_the_run_log_destination_is_rendered_rather_than_hardcoded() -> None:
-    """No shipped source file names a run-log id or system of its own."""
-    destination = example_config().records[RUN_LOG_RECORD_KEY]
-    for path in SRC.rglob("*.py"):
-        assert destination.id not in path.read_text(encoding="utf-8"), path
+    """No shipped source file names a record id of its own.
+
+    A template that speaks of a run log must address a record destination
+    through the config namespace — any ``records.*`` placeholder, since the
+    grooming routine writes to its own log entry (KOD-60 R20(e)) — and no
+    shipped file may carry a destination id literal.
+    """
+    for destination in example_config().records.values():
+        for path in SRC.rglob("*.py"):
+            assert destination.id not in path.read_text(encoding="utf-8"), path
+        for path in SRC.rglob("*.md"):
+            assert destination.id not in path.read_text(encoding="utf-8"), path
     for path in SRC.rglob("*.md"):
         body = path.read_text(encoding="utf-8")
-        assert destination.id not in body, path
         if "run log" in body.lower():
-            assert "{{records.run_log.id}}" in body, path
+            assert "{{records." in body, path
 
 
 def test_documents_stays_read_side_with_no_write_flag() -> None:

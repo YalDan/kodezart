@@ -88,12 +88,21 @@ def test_a_guarded_template_names_the_absence() -> None:
 
 
 def test_a_principal_carries_the_forge_handle_pair_per_item() -> None:
-    """The example declares both states, and each item names exactly one."""
+    """The example declares both states, and each item names exactly one.
+
+    The namespace is keyed by position and by role (KOD-60 R16); the
+    positional entries are the roster, and the two roles the routines
+    address singly alias into it.
+    """
     bindings = operation_bindings(example_config())
     principals = bindings["principals"]
-    assert isinstance(principals, list)
+    assert isinstance(principals, dict)
+    items = [view for key, view in principals.items() if key.isdigit()]
+    assert items
+    assert principals["approver"] in items
+    assert principals["assignee"] in items
     states = set()
-    for item in principals:
+    for item in items:
         assert isinstance(item, dict)
         assert (item["forge_handle"] is None) != (item["forge_handle_absent"] is None)
         states.add(item["forge_handle"] is None)
@@ -127,10 +136,10 @@ def test_an_unadopted_document_id_is_named_not_blank() -> None:
 def test_a_gate_step_names_its_gatehood_instead_of_a_missing_ancestor() -> None:
     bindings = operation_bindings(example_config())
     repos = bindings["repos"]
-    assert isinstance(repos, list)
-    steps = repos[0]["checks"]
-    by_name = {step["name"]: step for step in steps}
-    assert by_name["lint"]["depends_on"] is None
-    assert by_name["lint"]["depends_on_absent"] is True
-    assert by_name["type-check"]["depends_on"] == "lint"
-    assert by_name["type-check"]["depends_on_absent"] is None
+    assert isinstance(repos, dict)
+    steps = repos["0"]["checks"]
+    by_name = {step["name"]: step for step in steps.values()}
+    assert by_name["install"]["depends_on"] is None
+    assert by_name["install"]["depends_on_absent"] is True
+    assert by_name["typecheck"]["depends_on"] == "install"
+    assert by_name["typecheck"]["depends_on_absent"] is None

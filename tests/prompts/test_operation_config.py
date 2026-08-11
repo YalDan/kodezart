@@ -62,7 +62,11 @@ ITEM_SCOPED_NAMES = frozenset({"criterion", "reasoning"})
 ORG_SHAPED_PATTERNS: dict[RedactionCategory, list[str]] = {
     RedactionCategory.EMAIL_HANDLES: [
         r"[\w.+-]+@[\w-]+\.[\w.]+",
-        r"(?<![\w/])@[\w-]{3,}",
+        # Narrowed under KOD-60 R19, never removed: a handle starts with a
+        # word character (the generic phrase "@-mentions" is not one), and
+        # an @ after a closing angle bracket is the plugin-suffix syntax
+        # (`<bundle>@<marketplace>`), not a mention.
+        r"(?<![\w/>])@[A-Za-z][\w.-]{2,}",
     ],
     RedactionCategory.INFRA_ENDPOINTS: [r"https?://"],
     RedactionCategory.CROSS_REPO_NAMES: [r"\b\d{4}-\d{2}-\d{2}\b"],

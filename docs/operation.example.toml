@@ -21,8 +21,10 @@ operation_name = "example-operation"
 # The tracker workspace the operation acts within. A slug, not a URL.
 workspace = "example-workspace"
 
-# Identities the agent posts under. Must not collide with a principal.
-agent_identities = ["example-agent"]
+# Identities the agent posts under, in the order the pass templates address
+# them: the mention handle first, the account's plain name second. Must not
+# collide with a principal.
+agent_identities = ["@example-agent", "example-agent"]
 
 # Prose describing the CLASS of thing this operation treats as private, read
 # by the judgment half of the outbound gate. A CLASS, never a list of
@@ -108,18 +110,56 @@ url = "https://example.invalid/example-org/example-repo"
 trunk = "main"
 
 [[repos.checks]]
-name = "lint"
-command = "make lint"
+name = "install"
+command = "make install"
 
 [[repos.checks]]
-name = "type-check"
+name = "typecheck"
 command = "make type-check"
+depends_on = "install"
+
+[[repos.checks]]
+name = "lint"
+command = "make lint"
+depends_on = "install"
+
+[[repos.checks]]
+name = "build"
+command = "make build"
+depends_on = "typecheck"
+
+[[repos.checks]]
+name = "test"
+command = "make test"
+depends_on = "build"
+
+[[repos.checks]]
+name = "test-integration"
+command = "make test-integration"
+depends_on = "build"
+
+[[repos]]
+url = "https://example.invalid/example-org/second-repo"
+trunk = "main"
+
+[[repos.checks]]
+name = "format"
+command = "make format-check"
+
+[[repos.checks]]
+name = "lint"
+command = "make lint"
+depends_on = "format"
+
+[[repos.checks]]
+name = "build"
+command = "make build"
 depends_on = "lint"
 
 [[repos.checks]]
 name = "test"
 command = "make test"
-depends_on = "type-check"
+depends_on = "build"
 
 # Read-side document registry, addressed by stable key. The "checkpoint" key
 # is required: the scan-window marker is addressed by key rather than by name
@@ -140,7 +180,7 @@ depends_on = "type-check"
 # second document beside it.
 [documents.checkpoint]
 system = "tracker"
-name = "Fire run checkpoint"
+name = "Example Run Log"
 id = "example-checkpoint-document-id"
 
 # A knowledge-store document is not this operation's to create, so its id is
@@ -149,6 +189,13 @@ id = "example-checkpoint-document-id"
 system = "knowledge"
 name = "House rules"
 id = "example-house-rules-document-id"
+
+# The operation's standing-protocol document, read by both passes. Its name
+# matches the knowledge entry addressing the same document by title.
+[documents.constitution]
+system = "knowledge"
+name = "Example — Operating Constitution"
+id = "example-constitution-document-id"
 
 # WRITE-side destination registry — where a pass records a row, as opposed to
 # where it reads. Deliberately separate from `documents`: that registry is
@@ -161,16 +208,30 @@ name = "Example Run Log"
 id = "example-run-log-destination-id"
 append_only = true
 
+# The grooming pass writes to a log of its own — a second entry in the same
+# registry, no type or consumer change.
+[records.grooming_log]
+system = "knowledge"
+name = "Example Grooming Log"
+id = "example-grooming-log-destination-id"
+append_only = true
+
 # Reference material held in the knowledge store, addressed by key. Every
 # value here belongs to the knowledge system by construction, which is what
 # a template naming it must say.
 [knowledge]
 house_rules = "example-house-rules-knowledge-entry"
+constitution = "Example — Operating Constitution"
 
 # Named infrastructure endpoints. No endpoint string ever appears in a
-# template — templates reference the key.
+# template — templates reference the key. Beside addresses this covers the
+# endpoint-shaped identifiers a rendered prompt needs: the host runner's
+# local address, a public documentation MCP, a connector instance id.
 [endpoints]
 escalation = "https://example.invalid/escalation"
+host_runner = "localhost:8000"
+cloudflare_docs_mcp = "https://example.invalid/docs-mcp"
+notion_connector = "example-notion-connector-id"
 
 # Initiatives the operation is steering toward. `target_date` is OPTIONAL and
 # omitting it is the ordinary case: most real initiatives carry none, and a

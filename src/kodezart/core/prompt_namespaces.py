@@ -13,7 +13,7 @@ defined meaning.  Boot asserts it rather than discovering it at render time.
 from collections.abc import Mapping, Sequence
 
 from kodezart.core.errors import PromptNamespaceCollisionError
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import OperationConfig, PrincipalRole
 
 SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 
@@ -79,6 +79,18 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     private-surface prose, a principal's forge handle, an unadopted
     document id, a gate step's dependency — is three-state: the value, or
     the paired absent marker, never a hole.
+
+    The verbatim pass templates address the sequence-shaped collections by
+    FLAT dotted paths (KOD-60 R16): a role for a principal
+    (``principals.approver``, ``principals.assignee``) and a position for
+    everything ordered (``principals.1``, ``repos.0.checks.2``,
+    ``agent_identities.0``, ``initiatives.1``).  The namespaces are
+    therefore mappings keyed by role and by decimal position — the renderer
+    resolves them without a loop construct, which is what byte-identity to
+    the routine prose requires: the renderer has no separator construct, so
+    an enumeration with a conjunction cannot be loop-rendered.  A role or
+    position the config does not declare is an unbound placeholder and the
+    render refuses, naming it — the refusal at the point of need.
     """
     bindings: dict[str, object] = {
         "operation_name": config.operation_name,
@@ -159,55 +171,77 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     _bind_absentable(
         bindings,
         "initiatives",
-        [
-            {
+        {
+            str(index): {
                 "id": item.id,
                 "target_date": (
                     None if item.target_date is None else item.target_date.isoformat()
                 ),
                 "target_date_absent": True if item.target_date is None else None,
             }
-            for item in config.initiatives
-        ],
+            for index, item in enumerate(config.initiatives)
+        },
         absent=not config.initiatives,
     )
     # ``handle`` is the identifier a MENTION is recognised by and
     # ``tracker_user`` the one authority is checked against. A sweep
     # given only the second has nothing to match on.  ``forge_handle`` is
     # the same principal's name on the forge; a principal who never
-    # appears there has none, and the absent case is named.
+    # appears there has none, and the absent case is named.  Beside the
+    # positions, the two roles the routines address singly are keyed by
+    # role: ``approver`` exists whenever principals do (exactly one is
+    # validated at load), ``assignee`` only when a principal carries the
+    # role — an unbound ``principals.assignee`` reference is the typed
+    # refusal for an operation that declares none.
+    principal_views = [
+        {
+            "tracker_user": p.tracker_user,
+            "roles": ", ".join(sorted(role.value for role in p.roles)),
+            "handle": p.handle,
+            "forge_handle": p.forge_handle,
+            "forge_handle_absent": True if p.forge_handle is None else None,
+        }
+        for p in config.principals
+    ]
+    principals_namespace: dict[str, object] = {
+        str(index): view for index, view in enumerate(principal_views)
+    }
+    for index, principal in enumerate(config.principals):
+        if PrincipalRole.APPROVER in principal.roles:
+            principals_namespace["approver"] = principal_views[index]
+        if PrincipalRole.ASSIGNEE in principal.roles:
+            principals_namespace["assignee"] = principal_views[index]
     _bind_absentable(
         bindings,
         "principals",
-        [
-            {
-                "tracker_user": p.tracker_user,
-                "roles": ", ".join(sorted(role.value for role in p.roles)),
-                "handle": p.handle,
-                "forge_handle": p.forge_handle,
-                "forge_handle_absent": True if p.forge_handle is None else None,
-            }
-            for p in config.principals
-        ],
+        principals_namespace,
         absent=not config.principals,
     )
     _bind_absentable(
         bindings,
         "agent_identities",
-        list(config.agent_identities),
+        {
+            str(index): identity
+            for index, identity in enumerate(config.agent_identities)
+        },
         absent=not config.agent_identities,
     )
     # A step naming no dependency is a GATE; the absent marker is what a
     # template says "a gate" with, rather than rendering a hole where the
-    # ancestor's name would be.
+    # ancestor's name would be.  ``name`` and ``slug`` are the display
+    # forms the routines write a repository with — the short name and the
+    # owner/name form — derived from the one declared ``url`` so the three
+    # can never drift apart.
     _bind_absentable(
         bindings,
         "repos",
-        [
-            {
+        {
+            str(index): {
                 "url": repo.url,
-                "checks": [
-                    {
+                "name": _repo_display(repo.url)[0],
+                "slug": _repo_display(repo.url)[1],
+                "checks": {
+                    str(step_index): {
                         "name": step.name,
                         "command": step.command,
                         "depends_on": step.depends_on,
@@ -215,14 +249,23 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                             True if step.depends_on is None else None
                         ),
                     }
-                    for step in repo.checks
-                ],
+                    for step_index, step in enumerate(repo.checks)
+                },
             }
-            for repo in config.repos
-        ],
+            for index, repo in enumerate(config.repos)
+        },
         absent=not config.repos,
     )
     return bindings
+
+
+def _repo_display(url: str) -> tuple[str, str]:
+    """``(name, slug)`` — the short and owner/name forms of a repository URL."""
+    trimmed = url.rstrip("/")
+    if trimmed.endswith(".git"):
+        trimmed = trimmed.removesuffix(".git")
+    segments = [segment for segment in trimmed.split("/") if segment]
+    return segments[-1], "/".join(segments[-2:])
 
 
 def assert_namespaces_disjoint(operation_names: Sequence[str]) -> None:
