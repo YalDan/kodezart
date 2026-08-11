@@ -485,3 +485,26 @@ class CriterionFailure(CamelCaseModel):
     criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     text: str = Field(min_length=1)
     reasoning: str = Field(min_length=1)
+
+
+class FanInReport(CamelCaseModel):
+    """The non-permutation a bounded re-dispatch could not clear.
+
+    Carried on an emitted event ONLY when the guard's attempts were spent
+    and the run graded a set that does not correspond 1:1 to the
+    dispatched ids.  Absent means the returned set was a permutation.
+
+    Not a flag: "the guard cleared" and "the guard could not clear it" are
+    different facts, and the second one has to name WHICH ids were wrong
+    and what it cost to find out — a reader who only learns that grading
+    was fail-closed cannot tell a model that answered a different question
+    from criteria the work genuinely failed.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    missing_ids: list[CriterionIdItem] = Field(default_factory=list)
+    unknown_ids: list[CriterionIdItem] = Field(default_factory=list)
+    duplicate_ids: list[CriterionIdItem] = Field(default_factory=list)
+    dispatched_count: int = Field(ge=1)
+    attempts: int = Field(ge=1)

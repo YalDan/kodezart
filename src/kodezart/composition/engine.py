@@ -61,6 +61,7 @@ def build_workflow_engine(
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,
+        fan_in_max_attempts=config.fan_in_max_attempts,
     )
     ticket_generator = TicketGenerationLoop(
         service=agent_service,
@@ -99,5 +100,6 @@ def build_workflow_engine(
         remediator=remediator,
         remediation_max_rounds=config.remediation_max_rounds,
         criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
+        fan_in_max_attempts=config.fan_in_max_attempts,
         artifact_persister=artifact_persister,
     )

@@ -33,6 +33,7 @@ from kodezart.core.protocols import (
     RepoVisibilityResolver,
     TicketGenerator,
 )
+from kodezart.core.redispatch import until_permutation
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import (
@@ -45,11 +46,13 @@ from kodezart.domain.base_scope import scope_base
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
+    reconcile,
     regeneration_targets,
     sweep,
 )
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criteria_prompt import render_validation_findings
+from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.pr_body import append_flagged_section
@@ -95,6 +98,7 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
+    FanInReport,
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import (
@@ -145,6 +149,7 @@ class RalphWorkflowEngine:
         remediator: Remediator | None = None,
         remediation_max_rounds: int = 1,
         criteria_max_regeneration_rounds: int = 1,
+        fan_in_max_attempts: int = 2,
         artifact_persister: ArtifactPersister | None = None,
     ) -> None:
         self._service: AgentRunner = service
@@ -168,6 +173,7 @@ class RalphWorkflowEngine:
         self._remediator: Remediator | None = remediator
         self._remediation_max_rounds: int = remediation_max_rounds
         self._criteria_max_regeneration_rounds: int = criteria_max_regeneration_rounds
+        self._fan_in_max_attempts: int = fan_in_max_attempts
         self._artifact_persister: ArtifactPersister | None = artifact_persister
         self._retry: RetryPolicy = RetryPolicy(
             max_attempts=retry_max_attempts,
@@ -676,38 +682,53 @@ class RalphWorkflowEngine:
             },
         )
 
-        result_event, rate_limit_rejected = await drain(
-            self._service.stream(
-                prompt=prompt,
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                branch=ctx.base_branch,
-                permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS,
-                skills=self._skills,
-                session_type=SessionType.TICKET_FIRE,
-                output_format={
-                    "type": "json_schema",
-                    "schema": CRITERIA_VALIDATION_SCHEMA,
-                },
-                cache_key=ctx.cache_key,
-            ),
-            site="criteria_validation",
-        )
-
-        if result_event is None or result_event.structured_output is None:
-            msg = "Agent did not produce structured output for criteria validation"
-            raise soft_failure(
-                msg,
-                raise_site="criteria_validation",
-                result_event=result_event,
-                rate_limit_rejected=rate_limit_rejected,
+        async def validate() -> CriteriaValidationOutput:
+            result_event, rate_limit_rejected = await drain(
+                self._service.stream(
+                    prompt=prompt,
+                    repo_path=ctx.repo_path,
+                    repo_url=ctx.repo_url,
+                    branch=ctx.base_branch,
+                    permission_mode=EVAL_PERMISSION_MODE,
+                    allowed_tools=EVAL_TOOLS,
+                    skills=self._skills,
+                    session_type=SessionType.TICKET_FIRE,
+                    output_format={
+                        "type": "json_schema",
+                        "schema": CRITERIA_VALIDATION_SCHEMA,
+                    },
+                    cache_key=ctx.cache_key,
+                ),
+                site="criteria_validation",
             )
 
-        validation = sweep(
-            criteria,
-            CriteriaValidationOutput.model_validate(result_event.structured_output),
+            if result_event is None or result_event.structured_output is None:
+                msg = "Agent did not produce structured output for criteria validation"
+                raise soft_failure(
+                    msg,
+                    raise_site="criteria_validation",
+                    result_event=result_event,
+                    rate_limit_rejected=rate_limit_rejected,
+                )
+
+            return CriteriaValidationOutput.model_validate(
+                result_event.structured_output,
+            )
+
+        output, unresolved, _attempts = await until_permutation(
+            dispatch=validate,
+            check=lambda candidate: reconcile(criteria, candidate),
+            max_attempts=self._fan_in_max_attempts,
+            site="criteria_validation",
+            log=self._log,
         )
+        if unresolved is not None:
+            # No fail-closed arm exists on this channel and none is
+            # invented here: a feasibility verdict nothing derived is
+            # exactly what the sweep refuses.  The bound is spent, so the
+            # run halts on the typed fan-in error.
+            raise unresolved
+        validation = sweep(criteria, output)
         targets = regeneration_targets(validation)
         rounds_used = state["criteria_regeneration_rounds"]
         bound_exhausted = (
@@ -1226,41 +1247,60 @@ class RalphWorkflowEngine:
             },
         )
 
-        result_event, rate_limit_rejected = await drain(
-            self._service.stream(
-                prompt=prompt,
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                branch=state["feature_branch"],
-                permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS,
-                skills=self._skills,
-                session_type=SessionType.TICKET_FIRE,
-                output_format={
-                    "type": "json_schema",
-                    "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-                },
-                cache_key=ctx.cache_key,
-            ),
-            site="post_merge_review",
-        )
-
-        if result_event is None or result_event.structured_output is None:
-            msg = "Agent did not produce structured output for review"
-            raise soft_failure(
-                msg,
-                raise_site="post_merge_review",
-                result_event=result_event,
-                rate_limit_rejected=rate_limit_rejected,
+        async def review() -> AcceptanceCriteriaOutput:
+            result_event, rate_limit_rejected = await drain(
+                self._service.stream(
+                    prompt=prompt,
+                    repo_path=ctx.repo_path,
+                    repo_url=ctx.repo_url,
+                    branch=state["feature_branch"],
+                    permission_mode=EVAL_PERMISSION_MODE,
+                    allowed_tools=EVAL_TOOLS,
+                    skills=self._skills,
+                    session_type=SessionType.TICKET_FIRE,
+                    output_format={
+                        "type": "json_schema",
+                        "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                    },
+                    cache_key=ctx.cache_key,
+                ),
+                site="post_merge_review",
             )
 
-        grade = grade_iteration(
-            validated_criteria(state),
-            AcceptanceCriteriaOutput.model_validate(result_event.structured_output),
+            if result_event is None or result_event.structured_output is None:
+                msg = "Agent did not produce structured output for review"
+                raise soft_failure(
+                    msg,
+                    raise_site="post_merge_review",
+                    result_event=result_event,
+                    rate_limit_rejected=rate_limit_rejected,
+                )
+
+            return AcceptanceCriteriaOutput.model_validate(
+                result_event.structured_output,
+            )
+
+        criteria = validated_criteria(state)
+        output, unresolved, attempts = await until_permutation(
+            dispatch=review,
+            check=lambda candidate: require_permutation(
+                grade_iteration(criteria, candidate),
+            ),
+            max_attempts=self._fan_in_max_attempts,
+            site="post_merge_review",
+            log=self._log,
         )
-        if grade.missing_ids or grade.unknown_ids or grade.duplicate_ids:
+        grade = grade_iteration(criteria, output)
+        fan_in: FanInReport | None = None
+        if unresolved is not None:
+            # Same guard, same exhaustion arm as the loop's evaluator —
+            # a separate call site, so it is wired and asserted separately
+            # rather than assumed to inherit anything.
+            fan_in = fan_in_report(grade, attempts=attempts)
             await self._log.awarning(
-                "review_result_reconciliation",
+                "fan_in_exhausted",
+                site="post_merge_review",
+                attempts=attempts,
                 dispatched_count=grade.dispatched_count,
                 missing_ids=grade.missing_ids,
                 unknown_ids=grade.unknown_ids,
@@ -1279,6 +1319,7 @@ class RalphWorkflowEngine:
                 passed=passed,
                 evaluation=AcceptanceCriteriaOutput(criteria_results=grade.results),
                 fix_round=state["remediation_rounds_used"],
+                fan_in=fan_in,
             )
         )
 

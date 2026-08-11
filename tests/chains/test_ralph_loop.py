@@ -14,6 +14,9 @@ from pydantic import ValidationError
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor
+from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.errors import CriteriaFanInError
+from kodezart.domain.fan_in import require_permutation
 from kodezart.domain.trajectory import fold_trajectory, landable_commit
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
@@ -1540,3 +1543,230 @@ async def test_the_three_stops_stay_distinct_and_none_shadows_another() -> None:
     assert stalled[-1].verdict is AcceptVerdict.rejected
     assert stalled[-1].iteration == 3 < 5
     assert stalled[-1].trajectory.plateaued is True
+
+
+# ---------------------------------------------------------------------------
+# KOD-91/AC-5, AC-6, AC-7 — the permutation guard in front of the grading
+# ---------------------------------------------------------------------------
+
+_TEN_CRITERIA = make_criteria(*(f"Criterion {n} holds" for n in range(1, 11)))
+
+
+def _results(*rows: tuple[str, bool]) -> dict[str, object]:
+    """An evaluator payload naming exactly *rows*, in the order given."""
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": criterion_id,
+                "criterion": "echoed text",
+                "passed": passed,
+                "reasoning": "scripted",
+            }
+            for criterion_id, passed in rows
+        ],
+    }
+
+
+_THREE_OF_TEN = _results(*((f"AC-{n}", True) for n in (1, 2, 3)))
+_ALL_TEN_WITH_AN_UNKNOWN = _results(
+    *((f"AC-{n}", True) for n in range(1, 11)),
+    ("AC-99", True),
+)
+_ALL_TEN_WITH_A_DUPLICATE = _results(
+    *((f"AC-{n}", True) for n in range(1, 11)),
+    ("AC-4", False),
+)
+_ALL_TEN_PASSING = _results(*((f"AC-{n}", True) for n in range(1, 11)))
+
+
+class _NonPermutationExecutor:
+    """Scripts one evaluator payload per evaluation dispatch.
+
+    Counting dispatches is the point: a guard that re-runs the session
+    shows up here as a second entry, and one that silently accepts the
+    first answer shows up as one.
+    """
+
+    def __init__(self, payloads: list[dict[str, object]]) -> None:
+        self._payloads = list(payloads)
+        self.evaluations: list[dict[str, object]] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            schema = output_format.get("schema")
+            if isinstance(schema, dict):
+                props = schema.get("properties", {})
+                if isinstance(props, dict) and "criteriaResults" in props:
+                    payload = self._payloads[len(self.evaluations)]
+                    self.evaluations.append(payload)
+                    yield ResultEvent(
+                        subtype="result",
+                        duration_ms=1,
+                        duration_api_ms=1,
+                        is_error=False,
+                        num_turns=1,
+                        session_id="scripted",
+                        structured_output=payload,
+                    )
+                    return
+        yield ResultEvent(
+            subtype="result",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="scripted",
+            commit_sha="a" * 40,
+        )
+
+
+def _guard_error(payload: dict[str, object]) -> CriteriaFanInError:
+    """The error the shared guard raises for *payload*, as the node runs it."""
+    with pytest.raises(CriteriaFanInError) as raised:
+        require_permutation(
+            grade_iteration(
+                _TEN_CRITERIA,
+                AcceptanceCriteriaOutput.model_validate(payload),
+            ),
+        )
+    return raised.value
+
+
+async def _iterations(
+    executor: _NonPermutationExecutor,
+    *,
+    max_iterations: int = 1,
+) -> list[WorkflowIterationEvent]:
+    loop = _make_loop(executor=executor, max_iterations=max_iterations)
+    return [
+        event
+        async for event in loop.run(**_run_kwargs(acceptance_criteria=_TEN_CRITERIA))
+        if isinstance(event, WorkflowIterationEvent)
+    ]
+
+
+async def test_partial_results_trigger_retry() -> None:
+    """KOD-91/AC-5: three of ten dispatched ids is not an evaluation.
+
+    The shape that motivated the guard: ``criteria_results`` is
+    ``min_length=1`` and acceptance used to be ``all(...)`` over whatever
+    returned, so three passing results for ten dispatched criteria read as
+    a clean run.  Now the id set is checked against the dispatched one,
+    the retryable error names the seven that never arrived, and the
+    session runs again instead of the loop accepting the partial set.
+    """
+    breach = _guard_error(_THREE_OF_TEN)
+    assert breach.missing_ids == tuple(f"AC-{n}" for n in range(4, 11))
+    assert breach.unknown_ids == ()
+    assert breach.duplicate_ids == ()
+
+    executor = _NonPermutationExecutor([_THREE_OF_TEN, _ALL_TEN_PASSING])
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 2
+    assert executor.evaluations[0] is _THREE_OF_TEN
+    assert len(iterations) == 1
+    assert iterations[0].fan_in is None
+    assert len(iterations[0].evaluation.criteria_results) == len(_TEN_CRITERIA)
+
+
+async def test_permutation_exhaustion_falls_through_to_fail_closed() -> None:
+    """KOD-91/AC-6: the bound is spent, the run grades — it never dies.
+
+    The graph's retry policy could not do this: it propagates once its
+    attempts are gone, which ends the run.  Here the last answer is graded
+    against the DISPATCHED set — every id that never arrived fails, the
+    denominator is ten, not three — and the holes ride the iteration event
+    so the fail-closed verdict is legible as one.
+    """
+    executor = _NonPermutationExecutor([_THREE_OF_TEN, _THREE_OF_TEN])
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 2
+    assert len(iterations) == 1
+    event = iterations[0]
+    assert event.verdict is AcceptVerdict.rejected
+    assert event.fan_in is not None
+    assert event.fan_in.dispatched_count == len(_TEN_CRITERIA)
+    assert event.fan_in.attempts == 2
+    assert event.fan_in.missing_ids == [f"AC-{n}" for n in range(4, 11)]
+    assert event.fan_in.unknown_ids == []
+    assert event.fan_in.duplicate_ids == []
+    graded = {
+        result.criterion_id: result for result in event.evaluation.criteria_results
+    }
+    assert len(graded) == len(_TEN_CRITERIA)
+    assert graded["AC-7"].passed is False
+
+
+async def test_unknown_ids_trigger_retry() -> None:
+    """KOD-91/AC-7: an id nobody dispatched is the same breach as a hole.
+
+    Second of the three non-permutation shapes, and it is not benign: the
+    invented id is discarded, so a set that looks complete is one result
+    short of the dispatched list without saying so.
+    """
+    breach = _guard_error(_ALL_TEN_WITH_AN_UNKNOWN)
+    assert isinstance(breach, CriteriaFanInError)
+    assert breach.unknown_ids == ("AC-99",)
+    assert breach.missing_ids == ()
+    assert breach.duplicate_ids == ()
+
+    executor = _NonPermutationExecutor(
+        [_ALL_TEN_WITH_AN_UNKNOWN, _ALL_TEN_WITH_AN_UNKNOWN],
+    )
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 2
+    assert iterations[0].fan_in is not None
+    assert iterations[0].fan_in.unknown_ids == ["AC-99"]
+
+
+async def test_duplicate_ids_trigger_retry() -> None:
+    """KOD-91/AC-7: one id answered twice is a criterion with no verdict.
+
+    Third shape.  Two answers contradict each other, so the criterion is
+    ungraded rather than graded by whichever arrived first — and the guard
+    asks for the set again before the fail-closed arm takes it.
+    """
+    breach = _guard_error(_ALL_TEN_WITH_A_DUPLICATE)
+    assert isinstance(breach, CriteriaFanInError)
+    assert breach.duplicate_ids == ("AC-4",)
+    assert breach.missing_ids == ()
+    assert breach.unknown_ids == ()
+
+    executor = _NonPermutationExecutor(
+        [_ALL_TEN_WITH_A_DUPLICATE, _ALL_TEN_WITH_A_DUPLICATE],
+    )
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 2
+    assert iterations[0].fan_in is not None
+    assert iterations[0].fan_in.duplicate_ids == ["AC-4"]
+    assert iterations[0].verdict is AcceptVerdict.rejected
+
+
+async def test_the_guard_costs_nothing_when_the_set_is_a_permutation() -> None:
+    """Non-vacuity: a conforming return is dispatched once and accepted.
+
+    Without this the three tests above would pass against a node that
+    re-dispatched unconditionally, and the bound would be a per-iteration
+    tax rather than a guard.
+    """
+    executor = _NonPermutationExecutor([_ALL_TEN_PASSING])
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 1
+    assert iterations[0].verdict is AcceptVerdict.accepted
+    assert iterations[0].fan_in is None

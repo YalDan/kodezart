@@ -30,6 +30,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
 | `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS` | `int` | `1`                 | 0-5         | Regeneration rounds the criteria sweep may spend on infeasible criteria before halting the run |
 | `KODEZART_RETRY_MAX_ATTEMPTS`     | `int`        | `3`                      | 1-10        | LangGraph node retry attempts on failure                 |
+| `KODEZART_FAN_IN_MAX_ATTEMPTS`    | `int`        | `2`                      | 1-5         | Dispatches a node spends while the returned criterion-id set is not a permutation of the dispatched one. Exhaustion grades fail-closed (evaluator, post-merge review) or halts on the typed fan-in error (criteria validator) |
 | `KODEZART_RETRY_INITIAL_INTERVAL` | `float`      | `1.0`                    | >= 0.1      | Retry backoff initial interval in seconds                |
 | `KODEZART_CHECKPOINT_URL`         | `str\|None`  | `None`                   |             | LangGraph checkpoint URL (see Checkpointing below)       |
 | `KODEZART_LOOP_PLATEAU_WINDOW`    | `int`        | `2`                      | 2-10        | Iterations without a new best passed-count before the Ralph loop is considered plateaued and stops |

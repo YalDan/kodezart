@@ -17,10 +17,12 @@ from kodezart.core.protocols import (
     PromptProvider,
     RepoCache,
 )
+from kodezart.core.redispatch import until_permutation
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
@@ -33,7 +35,7 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.criteria import ValidatedCriterion
+from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
@@ -61,10 +63,12 @@ class RalphLoop:
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
+        fan_in_max_attempts: int = 2,
     ) -> None:
         self._service = service
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
+        self._fan_in_max_attempts = fan_in_max_attempts
         # git/cache are injected solely so _evaluate_node can pre-compute
         # the ChangesetDigest passed to evaluation.build_prompt — the loop
         # does NOT take on canonical-tip bookkeeping (the outer engine's
@@ -240,42 +244,61 @@ class RalphLoop:
             },
         )
 
-        result_event, rate_limit_rejected = await drain(
-            self._service.stream(
-                prompt=eval_prompt,
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                branch=ctx.ralph_branch,
-                permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS,
-                skills=self._skills,
-                session_type=SessionType.TICKET_FIRE,
-                output_format={
-                    "type": "json_schema",
-                    "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-                },
-                cache_key=ctx.cache_key,
-            ),
-            site="ralph_evaluator",
-        )
-
-        if result_event is None or result_event.structured_output is None:
-            msg = "Evaluator produced no structured output."
-            raise soft_failure(
-                msg,
-                raise_site="ralph_evaluator",
-                result_event=result_event,
-                rate_limit_rejected=rate_limit_rejected,
+        async def evaluate() -> AcceptanceCriteriaOutput:
+            result_event, rate_limit_rejected = await drain(
+                self._service.stream(
+                    prompt=eval_prompt,
+                    repo_path=ctx.repo_path,
+                    repo_url=ctx.repo_url,
+                    branch=ctx.ralph_branch,
+                    permission_mode=EVAL_PERMISSION_MODE,
+                    allowed_tools=EVAL_TOOLS,
+                    skills=self._skills,
+                    session_type=SessionType.TICKET_FIRE,
+                    output_format={
+                        "type": "json_schema",
+                        "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                    },
+                    cache_key=ctx.cache_key,
+                ),
+                site="ralph_evaluator",
             )
 
-        output = AcceptanceCriteriaOutput.model_validate(
-            result_event.structured_output,
+            if result_event is None or result_event.structured_output is None:
+                msg = "Evaluator produced no structured output."
+                raise soft_failure(
+                    msg,
+                    raise_site="ralph_evaluator",
+                    result_event=result_event,
+                    rate_limit_rejected=rate_limit_rejected,
+                )
+
+            return AcceptanceCriteriaOutput.model_validate(
+                result_event.structured_output,
+            )
+
+        output, unresolved, attempts = await until_permutation(
+            dispatch=evaluate,
+            check=lambda candidate: require_permutation(
+                grade_iteration(ctx.acceptance_criteria, candidate),
+            ),
+            max_attempts=self._fan_in_max_attempts,
+            site="ralph_evaluator",
+            log=self._log,
         )
         grade = grade_iteration(ctx.acceptance_criteria, output)
-        if grade.missing_ids or grade.unknown_ids or grade.duplicate_ids:
+        fan_in: FanInReport | None = None
+        if unresolved is not None:
+            # The bound is spent: grade what came back against the
+            # DISPATCHED set anyway — a missing id fails and the
+            # denominator stands — and put the holes on the wire so the
+            # fail-closed verdict is legible as one.
+            fan_in = fan_in_report(grade, attempts=attempts)
             await self._log.awarning(
-                "evaluator_result_reconciliation",
+                "fan_in_exhausted",
+                site="ralph_evaluator",
                 iteration=state["iteration"],
+                attempts=attempts,
                 dispatched_count=grade.dispatched_count,
                 missing_ids=grade.missing_ids,
                 unknown_ids=grade.unknown_ids,
@@ -305,6 +328,7 @@ class RalphLoop:
                 verdict=verdict,
                 evaluation=reconciled,
                 trajectory=trajectory,
+                fan_in=fan_in,
             )
         )
         if (

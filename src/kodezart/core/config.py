@@ -146,6 +146,19 @@ class AppConfig(BaseSettings):
         le=10,
         description="LangGraph node retry attempts on failure.",
     )
+    fan_in_max_attempts: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description=(
+            "Dispatches a node spends while the returned criterion-id set is "
+            "not a permutation of the dispatched one. Each attempt is a whole "
+            "judgment session, and the id list the second attempt re-states is "
+            "the only new information a retry carries. Exhaustion is not a run "
+            "failure: the evaluator falls through to fail-closed grading, the "
+            "validator halts on its own typed error."
+        ),
+    )
     retry_initial_interval: float = Field(
         default=1.0,
         ge=0.1,

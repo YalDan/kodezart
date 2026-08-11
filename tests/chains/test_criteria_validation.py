@@ -504,24 +504,30 @@ async def test_an_unsatisfiable_conjunction_regenerates_then_halts() -> None:
 
 
 async def test_a_missing_validator_finding_fails_the_run_closed() -> None:
-    """A verdict nobody produced never defaults to a pass."""
-    executor = ValidatorScriptExecutor(
-        sweeps=[{"findings": [FEASIBLE_A], "contradictions": []}],
-    )
+    """A verdict nobody produced never defaults to a pass.
+
+    The sweep is scripted for every attempt KOD-91's permutation guard
+    spends: the run is asked again before it halts, and a model that
+    repeats its answer halts it on the same fail-closed error.
+    """
+    incomplete = {"findings": [FEASIBLE_A], "contradictions": []}
+    executor = ValidatorScriptExecutor(sweeps=[incomplete, incomplete])
     with pytest.raises(CriteriaFanInError) as excinfo:
         await _run(_engine(executor, max_rounds=1))
     assert excinfo.value.missing_ids == ("AC-2",)
+    assert executor.sweep_calls == AppConfig().fan_in_max_attempts
 
 
 async def test_a_duplicate_validator_finding_fails_the_run_closed() -> None:
-    executor = ValidatorScriptExecutor(
-        sweeps=[
-            {"findings": [FEASIBLE_A, FEASIBLE_A, FEASIBLE_B], "contradictions": []},
-        ],
-    )
+    duplicated = {
+        "findings": [FEASIBLE_A, FEASIBLE_A, FEASIBLE_B],
+        "contradictions": [],
+    }
+    executor = ValidatorScriptExecutor(sweeps=[duplicated, duplicated])
     with pytest.raises(CriteriaFanInError) as excinfo:
         await _run(_engine(executor, max_rounds=1))
     assert excinfo.value.duplicate_ids == ("AC-1",)
+    assert executor.sweep_calls == AppConfig().fan_in_max_attempts
 
 
 # ---------------------------------------------------------------------------

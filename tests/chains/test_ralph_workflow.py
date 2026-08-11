@@ -19,7 +19,7 @@ from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
 from kodezart.domain.accept_gate import accept_verdict
-from kodezart.domain.errors import StaleBaseError
+from kodezart.domain.errors import CriteriaFanInError, StaleBaseError
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -81,6 +81,7 @@ from tests.fakes import (
     make_dispatched_criteria,
     make_failing_evaluation,
     make_passing_evaluation,
+    make_passing_evaluation_over,
     make_prompt_provider,
 )
 
@@ -4050,3 +4051,327 @@ def test_the_round_budget_is_config_read_with_no_literal_in_routing(
         / "composition"
         / "engine.py"
     ).read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# KOD-91/AC-8, AC-9 — the same guard on the validator and the review call site
+# ---------------------------------------------------------------------------
+
+_TWO_DISPATCHED = ("AC-1", "AC-2")
+
+
+def _finding(criterion_id: str) -> dict[str, object]:
+    return {
+        "criterionId": criterion_id,
+        "verdict": "feasible",
+        "smallestRepair": "none",
+    }
+
+
+def _validation(*criterion_ids: str) -> dict[str, object]:
+    return {
+        "findings": [_finding(criterion_id) for criterion_id in criterion_ids],
+        "contradictions": [],
+    }
+
+
+_VERDICTS_MISSING_ONE = _validation("AC-1")
+_VERDICTS_WITH_AN_UNKNOWN = _validation("AC-1", "AC-2", "AC-99")
+_VERDICTS_WITH_A_DUPLICATE = _validation("AC-1", "AC-2", "AC-2")
+_VERDICTS_COMPLETE = _validation(*_TWO_DISPATCHED)
+
+
+class _ScriptedValidatorExecutor:
+    """Scripts one sweep payload per criteria-validation dispatch.
+
+    Everything else answers as the sequential review double does; only the
+    validator's channel is scripted, and its dispatches are counted so a
+    re-run is observable rather than inferred.
+    """
+
+    def __init__(self, validations: list[dict[str, object]]) -> None:
+        self._validations = list(validations)
+        self.validations: list[dict[str, object]] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            schema = output_format.get("schema")
+            if isinstance(schema, dict):
+                props = schema.get("properties", {})
+                if isinstance(props, dict):
+                    if "slug" in props:
+                        yield _scripted_result({"slug": "test-branch"})
+                        return
+                    if "criteria" in props and "criteriaResults" not in props:
+                        yield _scripted_result(
+                            {
+                                "criteria": [
+                                    {
+                                        "text": "Tests pass",
+                                        "criterionClass": "hard_gate",
+                                    },
+                                    {
+                                        "text": "No lint errors",
+                                        "criterionClass": "soft_signal",
+                                    },
+                                ],
+                                "reasoning": "Generated.",
+                            },
+                        )
+                        return
+                    if "findings" in props:
+                        payload = self._validations[len(self.validations)]
+                        self.validations.append(payload)
+                        yield _scripted_result(payload)
+                        return
+                    if "criteriaResults" in props:
+                        yield _scripted_result(
+                            make_passing_evaluation_over(*_TWO_DISPATCHED).model_dump(
+                                by_alias=True,
+                            ),
+                        )
+                        return
+                    if "title" in props and "description" in props:
+                        yield _scripted_result(
+                            {
+                                "title": "feat: test PR",
+                                "description": "Test PR description.",
+                            },
+                        )
+                        return
+        yield _scripted_result(None)
+
+
+def _scripted_result(structured_output: dict[str, object] | None) -> ResultEvent:
+    return ResultEvent(
+        subtype="result",
+        duration_ms=1,
+        duration_api_ms=1,
+        is_error=False,
+        num_turns=1,
+        session_id="scripted",
+        structured_output=structured_output,
+    )
+
+
+async def _run_engine(executor: AgentExecutor) -> list[AgentEvent]:
+    engine = _make_engine_with_executor(
+        executor=executor,
+        merger=FakeBranchMerger(),
+    )
+    return [
+        event
+        async for event in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+
+async def _validator_breach(
+    payload: dict[str, object],
+) -> tuple[CriteriaFanInError, _ScriptedValidatorExecutor]:
+    """Run a workflow whose validator never conforms; return the halt it raised."""
+    executor = _ScriptedValidatorExecutor([payload, payload])
+    with pytest.raises(CriteriaFanInError) as raised:
+        await _run_engine(executor)
+    return raised.value, executor
+
+
+async def test_validator_missing_verdict_retries_then_halts() -> None:
+    """KOD-91/AC-8: one verdict per dispatched id, first of the three shapes.
+
+    The validator's channel gets the identical guard: a verdict set short
+    of the dispatched list re-dispatches, and the spent bound halts the
+    run on the same typed error rather than sweeping a set nobody graded.
+    A fail-closed arm is deliberately absent here — a feasibility verdict
+    nothing derived is exactly what this sweep refuses.
+    """
+    breach, executor = await _validator_breach(_VERDICTS_MISSING_ONE)
+
+    assert len(executor.validations) == 2
+    assert breach.missing_ids == ("AC-2",)
+    assert breach.unknown_ids == ()
+    assert breach.duplicate_ids == ()
+
+
+async def test_validator_unknown_verdict_retries_then_halts() -> None:
+    """KOD-91/AC-8: second shape — a verdict about a criterion nobody sent.
+
+    Not cosmetic on this channel: an unreconciled id reaches the
+    conjunction verdict, the regeneration targets and the pre-loop halt,
+    so a hallucinated one can end a run over criteria never asked about.
+    """
+    breach, executor = await _validator_breach(_VERDICTS_WITH_AN_UNKNOWN)
+
+    assert len(executor.validations) == 2
+    assert breach.unknown_ids == ("AC-99",)
+    assert breach.missing_ids == ()
+    assert breach.duplicate_ids == ()
+
+
+async def test_validator_duplicate_verdict_retries_then_halts() -> None:
+    """KOD-91/AC-8: third shape — one criterion given two feasibility verdicts."""
+    breach, executor = await _validator_breach(_VERDICTS_WITH_A_DUPLICATE)
+
+    assert len(executor.validations) == 2
+    assert breach.duplicate_ids == ("AC-2",)
+    assert breach.missing_ids == ()
+    assert breach.unknown_ids == ()
+
+
+async def test_validator_retry_that_conforms_lets_the_run_proceed() -> None:
+    """Non-vacuity: the guard re-dispatches, it does not merely refuse.
+
+    A second answer covering every dispatched id is swept normally and the
+    run reaches its terminal event — so the three tests above are about a
+    spent bound, not about a channel that refuses everything.
+    """
+    executor = _ScriptedValidatorExecutor([_VERDICTS_MISSING_ONE, _VERDICTS_COMPLETE])
+
+    events = await _run_engine(executor)
+
+    assert len(executor.validations) == 2
+    assert [e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)] != []
+    assert [e for e in events if isinstance(e, WorkflowCompleteEvent)] != []
+
+
+class _ScriptedReviewExecutor:
+    """Scripts one payload per POST-MERGE REVIEW dispatch, counting them.
+
+    The review is a separate call site from the loop's evaluator — a
+    different node, a different prompt, its own dispatch — so it is wired
+    and asserted separately rather than assumed to inherit the guard.
+    """
+
+    def __init__(self, reviews: list[dict[str, object]]) -> None:
+        self._reviews = list(reviews)
+        self.reviews: list[dict[str, object]] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            schema = output_format.get("schema")
+            if isinstance(schema, dict):
+                props = schema.get("properties", {})
+                if isinstance(props, dict):
+                    if "slug" in props:
+                        yield _scripted_result({"slug": "test-branch"})
+                        return
+                    if "criteria" in props and "criteriaResults" not in props:
+                        yield _scripted_result(
+                            {
+                                "criteria": [
+                                    {
+                                        "text": "Tests pass",
+                                        "criterionClass": "hard_gate",
+                                    },
+                                    {
+                                        "text": "No lint errors",
+                                        "criterionClass": "soft_signal",
+                                    },
+                                ],
+                                "reasoning": "Generated.",
+                            },
+                        )
+                        return
+                    if "findings" in props:
+                        yield _scripted_result(_VERDICTS_COMPLETE)
+                        return
+                    if "criteriaResults" in props:
+                        payload = self._reviews[len(self.reviews)]
+                        self.reviews.append(payload)
+                        yield _scripted_result(payload)
+                        return
+                    if "title" in props and "description" in props:
+                        yield _scripted_result(
+                            {
+                                "title": "feat: test PR",
+                                "description": "Test PR description.",
+                            },
+                        )
+                        return
+        yield _scripted_result(None)
+
+
+def _review_results(*rows: tuple[str, bool]) -> dict[str, object]:
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": criterion_id,
+                "criterion": "echoed text",
+                "passed": passed,
+                "reasoning": "scripted",
+            }
+            for criterion_id, passed in rows
+        ],
+    }
+
+
+async def test_post_merge_review_is_guarded_identically_to_the_evaluator() -> None:
+    """KOD-91/AC-9: the review's own call site retries, then grades fail-closed.
+
+    Same model, same guard, asserted here because the review dispatches
+    from its own node: the partial answer re-runs the session, the spent
+    bound grades the DISPATCHED set — the id that never arrived fails —
+    and the holes ride the review event exactly as they ride the loop's
+    iteration event.
+    """
+    # The answered id is the SOFT signal, so the id that never arrives is
+    # the hard gate — otherwise the fail-closed grading would be invisible
+    # behind a verdict that ships with flags.
+    partial = _review_results(("AC-2", True))
+    executor = _ScriptedReviewExecutor([partial, partial])
+
+    events = await _run_engine(executor)
+
+    assert len(executor.reviews) == 2
+    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
+    assert len(review_events) == 1
+    review = review_events[0]
+    assert review.passed is False
+    assert review.fan_in is not None
+    assert review.fan_in.missing_ids == ["AC-1"]
+    assert review.fan_in.dispatched_count == len(_TWO_DISPATCHED)
+    assert review.fan_in.attempts == 2
+    assert len(review.evaluation.criteria_results) == len(_TWO_DISPATCHED)
+
+
+async def test_a_conforming_review_is_dispatched_once_and_carries_no_report() -> None:
+    """Non-vacuity for the review call site: no breach, no re-dispatch, no report."""
+    complete = _review_results(("AC-1", True), ("AC-2", True))
+    executor = _ScriptedReviewExecutor([complete])
+
+    events = await _run_engine(executor)
+
+    assert len(executor.reviews) == 1
+    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
+    assert len(review_events) == 1
+    assert review_events[0].passed is True
+    assert review_events[0].fan_in is None

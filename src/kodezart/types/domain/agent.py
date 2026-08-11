@@ -20,6 +20,7 @@ from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
     CriterionId,
     DraftedCriterion,
+    FanInReport,
     GeneratedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
@@ -571,6 +572,7 @@ class WorkflowReviewEvent(AgentEvent):
     passed: bool
     evaluation: AcceptanceCriteriaOutput
     fix_round: int
+    fan_in: FanInReport | None = None
 
 
 class WorkflowPREvent(AgentEvent):
@@ -621,6 +623,7 @@ class WorkflowIterationEvent(AgentEvent):
     verdict: AcceptVerdict
     evaluation: AcceptanceCriteriaOutput
     trajectory: LoopTrajectory
+    fan_in: FanInReport | None = None
 
 
 class WorkflowConsolidationEvent(AgentEvent):
