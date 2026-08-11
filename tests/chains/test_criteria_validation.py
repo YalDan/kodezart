@@ -240,6 +240,20 @@ def test_regeneration_bound_is_a_named_config_field() -> None:
     assert AppConfig().criteria_max_regeneration_rounds >= 0
 
 
+def test_the_regeneration_bound_defaults_to_one_round() -> None:
+    """One amendment round, then the halt — the shipped default, pinned.
+
+    The number is what separates "the sweep asked for an amendment" from
+    "these criteria are permanently infeasible".  At 1 a set the refuter
+    refuses twice ends the run BEFORE the loop, with the sweep as its
+    report.  A default of 0 would refuse the first amendment the sweep
+    asks for and halt on a repairable set; a larger one re-dispatches a
+    drafter that has already failed to repair the same set, spending
+    generator rounds to reach the same halt.
+    """
+    assert AppConfig().criteria_max_regeneration_rounds == 1
+
+
 def test_regeneration_bound_reads_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -16,7 +16,7 @@ enforced by the sweep and asserted over the DISPATCHED criteria in
 import pytest
 
 from kodezart.domain.criteria import mint_criteria
-from kodezart.domain.prompt_variables import render_validation_findings
+from kodezart.domain.criteria_prompt import render_validation_findings
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     CriteriaValidation,

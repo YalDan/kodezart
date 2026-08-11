@@ -16,9 +16,11 @@ dispatched count, so:
   the criterion anybody downstream reads.
 
 The missing / unknown / duplicate DETECTION above is a KOD-91 workaround
-rather than architecture.  Server-side strict enforcement does not engage
-for any schema kodezart ships — every one uses keywords outside the strict
-allowlist — so nothing upstream rejects a partial or padded result set.
+rather than architecture — here and at the sweep's ``reconcile``, which
+points at this statement rather than repeating it.  Server-side strict
+enforcement does not engage for any schema kodezart ships — every one uses
+keywords outside the strict allowlist — so nothing upstream rejects a
+partial or padded result set.
 Measured, not feared: ``criteria_results`` is ``Field(min_length=1)`` and
 acceptance is ``all(...)`` over whatever returned, so three results for ten
 criteria yielded acceptance over the partial set.

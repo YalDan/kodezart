@@ -33,7 +33,6 @@ from kodezart.core.protocols import (
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import (
-    append_flagged_section,
     flagged_items,
     gate_cleared,
     sherlock_items,
@@ -47,15 +46,15 @@ from kodezart.domain.criteria_feasibility import (
     sweep,
 )
 from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.criteria_prompt import render_validation_findings
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
-from kodezart.domain.prompt_variables import (
-    changeset_variables,
-    render_validation_findings,
-)
+from kodezart.domain.pr_body import append_flagged_section
+from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.domain.workflow_state import validated_artifact, validated_criteria
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
@@ -84,7 +83,6 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.base_spec import BaseRefRole, BaseSpec
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
-    CriteriaArtifact,
     CriteriaValidationOutput,
     ValidatedCriterion,
 )
@@ -96,26 +94,6 @@ from kodezart.types.domain.gating import (
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
-
-
-def _validated_artifact(state: WorkflowState) -> CriteriaArtifact:
-    """The post-sweep criteria document. Raises if the sweep has not run.
-
-    Every surface downstream of ``validate_criteria`` — the loop, the
-    review, the fix round and the PR body — reads criteria through this
-    one accessor, so no consumer can pick up the pre-sweep list and
-    dispatch a criterion without the verdict the sweep computed for it.
-    """
-    artifact = state["criteria_artifact"]
-    if artifact is None:
-        msg = "Criteria are read after the sweep; state['criteria_artifact'] is None."
-        raise RuntimeError(msg)
-    return artifact
-
-
-def _validated_criteria(state: WorkflowState) -> list[ValidatedCriterion]:
-    """The criteria as validated — identity, text, class, verdict."""
-    return _validated_artifact(state).criteria
 
 
 class RalphWorkflowEngine:
@@ -806,7 +784,7 @@ class RalphWorkflowEngine:
             base_spec=ctx.base_spec,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            acceptance_criteria=_validated_criteria(state),
+            acceptance_criteria=validated_criteria(state),
             cache_key=ctx.cache_key,
             repo_visibility=state["repo_visibility"],
         )
@@ -816,7 +794,7 @@ class RalphWorkflowEngine:
         return {
             "accept_verdict": last_iteration_event.verdict,
             "flagged_items": flagged_items(
-                _validated_criteria(state),
+                validated_criteria(state),
                 last_iteration_event.evaluation.criteria_results,
                 last_iteration_event.evaluation.sherlock_flags,
             ),
@@ -842,7 +820,7 @@ class RalphWorkflowEngine:
             msg = "persist_artifacts requires a ticket but state['ticket'] is None."
             raise RuntimeError(msg)
 
-        criteria_artifact = _validated_artifact(state)
+        criteria_artifact = validated_artifact(state)
 
         artifacts: dict[str, str] = {
             "ticket.json": await self._gated(
@@ -999,7 +977,7 @@ class RalphWorkflowEngine:
         )
         prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(
             {
-                "criteria": _validated_criteria(state),
+                "criteria": validated_criteria(state),
                 **changeset_variables(changeset),
             },
         )
@@ -1031,7 +1009,7 @@ class RalphWorkflowEngine:
             )
 
         grade = grade_iteration(
-            _validated_criteria(state),
+            validated_criteria(state),
             AcceptanceCriteriaOutput.model_validate(result_event.structured_output),
         )
         if grade.missing_ids or grade.unknown_ids or grade.duplicate_ids:
@@ -1144,7 +1122,7 @@ class RalphWorkflowEngine:
             ),
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            acceptance_criteria=_validated_criteria(state),
+            acceptance_criteria=validated_criteria(state),
             cache_key=ctx.cache_key,
             repo_visibility=state["repo_visibility"],
         )
@@ -1173,7 +1151,7 @@ class RalphWorkflowEngine:
             "fix_rounds_used": state["fix_rounds_used"] + 1,
             "accept_verdict": gate_event.verdict,
             "flagged_items": flagged_items(
-                _validated_criteria(state),
+                validated_criteria(state),
                 gate_event.evaluation.criteria_results,
                 gate_event.evaluation.sherlock_flags,
             ),
@@ -1264,7 +1242,7 @@ class RalphWorkflowEngine:
         prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
             {
                 "task_md": format_ticket_as_task(ticket),
-                "acceptance_criteria": _validated_criteria(state),
+                "acceptance_criteria": validated_criteria(state),
                 "total_iterations": state["total_iterations"],
             },
         )

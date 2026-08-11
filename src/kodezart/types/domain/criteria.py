@@ -19,8 +19,15 @@ from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 
+#: The prefix every minted criterion identity carries — one owner.
+#:
+#: The pattern below derives from it, and so does the minting function in
+#: :mod:`kodezart.domain.criteria`, so no second surface spells the scheme
+#: and the two cannot drift apart into a pattern nothing minted matches.
+CRITERION_ID_PREFIX = "AC-"
+
 #: Pattern every minted criterion identity matches.
-CRITERION_ID_PATTERN = r"^AC-[1-9][0-9]*$"
+CRITERION_ID_PATTERN = rf"^{CRITERION_ID_PREFIX}[1-9][0-9]*$"
 
 #: A criterion's identity, distinct from the strings it is spelled with.
 #:
@@ -311,7 +318,10 @@ class CriterionFeasibility(CamelCaseModel):
     is what makes an absence meaningful: present means observed.
 
     A field here that reached neither surface would be an orphan write and
-    would go, as ``limit_arm`` and ``cost_claim_struck`` did.
+    would go, as ``cost_claim_struck`` did.  ``limit_arm`` left THIS model
+    on the same ground and did not leave the codebase: it survives on
+    :class:`DerivedFeasibility` as a derivation component, because the wire
+    carries the distinction it drew as ``cost_measurement``'s presence.
     """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)

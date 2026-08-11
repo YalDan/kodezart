@@ -267,20 +267,10 @@ def reconcile(
     two rounds of a hallucinated one end a run over criteria that were
     never asked about.
 
-    A KOD-91 workaround rather than architecture.  Server-side strict
-    enforcement does not engage for any schema kodezart ships — every one
-    uses keywords outside the strict allowlist — so nothing upstream
-    rejects a validator return that answers some ids twice and others not
-    at all.
-
-    KOD-91 is the expiry, and its deliverable 4 names this channel in
-    terms — "The identical guard applies to the KOD-66 validator's verdict
-    set: one verdict per dispatched id".  What KOD-91 retires is the
-    missing / unknown / duplicate detection here.  What survives it is the
-    fail-closed arm, because deliverable 4 "falls through to KOD-11's
-    fail-closed grading" once the retries are exhausted.  Detection is
-    retained TODAY on a scope boundary — KOD-11 assigns the retrying guard
-    to KOD-91 — and not on a mechanism gap.
+    This is one of the two fan-in channels KOD-91 deliverable 4 covers;
+    why the detection is a workaround rather than architecture, what KOD-91
+    retires and what survives it, is stated once in
+    :mod:`kodezart.domain.criteria_grading`.
     """
     dispatched = [c.id for c in criteria]
     dispatched_set = set(dispatched)

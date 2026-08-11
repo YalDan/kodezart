@@ -26,10 +26,8 @@ from kodezart.core.prompt_rendering import (
 )
 from kodezart.core.protocols import PromptProvider
 from kodezart.domain.criteria import mint_criteria
-from kodezart.domain.prompt_variables import (
-    changeset_variables,
-    render_validation_findings,
-)
+from kodezart.domain.criteria_prompt import render_validation_findings
+from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.types.domain.agent import FileChange, TicketDraftOutput
 from kodezart.types.domain.consolidation import ChangesetDigest

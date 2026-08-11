@@ -140,24 +140,3 @@ def flagged_items(
     )
     items.extend(sherlock_items(sherlock_flags))
     return items
-
-
-FLAGGED_HEADING = "## Shipped with flags"
-
-
-def append_flagged_section(body: str, items: Sequence[FlaggedItem]) -> str:
-    """Append the flagged items to a pull-request *body*, verbatim.
-
-    Composed by the harness, so a flag the reader must act on does not
-    depend on a generator choosing to mention it.  An empty list leaves the
-    body byte-identical.
-    """
-    if not items:
-        return body
-    lines = [
-        f"- {item.criterion_id}: {item.summary}"
-        if item.criterion_id is not None
-        else f"- {item.summary}"
-        for item in items
-    ]
-    return "\n\n".join([body, FLAGGED_HEADING, "\n".join(lines)])
