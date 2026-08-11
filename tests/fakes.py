@@ -39,7 +39,7 @@ from kodezart.types.domain.gating import (
     ScanHit,
     WriterShape,
 )
-from kodezart.types.domain.persist import PersistResult
+from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
@@ -1133,9 +1133,14 @@ class FakeTicketGenerator:
 class FakeArtifactPersister:
     """Records persist/clean calls for assertion."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        persist_status: ArtifactPersistStatus = ArtifactPersistStatus.PERSISTED,
+    ) -> None:
         self.persist_calls: list[tuple[str | None, str | None, str, str]] = []
         self.clean_calls: list[tuple[str | None, str | None, str]] = []
+        self._persist_status: ArtifactPersistStatus = persist_status
 
     async def persist(
         self,
@@ -1146,8 +1151,9 @@ class FakeArtifactPersister:
         base_branch: str,
         artifacts: Mapping[str, str],
         cache_key: str | None = None,
-    ) -> None:
+    ) -> ArtifactPersistStatus:
         self.persist_calls.append((repo_path, repo_url, branch, base_branch))
+        return self._persist_status
 
     async def clean(
         self,
