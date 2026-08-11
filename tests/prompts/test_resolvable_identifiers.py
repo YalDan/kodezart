@@ -150,6 +150,7 @@ def test_the_document_binding_carries_system_and_id_not_a_bare_string() -> None:
     assert checkpoint == {
         "system": DocumentSystem.TRACKER.value,
         "id": example_config().documents[CHECKPOINT_DOCUMENT_KEY].id,
+        "id_absent": None,
     }
 
 
