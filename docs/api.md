@@ -139,7 +139,7 @@ field or a stale heading count reddens that test.
 | `stream_event`        | `sessionId`, `event`                                        |
 | `rate_limit_warning`  | `status`, `resetsAt`, `utilization`, `rateLimitType`        |
 
-### Workflow Events (13)
+### Workflow Events (14)
 
 | Event Type                     | Key Fields                                      |
 | ------------------------------ | ----------------------------------------------- |
@@ -153,6 +153,7 @@ field or a stale heading count reddens that test.
 | `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
 | `workflow_review`              | `passed`, `evaluation`, `fixRound`              |
+| `workflow_remediation`         | `entry`, `roundIndex`, `ticket`, `baseRef`      |
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
 | `workflow_ci`                  | `passed`, `summary`, `ref`                      |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `error` |
