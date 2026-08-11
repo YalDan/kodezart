@@ -6,10 +6,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
+from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
@@ -115,6 +118,113 @@ DEFAULT_SETTING_SOURCES: list[SettingSource] = [
     SettingSource.PROJECT,
     SettingSource.LOCAL,
 ]
+
+#: Both adapters implementing the executor protocol, including the one the
+#: default composition root does not wire.  Absence from the composition root
+#: is never absence from a guarantee, so every executor-level assertion runs
+#: over this list rather than over the default.
+EXECUTOR_MODULES: list[str] = [
+    "kodezart.adapters.claude_client_executor",
+    "kodezart.adapters.claude_agent_executor",
+]
+
+
+def executor_for(module: str, grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT):
+    """Build the adapter that lives in *module* with configured setting sources."""
+    if module.endswith("claude_client_executor"):
+        return ClaudeClientExecutor(
+            setting_sources=DEFAULT_SETTING_SOURCES,
+            knowledge_grant=grant,
+        )
+    return ClaudeAgentExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=grant,
+    )
+
+
+@dataclass(frozen=True)
+class RecordedSession:
+    """Everything an executor handed the SDK for one session.
+
+    The prompt is recorded beside the options because they are two
+    consequences of one decision, and an assertion that can only see the
+    options cannot tell whether the other consequence agreed with it.
+    """
+
+    options: object
+    prompt: str
+
+
+async def _no_messages() -> AsyncGenerator[object, None]:
+    """A transport that accepts a session and returns nothing from it."""
+    for message in ():
+        yield message
+
+
+def _recording_client(recorded: list[RecordedSession]) -> Callable[..., object]:
+    """Stand-in for the persistent SDK client that records and yields nothing."""
+
+    class _Client:
+        def __init__(self, *, options: object) -> None:
+            self._options = options
+
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *exc: object) -> bool:
+            return False
+
+        async def query(self, prompt: str) -> None:
+            recorded.append(RecordedSession(options=self._options, prompt=prompt))
+
+        def receive_response(self) -> AsyncGenerator[object, None]:
+            return _no_messages()
+
+    return _Client
+
+
+def _recording_query(recorded: list[RecordedSession]) -> Callable[..., object]:
+    """Stand-in for the one-shot SDK entry point, same recording contract."""
+
+    def query(*, prompt: str, options: object) -> AsyncGenerator[object, None]:
+        recorded.append(RecordedSession(options=options, prompt=prompt))
+        return _no_messages()
+
+    return query
+
+
+async def recorded_session(
+    module: str,
+    *,
+    grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT,
+    session_type: SessionType = FAKE_SESSION_TYPE,
+    prompt: str = "p",
+    cwd: str = "/tmp/fake",
+    skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+) -> RecordedSession:
+    """Run one session through *module*'s adapter against a recording transport."""
+    recorded: list[RecordedSession] = []
+    target = "ClaudeSDKClient" if module.endswith("claude_client_executor") else "query"
+    replacement = (
+        _recording_client(recorded)
+        if target == "ClaudeSDKClient"
+        else _recording_query(recorded)
+    )
+    executor = executor_for(module, grant)
+
+    with patch(f"{module}.{target}", replacement):
+        async for _event in executor.stream(
+            prompt=prompt,
+            cwd=cwd,
+            permission_mode="plan",
+            allowed_tools=[],
+            skills=skills,
+            session_type=session_type,
+        ):
+            pass
+
+    assert len(recorded) == 1
+    return recorded[0]
 
 
 class FakeGitService:

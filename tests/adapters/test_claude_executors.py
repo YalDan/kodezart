@@ -21,10 +21,12 @@ from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
+    EXECUTOR_MODULES,
     FAKE_SESSION_TYPE,
     FIXTURE_KNOWLEDGE_SERVER,
     NO_KNOWLEDGE_GRANT,
     SUPPRESS_ALL_SKILLS,
+    executor_for,
     knowledge_grant_for,
 )
 
@@ -257,19 +259,6 @@ def _capture(module: str):
     return recorded, patch(f"{module}.{target}", sink)
 
 
-def _executor_for(module: str, grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT):
-    """Build the adapter that lives in *module* with configured setting sources."""
-    if module.endswith("claude_client_executor"):
-        return ClaudeClientExecutor(
-            setting_sources=DEFAULT_SETTING_SOURCES,
-            knowledge_grant=grant,
-        )
-    return ClaudeAgentExecutor(
-        setting_sources=DEFAULT_SETTING_SOURCES,
-        knowledge_grant=grant,
-    )
-
-
 async def _options_for(
     module: str,
     *,
@@ -278,7 +267,7 @@ async def _options_for(
 ) -> ClaudeAgentOptions:
     """The options *module*'s adapter constructs for one session."""
     recorded, patcher = _capture(module)
-    executor = _executor_for(module, grant)
+    executor = executor_for(module, grant)
 
     with patcher, pytest.raises(RuntimeError, match="stop after options"):
         await _drain(
@@ -296,10 +285,6 @@ async def _options_for(
     return recorded[0]
 
 
-EXECUTOR_MODULES = [
-    "kodezart.adapters.claude_client_executor",
-    "kodezart.adapters.claude_agent_executor",
-]
 SKILLS_MATRIX = [
     (SkillsSelection(mode=SkillsMode.NONE), []),
     (SkillsSelection(mode=SkillsMode.ALL), "all"),
@@ -334,7 +319,7 @@ async def test_both_executors_pass_the_mapped_skills_never_none(
 ) -> None:
     """Neither adapter has a code path that hands the SDK ``skills=None``."""
     recorded, patcher = _capture(module)
-    executor = _executor_for(module)
+    executor = executor_for(module)
 
     with patcher, pytest.raises(RuntimeError, match="stop after options"):
         await _drain(
@@ -362,7 +347,7 @@ async def test_setting_sources_come_from_config_in_every_mode(
 ) -> None:
     """AC-1c: the skills knob never silently narrows loaded settings."""
     recorded, patcher = _capture(module)
-    executor = _executor_for(module)
+    executor = executor_for(module)
 
     with patcher, pytest.raises(RuntimeError, match="stop after options"):
         await _drain(
