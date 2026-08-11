@@ -1,7 +1,10 @@
 """Tests for the terminal-outcome classifier — one assertion per route."""
 
+import inspect
+
 import pytest
 
+from kodezart.domain import outcome as outcome_module
 from kodezart.domain.outcome import classify_outcome
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -85,11 +88,12 @@ def _trajectory(
 
 
 def test_wire_values_are_pinned_verbatim() -> None:
-    """The fourteen values are a wire contract — a re-point must break the build.
+    """The sixteen values are a wire contract — a re-point must break the build.
 
     The order is the module's stated extension convention: later work
-    APPENDS, so ``criteria_infeasible`` sits last rather than first and
-    KOD-40's two members sit after it.
+    APPENDS, so ``criteria_infeasible`` sits last rather than first,
+    KOD-40's two members sit after it, and KOD-120's queue-assigned pair
+    sits at the end.
     """
     assert [member.value for member in WorkflowOutcome] == [
         "merge_divergent",
@@ -106,7 +110,37 @@ def test_wire_values_are_pinned_verbatim() -> None:
         "stalled_pr_opened",
         "zero_commit_no_pr",
         "remediation_budget_exhausted",
+        "engine_error",
+        "shutdown_abandoned",
     ]
+
+
+#: The members no state can produce, because the runs they name have no state.
+QUEUE_ASSIGNED = (
+    WorkflowOutcome.engine_error,
+    WorkflowOutcome.shutdown_abandoned,
+)
+
+
+def test_the_classifier_never_produces_the_queue_assigned_members() -> None:
+    """KOD-120/AC-2: totality of the classifier and completeness of the job
+    record are two different guarantees.
+
+    ``classify_outcome`` is total over the states it CAN see, and a run
+    that raised mid-node or was killed by shutdown never produced one.
+    Swept from the source rather than sampled from fixtures: a battery of
+    states can only show that the branches it happened to reach do not
+    return these, while the module naming neither member at all is the
+    whole claim.
+    """
+    source = inspect.getsource(outcome_module)
+
+    for member in QUEUE_ASSIGNED:
+        assert member.name not in source
+
+    # And the classifier still has no default arm to fall into.
+    assert "return WorkflowOutcome" in source
+    assert "raise ValueError" in source
 
 
 def test_merge_divergent() -> None:

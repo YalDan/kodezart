@@ -716,6 +716,227 @@ async def test_dispatcher_writes_the_terminal_outcome_onto_the_record() -> None:
         await queue.stop()
 
 
+# ---------------------------------------------------------------------------
+# KOD-120: a terminal job record always names why it is terminal
+# ---------------------------------------------------------------------------
+
+
+class RaisingWorkflowEngine:
+    """Engine whose stream raises after its retry budget is spent.
+
+    Stands for the inherited constraint this issue is about: milestone
+    1's transient-404 tolerance closes the observed case, and when those
+    retries ALSO exhaust the node raises and the run ends without ever
+    classifying itself.
+    """
+
+    def __init__(self, *, events: list[AgentEvent] | None = None) -> None:
+        self._events: list[AgentEvent] = events if events is not None else []
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
+        permission_mode: str,
+        allowed_tools: list[str],
+        cache_key: str,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        for event in self._events:
+            yield event
+        msg = "adapter retries exhausted"
+        raise RuntimeError(msg)
+
+
+async def test_a_run_whose_engine_raises_terminates_naming_the_hard_failure() -> None:
+    """KOD-120/AC-1: one terminal record, and it names the failure.
+
+    ``engine_error`` is distinct from every budget-exhaustion and
+    non-acceptance member — those classify a run that ended and
+    reported, and this one never got that far.
+    """
+    queue = _make_queue(RaisingWorkflowEngine())
+    await queue.start()
+    try:
+        record = await queue.submit(lane=DEFAULT_LANE, request=_request("fix"))
+        await _wait_terminal(queue, record.job_id)
+
+        final = await queue.get(job_id=record.job_id)
+        assert final is not None
+        assert final.state is JobState.TERMINAL
+        assert final.outcome is WorkflowOutcome.engine_error
+        assert final.outcome not in {
+            WorkflowOutcome.remediation_budget_exhausted,
+            WorkflowOutcome.ci_failed_fix_budget_exhausted,
+            WorkflowOutcome.review_failed_fix_budget_exhausted,
+            WorkflowOutcome.loop_not_accepted,
+            WorkflowOutcome.loop_plateaued,
+        }
+
+        published = await _drain(queue, record.job_id)
+        assert [e.type for e in published] == ["error"]
+    finally:
+        await queue.stop()
+
+
+async def test_a_process_killed_mid_node_is_a_different_case_and_says_so() -> None:
+    """KOD-120/AC-4: raising inside a node and being swept by shutdown differ.
+
+    Only the first is the engine's to catch.  The sweep is the genuinely
+    eventless path — it publishes nothing — so the record is the only
+    place the difference can be read.
+    """
+    gated = GatedWorkflowEngine()
+    killed = _make_queue(gated)
+    await killed.start()
+    swept = await killed.submit(lane=DEFAULT_LANE, request=_request("held open"))
+    await _until(lambda: gated.started == ["held open"])
+    await killed.stop()
+
+    raised = _make_queue(RaisingWorkflowEngine())
+    await raised.start()
+    try:
+        failed = await raised.submit(lane=DEFAULT_LANE, request=_request("fix"))
+        await _wait_terminal(raised, failed.job_id)
+        raised_record = await raised.get(job_id=failed.job_id)
+    finally:
+        await raised.stop()
+
+    swept_record = await killed.get(job_id=swept.job_id)
+    assert swept_record is not None
+    assert raised_record is not None
+    assert swept_record.state is JobState.TERMINAL
+    assert swept_record.outcome is WorkflowOutcome.shutdown_abandoned
+    assert raised_record.outcome is WorkflowOutcome.engine_error
+    assert swept_record.outcome is not raised_record.outcome
+
+
+async def test_a_job_still_queued_at_shutdown_is_abandoned_too() -> None:
+    """The sweep reaches waiting jobs, and they leave nothing to resume either."""
+    gated = GatedWorkflowEngine()
+    queue = _make_queue(gated)
+    await queue.start()
+    running = await queue.submit(lane=DEFAULT_LANE, request=_request("held open"))
+    waiting = await queue.submit(lane=DEFAULT_LANE, request=_request("never started"))
+    await _until(lambda: gated.started == ["held open"])
+    await queue.stop()
+
+    for job_id in (running.job_id, waiting.job_id):
+        record = await queue.get(job_id=job_id)
+        assert record is not None
+        assert record.state is JobState.TERMINAL
+        assert record.outcome is WorkflowOutcome.shutdown_abandoned
+        assert record.queue_position is None
+
+
+async def test_no_terminal_record_the_queue_writes_carries_a_null_outcome() -> None:
+    """The invariant, enforceable over this class alone.
+
+    Three fates, one for each way a record reaches TERMINAL: a run that
+    reported, a run that raised, and a run that was swept.  ``None`` used
+    to mean all three.
+    """
+    reported = _make_queue(
+        ChattyWorkflowEngine([_complete_event(WorkflowOutcome.pr_opened)])
+    )
+    await reported.start()
+    try:
+        clean = await reported.submit(lane=DEFAULT_LANE, request=_request("clean"))
+        await _wait_terminal(reported, clean.job_id)
+        clean_record = await reported.get(job_id=clean.job_id)
+    finally:
+        await reported.stop()
+
+    failing = _make_queue(RaisingWorkflowEngine())
+    await failing.start()
+    try:
+        hard = await failing.submit(lane=DEFAULT_LANE, request=_request("hard"))
+        await _wait_terminal(failing, hard.job_id)
+        hard_record = await failing.get(job_id=hard.job_id)
+    finally:
+        await failing.stop()
+
+    gated = GatedWorkflowEngine()
+    sweeping = _make_queue(gated)
+    await sweeping.start()
+    abandoned = await sweeping.submit(lane=DEFAULT_LANE, request=_request("held open"))
+    await _until(lambda: gated.started == ["held open"])
+    await sweeping.stop()
+    abandoned_record = await sweeping.get(job_id=abandoned.job_id)
+
+    records = [clean_record, hard_record, abandoned_record]
+    assert all(r is not None and r.state is JobState.TERMINAL for r in records)
+    assert [r.outcome for r in records if r is not None] == [
+        WorkflowOutcome.pr_opened,
+        WorkflowOutcome.engine_error,
+        WorkflowOutcome.shutdown_abandoned,
+    ]
+
+
+async def test_a_failed_run_is_distinguishable_from_one_still_in_flight() -> None:
+    """KOD-120/AC-5: a reader holding only job state can tell them apart.
+
+    In flight is ``(RUNNING, outcome=None)`` and stays addressable; the
+    hard failure is ``(TERMINAL, engine_error)``.  Neither reads as the
+    other, and neither reads as absence.
+    """
+    gated = GatedWorkflowEngine()
+    in_flight_queue = _make_queue(gated)
+    await in_flight_queue.start()
+    try:
+        in_flight = await in_flight_queue.submit(
+            lane=DEFAULT_LANE,
+            request=_request("held open"),
+        )
+        await _until(lambda: gated.started == ["held open"])
+        live = await in_flight_queue.get(job_id=in_flight.job_id)
+        assert live is not None
+        assert (live.state, live.outcome) == (JobState.RUNNING, None)
+
+        failing_queue = _make_queue(RaisingWorkflowEngine())
+        await failing_queue.start()
+        try:
+            failed = await failing_queue.submit(
+                lane=DEFAULT_LANE,
+                request=_request("fix"),
+            )
+            await _wait_terminal(failing_queue, failed.job_id)
+            dead = await failing_queue.get(job_id=failed.job_id)
+        finally:
+            await failing_queue.stop()
+
+        assert dead is not None
+        assert (dead.state, dead.outcome) == (
+            JobState.TERMINAL,
+            WorkflowOutcome.engine_error,
+        )
+        assert (live.state, live.outcome) != (dead.state, dead.outcome)
+    finally:
+        gated.release("held open")
+        await in_flight_queue.stop()
+
+
+async def test_status_of_a_hard_failure_is_terminal_and_names_the_cause() -> None:
+    """KOD-120/AC-3: the status surface, not just the record behind it.
+
+    A caller polling this job sees a terminal state that says why, rather
+    than a terminal state that says nothing and reads as a run that is
+    somehow still going.
+    """
+    async for wired in _build_app(RaisingWorkflowEngine(), run_state_available=False):
+        fired = await wired.client.post("/api/v1/agent/fire", json=_BODY)
+        job_id = fired.json()["jobId"]
+        await _wait_terminal(wired.queue, job_id)
+
+        payload = (await wired.client.get(f"/api/v1/jobs/{job_id}")).json()
+
+        assert payload["state"] == "terminal"
+        assert payload["outcome"] == WorkflowOutcome.engine_error.value
+
+
 async def test_job_id_is_the_langgraph_thread_id(checkpointed_app: _JobApp) -> None:
     """The job's id addresses its own checkpoint."""
     fired = await checkpointed_app.client.post("/api/v1/agent/fire", json=_BODY)
