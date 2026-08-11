@@ -23,6 +23,7 @@ from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
     EXECUTOR_MODULES,
     FAKE_SESSION_TYPE,
+    FIXTURE_KNOWLEDGE_MAP,
     FIXTURE_KNOWLEDGE_SERVER,
     NO_KNOWLEDGE_GRANT,
     SUPPRESS_ALL_SKILLS,
@@ -521,6 +522,7 @@ def test_a_grant_without_a_credential_never_builds_a_header() -> None:
         auth_header="Authorization",
         auth_scheme="Bearer",
         credential=None,
+        knowledge_map=FIXTURE_KNOWLEDGE_MAP,
     )
 
     with pytest.raises(ValueError, match="carries no credential"):

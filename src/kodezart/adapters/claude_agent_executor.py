@@ -10,7 +10,10 @@ from claude_agent_sdk import (
     query,
 )
 
-from kodezart.adapters._mcp_mapping import map_knowledge_mcp
+from kodezart.adapters._mcp_mapping import (
+    map_knowledge_mcp,
+    prompt_with_knowledge_map,
+)
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
@@ -62,6 +65,7 @@ class ClaudeAgentExecutor:
             skills_mode=skills.mode.value,
             session_type=session_type.value,
         )
+        knowledge = map_knowledge_mcp(self._knowledge_grant, session_type)
         options = ClaudeAgentOptions(
             cwd=cwd,
             permission_mode=_validate_permission_mode(permission_mode),
@@ -70,7 +74,12 @@ class ClaudeAgentExecutor:
             output_format=output_format,
             skills=map_skills(skills),
             setting_sources=map_setting_sources(self._setting_sources),
-            **map_knowledge_mcp(self._knowledge_grant, session_type),
+            **knowledge,
+        )
+        session_prompt = prompt_with_knowledge_map(
+            prompt,
+            grant=self._knowledge_grant,
+            attached=knowledge,
         )
         # TODO: symmetric ProcessError/CLIConnectionError/ClaudeSDKError
         # detail preservation (exit_code, stderr_tail) matching
@@ -81,7 +90,7 @@ class ClaudeAgentExecutor:
         # default).  Adding the parallel change here costs CI time on a
         # code path no production deployment exercises.
         try:
-            async for message in query(prompt=prompt, options=options):
+            async for message in query(prompt=session_prompt, options=options):
                 for event in map_message(message):
                     yield event
         except ProcessError as exc:

@@ -13,6 +13,7 @@ from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.forge import build_forge_client
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.jobs import build_job_queue, build_job_service
+from kodezart.composition.knowledge import boot_knowledge_grant
 from kodezart.composition.passes import build_fire_prep_pass, build_pass_scheduler
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
@@ -87,7 +88,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     executor = ClaudeClientExecutor(
         model=config.model,
         setting_sources=config.setting_sources,
-        knowledge_grant=config.knowledge_grant(),
+        knowledge_grant=await boot_knowledge_grant(
+            config=config,
+            prompts=prompts,
+            log=log,
+        ),
     )
     gate = await build_outbound_gate(
         config=config,

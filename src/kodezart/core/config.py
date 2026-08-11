@@ -663,8 +663,16 @@ class AppConfig(BaseSettings):
             allowlist=tuple(self.skills_allowlist),
         )
 
-    def knowledge_grant(self) -> KnowledgeGrant:
-        """The resolved grant threaded to executor sessions."""
+    def knowledge_grant(self, *, knowledge_map: str) -> KnowledgeGrant:
+        """The resolved grant threaded to executor sessions.
+
+        *knowledge_map* is the rendered what-lives-where prelude a granted
+        session's prompt receives — supplied by the caller rather than
+        derived here, because rendering it needs the prompt registry and
+        this model knows nothing about prompts.  It has no default: a
+        defaulted map is a grant that silently attaches a server and tells
+        the session nothing about what it reaches.
+        """
         return KnowledgeGrant(
             granted=tuple(self.notion_session_grants),
             server_name=self.notion_mcp_server_name,
@@ -672,6 +680,7 @@ class AppConfig(BaseSettings):
             auth_header=self.notion_mcp_auth_header,
             auth_scheme=self.notion_mcp_auth_scheme,
             credential=self.notion_token,
+            knowledge_map=knowledge_map,
         )
 
     @classmethod

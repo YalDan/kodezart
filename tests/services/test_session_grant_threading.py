@@ -170,7 +170,7 @@ async def test_the_grant_reaching_the_options_is_the_one_app_config_resolved(
     monkeypatch.setenv("KODEZART_NOTION_TOKEN", "ntn_" + ("R" * 44))
     config = AppConfig()
 
-    grant = config.knowledge_grant()
+    grant = config.knowledge_grant(knowledge_map="── fixture map ──")
     executor = ClaudeClientExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
         knowledge_grant=grant,

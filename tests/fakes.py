@@ -95,10 +95,21 @@ FAKE_SESSION_TYPE: SessionType = SessionType.API_QUERY
 #: not what a vendor's server offers.
 FIXTURE_KNOWLEDGE_SERVER: str = "fixture-knowledge"
 _FIXTURE_KNOWLEDGE_CREDENTIAL: str = "ntn_" + ("K" * 44)
+#: A stand-in for the rendered what-lives-where map.  Deliberately not the
+#: shipped fragment: a test asserting the map reached a prompt must fail for
+#: a reason other than "some prose happens to match".
+FIXTURE_KNOWLEDGE_MAP: str = "── FIXTURE MAP ── where the fixture things live"
 
 
-def knowledge_grant_for(*granted: SessionType) -> KnowledgeGrant:
-    """The fixture knowledge server, granted to *granted* and nothing else."""
+def knowledge_grant_for(
+    *granted: SessionType,
+    knowledge_map: str = FIXTURE_KNOWLEDGE_MAP,
+) -> KnowledgeGrant:
+    """The fixture knowledge server, granted to *granted* and nothing else.
+
+    The map rides with the grant exactly as the model requires: a grant
+    naming no session type carries none, because nothing would render it.
+    """
     return KnowledgeGrant(
         granted=granted,
         server_name=FIXTURE_KNOWLEDGE_SERVER,
@@ -106,6 +117,7 @@ def knowledge_grant_for(*granted: SessionType) -> KnowledgeGrant:
         auth_header="Authorization",
         auth_scheme="Bearer",
         credential=_FIXTURE_KNOWLEDGE_CREDENTIAL,
+        knowledge_map=knowledge_map if granted else "",
     )
 
 

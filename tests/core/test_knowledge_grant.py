@@ -18,17 +18,20 @@ from kodezart.types.domain.session import SessionType
 _CREDENTIAL: Final[str] = "ntn_" + ("Q" * 44)
 _GRANTS_VAR: Final[str] = "KODEZART_NOTION_SESSION_GRANTS"
 _TOKEN_VAR: Final[str] = "KODEZART_NOTION_TOKEN"
+#: Any non-empty map: the model refuses a grant that names a session type
+#: and carries none, so the builder has to be handed one.
+_MAP: Final[str] = "── fixture map ──"
 
 
 def test_the_shipped_grant_names_no_session_type() -> None:
     """The mechanism ships; the grant is operator configuration."""
     assert AppConfig().notion_session_grants == []
-    assert AppConfig().knowledge_grant().granted == ()
+    assert AppConfig().knowledge_grant(knowledge_map="").granted == ()
 
 
 def test_no_session_type_is_granted_by_the_shipped_default() -> None:
     """Exhaustive over the vocabulary, so a new member cannot ship granted."""
-    grant = AppConfig().knowledge_grant()
+    grant = AppConfig().knowledge_grant(knowledge_map="")
 
     for session_type in SessionType:
         assert grant.grants(session_type) is False
@@ -41,7 +44,7 @@ def test_the_grant_list_resolves_from_its_env_var(
     monkeypatch.setenv(_GRANTS_VAR, '["ticket_fire"]')
     monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
 
-    grant = AppConfig().knowledge_grant()
+    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
 
     assert grant.granted == (SessionType.TICKET_FIRE,)
     assert grant.grants(SessionType.TICKET_FIRE) is True
@@ -55,7 +58,7 @@ def test_an_empty_grant_list_is_a_legal_configuration(
     monkeypatch.setenv(_GRANTS_VAR, "[]")
     monkeypatch.delenv(_TOKEN_VAR, raising=False)
 
-    assert AppConfig().knowledge_grant().granted == ()
+    assert AppConfig().knowledge_grant(knowledge_map="").granted == ()
 
 
 def test_an_entry_naming_no_session_type_aborts_boot(

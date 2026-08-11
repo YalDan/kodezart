@@ -97,36 +97,77 @@ def _returned_mappings(
             yield _mapping_items(node.value)
 
 
+def _assignments(scope: ast.AST) -> dict[str, ast.expr]:
+    """Single-name assignments made anywhere inside *scope*."""
+    bound: dict[str, ast.expr] = {}
+    for node in ast.walk(scope):
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            bound[node.targets[0].id] = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.value is not None
+        ):
+            bound[node.target.id] = node.value
+    return bound
+
+
+def _enclosing_bindings(
+    node: ast.AST,
+    parents: Mapping[ast.AST, ast.AST],
+    tree: ast.AST,
+) -> dict[str, ast.expr]:
+    """The names in scope where *node* sits: its function's, else the module's."""
+    cursor: ast.AST | None = parents.get(node)
+    while cursor is not None:
+        if isinstance(cursor, ast.FunctionDef | ast.AsyncFunctionDef):
+            return _assignments(cursor)
+        cursor = parents.get(cursor)
+    return _assignments(tree)
+
+
+def _dereference(node: ast.expr, bound: Mapping[str, ast.expr]) -> ast.expr:
+    """Follow a local name to the expression it was assigned, once.
+
+    A construction that builds its option mapping into a local first is the
+    shape the package actually uses, and an invariant that cannot see
+    through one variable would report every such site as unreadable.
+    """
+    if isinstance(node, ast.Name) and node.id in bound:
+        return bound[node.id]
+    return node
+
+
 def _contributions(
     call: ast.Call,
     functions: Mapping[str, list[ast.FunctionDef]],
+    bound: Mapping[str, ast.expr],
 ) -> Iterator[dict[str, ast.expr] | None]:
     """Every option source feeding one construction.
 
     The explicit keywords are one source; each ``**`` unpack is another,
-    resolved through the function that builds it.  Yielding ``None`` marks
-    a source this scan cannot read.
+    resolved through the local it names and the function that builds it.
+    Yielding ``None`` marks a source this scan cannot read.
     """
     explicit = {kw.arg: kw.value for kw in call.keywords if kw.arg is not None}
     yield explicit
     for keyword in call.keywords:
         if keyword.arg is not None:
             continue
-        inline = _mapping_items(keyword.value)
-        if inline is not None and not isinstance(keyword.value, ast.Call):
-            yield inline
+        source = _dereference(keyword.value, bound)
+        if isinstance(source, ast.Call):
+            builders = functions.get(_called_name(source.func) or "", [])
+            if not builders:
+                yield None
+                continue
+            for builder in builders:
+                yield from _returned_mappings(builder)
             continue
-        name = (
-            _called_name(keyword.value.func)
-            if isinstance(keyword.value, ast.Call)
-            else None
-        )
-        builders = functions.get(name or "", [])
-        if not builders:
-            yield None
-            continue
-        for builder in builders:
-            yield from _returned_mappings(builder)
+        yield _mapping_items(source)
 
 
 def _is_true(node: ast.expr) -> bool:
@@ -134,53 +175,57 @@ def _is_true(node: ast.expr) -> bool:
     return isinstance(node, ast.Constant) and node.value is True
 
 
-def pairing_failures(sources: Mapping[str, str]) -> list[str]:
-    """Every violation of the pairing across *sources*.
+def _constructions(
+    sources: Mapping[str, str],
+) -> Iterator[tuple[str, int, dict[str, ast.expr] | None]]:
+    """Every option source of every construction, with where it was written.
 
-    Docstrings and comments cannot register: the walk visits call nodes,
-    so prose naming ``ClaudeAgentOptions`` is invisible to it.
+    Docstrings and comments cannot register: the walk visits call nodes, so
+    prose naming ``ClaudeAgentOptions`` is invisible to it.
     """
     trees = {origin: ast.parse(text) for origin, text in sources.items()}
     functions = _functions(trees)
-    failures: list[str] = []
     for origin, tree in trees.items():
+        parents: dict[ast.AST, ast.AST] = {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             if _called_name(node.func) != OPTIONS_CALLABLE:
                 continue
-            where = f"{origin}:{node.lineno}"
-            for contribution in _contributions(node, functions):
-                if contribution is None:
-                    failures.append(f"{where}: unresolvable option source")
-                    continue
-                if SERVERS_KEYWORD not in contribution:
-                    continue
-                strict = contribution.get(STRICT_KEYWORD)
-                if strict is None:
-                    failures.append(
-                        f"{where}: {SERVERS_KEYWORD} without {STRICT_KEYWORD}"
-                    )
-                elif not _is_true(strict):
-                    failures.append(f"{where}: {STRICT_KEYWORD} is not True")
+            bound = _enclosing_bindings(node, parents, tree)
+            for contribution in _contributions(node, functions, bound):
+                yield origin, node.lineno, contribution
+
+
+def pairing_failures(sources: Mapping[str, str]) -> list[str]:
+    """Every violation of the pairing across *sources*."""
+    failures: list[str] = []
+    for origin, line, contribution in _constructions(sources):
+        where = f"{origin}:{line}"
+        if contribution is None:
+            failures.append(f"{where}: unresolvable option source")
+            continue
+        if SERVERS_KEYWORD not in contribution:
+            continue
+        strict = contribution.get(STRICT_KEYWORD)
+        if strict is None:
+            failures.append(f"{where}: {SERVERS_KEYWORD} without {STRICT_KEYWORD}")
+        elif not _is_true(strict):
+            failures.append(f"{where}: {STRICT_KEYWORD} is not True")
     return failures
 
 
 def server_sites(sources: Mapping[str, str]) -> set[str]:
     """The origins whose constructions can carry ``mcp_servers`` at all."""
-    trees = {origin: ast.parse(text) for origin, text in sources.items()}
-    functions = _functions(trees)
-    origins: set[str] = set()
-    for origin, tree in trees.items():
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if _called_name(node.func) != OPTIONS_CALLABLE:
-                continue
-            for contribution in _contributions(node, functions):
-                if contribution and SERVERS_KEYWORD in contribution:
-                    origins.add(origin)
-    return origins
+    return {
+        origin
+        for origin, _line, contribution in _constructions(sources)
+        if contribution and SERVERS_KEYWORD in contribution
+    }
 
 
 def package_sources() -> dict[str, str]:
@@ -246,6 +291,28 @@ def test_a_helper_built_site_missing_the_flag_is_detected() -> None:
     failures = pairing_failures(violation)
 
     assert failures == ["fixture.py:5: mcp_servers without strict_mcp_config"]
+
+
+def test_a_site_whose_mapping_passes_through_a_local_is_still_read() -> None:
+    """Negative control: the local the package's own sites use.
+
+    A scan that could not see through one variable would report the real
+    construction sites as unreadable and this violation as invisible.
+    """
+    violation = {
+        "fixture.py": (
+            "def _servers():\n"
+            '    return {"mcp_servers": {"x": {}}}\n'
+            "\n"
+            "def build():\n"
+            "    knowledge = _servers()\n"
+            '    return ClaudeAgentOptions(cwd="/tmp", **knowledge)\n'
+        ),
+    }
+
+    assert pairing_failures(violation) == [
+        "fixture.py:6: mcp_servers without strict_mcp_config",
+    ]
 
 
 def test_the_flag_set_to_something_other_than_true_is_detected() -> None:

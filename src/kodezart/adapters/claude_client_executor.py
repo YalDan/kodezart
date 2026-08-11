@@ -12,7 +12,10 @@ from claude_agent_sdk import (
     ProcessError,
 )
 
-from kodezart.adapters._mcp_mapping import map_knowledge_mcp
+from kodezart.adapters._mcp_mapping import (
+    map_knowledge_mcp,
+    prompt_with_knowledge_map,
+)
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
@@ -69,6 +72,7 @@ class ClaudeClientExecutor:
             skills_mode=skills.mode.value,
             session_type=session_type.value,
         )
+        knowledge = map_knowledge_mcp(self._knowledge_grant, session_type)
         options = ClaudeAgentOptions(
             cwd=cwd,
             permission_mode=_validate_permission_mode(
@@ -80,13 +84,18 @@ class ClaudeClientExecutor:
             model=self._model,
             skills=map_skills(skills),
             setting_sources=map_setting_sources(self._setting_sources),
-            **map_knowledge_mcp(self._knowledge_grant, session_type),
+            **knowledge,
+        )
+        session_prompt = prompt_with_knowledge_map(
+            prompt,
+            grant=self._knowledge_grant,
+            attached=knowledge,
         )
         try:
             async with ClaudeSDKClient(
                 options=options,
             ) as client:
-                await client.query(prompt)
+                await client.query(session_prompt)
                 async for message in client.receive_response():
                     for event in map_message(message):
                         yield event

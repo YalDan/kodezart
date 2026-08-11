@@ -1,9 +1,14 @@
-"""Mapping the resolved knowledge grant onto SDK session options.
+"""Mapping the resolved knowledge grant onto a session — options and prompt.
 
 One helper serves both executor option-construction sites, so the grant
 decision is taken in exactly one expression.  That is what keeps the
 unwired executor from becoming a hole: it is not covered by a second copy
 of the rule, it is covered by the same one.
+
+The grant has two consequences — the servers a session is configured with,
+and the what-lives-where map its prompt is preluded with.  The second reads
+the RESULT of the first rather than re-testing membership, so the two can
+never be answered differently for one session.
 """
 
 from typing import TypedDict
@@ -55,3 +60,22 @@ def map_knowledge_mcp(
         mcp_servers={grant.server_name: server},
         strict_mcp_config=True,
     )
+
+
+def prompt_with_knowledge_map(
+    prompt: str,
+    *,
+    grant: KnowledgeGrant,
+    attached: McpSessionOptions,
+) -> str:
+    """*prompt* preceded by the what-lives-where map, for a granted session.
+
+    The grant decision is not re-taken here.  *attached* is what
+    :func:`map_knowledge_mcp` answered for this session: empty means the
+    grant does not name it, and its prompt is returned unchanged — byte for
+    byte the string the caller passed.  A session told what lives where is
+    therefore exactly a session configured to reach it.
+    """
+    if not attached:
+        return prompt
+    return f"{grant.knowledge_map}\n\n{prompt}"
