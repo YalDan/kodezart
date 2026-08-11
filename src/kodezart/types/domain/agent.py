@@ -5,14 +5,13 @@ from typing import Literal
 from pydantic import (
     ConfigDict,
     Field,
-    SerializerFunctionWrapHandler,
     field_validator,
-    model_serializer,
 )
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
@@ -571,7 +570,7 @@ class WorkflowReviewEvent(AgentEvent):
     type: Literal["workflow_review"] = "workflow_review"
     passed: bool
     evaluation: AcceptanceCriteriaOutput
-    fix_round: int
+    fix_rounds_used: int
     fan_in: FanInReport | None = None
 
 
@@ -586,22 +585,17 @@ class WorkflowPREvent(AgentEvent):
 
 
 class WorkflowCIEvent(AgentEvent):
-    """Emitted after CI monitoring completes or is skipped."""
+    """Emitted after CI monitoring completes or is skipped.
+
+    ``ci_status`` is a required enum, so it serializes on every frame
+    without a wrap serializer forcing the key back in — which is what a
+    nullable tri-state bool needed under ``exclude_none=True``.
+    """
 
     type: Literal["workflow_ci"] = "workflow_ci"
-    passed: bool | None
+    ci_status: CIStatus
     summary: str
     ref: str
-
-    @model_serializer(mode="wrap")
-    def _force_ci_field(
-        self,
-        handler: SerializerFunctionWrapHandler,
-    ) -> dict[str, object]:
-        result: dict[str, object] = handler(self)
-        if "passed" not in result:
-            result["passed"] = None
-        return result
 
 
 class WorkflowIterationEvent(AgentEvent):
@@ -678,7 +672,10 @@ class WorkflowCompleteEvent(AgentEvent):
 
     ``outcome`` is the sole terminal discriminator — required and
     non-nullable, so ``exclude_none=True`` can never drop it and no
-    serializer hack is needed to force it onto the wire.
+    serializer hack is needed to force it onto the wire.  ``ci_status``
+    now holds on the same ground, and ``merge_error`` says what its
+    string actually carries: the merge failure, never a general error
+    channel.
     """
 
     type: Literal["workflow_complete"] = "workflow_complete"
@@ -689,24 +686,12 @@ class WorkflowCompleteEvent(AgentEvent):
     outcome: WorkflowOutcome
     merged: bool = False
     final_commit_sha: str | None = None
-    error: str | None = None
+    merge_error: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None
-    ci_passed: bool | None = None
+    ci_status: CIStatus = CIStatus.not_monitored
     trajectory: LoopTrajectory | None = None
     criteria_validation: CriteriaValidation | None = None
-
-    @model_serializer(mode="wrap")
-    def _force_ci_field(
-        self,
-        handler: SerializerFunctionWrapHandler,
-    ) -> dict[str, object]:
-        result: dict[str, object] = handler(self)
-        # ci_passed is a three-state field (True/False/None) — must always appear
-        key = "ciPassed" if "featureBranch" in result else "ci_passed"
-        if key not in result:
-            result[key] = None
-        return result
 
 
 class WorkflowVisibilityEvent(AgentEvent):

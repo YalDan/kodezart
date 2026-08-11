@@ -47,6 +47,7 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
@@ -320,8 +321,8 @@ async def test_workflow_merge_failure_reports_error() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is False
-    assert complete_events[0].error is not None
-    assert "diverged" in complete_events[0].error
+    assert complete_events[0].merge_error is not None
+    assert "diverged" in complete_events[0].merge_error
 
 
 async def test_workflow_merge_success_has_no_error() -> None:
@@ -351,7 +352,7 @@ async def test_workflow_merge_success_has_no_error() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
-    assert complete_events[0].error is None
+    assert complete_events[0].merge_error is None
 
 
 async def test_workflow_rejected_does_not_merge() -> None:
@@ -807,7 +808,7 @@ async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
-    assert complete_events[0].error is None
+    assert complete_events[0].merge_error is None
 
 
 # ---------------------------------------------------------------------------
@@ -1202,7 +1203,7 @@ async def test_workflow_review_passes_opens_pr() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is not None
-    assert complete_events[0].ci_passed is True
+    assert complete_events[0].ci_status is CIStatus.passed
 
 
 async def test_workflow_review_fails_triggers_fix() -> None:
@@ -1299,11 +1300,11 @@ async def test_workflow_review_fails_triggers_fix() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is not None
-    assert complete_events[0].ci_passed is True
+    assert complete_events[0].ci_status is CIStatus.passed
 
 
 async def test_workflow_ci_passes_completes() -> None:
-    """CI passing leads to complete with ci_passed=True."""
+    """CI passing leads to complete with a passed status."""
     ci_monitor = FakeCIMonitor(passed=True)
     pr_creator = FakePRCreator()
     gate = FakeQualityGate(
@@ -1333,7 +1334,7 @@ async def test_workflow_ci_passes_completes() -> None:
 
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
-    assert complete_events[0].ci_passed is True
+    assert complete_events[0].ci_status is CIStatus.passed
 
 
 async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
@@ -1405,14 +1406,14 @@ async def test_workflow_no_pr_creator_skips_pr() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is None
-    assert complete_events[0].ci_passed is None
+    assert complete_events[0].ci_status is CIStatus.not_monitored
 
     ci_events = [e for e in events if isinstance(e, WorkflowCIEvent)]
     assert len(ci_events) == 0
 
 
 async def test_workflow_no_ci_monitor_skips_ci() -> None:
-    """No ci_monitor: routing guard skips monitor_ci, ci_passed stays None."""
+    """No ci_monitor: routing guard skips monitor_ci, the status stays not_monitored."""
     pr_creator = FakePRCreator()
     gate = FakeQualityGate(
         events=[],
@@ -1444,7 +1445,7 @@ async def test_workflow_no_ci_monitor_skips_ci() -> None:
 
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
-    assert complete_events[0].ci_passed is None
+    assert complete_events[0].ci_status is CIStatus.not_monitored
 
 
 async def test_workflow_rejected_skips_review() -> None:
@@ -1490,7 +1491,7 @@ async def test_workflow_rejected_skips_review() -> None:
 
 
 async def test_workflow_complete_event_includes_pr_fields() -> None:
-    """WorkflowCompleteEvent carries pr_url, pr_number, ci_passed."""
+    """WorkflowCompleteEvent carries pr_url, pr_number, ci_status."""
     pr_creator = FakePRCreator(
         pr_url="https://github.com/o/r/pull/99",
         pr_number=99,
@@ -1526,7 +1527,7 @@ async def test_workflow_complete_event_includes_pr_fields() -> None:
     ce = complete_events[0]
     assert ce.pr_url == "https://github.com/o/r/pull/99"
     assert ce.pr_number == 99
-    assert ce.ci_passed is True
+    assert ce.ci_status is CIStatus.passed
 
 
 async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
@@ -1801,7 +1802,7 @@ async def test_workflow_repo_url_none_with_protocols_skips_pr() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is None
-    assert complete_events[0].ci_passed is None
+    assert complete_events[0].ci_status is CIStatus.not_monitored
 
     create_calls = [c for c in pr_creator.calls if c.get("method") == "create_pr"]
     assert len(create_calls) == 0
@@ -1877,7 +1878,7 @@ async def test_route_after_review_no_repo_url_routes_complete() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is None
-    assert complete_events[0].ci_passed is None
+    assert complete_events[0].ci_status is CIStatus.not_monitored
 
 
 def test_route_after_ci_no_pr_number_routes_complete() -> None:
@@ -1904,7 +1905,7 @@ def test_route_after_ci_no_pr_number_routes_complete() -> None:
         "fix_rounds_used": 0,
         "pr_url": None,
         "pr_number": None,
-        "ci_passed": False,
+        "ci_status": CIStatus.failed,
         "ci_summary": "CI failed: ci/test",
         "repo_url": "https://github.com/owner/repo",
     }
@@ -2521,7 +2522,7 @@ async def test_backup_cleanup_failure_does_not_block_complete() -> None:
     assert complete_events[0].accepted is True
     assert complete_events[0].merged is True
     # The event emitted before cleanup — cleanup failure does not affect it
-    assert complete_events[0].error is None
+    assert complete_events[0].merge_error is None
 
 
 # -- CI fix loop happy-path tests --------------------------------------------
@@ -2659,7 +2660,7 @@ async def test_merge_to_feature_already_integrated_proceeds_to_review() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
-    assert complete_events[0].error is None
+    assert complete_events[0].merge_error is None
     review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
     assert len(review_events) >= 1
 
@@ -2696,8 +2697,8 @@ async def test_merge_to_feature_divergent_routes_to_complete_with_merge_error() 
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is False
-    assert complete_events[0].error is not None
-    assert "diverged" in complete_events[0].error
+    assert complete_events[0].merge_error is not None
+    assert "diverged" in complete_events[0].merge_error
 
 
 async def test_merge_to_feature_source_missing_raises() -> None:
@@ -3137,7 +3138,7 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
         "fix_rounds_used": 0,
         "pr_url": None,
         "pr_number": None,
-        "ci_passed": None,
+        "ci_status": CIStatus.not_monitored,
         "ci_summary": None,
         "repo_url": None,
     }
@@ -3465,7 +3466,7 @@ async def test_plateaued_run_reports_loop_plateaued_with_actionable_payload() ->
     assert "-ralph-" in complete.ralph_branch
     # No second discriminator: the never-passing criteria are not folded
     # into the free-text error field.
-    assert complete.error is None
+    assert complete.merge_error is None
 
 
 async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
@@ -3498,8 +3499,8 @@ async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
     assert complete.trajectory == _plateaued_trajectory()
 
 
-async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
-    """FAST_FORWARDED / ALREADY_INTEGRATED no longer stamp ci_passed False.
+async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
+    """FAST_FORWARDED / ALREADY_INTEGRATED no longer stamp a failed CI status.
 
     The fix round is reached from a review failure, so monitor_ci never
     ran and the three-state value must still be None at complete.
@@ -3582,7 +3583,7 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
     ]
 
     complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
-    assert complete.ci_passed is None
+    assert complete.ci_status is CIStatus.not_monitored
     assert complete.outcome is WorkflowOutcome.review_passed_no_pr_adapter
 
 

@@ -10,6 +10,7 @@ from pydantic import Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 
@@ -35,7 +36,7 @@ class RunStateResponse(CamelCaseModel):
     accept_verdict: AcceptVerdict | None = None
     merged: bool = False
     review_passed: bool = False
-    ci_passed: bool | None = None
+    ci_status: CIStatus = CIStatus.not_monitored
     ci_summary: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None

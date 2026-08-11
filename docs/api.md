@@ -222,11 +222,11 @@ ids clears them on `terminal` from either frame.
 | `workflow_artifacts`           | `status`, `branch`                              |
 | `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
-| `workflow_review`              | `passed`, `evaluation`, `fixRound`              |
+| `workflow_review`              | `passed`, `evaluation`, `fixRoundsUsed`         |
 | `workflow_remediation`         | `entry`, `roundIndex`, `ticket`, `baseRef`      |
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
-| `workflow_ci`                  | `passed`, `summary`, `ref`                      |
-| `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `error` |
+| `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
+| `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.

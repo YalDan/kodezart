@@ -1253,7 +1253,7 @@ async def test_status_of_a_running_job_reports_checkpointed_progress(
     assert run["lastCompletedNode"] == "complete"
     assert run["totalIterations"] == 1
     assert run["remediationRoundsUsed"] == 0
-    assert run["ciPassed"] is None
+    assert run["ciStatus"] == "not_monitored"
     assert run["ciSummary"] is None
     assert run["featureBranch"].startswith("kodezart/")
     assert "-ralph-" in run["ralphBranch"]
@@ -1293,7 +1293,7 @@ async def test_status_reports_progress_while_the_graph_is_paused_mid_run() -> No
         # The round is already OPEN — the counter advances when the
         # remediation ticket is drafted, which happens before its loop.
         assert run["remediationRoundsUsed"] == 1
-        assert run["ciPassed"] is None
+        assert run["ciStatus"] == "not_monitored"
         assert run["reviewPassed"] is False
         # The round reset the consolidation verdict: the loop it is about
         # to run has to earn a merge of its own.

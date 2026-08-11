@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient, Response
@@ -14,12 +15,18 @@ from kodezart.types.domain.agent import (
     ErrorEvent,
     ResultEvent,
 )
+from kodezart.types.domain.consolidation import (
+    ConsolidationOutcome,
+    ConsolidationStatus,
+)
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
+    FakeCIMonitor,
     FakeGitService,
+    FakePRCreator,
     FakeQualityGate,
     FakeRaisingExecutor,
     FakeRepoCache,
@@ -383,3 +390,172 @@ async def test_error_event_carries_no_structured_output_payload() -> None:
     assert error_event.error_kind == "NoStructuredOutputError"
     assert error_event.raise_site == "ticket_creator"
     assert error_event.rate_limit_rejected is False
+
+
+# ---------------------------------------------------------------------------
+# KOD-91/AC-10 — the renamed keys on the wire, and the old ones nowhere
+# ---------------------------------------------------------------------------
+
+_OLD_WIRE_KEYS = ("ciPassed", "ci_passed", "fixRound", "fix_round", "error")
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def _ci_workflow_client() -> AsyncGenerator[AsyncClient, None]:
+    """A run that opens a pull request and monitors CI on a repo that has none.
+
+    The no-CI case AC-10 names: the monitor answers "no checks ran", which
+    used to be ``passed: null`` on two events and needed a serializer hack
+    to appear at all.
+    """
+    async with _workflow_client_with(
+        pr_creator=FakePRCreator(),
+        ci_monitor=FakeCIMonitor(
+            passed=None,
+            summary="No CI checks are configured for this repository.",
+        ),
+    ) as client:
+        yield client
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def _divergent_workflow_client() -> AsyncGenerator[AsyncClient, None]:
+    """A run whose consolidation diverges — the only producer of a merge error."""
+    async with _workflow_client_with(
+        merger=FakeBranchMerger(
+            consolidation_outcomes=[
+                ConsolidationOutcome(
+                    status=ConsolidationStatus.DIVERGENT,
+                    feature_tip_sha="0" * 40,
+                ),
+            ],
+        ),
+    ) as client:
+        yield client
+
+
+@asynccontextmanager
+async def _workflow_client_with(
+    *,
+    pr_creator: FakePRCreator | None = None,
+    ci_monitor: FakeCIMonitor | None = None,
+    merger: FakeBranchMerger | None = None,
+) -> AsyncGenerator[AsyncClient, None]:
+    app = create_app()
+    service = AgentService(
+        executor=FakeAgentExecutor(events=[]),
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        quality_gate=FakeQualityGate(
+            events=[],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha="a" * 40,
+        ),
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger or FakeBranchMerger(),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        pr_creator=pr_creator,
+        ci_monitor=ci_monitor,
+        artifact_persister=None,
+    )
+    app.state.skills = SUPPRESS_ALL_SKILLS
+    app.state.agent_service = service
+    app.state.workflow_engine = engine
+    async with attached_job_queue(app, engine):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            yield client
+
+
+async def _workflow_events(client: AsyncClient) -> list[dict[str, object]]:
+    async with client.stream(
+        "POST",
+        "/api/v1/agent/workflow",
+        json={
+            "prompt": "fix",
+            "repoUrl": "https://github.com/owner/repo",
+        },
+    ) as response:
+        assert response.status_code == 200
+        return await _collect_sse_events(response)
+
+
+def _of_type(events: list[dict[str, object]], wire_type: str) -> dict[str, object]:
+    matching = [event for event in events if event["type"] == wire_type]
+    assert len(matching) == 1, f"expected one {wire_type}, got {len(matching)}"
+    return matching[0]
+
+
+async def test_ci_status_is_on_the_wire_including_the_no_ci_case(
+    _ci_workflow_client: AsyncClient,
+) -> None:
+    """KOD-91/AC-10: an enum member always serializes; ``null`` never did.
+
+    Both serializer hacks existed to force a dropped key back into the
+    payload under ``exclude_none=True``.  The status is a required enum
+    now, so the key is on both events by construction — and the no-CI run
+    says ``not_configured`` in its own name instead of ``passed: null``,
+    which a consumer could not tell from "CI has not run yet".
+    """
+    events = await _workflow_events(_ci_workflow_client)
+
+    assert _of_type(events, "workflow_ci")["ciStatus"] == "not_configured"
+    assert _of_type(events, "workflow_complete")["ciStatus"] == "not_configured"
+
+
+async def test_the_review_event_carries_the_count_it_actually_holds(
+    _ci_workflow_client: AsyncClient,
+) -> None:
+    """KOD-91/AC-10: ``fixRoundsUsed`` — populated from the rounds-used state."""
+    review = _of_type(await _workflow_events(_ci_workflow_client), "workflow_review")
+
+    assert review["fixRoundsUsed"] == 0
+    assert "fixRound" not in review
+
+
+async def test_the_complete_event_names_the_merge_error_as_one(
+    _divergent_workflow_client: AsyncClient,
+) -> None:
+    """KOD-91/AC-10: ``mergeError`` — the only thing that field ever carried."""
+    complete = _of_type(
+        await _workflow_events(_divergent_workflow_client),
+        "workflow_complete",
+    )
+
+    assert isinstance(complete["mergeError"], str)
+    assert "error" not in complete
+    assert complete["outcome"] == "merge_divergent"
+
+
+async def test_no_emitted_event_carries_any_of_the_old_keys(
+    _ci_workflow_client: AsyncClient,
+    _divergent_workflow_client: AsyncClient,
+) -> None:
+    """KOD-91/AC-10: the renames leave nothing behind, on any frame.
+
+    Swept over every event both runs emit rather than the three that were
+    renamed: a shim re-adding an old key anywhere would be invisible to a
+    per-event assertion.
+    """
+    events = await _workflow_events(_ci_workflow_client)
+    events += await _workflow_events(_divergent_workflow_client)
+
+    assert len(events) > 1
+    survivors = {
+        (str(event["type"]), key)
+        for event in events
+        for key in _OLD_WIRE_KEYS
+        if key in event
+    }
+    assert survivors == set()

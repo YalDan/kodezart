@@ -9,6 +9,7 @@ from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriteriaValidation,
@@ -190,7 +191,7 @@ class WorkflowState(TypedDict):
     best_iteration_sha: str | None
     pr_url: str | None
     pr_number: int | None
-    ci_passed: bool | None
+    ci_status: CIStatus
     ci_summary: str | None
     repo_url: str | None
     repo_visibility: RepoVisibility

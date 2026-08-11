@@ -32,6 +32,7 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
 )
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from tests.fakes import (
@@ -88,7 +89,7 @@ class _MergingEngine:
             merged=True,
             pr_url="https://forge.invalid/owner/primary/pull/1",
             pr_number=1,
-            ci_passed=True,
+            ci_status=CIStatus.passed,
         )
 
 

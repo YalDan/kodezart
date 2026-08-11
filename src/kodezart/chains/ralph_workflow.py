@@ -43,6 +43,7 @@ from kodezart.domain.accept_gate import (
 )
 from kodezart.domain.agent import best_iteration_ref, generate_ralph_branch_name
 from kodezart.domain.base_scope import scope_base
+from kodezart.domain.ci import ci_status_of
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
@@ -95,6 +96,7 @@ from kodezart.types.domain.agent import (
     WorkflowVisibilityEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
@@ -268,7 +270,7 @@ class RalphWorkflowEngine:
             "best_iteration_sha": None,
             "pr_url": None,
             "pr_number": None,
-            "ci_passed": None,
+            "ci_status": CIStatus.not_monitored,
             "ci_summary": None,
             "repo_url": resolved_url,
             "repo_visibility": RepoVisibility.UNKNOWN,
@@ -1318,7 +1320,7 @@ class RalphWorkflowEngine:
             WorkflowReviewEvent(
                 passed=passed,
                 evaluation=AcceptanceCriteriaOutput(criteria_results=grade.results),
-                fix_round=state["remediation_rounds_used"],
+                fix_rounds_used=state["remediation_rounds_used"],
                 fan_in=fan_in,
             )
         )
@@ -1461,7 +1463,7 @@ class RalphWorkflowEngine:
         the same reason the terminal outcome is computed rather than
         judged from routing provenance.
         """
-        if state["ci_passed"] is False:
+        if state["ci_status"] is CIStatus.failed:
             return RemediationEntry.ci_failure
         if state["merged"] and state["review_passed"] is False:
             return RemediationEntry.review_failure
@@ -1639,22 +1641,21 @@ class RalphWorkflowEngine:
             repo_url=repo_url,
             ref=ref,
         )
+        ci_status = ci_status_of(passed)
 
         writer(
             WorkflowCIEvent(
-                passed=passed,
+                ci_status=ci_status,
                 summary=summary,
                 ref=ref,
             )
         )
 
-        return {"ci_passed": passed, "ci_summary": summary}
+        return {"ci_status": ci_status, "ci_summary": summary}
 
     def _route_after_ci(self, state: WorkflowState) -> str:
         """Route based on CI result, fix budget, and adapter preconditions."""
-        if state["ci_passed"] is True:
-            return "complete"
-        if state["ci_passed"] is None:
+        if state["ci_status"] is not CIStatus.failed:
             return "complete"
         if self._rounds_remain(state):
             return "remediate"
@@ -1744,10 +1745,10 @@ class RalphWorkflowEngine:
                 outcome=classify_outcome(state),
                 merged=state["merged"],
                 final_commit_sha=state["feature_tip_sha"],
-                error=state["merge_error"],
+                merge_error=state["merge_error"],
                 pr_url=state["pr_url"],
                 pr_number=state["pr_number"],
-                ci_passed=state["ci_passed"],
+                ci_status=state["ci_status"],
                 trajectory=state["trajectory"],
                 criteria_validation=state["criteria_validation"],
             )
