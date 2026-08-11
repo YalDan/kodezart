@@ -9,7 +9,7 @@ substitution stays forbidden (KOD-36 R3): nothing below reads prompt
 text as evidence of compliance — every assertion is over what the model
 generated.
 
-The dispatch mirrors ``_generate_criteria_node`` exactly: the
+The generation dispatch mirrors ``_generate_criteria_node`` exactly: the
 composition-root prompt registry renders ``ACCEPTANCE_CRITERIA`` with
 the node's variables, ``AgentService.stream`` carries it with
 ``EVAL_PERMISSION_MODE`` / ``EVAL_TOOLS_WITH_AGENT`` and the
@@ -18,15 +18,30 @@ result is validated and minted as the node validates and mints it.
 Skills are suppressed so the probe observes the prompt set alone —
 the same posture as the empty-skills golden family.
 
+**Compliance is judged by a dispatched call, never by a prose parser.**
+The second ``[decision]`` of 2026-08-11 rules the demand/guard
+discrimination to be judgment, and it is made by ONE structured-output
+dispatch per probe (R9 fixes its shape): a fresh session, no tools, the
+generated criteria supplied id-keyed, one verdict per id carrying a span
+quoted from that criterion's own text.  The report is reconciled
+fail-closed against the dispatched ids — the ``reconcile`` discipline of
+:mod:`kodezart.domain.criteria_feasibility` — so a missing, duplicated or
+invented id fails the probe rather than shrinking the denominator.
+
+What stays harness-side is only arithmetic: the fixture premises, and
+exact-token containment over the generated set.  Nothing here classifies
+a sentence.
+
 These tests call the REAL Claude Agent SDK (no mocks).
 Skip by default; run with: ``pytest -m live``.
 """
 
 import asyncio
-import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
+from pydantic import ConfigDict, Field
 
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
@@ -37,6 +52,7 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS_WITH_AGENT
 from kodezart.core.stream_drain import drain
 from kodezart.domain.criteria import mint_criteria
 from kodezart.services.agent_service import AgentService
+from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.agent import (
     GENERATED_CRITERIA_SCHEMA,
     GeneratedCriteriaOutput,
@@ -77,6 +93,24 @@ async def _init_repo(repo: Path) -> None:
     await _git(["git", "config", "user.name", "kodezart-live-probe"], cwd=repo)
 
 
+def _probe_service(tmp_path: Path) -> AgentService:
+    """The composition root's own wiring for a real dispatch, minus the graph."""
+    config = AppConfig()
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="kodezart-live-probe",
+        committer_email="probe@kodezart-test.invalid",
+    )
+    executor = ClaudeClientExecutor(
+        model=config.model,
+        setting_sources=config.setting_sources,
+    )
+    return AgentService(executor=executor, workspace=workspace)
+
+
 def _render_generation_prompt(ticket: str, base_ref: str) -> str:
     """The drafter prompt exactly as ``_generate_criteria_node`` renders it."""
     return (
@@ -95,26 +129,11 @@ def _render_generation_prompt(ticket: str, base_ref: str) -> str:
 async def _generate_live(
     ticket: str,
     *,
+    service: AgentService,
     repo: Path,
     base_ref: str,
-    tmp_path: Path,
 ) -> list[GeneratedCriterion]:
     """One real generator call — the node's dispatch, minus the graph."""
-    config = AppConfig()
-    git = SubprocessGitService(remote="origin")
-    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
-    workspace = GitWorktreeProvider(
-        git=git,
-        cache=cache,
-        committer_name="kodezart-live-probe",
-        committer_email="probe@kodezart-test.invalid",
-    )
-    executor = ClaudeClientExecutor(
-        model=config.model,
-        setting_sources=config.setting_sources,
-    )
-    service = AgentService(executor=executor, workspace=workspace)
-
     result_event, rate_limit_rejected = await drain(
         service.stream(
             prompt=_render_generation_prompt(ticket, base_ref),
@@ -142,86 +161,149 @@ async def _generate_live(
     return criteria
 
 
-_CLAUSE_BOUNDARY = re.compile(r"[.;:!?]+(?=\s|$)")
-_INLINE_CODE = re.compile(r"`[^`]+`")
-
-_NEGATED = re.compile(
-    r"\b(?:no|not|never|without|nor|none|nothing|neither|cannot|zero)\b|n't\b"
-)
-_ABBREVIATION = re.compile(r"\b(?:e\.g\.|i\.e\.|etc\.|cf\.|vs\.)", re.IGNORECASE)
-_PUNISHED = re.compile(
-    r"\b(?:is|are)\s+(?:an?\s+)?(?:hard\s+)?"
-    r"(?:fail|failure|violation|regression|defect)s?\b"
-    r"|\bfails\b"
-    r"|\bforbid(?:s|den)?\b"
-)
-_PUNISHED_INVERSION = re.compile(
-    r"\b(?:absence|absent|missing|omitted|omitting|omission|lacking|lacks|unless)\b"
-)
-_PRESERVED = re.compile(
-    r"\b(?:still|unchanged|byte-identical|remains?|stays?|kept|preserved|untouched)\b"
-)
+# ---------------------------------------------------------------------------
+# The judge — one dispatched structured-output call per probe (KOD-53 R9)
+# ---------------------------------------------------------------------------
 
 
-def _clauses(text: str) -> list[str]:
-    """Sentence-level clauses, with inline code opaque to the splitter.
+class JudgeVerdict(CamelCaseModel):
+    """One criterion judged, with the span the judgment rests on.
 
-    Punctuation inside an inline-code span or an abbreviation ("e.g.",
-    "i.e.") is not a clause boundary — the dot in
-    ``RunOutcome.rolled_back`` and the colon in ``case ...:`` never end
-    a clause — and outside those a boundary needs trailing whitespace,
-    so an attribute dot never severs a token from the clause that
-    governs it.
+    ``evidence`` is required in both directions: a guard verdict that
+    cannot quote the guarding clause is not an observation, and the
+    recorded verdict must be re-derivable from the transcript.
     """
-    masked = _INLINE_CODE.sub(
-        lambda match: re.sub(r"[.;:!?]", " ", match.group(0)),
-        text,
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    criterion_id: str = Field(min_length=1)
+    demands: bool
+    evidence: str = Field(min_length=1)
+
+
+class JudgeReport(CamelCaseModel):
+    """The judge's verdicts over one dispatched criteria set."""
+
+    verdicts: list[JudgeVerdict] = Field(min_length=1)
+
+
+JUDGE_SCHEMA: dict[str, object] = JudgeReport.model_json_schema()
+
+JUDGE_PROMPT = """You are judging acceptance criteria that another agent \
+generated. Judge ONLY the criterion text supplied below. You have no tools; \
+do not infer anything from a repository.
+
+The question, asked separately of every criterion:
+
+{question}
+
+How to answer:
+- Return one verdict for EVERY criterion id listed below, exactly once each. \
+Never invent an id, never omit one, never answer one twice.
+- `demands` is true only when THAT criterion's own text demands the thing the \
+question names. A criterion that forbids it, that asserts its absence, that \
+punishes its presence, or that merely requires an existing artifact which \
+mentions it to stay unchanged, does NOT demand it — answer false.
+- `evidence` is a span quoted from that criterion's own text: the clause that \
+demands, when true; the clause that guards, forbids or preserves, when false. \
+Never empty.
+
+Criteria:
+
+{criteria}
+"""
+
+
+def _judge_lines(criteria: Sequence[GeneratedCriterion]) -> str:
+    return "\n\n".join(
+        f"{criterion.id} [{criterion.criterion_class.value}]: {criterion.text}"
+        for criterion in criteria
     )
-    masked = _ABBREVIATION.sub(
-        lambda match: match.group(0).replace(".", " "),
-        masked,
-    )
-    return [clause for clause in _CLAUSE_BOUNDARY.split(masked) if clause.strip()]
 
 
-def _guarded(clause: str) -> bool:
-    """Whether *clause* guards against its token rather than demanding it.
+def _reconciled(
+    criteria: Sequence[GeneratedCriterion],
+    report: JudgeReport,
+) -> dict[str, JudgeVerdict]:
+    """Pair verdicts to dispatched ids 1:1 — ``reconcile``'s discipline.
 
-    Three guard families, each judged over the whole governing clause:
-
-    - **negated** — the clause denies the token's presence ("contains no
-      occurrence of", "does NOT gain a case for", "zero matches");
-    - **preserved** — the clause pins existing state ("stays
-      byte-identical", "still carrying ... for wire compatibility"); the
-      probe's premise pins the completion surfaces free of the token, so
-      preserving what exists cannot demand adding it;
-    - **punished** — the clause deems the token's presence a failure ("a
-      ``case ...:`` arm is a hard fail", "fails the gate", "forbidden"),
-      unless it punishes the token's ABSENCE ("absence of the arm is a
-      hard fail"), which is a demand and stays one.
+    Fail-closed on every correspondence hole: an id with no verdict, an id
+    answered twice, or a verdict for an id nobody dispatched. A judge that
+    answers eleven of twelve licenses no verdict over the eleven.
     """
-    lowered = clause.lower()
-    if _NEGATED.search(lowered) or _PRESERVED.search(lowered):
-        return True
-    return bool(
-        _PUNISHED.search(lowered) and not _PUNISHED_INVERSION.search(lowered)
+    dispatched = [criterion.id for criterion in criteria]
+    dispatched_set = set(dispatched)
+    seen: dict[str, JudgeVerdict] = {}
+    duplicates: list[str] = []
+    unknown: list[str] = []
+    for verdict in report.verdicts:
+        if verdict.criterion_id not in dispatched_set:
+            unknown.append(verdict.criterion_id)
+        elif verdict.criterion_id in seen:
+            duplicates.append(verdict.criterion_id)
+        else:
+            seen[verdict.criterion_id] = verdict
+    missing = [id_ for id_ in dispatched if id_ not in seen]
+    assert not (missing or duplicates or unknown), (
+        "the judge's report does not correspond 1:1 to the dispatched "
+        f"criteria (missing: {missing}; duplicate: {duplicates}; "
+        f"unknown: {unknown})"
     )
+    return seen
 
 
-def _demands(text: str, token: str) -> bool:
-    """Whether *text* demands *token* rather than guarding against it.
+async def _judge_live(
+    criteria: Sequence[GeneratedCriterion],
+    *,
+    question: str,
+    service: AgentService,
+    repo: Path,
+    base_ref: str,
+) -> dict[str, JudgeVerdict]:
+    """One dispatched judgment over the generated criteria, reconciled.
 
-    A criterion that GUARDS against the token asserts the property the
-    probe checks and is never an offender; the token is judged against
-    its governing clause, never against a fragment severed at an
-    attribute dot or inside an inline-code span.  The default is
-    conservative — a clause containing the token is a demand unless a
-    guard family exculpates it — and the full transcript printed above
-    is the evidence of record for the verdict either way.
+    A fresh session — no ``session_id`` is carried from the generation
+    call — and no tools, so the judge answers from the criterion text it
+    was handed and from nothing else.
     """
-    return any(
-        token in clause and not _guarded(clause) for clause in _clauses(text)
+    result_event, rate_limit_rejected = await drain(
+        service.stream(
+            prompt=JUDGE_PROMPT.format(
+                question=question,
+                criteria=_judge_lines(criteria),
+            ),
+            repo_path=str(repo),
+            branch=base_ref,
+            permission_mode=EVAL_PERMISSION_MODE,
+            allowed_tools=[],
+            skills=SkillsSelection(mode=SkillsMode.NONE),
+            output_format={
+                "type": "json_schema",
+                "schema": JUDGE_SCHEMA,
+            },
+        )
     )
+
+    assert not rate_limit_rejected, "judge dispatch was rate-limit rejected"
+    assert result_event is not None
+    assert result_event.structured_output is not None
+    judged = _reconciled(
+        criteria,
+        JudgeReport.model_validate(result_event.structured_output),
+    )
+    for criterion in criteria:
+        verdict = judged[criterion.id]
+        print(f"judge {criterion.id}: demands={verdict.demands} :: {verdict.evidence}")
+    return judged
+
+
+def _demand_verdicts(judged: Mapping[str, JudgeVerdict]) -> list[str]:
+    """Every id the judge found demanding the forbidden thing, with its span."""
+    return [
+        f"{criterion_id}: {verdict.evidence}"
+        for criterion_id, verdict in judged.items()
+        if verdict.demands
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -280,11 +362,26 @@ PATTERN_5_LIVE_TICKET = (
     "route is left undiscriminated."
 )
 
+PHANTOM_ARM_QUESTION = (
+    "Does this criterion DEMAND that the implementation handle, add, render "
+    "or discriminate a `rolled_back` terminal outcome?\n\n"
+    "The situation the criteria were generated over: the type under change, "
+    "`RunOutcome`, declares exactly three members — `succeeded`, `failed`, "
+    "`plateaued`. A separate superseded type `LegacyRunOutcome` and a "
+    "`ROUTES.md` document both mention a `rolled_back` route; the type under "
+    "change does not declare it.\n\n"
+    "Answer true only if the criterion requires `rolled_back` to be handled, "
+    "added, rendered or discriminated by the implementation. Answer false if "
+    "the criterion forbids it, requires its absence, requires that the "
+    "superseded type or the document keep it unchanged, or does not raise it "
+    "at all."
+)
+
 
 async def test_live_generated_criteria_complete_behaviorally_not_literally(
     tmp_path: Path,
 ) -> None:
-    """KOD-53/AC-13 live probe, per the 2026-08-11 decision on the fire.
+    """KOD-53/AC-13 live probe, per the 2026-08-11 decisions on the fire.
 
     The fixture repo declares ``RunOutcome`` with three arms and a switch
     discriminating only two; a sibling type and a routes document both
@@ -296,9 +393,9 @@ async def test_live_generated_criteria_complete_behaviorally_not_literally(
       completion enumerated from the type's ACTUAL definition;
     - no criterion DEMANDS the arm the type does not declare
       (``rolled_back``) — an arm inferred from a sibling type or from
-      what the type "ought" to have never reaches the criteria.  A
-      criterion forbidding the phantom arm asserts the same property the
-      probe checks and is not an offender.
+      what the type "ought" to have never reaches the criteria.  Whether
+      a criterion demands that arm or guards against it is the judge's
+      call, dispatched once over the whole generated set.
     """
     # Premise, pinned against the fixture the probe dispatches: the arm
     # the decoys name is NOT declared by the type, and one declared arm
@@ -317,20 +414,28 @@ async def test_live_generated_criteria_complete_behaviorally_not_literally(
     await _commit_file(repo, "legacy_outcome.py", LEGACY_MODULE, "chore: legacy enum")
     await _commit_file(repo, "ROUTES.md", ROUTES_DOC, "docs: terminal routes")
 
+    service = _probe_service(tmp_path)
     criteria = await _generate_live(
         PATTERN_5_LIVE_TICKET,
+        service=service,
         repo=repo,
         base_ref="main",
-        tmp_path=tmp_path,
     )
 
-    texts = [criterion.text for criterion in criteria]
-    joined = " ".join(texts)
+    joined = " ".join(criterion.text for criterion in criteria)
     assert "plateaued" in joined, (
         "behavioral completion must reach the declared arm the switch "
-        f"misses; generated criteria: {texts}"
+        f"misses; generated criteria: {[c.text for c in criteria]}"
     )
-    offenders = [text for text in texts if _demands(text, "rolled_back")]
+
+    judged = await _judge_live(
+        criteria,
+        question=PHANTOM_ARM_QUESTION,
+        service=service,
+        repo=repo,
+        base_ref="main",
+    )
+    offenders = _demand_verdicts(judged)
     assert offenders == [], (
         "a criterion demands an arm the type does not declare — the "
         f"Pattern-5 literal completion: {offenders}"
@@ -356,19 +461,38 @@ STACKED_LIVE_TICKET = (
     "outside `app/api/` may change."
 )
 
+BARE_DIFF_QUESTION = (
+    "Does this criterion call for a diff — `git diff`, a changed-file "
+    "comparison, a scope check against a baseline — WITHOUT naming "
+    f"`{STACKED_BASE_REF}` as the base of THAT comparison?\n\n"
+    "The situation the criteria were generated over: the lane's resolved "
+    f"comparison base is the branch `{STACKED_BASE_REF}`, which already "
+    "carries inherited work. A diff taken against anything else, or against "
+    "an unstated baseline, convicts the lane of work it inherited.\n\n"
+    "Answer true if the criterion invokes any such comparison and that "
+    "comparison's base is unstated, or is stated as something other than "
+    f"`{STACKED_BASE_REF}`. The base must be named for the comparison "
+    "itself: a mention of the base elsewhere in the criterion, for an "
+    "unrelated purpose, does not settle it. Answer false if the criterion "
+    "invokes no comparison at all, or if every comparison it invokes names "
+    "that base as its own baseline."
+)
+
 
 async def test_live_scope_criteria_state_the_resolved_stacked_base(
     tmp_path: Path,
 ) -> None:
-    """KOD-53/AC-23 live probe, per the 2026-08-11 decision on the fire.
+    """KOD-53/AC-23 live probe, per the 2026-08-11 decisions on the fire.
 
     The run is fired against a stacked base — a blocker branch carrying
     inherited work — and the ticket's no-touch clause invites scope
     criteria.  The generated criteria must contain the resolved base
-    ref, and no criterion may invoke ``git diff`` without stating that
-    base in its own text: a bare diff, or a diff against a base other
+    ref, and no criterion may invoke a diff without stating that base as
+    that diff's own baseline: a bare diff, or a diff against a base other
     than the resolved one, leaves the lane convicted of the work it
-    inherited.
+    inherited.  The per-criterion half is the judge's call — a base ref
+    named anywhere in a criterion no longer exculpates a bare invocation
+    elsewhere in it.
     """
     repo = tmp_path / "repo"
     await _init_repo(repo)
@@ -383,25 +507,29 @@ async def test_live_scope_criteria_state_the_resolved_stacked_base(
     )
     await _git(["git", "checkout", "main"], cwd=repo)
 
+    service = _probe_service(tmp_path)
     criteria = await _generate_live(
         STACKED_LIVE_TICKET,
+        service=service,
         repo=repo,
         base_ref=STACKED_BASE_REF,
-        tmp_path=tmp_path,
     )
 
-    texts = [criterion.text for criterion in criteria]
-    joined = " ".join(texts)
+    joined = " ".join(criterion.text for criterion in criteria)
     assert STACKED_BASE_REF in joined, (
         "generated criteria never state the resolved base ref; "
-        f"generated criteria: {texts}"
+        f"generated criteria: {[c.text for c in criteria]}"
     )
-    bare_diffs = [
-        text
-        for text in texts
-        if STACKED_BASE_REF not in text and _demands(text, "git diff")
-    ]
+
+    judged = await _judge_live(
+        criteria,
+        question=BARE_DIFF_QUESTION,
+        service=service,
+        repo=repo,
+        base_ref=STACKED_BASE_REF,
+    )
+    bare_diffs = _demand_verdicts(judged)
     assert bare_diffs == [], (
-        "a criterion invokes git diff without stating the resolved base "
-        f"in its own text: {bare_diffs}"
+        "a criterion invokes a diff without stating the resolved base "
+        f"as its baseline: {bare_diffs}"
     )

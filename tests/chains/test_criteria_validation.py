@@ -536,9 +536,12 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
 # ---------------------------------------------------------------------------
 # KOD-53/AC-23, harness half — a scope criterion that names no base never
 # reaches the loop.  The criterion's other half asserts a property of the
-# criteria a MODEL generates; KOD-36 R3 rules that unrunnable here and
-# forbids substituting a rendered-prompt assertion for it, so the criterion
-# stays UNMET (KOD-53 R5) and nothing below claims otherwise.
+# criteria a MODEL generates, and it is NOT carried here: the 2026-08-11
+# [decision] on KOD-53 supersedes R5 for this criterion and moves that half
+# to the live probe in tests/integration/test_live_criteria_probes.py, which
+# runs the real generation path and judges its actual output.  KOD-36 R3 is
+# unchanged — substituting a rendered-prompt assertion for the model-behaviour
+# claim stays forbidden, and nothing below does it.
 # ---------------------------------------------------------------------------
 
 
