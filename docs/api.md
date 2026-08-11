@@ -133,7 +133,7 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `result`              | `subtype`, `durationMs`, `durationApiMs`, `isError`, `numTurns`, `sessionId`, `stopReason`, `totalCostUsd`, `usage`, `result`, `branch`, `commitSha`, `structuredOutput` |
 | `stream_event`        | `sessionId`, `event`                                        |
 
-### Workflow Events (6)
+### Workflow Events (7)
 
 | Event Type                | Key Fields                                      |
 | ------------------------- | ----------------------------------------------- |
@@ -141,6 +141,7 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `workflow_ticket_review`  | `iteration`, `approved`, `feedback`, `suggestions` |
 | `workflow_ticket`         | `ticket`, `reviewRounds`, `approved`            |
 | `workflow_criteria`       | `criteria`, `reasoning`                         |
+| `workflow_artifacts`      | `status` (`persisted` \| `unchanged` \| `ignored_by_target`), `branch` |
 | `workflow_iteration`      | `iteration`, `branch`, `commitSha`, `accepted`, `evaluation` |
 | `workflow_complete`       | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `merged`, `finalCommitSha`, `error` |
 
