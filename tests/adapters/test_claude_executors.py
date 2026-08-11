@@ -1,5 +1,6 @@
 """Tests for ClaudeAgentExecutor and ClaudeClientExecutor SDK exception wrapping."""
 
+import inspect
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, Final
@@ -9,14 +10,23 @@ import pytest
 import structlog
 from claude_agent_sdk import ClaudeAgentOptions, ProcessError
 
+from kodezart.adapters._mcp_mapping import map_knowledge_mcp
 from kodezart.adapters._skills_mapping import map_skills
 from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.core.error_egress import _REDACTION_SENTINEL
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
-from tests.fakes import DEFAULT_SETTING_SOURCES, SUPPRESS_ALL_SKILLS
+from tests.fakes import (
+    DEFAULT_SETTING_SOURCES,
+    FAKE_SESSION_TYPE,
+    FIXTURE_KNOWLEDGE_SERVER,
+    NO_KNOWLEDGE_GRANT,
+    SUPPRESS_ALL_SKILLS,
+    knowledge_grant_for,
+)
 
 
 async def _drain(gen: AsyncGenerator[AgentEvent, None]) -> list[AgentEvent]:
@@ -26,13 +36,19 @@ async def _drain(gen: AsyncGenerator[AgentEvent, None]) -> list[AgentEvent]:
 
 def test_agent_executor_instantiates() -> None:
     """ClaudeAgentExecutor can be constructed without side effects."""
-    executor = ClaudeAgentExecutor(setting_sources=DEFAULT_SETTING_SOURCES)
+    executor = ClaudeAgentExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=NO_KNOWLEDGE_GRANT,
+    )
     assert executor is not None
 
 
 def test_client_executor_instantiates() -> None:
     """ClaudeClientExecutor can be constructed without side effects."""
-    executor = ClaudeClientExecutor(setting_sources=DEFAULT_SETTING_SOURCES)
+    executor = ClaudeClientExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=NO_KNOWLEDGE_GRANT,
+    )
     assert executor is not None
 
 
@@ -85,7 +101,10 @@ class _FakeSDKClient:
 async def test_process_error_round_trips_exit_code_and_stderr_on_re_raise() -> None:
     """ProcessError(exit_code, stderr) survives the re-raise on AgentSDKError."""
     boom = ProcessError("boom", exit_code=137, stderr="<known-tail>" * 10)
-    executor = ClaudeClientExecutor(setting_sources=DEFAULT_SETTING_SOURCES)
+    executor = ClaudeClientExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=NO_KNOWLEDGE_GRANT,
+    )
     with patch(
         "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
         lambda **_: _FakeSDKClient(boom),
@@ -94,6 +113,7 @@ async def test_process_error_round_trips_exit_code_and_stderr_on_re_raise() -> N
             await _drain(
                 executor.stream(
                     skills=SUPPRESS_ALL_SKILLS,
+                    session_type=FAKE_SESSION_TYPE,
                     prompt="x",
                     cwd="/tmp",
                     permission_mode="default",
@@ -112,7 +132,10 @@ async def test_process_error_round_trips_exit_code_and_stderr_on_re_raise() -> N
 async def test_process_error_with_none_stderr_does_not_crash() -> None:
     """ProcessError(exit_code=137, stderr=None) re-raises with stderr_tail=None."""
     boom = ProcessError("boom", exit_code=137, stderr=None)
-    executor = ClaudeClientExecutor(setting_sources=DEFAULT_SETTING_SOURCES)
+    executor = ClaudeClientExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=NO_KNOWLEDGE_GRANT,
+    )
     with patch(
         "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
         lambda **_: _FakeSDKClient(boom),
@@ -121,6 +144,7 @@ async def test_process_error_with_none_stderr_does_not_crash() -> None:
             await _drain(
                 executor.stream(
                     skills=SUPPRESS_ALL_SKILLS,
+                    session_type=FAKE_SESSION_TYPE,
                     prompt="x",
                     cwd="/tmp",
                     permission_mode="default",
@@ -150,7 +174,10 @@ async def test_process_error_redacts_token_in_warning_log() -> None:
     """``claude_sdk_process_error`` log scrubs the credential URL in stderr."""
     stderr_payload = f"git fetch failed: {_FAKE_URL} permission denied"
     boom = ProcessError("git fetch failed", exit_code=128, stderr=stderr_payload)
-    executor = ClaudeClientExecutor(setting_sources=DEFAULT_SETTING_SOURCES)
+    executor = ClaudeClientExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=NO_KNOWLEDGE_GRANT,
+    )
     with patch(
         "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
         lambda **_: _FakeSDKClient(boom),
@@ -160,6 +187,7 @@ async def test_process_error_redacts_token_in_warning_log() -> None:
                 await _drain(
                     executor.stream(
                         skills=SUPPRESS_ALL_SKILLS,
+                        session_type=FAKE_SESSION_TYPE,
                         prompt="x",
                         cwd="/tmp",
                         permission_mode="default",
@@ -185,7 +213,10 @@ async def test_process_error_redacts_token_in_warning_log() -> None:
 async def test_process_error_stderr_tail_on_agent_sdk_error_is_redacted() -> None:
     """``AgentSDKError.stderr_tail`` is redact-before-slice; secret cannot leak."""
     boom = ProcessError("git fetch failed", exit_code=128, stderr=_FAKE_URL)
-    executor = ClaudeClientExecutor(setting_sources=DEFAULT_SETTING_SOURCES)
+    executor = ClaudeClientExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=NO_KNOWLEDGE_GRANT,
+    )
     with patch(
         "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
         lambda **_: _FakeSDKClient(boom),
@@ -194,6 +225,7 @@ async def test_process_error_stderr_tail_on_agent_sdk_error_is_redacted() -> Non
             await _drain(
                 executor.stream(
                     skills=SUPPRESS_ALL_SKILLS,
+                    session_type=FAKE_SESSION_TYPE,
                     prompt="x",
                     cwd="/tmp",
                     permission_mode="default",
@@ -225,11 +257,43 @@ def _capture(module: str):
     return recorded, patch(f"{module}.{target}", sink)
 
 
-def _executor_for(module: str):
+def _executor_for(module: str, grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("claude_client_executor"):
-        return ClaudeClientExecutor(setting_sources=DEFAULT_SETTING_SOURCES)
-    return ClaudeAgentExecutor(setting_sources=DEFAULT_SETTING_SOURCES)
+        return ClaudeClientExecutor(
+            setting_sources=DEFAULT_SETTING_SOURCES,
+            knowledge_grant=grant,
+        )
+    return ClaudeAgentExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=grant,
+    )
+
+
+async def _options_for(
+    module: str,
+    *,
+    grant: KnowledgeGrant,
+    session_type: SessionType,
+) -> ClaudeAgentOptions:
+    """The options *module*'s adapter constructs for one session."""
+    recorded, patcher = _capture(module)
+    executor = _executor_for(module, grant)
+
+    with patcher, pytest.raises(RuntimeError, match="stop after options"):
+        await _drain(
+            executor.stream(
+                prompt="p",
+                cwd="/tmp/fake",
+                permission_mode="plan",
+                allowed_tools=[],
+                skills=SUPPRESS_ALL_SKILLS,
+                session_type=session_type,
+            )
+        )
+
+    assert len(recorded) == 1
+    return recorded[0]
 
 
 EXECUTOR_MODULES = [
@@ -280,6 +344,7 @@ async def test_both_executors_pass_the_mapped_skills_never_none(
                 permission_mode="plan",
                 allowed_tools=[],
                 skills=selection,
+                session_type=FAKE_SESSION_TYPE,
             )
         )
 
@@ -307,6 +372,7 @@ async def test_setting_sources_come_from_config_in_every_mode(
                 permission_mode="plan",
                 allowed_tools=[],
                 skills=selection,
+                session_type=FAKE_SESSION_TYPE,
             )
         )
 
@@ -320,3 +386,167 @@ def test_no_skill_name_literal_lives_in_the_adapters() -> None:
         source = path.read_text(encoding="utf-8")
         assert "skills=[" not in source
         assert 'skills = ["' not in source
+
+
+# ---------------------------------------------------------------------------
+# The knowledge grant: who is configured with the server, and who is untouched
+# ---------------------------------------------------------------------------
+
+#: The arguments each adapter constructed before any grant existed, so a
+#: non-granted session can be compared against them argument for argument
+#: rather than against a rebuilt copy of itself.
+_PRE_FIRE_OPTIONS: dict[str, ClaudeAgentOptions] = {
+    "kodezart.adapters.claude_client_executor": ClaudeAgentOptions(
+        cwd="/tmp/fake",
+        permission_mode="plan",
+        allowed_tools=[],
+        resume=None,
+        output_format=None,
+        model=None,
+        skills=map_skills(SUPPRESS_ALL_SKILLS),
+        setting_sources=["user", "project", "local"],
+    ),
+    "kodezart.adapters.claude_agent_executor": ClaudeAgentOptions(
+        cwd="/tmp/fake",
+        permission_mode="plan",
+        allowed_tools=[],
+        resume=None,
+        output_format=None,
+        skills=map_skills(SUPPRESS_ALL_SKILLS),
+        setting_sources=["user", "project", "local"],
+    ),
+}
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_a_granted_session_carries_the_knowledge_server(module) -> None:
+    """The grant names the type, so the server definition is in the options."""
+    grant = knowledge_grant_for(SessionType.TICKET_FIRE)
+
+    options = await _options_for(
+        module,
+        grant=grant,
+        session_type=SessionType.TICKET_FIRE,
+    )
+
+    assert isinstance(options.mcp_servers, dict)
+    assert set(options.mcp_servers) == {FIXTURE_KNOWLEDGE_SERVER}
+    definition = options.mcp_servers[FIXTURE_KNOWLEDGE_SERVER]
+    assert definition["type"] == "http"
+    assert definition["url"] == grant.server_url
+    assert definition["headers"] == {
+        grant.auth_header: f"{grant.auth_scheme} {grant.credential}",
+    }
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+@pytest.mark.parametrize(
+    "session_type",
+    [
+        SessionType.API_QUERY,
+        SessionType.COMMIT_MESSAGE,
+        SessionType.CONTENT_AUDIT,
+    ],
+)
+async def test_every_non_granted_type_constructs_the_pre_fire_options(
+    module,
+    session_type,
+) -> None:
+    """Not a spot check: each type outside the grant, argument for argument."""
+    options = await _options_for(
+        module,
+        grant=knowledge_grant_for(SessionType.TICKET_FIRE),
+        session_type=session_type,
+    )
+
+    assert options == _PRE_FIRE_OPTIONS[module]
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_the_strict_flag_rides_with_the_server_and_only_with_it(
+    module,
+) -> None:
+    """Set together for a granted session; neither set for any other."""
+    grant = knowledge_grant_for(SessionType.TICKET_FIRE)
+
+    granted = await _options_for(
+        module,
+        grant=grant,
+        session_type=SessionType.TICKET_FIRE,
+    )
+    plain = await _options_for(
+        module,
+        grant=grant,
+        session_type=SessionType.API_QUERY,
+    )
+
+    assert granted.strict_mcp_config is True
+    assert plain.strict_mcp_config is _PRE_FIRE_OPTIONS[module].strict_mcp_config
+    assert plain.mcp_servers == _PRE_FIRE_OPTIONS[module].mcp_servers
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_an_empty_grant_configures_no_server_at_either_site(module) -> None:
+    """The shipped grant names nothing, so no site configures a server."""
+    for session_type in SessionType:
+        options = await _options_for(
+            module,
+            grant=NO_KNOWLEDGE_GRANT,
+            session_type=session_type,
+        )
+        assert options == _PRE_FIRE_OPTIONS[module]
+
+
+async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None:
+    """Absence from the composition root must not make it a hole.
+
+    Asserted as identity of the mapping helper both adapters call, so the
+    coverage cannot regress by one adapter growing its own copy.
+    """
+    agent_source = Path(
+        inspect.getfile(ClaudeAgentExecutor),
+    ).read_text(encoding="utf-8")
+    client_source = Path(
+        inspect.getfile(ClaudeClientExecutor),
+    ).read_text(encoding="utf-8")
+
+    for source in (agent_source, client_source):
+        assert "map_knowledge_mcp(self._knowledge_grant, session_type)" in source
+
+    granted = await _options_for(
+        "kodezart.adapters.claude_agent_executor",
+        grant=knowledge_grant_for(SessionType.TICKET_FIRE),
+        session_type=SessionType.TICKET_FIRE,
+    )
+    assert granted.mcp_servers == {
+        FIXTURE_KNOWLEDGE_SERVER: {
+            "type": "http",
+            "url": "https://knowledge.invalid/mcp",
+            "headers": {"Authorization": f"Bearer {knowledge_grant_for().credential}"},
+        },
+    }
+
+
+def test_a_grant_without_a_credential_never_builds_a_header() -> None:
+    """The dead configuration fails loudly rather than dialling unauthenticated."""
+    grant = KnowledgeGrant(
+        granted=(SessionType.TICKET_FIRE,),
+        server_name=FIXTURE_KNOWLEDGE_SERVER,
+        server_url="https://knowledge.invalid/mcp",
+        auth_header="Authorization",
+        auth_scheme="Bearer",
+        credential=None,
+    )
+
+    with pytest.raises(ValueError, match="carries no credential"):
+        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
+
+
+def test_the_mapping_is_empty_for_a_type_the_grant_does_not_name() -> None:
+    """Emptiness is the mechanism: no keyword is passed, not a falsy one."""
+    mapped = map_knowledge_mcp(
+        knowledge_grant_for(SessionType.TICKET_FIRE),
+        SessionType.API_QUERY,
+    )
+
+    assert mapped == {}

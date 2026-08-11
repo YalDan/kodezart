@@ -24,6 +24,7 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.tracker import (
     ClaimResult,
@@ -205,10 +206,16 @@ class AgentExecutor(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Stream events by executing a prompt in *cwd*."""
+        """Stream events by executing a prompt in *cwd*.
+
+        *session_type* names what the session is for.  It carries no
+        default: every caller states its kind, because the kind is what
+        the knowledge grant is resolved against.
+        """
         ...
 
 
@@ -616,6 +623,7 @@ class AgentRunner(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -635,6 +643,7 @@ class AgentRunner(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         visibility: RepoVisibility,
         create_branch: bool = True,
         cache_key: str | None = None,
@@ -650,6 +659,7 @@ class AgentRunner(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:

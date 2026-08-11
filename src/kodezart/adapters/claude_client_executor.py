@@ -12,6 +12,7 @@ from claude_agent_sdk import (
     ProcessError,
 )
 
+from kodezart.adapters._mcp_mapping import map_knowledge_mcp
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
@@ -20,6 +21,7 @@ from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsSelection
 
 
@@ -34,9 +36,11 @@ class ClaudeClientExecutor:
         *,
         model: str | None = None,
         setting_sources: list[SettingSource],
+        knowledge_grant: KnowledgeGrant,
     ) -> None:
         self._model = model
         self._setting_sources = setting_sources
+        self._knowledge_grant = knowledge_grant
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -47,6 +51,7 @@ class ClaudeClientExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -62,6 +67,7 @@ class ClaudeClientExecutor:
             permission_mode=permission_mode,
             has_output_format=output_format is not None,
             skills_mode=skills.mode.value,
+            session_type=session_type.value,
         )
         options = ClaudeAgentOptions(
             cwd=cwd,
@@ -74,6 +80,7 @@ class ClaudeClientExecutor:
             model=self._model,
             skills=map_skills(skills),
             setting_sources=map_setting_sources(self._setting_sources),
+            **map_knowledge_mcp(self._knowledge_grant, session_type),
         )
         try:
             async with ClaudeSDKClient(

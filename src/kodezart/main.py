@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     executor = ClaudeClientExecutor(
         model=config.model,
         setting_sources=config.setting_sources,
+        knowledge_grant=config.knowledge_grant(),
     )
     gate = await build_outbound_gate(
         config=config,

@@ -11,6 +11,7 @@ from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -43,6 +44,7 @@ class AgentService:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -62,6 +64,7 @@ class AgentService:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             skills=skills,
+            session_type=session_type,
             session_id=session_id,
             output_format=output_format,
             cache_key=cache_key,
@@ -76,6 +79,7 @@ class AgentService:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -86,6 +90,7 @@ class AgentService:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             skills=skills,
+            session_type=session_type,
             session_id=session_id,
             output_format=output_format,
         ):
@@ -103,6 +108,7 @@ class AgentService:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         visibility: RepoVisibility,
         create_branch: bool = True,
         cache_key: str | None = None,
@@ -120,6 +126,7 @@ class AgentService:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             skills=skills,
+            session_type=session_type,
             visibility=visibility,
             persist_branch=effective_ralph,
             cache_key=cache_key,
@@ -142,6 +149,7 @@ class AgentService:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
@@ -185,6 +193,7 @@ class AgentService:
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
                 skills=skills,
+                session_type=session_type,
                 session_id=session_id,
                 output_format=output_format,
             ):

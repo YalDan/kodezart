@@ -11,6 +11,7 @@ from kodezart.types.domain.gating import (
     HygieneCategory,
     RedactionCategory,
 )
+from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.tracker import TrackerBackend
 
@@ -390,6 +391,35 @@ class AppConfig(BaseSettings):
             "config is copied into logs, fixtures and error payloads."
         ),
     )
+    notion_session_grants: list[SessionType] = Field(
+        default_factory=list,
+        description=(
+            "Session types the Notion knowledge server is attached to, "
+            "named one by one. There is no wildcard value. Ships empty: "
+            "the mechanism ships and the grant is operator configuration. "
+            "A non-empty list with KODEZART_NOTION_TOKEN unset aborts boot "
+            "rather than attaching an unauthenticated server."
+        ),
+    )
+    notion_mcp_server_name: str = Field(
+        default="notion",
+        min_length=1,
+        description="Identity the knowledge MCP server carries in a granted session.",
+    )
+    notion_mcp_server_url: str = Field(
+        default="https://mcp.notion.com/mcp",
+        description="Endpoint of the vendor MCP server a granted session dials.",
+    )
+    notion_mcp_auth_header: str = Field(
+        default="Authorization",
+        min_length=1,
+        description="Request header the knowledge credential is presented in.",
+    )
+    notion_mcp_auth_scheme: str = Field(
+        default="Bearer",
+        min_length=1,
+        description="Scheme prefixing the knowledge credential in its auth header.",
+    )
     checkpoint_url: str | None = Field(
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
@@ -605,11 +635,43 @@ class AppConfig(BaseSettings):
             raise ValueError(msg)
         return self
 
+    @model_validator(mode="after")
+    def _check_knowledge_grant_carries_its_credential(self) -> Self:
+        """A granted session without a credential aborts boot.
+
+        The alternative is a session configured with a knowledge server it
+        cannot authenticate against, which fails at the first tool call
+        with a vendor error rather than at boot with a configuration one.
+        """
+        if self.notion_session_grants and self.notion_token is None:
+            granted = ", ".join(
+                session_type.value for session_type in self.notion_session_grants
+            )
+            msg = (
+                f"KODEZART_NOTION_SESSION_GRANTS names {granted} but "
+                f"KODEZART_NOTION_TOKEN is unset: a granted session would "
+                f"attach an unauthenticated knowledge server. Set the "
+                f"credential, or empty the grant list."
+            )
+            raise ValueError(msg)
+        return self
+
     def skills_selection(self) -> SkillsSelection:
         """The typed three-state selection threaded to executor sessions."""
         return SkillsSelection(
             mode=self.skills_mode,
             allowlist=tuple(self.skills_allowlist),
+        )
+
+    def knowledge_grant(self) -> KnowledgeGrant:
+        """The resolved grant threaded to executor sessions."""
+        return KnowledgeGrant(
+            granted=tuple(self.notion_session_grants),
+            server_name=self.notion_mcp_server_name,
+            server_url=self.notion_mcp_server_url,
+            auth_header=self.notion_mcp_auth_header,
+            auth_scheme=self.notion_mcp_auth_scheme,
+            credential=self.notion_token,
         )
 
     @classmethod
