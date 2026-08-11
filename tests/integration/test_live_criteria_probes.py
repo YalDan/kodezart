@@ -142,25 +142,79 @@ async def _generate_live(
     return criteria
 
 
-_NEGATION_MARKERS = ("no ", "not ", "never ", "without ", "n't ", "nor ")
+_CLAUSE_BOUNDARY = re.compile(r"[.;:!?]+(?=\s|$)")
+_INLINE_CODE = re.compile(r"`[^`]+`")
+
+_NEGATED = re.compile(
+    r"\b(?:no|not|never|without|nor|none|nothing|neither|cannot)\b|n't\b"
+)
+_PUNISHED = re.compile(
+    r"\b(?:is|are)\s+(?:an?\s+)?(?:hard\s+)?"
+    r"(?:fail|failure|violation|regression|defect)s?\b"
+    r"|\bfails\b"
+    r"|\bforbid(?:s|den)?\b"
+)
+_PUNISHED_INVERSION = re.compile(
+    r"\b(?:absence|absent|missing|omitted|omitting|omission|lacking|lacks|unless)\b"
+)
+_PRESERVED = re.compile(
+    r"\b(?:still|unchanged|byte-identical|remains?|stays?|kept|preserved|untouched)\b"
+)
+
+
+def _clauses(text: str) -> list[str]:
+    """Sentence-level clauses, with inline code opaque to the splitter.
+
+    Punctuation inside an inline-code span is part of the code — the dot
+    in ``RunOutcome.rolled_back`` and the colon in ``case ...:`` never
+    end a clause — and outside code a boundary needs trailing whitespace,
+    so an attribute dot never severs a token from the clause that
+    governs it.
+    """
+    masked = _INLINE_CODE.sub(
+        lambda match: re.sub(r"[.;:!?]", " ", match.group(0)),
+        text,
+    )
+    return [clause for clause in _CLAUSE_BOUNDARY.split(masked) if clause.strip()]
+
+
+def _guarded(clause: str) -> bool:
+    """Whether *clause* guards against its token rather than demanding it.
+
+    Three guard families, each judged over the whole governing clause:
+
+    - **negated** — the clause denies the token's presence ("contains no
+      occurrence of", "does NOT gain a case for");
+    - **preserved** — the clause pins existing state ("stays
+      byte-identical", "still carrying ... for wire compatibility"); the
+      probe's premise pins the completion surfaces free of the token, so
+      preserving what exists cannot demand adding it;
+    - **punished** — the clause deems the token's presence a failure ("a
+      ``case ...:`` arm is a hard fail", "fails the gate", "forbidden"),
+      unless it punishes the token's ABSENCE ("absence of the arm is a
+      hard fail"), which is a demand and stays one.
+    """
+    lowered = clause.lower()
+    if _NEGATED.search(lowered) or _PRESERVED.search(lowered):
+        return True
+    return bool(
+        _PUNISHED.search(lowered) and not _PUNISHED_INVERSION.search(lowered)
+    )
 
 
 def _demands(text: str, token: str) -> bool:
-    """Whether *text* demands *token* rather than forbidding it.
+    """Whether *text* demands *token* rather than guarding against it.
 
-    A criterion that PROHIBITS the token ("contains no reference to
-    ``rolled_back``", "never a bare ``git diff``") asserts the property
-    the probe checks; only a criterion demanding the token violates it.
-    The discriminator is deliberately minimal — a sentence segment
-    containing the token counts as a demand unless it carries a negation
-    marker — and the full transcript printed above is the evidence of
-    record for the verdict either way.
+    A criterion that GUARDS against the token asserts the property the
+    probe checks and is never an offender; the token is judged against
+    its governing clause, never against a fragment severed at an
+    attribute dot or inside an inline-code span.  The default is
+    conservative — a clause containing the token is a demand unless a
+    guard family exculpates it — and the full transcript printed above
+    is the evidence of record for the verdict either way.
     """
-    segments = re.split(r"[.;:!?]", text)
     return any(
-        token in segment
-        and not any(marker in segment.lower() for marker in _NEGATION_MARKERS)
-        for segment in segments
+        token in clause and not _guarded(clause) for clause in _clauses(text)
     )
 
 
@@ -244,6 +298,7 @@ async def test_live_generated_criteria_complete_behaviorally_not_literally(
     # the decoys name is NOT declared by the type, and one declared arm
     # is undiscriminated by the switch.
     assert "rolled_back" not in OUTCOME_MODULE
+    assert "rolled_back" not in RENDER_MODULE
     assert "plateaued" in OUTCOME_MODULE
     assert "plateaued" not in RENDER_MODULE
     assert "rolled_back" in LEGACY_MODULE
