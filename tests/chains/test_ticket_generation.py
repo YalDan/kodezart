@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 
 import pytest
+import structlog
 from pydantic import ValidationError
 
 from kodezart.chains.ticket_generation import TicketGenerationLoop
@@ -354,7 +355,7 @@ def _is_review_schema(output_format: dict[str, object]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Session resume lifecycle
+# KOD-65/AC-1 — no session is resumed, on any iteration, by either role
 # ---------------------------------------------------------------------------
 
 
@@ -367,17 +368,45 @@ async def test_first_call_passes_no_session_id() -> None:
     assert executor.calls[1]["session_id"] is None
 
 
-async def test_session_resume_lifecycle() -> None:
-    """First call: session_id=None (fresh). Subsequent: captured UUID (resume)."""
+async def test_no_call_in_a_revision_run_resumes_a_session() -> None:
+    """The revision iterations are the ones that died, and they resume nothing.
+
+    Both recorded deaths were revision-side: the resumed creator session
+    carried a dangling task notification, and the CLI answered it with a
+    zero-API-call turn that ended the SDK's receive loop before the
+    revision prompt was dequeued.  Asserted over EVERY call rather than
+    the first pair, because the second pair is where the resume was.
+
+    The executor hands back distinct, non-null session ids on both
+    schemas, so a reinstated resume shows up here as a real id.
+    """
     executor = _ScriptedReviewExecutor(review_outcomes=[False, True])
     loop = _make_loop(executor=executor)
     _ = [e async for e in loop.run(**_run_kwargs())]
+
     assert len(executor.calls) == 4
-    assert executor.calls[0]["session_id"] is None
-    assert executor.calls[1]["session_id"] is None
-    assert executor.calls[2]["session_id"] == "draft-session"
-    assert executor.calls[3]["session_id"] == "review-session"
-    assert "draft-session" != "review-session"
+    assert [call["session_id"] for call in executor.calls] == [None] * 4
+
+
+async def test_the_revision_breadcrumb_reports_the_null_resume() -> None:
+    """KOD-65/AC-3: the breadcrumb says what the revision call was handed."""
+    executor = _ScriptedReviewExecutor(
+        review_outcomes=[False, True],
+        reviewer_suggestions=["tighten the summary", "name the base ref"],
+    )
+    loop = _make_loop(executor=executor)
+    with structlog.testing.capture_logs() as logs:
+        _ = [e async for e in loop.run(**_run_kwargs())]
+
+    attempts = [entry for entry in logs if entry["event"] == "ticket_create_attempt"]
+    assert [entry["iteration"] for entry in attempts] == [1, 2]
+    assert [entry["resumed_session_id"] for entry in attempts] == [None, None]
+    assert attempts[1]["suggestion_count"] == 2
+    assert all(int(str(entry["prompt_chars"])) > 0 for entry in attempts)
+
+    reviews = [entry for entry in logs if entry["event"] == "ticket_review_attempt"]
+    assert [entry["iteration"] for entry in reviews] == [1, 2]
+    assert [entry["resumed_session_id"] for entry in reviews] == [None, None]
 
 
 # ---------------------------------------------------------------------------
