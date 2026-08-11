@@ -47,8 +47,14 @@ from tests.prompts.test_claude_opus_goldens import V5_SET
 LENS_NAMES = ("doc-verifier", "draft-critic", "explorer")
 
 
-def v5_provider() -> InRepoPromptRegistry:
-    """A registry over the set that declares the three lenses."""
+def v5_provider(
+    mode: TicketReviewMode = TicketReviewMode.REVIEWED,
+) -> InRepoPromptRegistry:
+    """A registry over the set that declares the three lenses, under *mode*.
+
+    One loader for both modes: a second copy resolved a different way is
+    how two suites come to disagree about what the set says.
+    """
     return InRepoPromptRegistry.load(
         sets_root=default_sets_root(),
         default_set=V5_SET,
@@ -56,7 +62,7 @@ def v5_provider() -> InRepoPromptRegistry:
         template_overrides={},
         bindings={},
         investigation_cap=configured_investigation_cap(),
-        ticket_review_mode=TicketReviewMode.REVIEWED,
+        ticket_review_mode=mode,
     )
 
 

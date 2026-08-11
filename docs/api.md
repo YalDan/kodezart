@@ -214,7 +214,7 @@ ids clears them on `terminal` from either frame.
 | ------------------------------ | ----------------------------------------------- |
 | `workflow_ticket_draft`        | `iteration`, `draft`                            |
 | `workflow_ticket_review`       | `iteration`, `approved`, `feedback`, `suggestions` |
-| `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`            |
+| `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`, `mode`    |
 | `workflow_scope_base`          | `baseBranch`, `baseRole`, `inputs`              |
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
@@ -230,6 +230,12 @@ ids clears them on `terminal` from either frame.
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.
+
+`workflow_ticket.approved` is three-state (`approved`, `unapproved`,
+`not_reviewed`) and rides beside `mode`. `not_reviewed` says no reviewer ran
+at all, which under the `create_only` mode is the compiled shape of the loop
+rather than a failure: a draft its reviewer rejected, a draft whose review
+budget ran out, and a draft nobody reviewed are three different facts.
 
 `workflow_artifacts.status` is three-state (`persisted`, `unchanged`,
 `ignored_by_target`). `ignored_by_target` is not a variant of success: the

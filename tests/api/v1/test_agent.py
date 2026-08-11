@@ -8,6 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient, Response
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -19,6 +20,8 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
+from tests.chains.test_dispatch_definitions import v5_provider
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
@@ -161,6 +164,17 @@ async def test_stream_query_missing_repo_source(agent_client: AsyncClient) -> No
 # project default fixture loop scope is "session".
 @pytest_asyncio.fixture(loop_scope="function")
 async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
+    async with _workflow_client(FakeTicketGenerator()) as client:
+        yield client
+
+
+# The ticket generator is a parameter because one test drives the REAL
+# create-only loop through this pipeline; everything else about the app is
+# the same app, so it is built once.
+@asynccontextmanager
+async def _workflow_client(
+    ticket_generator: object,
+) -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
     executor = FakeAgentExecutor(
         events=[
@@ -213,7 +227,7 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=gate,
-        ticket_generator=FakeTicketGenerator(),
+        ticket_generator=ticket_generator,
         merger=merger,
         git_base_url="https://github.com",
         git_remote="origin",
@@ -230,6 +244,24 @@ async def workflow_client() -> AsyncGenerator[AsyncClient, None]:
             base_url="http://test",
         ) as ac:
             yield ac
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def create_only_workflow_client() -> AsyncGenerator[AsyncClient, None]:
+    """The pipeline running the REAL ticket loop, compiled without a review arm."""
+    loop = TicketGenerationLoop(
+        service=AgentService(
+            executor=FakeAgentExecutor(events=[]),
+            workspace=FakeWorkspaceProvider(),
+            persister=None,
+        ),
+        workspace=FakeWorkspaceProvider(),
+        prompts=v5_provider(TicketReviewMode.CREATE_ONLY),
+        skills=SUPPRESS_ALL_SKILLS,
+        review_mode=TicketReviewMode.CREATE_ONLY,
+    )
+    async with _workflow_client(loop) as client:
+        yield client
 
 
 async def test_stream_workflow_sse(
@@ -559,3 +591,26 @@ async def test_no_emitted_event_carries_any_of_the_old_keys(
         if key in event
     }
     assert survivors == set()
+
+
+async def test_the_create_only_ticket_event_reaches_the_wire(
+    create_only_workflow_client: AsyncClient,
+) -> None:
+    """KOD-90-AC-8 — the three-state value and the mode, as a client sees them.
+
+    Driven through the real loop rather than a double: the payload is only
+    evidence if something produced it by running the mode.
+    """
+    async with create_only_workflow_client.stream(
+        "POST",
+        "/api/v1/agent/workflow",
+        json={"prompt": "fix a bug", "repoPath": "/tmp/fake"},
+    ) as response:
+        assert response.status_code == 200
+        events = await _collect_sse_events(response)
+
+    ticket_events = [e for e in events if e["type"] == "workflow_ticket"]
+    assert len(ticket_events) == 1
+    assert ticket_events[0]["approved"] == TicketApproval.NOT_REVIEWED.value
+    assert ticket_events[0]["mode"] == TicketReviewMode.CREATE_ONLY.value
+    assert ticket_events[0]["reviewRounds"] == 0
