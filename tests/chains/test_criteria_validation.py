@@ -240,6 +240,20 @@ def test_regeneration_bound_is_a_named_config_field() -> None:
     assert AppConfig().criteria_max_regeneration_rounds >= 0
 
 
+def test_the_regeneration_bound_defaults_to_one_round() -> None:
+    """One amendment round, then the halt — the shipped default, pinned.
+
+    The number is what separates "the sweep asked for an amendment" from
+    "these criteria are permanently infeasible".  At 1 a set the refuter
+    refuses twice ends the run BEFORE the loop, with the sweep as its
+    report.  A default of 0 would refuse the first amendment the sweep
+    asks for and halt on a repairable set; a larger one re-dispatches a
+    drafter that has already failed to repair the same set, spending
+    generator rounds to reach the same halt.
+    """
+    assert AppConfig().criteria_max_regeneration_rounds == 1
+
+
 def test_regeneration_bound_reads_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -536,9 +550,12 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
 # ---------------------------------------------------------------------------
 # KOD-53/AC-23, harness half — a scope criterion that names no base never
 # reaches the loop.  The criterion's other half asserts a property of the
-# criteria a MODEL generates; KOD-36 R3 rules that unrunnable here and
-# forbids substituting a rendered-prompt assertion for it, so the criterion
-# stays UNMET (KOD-53 R5) and nothing below claims otherwise.
+# criteria a MODEL generates, and it is NOT carried here: the 2026-08-11
+# [decision] on KOD-53 supersedes R5 for this criterion and moves that half
+# to the live probe in tests/integration/test_live_criteria_probes.py, which
+# runs the real generation path and judges its actual output.  KOD-36 R3 is
+# unchanged — substituting a rendered-prompt assertion for the model-behaviour
+# claim stays forbidden, and nothing below does it.
 # ---------------------------------------------------------------------------
 
 

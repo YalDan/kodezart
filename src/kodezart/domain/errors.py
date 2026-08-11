@@ -238,19 +238,24 @@ class CriteriaFanInError(Exception):
 
 
 class UngroundedVerdictError(Exception):
-    """Raised when an ungraded criterion reaches the accept gate naming nothing.
+    """Raised when a verdict or a resource claim arrives without its grounds.
 
-    One raise site: ``accept_gate.named_resource``.  It also fired during
-    the feasibility sweep, over a repair demanded with no evidence behind
-    it, until that sweep-time check was deleted; the obligation now lives
-    on ``CriterionFinding`` as a ``model_validator`` and fails as a
-    ``ValidationError`` at the model boundary, so no sweep-time raise
-    remains and this class no longer describes one.
+    Two raise surfaces.  The feasibility sweep raises it before anything
+    is recorded, on three grounds: a stated verdict its own evidence does
+    not derive (``_grounded``, comparing the statement with the derivation
+    ``classify_finding`` computed beside it), a repair demanded on a
+    criterion demonstrated satisfied at base (``classify_finding``), and a
+    measured uneconomic cost filed anywhere but the environment arm (both
+    ``_classify_criterion_side`` and ``_classify_no_repair``).  The accept
+    gate raises it at ``accept_gate.named_resource`` — the last check
+    before a resource name reaches a pull-request body.
 
-    The gate's own check is the last one before a resource name reaches a
-    pull-request body.  ``CriterionFeasibility`` carries no validator of
-    its own, so what keeps the field filled is the finding it was
-    projected from.
+    A single finding's completeness — a verdict arriving with its own
+    repair and its evidence fields filled — is checked earlier still, on
+    ``CriterionFinding``'s ``model_validator``, and fails as a
+    ``ValidationError`` at the model boundary.  ``CriterionFeasibility``
+    carries no validator of its own, so what keeps its fields filled is
+    the finding it was projected from.
     """
 
     def __init__(self, message: str, *, criterion_id: str) -> None:

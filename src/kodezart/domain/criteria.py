@@ -9,6 +9,7 @@ echoed string drifts, and KOD-11 measured it drifting.
 from collections.abc import Sequence
 
 from kodezart.types.domain.criteria import (
+    CRITERION_ID_PREFIX,
     CriteriaArtifact,
     CriteriaValidation,
     CriterionClass,
@@ -19,19 +20,18 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 
-_ID_PREFIX = "AC-"
-
 
 def mint_criterion_id(index: int) -> CriterionId:
     """The identity of the criterion at 1-based *index*.
 
     The single construction site for a ``CriterionId``, so no other surface
-    knows the ``AC-n`` shape and none may invent one.
+    knows the ``AC-n`` shape and none may invent one.  The prefix is the
+    one the format pattern is built from, so a minted id always matches it.
     """
     if index < 1:
         msg = f"Criterion positions are 1-based; got {index}"
         raise ValueError(msg)
-    return CriterionId(f"{_ID_PREFIX}{index}")
+    return CriterionId(f"{CRITERION_ID_PREFIX}{index}")
 
 
 def mint_criteria(

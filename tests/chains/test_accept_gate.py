@@ -14,13 +14,12 @@ import pytest
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.domain.accept_gate import (
-    FLAGGED_HEADING,
     accept_verdict,
-    append_flagged_section,
     flagged_items,
     gate_cleared,
 )
 from kodezart.domain.errors import UngroundedVerdictError
+from kodezart.domain.pr_body import FLAGGED_HEADING, append_flagged_section
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem, SherlockFlag
 from kodezart.types.domain.agent import (

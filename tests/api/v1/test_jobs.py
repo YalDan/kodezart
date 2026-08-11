@@ -150,40 +150,50 @@ async def _drain(queue: AsyncioJobQueue, job_id: str) -> list[AgentEvent]:
     return [event async for event in queue.attach(job_id=job_id)]
 
 
+# Waits are bounded by wall clock, not by a yield count: a fixed count of
+# zero-second yields underestimates how many scheduler turns a slow runner
+# needs, which made these waits flake on CI while passing locally.
+_WAIT_TIMEOUT = 30.0
+_WAIT_YIELD = 0.001
+
+
 async def _wait_terminal(
-    queue: AsyncioJobQueue, job_id: str, *, ticks: int = 400
+    queue: AsyncioJobQueue, job_id: str, *, timeout: float = _WAIT_TIMEOUT
 ) -> None:
     """Yield to the loop until *job_id* reaches TERMINAL, through the port."""
-    for _ in range(ticks):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
         record = await queue.get(job_id=job_id)
         if record is not None and record.state is JobState.TERMINAL:
             return
-        await asyncio.sleep(0)
+        await asyncio.sleep(_WAIT_YIELD)
     msg = f"job {job_id} never reached TERMINAL"
     raise AssertionError(msg)
 
 
 async def _wait_truncated(
-    queue: AsyncioJobQueue, job_id: str, *, ticks: int = 400
+    queue: AsyncioJobQueue, job_id: str, *, timeout: float = _WAIT_TIMEOUT
 ) -> None:
     """Yield to the loop until *job_id*'s record is marked truncated."""
-    for _ in range(ticks):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
         record = await queue.get(job_id=job_id)
         if record is not None and record.truncated:
             return
-        await asyncio.sleep(0)
+        await asyncio.sleep(_WAIT_YIELD)
     msg = f"job {job_id} was never marked truncated"
     raise AssertionError(msg)
 
 
-async def _until(predicate: object, *, ticks: int = 200) -> None:
+async def _until(predicate: object, *, timeout: float = _WAIT_TIMEOUT) -> None:
     """Yield to the loop until *predicate* holds. Fails loudly on timeout."""
     check = predicate
     assert callable(check)
-    for _ in range(ticks):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
         if check():
             return
-        await asyncio.sleep(0)
+        await asyncio.sleep(_WAIT_YIELD)
     msg = "condition never became true"
     raise AssertionError(msg)
 
