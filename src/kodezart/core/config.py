@@ -111,12 +111,6 @@ class AppConfig(BaseSettings):
         default=None,
         description="Claude model override. None uses SDK default.",
     )
-    max_fix_rounds: int = Field(
-        default=2,
-        ge=0,
-        le=10,
-        description="Maximum automatic fix attempts after review feedback.",
-    )
     remediation_max_rounds: int = Field(
         default=1,
         ge=1,

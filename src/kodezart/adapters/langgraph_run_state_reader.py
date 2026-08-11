@@ -25,7 +25,7 @@ _RESERVED_NODES: frozenset[str] = frozenset({"__input__", "__start__"})
 # which are ``WorkflowState``'s own initial values.
 _RUN_STATE_CHANNELS: tuple[str, ...] = (
     "total_iterations",
-    "fix_rounds_used",
+    "remediation_rounds_used",
     "accept_verdict",
     "merged",
     "review_passed",

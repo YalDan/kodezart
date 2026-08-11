@@ -1,8 +1,10 @@
 """Tests for RalphWorkflowEngine (outer pipeline) with fakes."""
 
 import asyncio
+import re
 import uuid
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 from langchain_core.runnables import RunnableConfig
@@ -10,6 +12,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
+from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.errors import StaleBaseError
@@ -23,8 +26,10 @@ from kodezart.types.domain.agent import (
     WorkflowCIEvent,
     WorkflowCompleteEvent,
     WorkflowCriteriaEvent,
+    WorkflowCriteriaValidationEvent,
     WorkflowIterationEvent,
     WorkflowPREvent,
+    WorkflowRemediationEvent,
     WorkflowReviewEvent,
     WorkflowScopeBaseEvent,
     WorkflowTicketEvent,
@@ -42,6 +47,7 @@ from kodezart.types.domain.consolidation import (
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
@@ -56,12 +62,12 @@ from tests.fakes import (
     FakePRCreator,
     FakeQualityGate,
     FakeRefPublisher,
+    FakeRemediator,
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
     RecordingPromptProvider,
-    SequentialCIMonitor,
     make_dispatched_criteria,
     make_failing_evaluation,
     make_passing_evaluation,
@@ -87,7 +93,8 @@ def _make_engine(
     pr_creator: FakePRCreator | None = None,
     ci_monitor: FakeCIMonitor | None = None,
     ref_publisher: FakeRefPublisher | None = None,
-    max_fix_rounds: int = 2,
+    remediator: FakeRemediator | None = None,
+    remediation_max_rounds: int = 1,
     artifact_persister: FakeArtifactPersister | None = None,
     prompts: RecordingPromptProvider | None = None,
     git: FakeGitService | None = None,
@@ -126,7 +133,8 @@ def _make_engine(
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
         ref_publisher=ref_publisher or FakeRefPublisher(),
-        max_fix_rounds=max_fix_rounds,
+        remediator=remediator,
+        remediation_max_rounds=remediation_max_rounds,
         artifact_persister=artifact_persister,
     )
 
@@ -1248,7 +1256,8 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
-        max_fix_rounds=2,
+        remediator=FakeRemediator(),
+        remediation_max_rounds=2,
         artifact_persister=None,
     )
 
@@ -1324,7 +1333,7 @@ async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
         quality_gate=gate,
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
-        max_fix_rounds=0,
+        remediator=None,
     )
 
     _ = [
@@ -1343,8 +1352,8 @@ async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
     comment_calls = [c for c in pr_creator.calls if c.get("method") == "comment_on_pr"]
     assert len(comment_calls) >= 1
     body = str(comment_calls[0]["body"])
-    assert "## kodezart: automated fix budget exhausted" in body
-    assert "Fix rounds used: 0/0" in body
+    assert "## kodezart: remediation budget exhausted" in body
+    assert "Remediation rounds used: 0/1" in body
     assert "CI failed: ci/test" in body
 
 
@@ -1552,7 +1561,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         cache=FakeRepoCache(),
         pr_creator=None,
         ci_monitor=None,
-        max_fix_rounds=0,
+        remediator=None,
         artifact_persister=None,
     )
 
@@ -1600,7 +1609,8 @@ async def test_workflow_ci_fails_budget_remaining_triggers_fix() -> None:
         quality_gate=gate,
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
-        max_fix_rounds=1,
+        remediator=FakeRemediator(),
+        remediation_max_rounds=1,
     )
 
     events = [
@@ -1704,7 +1714,8 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
-        max_fix_rounds=1,
+        remediator=FakeRemediator(),
+        remediation_max_rounds=1,
         artifact_persister=None,
     )
 
@@ -1730,8 +1741,8 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
     comment_calls = [c for c in pr_creator.calls if c.get("method") == "comment_on_pr"]
     assert len(comment_calls) >= 1
     body = str(comment_calls[0]["body"])
-    assert "## kodezart: automated fix budget exhausted" in body
-    assert "Fix rounds used:" in body
+    assert "## kodezart: remediation budget exhausted" in body
+    assert "Remediation rounds used:" in body
 
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
@@ -1857,7 +1868,7 @@ def test_route_after_ci_no_pr_number_routes_complete() -> None:
     engine = _make_engine(
         pr_creator=FakePRCreator(),
         ci_monitor=FakeCIMonitor(passed=False),
-        max_fix_rounds=0,
+        remediator=None,
     )
     state: WorkflowState = {
         "feature_branch": "kodezart/test",
@@ -1897,7 +1908,8 @@ async def test_route_after_ci_budget_remaining_routes_fix() -> None:
         quality_gate=gate,
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
-        max_fix_rounds=1,
+        remediator=FakeRemediator(),
+        remediation_max_rounds=1,
     )
 
     events = [
@@ -2180,225 +2192,6 @@ async def test_backup_cleanup_failure_does_not_block_complete() -> None:
 # -- CI fix loop happy-path tests --------------------------------------------
 
 
-async def test_workflow_ci_fails_then_passes_after_fix() -> None:
-    """CI fails once, fix applied, CI passes on retry → complete(ci_passed=True).
-
-    Covers the primary gap: the happy path of the CI fix loop.
-    Flow: merge → review passes → open_pr → CI FAILS →
-    fix_code → review passes → CI PASSES → complete.
-    """
-    passing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": True,
-                "reasoning": "Tests pass.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": True,
-                "reasoning": "Tests pass.",
-            },
-        ],
-    }
-    executor = _SequentialReviewExecutor(
-        review_results=[passing_review, passing_review],
-    )
-    service = AgentService(
-        executor=executor,
-        workspace=FakeWorkspaceProvider(),
-        persister=FakeChangePersister(),
-    )
-    pr_creator = FakePRCreator()
-    ci_monitor = SequentialCIMonitor(
-        results=[
-            (False, "CI failed: lint"),
-            (True, "All CI checks passed."),
-        ],
-    )
-    merger = FakeBranchMerger()
-    gate = FakeQualityGate(
-        events=[],
-        evaluation=make_passing_evaluation(),
-        total_iterations=1,
-        last_commit_sha="a" * 40,
-    )
-    engine = RalphWorkflowEngine(
-        gate=PassThroughGate(),
-        skills=SUPPRESS_ALL_SKILLS,
-        prompts=make_prompt_provider(),
-        service=service,
-        quality_gate=gate,
-        ticket_generator=FakeTicketGenerator(),
-        merger=merger,
-        git_base_url="https://github.com",
-        git_remote="origin",
-        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
-        cache=FakeRepoCache(),
-        pr_creator=pr_creator,
-        ci_monitor=ci_monitor,
-        max_fix_rounds=1,
-        artifact_persister=None,
-    )
-
-    events = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url="https://github.com/owner/repo",
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    # P2-AC02 / P2-AC03: Two CI events — first fails, second passes
-    ci_events = [e for e in events if isinstance(e, WorkflowCIEvent)]
-    assert len(ci_events) == 2
-    assert ci_events[0].passed is False
-    assert ci_events[1].passed is True
-
-    # P2-AC04: Two review events, both passing
-    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
-    assert len(review_events) == 2
-    assert all(r.passed is True for r in review_events)
-
-    # P2-AC05: Complete event has ci_passed=True (monitor_ci overwrites fix_code reset)
-    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
-    assert len(complete_events) == 1
-    assert complete_events[0].ci_passed is True
-
-    # P2-AC06: CI monitor polled feature branch both times
-    assert len(ci_monitor.calls) == 2
-    refs = [str(c["ref"]) for c in ci_monitor.calls]
-    assert refs[0] == refs[1]  # same feature branch both times
-
-    # P2-AC07: PR opened exactly once
-    create_calls = [c for c in pr_creator.calls if c.get("method") == "create_pr"]
-    assert len(create_calls) == 1
-
-    # P2-AC08: No failure comment posted (fix succeeded)
-    comment_calls = [c for c in pr_creator.calls if c.get("method") == "comment_on_pr"]
-    assert len(comment_calls) == 0
-
-    # P2-AC09: Fix prompt includes CI summary. The fix path now routes
-    # through _run_quality_gate (gate.calls[1] is the fix invocation;
-    # gate.calls[0] is the pre-merge ralph-loop invocation).
-    assert len(gate.calls) == 2
-    fix_prompt = str(gate.calls[1].get("prompt", ""))
-    assert "## CI Failures\nCI failed: lint" in fix_prompt
-
-
-async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> None:
-    """CI fails twice, two fix rounds, CI passes on third check → complete.
-
-    Covers multi-round fix loop with max_fix_rounds=2.
-    Flow: CI FAILS → fix(1) → review passes → CI FAILS →
-    fix(2) → review passes → CI PASSES → complete.
-    """
-    passing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": True,
-                "reasoning": "Tests pass.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": True,
-                "reasoning": "Tests pass.",
-            },
-        ],
-    }
-    executor = _SequentialReviewExecutor(
-        review_results=[passing_review, passing_review, passing_review],
-    )
-    service = AgentService(
-        executor=executor,
-        workspace=FakeWorkspaceProvider(),
-        persister=FakeChangePersister(),
-    )
-    pr_creator = FakePRCreator()
-    ci_monitor = SequentialCIMonitor(
-        results=[
-            (False, "CI failed: lint"),
-            (False, "CI failed: test"),
-            (True, "All CI checks passed."),
-        ],
-    )
-    merger = FakeBranchMerger()
-    gate = FakeQualityGate(
-        events=[],
-        evaluation=make_passing_evaluation(),
-        total_iterations=1,
-        last_commit_sha="a" * 40,
-    )
-    engine = RalphWorkflowEngine(
-        gate=PassThroughGate(),
-        skills=SUPPRESS_ALL_SKILLS,
-        prompts=make_prompt_provider(),
-        service=service,
-        quality_gate=gate,
-        ticket_generator=FakeTicketGenerator(),
-        merger=merger,
-        git_base_url="https://github.com",
-        git_remote="origin",
-        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
-        cache=FakeRepoCache(),
-        pr_creator=pr_creator,
-        ci_monitor=ci_monitor,
-        max_fix_rounds=2,
-        artifact_persister=None,
-    )
-
-    events = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url="https://github.com/owner/repo",
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    # P2-AC10 / P2-AC11: Three CI events — False, False, True
-    ci_events = [e for e in events if isinstance(e, WorkflowCIEvent)]
-    assert len(ci_events) == 3
-    assert ci_events[0].passed is False
-    assert ci_events[1].passed is False
-    assert ci_events[2].passed is True
-
-    # P2-AC12: Three review events, all passing
-    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
-    assert len(review_events) == 3
-    assert all(r.passed is True for r in review_events)
-
-    # P2-AC13: Complete event has ci_passed=True
-    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
-    assert len(complete_events) == 1
-    assert complete_events[0].ci_passed is True
-
-    # P2-AC14: 3 consolidate calls (1 initial + 2 fixes)
-    merge_calls = [c for c in merger.calls if c.get("method") == "consolidate"]
-    assert len(merge_calls) == 3
-
-    # P2-AC15: CI monitor polled 3 times
-    assert len(ci_monitor.calls) == 3
-
-    # P2-AC16: No failure comment posted
-    comment_calls = [c for c in pr_creator.calls if c.get("method") == "comment_on_pr"]
-    assert len(comment_calls) == 0
-
-
 # ---------------------------------------------------------------------------
 # Consolidation event + four-status routing tests
 # ---------------------------------------------------------------------------
@@ -2652,7 +2445,7 @@ def _make_engine_with_executor(
     merger: FakeBranchMerger,
     pr_creator: FakePRCreator | None = None,
     ci_monitor: FakeCIMonitor | None = None,
-    max_fix_rounds: int = 2,
+    remediation_max_rounds: int = 1,
     prompts: RecordingPromptProvider | None = None,
 ) -> RalphWorkflowEngine:
     """Build an engine wired to a pre-configured executor (e.g. _Sequential)."""
@@ -2681,286 +2474,9 @@ def _make_engine_with_executor(
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
-        max_fix_rounds=max_fix_rounds,
+        remediation_max_rounds=remediation_max_rounds,
         artifact_persister=None,
     )
-
-
-async def test_fix_code_node_divergent_routes_to_comment_failure_when_pr_url_set() -> (
-    None
-):
-    """fix_code DIVERGENT + pr_url set → comment_failure → complete."""
-    failing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-        ],
-    }
-    passing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": True,
-                "reasoning": "Tests pass.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": True,
-                "reasoning": "Tests pass.",
-            },
-        ],
-    }
-    # 1st review: pass → open_pr; 2nd review (after CI fail + fix): fail → comment.
-    # But here we want the fix consolidation itself to DIVERGE, so we drive
-    # the review path with: pass, then CI fail triggers fix, fix DIVERGES,
-    # _route_after_fix sees merge_error + pr_url set → comment_failure.
-    executor = _SequentialReviewExecutor(
-        review_results=[passing_review, failing_review],
-    )
-    pr_creator = FakePRCreator()
-    ci_monitor = FakeCIMonitor(passed=False, summary="CI failed: lint")
-    merger = FakeBranchMerger(
-        consolidation_outcomes=[
-            ConsolidationOutcome(
-                status=ConsolidationStatus.FAST_FORWARDED,
-                feature_tip_sha="a" * 40,
-            ),  # post-loop merge
-            ConsolidationOutcome(
-                status=ConsolidationStatus.DIVERGENT,
-                feature_tip_sha="0" * 40,
-            ),  # fix consolidation diverges
-        ],
-    )
-    engine = _make_engine_with_executor(
-        executor=executor,
-        merger=merger,
-        pr_creator=pr_creator,
-        ci_monitor=ci_monitor,
-        max_fix_rounds=1,
-    )
-
-    _ = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url="https://github.com/owner/repo",
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    comment_calls = [c for c in pr_creator.calls if c.get("method") == "comment_on_pr"]
-    assert len(comment_calls) >= 1
-
-
-async def test_fix_code_node_divergent_routes_to_complete_when_no_pr_url() -> None:
-    """fix_code DIVERGENT + no pr_url → complete (no comment_failure)."""
-    failing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-        ],
-    }
-    executor = _SequentialReviewExecutor(review_results=[failing_review])
-    # No pr_creator, no ci_monitor — workflow stays in review/fix loop.
-    merger = FakeBranchMerger(
-        consolidation_outcomes=[
-            ConsolidationOutcome(
-                status=ConsolidationStatus.FAST_FORWARDED,
-                feature_tip_sha="a" * 40,
-            ),  # post-loop merge succeeds
-            ConsolidationOutcome(
-                status=ConsolidationStatus.DIVERGENT,
-                feature_tip_sha="0" * 40,
-            ),  # fix consolidation diverges
-        ],
-    )
-    engine = _make_engine_with_executor(
-        executor=executor,
-        merger=merger,
-        pr_creator=None,
-        ci_monitor=None,
-        max_fix_rounds=1,
-    )
-
-    events = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url=None,
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    # Workflow completes; no PR comment was made (no PR exists).
-    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
-    assert len(complete_events) == 1
-    assert complete_events[0].pr_url is None
-
-
-async def test_fix_code_node_already_integrated_does_not_raise_advances_fix_round() -> (
-    None
-):
-    """fix_code ALREADY_INTEGRATED → no raise, fix_rounds_used += 1, route to review.
-
-    The empty-changeset escape clause in the evaluator prompt fires on the
-    subsequent review; the second review returns failing, advancing
-    fix_rounds_used to the limit and terminating.
-    """
-    failing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-        ],
-    }
-    # Two failing reviews so fix runs (and fix_rounds_used reaches max_fix_rounds=1).
-    executor = _SequentialReviewExecutor(
-        review_results=[failing_review, failing_review],
-    )
-    merger = FakeBranchMerger(
-        consolidation_outcomes=[
-            ConsolidationOutcome(
-                status=ConsolidationStatus.FAST_FORWARDED,
-                feature_tip_sha="a" * 40,
-            ),  # post-loop merge
-            ConsolidationOutcome(
-                status=ConsolidationStatus.ALREADY_INTEGRATED,
-                feature_tip_sha="a" * 40,
-            ),  # fix's consolidate sees nothing new
-        ],
-    )
-    engine = _make_engine_with_executor(
-        executor=executor,
-        merger=merger,
-        pr_creator=None,
-        ci_monitor=None,
-        max_fix_rounds=1,
-    )
-
-    events = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url=None,
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    # Did NOT raise.  Workflow terminated; two reviews occurred.
-    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
-    assert len(review_events) == 2
-    # Second review's fix_round counter is 1 (advanced after fix_code).
-    assert review_events[1].fix_round == 1
-    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
-    assert len(complete_events) == 1
-
-
-async def test_fix_code_node_source_missing_routes_terminally() -> None:
-    """fix_code SOURCE_MISSING populates merge_error and routes terminally.
-
-    Unlike the post-loop SOURCE_MISSING (which raises — programming
-    error), the fix-node SOURCE_MISSING is folded into the merge_error
-    surface so the workflow terminates gracefully via _route_after_fix.
-    """
-    failing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-        ],
-    }
-    executor = _SequentialReviewExecutor(review_results=[failing_review])
-    merger = FakeBranchMerger(
-        consolidation_outcomes=[
-            ConsolidationOutcome(
-                status=ConsolidationStatus.FAST_FORWARDED,
-                feature_tip_sha="a" * 40,
-            ),  # post-loop merge
-            ConsolidationOutcome(
-                status=ConsolidationStatus.SOURCE_MISSING,
-                feature_tip_sha="a" * 40,
-            ),  # fix's source push never happened
-        ],
-    )
-    engine = _make_engine_with_executor(
-        executor=executor,
-        merger=merger,
-        pr_creator=None,
-        ci_monitor=None,
-        max_fix_rounds=1,
-    )
-
-    events = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url=None,
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    # Workflow completes without raising (fix-node SOURCE_MISSING is non-terminal).
-    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
-    assert len(complete_events) == 1
-    # Only one review (the first); no re-review after the failed fix consolidation.
-    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
-    assert len(review_events) == 1
 
 
 class _SequentialQualityGate:
@@ -3036,150 +2552,6 @@ class _SequentialQualityGate:
                 plateau_window=2,
             ),
         )
-
-
-async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> None:
-    """fix_code routes through _run_quality_gate without overwriting state['accepted'].
-
-    Asserts (a) exactly two gate invocations across the workflow,
-    (b) the fix-path call's ``base_branch`` equals ``feature_branch`` and
-    ``acceptance_criteria`` is forwarded, and (c) the terminal
-    ``WorkflowCompleteEvent.accepted`` is LAST ROUND WINS — the fix
-    round's gate verdict, never the pre-merge round's.
-    """
-    failing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-        ],
-    }
-    passing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": True,
-                "reasoning": "Tests pass now.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": True,
-                "reasoning": "Tests pass now.",
-            },
-        ],
-    }
-    executor = _SequentialReviewExecutor(
-        review_results=[failing_review, passing_review],
-    )
-    # Pre-merge gate returns accepted=True → merge proceeds.
-    # Fix-path gate returns accepted=False → would-be regression case if
-    # _fix_code_node propagated it into state['accepted'].
-    gate = _SequentialQualityGate(
-        evaluations=[make_passing_evaluation(), make_failing_evaluation()],
-    )
-    merger = FakeBranchMerger(
-        consolidation_outcomes=[
-            ConsolidationOutcome(
-                status=ConsolidationStatus.FAST_FORWARDED,
-                feature_tip_sha="a" * 40,
-            ),  # post-loop merge
-            ConsolidationOutcome(
-                status=ConsolidationStatus.FAST_FORWARDED,
-                feature_tip_sha="c" * 40,
-            ),  # fix consolidation
-        ],
-    )
-    service = AgentService(
-        executor=executor,
-        workspace=FakeWorkspaceProvider(),
-        persister=FakeChangePersister(),
-    )
-    engine = RalphWorkflowEngine(
-        gate=PassThroughGate(),
-        skills=SUPPRESS_ALL_SKILLS,
-        prompts=make_prompt_provider(),
-        service=service,
-        quality_gate=gate,
-        ticket_generator=FakeTicketGenerator(),
-        merger=merger,
-        git_base_url="https://github.com",
-        git_remote="origin",
-        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
-        cache=FakeRepoCache(),
-        pr_creator=FakePRCreator(),
-        ci_monitor=FakeCIMonitor(passed=True),
-        max_fix_rounds=2,
-        artifact_persister=None,
-    )
-
-    events = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url="https://github.com/owner/repo",
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    # (a) Exactly two gate invocations: one pre-merge, one fix-path.
-    assert len(gate.calls) == 2
-
-    # (b) Differential bases: pre-merge gate uses ctx.base_branch ("main"),
-    # fix-path gate uses state["feature_branch"] (so the inner evaluator
-    # diffs against the merged feature tip, not main). Asserting BOTH
-    # bases proves the two call sites pass different bases — a future
-    # refactor that accidentally forwarded feature_branch to BOTH calls
-    # would otherwise slip through.
-    assert gate.calls[0]["base_branch"] == "main"
-    fix_call = gate.calls[1]
-    assert fix_call["base_branch"] == fix_call["feature_branch"]
-    assert isinstance(fix_call["base_branch"], str)
-    assert fix_call["base_branch"].startswith("kodezart/")
-    # Fix-path kwargs: acceptance criteria forwarded; ralph_branch is a
-    # fresh kodezart/...-ralph-... branch off the feature branch; the
-    # fix prompt carries the review-failure body so the routed-through-
-    # gate path preserves the fix-prompt assembly (incl. the
-    # "## Review Failures" header from _fix_code_node).
-    assert fix_call["acceptance_criteria"] == make_dispatched_criteria()
-    assert isinstance(fix_call["ralph_branch"], str)
-    assert isinstance(fix_call["feature_branch"], str)
-    assert fix_call["ralph_branch"].startswith(fix_call["feature_branch"])
-    assert "-ralph-" in fix_call["ralph_branch"]
-    assert "## Review Failures" in str(fix_call["prompt"])
-
-    # (c) Terminal accepted is LAST ROUND WINS: the fix gate returned
-    # accepted=False, so the terminal event reports False even though the
-    # pre-merge round accepted. total_iterations is the SUM over both
-    # rounds, not round zero's number.
-    complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
-    assert len(complete_events) == 1
-    assert complete_events[0].accepted is False
-    assert complete_events[0].total_iterations == 2
-
-    # (d) Downstream SSE consumers receive at least one
-    # ``WorkflowIterationEvent`` per fix round in addition to the
-    # pre-merge round, because ``_run_quality_gate`` calls
-    # ``writer(event)`` on every inner event. A regression that
-    # dropped the writer propagation (or that reverted the fix path
-    # to the event-discarding ``stream_workflow`` consumer) would
-    # otherwise slip through unnoticed.
-    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
-    assert len(iteration_events) >= 2
 
 
 async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs() -> (
@@ -3855,7 +3227,8 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
         cache=FakeRepoCache(),
         pr_creator=None,
         ci_monitor=None,
-        max_fix_rounds=2,
+        remediator=FakeRemediator(),
+        remediation_max_rounds=2,
         artifact_persister=None,
     )
 
@@ -3875,176 +3248,6 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
     complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
     assert complete.ci_passed is None
     assert complete.outcome is WorkflowOutcome.review_passed_no_pr_adapter
-
-
-async def test_fix_round_divergent_still_sets_ci_passed_false() -> None:
-    """The DIVERGENT / SOURCE_MISSING failure write is unchanged."""
-    failing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-        ],
-    }
-    executor = _SequentialReviewExecutor(review_results=[failing_review])
-    service = AgentService(
-        executor=executor,
-        workspace=FakeWorkspaceProvider(),
-        persister=FakeChangePersister(),
-    )
-    merger = FakeBranchMerger(
-        consolidation_outcomes=[
-            ConsolidationOutcome(
-                status=ConsolidationStatus.FAST_FORWARDED,
-                feature_tip_sha="a" * 40,
-            ),
-            ConsolidationOutcome(
-                status=ConsolidationStatus.DIVERGENT,
-                feature_tip_sha="d" * 40,
-            ),
-        ],
-    )
-    engine = RalphWorkflowEngine(
-        gate=PassThroughGate(),
-        skills=SUPPRESS_ALL_SKILLS,
-        prompts=make_prompt_provider(),
-        service=service,
-        quality_gate=FakeQualityGate(
-            events=[],
-            evaluation=make_passing_evaluation(),
-            total_iterations=1,
-            last_commit_sha="a" * 40,
-        ),
-        ticket_generator=FakeTicketGenerator(),
-        merger=merger,
-        git_base_url="https://github.com",
-        git_remote="origin",
-        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
-        cache=FakeRepoCache(),
-        pr_creator=None,
-        ci_monitor=None,
-        max_fix_rounds=2,
-        artifact_persister=None,
-    )
-
-    events = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url=None,
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
-    assert complete.ci_passed is False
-    assert complete.error is not None
-    assert complete.outcome is WorkflowOutcome.fix_consolidation_failed
-
-
-async def test_terminal_totals_are_cumulative_and_last_round_wins() -> None:
-    """total_iterations sums both rounds; accepted is the fix round's verdict.
-
-    A run whose fix round succeeds must also reach the backup-cleanup
-    gate at _complete_node.
-    """
-    failing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": False,
-                "reasoning": "Tests fail.",
-            },
-        ],
-    }
-    passing_review: dict[str, object] = {
-        "criteriaResults": [
-            {
-                "criterionId": "AC-1",
-                "criterion": "Tests pass",
-                "passed": True,
-                "reasoning": "Fixed.",
-            },
-            {
-                "criterionId": "AC-2",
-                "criterion": "No lint errors",
-                "passed": True,
-                "reasoning": "Fixed.",
-            },
-        ],
-    }
-    executor = _SequentialReviewExecutor(
-        review_results=[failing_review, passing_review],
-    )
-    service = AgentService(
-        executor=executor,
-        workspace=FakeWorkspaceProvider(),
-        persister=FakeChangePersister(),
-    )
-    # Pre-merge round runs 2 iterations; the fix round runs 3 more.
-    gate = _SequentialQualityGate(
-        evaluations=[make_passing_evaluation(), make_passing_evaluation()],
-        iterations=[2, 3],
-    )
-    merger = FakeBranchMerger()
-    engine = RalphWorkflowEngine(
-        gate=PassThroughGate(),
-        skills=SUPPRESS_ALL_SKILLS,
-        prompts=make_prompt_provider(),
-        service=service,
-        quality_gate=gate,
-        ticket_generator=FakeTicketGenerator(),
-        merger=merger,
-        git_base_url="https://github.com",
-        git_remote="origin",
-        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
-        cache=FakeRepoCache(),
-        pr_creator=None,
-        ci_monitor=None,
-        max_fix_rounds=2,
-        artifact_persister=None,
-    )
-
-    events = [
-        e
-        async for e in engine.run(
-            prompt="fix it",
-            repo_path="/tmp/fake",
-            repo_url=None,
-            base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
-            allowed_tools=["Bash"],
-            cache_key=uuid.uuid4().hex,
-        )
-    ]
-
-    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
-    assert complete.total_iterations == 5
-    assert complete.accepted is True
-    cleanup_calls = [
-        c for c in merger.calls if c.get("method") == "cleanup_backup_branches"
-    ]
-    assert len(cleanup_calls) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -4296,3 +3499,215 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
                 cache_key=uuid.uuid4().hex,
             )
         ]
+
+
+# ---------------------------------------------------------------------------
+# KOD-48: every failure route reaches one remediation component
+# ---------------------------------------------------------------------------
+
+
+def _graph_nodes(engine: RalphWorkflowEngine) -> set[str]:
+    return set(engine._compiled.get_graph().nodes)
+
+
+def _failing_gate() -> FakeQualityGate:
+    return FakeQualityGate(
+        events=[],
+        evaluation=make_failing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="b" * 40,
+    )
+
+
+async def _failing_run(
+    *,
+    remediator: FakeRemediator,
+    remediation_max_rounds: int = 1,
+    ci_monitor: FakeCIMonitor | None = None,
+    pr_creator: FakePRCreator | None = None,
+    quality_gate: FakeQualityGate | None = None,
+) -> list[AgentEvent]:
+    engine = _make_engine(
+        quality_gate=quality_gate if quality_gate is not None else _failing_gate(),
+        remediator=remediator,
+        remediation_max_rounds=remediation_max_rounds,
+        pr_creator=pr_creator,
+        ci_monitor=ci_monitor,
+    )
+    return [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url="https://github.com/owner/repo",
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+
+def test_the_single_shot_fix_node_is_gone_from_the_compiled_graph() -> None:
+    """KOD-48/AC-1, AC-8: replaced outright, no legacy path kept alongside."""
+    nodes = _graph_nodes(_make_engine(remediator=FakeRemediator()))
+
+    assert "fix_code" not in nodes
+    assert "remediate" in nodes
+
+
+def test_the_remediation_node_exists_even_with_no_remediator_wired() -> None:
+    """The graph shape is one shape — the budget decides, not the topology."""
+    assert "remediate" in _graph_nodes(_make_engine())
+
+
+async def test_a_loop_that_never_accepts_opens_a_round_with_loop_evidence() -> None:
+    """KOD-48/AC-2, AC-9: the loop entry, carrying loop-failure evidence."""
+    remediator = FakeRemediator()
+
+    events = await _failing_run(remediator=remediator)
+
+    assert len(remediator.calls) == 1
+    request = remediator.calls[0]
+    assert request.entry is RemediationEntry.loop_not_accepted
+    assert "ended without acceptance" in request.failure_evidence
+    assert request.work_base_ref.endswith("-best")
+    remediation = next(e for e in events if isinstance(e, WorkflowRemediationEvent))
+    assert remediation.entry is RemediationEntry.loop_not_accepted
+
+
+async def test_a_ci_failure_opens_a_round_with_the_ci_summary_as_evidence() -> None:
+    """KOD-48/AC-1, AC-9: the CI entry, carrying the CI evidence."""
+    remediator = FakeRemediator()
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+
+    _ = await _failing_run(
+        remediator=remediator,
+        quality_gate=gate,
+        pr_creator=FakePRCreator(),
+        ci_monitor=FakeCIMonitor(passed=False, summary="CI failed: ci/test"),
+    )
+
+    assert remediator.calls
+    request = remediator.calls[0]
+    assert request.entry is RemediationEntry.ci_failure
+    assert request.failure_evidence == "CI failed: ci/test"
+    assert request.work_base_ref == request.work_branch
+
+
+async def test_both_entries_are_served_by_one_component_and_one_budget() -> None:
+    """KOD-48/AC-4: one instance, one counter — never a path per entry."""
+    loop_remediator = FakeRemediator()
+    ci_remediator = FakeRemediator()
+
+    await _failing_run(remediator=loop_remediator)
+    await _failing_run(
+        remediator=ci_remediator,
+        quality_gate=FakeQualityGate(
+            events=[],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha="a" * 40,
+        ),
+        pr_creator=FakePRCreator(),
+        ci_monitor=FakeCIMonitor(passed=False, summary="CI failed: ci/test"),
+    )
+
+    assert len(loop_remediator.calls) == 1
+    assert len(ci_remediator.calls) == 1
+    assert {call.entry for call in loop_remediator.calls} == {
+        RemediationEntry.loop_not_accepted
+    }
+    assert {call.entry for call in ci_remediator.calls} == {RemediationEntry.ci_failure}
+
+
+async def test_the_round_carries_the_original_ticket_not_its_own_replacement() -> None:
+    """KOD-48/AC-3: the run's subject survives the round that replaces it."""
+    remediator = FakeRemediator()
+
+    await _failing_run(remediator=remediator, remediation_max_rounds=2)
+
+    assert len(remediator.calls) == 2
+    first, second = remediator.calls
+    assert first.original_ticket == second.original_ticket
+    assert second.round_index == 1
+
+
+async def test_the_rounds_fresh_criteria_go_through_the_validation_gate() -> None:
+    """KOD-48/AC-10: the existing gated path, re-entered — never a second one."""
+    events = await _failing_run(remediator=FakeRemediator())
+
+    criteria_events = [e for e in events if isinstance(e, WorkflowCriteriaEvent)]
+    validations = [e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)]
+    assert len(criteria_events) == 2
+    assert len(validations) == 2
+    # Every generation is followed by a sweep: no set reaches a loop ungated.
+    kinds = [
+        type(e).__name__
+        for e in events
+        if isinstance(e, WorkflowCriteriaEvent | WorkflowCriteriaValidationEvent)
+    ]
+    assert kinds == [
+        "WorkflowCriteriaEvent",
+        "WorkflowCriteriaValidationEvent",
+        "WorkflowCriteriaEvent",
+        "WorkflowCriteriaValidationEvent",
+    ]
+
+
+async def test_every_round_is_observable_in_the_stream() -> None:
+    """KOD-48/AC-6, AC-11: ticket, fresh criteria and loop result per round."""
+    events = await _failing_run(remediator=FakeRemediator())
+
+    assert len([e for e in events if isinstance(e, WorkflowRemediationEvent)]) == 1
+    assert len([e for e in events if isinstance(e, WorkflowCriteriaEvent)]) == 2
+    assert len([e for e in events if isinstance(e, WorkflowIterationEvent)]) == 2
+
+
+async def test_an_exhausted_budget_terminates_on_its_own_outcome() -> None:
+    """KOD-48/AC-7, AC-11: distinct and observable, not a generic failure."""
+    events = await _failing_run(remediator=FakeRemediator())
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert complete.outcome is WorkflowOutcome.remediation_budget_exhausted
+    payload = complete.model_dump(by_alias=True, exclude_none=True)
+    assert payload["outcome"] == "remediation_budget_exhausted"
+
+
+async def test_the_budget_bounds_the_rounds_a_run_may_spend() -> None:
+    """A budget that did not bound anything would not be a budget."""
+    one = FakeRemediator()
+    two = FakeRemediator()
+
+    await _failing_run(remediator=one, remediation_max_rounds=1)
+    await _failing_run(remediator=two, remediation_max_rounds=2)
+
+    assert len(one.calls) == 1
+    assert len(two.calls) == 2
+
+
+def test_the_round_budget_is_config_read_with_no_literal_in_routing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KOD-48/AC-5, AC-12: `KODEZART_` prefixed, absent from routing code."""
+    monkeypatch.delenv("KODEZART_REMEDIATION_MAX_ROUNDS", raising=False)
+    assert AppConfig().remediation_max_rounds == 1
+    monkeypatch.setenv("KODEZART_REMEDIATION_MAX_ROUNDS", "3")
+    assert AppConfig().remediation_max_rounds == 3
+
+    engine_source = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "kodezart"
+        / "chains"
+        / "ralph_workflow.py"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"_remediation_max_rounds\s*[<>=]+\s*\d", engine_source) is None
+    assert "remediation_max_rounds=config.remediation_max_rounds" in (
+        Path(__file__).resolve().parents[2] / "src" / "kodezart" / "main.py"
+    ).read_text(encoding="utf-8")

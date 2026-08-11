@@ -15,7 +15,8 @@ def _state(
     verdict: AcceptVerdict = AcceptVerdict.rejected,
     merged: bool = False,
     merge_error: str | None = None,
-    fix_rounds_used: int = 0,
+    remediation_rounds_used: int = 0,
+    best_iteration_sha: str | None = "c" * 40,
     review_passed: bool = False,
     pr_url: str | None = None,
     pr_number: int | None = None,
@@ -44,7 +45,10 @@ def _state(
         merge_error=merge_error,
         review_passed=review_passed,
         review_feedback=None,
-        fix_rounds_used=fix_rounds_used,
+        remediation_rounds_used=remediation_rounds_used,
+        remediation_ticket=None,
+        remediation_entry=None,
+        best_iteration_sha=best_iteration_sha,
         pr_url=pr_url,
         pr_number=pr_number,
         ci_passed=ci_passed,
@@ -110,7 +114,7 @@ def test_merge_divergent() -> None:
         verdict=AcceptVerdict.accepted,
         merged=False,
         merge_error="ralph diverged from feature",
-        fix_rounds_used=0,
+        remediation_rounds_used=0,
     )
     assert classify_outcome(state) is WorkflowOutcome.merge_divergent
 
@@ -120,7 +124,7 @@ def test_fix_consolidation_failed() -> None:
         verdict=AcceptVerdict.accepted,
         merged=False,
         merge_error="fix consolidation failed: status=divergent",
-        fix_rounds_used=1,
+        remediation_rounds_used=1,
     )
     assert classify_outcome(state) is WorkflowOutcome.fix_consolidation_failed
 
@@ -190,6 +194,7 @@ def test_zero_commit_no_pr_when_no_iteration_produced_a_commit() -> None:
         merged=False,
         merge_error=None,
         pr_url=None,
+        best_iteration_sha=None,
         trajectory=_trajectory(plateaued=True, commit_sha=None),
     )
     assert classify_outcome(state) is WorkflowOutcome.zero_commit_no_pr
@@ -309,7 +314,7 @@ def test_divergent_fix_after_failed_ci_is_a_fix_consolidation_failure() -> None:
         verdict=AcceptVerdict.accepted,
         merged=False,
         merge_error="fix consolidation failed: status=divergent",
-        fix_rounds_used=1,
+        remediation_rounds_used=1,
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
