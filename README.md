@@ -324,8 +324,12 @@ Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the
 live workspace belongs to the tracker adapter, not to config load.
 
+- [`docs/operation.minimal.toml`](docs/operation.minimal.toml) — the minimal
+  floor: the smallest config that boots, and the file a new operator copies
+  first.
 - [`docs/operation.example.toml`](docs/operation.example.toml) — a fully
-  annotated example covering every field.
+  annotated example covering every field, the complete counterpart the
+  minimal floor grows into.
 - [`docs/cutover_mapping.md`](docs/cutover_mapping.md) — which routine behavior
   maps to which kodezart component, plus the behavior-parity dimension and
   placeholder mapping tables.

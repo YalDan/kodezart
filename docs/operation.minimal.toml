@@ -1,0 +1,27 @@
+# The minimal floor: the smallest operation config that boots.
+#
+# This is the file a new operator copies first. Two fields are required and
+# nothing else: every collection defaults empty, and an empty board boots.
+# Grow it toward docs/operation.example.toml — the complete annotated
+# example — one section at a time, as the operation acquires the thing each
+# section declares.
+#
+# What an empty collection costs is paid at the point of need, never at
+# load: a consumer that requires an absent member refuses with a typed
+# error naming the missing role or key and what stops working. With this
+# file as-is, nothing can be dispatched (no principal carries the approver
+# role), no pass can assign prepared work (no assignee), establish a scan
+# window (no checkpoint document) or record a run-log row (no run-log
+# destination) — each refusal says so when the need arises.
+#
+# Validation applies to what IS present. The moment you declare any
+# principal, exactly one must carry the approver role; the moment you
+# declare any queue state, the five members code addresses by name are
+# required; a populated documents registry must carry the checkpoint key,
+# and a populated records registry the run_log key.
+
+# Human-readable name of the operation these settings describe.
+operation_name = "example-operation"
+
+# The tracker workspace the operation acts within. A slug, not a URL.
+workspace = "example-workspace"
