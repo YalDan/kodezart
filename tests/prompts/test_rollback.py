@@ -288,3 +288,32 @@ def test_the_flipped_default_set_does_declare_one(
     set_toml = _set_toml(default_set)
 
     assert "[definitions.draft-critic]" in set_toml
+
+
+def test_the_documents_name_each_shipped_default_as_the_shipped_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deliverable 4's currency check, derived rather than restated.
+
+    The env file's VALUES are already checked against the shipped defaults
+    by the documented-surface suite. What that cannot see is prose: a
+    paragraph calling the displaced value "the shipped default" reads as
+    current and is wrong, which is exactly the drift this flip introduced
+    and this test catches. Both claims are derived from AppConfig, so the
+    next default to move fails here rather than misleading an operator.
+    """
+    for name in list(os.environ):
+        if name.startswith("KODEZART_"):
+            monkeypatch.delenv(name)
+    config = AppConfig()
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    displaced = {
+        config.prompt_set: DEFAULT_SET,
+        config.ticket_review_mode.value: TicketReviewMode.REVIEWED.value,
+    }
+    for shipped, legacy in displaced.items():
+        assert f"`{shipped}` (the shipped default)" in readme or (
+            f"the default set (`{shipped}`)" in readme
+        ), shipped
+        assert f"`{legacy}` (the shipped default)" not in readme, legacy
