@@ -208,7 +208,7 @@ stopped externally reports `killed` only here. `terminal` is resolved
 against the SDK's own terminal-status set, so a consumer tracking task
 ids clears them on `terminal` from either frame.
 
-### Workflow Events (14)
+### Workflow Events (15)
 
 | Event Type                     | Key Fields                                      |
 | ------------------------------ | ----------------------------------------------- |
@@ -219,6 +219,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
 | `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets` |
+| `workflow_artifacts`           | `status`, `branch`                              |
 | `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
 | `workflow_review`              | `passed`, `evaluation`, `fixRound`              |
@@ -229,6 +230,11 @@ ids clears them on `terminal` from either frame.
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.
+
+`workflow_artifacts.status` is three-state (`persisted`, `unchanged`,
+`ignored_by_target`). `ignored_by_target` is not a variant of success: the
+target repository's ignore rules match the artifact directory, so no run
+lands artifacts there until they change.
 
 ### Job Events (1)
 

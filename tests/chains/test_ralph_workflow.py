@@ -29,6 +29,7 @@ from kodezart.types.domain.agent import (
     RateLimitWarningEvent,
     ResultEvent,
     TicketDraftOutput,
+    WorkflowArtifactsEvent,
     WorkflowCIEvent,
     WorkflowCompleteEvent,
     WorkflowCriteriaEvent,
@@ -52,6 +53,7 @@ from kodezart.types.domain.consolidation import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.session import SessionType
@@ -1982,6 +1984,39 @@ async def test_workflow_persists_the_ticket_first_then_both_artifacts() -> None:
         assert branch.startswith("kodezart/")
         assert "-ralph-" in branch
 
+    artifact_events = [e for e in events if isinstance(e, WorkflowArtifactsEvent)]
+    assert len(artifact_events) == 1
+    assert artifact_events[0].status is ArtifactPersistStatus.PERSISTED
+    assert artifact_events[0].branch == branch
+
+    complete = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete) == 1
+
+
+async def test_workflow_reports_artifacts_ignored_by_target() -> None:
+    """A target that ignores .kodezart/ surfaces as an explicit event status."""
+    persister = FakeArtifactPersister(
+        persist_status=ArtifactPersistStatus.IGNORED_BY_TARGET,
+    )
+    engine = _make_engine(artifact_persister=persister)
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    artifact_events = [e for e in events if isinstance(e, WorkflowArtifactsEvent)]
+    assert len(artifact_events) == 1
+    assert artifact_events[0].status is ArtifactPersistStatus.IGNORED_BY_TARGET
+
     complete = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete) == 1
 
@@ -2087,12 +2122,13 @@ class _DiskArtifactPersister:
         base_branch: str,
         artifacts: Mapping[str, str],
         cache_key: str | None = None,
-    ) -> None:
+    ) -> ArtifactPersistStatus:
         target = self._root / branch
         target.mkdir(parents=True, exist_ok=True)
         for name, content in artifacts.items():
             (target / name).write_text(content)
         self.branches.append(branch)
+        return ArtifactPersistStatus.PERSISTED
 
     async def clean(
         self,

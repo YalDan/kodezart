@@ -11,6 +11,7 @@ from kodezart.adapters.git_artifact_persister import ARTIFACT_DIR, GitArtifactPe
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.types.domain.persist import ArtifactPersistStatus
 
 
 async def _run_git(cmd: list[str], cwd: Path) -> None:
@@ -77,7 +78,7 @@ async def test_persist_creates_kodezart_files_and_pushes(
         committer_email="t@t.dev",
     )
 
-    await persister.persist(
+    status = await persister.persist(
         repo_path=str(repo),
         repo_url=None,
         branch="test-branch",
@@ -87,6 +88,7 @@ async def test_persist_creates_kodezart_files_and_pushes(
             "criteria.json": '["criterion 1"]',
         },
     )
+    assert status is ArtifactPersistStatus.PERSISTED
 
     # Clone to verify the files were pushed
     verify = tmp_path / "verify"
@@ -220,3 +222,94 @@ async def test_persist_skips_when_target_gitignores_artifact_dir(
     clone_cmd = ["git", "clone", "-b", "main", str(bare), str(verify)]
     await _run_git(clone_cmd, cwd=tmp_path)
     assert not (verify / ARTIFACT_DIR).exists()
+
+
+async def test_persist_reports_ignored_by_target_status(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """A gitignored .kodezart/ returns IGNORED_BY_TARGET and warns, no push."""
+    repo, bare = git_env
+    (repo / ".gitignore").write_text(f"{ARTIFACT_DIR}/\n")
+    await _run_git(["git", "add", ".gitignore"], cwd=repo)
+    await _run_git(["git", "commit", "-m", "chore: ignore artifacts"], cwd=repo)
+    await _run_git(["git", "push", "origin", "HEAD:refs/heads/main"], cwd=repo)
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    persister = GitArtifactPersister(
+        git=git,
+        workspace=workspace,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        status = await persister.persist(
+            repo_path=str(repo),
+            repo_url=None,
+            branch="ignored-status-branch",
+            base_branch="main",
+            artifacts={"ticket.json": '{"title": "test"}'},
+        )
+
+    assert status is ArtifactPersistStatus.IGNORED_BY_TARGET
+    skipped = [e for e in logs if e["event"] == "artifacts_persist_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["reason"] == ArtifactPersistStatus.IGNORED_BY_TARGET
+    assert skipped[0]["log_level"] == "warning"
+
+    remote_branches = await _run_git_output(["git", "branch", "--list"], cwd=bare)
+    assert "ignored-status-branch" not in remote_branches
+
+
+async def test_persist_reports_unchanged_when_artifacts_already_committed(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """Byte-identical artifacts are UNCHANGED, never confused with ignored."""
+    repo, _bare = git_env
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    persister = GitArtifactPersister(
+        git=git,
+        workspace=workspace,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    artifacts = {"ticket.json": '{"title": "test"}'}
+
+    first = await persister.persist(
+        repo_path=str(repo),
+        repo_url=None,
+        branch="unchanged-branch",
+        base_branch="main",
+        artifacts=artifacts,
+    )
+    with structlog.testing.capture_logs() as logs:
+        second = await persister.persist(
+            repo_path=str(repo),
+            repo_url=None,
+            branch="unchanged-branch",
+            base_branch="main",
+            artifacts=artifacts,
+        )
+
+    assert first is ArtifactPersistStatus.PERSISTED
+    assert second is ArtifactPersistStatus.UNCHANGED
+    skipped = [e for e in logs if e["event"] == "artifacts_persist_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["reason"] == ArtifactPersistStatus.UNCHANGED
+    assert skipped[0]["log_level"] == "info"

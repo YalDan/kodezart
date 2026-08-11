@@ -24,6 +24,7 @@ from kodezart.types.domain.criteria import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.trajectory import LoopTrajectory
 
@@ -506,6 +507,19 @@ class WorkflowRemediationEvent(AgentEvent):
     round_index: int
     ticket: TicketDraftOutput
     base_ref: str
+
+
+class WorkflowArtifactsEvent(AgentEvent):
+    """Emitted after workflow artifacts are written to the ralph branch.
+
+    ``IGNORED_BY_TARGET`` is not a variant of success: the target
+    repository's ignore rules match the artifact directory, so no run
+    will ever land artifacts there until they change.
+    """
+
+    type: Literal["workflow_artifacts"] = "workflow_artifacts"
+    status: ArtifactPersistStatus
+    branch: str = Field(min_length=1)
 
 
 class WorkflowCompleteEvent(AgentEvent):
