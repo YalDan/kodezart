@@ -14,7 +14,6 @@ production constants.
 """
 
 import shutil
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -40,6 +39,7 @@ from kodezart.types.domain.agent import (
     ToolResultEvent,
     ToolUseEvent,
 )
+from tests.probes.recording import record
 
 # ---------------------------------------------------------------------------
 # Probe vocabulary
@@ -111,68 +111,6 @@ TYPED_AGENT_DEFINITIONS: dict[str, AgentDefinition] = {
         tools=["Read", WRITE_TOOL_NAME],
     ),
 }
-
-
-# ---------------------------------------------------------------------------
-# Results ledger
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ProbeRecord:
-    """One row of the recorded results table."""
-
-    probe: str
-    question: str
-    configuration: str
-    observed: str
-    verdict: str
-
-
-RECORDS: list[ProbeRecord] = []
-
-
-def record(
-    *,
-    probe: str,
-    question: str,
-    configuration: str,
-    observed: str,
-    verdict: str,
-) -> None:
-    RECORDS.append(
-        ProbeRecord(
-            probe=probe,
-            question=question,
-            configuration=configuration,
-            observed=observed,
-            verdict=verdict,
-        )
-    )
-
-
-def render_table(records: list[ProbeRecord]) -> str:
-    rows = [
-        "",
-        "KOD-86 harness capability probes -- measured results",
-        "",
-        "| Probe | Question | Configuration | Observed | Verdict |",
-        "| --- | --- | --- | --- | --- |",
-    ]
-    rows.extend(
-        f"| {r.probe} | {r.question} | {r.configuration} | {r.observed} | {r.verdict} |"
-        for r in records
-    )
-    return "\n".join(rows)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def emit_results_table(request: pytest.FixtureRequest) -> Iterator[None]:
-    yield
-    if not RECORDS:
-        return
-    reporter = request.config.pluginmanager.get_plugin("terminalreporter")
-    reporter.write_line(render_table(RECORDS))
 
 
 # ---------------------------------------------------------------------------

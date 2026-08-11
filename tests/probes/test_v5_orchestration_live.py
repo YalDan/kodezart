@@ -20,6 +20,7 @@ import pytest
 
 from kodezart.adapters._agents_mapping import map_agents
 from kodezart.types.domain.prompts import OrchestrationPrimitive, PromptKey
+from tests.probes.recording import record
 from tests.probes.test_harness_capabilities import (
     UNGATED_PERMISSION_MODE,
     VERDICT_LIVE,
@@ -28,7 +29,6 @@ from tests.probes.test_harness_capabilities import (
     WORKFLOW_TOOL_NAME,
     WORKFLOW_TURNS,
     observe,
-    record,
     session_options,
 )
 from tests.prompts.test_claude_opus_goldens import V5_SET
@@ -136,3 +136,8 @@ async def test_probe_workflow_primitive_dispatches_and_counts(
     assert observed.results, "the probe session produced no result event"
     assert uses, "no Workflow tool use was emitted"
     assert launched, "the Workflow tool use never reached execution"
+    assert counted, (
+        "the run reported no count over the questions dispatched: the "
+        "criterion's second clause is the fan-in coming back counted, not "
+        "the tool merely firing"
+    )
