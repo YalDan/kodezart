@@ -1,6 +1,7 @@
 """SDK message to domain event mapping — shared by all Claude adapters."""
 
 from claude_agent_sdk import (
+    TERMINAL_TASK_STATUSES,
     AssistantMessage,
     Message,
     RateLimitEvent,
@@ -10,6 +11,7 @@ from claude_agent_sdk import (
     TaskNotificationMessage,
     TaskProgressMessage,
     TaskStartedMessage,
+    TaskUpdatedMessage,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -29,10 +31,24 @@ from kodezart.types.domain.agent import (
     TaskNotificationEvent,
     TaskProgressEvent,
     TaskStartedEvent,
+    TaskUpdatedEvent,
     ToolResultEvent,
     ToolUseEvent,
     UserMessageEvent,
 )
+
+
+def _task_updated_status(message: TaskUpdatedMessage) -> str | None:
+    """The status the update reports — the patch first, the field behind it.
+
+    The SDK documents ``patch.status`` as where a lifecycle transition
+    lands; the typed field is the resolved state and stands in when the
+    patch changed something else.
+    """
+    patched = message.patch.get("status")
+    if isinstance(patched, str):
+        return patched
+    return message.status
 
 
 def map_message(message: Message) -> list[AgentEvent]:
@@ -70,6 +86,23 @@ def map_message(message: Message) -> list[AgentEvent]:
             TaskNotificationEvent.model_validate(
                 message,
                 from_attributes=True,
+            )
+        )
+    elif isinstance(message, TaskUpdatedMessage):
+        # Ahead of the SystemMessage arm, which this SDK type subclasses:
+        # below it, a terminal task state reaches the wire as an untyped
+        # system event and no consumer can clear the task it names.
+        status = _task_updated_status(message)
+        events.append(
+            TaskUpdatedEvent(
+                subtype=message.subtype,
+                task_id=message.task_id,
+                status=status,
+                terminal=status in TERMINAL_TASK_STATUSES,
+                patch=dict(message.patch),
+                uuid=message.uuid,
+                session_id=message.session_id,
+                data=dict(message.data),
             )
         )
     elif isinstance(message, SystemMessage):

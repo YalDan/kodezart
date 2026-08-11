@@ -122,7 +122,7 @@ Every event type below is enumerated from the event models in
 holds this reference to them: a new event model, a removed one, a renamed
 field or a stale heading count reddens that test.
 
-### Streaming Events (12)
+### Streaming Events (13)
 
 | Event Type            | Key Fields                                                  |
 | --------------------- | ----------------------------------------------------------- |
@@ -135,9 +135,16 @@ field or a stale heading count reddens that test.
 | `task_started`        | `subtype`, `taskId`, `description`, `uuid`, `sessionId`     |
 | `task_progress`       | `subtype`, `taskId`, `description`, `usage`, `uuid`, `sessionId` |
 | `task_notification`   | `subtype`, `taskId`, `status`, `outputFile`, `summary`, `uuid`, `sessionId` |
+| `task_updated`        | `subtype`, `taskId`, `status`, `terminal`, `patch`, `uuid`, `sessionId` |
 | `result`              | `subtype`, `durationMs`, `durationApiMs`, `isError`, `numTurns`, `sessionId`, `stopReason`, `totalCostUsd`, `usage`, `result`, `branch`, `commitSha`, `structuredOutput` |
 | `stream_event`        | `sessionId`, `event`                                        |
 | `rate_limit_warning`  | `status`, `resetsAt`, `utilization`, `rateLimitType`        |
+
+A background task's terminal state can arrive as `task_updated` alone —
+the matching `task_notification` is sometimes suppressed, and a task
+stopped externally reports `killed` only here. `terminal` is resolved
+against the SDK's own terminal-status set, so a consumer tracking task
+ids clears them on `terminal` from either frame.
 
 ### Workflow Events (14)
 

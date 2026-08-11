@@ -195,6 +195,30 @@ class TaskProgressEvent(AgentEvent):
     data: dict[str, object]
 
 
+class TaskUpdatedEvent(AgentEvent):
+    """Lifecycle state change of a background sub-task.
+
+    Distinct from ``task_notification`` because it is not interchangeable
+    with it: the SDK documents that a background task's terminal state
+    can arrive ONLY here, with the matching notification suppressed — a
+    task stopped externally reports ``killed`` on this message and
+    nothing else.  ``terminal`` is resolved at the adapter boundary
+    against the SDK's own terminal-status set, which spans both message
+    vocabularies, so a consumer tracking task ids clears them from
+    either message without importing the vendor's constant.
+    """
+
+    type: Literal["task_updated"] = "task_updated"
+    subtype: str
+    task_id: str
+    status: str | None = None
+    terminal: bool
+    patch: dict[str, object]
+    uuid: str | None = None
+    session_id: str | None = None
+    data: dict[str, object]
+
+
 class TaskNotificationEvent(AgentEvent):
     """Completion notification from a sub-task."""
 
