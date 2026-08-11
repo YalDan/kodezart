@@ -94,6 +94,33 @@
       "title": "Requiredchanges",
       "type": "array"
     },
+    "sherlockFlags": {
+      "description": "Every flag the draft critic raised about why a part of this ticket exists rather than whether it works, carried out unchanged; empty when none was raised.",
+      "items": {
+        "additionalProperties": false,
+        "description": "One thing the critic flags for a supervisor's attention.\n\nThe channel the persona rewrite had to preserve: a finding about WHY a\ncomponent exists rather than whether it works \u2014 over-implementation,\nmachinery no measured failure justifies, a goal quietly substituted.\nIt is a typed, routable item because a flag that cannot be routed is a\npersona artefact with a new name.\n\nDistinct from the accept gate's ``SherlockFlag``, which anchors to a\ncriterion id: this one anchors to a passage of a drafted artifact,\nwhich has no criteria yet.  Same wire field name on two producers,\ntwo anchors, one definition each.",
+        "properties": {
+          "reason": {
+            "description": "Why it is flagged: the measured failure that would justify it and is absent, or the goal it serves that the task never asked for.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "subject": {
+            "description": "What is flagged: the component, claim, or decision the supervisor should look at, named precisely enough to find.",
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject",
+          "reason"
+        ],
+        "title": "CritiqueFlag",
+        "type": "object"
+      },
+      "title": "Sherlockflags",
+      "type": "array"
+    },
     "summary": {
       "description": "What the change accomplishes, for a reader with no other context.",
       "title": "Summary",

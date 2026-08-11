@@ -84,6 +84,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -1611,9 +1612,17 @@ class SequentialCIMonitor:
 class FakeTicketGenerator:
     """Fake TicketGenerator for testing the outer workflow pipeline."""
 
-    def __init__(self, ticket: TicketDraftOutput | None = None) -> None:
+    def __init__(
+        self,
+        ticket: TicketDraftOutput | None = None,
+        *,
+        approved: TicketApproval = TicketApproval.APPROVED,
+        mode: TicketReviewMode = TicketReviewMode.REVIEWED,
+    ) -> None:
         self.calls: list[dict[str, object]] = []
         self._ticket = ticket or make_ticket_draft()
+        self._approved = approved
+        self._mode = mode
 
     async def run(
         self,
@@ -1636,7 +1645,8 @@ class FakeTicketGenerator:
         yield WorkflowTicketEvent(
             ticket=self._ticket,
             review_rounds=1,
-            approved=True,
+            approved=self._approved,
+            mode=self._mode,
         )
 
 

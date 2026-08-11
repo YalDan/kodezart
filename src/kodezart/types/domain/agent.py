@@ -27,6 +27,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
 from kodezart.types.domain.wire_schema import sanitize_schema
 
@@ -93,68 +94,6 @@ class FileChange(CamelCaseModel):
     rationale: str = Field(
         min_length=1,
         description="Why this change is required by the task, not merely useful.",
-    )
-
-
-class TicketDraftOutput(CamelCaseModel):
-    """Structured output for a generated implementation ticket.
-
-    The downstream generate_criteria agent has its own job — it derives
-    observable acceptance criteria from the full formatted ticket.
-    """
-
-    title: str = Field(
-        min_length=1,
-        max_length=120,
-        description="One line naming what the ticket delivers.",
-    )
-    summary: str = Field(
-        min_length=1,
-        description=(
-            "What the change accomplishes, for a reader with no other context."
-        ),
-    )
-    context: str = Field(
-        min_length=1,
-        description=(
-            "The repository facts the implementation rests on, including the "
-            "documentation sources consulted."
-        ),
-    )
-    references: list[CodeReference] = Field(
-        default_factory=list,
-        description="Locations in the repository the implementer starts from.",
-    )
-    required_changes: list[FileChange] = Field(
-        min_length=1,
-        description="Every file the change must touch, one entry per file.",
-    )
-    out_of_scope: list[str] = Field(
-        default_factory=list,
-        description="Work this ticket deliberately excludes.",
-    )
-    open_questions: list[str] = Field(
-        default_factory=list,
-        description="Questions the ticket could not settle from the repository.",
-    )
-
-
-class TicketReviewOutput(CamelCaseModel):
-    """Structured output for a ticket review."""
-
-    approved: bool = Field(
-        description=(
-            "Whether the draft is fit to implement: false while any blocking "
-            "or significant finding remains."
-        ),
-    )
-    feedback: str = Field(
-        min_length=1,
-        description="Every finding, with its severity and your confidence in it.",
-    )
-    suggestions: list[str] = Field(
-        default_factory=list,
-        description="Concrete revisions that would resolve the findings.",
     )
 
 
@@ -250,6 +189,76 @@ class DraftCritiqueOutput(CamelCaseModel):
             "Findings about why the draft's parts exist rather than whether "
             "they work; empty when nothing warrants a supervisor's attention."
         ),
+    )
+
+
+class TicketDraftOutput(CamelCaseModel):
+    """Structured output for a generated implementation ticket.
+
+    The downstream generate_criteria agent has its own job — it derives
+    observable acceptance criteria from the full formatted ticket.
+    """
+
+    title: str = Field(
+        min_length=1,
+        max_length=120,
+        description="One line naming what the ticket delivers.",
+    )
+    summary: str = Field(
+        min_length=1,
+        description=(
+            "What the change accomplishes, for a reader with no other context."
+        ),
+    )
+    context: str = Field(
+        min_length=1,
+        description=(
+            "The repository facts the implementation rests on, including the "
+            "documentation sources consulted."
+        ),
+    )
+    references: list[CodeReference] = Field(
+        default_factory=list,
+        description="Locations in the repository the implementer starts from.",
+    )
+    required_changes: list[FileChange] = Field(
+        min_length=1,
+        description="Every file the change must touch, one entry per file.",
+    )
+    out_of_scope: list[str] = Field(
+        default_factory=list,
+        description="Work this ticket deliberately excludes.",
+    )
+    open_questions: list[str] = Field(
+        default_factory=list,
+        description="Questions the ticket could not settle from the repository.",
+    )
+    sherlock_flags: list[CritiqueFlag] = Field(
+        default_factory=list,
+        description=(
+            "Every flag the draft critic raised about why a part of this "
+            "ticket exists rather than whether it works, carried out "
+            "unchanged; empty when none was raised."
+        ),
+    )
+
+
+class TicketReviewOutput(CamelCaseModel):
+    """Structured output for a ticket review."""
+
+    approved: bool = Field(
+        description=(
+            "Whether the draft is fit to implement: false while any blocking "
+            "or significant finding remains."
+        ),
+    )
+    feedback: str = Field(
+        min_length=1,
+        description="Every finding, with its severity and your confidence in it.",
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Concrete revisions that would resolve the findings.",
     )
 
 
@@ -865,12 +874,18 @@ class WorkflowTicketReviewEvent(AgentEvent):
 
 
 class WorkflowTicketEvent(AgentEvent):
-    """Emitted when ticket generation finishes."""
+    """Emitted when ticket generation finishes.
+
+    ``approved`` and ``mode`` ride together because either alone is
+    ambiguous: ``not_reviewed`` says no reviewer ran and the mode says why
+    nobody expected one to.
+    """
 
     type: Literal["workflow_ticket"] = "workflow_ticket"
     ticket: TicketDraftOutput
     review_rounds: int
-    approved: bool
+    approved: TicketApproval
+    mode: TicketReviewMode
 
 
 # Pre-computed WIRE schemas for structured agent output via output_format.

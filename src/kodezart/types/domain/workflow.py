@@ -19,6 +19,7 @@ from kodezart.types.domain.criteria import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
 
@@ -119,14 +120,20 @@ class RalphLoopContext(ExecutionContext):
 
 
 class TicketGenerationState(TypedDict):
-    """State for the ticket generation sub-graph."""
+    """State for the ticket generation sub-graph.
+
+    ``approved`` starts at ``NOT_REVIEWED`` and stays there unless a review
+    node writes a verdict, which is what makes the create-only run's
+    terminal value a fact about the graph rather than an initial value that
+    happened to survive.
+    """
 
     draft_iteration: int
     review_count: int
     current_draft: TicketDraftOutput | None
     review_feedback: str | None
     review_suggestions: list[str]
-    approved: bool
+    approved: TicketApproval
 
 
 class RalphLoopState(TypedDict):

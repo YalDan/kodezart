@@ -13,6 +13,10 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.ticket_review import (
+    DEFAULT_MAX_REVIEWS,
+    TicketReviewMode,
+)
 from kodezart.types.domain.tracker import TrackerBackend
 
 # Credential shapes are the one category that ships populated: a credential
@@ -135,10 +139,20 @@ class AppConfig(BaseSettings):
         description="Maximum criteria regeneration rounds after an infeasible verdict.",
     )
     max_reviews: int = Field(
-        default=2,
+        default=DEFAULT_MAX_REVIEWS,
         ge=1,
         le=10,
         description="Maximum ticket review rounds before accepting.",
+    )
+    ticket_review_mode: TicketReviewMode = Field(
+        default=TicketReviewMode.REVIEWED,
+        description=(
+            "Whether the ticket loop runs a harness-level reviewer session "
+            "(reviewed) or one creator session that critiques its own draft "
+            "in-session (create_only). Under create_only the review budget "
+            "above compiles nothing, so configuring both is refused rather "
+            "than resolved."
+        ),
     )
     retry_max_attempts: int = Field(
         default=3,
@@ -714,6 +728,17 @@ class AppConfig(BaseSettings):
             mode=self.skills_mode,
             allowlist=tuple(self.skills_allowlist),
         )
+
+    def explicit_max_reviews(self) -> int | None:
+        """``max_reviews`` when the deployment configured one, else ``None``.
+
+        The distinction the ticket loop needs and no other reader does: a
+        budget sitting at its shipped default expresses no decision, while
+        one an operator set does, and only the second contradicts a mode
+        that compiles no review arm.  Answered here because this model is
+        the only place that knows which fields were supplied.
+        """
+        return self.max_reviews if "max_reviews" in self.model_fields_set else None
 
     def knowledge_grant(self, *, knowledge_map: str) -> KnowledgeGrant:
         """The resolved grant threaded to executor sessions.

@@ -24,6 +24,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.ticket_review import TicketApproval
 from tests.chains.test_dispatch_definitions import (
     LENS_NAMES,
     chain_source,
@@ -216,7 +217,7 @@ async def test_approved_on_first_review() -> None:
     assert len(review_events) == 1
     assert len(ticket_events) == 1
     assert ticket_events[0].review_rounds == 1
-    assert ticket_events[0].approved is True
+    assert ticket_events[0].approved is TicketApproval.APPROVED
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +240,7 @@ async def test_approved_on_second_review() -> None:
     assert len(review_events) == 2
     assert len(ticket_events) == 1
     assert ticket_events[0].review_rounds == 2
-    assert ticket_events[0].approved is True
+    assert ticket_events[0].approved is TicketApproval.APPROVED
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +249,7 @@ async def test_approved_on_second_review() -> None:
 
 
 async def test_max_reviews_exhausted() -> None:
-    """Script: both reviews reject -> finalize with approved=False."""
+    """Script: both reviews reject -> finalize unapproved."""
     executor = _ScriptedReviewExecutor(review_outcomes=[False, False])
     loop = _make_loop(executor=executor, max_reviews=2)
 
@@ -261,7 +262,7 @@ async def test_max_reviews_exhausted() -> None:
     assert len(draft_events) == 2
     assert len(review_events) == 2
     assert len(ticket_events) == 1
-    assert ticket_events[0].approved is False
+    assert ticket_events[0].approved is TicketApproval.UNAPPROVED
     assert ticket_events[0].review_rounds == 2
 
     # CRITICAL: no third draft — loop stops after 2nd review
