@@ -1,23 +1,32 @@
 """E2E workflow tests — real git repos, real components, scripted agent."""
 
 import asyncio
+import os
 import uuid
 from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
 
 import pytest
+import structlog
 
 from kodezart.adapters.git_branch_merger import GitBranchMerger
 from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
+from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.prompts import boot_prompts
 from kodezart.core.config import AppConfig
 from kodezart.services.agent_service import AgentService
-from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
+from kodezart.types.domain.agent import (
+    AgentEvent,
+    WorkflowCompleteEvent,
+    WorkflowTicketEvent,
+    WorkflowTicketReviewEvent,
+)
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
@@ -32,6 +41,11 @@ from kodezart.types.domain.subagents import (
     UNCONFIGURED_SESSION_POLICY,
     AgentDefinition,
     SessionPolicy,
+)
+from kodezart.types.domain.ticket_review import (
+    DRAFT_CRITIC_LENS,
+    TicketApproval,
+    TicketReviewMode,
 )
 from tests.fakes import (
     FAKE_SESSION_TYPE,
@@ -1261,4 +1275,209 @@ def test_consolidation_status_unchanged_no_exit_128_value_added() -> None:
         "fast_forwarded",
         "divergent",
         "source_missing",
+    }
+
+
+# ---------------------------------------------------------------------------
+# KOD-93-AC-6 — the whole workflow under the FLIPPED DEFAULTS
+#
+# The tests above build their components from named arguments, which is what
+# makes them tests of the workflow. This one builds them from AppConfig with
+# nothing configured, through the same composition helpers the application
+# boots with, which is what makes it a test of the DEFAULTS: if either flipped
+# value stopped reaching the graph, the assertions below could not hold.
+# ---------------------------------------------------------------------------
+
+
+async def _registry_from_shipped_defaults(config: AppConfig) -> InRepoPromptRegistry:
+    """The prompt registry a deployment gets when it configures nothing."""
+    return await boot_prompts(
+        config=config,
+        operation=None,
+        log=structlog.get_logger(__name__),
+    )
+
+
+async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End to end on real git, real components, scripted executor, zero config.
+
+    Three things are asserted together on purpose. The corpus serving every
+    dispatch is the flipped set; the ticket half compiled the create-only
+    shape, which is visible as an absent reviewer rather than an unvisited
+    one; and the run still reaches a merged, accepted terminal event. A
+    flip that shipped a set the graph could not actually run would satisfy
+    the first and fail the third.
+    """
+    for name in list(os.environ):
+        if name.startswith("KODEZART_"):
+            monkeypatch.delenv(name)
+
+    repo, bare = git_env
+    config = AppConfig()
+    prompts = await _registry_from_shipped_defaults(config)
+
+    assert config.prompt_set == "anthropic_v5"
+    assert config.ticket_review_mode is TicketReviewMode.CREATE_ONLY
+    assert set(prompts.resolution_table().values()) == {config.prompt_set}
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    persister = GitChangePersister(
+        gate=PassThroughGate(),
+        prompts=prompts,
+        git=git,
+        committer_name="test",
+        committer_email="t@t.dev",
+        remote="origin",
+    )
+    passing_sweep = {
+        "criteriaResults": [
+            {
+                "criterionId": f"AC-{index}",
+                "criterion": criterion,
+                "passed": True,
+                "reasoning": "Scripted pass.",
+            }
+            for index, criterion in enumerate(
+                (
+                    "The fix compiles without errors",
+                    "All existing tests pass",
+                    "Linting passes with no new warnings",
+                ),
+                start=1,
+            )
+        ],
+    }
+    executor = ScriptedFakeExecutor(eval_results=[passing_sweep, passing_sweep])
+    service = AgentService(
+        executor=executor,
+        workspace=workspace,
+        persister=persister,
+    )
+    engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=prompts,
+        service=service,
+        quality_gate=RalphLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=prompts,
+            service=service,
+            max_iterations=config.max_iterations,
+            plateau_window=config.loop_plateau_window,
+            git=git,
+            cache=cache,
+        ),
+        ticket_generator=TicketGenerationLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=prompts,
+            service=service,
+            workspace=workspace,
+            review_mode=config.ticket_review_mode,
+            max_reviews=config.explicit_max_reviews(),
+        ),
+        merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=git,
+        cache=cache,
+        artifact_persister=None,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix",
+            repo_path=str(repo),
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    ticket_events = [e for e in events if isinstance(e, WorkflowTicketEvent)]
+    assert len(ticket_events) == 1
+    assert ticket_events[0].mode is TicketReviewMode.CREATE_ONLY
+    assert ticket_events[0].approved is TicketApproval.NOT_REVIEWED
+    assert ticket_events[0].review_rounds == 0
+    assert [e for e in events if isinstance(e, WorkflowTicketReviewEvent)] == []
+
+    complete = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete) == 1
+    assert complete[0].accepted is True
+    assert complete[0].merged is True
+    assert complete[0].final_commit_sha is not None
+
+    branches = await _git_output(["git", "branch", "--list"], cwd=bare)
+    assert "kodezart/" in branches
+
+
+async def test_the_flipped_defaults_attach_the_sets_lenses_to_the_creator(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-vacuity for the run above: create-only ships WITH its critic.
+
+    Without this, a create-only run that dispatched no lens at all would
+    pass every assertion in the previous test while shipping exactly the
+    unreviewed ticket the mode's refusal exists to prevent.
+    """
+    for name in list(os.environ):
+        if name.startswith("KODEZART_"):
+            monkeypatch.delenv(name)
+
+    repo, _bare = git_env
+    config = AppConfig()
+    prompts = await _registry_from_shipped_defaults(config)
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    executor = ScriptedFakeExecutor(eval_results=[])
+    loop = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=prompts,
+        service=AgentService(
+            executor=executor,
+            workspace=workspace,
+            persister=None,
+        ),
+        workspace=workspace,
+        review_mode=config.ticket_review_mode,
+        max_reviews=config.explicit_max_reviews(),
+    )
+
+    events = [
+        e
+        async for e in loop.run(
+            prompt="fix",
+            repo_path=str(repo),
+            repo_url=None,
+            cache_key=uuid.uuid4().hex,
+            base_branch="main",
+        )
+    ]
+
+    assert [e for e in events if isinstance(e, WorkflowTicketEvent)]
+    assert len(executor.calls) == 1
+    assert DRAFT_CRITIC_LENS in {
+        definition.name for definition in prompts.definitions()
     }
