@@ -305,6 +305,30 @@ class BranchMerger(Protocol):
 
 
 @runtime_checkable
+class RefPublisher(Protocol):
+    """Publishes an existing commit under a named ref on the remote."""
+
+    async def publish(
+        self,
+        *,
+        repo_path: str | None,
+        repo_url: str | None,
+        commit_sha: str,
+        ref: str,
+        cache_key: str | None = None,
+    ) -> None:
+        """Point *ref* at *commit_sha* on the remote.
+
+        Separate from ``BranchMerger`` because publishing combines no
+        trees: there is no conflict state, so no outcome to route on and
+        nothing for a caller to decide.  It exists so a commit can be
+        made visible to a forge without first being integrated anywhere
+        — which is exactly what a pull request needs and a merge is not.
+        """
+        ...
+
+
+@runtime_checkable
 class PRCreator(Protocol):
     """Opens pull requests and posts comments on a code hosting platform."""
 

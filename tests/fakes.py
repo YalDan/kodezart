@@ -1191,6 +1191,35 @@ def make_ticket_draft(
     )
 
 
+class FakeRefPublisher:
+    """Fake RefPublisher recording every published (ref, commit) pair."""
+
+    def __init__(self, *, fail: Exception | None = None) -> None:
+        self._fail = fail
+        self.calls: list[dict[str, object]] = []
+
+    async def publish(
+        self,
+        *,
+        repo_path: str | None,
+        repo_url: str | None,
+        commit_sha: str,
+        ref: str,
+        cache_key: str | None = None,
+    ) -> None:
+        self.calls.append(
+            {
+                "repo_path": repo_path,
+                "repo_url": repo_url,
+                "commit_sha": commit_sha,
+                "ref": ref,
+                "cache_key": cache_key,
+            }
+        )
+        if self._fail is not None:
+            raise self._fail
+
+
 class FakePRCreator:
     """Fake PRCreator for testing the outer workflow pipeline."""
 
