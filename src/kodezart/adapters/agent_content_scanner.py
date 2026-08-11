@@ -125,7 +125,10 @@ class AgentContentScanner:
                         cwd=self._neutral_cwd,
                         permission_mode=_AUDIT_PERMISSION_MODE,
                         allowed_tools=[],
-                        skills=self._skills,
+                        skills=self._prompts.session_skills(
+                            PromptKey.CONTENT_AUDIT,
+                            self._skills,
+                        ),
                         session_type=SessionType.CONTENT_AUDIT,
                         session_policy=self._prompts.session_policy(
                             PromptKey.CONTENT_AUDIT,

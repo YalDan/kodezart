@@ -905,6 +905,18 @@ class PromptSetProvider(PromptProvider, Protocol):
         """The set's system-prompt append, or ``None`` when it declares none."""
         ...
 
+    def session_skills(
+        self,
+        key: PromptKey,
+        configured: SkillsSelection,
+    ) -> SkillsSelection:
+        """*configured*, narrowed to what *key*'s role declares.
+
+        The deployment decides what is available and the set decides what
+        each role reaches for; what a dispatch gets is the intersection.
+        """
+        ...
+
     def session_policy(self, key: PromptKey) -> SessionPolicy:
         """What *key*'s dispatch declares about its session.
 

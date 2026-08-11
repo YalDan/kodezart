@@ -228,7 +228,12 @@ class TicketGenerationLoop:
                 workspace_path=ctx.workspace_path,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=TICKET_TOOLS,
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.TICKET_CREATE
+                    if iteration == 1
+                    else PromptKey.TICKET_REVISION,
+                    self._skills,
+                ),
                 session_type=SessionType.TICKET_FIRE,
                 # Generative: the set's lenses are dispatchable from here.
                 agents=self._prompts.definitions(),
@@ -304,7 +309,9 @@ class TicketGenerationLoop:
                 workspace_path=ctx.workspace_path,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=TICKET_TOOLS,
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.TICKET_REVIEW, self._skills
+                ),
                 session_type=SessionType.TICKET_FIRE,
                 session_policy=self._prompts.session_policy(
                     PromptKey.TICKET_REVIEW,

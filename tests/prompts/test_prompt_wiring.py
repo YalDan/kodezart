@@ -254,6 +254,7 @@ def load_registry(
     template_overrides: dict[str, str] | None = None,
     bindings: dict[str, object] | None = None,
     investigation_cap: int | None = None,
+    fallback_model: str | None = None,
 ) -> InRepoPromptRegistry:
     """Load a registry addressing the set BY NAME (never via environment)."""
     return InRepoPromptRegistry.load(
@@ -267,6 +268,7 @@ def load_registry(
             if investigation_cap is not None
             else CONFIGURED_INVESTIGATION_CAP
         ),
+        fallback_model=fallback_model,
     )
 
 

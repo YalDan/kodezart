@@ -1736,6 +1736,13 @@ class RecordingPromptProvider:
     def session_policy(self, key: PromptKey) -> SessionPolicy:
         return self._inner.session_policy(key)
 
+    def session_skills(
+        self,
+        key: PromptKey,
+        configured: SkillsSelection,
+    ) -> SkillsSelection:
+        return self._inner.session_skills(key, configured)
+
     def variables_for(self, key: PromptKey) -> list[dict[str, object]]:
         """Every recorded variable mapping rendered under *key*."""
         return [variables for recorded, variables in self.renders if recorded is key]

@@ -60,10 +60,13 @@ def v5_provider() -> InRepoPromptRegistry:
 
 @dataclass
 class RecordedDispatch:
-    """One dispatch, reduced to what the role rule is about."""
+    """One dispatch, reduced to what the role rules are about."""
 
     agent_names: tuple[str, ...]
     method: str = "stream"
+    policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY
+    prompt: str = ""
+    skills: SkillsSelection = SUPPRESS_ALL_SKILLS
 
 
 @dataclass
@@ -78,11 +81,21 @@ class RecordingRunner:
     dispatches: list[RecordedDispatch] = field(default_factory=list)
     structured_output: dict[str, object] | None = None
 
-    def _record(self, agents: Sequence[AgentDefinition], method: str) -> None:
+    def _record(
+        self,
+        agents: Sequence[AgentDefinition],
+        method: str,
+        policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        prompt: str = "",
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+    ) -> None:
         self.dispatches.append(
             RecordedDispatch(
                 agent_names=tuple(definition.name for definition in agents),
                 method=method,
+                policy=policy,
+                prompt=prompt,
+                skills=skills,
             ),
         )
 
@@ -120,7 +133,7 @@ class RecordingRunner:
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream the configured answer, if any."""
-        self._record(agents, "stream")
+        self._record(agents, "stream", session_policy, prompt, skills)
         for event in self._answer():
             yield event
 
@@ -139,7 +152,7 @@ class RecordingRunner:
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream nothing."""
-        self._record(agents, "stream_in_workspace")
+        self._record(agents, "stream_in_workspace", session_policy, prompt, skills)
         for event in ():
             yield event
 
@@ -163,7 +176,7 @@ class RecordingRunner:
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream nothing."""
-        self._record(agents, "stream_workflow")
+        self._record(agents, "stream_workflow", session_policy, prompt, skills)
         for event in ():
             yield event
 

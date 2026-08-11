@@ -1803,3 +1803,57 @@ def test_the_evaluate_dispatch_passes_an_empty_definition_set() -> None:
     block = dispatch_block(chain_source("ralph_loop.py"), "ACCEPTANCE_CRITERIA_SCHEMA")
     assert "agents=NO_SUBAGENTS" in block
     assert "self._prompts.definitions()" not in block
+
+
+# ---------------------------------------------------------------------------
+# KOD-92-AC-2 — the effort each dispatch carries is its role's, in one run
+# ---------------------------------------------------------------------------
+
+
+async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -> None:
+    """Both tiers in a single run: implementation authors, evaluation grades.
+
+    The ralph loop dispatches both, so the relation the policy exists to
+    express — judgment strictly below authoring — is observable in one
+    run rather than inferred across two.
+    """
+    from kodezart.types.domain.prompts import PromptKey, SessionRole
+    from kodezart.types.domain.subagents import SessionEffort
+    from tests.chains.test_dispatch_definitions import evaluator_dispatches, v5_provider
+    from tests.prompts.test_session_policy import rank, v5_metadata
+
+    provider = v5_provider()
+    runner = await evaluator_dispatches(provider)
+    metadata = v5_metadata()
+
+    efforts = {
+        dispatch.method: dispatch.policy.effort for dispatch in runner.dispatches
+    }
+    assert (
+        efforts["stream_workflow"]
+        is metadata.session_roles[SessionRole.IMPLEMENTATION].effort
+    )
+    assert efforts["stream"] is metadata.session_roles[SessionRole.EVALUATIVE].effort
+
+    evaluative = efforts["stream"]
+    generative = efforts["stream_workflow"]
+    assert isinstance(evaluative, SessionEffort)
+    assert isinstance(generative, SessionEffort)
+    assert rank(evaluative) < rank(generative)
+
+    assert provider.session_policy(PromptKey.EVALUATION).effort is evaluative
+
+
+async def test_a_legacy_run_carries_no_effort_at_any_dispatch() -> None:
+    """The mechanism is opt-in per set: the legacy set dispatches as before."""
+    from tests.chains.test_dispatch_definitions import (
+        evaluator_dispatches,
+        legacy_provider,
+    )
+
+    runner = await evaluator_dispatches(legacy_provider())
+
+    assert runner.dispatches
+    for dispatch in runner.dispatches:
+        assert dispatch.policy.effort is None
+        assert dispatch.policy.system_prompt_append is None

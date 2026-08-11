@@ -769,3 +769,53 @@ def test_the_create_dispatch_passes_exactly_the_sets_three_definitions() -> None
     block = dispatch_block(chain_source("ticket_generation.py"), "TICKET_DRAFT_SCHEMA")
     assert "agents=self._prompts.definitions()" in block
     assert tuple(d.name for d in v5_provider().definitions()) == LENS_NAMES
+
+
+# ---------------------------------------------------------------------------
+# KOD-92-AC-2 and AC-5 — the ticket loop's two roles, observed at dispatch
+# ---------------------------------------------------------------------------
+
+
+async def test_the_creator_dispatch_carries_the_generative_roles_policy() -> None:
+    """The create session is authoring, so it runs at the authoring level."""
+    from kodezart.types.domain.prompts import SessionRole
+    from tests.chains.test_dispatch_definitions import creator_dispatches, v5_provider
+    from tests.prompts.test_session_policy import v5_metadata
+
+    runner = await creator_dispatches(v5_provider())
+    generative = v5_metadata().session_roles[SessionRole.GENERATIVE]
+
+    assert runner.dispatches[0].policy.effort is generative.effort
+    assert runner.dispatches[0].policy.system_prompt_append is not None
+
+
+async def test_the_creator_dispatch_names_no_skill_of_another_role() -> None:
+    """A skill declared for the judgment role never reaches the author."""
+    from kodezart.types.domain.prompts import SessionRole
+    from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+    from tests.chains.test_dispatch_definitions import creator_dispatches, v5_provider
+    from tests.prompts.test_session_policy import v5_metadata
+
+    provider = v5_provider()
+    runner = await creator_dispatches(provider)
+    roles = v5_metadata().session_roles
+    foreign = set(roles[SessionRole.EVALUATIVE].skills) - set(
+        roles[SessionRole.GENERATIVE].skills,
+    )
+    assert foreign, "non-vacuity: the two roles declare different loadouts"
+
+    # The dispatch runs under whatever the deployment allows, and the
+    # recording fixture suppresses everything — so the narrowing is
+    # exercised against a deployment that allows all of them, which is the
+    # only configuration where a foreign skill COULD leak through.
+    available = SkillsSelection(mode=SkillsMode.ALL)
+    from kodezart.types.domain.prompts import PromptKey
+
+    creator = provider.session_skills(PromptKey.TICKET_CREATE, available)
+    reviewer = provider.session_skills(PromptKey.TICKET_REVIEW, available)
+
+    assert set(creator.allowlist) == set(roles[SessionRole.GENERATIVE].skills)
+    assert set(reviewer.allowlist) == set(roles[SessionRole.EVALUATIVE].skills)
+    for skill in foreign:
+        assert skill not in creator.allowlist
+    assert runner.dispatches[0].skills == SUPPRESS_ALL_SKILLS

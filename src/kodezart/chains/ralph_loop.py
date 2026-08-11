@@ -203,7 +203,7 @@ class RalphLoop:
             ralph_branch=ctx.ralph_branch,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            skills=self._skills,
+            skills=self._prompts.session_skills(PromptKey.IMPLEMENTATION, self._skills),
             session_type=SessionType.TICKET_FIRE,
             session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
@@ -255,7 +255,9 @@ class RalphLoop:
                     branch=ctx.ralph_branch,
                     permission_mode=EVAL_PERMISSION_MODE,
                     allowed_tools=EVAL_TOOLS,
-                    skills=self._skills,
+                    skills=self._prompts.session_skills(
+                        PromptKey.EVALUATION, self._skills
+                    ),
                     session_type=SessionType.TICKET_FIRE,
                     # Evaluative: no lens is dispatched from here. Asking a
                     # template not to fan out is a request; an empty

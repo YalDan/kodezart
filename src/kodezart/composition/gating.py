@@ -15,7 +15,7 @@ from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
     AgentExecutor,
     ContentScanner,
-    PromptProvider,
+    PromptSetProvider,
 )
 from kodezart.types.domain.gating import content_digest
 from kodezart.types.domain.operation import OperationConfig
@@ -27,7 +27,7 @@ def outbound_scanners(
     config: AppConfig,
     operation: OperationConfig | None,
     executor: AgentExecutor,
-    prompts: PromptProvider,
+    prompts: PromptSetProvider,
     skills: SkillsSelection,
 ) -> tuple[list[ContentScanner], str]:
     """The gate's ORDERED scanner list, and the fragment digest keying its memo.
@@ -72,7 +72,7 @@ async def build_outbound_gate(
     config: AppConfig,
     operation: OperationConfig | None,
     executor: AgentExecutor,
-    prompts: PromptProvider,
+    prompts: PromptSetProvider,
     skills: SkillsSelection,
     log: BoundLogger,
 ) -> PatternOutboundContentGate:

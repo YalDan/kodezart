@@ -23,7 +23,7 @@ from kodezart.core.protocols import (
     ChangePersister,
     GitService,
     OutboundContentGate,
-    PromptProvider,
+    PromptSetProvider,
     RefPublisher,
     RepoCache,
     WorkspaceProvider,
@@ -52,7 +52,7 @@ class GitStack:
 def build_git_stack(
     *,
     config: AppConfig,
-    prompts: PromptProvider,
+    prompts: PromptSetProvider,
     gate: OutboundContentGate,
 ) -> GitStack:
     """Git, its clone cache, and the writers that work through them."""

@@ -77,7 +77,9 @@ class RemediationChain:
                 branch=request.work_base_ref,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.REMEDIATION_TICKET, self._skills
+                ),
                 session_type=SessionType.TICKET_FIRE,
                 session_policy=self._prompts.session_policy(
                     PromptKey.REMEDIATION_TICKET,

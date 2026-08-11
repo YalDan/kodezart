@@ -32,6 +32,7 @@ from kodezart.types.domain.prompts import (
     PromptKey,
     PromptSetMetadata,
 )
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import AgentDefinition, SessionPolicy
 
 _METADATA_FILE = "set.toml"
@@ -185,6 +186,22 @@ class InRepoPromptRegistry:
     def declared_skills(self, key: PromptKey) -> Sequence[str]:
         """Skill names the default set declares for *key*."""
         return tuple(self._default_metadata.skill_names(key.value) or ())
+
+    def session_skills(
+        self,
+        key: PromptKey,
+        configured: SkillsSelection,
+    ) -> SkillsSelection:
+        """*configured*, narrowed to what *key*'s role declares.
+
+        The deployment's selection is the caller's and stays there; this
+        answers only what the SET says the role reaches for.  A set that
+        declares no roles narrows nothing and hands the selection straight
+        back, which is what leaves the legacy set's dispatches unchanged.
+        """
+        if not self._default_metadata.session_roles:
+            return configured
+        return configured.narrowed_to(self.declared_skills(key))
 
     def session_policy(self, key: PromptKey) -> SessionPolicy:
         """What *key*'s dispatch declares about its session.

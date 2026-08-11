@@ -4417,3 +4417,73 @@ def test_the_criteria_dispatch_passes_exactly_the_sets_three_definitions() -> No
     )
     assert "agents=self._prompts.definitions()" in block
     assert len(v5_provider().definitions()) == 3
+
+
+# ---------------------------------------------------------------------------
+# KOD-92-AC-3 — the house rules move to the session, and leave the templates
+# ---------------------------------------------------------------------------
+
+
+def _dispatch_sites() -> list[tuple[str, str]]:
+    """Every dispatch that serves a PROMPT KEY, as (file, block).
+
+    Scoped to the modules that resolve a template, because a role is a
+    property of a key: the query endpoint dispatches a caller's own prompt
+    under no key at all, and inventing a role for it would be this suite
+    deciding policy the set never declared.
+    """
+    import kodezart
+
+    root = Path(kodezart.__file__).resolve().parent
+    sites: list[tuple[str, str]] = []
+    for path in sorted(root.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if "template_for(PromptKey." not in source:
+            continue
+        for opener in (".stream(", ".stream_in_workspace(", ".stream_workflow("):
+            start = 0
+            while (found := source.find(opener, start)) != -1:
+                start = found + 1
+                sites.append((path.name, source[found : source.find(")\n", found)]))
+    return sites
+
+
+#: The dispatch census this suite expects to find, so a site that stops
+#: resolving a template cannot silently leave the check.
+KEYED_DISPATCH_COUNT = 12
+
+
+def test_house_rules_delivered_as_system_prompt_append() -> None:
+    """The paired assertion: moving the rules can neither drop nor duplicate them.
+
+    One half is mechanical over the shipped source — every dispatch reads
+    its session policy from the set, so none can quietly opt out — and the
+    other is the rendered corpus, where the text must now be absent.  A
+    check on only one half would pass while the rules were both appended
+    and still baked into every template.
+    """
+    from kodezart.types.domain.prompts import PromptKey
+    from tests.prompts.test_claude_opus_goldens import ALL_CASES, V5_SET
+    from tests.prompts.test_prompt_wiring import load_registry
+    from tests.prompts.test_session_policy import v5_metadata
+    from tests.prompts.test_v5_goldens import render_case
+
+    house_rules = v5_metadata().fragments.house_rules
+    assert house_rules is not None
+
+    registry = load_registry(default_set=V5_SET)
+    for key in PromptKey:
+        assert registry.session_policy(key).system_prompt_append == house_rules
+
+    sites = _dispatch_sites()
+    assert len(sites) == KEYED_DISPATCH_COUNT, [name for name, _ in sites]
+
+    carriers = [
+        (name, block) for name, block in sites if "session_policy=" not in block
+    ]
+    assert carriers == [], f"dispatch sites that declare no session policy: {carriers}"
+
+    sentence = house_rules.splitlines()[2]
+    assert sentence.strip(), "non-vacuity: the fragment has a body to look for"
+    leaked = [name for name in sorted(ALL_CASES) if sentence in render_case(name)]
+    assert leaked == []

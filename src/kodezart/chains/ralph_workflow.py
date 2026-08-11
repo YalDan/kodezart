@@ -533,7 +533,9 @@ class RalphWorkflowEngine:
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.BRANCH_NAME, self._skills
+                ),
                 session_type=SessionType.TICKET_FIRE,
                 session_policy=self._prompts.session_policy(PromptKey.BRANCH_NAME),
                 output_format={
@@ -626,7 +628,9 @@ class RalphWorkflowEngine:
                 branch=ctx.base_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.ACCEPTANCE_CRITERIA, self._skills
+                ),
                 session_type=SessionType.TICKET_FIRE,
                 # Generative: the set's lenses are dispatchable from here.
                 agents=self._prompts.definitions(),
@@ -700,7 +704,9 @@ class RalphWorkflowEngine:
                     branch=ctx.base_branch,
                     permission_mode=EVAL_PERMISSION_MODE,
                     allowed_tools=EVAL_TOOLS,
-                    skills=self._skills,
+                    skills=self._prompts.session_skills(
+                        PromptKey.CRITERIA_VALIDATION, self._skills
+                    ),
                     session_type=SessionType.TICKET_FIRE,
                     agents=NO_SUBAGENTS,
                     session_policy=self._prompts.session_policy(
@@ -1269,7 +1275,9 @@ class RalphWorkflowEngine:
                     branch=state["feature_branch"],
                     permission_mode=EVAL_PERMISSION_MODE,
                     allowed_tools=EVAL_TOOLS,
-                    skills=self._skills,
+                    skills=self._prompts.session_skills(
+                        PromptKey.POST_MERGE_REVIEW, self._skills
+                    ),
                     session_type=SessionType.TICKET_FIRE,
                     agents=NO_SUBAGENTS,
                     session_policy=self._prompts.session_policy(
@@ -1574,7 +1582,9 @@ class RalphWorkflowEngine:
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.PR_DESCRIPTION, self._skills
+                ),
                 session_type=SessionType.TICKET_FIRE,
                 session_policy=self._prompts.session_policy(
                     PromptKey.PR_DESCRIPTION,
