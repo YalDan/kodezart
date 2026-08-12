@@ -58,6 +58,9 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_DISPATCH_HOLDER` | `str` | `kodezart` | min length 1 | Identity this deployment holds atomic claims under. Names the PROCESS, not the tracker account: two deployments sharing one workspace must carry different values or they cannot race. |
 | `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
 | `KODEZART_TRACKER_SCHEDULER_PASS_INTERVAL_SECONDS` | `float` | `300.0` | >= 10.0, <= 3600.0 | Seconds between approved-fire dispatch passes. Dispatch is single-winner-per-pass, so throughput IS the interval: the upper bound is what stops a loaded queue sitting idle for a working day. |
+| `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `float` | `3600.0` | >= 60.0, <= 86400.0 | Seconds between fire-preparation pass sessions. The interval IS the latency a newly filed issue waits before anything prepares it, so it is the operator's answer to how stale the queue may get. |
+| `KODEZART_GROOMING_PASS_INTERVAL_SECONDS` | `float` | `21600.0` | >= 60.0, <= 86400.0 | Seconds between grooming pass sessions. Grooming verifies the whole tree against the real code by building it, so one run costs far more than one preparation and buys a report rather than a queued unit of work — a slower cadence than fire preparation is the shipped default, never a shared one. |
+| `KODEZART_SCHEDULED_PASS_WORKING_DIR` | `str` | `/tmp/kodezart-scheduled-pass` |  | Working directory a scheduled pass session runs in. Deliberately not a cloned repository: a pass acts on the tracker and reaches whatever repository it needs itself, so standing it in one of them would privilege that one for no reason. |
 | `KODEZART_FORGE_API_BASE_URL` | `str` | `https://api.github.com` |  | Base URL for code hosting platform REST API. |
 | `KODEZART_FORGE_API_MAX_RETRIES` | `int` | `3` | >= 0, <= 10 | Maximum retry attempts for code hosting platform API 429/5xx responses. |
 | `KODEZART_FORGE_API_RETRY_BACKOFF_FACTOR` | `float` | `1.0` | >= 0.1, <= 30.0 | Base backoff multiplier in seconds for code hosting platform API retries. |
@@ -102,6 +105,7 @@ the `SessionType` enum, and it is closed:
 | `api_query` | the direct one-shot query a caller drives over HTTP |
 | `commit_message` | the change persister's utility session |
 | `content_audit` | the outbound gate's judgment session |
+| `scheduled_pass` | the passes the scheduler fires on their configured cadence |
 
 Three rules, each enforced at boot rather than documented and hoped for:
 

@@ -26,6 +26,12 @@ class SessionType(StrEnum):
     API_QUERY = "api_query"
     COMMIT_MESSAGE = "commit_message"
     CONTENT_AUDIT = "content_audit"
+    #: The passes the scheduler fires on their configured cadence. One
+    #: member for both of them: they differ in what their prompt says, not
+    #: in what kind of session runs it, and nothing distinguishes the two
+    #: for the grant this vocabulary exists to decide. Splitting the day a
+    #: grant has to name one and not the other is additive.
+    SCHEDULED_PASS = "scheduled_pass"
 
 
 class KnowledgeGrant(CamelCaseModel):

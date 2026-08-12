@@ -360,6 +360,37 @@ class AppConfig(BaseSettings):
             "bound is what stops a loaded queue sitting idle for a working day."
         ),
     )
+    fire_prep_pass_interval_seconds: float = Field(
+        default=3600.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds between fire-preparation pass sessions. The interval IS "
+            "the latency a newly filed issue waits before anything prepares "
+            "it, so it is the operator's answer to how stale the queue may get."
+        ),
+    )
+    grooming_pass_interval_seconds: float = Field(
+        default=21600.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds between grooming pass sessions. Grooming verifies the "
+            "whole tree against the real code by building it, so one run costs "
+            "far more than one preparation and buys a report rather than a "
+            "queued unit of work — a slower cadence than fire preparation is "
+            "the shipped default, never a shared one."
+        ),
+    )
+    scheduled_pass_working_dir: str = Field(
+        default="/tmp/kodezart-scheduled-pass",
+        description=(
+            "Working directory a scheduled pass session runs in. Deliberately "
+            "not a cloned repository: a pass acts on the tracker and reaches "
+            "whatever repository it needs itself, so standing it in one of "
+            "them would privilege that one for no reason."
+        ),
+    )
     dispatch_lane: str = Field(
         default="tracker",
         description="Fire-queue lane tracker-originated dispatches are enqueued on.",
