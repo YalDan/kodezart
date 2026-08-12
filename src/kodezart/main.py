@@ -72,14 +72,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # The pass path's entry point: constructed whenever an operation config
     # exists, held where the cutover act can invoke it. Absence is named,
     # never inferred from a missing attribute.
-    if operation is not None:
-        app.state.fire_prep_pass = build_fire_prep_pass(
+    fire_prep_pass = (
+        None
+        if operation is None
+        else build_fire_prep_pass(
             config=config,
             operation=operation,
             prompts=prompts,
         )
-    else:
-        app.state.fire_prep_pass = None
+    )
+    app.state.fire_prep_pass = fire_prep_pass
+    if fire_prep_pass is None:
         await log.ainfo(
             "fire_prep_pass_not_wired",
             operation_config_present=False,
@@ -153,6 +156,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             gate=gate,
             git=stack.git,
             cache=stack.cache,
+            prompts=prompts,
+            fire_prep=fire_prep_pass,
+            runner=agent_service,
+            skills=skills,
             log=log,
         )
         app.state.pass_scheduler = scheduler

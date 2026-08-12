@@ -4,10 +4,16 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+from collections.abc import Callable
+from functools import partial
+from pathlib import Path
+
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
+from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
+    AgentRunner,
     DeliveryProbe,
     GitService,
     JobQueue,
@@ -22,12 +28,16 @@ from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.services.fire_prep_pass import FirePrepPass
+from kodezart.services.grooming_pass import compose_grooming_prompt
 from kodezart.services.hygiene_scan import HygieneScan
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
+from kodezart.services.pass_session import PassSession
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.operation import OperationConfig, QueueState
+from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.skills import SkillsSelection
 
 
 def build_fire_prep_pass(
@@ -51,6 +61,59 @@ def build_fire_prep_pass(
         ),
         operation=operation,
     )
+
+
+def build_prompt_passes(
+    *,
+    config: AppConfig,
+    prompts: PromptProvider,
+    fire_prep: FirePrepPass,
+    runner: AgentRunner,
+    skills: SkillsSelection,
+) -> list[ScheduledPass]:
+    """The two scheduled prompt passes, each with its own cadence and render.
+
+    Each entry is a prompt and an interval: the cron fires, the prompt
+    renders from the operation configuration, and the rendered text goes to
+    the query path as one session.  The fire-prep render is the one the
+    fire-prep service already owns rather than a second copy of it.
+    """
+    working_dir = Path(config.scheduled_pass_working_dir).expanduser()
+    working_dir.mkdir(parents=True, exist_ok=True)
+    composers: dict[str, tuple[float, Callable[[], str]]] = {
+        "fire_prep": (
+            config.fire_prep_pass_interval_seconds,
+            fire_prep.compose_prompt,
+        ),
+        "grooming": (
+            config.grooming_pass_interval_seconds,
+            partial(compose_grooming_prompt, prompts),
+        ),
+    }
+    passes: list[ScheduledPass] = []
+    for name, (interval_seconds, compose) in composers.items():
+        session = PassSession(
+            name=name,
+            compose=compose,
+            runner=runner,
+            workspace_path=str(working_dir),
+            permission_mode=UNATTENDED_PERMISSION_MODE,
+            # No allowlist: the session reaches the tracker through the
+            # vendor server the host attaches, and a list naming the
+            # in-process tools would read as the whole set a pass may use
+            # while saying nothing about the ones it exists to call.
+            allowed_tools=[],
+            skills=skills,
+            session_type=SessionType.SCHEDULED_PASS,
+        )
+        passes.append(
+            ScheduledPass(
+                name=session.name,
+                interval_seconds=interval_seconds,
+                run=session.run,
+            ),
+        )
+    return passes
 
 
 def build_dispatch_passes(
@@ -135,6 +198,10 @@ async def build_pass_scheduler(
     gate: OutboundContentGate,
     git: GitService,
     cache: RepoCache,
+    prompts: PromptProvider,
+    fire_prep: FirePrepPass | None,
+    runner: AgentRunner,
+    skills: SkillsSelection,
     log: BoundLogger,
 ) -> PassScheduler:
     """The scheduler, wired to every pass this deployment can actually run."""
@@ -163,4 +230,20 @@ async def build_pass_scheduler(
             operation_config_present=operation is not None,
             delivery_probe_present=github_api is not None,
         )
+    # The prompt passes need no tracker port of their own: the session
+    # reaches the tracker itself. What they cannot do without is the
+    # operation config their prompts render from, which is exactly the
+    # condition the fire-prep pass is built under.
+    if fire_prep is not None:
+        scheduled.extend(
+            build_prompt_passes(
+                config=config,
+                prompts=prompts,
+                fire_prep=fire_prep,
+                runner=runner,
+                skills=skills,
+            ),
+        )
+    else:
+        await log.ainfo("prompt_passes_not_wired", operation_config_present=False)
     return PassScheduler(passes=scheduled)
