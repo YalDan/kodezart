@@ -33,10 +33,12 @@ from kodezart.types.domain.tracker import (
     IssueQuery,
     MappingOutcome,
     MappingRef,
+    ReviewQuery,
     StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerReview,
 )
 from kodezart.types.domain.workflow import RemediationRequest
 from kodezart.types.requests.agent import WorkflowRequest
@@ -448,6 +450,20 @@ class TrackerPort(Protocol):
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
         """Issues matching *query*, in backend order."""
+        ...
+
+    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
+        """Reviews matching *query*, newest first.
+
+        A separate call rather than a flag on :meth:`scan_issues` because
+        a review is a separate object class: no issue scan reaches one at
+        any page size, so a consumer asking "did anything move?" over
+        issues alone is answering a narrower question than it thinks.
+
+        Newest first is part of the contract, not an accident of a
+        backend: it is what lets a recency question be answered from one
+        page instead of walking the whole set.
+        """
         ...
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:

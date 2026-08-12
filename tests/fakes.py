@@ -86,10 +86,12 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingOutcome,
     MappingRef,
+    ReviewQuery,
     StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerReview,
     WorkflowStateKind,
 )
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
@@ -2301,6 +2303,11 @@ class FakeTrackerPort:
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
         self.queue_writes: list[tuple[str, QueueState]] = []
         self.scans: list[IssueQuery] = []
+        #: Reviews this double reports, and the queries it was asked.  A
+        #: separate list from ``issues`` because a review is a separate
+        #: object class: seeding one must not make an issue scan see it.
+        self.reviews: list[TrackerReview] = []
+        self.review_scans: list[ReviewQuery] = []
         self._provenance: dict[tuple[str, QueueState], StateTransition] = dict(
             provenance or {}
         )
@@ -2330,6 +2337,20 @@ class FakeTrackerPort:
             if (query.queue_state is None or query.queue_state in issue.queue_states)
             and (query.updated_since is None or issue.updated_at > query.updated_since)
         ]
+        return tuple(matched[: query.page_size])
+
+    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
+        await asyncio.sleep(0)
+        self.review_scans.append(query)
+        matched = [
+            review
+            for review in self.reviews
+            if query.updated_since is None or review.updated_at > query.updated_since
+        ]
+        # Newest first, which is the port's contract rather than this
+        # double's convenience: a consumer that reads only the head of the
+        # page must get the same answer here as it does from an adapter.
+        matched.sort(key=lambda review: review.updated_at, reverse=True)
         return tuple(matched[: query.page_size])
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
@@ -2636,6 +2657,15 @@ class FakeDeliveryProbe:
     async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
         self.calls.append(issue_key)
         return issue_key in self.delivered
+
+
+def make_tracker_review(
+    review_key: str,
+    *,
+    updated_at: datetime = FIXTURE_EPOCH,
+) -> TrackerReview:
+    """A domain review for gate fixtures — identity and recency, nothing else."""
+    return TrackerReview(review_key=review_key, updated_at=updated_at)
 
 
 def make_tracker_issue(

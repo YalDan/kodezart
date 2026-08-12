@@ -29,10 +29,12 @@ from kodezart.core.errors import TrackerEnsureConflictError, TrackerProtocolErro
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
+from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.linear_mcp import (
     LinearCommentListWire,
     LinearCommentWire,
+    LinearDiffListWire,
     LinearDocumentListWire,
     LinearDocumentSummaryWire,
     LinearDocumentWire,
@@ -55,14 +57,18 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingOutcome,
     MappingRef,
+    ReviewQuery,
     StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerReview,
     WorkflowStateKind,
 )
 
 _TOOL_LIST_ISSUES = "list_issues"
+_TOOL_LIST_DIFFS = "list_diffs"
+_ORDER_BY_UPDATED_AT = "updatedAt"
 _TOOL_GET_ISSUE = "get_issue"
 _TOOL_SAVE_ISSUE = "save_issue"
 _TOOL_SAVE_COMMENT = "save_comment"
@@ -239,6 +245,41 @@ class LinearMcpTracker:
         payload = await self._call(_TOOL_LIST_ISSUES, arguments)
         listing = self._validate(LinearIssueListWire, payload, _TOOL_LIST_ISSUES)
         return tuple(self._to_issue(wire) for wire in listing.issues)
+
+    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
+        """Reviews matching *query*, newest first.
+
+        Ordering is asked of the vendor and recency is applied here: the
+        listing tool takes an order but no recency predicate, so pushing
+        the filter down is not on offer.  Ordering newest-first is what
+        makes that acceptable — the answer to "did anything move since
+        *t*" is at the head of the first page, not spread over the set.
+        """
+        arguments: dict[str, object] = {
+            "limit": query.page_size,
+            "orderBy": _ORDER_BY_UPDATED_AT,
+        }
+        if query.repo_url is not None:
+            owner, repo = extract_owner_repo(query.repo_url)
+            arguments["owner"] = owner
+            arguments["repo"] = repo
+        payload = await self._call(_TOOL_LIST_DIFFS, arguments)
+        listing = self._validate(LinearDiffListWire, payload, _TOOL_LIST_DIFFS)
+        reviews = tuple(
+            TrackerReview(
+                review_key=wire.full_identifier,
+                updated_at=wire.updated_at,
+            )
+            for wire in listing.diffs
+        )
+        if query.updated_since is None:
+            return reviews
+        # Strictly after: the mark is the newest thing the last tick SAW,
+        # so an equal stamp is that same thing and reporting it again
+        # would keep a quiet board looking busy forever.
+        return tuple(
+            review for review in reviews if review.updated_at > query.updated_since
+        )
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
