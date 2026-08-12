@@ -14,8 +14,18 @@ const EVIDENCE = {
   },
 }
 
-const items = (args?.repo_questions ?? []).map(q => ({ q, type: 'explorer' }))
-  .concat((args?.external_claims ?? []).map(q => ({ q, type: 'doc-verifier' })))
+// Measured: the Workflow tool hands `args` over as a JSON-encoded string.
+const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
+
+const items = (input.repo_questions ?? []).map(q => ({ q, type: 'explorer' }))
+  .concat((input.external_claims ?? []).map(q => ({ q, type: 'doc-verifier' })))
+
+if (items.length === 0) {
+  throw new Error(
+    'kodezart-investigate: no questions to investigate — pass repo_questions and/or external_claims. ' +
+    'A run that dispatches nobody would report 0/0 answered, which reads as settled.',
+  )
+}
 
 phase('Investigate')
 const results = await parallel(items.map(({ q, type }) => () =>

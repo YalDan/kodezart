@@ -10,6 +10,11 @@ correct and leave the artifact untested.
 A missing Node interpreter FAILS this module rather than skipping it: the
 guard exists to make a silent shortfall loud, and a test that disappears
 when a tool is absent is the same silence one layer up.
+
+Per FR-9 the scenarios cover the argument shape the Workflow tool measurably
+sends — a JSON-encoded string — and the empty question set, because a guard
+exercised only with an input production never produces is a guard tested
+against a copy.
 """
 
 import json
@@ -43,28 +48,40 @@ def answered(question: str) -> dict[str, Any]:
     }
 
 
-def run_workflow(results: list[dict[str, Any] | None]) -> dict[str, Any]:
-    """Execute the shipped script with *results* scripted per dispatch."""
+SCENARIO_ARGS: dict[str, Any] = {
+    "repo_questions": REPO_QUESTIONS,
+    "external_claims": EXTERNAL_CLAIMS,
+}
+
+
+def execute(
+    args: object,
+    results: list[dict[str, Any] | None],
+    *,
+    check: bool,
+) -> subprocess.CompletedProcess[str]:
+    """Run the shipped script under Node with *args* handed over verbatim."""
     node = shutil.which("node")
     assert node is not None, (
         "node is required to execute .claude/workflows/kodezart-investigate.js; "
         "this criterion is graded by running the shipped script, not by reading it"
     )
-    scenario = {
-        "args": {
-            "repo_questions": REPO_QUESTIONS,
-            "external_claims": EXTERNAL_CLAIMS,
-        },
-        "results": results,
-    }
-    completed = subprocess.run(
+    return subprocess.run(
         [node, str(HARNESS), str(WORKFLOW)],
-        input=json.dumps(scenario),
+        input=json.dumps({"args": args, "results": results}),
         capture_output=True,
         text=True,
-        check=True,
+        check=check,
         cwd=REPO_ROOT,
     )
+
+
+def run_workflow(
+    results: list[dict[str, Any] | None],
+    args: object = SCENARIO_ARGS,
+) -> dict[str, Any]:
+    """Execute the shipped script with *results* scripted per dispatch."""
+    completed = execute(args, results, check=True)
     parsed: dict[str, Any] = json.loads(completed.stdout)
     return parsed
 
@@ -130,6 +147,38 @@ def test_the_counted_report_is_logged_for_the_dispatching_session() -> None:
 
     assert "phase:Investigate" in executed["log"]
     assert "2/3 questions answered" in executed["log"]
+
+
+def test_the_json_string_args_the_workflow_tool_sends_reach_the_fan_out() -> None:
+    """The runtime hands `args` over encoded; the same three agents go out."""
+    executed = run_workflow(ALL_ANSWERED, args=json.dumps(SCENARIO_ARGS))
+
+    assert executed["report"]["dispatched"] == 3
+    assert executed["report"]["unanswered"] == 0
+    assert [d["prompt"] for d in executed["dispatches"]] == [
+        *REPO_QUESTIONS,
+        *EXTERNAL_CLAIMS,
+    ]
+    assert [d["options"]["agentType"] for d in executed["dispatches"]] == [
+        "explorer",
+        "explorer",
+        "doc-verifier",
+    ]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [{}, {"repo_questions": [], "external_claims": []}, "{}"],
+)
+def test_an_investigation_with_no_questions_refuses_instead_of_counting_zero(
+    args: object,
+) -> None:
+    """Dispatching nobody is a failure, never a 0/0 that reads as settled."""
+    completed = execute(args, [], check=False)
+
+    assert completed.returncode != 0
+    assert "no questions to investigate" in completed.stderr
+    assert "0/0 questions answered" not in completed.stdout
 
 
 @pytest.mark.parametrize(
