@@ -950,6 +950,7 @@ class FakeAgentRunner:
                 "prompt": prompt,
                 "workspace_path": workspace_path,
                 "session_id": session_id,
+                "session_type": session_type,
             }
         )
         for event in self._events:
