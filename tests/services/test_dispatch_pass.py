@@ -12,6 +12,7 @@ object, one per declared repository, carrying the configured cadence.
 """
 
 import asyncio
+from collections.abc import Callable
 
 from kodezart.composition.passes import build_dispatch_passes
 from kodezart.core.config import AppConfig
@@ -62,6 +63,23 @@ PAGE_SIZE = 50
 ASSET_MAX_COUNT = 20
 ASSET_MAX_BYTES = 262144
 ASSET_FETCH_TIMEOUT_SECONDS = 30.0
+SETTLE_TRIES = 500
+SETTLE_DELAY_SECONDS = 0.01
+
+
+async def settled(condition: Callable[[], bool]) -> None:
+    """Wait until *condition* holds, then let the assertions do the reporting.
+
+    The delay is real. The lifecycle write-back awaits a logger whose
+    underlying call completes on a thread-pool executor, and an
+    executor-backed future is not advanced by ``asyncio.sleep(0)`` — a bare
+    yield only reschedules the loop, so a busy machine reaches the
+    assertions before the writes they read.
+    """
+    for _ in range(SETTLE_TRIES):
+        if condition():
+            return
+        await asyncio.sleep(SETTLE_DELAY_SECONDS)
 
 
 def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationConfig:
@@ -326,10 +344,13 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     )
 
     await passes[0].run()
-    for _ in range(64):
-        if tracker.comments:
-            break
-        await asyncio.sleep(0)
+    # The write-back runs in a background watch, so the test waits for the
+    # terminal chain it asserts on: the DONE transition, then the comment
+    # that ``LifecycleWatcher`` posts after it.
+    await settled(
+        lambda: ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
+        and bool(tracker.comments),
+    )
 
     assert queue.attached == ["job-0001"]
     assert tracker.workflow_writes == [
