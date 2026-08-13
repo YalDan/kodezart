@@ -8,35 +8,53 @@ as it exists. The replacement design is KOD-135 and is not decided here.
 TODO(KOD-134) — the information asymmetry. The stripped schema is what the
 model was TOLD; the original model is what the response was JUDGED BY. A
 response complying perfectly with everything it was given was rejected on
-rules it was never shown. With structured output the response SHAPE cannot be
-wrong, so every failure of this class was that asymmetry and nothing else. It
-terminated a run of roughly 1723 seconds on one non-conforming field.
+rules it was never shown. It terminated a run of roughly 1723 seconds on one
+non-conforming field.
 
 TODO(KOD-134) — "it stops being expressed twice" is FALSE. The two
 expressions are not duplicates of one statement. One is the contract stated
 to the model, the other is the contract enforced against it. Deleting the
 first is information loss, not deduplication.
 
-TODO(KOD-134) — the trade, stated only as far as it was measured. With
-stripping, conformance is guaranteed to a WEAKENED contract and a violation
-of a stripped constraint becomes fatal downstream. What the runtime does
-INSTEAD when a schema carries a non-allowlisted keyword was NOT measured: no
-dispatch was made and no control flow was observed.
+TODO(KOD-134) — the trade. Its downstream half is a property of THIS
+repository and is checkable here: a response violating a stripped constraint
+raises out of the node, because every parse site calls the response model's
+validate with no handler. Its runtime half — what the engine does with a
+schema either way — is stated only under the markers below, and every claim
+this module makes about the runtime lives there.
 
-OBSERVED, and only this: a static string scan of the CLI binary the SDK
-bundles at ``claude_agent_sdk/_bundled/claude`` finds the literal ``Init JSON
-schema rejected, structured output disabled: `` beside the event name
+WHAT IS KNOWN ABOUT THE RUNTIME, and nothing outside this block is asserted:
+
+OBSERVED — one live dispatch, 2026-08-13, by
+``tests/probes/test_strict_output_enforcement.py`` (marker-gated; it does not
+run in the default gate). It sent ``CRITERIA_VALIDATION_SCHEMA``, which
+carries ``$defs``, ``minLength`` and a ``pattern``, and asked in the prompt
+for a criterion id of ``AC-0``, which that pattern forbids. The run finished
+with subtype ``success`` in 3 turns, the result event CARRIED a structured
+payload, the payload's criterion id was ``AC-1``, and the response model
+accepted it unchanged. So: a schema carrying keywords outside
+:data:`STRICT_MODE_KEYWORDS` did not cost the dispatch its structured output,
+and a constraint this module used to delete was honoured by the response.
+
+OBSERVED, separately — a static string scan of the CLI binary the SDK bundles
+at ``claude_agent_sdk/_bundled/claude`` finds the literal ``Init JSON schema
+rejected, structured output disabled: `` beside the event name
 ``tengu_structured_output_failure`` and the literal ``Invalid JSON schema``,
 and finds the identifier ``structuredOutputAttempts`` carried on an agent-run
 result and read by a retry loop's stall diagnostics. Presence of strings in a
 compiled artifact, nothing more.
 
-INFERRED from those strings and UNVERIFIED: that a rejected schema turns
-server-side enforcement off rather than failing the run, and that the attempt
-counter belongs to a retry which re-validates. No test in this repository
-fails if either is false, which is why they are marked here rather than
-asserted. Only a live dispatch carrying a ``$defs``/``minLength`` schema
-settles it.
+STILL UNVERIFIED, and the dispatch above narrows rather than settles it:
+WHICH mechanism honoured the pattern — decoding constrained against the
+schema, a model that simply read the constraint in the schema it was shown,
+or a retry that re-validated — since one dispatch separates none of the
+three. Also unverified: that any schema is rejected at all; that a rejected
+one turns enforcement off for the whole schema rather than failing the run;
+that the attempt counter belongs to a re-validating retry; and that under
+structured output the response SHAPE cannot be wrong, which is what would
+make the asymmetry above the only remaining explanation for the incident. No
+test in this repository fails if any of them is false, which is why they are
+marked here rather than asserted.
 
 TODO(KOD-134) — the name is wrong. Sanitizing is a CONTENT operation:
 removing harmful or private material from a payload before it is published,
@@ -64,8 +82,9 @@ The original rationale, retained verbatim as the record of what was believed:
 
 from typing import Final
 
-#: The keywords the engine's strict mode understands. One keyword outside
-#: this set disables server-side enforcement for the entire schema.
+#: The keywords this stripper keeps. What the engine does with a schema
+#: carrying anything else is the UNVERIFIED proposition in the module
+#: docstring, not a property of this set.
 STRICT_MODE_KEYWORDS: Final[frozenset[str]] = frozenset(
     {
         "$schema",
@@ -89,7 +108,7 @@ _REF_PREFIX: Final[str] = "#/$defs/"
 
 
 class WireSchemaError(ValueError):
-    """A schema that cannot be expressed in strict mode without guessing."""
+    """A schema this stripper cannot rewrite without guessing."""
 
     def __init__(self, message: str, *, path: str) -> None:
         super().__init__(message)
@@ -97,7 +116,7 @@ class WireSchemaError(ValueError):
 
 
 def sanitize_schema(schema: dict[str, object]) -> dict[str, object]:
-    """Return *schema* in strict-mode form: inlined, allowlisted, closed.
+    """Return *schema* inlined, allowlisted and closed.
 
     TODO(KOD-134): UNWIRED — no dispatch site calls this. Do not re-wire it.
     Four defects, stated in full in the module docstring: (1) the output is
@@ -105,11 +124,11 @@ def sanitize_schema(schema: dict[str, object]) -> dict[str, object]:
     an information asymmetry; (2) the "stops being expressed twice" claim is
     FALSE, because the two expressions are the stated contract and the
     enforced contract, not one statement written down twice; (3) the trade is
-    measured on one side only — with this, a violation of a stripped
-    constraint is fatal downstream, while what the runtime does without it is
-    inferred from strings in a compiled binary and was never observed running;
-    (4) the name is wrong, because sanitizing is a CONTENT operation and this
-    deletes keywords from a CONTRACT. The replacement design is KOD-135.
+    checkable on one side only — a violation of a stripped constraint raises
+    out of the node here, while what the engine does with either schema is
+    only ever stated under the markers in the module docstring; (4) the name
+    is wrong, because sanitizing is a CONTENT operation and this deletes
+    keywords from a CONTRACT. The replacement design is KOD-135.
     """
     definitions = schema.get(_DEFS)
     known: dict[str, object] = definitions if isinstance(definitions, dict) else {}
@@ -189,7 +208,7 @@ def _collapse_all_of(node: dict[str, object], *, path: str) -> dict[str, object]
     if member is None:
         return node
     if not isinstance(member, list) or len(member) != 1:
-        msg = "allOf with more than one subschema has no strict-mode form"
+        msg = "allOf with more than one subschema has no single-node form"
         raise WireSchemaError(msg, path=path)
     only = member[0]
     if not isinstance(only, dict):
