@@ -2,12 +2,14 @@
 
 import uuid
 from collections.abc import AsyncIterator
+from typing import Final
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
+from pydantic import ValidationError
 
 from kodezart.core.constants import (
     EVAL_PERMISSION_MODE,
@@ -33,7 +35,12 @@ from kodezart.core.protocols import (
     RepoVisibilityResolver,
     TicketGenerator,
 )
-from kodezart.core.redispatch import until_permutation
+from kodezart.core.redispatch import (
+    correction_notice,
+    correction_report,
+    until_conforming,
+    until_permutation,
+)
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import (
@@ -47,12 +54,13 @@ from kodezart.domain.ci import ci_status_of
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
-    reconcile,
     regeneration_targets,
     sweep,
+    sweep_derived,
 )
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criteria_prompt import render_validation_findings
+from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
@@ -99,6 +107,7 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
+    CorrectionOutcome,
     CriteriaValidationOutput,
     FanInReport,
     ValidatedCriterion,
@@ -118,6 +127,18 @@ from kodezart.types.domain.workflow import (
     ExecutionContext,
     RemediationRequest,
     WorkflowState,
+)
+
+#: The refusals the criteria-validation guard answers with a re-dispatch.
+#:
+#: All three are refusals of a response the model can correct once it is
+#: told what was refused, and none is transient — the graph's retry
+#: predicate returns False for every one of them, which is why a node
+#: retry re-runs the session and then ends the run.
+CORRECTABLE_VALIDATION_BREACHES: Final[tuple[type[Exception], ...]] = (
+    ValidationError,
+    UngroundedVerdictError,
+    CriteriaFanInError,
 )
 
 
@@ -677,9 +698,18 @@ class RalphWorkflowEngine:
         """Sweep the generated criteria for feasibility against the base ref.
 
         The refuter reports a verdict per criterion with its evidence;
-        :func:`sweep` reconciles the report against the dispatched ids.
-        A set that still demands regeneration once the bound is spent halts
-        the run here — before the loop, with the sweep as its report.
+        :func:`sweep` reconciles the report against the dispatched ids and
+        grounds every stated verdict in the evidence beside it.  A set that
+        still demands regeneration once the regeneration bound is spent
+        halts the run here — before the loop, with the sweep as its report.
+
+        The whole sweep is inside the re-dispatch guard, so a refusal it
+        raises is answerable rather than fatal: the session is told what
+        was refused and asked again under the same bound.  The prompt
+        promises the refuter that a downstream pass decides consequences,
+        and a pass that ends the run on the material it asked for is not
+        one — so a spent bound strikes the statement and keeps the
+        derivation, which is what caught the breach in the first place.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -695,10 +725,11 @@ class RalphWorkflowEngine:
             },
         )
 
-        async def validate() -> CriteriaValidationOutput:
+        async def validate(breach: Exception | None) -> CriteriaValidationOutput:
+            notice = None if breach is None else correction_notice(breach)
             result_event, rate_limit_rejected = await drain(
                 self._service.stream(
-                    prompt=prompt,
+                    prompt=prompt if notice is None else f"{prompt}\n\n{notice}",
                     repo_path=ctx.repo_path,
                     repo_url=ctx.repo_url,
                     branch=ctx.base_branch,
@@ -734,20 +765,27 @@ class RalphWorkflowEngine:
                 result_event.structured_output,
             )
 
-        output, unresolved, _attempts = await until_permutation(
+        redispatched = await until_conforming(
             dispatch=validate,
-            check=lambda candidate: reconcile(criteria, candidate),
+            check=lambda candidate: sweep(criteria, candidate),
+            correctable=CORRECTABLE_VALIDATION_BREACHES,
             max_attempts=self._fan_in_max_attempts,
             site="criteria_validation",
             log=self._log,
         )
-        if unresolved is not None:
-            # No fail-closed arm exists on this channel and none is
-            # invented here: a feasibility verdict nothing derived is
-            # exactly what the sweep refuses.  The bound is spent, so the
-            # run halts on the typed fan-in error.
-            raise unresolved
-        validation = sweep(criteria, output)
+        if redispatched.unresolved is None:
+            validation = sweep(criteria, redispatched.output)
+            outcome = CorrectionOutcome.corrected
+        else:
+            # The bound is spent, so the STATEMENT is struck and the
+            # derivation stands in its place: nothing is invented, and an
+            # unsupported verdict reaches the regeneration it was always
+            # owed rather than ending the run.  Where no derivation exists
+            # this raises instead — a criterion with no finding at all, or
+            # evidence that contradicts itself, derives nothing to keep.
+            validation = sweep_derived(criteria, redispatched.output)
+            outcome = CorrectionOutcome.derived
+        correction = correction_report(redispatched, outcome=outcome)
         targets = regeneration_targets(validation)
         rounds_used = state["criteria_regeneration_rounds"]
         bound_exhausted = (
@@ -759,8 +797,17 @@ class RalphWorkflowEngine:
                 regeneration_round=rounds_used,
                 validation=validation,
                 regeneration_targets=list(targets),
+                correction=correction,
             )
         )
+        if correction is not None:
+            await self._log.awarning(
+                "criteria_contract_correction",
+                site="criteria_validation",
+                outcome=correction.outcome.value,
+                attempts=correction.attempts,
+                breach_classes=[b.breach_class for b in correction.breaches],
+            )
         await self._log.ainfo(
             "criteria_sweep_complete",
             regeneration_round=rounds_used,

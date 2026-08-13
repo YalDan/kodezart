@@ -508,3 +508,43 @@ class FanInReport(CamelCaseModel):
     duplicate_ids: list[CriterionIdItem] = Field(default_factory=list)
     dispatched_count: int = Field(ge=1)
     attempts: int = Field(ge=1)
+
+
+class CorrectionOutcome(StrEnum):
+    """How a refused response resolved once the node fed the refusal back.
+
+    Two outcomes, and the absence of the record is the third fact: a
+    response that conformed the first time needed no correction at all.
+    """
+
+    #: A later dispatch, told what was refused, returned a conforming answer.
+    corrected = "corrected"
+    #: The bound was spent; the stated verdicts were struck and the
+    #: derivation the evidence supports stands in their place.
+    derived = "derived"
+
+
+class ContractBreach(CamelCaseModel):
+    """One refused response, named by the class that refused it."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    breach_class: str = Field(min_length=1)
+    detail: str = Field(min_length=1)
+
+
+class ContractCorrection(CamelCaseModel):
+    """A contract violation the node corrected in flight, and how it ended.
+
+    Carried on the criteria-validation event ONLY when a response was
+    refused: absent means the first answer conformed.  A run that had to
+    argue with its validator costs whole judgment sessions, and a reader
+    who cannot see WHICH rule was broken cannot tell a model that
+    misread the contract from criteria the sweep genuinely refuses.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    breaches: list[ContractBreach] = Field(min_length=1)
+    attempts: int = Field(ge=1)
+    outcome: CorrectionOutcome
