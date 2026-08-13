@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import structlog
+from pydantic import ValidationError
 
 from kodezart.domain.dispatch import DOMAIN_PRIORITY_ORDER
 from kodezart.services.base_resolver import BaseResolver
@@ -269,20 +270,21 @@ class TestTheContainerBoundary:
         for query in tracker.scans:
             assert query.queue_state is QueueState.APPROVED
 
-    async def test_an_issue_reached_by_two_scans_is_one_candidate(self) -> None:
-        tracker = FakeTrackerPort(
-            issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
-        )
-        operation = operation_config(
-            teams={
-                "engineering": TeamEntry(name="fixture-team", key="ENG"),
-                "also-engineering": TeamEntry(name="fixture-team", key="ENG"),
-            },
-        )
-        fire, _, _ = dispatcher(tracker, operation=operation)
-        report = await fire.run_pass()
-        assert [row.issue_key for row in report.snapshot] == ["K-1"]
+    def test_two_keys_naming_one_team_is_a_load_failure(self) -> None:
+        """What makes the per-team scans disjoint, and the reverse map total.
+
+        The adapter resolves an issue's team back onto the key a scan was
+        scoped by.  Two keys for one team makes that answer a coin toss, so
+        it is refused where every other structural ambiguity is.
+        """
+        with pytest.raises(ValidationError) as caught:
+            operation_config(
+                teams={
+                    "engineering": TeamEntry(name="fixture-team", key="ENG"),
+                    "also-engineering": TeamEntry(name="fixture-team", key="ENG"),
+                },
+            )
+        assert "is not unique" in str(caught.value)
 
     async def test_clause_one_excludes_an_issue_on_an_undeclared_team(self) -> None:
         """The defect: another board's issue, approved by the same person.
