@@ -14,14 +14,21 @@ import re
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from kodezart.types.domain.agent import (
     WIRE_SCHEMAS,
+    AcceptanceCriteriaOutput,
     BranchNameOutput,
     CommitMessageOutput,
     ContentAuditFinding,
+    ContentAuditOutput,
+    CriteriaValidationOutput,
+    DraftCritiqueOutput,
+    GeneratedCriteriaOutput,
     PRDescriptionOutput,
+    TicketDraftOutput,
+    TicketReviewOutput,
 )
 from kodezart.types.domain.criteria import CRITERION_ID_PATTERN
 from kodezart.types.domain.wire_schema import (
@@ -44,6 +51,22 @@ SANITIZER_CALL = "sanitize_schema("
 #: The one dispatch site whose schema is not a roster constant: the agent
 #: endpoint forwards the schema its caller supplied, unaltered.
 CALLER_SUPPLIED_SCHEMA = "request.output_schema"
+
+#: The model each roster schema is derived from. The equality test below
+#: parametrizes over ``WIRE_SCHEMAS`` and indexes this, so a roster entry
+#: with no model here fails rather than going unchecked.
+WIRE_MODELS: dict[str, type[BaseModel]] = {
+    "COMMIT_MESSAGE_SCHEMA": CommitMessageOutput,
+    "ACCEPTANCE_CRITERIA_SCHEMA": AcceptanceCriteriaOutput,
+    "BRANCH_NAME_SCHEMA": BranchNameOutput,
+    "GENERATED_CRITERIA_SCHEMA": GeneratedCriteriaOutput,
+    "CRITERIA_VALIDATION_SCHEMA": CriteriaValidationOutput,
+    "TICKET_DRAFT_SCHEMA": TicketDraftOutput,
+    "TICKET_REVIEW_SCHEMA": TicketReviewOutput,
+    "PR_DESCRIPTION_SCHEMA": PRDescriptionOutput,
+    "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
+    "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
+}
 
 
 def is_rostered_argument(argument: str) -> bool:
@@ -89,7 +112,7 @@ def test_sanitized_schema_matches_its_golden(name: str) -> None:
 
 @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
 def test_sanitized_schema_uses_only_allowlist_keywords(name: str) -> None:
-    """The property that decides whether enforcement engages at all."""
+    """The stripper's own guarantee: nothing outside the allowlist survives."""
     offenders = sorted(
         {
             keyword
@@ -192,6 +215,17 @@ def test_client_validation_unchanged() -> None:
 # ---------------------------------------------------------------------------
 # KOD-134 — the wire states the contract the response is judged by
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
+def test_each_wire_schema_is_its_own_models_schema(name: str) -> None:
+    """The whole roster, not the one schema a later test reads by hand.
+
+    Every other guarantee about the wire is per-schema or per-keyword, so a
+    constant put back through the stripper — or built any other way than from
+    its model — passes them all. This is the one that fails.
+    """
+    assert WIRE_SCHEMAS[name] == WIRE_MODELS[name].model_json_schema()
 
 
 def test_a_dispatched_schema_carries_its_constraints() -> None:
