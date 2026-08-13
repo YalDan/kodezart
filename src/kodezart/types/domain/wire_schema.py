@@ -1,18 +1,51 @@
-"""The one place a JSON schema is made fit for the wire.
+"""A JSON schema keyword stripper. UNWIRED — nothing dispatches its output.
 
-The engine's strict structured-output mode is all-or-nothing over a fixed
-keyword allowlist: a schema carrying ANY keyword outside it abandons
-server-side enforcement for the whole schema and silently falls back to
-client-side validation.  Every schema this system dispatched was raw
-``model_json_schema()`` output — ``$defs``, ``$ref``, ``minLength``,
-``maxLength``, numeric bounds — so enforcement was off everywhere, without a
-single log line saying so.
+TODO(KOD-134): this module is retained, unwired, and annotated. Every claim
+the paragraphs below make about why stripping is safe is wrong, and each
+defect is named here so the module states what is wrong with it for as long
+as it exists. The replacement design is KOD-135 and is not decided here.
 
-:func:`sanitize_schema` normalizes a schema to that allowlist: references are
-inlined, non-allowlisted keywords are dropped, and every object node is closed
-with ``additionalProperties: false``.  Pydantic keeps validating payloads
-against the ORIGINAL model, so nothing a stripped keyword expressed stops being
-enforced — it stops being expressed twice.
+TODO(KOD-134) — the information asymmetry. The stripped schema is what the
+model was TOLD; the original model is what the response was JUDGED BY. A
+response complying perfectly with everything it was given was rejected on
+rules it was never shown. With structured output the response SHAPE cannot be
+wrong, so every failure of this class was that asymmetry and nothing else. It
+terminated a run of roughly 1723 seconds on one non-conforming field.
+
+TODO(KOD-134) — "it stops being expressed twice" is FALSE. The two
+expressions are not duplicates of one statement. One is the contract stated
+to the model, the other is the contract enforced against it. Deleting the
+first is information loss, not deduplication.
+
+TODO(KOD-134) — the trade ran the wrong way. Without stripping, the runtime
+validates the FULL schema and RETRIES on violation, so every constraint is
+enforced and violations are corrected in flight. With stripping, conformance
+is guaranteed only to a WEAKENED contract, and a violation of a stripped
+constraint becomes fatal downstream with no retry. A strong guarantee about a
+weak contract, bought by surrendering enforcement-with-retry of the real one.
+
+TODO(KOD-134) — the name is wrong. Sanitizing is a CONTENT operation:
+removing harmful or private material from a payload before it is published,
+which is what the outbound gate does and is correctly named. This deletes
+keywords from a CONTRACT. A sanitizer that removes things is working
+correctly; a contract-downgrader that removes constraints is broken, and the
+borrowed word decided which one a reviewer saw.
+
+The original rationale, retained verbatim as the record of what was believed:
+
+    The engine's strict structured-output mode is all-or-nothing over a fixed
+    keyword allowlist: a schema carrying ANY keyword outside it abandons
+    server-side enforcement for the whole schema and silently falls back to
+    client-side validation.  Every schema this system dispatched was raw
+    ``model_json_schema()`` output — ``$defs``, ``$ref``, ``minLength``,
+    ``maxLength``, numeric bounds — so enforcement was off everywhere,
+    without a single log line saying so.
+
+    :func:`sanitize_schema` normalizes a schema to that allowlist: references
+    are inlined, non-allowlisted keywords are dropped, and every object node
+    is closed with ``additionalProperties: false``.  Pydantic keeps
+    validating payloads against the ORIGINAL model, so nothing a stripped
+    keyword expressed stops being enforced — it stops being expressed twice.
 """
 
 from typing import Final
@@ -50,7 +83,20 @@ class WireSchemaError(ValueError):
 
 
 def sanitize_schema(schema: dict[str, object]) -> dict[str, object]:
-    """Return *schema* in strict-mode form: inlined, allowlisted, closed."""
+    """Return *schema* in strict-mode form: inlined, allowlisted, closed.
+
+    TODO(KOD-134): UNWIRED — no dispatch site calls this. Do not re-wire it.
+    Four defects, stated in full in the module docstring: (1) the output is
+    what the model is TOLD while the original model is what it is JUDGED BY,
+    an information asymmetry; (2) the "stops being expressed twice" claim is
+    FALSE, because the two expressions are the stated contract and the
+    enforced contract, not one statement written down twice; (3) the trade
+    ran the wrong way — without this the runtime validates the FULL schema
+    WITH RETRIES, with it a violation of a stripped constraint is fatal
+    downstream and unretried; (4) the name is wrong, because sanitizing is a
+    CONTENT operation and this deletes keywords from a CONTRACT. The
+    replacement design is KOD-135.
+    """
     definitions = schema.get(_DEFS)
     known: dict[str, object] = definitions if isinstance(definitions, dict) else {}
     inlined = _inline(schema, known, (), path="")

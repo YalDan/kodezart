@@ -29,7 +29,6 @@ from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
-from kodezart.types.domain.wire_schema import sanitize_schema
 
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)
@@ -889,47 +888,32 @@ class WorkflowTicketEvent(AgentEvent):
 
 
 # Pre-computed WIRE schemas for structured agent output via output_format.
-# Every one goes through the sanitizer: an unsanitized schema silently
-# disables the engine's server-side enforcement for the whole dispatch, so
-# there is exactly one construction path and no site may build its own.
-COMMIT_MESSAGE_SCHEMA: dict[str, object] = sanitize_schema(
-    CommitMessageOutput.model_json_schema()
-)
+# Each is the model's OWN schema: the contract the model is shown is the
+# contract its response is judged against, constraints included.
+COMMIT_MESSAGE_SCHEMA: dict[str, object] = CommitMessageOutput.model_json_schema()
 # Schema for acceptance criteria evaluation results
-ACCEPTANCE_CRITERIA_SCHEMA: dict[str, object] = sanitize_schema(
+ACCEPTANCE_CRITERIA_SCHEMA: dict[str, object] = (
     AcceptanceCriteriaOutput.model_json_schema()
 )
 # Schema for agent-generated branch name slugs
-BRANCH_NAME_SCHEMA: dict[str, object] = sanitize_schema(
-    BranchNameOutput.model_json_schema()
-)
+BRANCH_NAME_SCHEMA: dict[str, object] = BranchNameOutput.model_json_schema()
 # Schema for agent-generated acceptance criteria from ticket analysis
-GENERATED_CRITERIA_SCHEMA: dict[str, object] = sanitize_schema(
+GENERATED_CRITERIA_SCHEMA: dict[str, object] = (
     GeneratedCriteriaOutput.model_json_schema()
 )
 # Schema for the feasibility sweep's per-criterion findings
-CRITERIA_VALIDATION_SCHEMA: dict[str, object] = sanitize_schema(
+CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
     CriteriaValidationOutput.model_json_schema()
 )
 # Schema for structured ticket draft output
-TICKET_DRAFT_SCHEMA: dict[str, object] = sanitize_schema(
-    TicketDraftOutput.model_json_schema()
-)
+TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
 # Schema for structured ticket review output
-TICKET_REVIEW_SCHEMA: dict[str, object] = sanitize_schema(
-    TicketReviewOutput.model_json_schema()
-)
-PR_DESCRIPTION_SCHEMA: dict[str, object] = sanitize_schema(
-    PRDescriptionOutput.model_json_schema()
-)
+TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
+PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
 # Schema for the judgment scanner's structured audit verdict
-CONTENT_AUDIT_SCHEMA: dict[str, object] = sanitize_schema(
-    ContentAuditOutput.model_json_schema()
-)
+CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
-DRAFT_CRITIQUE_SCHEMA: dict[str, object] = sanitize_schema(
-    DraftCritiqueOutput.model_json_schema()
-)
+DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
 #: sanitizer test and the dispatch-site guard both read this rather than
