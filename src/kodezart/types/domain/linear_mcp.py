@@ -66,6 +66,12 @@ class LinearIssueWire(LinearWireModel):
     priority: LinearPriorityWire
     status: str
     status_type: str
+    #: The team the issue lives on, by display name — the same spelling the
+    #: ``team`` scan argument takes, so one configured value both narrows a
+    #: query and identifies what came back.  Required: the vendor reports it
+    #: on every issue in every payload the adapter reads, and a default here
+    #: would answer "which board is this from" with a guess.
+    team: str
     labels: list[str] = Field(default_factory=list)
     relations: list[LinearRelationWire] = Field(default_factory=list)
     attachments: list[LinearAssetWire] = Field(default_factory=list)

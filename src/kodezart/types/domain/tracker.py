@@ -159,6 +159,14 @@ class TrackerIssue(TrackerModel):
     ``queue_states`` holds only semantic members: whatever the backend
     marks an issue with that the configured mapping does NOT name is not a
     queue state and never reaches a consumer.
+
+    ``team_key`` is the same discipline applied to the issue's container:
+    it carries the configured key of the team the issue belongs to, and
+    ``None`` when the issue belongs to a team the configuration does not
+    declare.  The two states are the whole partition an eligibility clause
+    needs, and neither is the absence of an answer — every backend puts an
+    issue somewhere, and the adapter is what decides whether that somewhere
+    is one of the operation's own.
     """
 
     issue_key: str = Field(min_length=1)
@@ -168,6 +176,7 @@ class TrackerIssue(TrackerModel):
     state_name: str
     state_kind: WorkflowStateKind
     queue_states: frozenset[QueueState]
+    team_key: str | None
     relations: tuple[IssueRelation, ...] = ()
     parent_key: str | None = None
     assignee_key: str | None = None

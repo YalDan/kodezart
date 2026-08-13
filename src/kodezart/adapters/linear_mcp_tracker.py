@@ -221,6 +221,9 @@ class LinearMcpTracker:
         self._clock: Callable[[], datetime] = clock
         self._workflow_state_names: Mapping[LifecycleStage, str] = workflow_state_names
         self._team_identifiers: Mapping[str, str] = team_identifiers
+        self._team_key_by_identifier: dict[str, str] = {
+            identifier: team_key for team_key, identifier in team_identifiers.items()
+        }
         self._log: BoundLogger = get_logger(__name__)
 
         known = {member.value for member in QueueState}
@@ -913,6 +916,7 @@ class LinearMcpTracker:
                 for label in wire.labels
                 if label in self._queue_state_by_label
             ),
+            team_key=self._team_key_by_identifier.get(wire.team),
             relations=tuple(relations),
             parent_key=wire.parent_id,
             assignee_key=wire.assignee,

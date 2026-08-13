@@ -474,6 +474,26 @@ class OperationConfig(OperationModel):
             ),
         )
 
+    def team_keys(self) -> tuple[str, ...]:
+        """Every team key this operation declares, in declaration order.
+
+        The container boundary a dispatch scan is narrowed to and every
+        candidate is judged against.  Refuses when the config declares no
+        team: a workspace holds more than one operation's board, so an
+        unbounded scan is not "the whole operation" — it is somebody else's
+        work, reachable by an approval act this operation does not own.
+        """
+        if not self.teams:
+            raise OperationMemberAbsentError(
+                missing="teams entry",
+                stops=(
+                    "a dispatch scan has no container to be bounded by, so "
+                    "nothing distinguishes this operation's board from any "
+                    "other in the workspace and no issue can be selected"
+                ),
+            )
+        return tuple(self.teams)
+
     def checkpoint_document(self) -> DocumentEntry:
         """The read-side document the scan-window marker lives in.
 

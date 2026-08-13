@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
 import structlog
 
 from kodezart.domain.dispatch import DOMAIN_PRIORITY_ORDER
@@ -31,6 +32,7 @@ from kodezart.types.domain.operation import (
     Initiative,
     LifecycleStage,
     OperationConfig,
+    OperationMemberAbsentError,
     Principal,
     PrincipalRole,
     QueueState,
@@ -38,7 +40,12 @@ from kodezart.types.domain.operation import (
     RepoEntry,
     TeamEntry,
 )
-from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
+from kodezart.types.domain.tracker import (
+    IssuePriority,
+    IssueQuery,
+    TrackerIssue,
+    WorkflowStateKind,
+)
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FIXTURE_EPOCH,
@@ -96,7 +103,10 @@ def raw_priority_ordering(line: str) -> bool:
     return _ORDERING_TOKENS.search(lowered) is not None
 
 
-def operation_config() -> OperationConfig:
+def operation_config(
+    *,
+    teams: dict[str, TeamEntry] | None = None,
+) -> OperationConfig:
     return OperationConfig(
         operation_name="fixture",
         workspace="fixture-workspace",
@@ -119,7 +129,11 @@ def operation_config() -> OperationConfig:
             ),
         ],
         agent_identities=[],
-        teams={"engineering": TeamEntry(name="fixture-team", key="ENG")},
+        teams=(
+            {"engineering": TeamEntry(name="fixture-team", key="ENG")}
+            if teams is None
+            else teams
+        ),
         queue_states={member.value: f"queue:{member.value}" for member in QueueState},
         workflow_states={
             LifecycleStage.IN_PROGRESS: "In Progress",
@@ -162,6 +176,7 @@ def dispatcher(
     holder: str = HOLDER,
     draw: object = None,
     git: FakeGitService | None = None,
+    operation: OperationConfig | None = None,
 ) -> tuple[FireDispatcher, FakeJobQueue, FakeDeliveryProbe]:
     """A dispatcher plus the doubles a test asserts against."""
     the_queue = queue or FakeJobQueue()
@@ -172,7 +187,7 @@ def dispatcher(
         "queue": the_queue,
         "registry": the_queue,
         "delivery": the_delivery,
-        "operation": operation_config(),
+        "operation": operation or operation_config(),
         "repo_url": REPO_URL,
         "lane": LANE,
         "holder": holder,
@@ -217,6 +232,121 @@ def git_with(*branches: str) -> FakeGitService:
     )
 
 
+class UnscopedTrackerPort(FakeTrackerPort):
+    """A port whose backend does not honour the scan's container scope.
+
+    Not a rigged double: the port contract says a scoped scan is scoped,
+    and an adapter over a backend with no server-side container filter has
+    to apply it after the fact.  This is what that adapter looks like on the
+    day it is written wrong, or the day the vendor stops honouring the
+    argument — the exact case the container CLAUSE exists for, as distinct
+    from the container-scoped QUERY.
+    """
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        return await super().scan_issues(
+            query=query.model_copy(update={"team_key": None}),
+        )
+
+
+class TestTheContainerBoundary:
+    """A pass claims from the operation's own board and from nowhere else."""
+
+    async def test_the_scan_is_scoped_to_every_declared_team(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        operation = operation_config(
+            teams={
+                "engineering": TeamEntry(name="fixture-team", key="ENG"),
+                "design": TeamEntry(name="fixture-design", key="DES"),
+            },
+        )
+        fire, _, _ = dispatcher(tracker, operation=operation)
+        await fire.run_pass()
+        assert [query.team_key for query in tracker.scans] == ["engineering", "design"]
+        for query in tracker.scans:
+            assert query.queue_state is QueueState.APPROVED
+
+    async def test_an_issue_reached_by_two_scans_is_one_candidate(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        operation = operation_config(
+            teams={
+                "engineering": TeamEntry(name="fixture-team", key="ENG"),
+                "also-engineering": TeamEntry(name="fixture-team", key="ENG"),
+            },
+        )
+        fire, _, _ = dispatcher(tracker, operation=operation)
+        report = await fire.run_pass()
+        assert [row.issue_key for row in report.snapshot] == ["K-1"]
+
+    async def test_clause_one_excludes_an_issue_on_an_undeclared_team(self) -> None:
+        """The defect: another board's issue, approved by the same person.
+
+        Both issues carry APPROVED and both were approved by this
+        operation's approver, so every clause below the container clause
+        passes on the foreign one.  Only the boundary separates them.
+
+        The foreign issue outranks the operation's own, so a pass without
+        the boundary claims it outright rather than only sometimes: the
+        failure this asserts against is a fact, not a draw.
+        """
+        tracker = UnscopedTrackerPort(
+            issues=[
+                make_tracker_issue("K-1"),
+                make_tracker_issue(
+                    "OTHER-1",
+                    priority=IssuePriority.URGENT,
+                    team_key="somebody-elses-board",
+                ),
+            ],
+            provenance=dict(
+                [
+                    approved_by("K-1", APPROVER),
+                    approved_by("OTHER-1", APPROVER),
+                ],
+            ),
+        )
+        fire, queue, _ = dispatcher(tracker)
+        report = await fire.run_pass()
+        assert [row.issue_key for row in report.snapshot] == ["K-1", "OTHER-1"]
+        assert report.eligible == ("K-1",)
+        assert report.claimed_issue_key == "K-1"
+        assert [
+            (item.issue_key, item.clause, item.detail) for item in report.exclusions
+        ] == [("OTHER-1", ExclusionClause.OUTSIDE_TEAM, "somebody-elses-board")]
+        assert len(queue.submissions) == 1
+
+    async def test_clause_one_excludes_an_issue_with_no_configured_team(self) -> None:
+        tracker = UnscopedTrackerPort(
+            issues=[make_tracker_issue("OTHER-1", team_key=None)],
+            provenance=dict([approved_by("OTHER-1", APPROVER)]),
+        )
+        fire, queue, _ = dispatcher(tracker)
+        report = await fire.run_pass()
+        assert report.outcome is DispatchOutcome.empty_eligible_set
+        assert report.exclusions[0].clause is ExclusionClause.OUTSIDE_TEAM
+        assert report.exclusions[0].detail == ""
+        assert queue.submissions == []
+
+    async def test_an_operation_declaring_no_team_refuses_before_scanning(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+            provenance=dict([approved_by("K-1", APPROVER)]),
+        )
+        fire, queue, _ = dispatcher(tracker, operation=operation_config(teams={}))
+        with pytest.raises(OperationMemberAbsentError) as caught:
+            await fire.run_pass()
+        assert caught.value.missing == "teams entry"
+        assert "no issue can be selected" in caught.value.stops
+        assert tracker.scans == []
+        assert queue.submissions == []
+
+
 class TestClauseDrivenExclusion:
     """Each clause excludes, and the report names which one."""
 
@@ -232,7 +362,7 @@ class TestClauseDrivenExclusion:
         assert len(queue.submissions) == 1
         assert queue.submissions[0][0] == LANE
 
-    async def test_clause_one_excludes_a_state_set_by_a_non_approver(self) -> None:
+    async def test_clause_two_excludes_a_state_set_by_a_non_approver(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", IMPOSTOR)]),
@@ -244,7 +374,7 @@ class TestClauseDrivenExclusion:
         assert report.exclusions[0].detail == IMPOSTOR
         assert queue.submissions == []
 
-    async def test_clause_two_excludes_a_closed_issue(self) -> None:
+    async def test_clause_three_excludes_a_closed_issue(self) -> None:
         tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(
@@ -260,7 +390,7 @@ class TestClauseDrivenExclusion:
         assert report.exclusions[0].clause is ExclusionClause.NOT_OPEN
         assert report.exclusions[0].detail == "Done"
 
-    async def test_clause_three_excludes_an_issue_with_a_live_blocker(self) -> None:
+    async def test_clause_four_excludes_an_issue_with_a_live_blocker(self) -> None:
         tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
@@ -273,7 +403,7 @@ class TestClauseDrivenExclusion:
         assert report.exclusions[0].clause is ExclusionClause.LIVE_BLOCKER
         assert report.exclusions[0].detail == "K-2"
 
-    async def test_clause_three_admits_an_issue_whose_blocker_is_closed(self) -> None:
+    async def test_clause_four_admits_an_issue_whose_blocker_is_closed(self) -> None:
         # The blocker carries the ref that delivered it, because a closed
         # blocker in a real workspace does: the base resolution the dispatch
         # now performs needs the premise it is based on to exist.
@@ -294,7 +424,7 @@ class TestClauseDrivenExclusion:
         assert report.outcome is DispatchOutcome.fire_enqueued
         assert report.claimed_issue_key == "K-1"
 
-    async def test_clause_four_excludes_an_issue_another_pass_holds(self) -> None:
+    async def test_clause_five_excludes_an_issue_another_pass_holds(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
@@ -310,7 +440,7 @@ class TestClauseDrivenExclusion:
         assert report.exclusions[0].detail == "another-pass"
         assert queue.submissions == []
 
-    async def test_clause_four_excludes_an_issue_with_a_live_run(self) -> None:
+    async def test_clause_five_excludes_an_issue_with_a_live_run(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),
@@ -323,7 +453,7 @@ class TestClauseDrivenExclusion:
         assert second.exclusions[0].clause is ExclusionClause.CLAIMED_OR_IN_FLIGHT
         assert len(queue.submissions) == 1
 
-    async def test_clause_five_excludes_an_issue_an_open_pr_delivers(self) -> None:
+    async def test_clause_six_excludes_an_issue_an_open_pr_delivers(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
             provenance=dict([approved_by("K-1", APPROVER)]),

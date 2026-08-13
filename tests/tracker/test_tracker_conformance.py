@@ -40,6 +40,7 @@ from tests.tracker.conftest import (
     DOCUMENT_CONTENT,
     DOCUMENT_KEY,
     FIXTURE_NOW,
+    FOREIGN_ISSUE,
     TEAM_IDENTIFIERS,
 )
 
@@ -60,9 +61,40 @@ class TestScanAndRead:
         assert {issue.issue_key for issue in found} == {
             CLAIMED_ISSUE,
             APPROVED_ISSUE,
+            FOREIGN_ISSUE,
         }
         for issue in found:
             assert QueueState.APPROVED in issue.queue_states
+
+    async def test_a_scan_scoped_to_a_team_returns_only_that_team(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        found = await tracker.scan_issues(
+            query=IssueQuery(
+                queue_state=QueueState.APPROVED,
+                team_key="engineering",
+                page_size=10,
+            ),
+        )
+        assert {issue.issue_key for issue in found} == {
+            CLAIMED_ISSUE,
+            APPROVED_ISSUE,
+        }
+
+    async def test_an_issue_carries_the_configured_key_of_its_team(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        issue = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        assert issue.team_key == "engineering"
+
+    async def test_an_issue_on_an_undeclared_team_carries_no_key(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        issue = await tracker.read_issue(issue_key=FOREIGN_ISSUE)
+        assert issue.team_key is None
 
     async def test_scan_page_size_bounds_the_result(
         self,

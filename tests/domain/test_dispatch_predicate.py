@@ -1,4 +1,4 @@
-"""The five eligibility clauses and the three-level ranking, clause by clause.
+"""The six eligibility clauses and the three-level ranking, clause by clause.
 
 Every case here is a pure function over data the port already returned, so
 a clause is falsifiable without standing up a pass.  Nothing in this module
@@ -13,6 +13,7 @@ from kodezart.domain.dispatch import (
     DOMAIN_PRIORITY_ORDER,
     blocker_keys,
     clause_approved,
+    clause_in_team,
     clause_open,
     clause_unclaimed,
     clause_undelivered,
@@ -44,7 +45,42 @@ def transition(actor: str) -> StateTransition:
     )
 
 
-class TestClauseOneApproved:
+class TestClauseOneInTeam:
+    """The issue belongs to a team the operation declares."""
+
+    def test_an_issue_on_a_declared_team_holds(self) -> None:
+        assert clause_in_team(
+            make_tracker_issue("K-1", team_key="engineering"),
+            team_keys=("engineering",),
+        )
+
+    def test_an_issue_on_another_declared_team_holds(self) -> None:
+        assert clause_in_team(
+            make_tracker_issue("K-1", team_key="design"),
+            team_keys=("engineering", "design"),
+        )
+
+    def test_an_issue_on_an_undeclared_team_fails(self) -> None:
+        """The defect: another board's issue, approved by the same person."""
+        assert not clause_in_team(
+            make_tracker_issue("K-1", team_key="somebody-elses-board"),
+            team_keys=("engineering",),
+        )
+
+    def test_an_issue_with_no_configured_team_fails(self) -> None:
+        assert not clause_in_team(
+            make_tracker_issue("K-1", team_key=None),
+            team_keys=("engineering",),
+        )
+
+    def test_no_declared_team_admits_nothing(self) -> None:
+        assert not clause_in_team(
+            make_tracker_issue("K-1", team_key="engineering"),
+            team_keys=(),
+        )
+
+
+class TestClauseTwoApproved:
     """The queue state is APPROVED and the APPROVER set it."""
 
     def test_approved_by_the_approver_holds(self) -> None:
@@ -77,7 +113,7 @@ class TestClauseOneApproved:
         )
 
 
-class TestClauseTwoOpen:
+class TestClauseThreeOpen:
     """Neither completed nor canceled."""
 
     @pytest.mark.parametrize(
@@ -100,7 +136,7 @@ class TestClauseTwoOpen:
         assert not clause_open(make_tracker_issue("K-1", state_kind=kind))
 
 
-class TestClauseThreeBlockers:
+class TestClauseFourBlockers:
     """Zero blockedBy edges to LIVE issues."""
 
     def test_no_edges_is_unblocked(self) -> None:
@@ -138,7 +174,7 @@ class TestClauseThreeBlockers:
         assert live_blocker(issue, blockers=blockers) == "K-3"
 
 
-class TestClauseFourClaimAndRun:
+class TestClauseFiveClaimAndRun:
     """No unexpired claim, no active run or queue entry."""
 
     def test_unclaimed_and_idle_holds(self) -> None:
@@ -157,7 +193,7 @@ class TestClauseFourClaimAndRun:
         assert not clause_unclaimed(claim=None, run_is_live=True)
 
 
-class TestClauseFiveDelivery:
+class TestClauseSixDelivery:
     """The discrimination workflow state alone cannot make."""
 
     def test_delivered_in_review_is_excluded(self) -> None:
