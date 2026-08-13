@@ -2,6 +2,7 @@
 
 import inspect
 from collections.abc import AsyncGenerator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import patch
@@ -438,21 +439,33 @@ async def test_every_non_granted_type_constructs_the_pre_fire_options(
     module,
     session_type,
 ) -> None:
-    """Not a spot check: each type outside the grant, argument for argument."""
+    """Not a spot check: each type outside the grant, argument for argument.
+
+    The baseline literal records the pre-grant construction and is never
+    edited.  The working-directory guard is replaced onto it here because
+    it is the one argument this lane adds to EVERY session rather than to
+    a granted one — so the comparison still ranges over every argument,
+    and still fails if any other one moved.
+    """
     options = await _options_for(
         module,
         grant=knowledge_grant_for(SessionType.TICKET_FIRE),
         session_type=session_type,
     )
 
-    assert options == _PRE_FIRE_OPTIONS[module]
+    assert options == replace(_PRE_FIRE_OPTIONS[module], strict_mcp_config=True)
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)
-async def test_the_strict_flag_rides_with_the_server_and_only_with_it(
+async def test_the_strict_flag_rides_with_the_session_never_with_the_server(
     module,
 ) -> None:
-    """Set together for a granted session; neither set for any other."""
+    """The server rides with the grant; the guard rides with the session.
+
+    The two are pinned against each other exactly as before, with the
+    pairing inverted: a session the grant does not name still carries no
+    server, and now carries the guard all the same.
+    """
     grant = knowledge_grant_for(SessionType.TICKET_FIRE)
 
     granted = await _options_for(
@@ -467,20 +480,26 @@ async def test_the_strict_flag_rides_with_the_server_and_only_with_it(
     )
 
     assert granted.strict_mcp_config is True
-    assert plain.strict_mcp_config is _PRE_FIRE_OPTIONS[module].strict_mcp_config
+    assert plain.strict_mcp_config is True
+    assert set(granted.mcp_servers or {}) == {FIXTURE_KNOWLEDGE_SERVER}
     assert plain.mcp_servers == _PRE_FIRE_OPTIONS[module].mcp_servers
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)
 async def test_an_empty_grant_configures_no_server_at_either_site(module) -> None:
-    """The shipped grant names nothing, so no site configures a server."""
+    """The shipped grant names nothing, so no site configures a server.
+
+    Every one of those sessions carries the working-directory guard even
+    so, which is the shipped arrangement this issue exists to correct.
+    """
     for session_type in SessionType:
         options = await _options_for(
             module,
             grant=NO_KNOWLEDGE_GRANT,
             session_type=session_type,
         )
-        assert options == _PRE_FIRE_OPTIONS[module]
+        assert options.mcp_servers == {}
+        assert options == replace(_PRE_FIRE_OPTIONS[module], strict_mcp_config=True)
 
 
 async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None:
@@ -529,11 +548,15 @@ def test_a_grant_without_a_credential_never_builds_a_header() -> None:
         map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
 
 
-def test_the_mapping_is_empty_for_a_type_the_grant_does_not_name() -> None:
-    """Emptiness is the mechanism: no keyword is passed, not a falsy one."""
+def test_the_mapping_describes_no_server_for_a_type_the_grant_does_not_name() -> None:
+    """Empty of servers is the mechanism, and it is not the same as empty.
+
+    The mapping the grant does not name still carries the guard, so the
+    keyword reaches the session rather than the SDK default doing so.
+    """
     mapped = map_knowledge_mcp(
         knowledge_grant_for(SessionType.TICKET_FIRE),
         SessionType.API_QUERY,
     )
 
-    assert mapped == {}
+    assert mapped == {"mcp_servers": {}, "strict_mcp_config": True}

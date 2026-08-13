@@ -31,6 +31,7 @@ from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
     EXECUTOR_MODULES,
     FIXTURE_KNOWLEDGE_SERVER,
+    NO_KNOWLEDGE_GRANT,
     knowledge_grant_for,
     recorded_session,
 )
@@ -449,3 +450,70 @@ async def test_the_granted_session_option_assertion_includes_the_flag() -> None:
         assert options.strict_mcp_config is True
         assert set(options.mcp_servers or {}) == {FIXTURE_KNOWLEDGE_SERVER}
         assert options.setting_sources == list(DEFAULT_SETTING_SOURCES)
+
+
+# ---------------------------------------------------------------------------
+# KOD-128 — the guard is the SESSION's, not the grant's
+# ---------------------------------------------------------------------------
+#
+# The invariant above pairs the guard with a configured server, which is
+# narrower than the threat: the danger is the working directory, and the
+# shipped grant names no session type, so under it no session configured a
+# server and none carried the guard.  The block below is the ungranted
+# case — the shipped one.
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_an_ungranted_session_in_a_cloned_repo_still_carries_the_guard(
+    module: str,
+    tmp_path: Path,
+) -> None:
+    """The shipped arrangement: nothing granted, a cloned cwd, guard on.
+
+    Exhaustive over the vocabulary rather than a spot check, because the
+    defect was that a session type nobody named was a session type nobody
+    guarded.  Each one runs with an EMPTY server map and the guard set:
+    no MCP at all, which is the safe outcome for a directory whose
+    contents an attacker authored.
+    """
+    repo = _repo_with_a_server_definition(tmp_path)
+
+    for session_type in SessionType:
+        options = (
+            await recorded_session(
+                module,
+                grant=NO_KNOWLEDGE_GRANT,
+                session_type=session_type,
+                cwd=str(repo),
+            )
+        ).options
+
+        assert options.cwd == str(repo), session_type
+        assert options.strict_mcp_config is True, session_type
+        assert options.mcp_servers == {}, session_type
+        assert SENTINEL_SERVER not in repr(options), session_type
+
+
+def test_the_mapping_names_every_session_kind_and_carries_no_default_arm() -> None:
+    """A kind added later fails the build rather than shipping unguarded.
+
+    mypy is what reports the missing return; this asserts the shape that
+    makes it do so, so the guarantee cannot be lost to a wildcard arm that
+    silently answers for a member nobody classified.
+    """
+    tree = ast.parse((SRC / "adapters" / "_mcp_mapping.py").read_text("utf-8"))
+    statements = [node for node in ast.walk(tree) if isinstance(node, ast.Match)]
+
+    assert len(statements) == 1
+    named: set[str] = set()
+    for case in statements[0].cases:
+        assert case.guard is None
+        for node in ast.walk(case.pattern):
+            assert not isinstance(node, ast.MatchAs | ast.MatchStar), ast.dump(node)
+            if isinstance(node, ast.MatchValue) and isinstance(
+                node.value,
+                ast.Attribute,
+            ):
+                named.add(node.value.attr)
+
+    assert named == {member.name for member in SessionType}
