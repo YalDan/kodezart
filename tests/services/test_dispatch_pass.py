@@ -349,8 +349,10 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     # terminal chain it asserts on: the DONE transition, then the comment
     # that ``LifecycleWatcher`` posts after it.
     await settled(
-        lambda: ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
-        and bool(tracker.comments),
+        lambda: (
+            ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
+            and bool(tracker.comments)
+        ),
     )
 
     assert queue.attached == ["job-0001"]

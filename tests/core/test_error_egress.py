@@ -13,8 +13,7 @@ from typing import Final
 import pytest
 
 from kodezart.core.error_egress import (
-    _REDACTION_SENTINEL,
-    _VENDOR_CREDENTIAL_PATTERNS,
+    _COMPILED_CREDENTIAL_SHAPES,
     build_error_event,
     redact_credentials,
 )
@@ -26,17 +25,19 @@ from kodezart.core.errors import (
 from kodezart.core.retry import should_retry
 from kodezart.domain.errors import AgentSDKError, TransientAPIError
 from kodezart.types.domain.agent import ResultEvent
+from kodezart.types.domain.credentials import REDACTION_SENTINEL
 
-# Construct token-like fixtures via concatenation; binding a "ghp_..."
-# literal to a variable named ``token`` would trip ruff S105
-# (hardcoded-password-string).  ``S105``/``S106`` are in the active
-# ``tests/**`` ruleset (only ``S101``/``S108`` are waived).
+# Token-like fixtures are built by concatenation so no literal in this file
+# has the shape of a real credential — a secret scanner reading the repo
+# cannot tell a fixture from the thing it imitates.
 _FAKE_GHP_BODY: Final[str] = "A" * 40
 _FAKE_PAT_BODY: Final[str] = ("B" * 22) + "_" + ("C" * 59)
 _FAKE_URL: Final[str] = (
     f"https://x-access-token:ghp_{_FAKE_GHP_BODY}@github.com/o/r.git"
 )
 _FAKE_NOTION_BODY: Final[str] = "D" * 44
+_FAKE_LINEAR_BODY: Final[str] = "E" * 40
+_FAKE_ANTHROPIC_BODY: Final[str] = "api03-" + ("F" * 90)
 
 
 def test_redact_credentials_redacts_embedded_url_token() -> None:
@@ -46,7 +47,7 @@ def test_redact_credentials_redacts_embedded_url_token() -> None:
     # Scheme + host + path survive — only the secret body is replaced.
     assert "https://x-access-token:" in redacted
     assert "@github.com/o/r.git" in redacted
-    assert _REDACTION_SENTINEL in redacted
+    assert REDACTION_SENTINEL in redacted
 
 
 @pytest.mark.parametrize("prefix", ["ghp_", "gho_", "ghs_", "ghu_"])
@@ -56,7 +57,7 @@ def test_redact_credentials_redacts_bare_classic_tokens(prefix: str) -> None:
     src = f"prefix line: {prefix}{body} trailing"
     redacted = redact_credentials(src)
     assert body not in redacted
-    assert _REDACTION_SENTINEL in redacted
+    assert REDACTION_SENTINEL in redacted
     assert "prefix line:" in redacted
     assert "trailing" in redacted
 
@@ -66,7 +67,7 @@ def test_redact_credentials_redacts_fine_grained_pat() -> None:
     src = f"github_pat_{_FAKE_PAT_BODY}"
     redacted = redact_credentials(src)
     assert _FAKE_PAT_BODY not in redacted
-    assert _REDACTION_SENTINEL in redacted
+    assert REDACTION_SENTINEL in redacted
 
 
 @pytest.mark.parametrize("prefix", ["ntn_", "secret_"])
@@ -75,9 +76,35 @@ def test_redact_credentials_redacts_notion_tokens(prefix: str) -> None:
     src = f"knowledge call failed: {prefix}{_FAKE_NOTION_BODY} rejected"
     redacted = redact_credentials(src)
     assert _FAKE_NOTION_BODY not in redacted
-    assert _REDACTION_SENTINEL in redacted
+    assert REDACTION_SENTINEL in redacted
     assert "knowledge call failed:" in redacted
     assert "rejected" in redacted
+
+
+@pytest.mark.parametrize("prefix", ["lin_api_", "lin_oauth_"])
+def test_redact_credentials_redacts_the_tracker_credential(prefix: str) -> None:
+    """The Linear shapes, one of which is the credential this build dials.
+
+    ``TrackerBackend`` has one member, so the tracker credential a running
+    deployment holds is one of these two shapes.  It reached neither
+    redaction surface before the shapes moved into one table.
+    """
+    src = f"tracker call failed: {prefix}{_FAKE_LINEAR_BODY} rejected"
+    redacted = redact_credentials(src)
+    assert _FAKE_LINEAR_BODY not in redacted
+    assert REDACTION_SENTINEL in redacted
+    assert "tracker call failed:" in redacted
+    assert "rejected" in redacted
+
+
+def test_redact_credentials_redacts_the_engine_key() -> None:
+    """The ``sk-ant-`` shape, which the SDK subprocess stderr can echo."""
+    src = f"process error: sk-ant-{_FAKE_ANTHROPIC_BODY} unauthorized"
+    redacted = redact_credentials(src)
+    assert _FAKE_ANTHROPIC_BODY not in redacted
+    assert REDACTION_SENTINEL in redacted
+    assert "process error:" in redacted
+    assert "unauthorized" in redacted
 
 
 @pytest.mark.parametrize(
@@ -89,6 +116,9 @@ def test_redact_credentials_redacts_notion_tokens(prefix: str) -> None:
         "ntn_short",
         "the secret_key operators supply",
         "set secret_value before boot",
+        "lin_api_short",
+        "the linear api key",
+        "sk-ant",
     ],
 )
 def test_redact_credentials_preserves_non_secret_text(src: str) -> None:
@@ -109,15 +139,17 @@ def test_a_vendor_added_to_the_pattern_set_needs_no_edit_to_the_helper(
     src = f"vendor call failed: acme_{body} rejected"
     assert redact_credentials(src) == src
 
-    monkeypatch.setitem(
-        _VENDOR_CREDENTIAL_PATTERNS,
-        "acme",
-        ((re.compile(r"\bacme_[A-Za-z0-9]{40,}"), _REDACTION_SENTINEL),),
+    monkeypatch.setattr(
+        "kodezart.core.error_egress._COMPILED_CREDENTIAL_SHAPES",
+        (
+            *_COMPILED_CREDENTIAL_SHAPES,
+            (re.compile(r"\bacme_[A-Za-z0-9]{40,}"), REDACTION_SENTINEL),
+        ),
     )
     redacted = redact_credentials(src)
 
     assert body not in redacted
-    assert _REDACTION_SENTINEL in redacted
+    assert REDACTION_SENTINEL in redacted
     assert "vendor call failed:" in redacted
     assert "rejected" in redacted
 
@@ -137,7 +169,7 @@ def test_build_error_event_redacts_token_in_error_field() -> None:
     except RuntimeError as exc:
         event = build_error_event(exc)
     assert _FAKE_GHP_BODY not in event.error
-    assert _REDACTION_SENTINEL in event.error
+    assert REDACTION_SENTINEL in event.error
 
 
 def test_build_error_event_redacts_token_in_stderr_tail_field() -> None:
@@ -151,7 +183,7 @@ def test_build_error_event_redacts_token_in_stderr_tail_field() -> None:
     event = build_error_event(exc)
     assert event.stderr_tail is not None
     assert _FAKE_GHP_BODY not in event.stderr_tail
-    assert _REDACTION_SENTINEL in event.stderr_tail
+    assert REDACTION_SENTINEL in event.stderr_tail
 
 
 def test_build_error_event_no_structured_output_carries_raise_site() -> None:
@@ -241,7 +273,7 @@ def test_the_result_tail_is_redacted_at_egress() -> None:
 
     assert event.result_tail is not None
     assert _FAKE_GHP_BODY not in event.result_tail
-    assert _REDACTION_SENTINEL in event.result_tail
+    assert REDACTION_SENTINEL in event.result_tail
 
 
 # ---------------------------------------------------------------------------
