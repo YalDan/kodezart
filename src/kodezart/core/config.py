@@ -167,12 +167,17 @@ class AppConfig(BaseSettings):
         ge=1,
         le=5,
         description=(
-            "Dispatches a node spends while the returned criterion-id set is "
-            "not a permutation of the dispatched one. Each attempt is a whole "
-            "judgment session, and the id list the second attempt re-states is "
-            "the only new information a retry carries. Exhaustion is not a run "
-            "failure: the evaluator falls through to fail-closed grading, the "
-            "validator halts on its own typed error."
+            "Dispatches a node spends while the answer that came back is "
+            "refused: an id set that is not a permutation of the dispatched "
+            "one, and — at the criteria validator — a response the response "
+            "model rejects or a verdict its own evidence does not derive. "
+            "Each attempt is a whole judgment session, and a contract "
+            "refusal is restated to the next one because it repeats "
+            "verbatim otherwise. Exhaustion is not a run failure: the "
+            "evaluator falls through to fail-closed grading, and the "
+            "validator strikes the stated verdict and keeps the derivation. "
+            "It halts only where no derivation exists — nothing parsed, or "
+            "a criterion left with no finding at all."
         ),
     )
     retry_initial_interval: float = Field(
