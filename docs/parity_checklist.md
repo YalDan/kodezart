@@ -9,10 +9,15 @@ and it is the gate on switching the external routines off.
 
 ## Cutover status
 
-**BLOCKED.** Cutover may not be performed while any row below is
-`not yet demonstrated`. This line is not editorial: a test derives the
-status from the rows and fails if the two disagree, so the gate cannot be
-lifted by editing this sentence.
+**BLOCKED** — `not yet demonstrated`: 25 · `not ported`: 1
+
+Cutover may not be performed while any row below is `not yet demonstrated`.
+Both counts are part of the status, because dropping a clause is the other
+way an obligation leaves the gate: re-pointing a row to `not ported` moves
+this line rather than silently shortening the blocking set. None of it is
+editorial — a test derives the verdict and both counts from the rows and
+fails if they disagree, so the gate cannot be lifted by editing this
+sentence.
 
 ## How the rows were derived
 
@@ -20,7 +25,9 @@ The derivation rule is KOD-60 R1's and it is mechanical rather than tasteful:
 **every imperative clause** of the two routine documents becomes a row. R1
 enumerates the obligations that are structurally load-bearing and says of them
 that *a checklist missing any of them is incomplete on its face*; every one has
-a row here, and a test holds that against a transcription of the ruling.
+a row here. That correspondence is read against the ruling on the issue and is
+not machine-checked: nothing transcribes R1's floor into a test, and the module
+that checks this document says so in its own docstring.
 
 Three things follow, and they are the reason this table is longer than the
 list of behaviors kodezart currently has:
@@ -44,7 +51,8 @@ behavior that must hold, and the evidence. Evidence is exactly one of:
 
 A prose argument is not evidence. Only `not yet demonstrated` blocks cutover:
 a deliberately dropped clause with a recorded reason is an accepted loss a
-reader can audit, whereas an undemonstrated one is an unknown.
+reader can audit — counted in the status above, so the loss is legible —
+whereas an undemonstrated one is an unknown.
 
 | Obligation | Ported into | Behavior that must hold | Evidence |
 | --- | --- | --- | --- |
@@ -60,7 +68,7 @@ reader can audit, whereas an undemonstrated one is an unknown.
 | four shape decisions | fire_prep_pass "Decide the shape (principle 1)" | Prepared work takes one of the ruled shapes: in-place rewrite, parent fire with re-parented sub-issues, epic plus sub-issue fires, or project plan with frontier and stubs. | not yet demonstrated |
 | frontier rule | fire_prep_pass "Frontier rule (every run)" | A project plan names its frontier, and work beyond it is a stub rather than a fire. | not yet demonstrated |
 | fire-body format | fire_prep_pass "The fire-body shape is a tight, self-contained raw task" | A promoted fire body carries the ruled sections and nothing else. | not yet demonstrated |
-| pre-promotion hygiene | fire_prep_pass "run a hygiene scan over the frozen body" | Every frozen fire body is scanned for orchestration vocabulary, tracker shorthand and pre-cooked evaluator material, through the same scanner entry point as the sanitization set, and a body that trips the set is not promoted. | not ported, because the frozen body is composed and written by the session through the vendor server, so kodezart never holds it to scan — the clause is carried by the prompt, and the code half deleted here had no reachable caller |
+| pre-promotion hygiene | fire_prep_pass "run a hygiene scan over the frozen body" | Every frozen fire body is scanned for orchestration vocabulary, tracker shorthand and pre-cooked evaluator material, through the same scanner entry point as the sanitization set, and a body that trips the set is not promoted. | not ported, because a deterministic pattern set standing in for *can the implementer act on this body alone?* is a heuristic standing in for judgment; the mechanism for that question is the judgment scanner registered in the outbound gate, and the clause itself is carried verbatim by the prompt |
 | queue-state transitions | grooming_pass "Queue-state machine — workflow states follow the queue" | A dispatched issue moves In Progress → In Review → Done, and approval is never demoted before the terminal write. | `tests/services/test_tracker_lifecycle.py::TestLifecycleWrites::test_approval_is_never_demoted_before_the_terminal_write` |
 | approval boundary | fire_prep_pass "Approval boundary:" | The approved state is set by the APPROVER alone: no pass sets it, and no pass removes it. | `tests/integration/test_self_running_chain.py::test_the_chain_never_sets_the_approved_state_itself` |
 | terminal done label | grooming_pass "plus the terminal" | The terminal queue state exists in the workspace, created by the operation that owns it rather than by hand. | `tests/tracker/test_tracker_boot_wiring.py::test_an_absent_queue_label_is_created_at_boot_not_a_failure` |
@@ -69,7 +77,7 @@ reader can audit, whereas an undemonstrated one is an unknown.
 | run digest | fire_prep_pass "write this run's row" | Every pass appends exactly one run-log row and never rewrites an earlier one. | not yet demonstrated |
 | exit-silently condition | fire_prep_pass "exit silently" | A pass that finds nothing to do exits without posting, cloning or notifying — the checkpoint write alone. | not yet demonstrated |
 | build for real | grooming_pass "Clone both repos and run the real chains" | Every registered repository is verified by running its own commands, recording per-check exit codes against the HEAD sha, never a snapshot or a reasoned-about result. | not yet demonstrated |
-| gate-vs-cascade | grooming_pass "gate vs cascade" | A failure report names one root and its cascades, never a list of independent-looking reds. | not ported, because the failure report is written by the session that ran the checks — the clause is a reporting discipline the prompt instructs, and the code half deleted here had no production consumer |
+| gate-vs-cascade | grooming_pass "gate vs cascade" | A failure report names one root and its cascades, never a list of independent-looking reds. | not yet demonstrated |
 | sandbox-vs-project | grooming_pass "sandbox vs project" | A failure caused by the environment is reported as environment-limited with the exact error as evidence, never as project-red — and never the reverse without evidence. | not yet demonstrated |
 | stack-head grounding | grooming_pass "build the **stack head**" | Work stacked on unlanded work is grounded on the stack head, not on a trunk that is only a scaffold. | `tests/domain/test_base_resolution.py::test_a_chain_of_three_blockers_resolves_to_the_tip` |
 | commit-PR-issue reconciliation | grooming_pass "account for EVERY commit" | No commit inside the window ends the pass unexplained: each reconciles to a pull request and an issue, or its diff sweeps the open-issue premises it touches. | not yet demonstrated |
@@ -88,7 +96,7 @@ reader can audit, whereas an undemonstrated one is an unknown.
 
 ## Why the undemonstrated rows are undemonstrated
 
-They fall into two classes, and the classes matter because they close in
+They fall into three classes, and the classes matter because they close in
 different ways. Every obligation named below is an open row, and a test
 holds that: a paragraph explaining why a demonstrated row is open is exactly
 the contradiction this section produced once already.
@@ -108,6 +116,18 @@ of a full agent session sweeping the board. Each becomes demonstrable when
 a sweep runs against the fake tracker and its transcript can be asserted
 over.
 
+**The arithmetic that ships without an importer.** Gate-vs-cascade is the
+one row of this class, and it was recorded as a dropped clause on a reason
+that is not true: nothing of its code half was deleted.
+`src/kodezart/domain/check_chain.py::classify_check_failures` ships at head
+with ten green cases over it in `tests/domain/test_check_chain.py`, one of
+them asserting that a consumer can tell a root failure from its cascades.
+What it has is no production importer — no module in `src/` calls it, so no
+failure report is produced from it and the reporting behavior stands
+undemonstrated rather than dropped. The row closes when a caller on the
+check-reporting path consumes the classification; whether it gets that
+caller or goes is a decision this document records, never one it takes.
+
 **The measurement only the tracker can hold.** Routine-text coverage is a
 row of its own because every other row is a clause-to-clause claim. The
 templates now carry the routine texts verbatim — the substitution ledger
@@ -121,19 +141,32 @@ table, is where that demonstration lives.
 
 ## How this document is checked
 
-- Every obligation this section's prose names as open is an open row. The
-  document could previously disagree with itself — the prose said the
-  pre-promotion hygiene row stayed open while the table gave it a citation —
-  because nothing derived one from the other.
-- Every obligation KOD-60 R1's floor enumerates has a row. The floor is
-  transcribed into `tests/docs/test_parity_checklist.py` because CI cannot
-  read a tracker comment; the transcription is declared there, along with
-  what it cannot catch.
+Every item below is an assertion in `tests/docs/test_parity_checklist.py`,
+and the list stops where the assertions stop.
+
+- The table parses to rows at all. Without that guard an unparsed table
+  would satisfy every check under it vacuously.
+- Every evidence cell is exactly one of the three declared states, and a
+  `not ported` cell carries a non-empty reason.
+- Every citation resolves under the whole `::` path, class included, through
+  the module's syntax tree rather than by searching for the leaf name.
+- The cutover status matches the rows — the verdict and both counts.
+  `BLOCKED` while any row is `not yet demonstrated`, `CLEAR` only when none
+  is, and the counts move whenever a row moves. A second assertion proves
+  that sensitivity: it adds a `not ported` row to a copy of this document,
+  which leaves the open count untouched, and requires the stated status to
+  disagree — so a row re-pointed to `not ported` cannot shorten the blocking
+  set unnoticed.
+- Every obligation the *why* section's prose names as open is an open row.
+  The document could previously disagree with itself — the prose called a
+  row open while the table gave that row a citation — because nothing
+  derived one from the other.
 - Every dimension named in `docs/cutover_mapping.md`'s parity table appears
-  here. That check stays, but it is traceability and not completeness — R1
-  says so of the six-row table in as many words.
-- Every evidence cell either names a test file that exists and contains that
-  test under the whole `::` path, is exactly `not yet demonstrated`, or is
-  `not ported, because <reason>` with a non-empty reason.
-- The cutover status matches the rows: `BLOCKED` while any row is
-  `not yet demonstrated`, `CLEAR` only when none is.
+  here. That check is traceability and not completeness — R1 says so of the
+  six-row table in as many words.
+
+What is **not** checked, stated here so the absence is not read as a check:
+no assertion derives the row set from R1's floor. CI cannot read a tracker
+comment and nothing transcribes the ruling into the test module — which
+declares that in its own docstring — so completeness against R1 is a reading
+recorded on the issue, not a gate this repository runs.
