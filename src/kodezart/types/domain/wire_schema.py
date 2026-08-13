@@ -17,12 +17,26 @@ expressions are not duplicates of one statement. One is the contract stated
 to the model, the other is the contract enforced against it. Deleting the
 first is information loss, not deduplication.
 
-TODO(KOD-134) — the trade ran the wrong way. Without stripping, the runtime
-validates the FULL schema and RETRIES on violation, so every constraint is
-enforced and violations are corrected in flight. With stripping, conformance
-is guaranteed only to a WEAKENED contract, and a violation of a stripped
-constraint becomes fatal downstream with no retry. A strong guarantee about a
-weak contract, bought by surrendering enforcement-with-retry of the real one.
+TODO(KOD-134) — the trade, stated only as far as it was measured. With
+stripping, conformance is guaranteed to a WEAKENED contract and a violation
+of a stripped constraint becomes fatal downstream. What the runtime does
+INSTEAD when a schema carries a non-allowlisted keyword was NOT measured: no
+dispatch was made and no control flow was observed.
+
+OBSERVED, and only this: a static string scan of the CLI binary the SDK
+bundles at ``claude_agent_sdk/_bundled/claude`` finds the literal ``Init JSON
+schema rejected, structured output disabled: `` beside the event name
+``tengu_structured_output_failure`` and the literal ``Invalid JSON schema``,
+and finds the identifier ``structuredOutputAttempts`` carried on an agent-run
+result and read by a retry loop's stall diagnostics. Presence of strings in a
+compiled artifact, nothing more.
+
+INFERRED from those strings and UNVERIFIED: that a rejected schema turns
+server-side enforcement off rather than failing the run, and that the attempt
+counter belongs to a retry which re-validates. No test in this repository
+fails if either is false, which is why they are marked here rather than
+asserted. Only a live dispatch carrying a ``$defs``/``minLength`` schema
+settles it.
 
 TODO(KOD-134) — the name is wrong. Sanitizing is a CONTENT operation:
 removing harmful or private material from a payload before it is published,
@@ -90,12 +104,12 @@ def sanitize_schema(schema: dict[str, object]) -> dict[str, object]:
     what the model is TOLD while the original model is what it is JUDGED BY,
     an information asymmetry; (2) the "stops being expressed twice" claim is
     FALSE, because the two expressions are the stated contract and the
-    enforced contract, not one statement written down twice; (3) the trade
-    ran the wrong way — without this the runtime validates the FULL schema
-    WITH RETRIES, with it a violation of a stripped constraint is fatal
-    downstream and unretried; (4) the name is wrong, because sanitizing is a
-    CONTENT operation and this deletes keywords from a CONTRACT. The
-    replacement design is KOD-135.
+    enforced contract, not one statement written down twice; (3) the trade is
+    measured on one side only — with this, a violation of a stripped
+    constraint is fatal downstream, while what the runtime does without it is
+    inferred from strings in a compiled binary and was never observed running;
+    (4) the name is wrong, because sanitizing is a CONTENT operation and this
+    deletes keywords from a CONTRACT. The replacement design is KOD-135.
     """
     definitions = schema.get(_DEFS)
     known: dict[str, object] = definitions if isinstance(definitions, dict) else {}

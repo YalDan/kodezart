@@ -51,7 +51,7 @@ def test_the_sweep_reads_nested_fields_and_not_only_roots() -> None:
     counted = [
         path
         for name in WIRE_SCHEMAS
-        for path, _ in described_fields(WIRE_SCHEMAS[name], name)
+        for path, _ in described_fields(sanitize_schema(WIRE_SCHEMAS[name]), name)
     ]
     assert len(counted) > len(WIRE_SCHEMAS)
     assert any("[]." in path for path in counted)

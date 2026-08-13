@@ -1,12 +1,12 @@
-"""KOD-91-AC-1, AC-2, AC-3 — the wire schemas, in strict-mode form.
+"""KOD-91-AC-1, AC-2, AC-3 — the keyword stripper, and what the wire carries.
 
-The engine's strict structured-output mode is all-or-nothing over a keyword
-allowlist, so one stray keyword turns server-side enforcement off for the
-whole schema and says nothing about it.  Every schema this system dispatched
-was raw ``model_json_schema()`` output, which means enforcement was off
-everywhere.  These tests hold the sanitized form byte-stable, prove that
-stripping a keyword from the WIRE form does not weaken client-side
-validation, and refuse a dispatch site that builds its own schema.
+``sanitize_schema`` is unwired (KOD-134): every dispatched schema is its
+model's own, constraints intact.  The stripper's guarantees are asserted
+against the stripper, called explicitly on a model's schema — the goldens stay
+byte-stable, and stripping a keyword still leaves client-side validation
+untouched.  The wire's guarantee is the opposite one and is asserted here too:
+a dispatched schema states the constraints its response is judged by, and no
+dispatch site filters a schema or builds one of its own.
 """
 
 import json
@@ -23,6 +23,7 @@ from kodezart.types.domain.agent import (
     ContentAuditFinding,
     PRDescriptionOutput,
 )
+from kodezart.types.domain.criteria import CRITERION_ID_PATTERN
 from kodezart.types.domain.wire_schema import (
     STRICT_MODE_KEYWORDS,
     WireSchemaError,
@@ -33,18 +34,21 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src" / "kodezart"
 GOLDENS = Path(__file__).parent / "schema_goldens"
 
-#: Every ``output_format`` mapping in the sources names its schema either by
-#: one of the precomputed constants or by a call to the sanitizer. The pattern
-#: reads the dispatch site as text, so a site that inlines a raw
+#: Every ``output_format`` mapping in the sources names its schema by one of
+#: the precomputed constants, or forwards the one its caller supplied. The
+#: pattern reads the dispatch site as text, so a site that inlines a raw
 #: ``model_json_schema()`` call is caught by the same check that catches a
-#: site naming an unsanitized constant.
+#: site passing a schema through the stripper.
 SCHEMA_ARGUMENT = re.compile(r'"schema"\s*:\s*([A-Za-z_][A-Za-z0-9_.()\[\]]*)')
 SANITIZER_CALL = "sanitize_schema("
+#: The one dispatch site whose schema is not a roster constant: the agent
+#: endpoint forwards the schema its caller supplied, unaltered.
+CALLER_SUPPLIED_SCHEMA = "request.output_schema"
 
 
-def is_sanitized_argument(argument: str) -> bool:
-    """Whether a dispatch site's schema expression went through the sanitizer."""
-    return argument in WIRE_SCHEMAS or argument.startswith(SANITIZER_CALL)
+def is_rostered_argument(argument: str) -> bool:
+    """Whether a dispatch site's schema expression is one the roster covers."""
+    return argument in WIRE_SCHEMAS or argument == CALLER_SUPPLIED_SCHEMA
 
 
 def walk(node: object) -> list[dict[str, object]]:
@@ -78,9 +82,9 @@ def walk(node: object) -> list[dict[str, object]]:
 
 @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
 def test_sanitized_schema_matches_its_golden(name: str) -> None:
-    """The wire form is pinned: a model change shows up as a schema diff."""
+    """The stripped form is pinned: a model change shows up as a schema diff."""
     expected = json.loads((GOLDENS / f"{name}.json").read_text(encoding="utf-8"))
-    assert WIRE_SCHEMAS[name] == expected
+    assert sanitize_schema(WIRE_SCHEMAS[name]) == expected
 
 
 @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
@@ -89,7 +93,7 @@ def test_sanitized_schema_uses_only_allowlist_keywords(name: str) -> None:
     offenders = sorted(
         {
             keyword
-            for node in walk(WIRE_SCHEMAS[name])
+            for node in walk(sanitize_schema(WIRE_SCHEMAS[name]))
             for keyword in node
             if keyword not in STRICT_MODE_KEYWORDS
         }
@@ -100,7 +104,7 @@ def test_sanitized_schema_uses_only_allowlist_keywords(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
 def test_sanitized_schema_has_no_references_left(name: str) -> None:
     """Nested models are inlined; nothing points at a definitions block."""
-    serialized = json.dumps(WIRE_SCHEMAS[name])
+    serialized = json.dumps(sanitize_schema(WIRE_SCHEMAS[name]))
     assert "$defs" not in serialized
     assert "$ref" not in serialized
 
@@ -126,7 +130,7 @@ def test_the_wire_schema_roster_is_every_precomputed_schema() -> None:
 
 def test_a_nested_model_is_inlined_with_its_fields() -> None:
     """Inlining is structural, not a deletion of the reference."""
-    audit = WIRE_SCHEMAS["CONTENT_AUDIT_SCHEMA"]
+    audit = sanitize_schema(WIRE_SCHEMAS["CONTENT_AUDIT_SCHEMA"])
     properties = audit["properties"]
     assert isinstance(properties, dict)
     findings = properties["findings"]
@@ -161,20 +165,21 @@ def test_an_unresolvable_reference_is_refused() -> None:
 
 
 # ---------------------------------------------------------------------------
-# KOD-91-AC-2 — the client keeps validating what the wire form no longer says
+# KOD-91-AC-2 — the client keeps validating what the stripped form drops
 # ---------------------------------------------------------------------------
 
 
 def test_client_validation_unchanged() -> None:
     """Stripped constraints are still enforced against the original models."""
-    slug_schema = WIRE_SCHEMAS["BRANCH_NAME_SCHEMA"]
+    slug_schema = sanitize_schema(WIRE_SCHEMAS["BRANCH_NAME_SCHEMA"])
     assert "maxLength" not in json.dumps(slug_schema)
     with pytest.raises(ValidationError):
         BranchNameOutput(slug="x" * 200)
     with pytest.raises(ValidationError):
         BranchNameOutput(slug="")
 
-    assert "minLength" not in json.dumps(WIRE_SCHEMAS["COMMIT_MESSAGE_SCHEMA"])
+    commit_schema = sanitize_schema(WIRE_SCHEMAS["COMMIT_MESSAGE_SCHEMA"])
+    assert "minLength" not in json.dumps(commit_schema)
     with pytest.raises(ValidationError):
         CommitMessageOutput(title="", body="body")
 
@@ -185,12 +190,42 @@ def test_client_validation_unchanged() -> None:
 
 
 # ---------------------------------------------------------------------------
+# KOD-134 — the wire states the contract the response is judged by
+# ---------------------------------------------------------------------------
+
+
+def test_a_dispatched_schema_carries_its_constraints() -> None:
+    """The dispatched schema says what the response is judged by.
+
+    ``CriteriaValidationOutput`` carries both kinds the stripper deleted: a
+    pattern on a criterion id and a length bound on its sibling. Either one
+    vanishing from the wire again fails this.
+    """
+    definitions = WIRE_SCHEMAS["CRITERIA_VALIDATION_SCHEMA"]["$defs"]
+    assert isinstance(definitions, dict)
+    contradiction = definitions["Contradiction"]
+    assert isinstance(contradiction, dict)
+    properties = contradiction["properties"]
+    assert isinstance(properties, dict)
+
+    criterion_ids = properties["criterionIds"]
+    assert isinstance(criterion_ids, dict)
+    item = criterion_ids["items"]
+    assert isinstance(item, dict)
+    assert item["pattern"] == CRITERION_ID_PATTERN
+
+    explanation = properties["explanation"]
+    assert isinstance(explanation, dict)
+    assert explanation["minLength"] == 1
+
+
+# ---------------------------------------------------------------------------
 # KOD-91-AC-3 — one construction path
 # ---------------------------------------------------------------------------
 
 
-def test_every_dispatch_site_sends_sanitized_schema() -> None:
-    """No dispatch site builds a schema of its own."""
+def test_every_dispatch_site_sends_the_models_own_schema() -> None:
+    """Every site names a roster schema; none filters one through the stripper."""
     offenders: list[str] = []
     for path in sorted(SRC.rglob("*.py")):
         for line_number, line in enumerate(
@@ -198,7 +233,7 @@ def test_every_dispatch_site_sends_sanitized_schema() -> None:
             start=1,
         ):
             for argument in SCHEMA_ARGUMENT.findall(line):
-                if not is_sanitized_argument(argument):
+                if not is_rostered_argument(argument):
                     offenders.append(
                         f"{path.relative_to(REPO_ROOT).as_posix()}:{line_number}"
                         f" sends {argument}"
@@ -211,7 +246,16 @@ def test_the_dispatch_site_guard_catches_an_unsanitized_schema() -> None:
     raw = '                    "schema": TicketDraftOutput.model_json_schema(),'
     found = SCHEMA_ARGUMENT.findall(raw)
     assert found
-    assert not is_sanitized_argument(found[0])
+    assert not is_rostered_argument(found[0])
+
+
+def test_the_dispatch_site_guard_catches_a_filtered_schema() -> None:
+    """The half the unwiring added: a re-wired site is rejected too."""
+    raw = '                    "schema": sanitize_schema(request.output_schema),'
+    found = SCHEMA_ARGUMENT.findall(raw)
+    assert found
+    assert found[0].startswith(SANITIZER_CALL)
+    assert not is_rostered_argument(found[0])
 
 
 def test_every_dispatch_site_is_accounted_for() -> None:
