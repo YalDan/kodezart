@@ -470,12 +470,25 @@ block, each naming its `system`.
 
 **5. Write the operation config.** Copy
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
-field by field and covers every one — fill in the values from steps 2–4, and
-point `KODEZART_OPERATION_CONFIG` at the file.
+field by field and covers every one — to `operation.toml` in the repository
+root, fill in the values from steps 2–4, and point
+`KODEZART_OPERATION_CONFIG` at it.
 
-*Observable result:* the path exists and `KODEZART_OPERATION_CONFIG` names it.
-An unset variable and a variable set to `""` are different states, and the
-second fails startup.
+**Your filled-in config is not the example, and it does not belong in version
+control.** It names real people by their tracker and forge identifiers, and
+this repository is public. `/operation.toml` and `/operation.*.toml` are
+ignored for exactly that reason; the pattern is root-anchored, so the
+examples under `docs/` stay tracked. Any other location works too — the
+variable takes a path, not a convention — but a path outside these two
+patterns is yours to keep out of a commit.
+
+Secrets are a different question and the answer is simpler: they never go in
+this file at all. The model is `extra="forbid"`, so a stray token key fails at
+load rather than shipping.
+
+*Observable result:* the path exists, `KODEZART_OPERATION_CONFIG` names it,
+and `git status` does not offer it. An unset variable and a variable set to
+`""` are different states, and the second fails startup.
 
 **6. What you do NOT configure.** Two things look like prerequisites and are
 not, so configuring them "to be safe" is how a first setup breaks itself.

@@ -9,6 +9,7 @@ a service that no longer behaves that way.
 
 import re
 import tomllib
+from fnmatch import fnmatch
 from pathlib import Path
 
 from kodezart.core import errors
@@ -24,6 +25,7 @@ from kodezart.types.domain.operation import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README = REPO_ROOT / "README.md"
+GITIGNORE = REPO_ROOT / ".gitignore"
 SRC = REPO_ROOT / "src" / "kodezart"
 
 GUIDE_HEADING = "### Setting up the self-running service"
@@ -281,3 +283,70 @@ def test_the_guide_states_the_count_invariants_the_loader_enforces() -> None:
         assert f"`{role.lower()}`" in guide, role
     assert "exactly one" in guide
     assert "at most one" in guide
+
+
+def _guide_config_destinations() -> set[str]:
+    """Every operation-config path the guide tells an operator to WRITE.
+
+    The annotated examples under ``docs/`` are excluded: those are the
+    tracked side, and the whole point of the anchoring below is that they
+    stay tracked.  So are globs, which the guide quotes when it states the
+    ignore rules themselves — a rule matches itself and would assert
+    nothing.
+    """
+    cited = re.findall(r"`(/?[\w./*-]*operation[\w.*-]*\.toml)`", _guide())
+    return {
+        path.lstrip("/")
+        for path in cited
+        if not path.lstrip("/").startswith("docs/") and "*" not in path
+    }
+
+
+def _root_anchored_toml_ignores() -> set[str]:
+    """The root-anchored ``.toml`` rules ``.gitignore`` carries."""
+    lines = (GITIGNORE.read_text(encoding="utf-8")).splitlines()
+    return {
+        line.strip().lstrip("/")
+        for line in lines
+        if line.strip().startswith("/") and line.strip().endswith(".toml")
+    }
+
+
+def test_every_config_path_the_guide_names_is_ignored() -> None:
+    """A guide telling you where to write real identifiers must not walk
+    you into committing them.
+
+    Both sides are derived: the destinations come out of the README and
+    the rules out of ``.gitignore``.  Renaming the file in the guide
+    without extending the ignore rules makes this red, which is the drift
+    that would otherwise be found by an operator's handles appearing in a
+    public repository.
+    """
+    destinations = _guide_config_destinations()
+    patterns = _root_anchored_toml_ignores()
+
+    assert destinations, "the guide must name where the filled-in config goes"
+    for path in sorted(destinations):
+        assert any(fnmatch(path, rule) for rule in patterns), (
+            f"the guide names {path!r} and no root-anchored rule ignores it: "
+            f"{sorted(patterns)}"
+        )
+
+
+def test_the_ignore_rules_are_anchored_so_the_examples_stay_tracked() -> None:
+    """The examples the guide tells you to COPY must remain in the tree.
+
+    An unanchored ``operation*.toml`` rule would ignore them too, and the
+    guide's first instruction would point at a file a fresh clone does not
+    have.
+    """
+    patterns = _root_anchored_toml_ignores()
+    examples = sorted(
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "docs").glob("operation*.toml")
+    )
+
+    assert examples, "the guide's step 5 copies an example that must exist"
+    for example in examples:
+        assert Path(REPO_ROOT / example).is_file()
+        assert not any(fnmatch(example, rule) for rule in patterns), example
