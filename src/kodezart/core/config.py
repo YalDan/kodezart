@@ -5,10 +5,10 @@ from typing import Self
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
     PATTERNLESS_CATEGORIES,
     GateVerdict,
-    HygieneCategory,
     RedactionCategory,
 )
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
@@ -29,35 +29,6 @@ _SHIPPED_CREDENTIAL_PATTERNS: list[str] = [
     r"\bgithub_pat_[A-Za-z0-9_]{20,}",
     r"\b(?:ntn_|secret_)[A-Za-z0-9]{40,}",
 ]
-
-# The quality-vocabulary set the pre-promotion hygiene scan runs through the
-# SAME engine as the deny set.  These ship non-empty, unlike the deny set: a
-# fire body's readability is a property of this project's own writing, not of
-# a deployment's private surface, so there is nothing for an operator to
-# supply before the scan means something.
-_SHIPPED_HYGIENE_PATTERNS: dict[HygieneCategory, list[str]] = {
-    # Words that belong to the machinery that scheduled the work.  An
-    # implementer reading its own dispatch mechanics is reading noise.
-    HygieneCategory.ORCHESTRATION_VOCABULARY: [
-        r"(?i)\bqueue:[a-z_]+\b",
-        r"(?i)\bdispatch(?:er|ed)?\s+pass\b",
-        r"(?i)\bfire[- ]?(?:queue|runner|prep)\b",
-        r"(?i)\bscheduled\s+routine\b",
-    ],
-    # Identifiers that resolve only against the board.  A body that leans on
-    # one is unreadable to anybody who cannot open the tracker.
-    HygieneCategory.TRACKER_SHORTHAND: [
-        r"\b[A-Z]{2,5}-\d+\b",
-        r"(?i)\bAC-\d+\b",
-    ],
-    # The evaluator's own answer sheet.  A body carrying it grades itself.
-    HygieneCategory.EVALUATOR_MATERIAL: [
-        r"(?i)\bacceptance criteri(?:on|a)\b",
-        r"```diff",
-        r"(?m)^[+-]{3} [ab]/",
-        r"(?m)^@@ -\d+",
-    ],
-}
 
 
 class AppConfig(BaseSettings):
@@ -398,6 +369,72 @@ class AppConfig(BaseSettings):
             "bound is what stops a loaded queue sitting idle for a working day."
         ),
     )
+    fire_prep_pass_interval_seconds: float = Field(
+        default=3600.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds between fire-preparation pass sessions. The interval IS "
+            "the latency a newly filed issue waits before anything prepares "
+            "it, so it is the operator's answer to how stale the queue may get."
+        ),
+    )
+    grooming_pass_interval_seconds: float = Field(
+        default=21600.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds between grooming pass sessions. Grooming verifies the "
+            "whole tree against the real code by building it, so one run costs "
+            "far more than one preparation and buys a report rather than a "
+            "queued unit of work — a slower cadence than fire preparation is "
+            "the shipped default, never a shared one."
+        ),
+    )
+    dispatch_pass_gate_signals: list[PassSignal] = Field(
+        default_factory=lambda: [PassSignal.approved_changed],
+        description=(
+            "Signals the dispatch pass is gated on. Dispatch claims and "
+            "enqueues, so it has work exactly when an approved issue moved — "
+            "one signal answers it completely. An empty list runs the pass "
+            "every tick, which is legal and costs a claim attempt per tick."
+        ),
+    )
+    fire_prep_pass_gate_signals: list[PassSignal] = Field(
+        default_factory=lambda: [
+            PassSignal.issues_changed,
+            PassSignal.triage_backlog,
+            PassSignal.reviews_changed,
+        ],
+        description=(
+            "Signals the fire-preparation pass is gated on. Three, because "
+            "its prompt gathers three streams and a gate covering fewer would "
+            "skip real work: the standing triage backlog it re-sweeps whole, "
+            "issue activity since the last tick, and review threads — which "
+            "are a separate object class no issue scan reaches. Dropping "
+            "triage_backlog is the usual edit on a board that parks plan "
+            "stubs at triage, since that signal is true while any exist."
+        ),
+    )
+    grooming_pass_gate_signals: list[PassSignal] = Field(
+        default_factory=list,
+        description=(
+            "Signals the grooming pass is gated on. Ships EMPTY — grooming "
+            "verifies the tree by building it, which is work even when "
+            "nothing changed, so a delta gate would skip exactly the thing "
+            "the pass exists for. An operator paying per session may still "
+            "gate it; the cost of doing so is the unchanged-board check."
+        ),
+    )
+    scheduled_pass_working_dir: str = Field(
+        default="/tmp/kodezart-scheduled-pass",
+        description=(
+            "Working directory a scheduled pass session runs in. Deliberately "
+            "not a cloned repository: a pass acts on the tracker and reaches "
+            "whatever repository it needs itself, so standing it in one of "
+            "them would privilege that one for no reason."
+        ),
+    )
     dispatch_lane: str = Field(
         default="tracker",
         description="Fire-queue lane tracker-originated dispatches are enqueued on.",
@@ -568,18 +605,6 @@ class AppConfig(BaseSettings):
         description=(
             "JSON object mapping a redaction category to the verdict a hit "
             "in that category yields. A payload takes the max severity."
-        ),
-    )
-    hygiene_patterns: dict[HygieneCategory, list[str]] = Field(
-        default_factory=lambda: {
-            category: list(patterns)
-            for category, patterns in _SHIPPED_HYGIENE_PATTERNS.items()
-        },
-        description=(
-            "JSON object mapping a fire-body hygiene category to its regex "
-            "pattern list. Runs through the same scanner engine as the deny "
-            "set and answers a different question: whether the implementer "
-            "receiving the body can act on it alone."
         ),
     )
     operation_config: str | None = Field(

@@ -83,6 +83,24 @@ class LinearIssueListWire(LinearWireModel):
     issues: list[LinearIssueWire]
 
 
+class LinearDiffWire(LinearWireModel):
+    """A Linear review — a pull-request mirror — as the server reports it.
+
+    Two fields of the many the vendor returns, because a gate asks only
+    whether something moved: declaring the thread payloads here would put
+    them one attribute access away from a caller that must not read them.
+    """
+
+    full_identifier: str
+    updated_at: datetime
+
+
+class LinearDiffListWire(LinearWireModel):
+    """The ``list_diffs`` envelope."""
+
+    diffs: list[LinearDiffWire]
+
+
 class LinearCommentWire(LinearWireModel):
     """A Linear comment as the MCP server reports it."""
 

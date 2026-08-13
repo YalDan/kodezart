@@ -22,26 +22,35 @@ class GatedDispatchPass:
     def __init__(
         self,
         *,
-        gate: PassGate,
+        gate: PassGate | None,
         dispatcher: FireDispatcher,
         lifecycle: LifecycleWatcher,
     ) -> None:
-        self._gate: PassGate = gate
+        self._gate: PassGate | None = gate
         self._dispatcher: FireDispatcher = dispatcher
         self._lifecycle: LifecycleWatcher = lifecycle
         self._log: BoundLogger = get_logger(__name__)
 
     async def run(self) -> None:
-        """Consult the gate; run the pass only when something moved."""
-        delta = await self._gate.delta()
-        if not delta.has_delta():
-            await self._log.ainfo("dispatch_pass_skipped_no_delta")
-            return
+        """Consult the gate; run the pass only when something moved.
+
+        An absent gate means this pass is ungated and runs every tick.
+        The alternative — a gate holding no signals — would report an
+        empty delta forever and silently pin the pass shut, which is why
+        "no signals configured" resolves to no gate rather than to one.
+        """
+        changed: tuple[str, ...] = ()
+        if self._gate is not None:
+            delta = await self._gate.delta()
+            if not delta.has_delta():
+                await self._log.ainfo("dispatch_pass_skipped_no_delta")
+                return
+            changed = delta.changed
         report = await self._dispatcher.run_pass()
         await self._log.ainfo(
             "dispatch_pass_completed",
             outcome=report.outcome.value,
-            changed=list(delta.changed),
+            changed=list(changed),
             claimed_issue_key=report.claimed_issue_key,
             job_id=report.job_id,
         )

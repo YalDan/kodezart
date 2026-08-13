@@ -24,6 +24,7 @@ from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import WorkflowCompleteEvent
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
@@ -146,7 +147,7 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
         ),
         gate=PassGate(
             tracker=tracker,
-            queue_state=QueueState.APPROVED,
+            signals=[PassSignal.approved_changed],
             page_size=PAGE_SIZE,
         ),
         dispatcher=FireDispatcher(

@@ -14,7 +14,7 @@ from kodezart.composition.forge import build_forge_client
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.jobs import build_job_queue, build_job_service
 from kodezart.composition.knowledge import boot_knowledge_grant
-from kodezart.composition.passes import build_fire_prep_pass, build_pass_scheduler
+from kodezart.composition.passes import build_pass_scheduler
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.tracker import (
@@ -68,22 +68,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     prompts = await boot_prompts(config=config, operation=operation, log=log)
     skills = await boot_skills(config=config, prompts=prompts, log=log)
     app.state.skills = skills
-
-    # The pass path's entry point: constructed whenever an operation config
-    # exists, held where the cutover act can invoke it. Absence is named,
-    # never inferred from a missing attribute.
-    if operation is not None:
-        app.state.fire_prep_pass = build_fire_prep_pass(
-            config=config,
-            operation=operation,
-            prompts=prompts,
-        )
-    else:
-        app.state.fire_prep_pass = None
-        await log.ainfo(
-            "fire_prep_pass_not_wired",
-            operation_config_present=False,
-        )
 
     executor = ClaudeClientExecutor(
         model=config.model,
@@ -153,6 +137,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             gate=gate,
             git=stack.git,
             cache=stack.cache,
+            prompts=prompts,
+            runner=agent_service,
+            skills=skills,
             log=log,
         )
         app.state.pass_scheduler = scheduler

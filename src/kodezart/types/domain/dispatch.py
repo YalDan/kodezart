@@ -113,6 +113,43 @@ class DispatchReport(DispatchModel):
     duplicate."""
 
 
+class PassSignal(StrEnum):
+    """The deterministic questions a pass may gate on — one port call each.
+
+    A gate is the DISJUNCTION over the signals its pass configures: any
+    signal reporting work runs the pass, and a pass configuring none runs
+    unconditionally without issuing a query at all, so ungated stays the
+    cheapest path rather than a special case.
+
+    Members are named for the QUESTION rather than for the pass that asks
+    it, because more than one pass asks the same question and a signal
+    named after a caller would have to be duplicated for the second one.
+    """
+
+    approved_changed = "approved_changed"
+    """Issues at the approved queue state that moved since this signal's
+    mark.  The dispatch pass's entire gate, expressed as configuration."""
+
+    issues_changed = "issues_changed"
+    """Any issue that moved since this signal's mark, at any queue state."""
+
+    triage_backlog = "triage_backlog"
+    """The standing triage backlog is non-empty.  Holds NO mark by
+    construction: the question is about the backlog's SIZE, not about
+    movement, because a pass that re-sweeps its whole backlog has work to
+    do on a board where nothing changed.  Consequence, stated rather than
+    discovered: this signal is true while anything sits at triage — plan
+    stubs deliberately parked there included — so a board that parks stubs
+    keeps its pass running every tick.  An operator drops the signal rather
+    than learning that from a bill."""
+
+    reviews_changed = "reviews_changed"
+    """Any review that moved since this signal's mark.  Reviews are a
+    separate object class and no issue scan reaches them, so a pass whose
+    prompt sweeps review threads is under-gated without this: a principal's
+    mention on a review with no issue activity would be skipped."""
+
+
 class PassDelta(DispatchModel):
     """What the deterministic pre-query saw since the last tick.
 

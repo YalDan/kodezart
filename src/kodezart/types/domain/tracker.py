@@ -288,3 +288,34 @@ class IssueQuery(TrackerModel):
     team_key: str | None = None
     updated_since: datetime | None = None
     page_size: int = Field(gt=0)
+
+
+class TrackerReview(TrackerModel):
+    """One review — a diff or pull-request mirror — as a gate needs it.
+
+    Identity and recency, and deliberately nothing else.  A gate asks
+    whether anything moved, never what moved inside it: reading a review's
+    threads is the session's work, and a value carrying them here would
+    invite the gate to start doing that work itself.
+    """
+
+    review_key: str
+    updated_at: datetime
+
+
+class ReviewQuery(TrackerModel):
+    """A scan over the tracker's reviews, expressed in domain terms only.
+
+    Reviews are a separate object class from issues — an issue scan cannot
+    reach them at any page size — so the question needs its own query
+    rather than a flag on :class:`IssueQuery`.
+
+    ``updated_since`` states the domain question and not a backend's
+    capability: an adapter whose vendor offers no server-side recency
+    filter answers it after the fact, and one whose vendor does pushes it
+    down.  Neither is visible here.
+    """
+
+    repo_url: str | None = None
+    updated_since: datetime | None = None
+    page_size: int = Field(gt=0)

@@ -13,8 +13,14 @@ from datetime import timedelta
 from pathlib import Path
 
 from kodezart.services.pass_gate import PassGate
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import QueueState
-from tests.fakes import FIXTURE_EPOCH, FakeTrackerPort, make_tracker_issue
+from tests.fakes import (
+    FIXTURE_EPOCH,
+    FakeTrackerPort,
+    make_tracker_issue,
+    make_tracker_review,
+)
 
 GATE_SOURCE = (
     Path(__file__).resolve().parents[2]
@@ -30,9 +36,16 @@ LATEST = FIXTURE_EPOCH + timedelta(hours=2)
 
 
 def gate(tracker: FakeTrackerPort) -> PassGate:
+    """The dispatch gate, now expressed as its one signal.
+
+    Every behaviour test below is unchanged from when this was a hardcoded
+    queue state.  That is the point of the generalisation: dispatch is one
+    configuration of the general mechanism, not a rewrite of it, and this
+    file passing untouched is what says so.
+    """
     return PassGate(
         tracker=tracker,
-        queue_state=QueueState.APPROVED,
+        signals=[PassSignal.approved_changed],
         page_size=PAGE_SIZE,
     )
 
@@ -93,7 +106,7 @@ async def test_the_mark_advances_to_the_newest_thing_the_gate_saw() -> None:
     subject = gate(tracker)
     first = await subject.delta()
     assert first.mark == LATEST
-    assert subject.mark == LATEST
+    assert subject.mark(PassSignal.approved_changed) == LATEST
 
     await subject.delta()
     assert tracker.scans[1].updated_since == LATEST
@@ -110,7 +123,7 @@ async def test_a_tick_that_saw_nothing_leaves_the_mark_where_it_was() -> None:
 
     assert not quiet.has_delta()
     assert quiet.mark == LATER
-    assert subject.mark == LATER
+    assert subject.mark(PassSignal.approved_changed) == LATER
     assert tracker.scans[-1].updated_since == LATER
 
 
@@ -164,3 +177,93 @@ def test_the_gate_module_imports_nothing_that_could_reach_a_model() -> None:
         for name in imported
         if re.search(r"executor|prompt|agent|claude|skills", name)
     ]
+
+
+def signal_gate(
+    tracker: FakeTrackerPort,
+    *signals: PassSignal,
+) -> PassGate:
+    return PassGate(tracker=tracker, signals=list(signals), page_size=PAGE_SIZE)
+
+
+async def test_the_backlog_signal_is_a_size_question_not_a_delta() -> None:
+    """A standing triage backlog is work even on a board where nothing moved."""
+    tracker = FakeTrackerPort(
+        issues=[make_tracker_issue("FIX-1", queue_states=[QueueState.TRIAGE])],
+    )
+    subject = signal_gate(tracker, PassSignal.triage_backlog)
+
+    first = await subject.delta()
+    second = await subject.delta()
+
+    assert first.has_delta()
+    assert second.has_delta(), "a backlog does not drain by being looked at"
+    assert tracker.scans[0].queue_state is QueueState.TRIAGE
+    # No mark, ever: asking "is the backlog empty" from a high-water stamp
+    # would answer "did the backlog change", which is a different question.
+    assert [scan.updated_since for scan in tracker.scans] == [None, None]
+    assert subject.mark(PassSignal.triage_backlog) is None
+
+
+async def test_the_review_signal_reads_reviews_and_no_issue_scan_sees_them() -> None:
+    """Reviews are a separate object class; an issue scan cannot reach one."""
+    tracker = FakeTrackerPort()
+    tracker.reviews.append(make_tracker_review("acme/repo#7", updated_at=LATER))
+
+    delta = await signal_gate(tracker, PassSignal.reviews_changed).delta()
+
+    assert delta.has_delta()
+    assert set(delta.changed) == {"acme/repo#7"}
+    assert len(tracker.review_scans) == 1
+    assert tracker.scans == [], "a review question must not become an issue scan"
+
+
+async def test_any_one_signal_reporting_work_runs_the_pass() -> None:
+    """The gate is a disjunction: a quiet signal does not veto a loud one."""
+    tracker = FakeTrackerPort()
+    tracker.reviews.append(make_tracker_review("acme/repo#7", updated_at=LATER))
+
+    delta = await signal_gate(
+        tracker,
+        PassSignal.issues_changed,
+        PassSignal.triage_backlog,
+        PassSignal.reviews_changed,
+    ).delta()
+
+    assert delta.has_delta()
+    assert set(delta.changed) == {"acme/repo#7"}
+
+
+async def test_marks_are_per_signal_so_issue_activity_cannot_skip_a_review() -> None:
+    """One shared stamp would advance past review activity nobody has read."""
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1", created_at=LATEST)])
+    subject = signal_gate(
+        tracker,
+        PassSignal.issues_changed,
+        PassSignal.reviews_changed,
+    )
+
+    await subject.delta()
+
+    assert subject.mark(PassSignal.issues_changed) == LATEST
+    assert subject.mark(PassSignal.reviews_changed) is None
+    # The review window was never consumed, so a review stamped before the
+    # issue activity is still reported on the next tick.
+    tracker.reviews.append(make_tracker_review("acme/repo#7", updated_at=LATER))
+    assert set((await subject.delta()).changed) == {"acme/repo#7"}
+
+
+async def test_a_gate_holding_no_signals_asks_nothing_at_all() -> None:
+    """Why the composition builds no gate rather than an empty one.
+
+    An empty gate would report no delta forever and pin its pass shut.
+    The composition therefore resolves "no signals" to no gate, and this
+    records what the object would do if one were ever built anyway.
+    """
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1")])
+
+    delta = await signal_gate(tracker).delta()
+
+    assert not delta.has_delta()
+    assert tracker.scans == []
+    assert tracker.review_scans == []

@@ -174,6 +174,21 @@ def _call_name(node: ast.expr) -> str:
     return ""
 
 
+def _dispatch_entries(scheduler: PassScheduler) -> list[tuple[str, float]]:
+    """``(name, interval)`` for the DISPATCH passes the scheduler carries.
+
+    The two cases below are about the dispatch half — one pass per
+    repository, on the dispatch interval, and none of them without a
+    delivery probe — so each reads the dispatch entries rather than the
+    whole schedule, which also carries the prompt passes (KOD-60 R25).
+    """
+    return [
+        (entry.name, entry.interval_seconds)
+        for entry in scheduler.passes
+        if entry.name.startswith("dispatch:")
+    ]
+
+
 def _first_call_line(name: str, *, inside: object = lifespan) -> int:
     """Where *name* is first called inside *inside*, the shipped function."""
     tree = ast.parse(textwrap.dedent(inspect.getsource(inside)))
@@ -448,11 +463,8 @@ async def test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo(
     async with lifespan(app):
         scheduler: PassScheduler = app.state.pass_scheduler
         assert scheduler.running
-        assert [entry.name for entry in scheduler.passes] == [
-            "dispatch:https://example.invalid/repo",
-        ]
-        assert [entry.interval_seconds for entry in scheduler.passes] == [
-            UNUSUAL_INTERVAL,
+        assert _dispatch_entries(scheduler) == [
+            ("dispatch:https://example.invalid/repo", UNUSUAL_INTERVAL),
         ]
     assert not scheduler.running
 
@@ -468,7 +480,7 @@ async def test_without_a_delivery_probe_no_pass_is_scheduled_and_boot_says_so(
     _configure(monkeypatch, tmp_path, _operation_toml())
     app = create_app()
     async with lifespan(app):
-        assert app.state.pass_scheduler.passes == ()
+        assert _dispatch_entries(app.state.pass_scheduler) == []
 
     unwired = [
         event
