@@ -50,7 +50,9 @@ CITED_ERRORS: frozenset[str] = frozenset(
     },
 )
 
-#: Every environment variable the guide instructs the operator to set.
+#: Every environment variable the guide MUST instruct the operator to set.
+#: A floor, not an inventory: the guide may name more, and every name it
+#: does carry is checked against the shipped model by the test below.
 CITED_VARIABLES: frozenset[str] = frozenset(
     {
         "KODEZART_TRACKER_TOKEN",
@@ -149,16 +151,36 @@ def test_every_failure_class_the_guide_names_exists() -> None:
         assert name in guide, name
 
 
-def test_every_variable_the_guide_sets_is_a_shipped_config_field() -> None:
-    """The guide instructs against the env surface the code actually reads."""
+def _shipped_variables() -> set[str]:
+    """Every environment name ``AppConfig`` actually reads."""
     from kodezart.core.config import AppConfig
 
-    shipped = {f"KODEZART_{name.upper()}" for name in AppConfig.model_fields}
+    return {f"KODEZART_{name.upper()}" for name in AppConfig.model_fields}
+
+
+def test_every_variable_the_guide_sets_is_a_shipped_config_field() -> None:
+    """The guide instructs against the env surface the code actually reads."""
+    shipped = _shipped_variables()
     guide = _guide()
 
     for variable in CITED_VARIABLES:
         assert variable in shipped, variable
         assert variable in guide, variable
+
+
+def test_the_guide_names_no_variable_the_config_does_not_ship() -> None:
+    """The other direction, derived: an invented or misspelled name reds here.
+
+    The floor above says which variables the guide owes an operator; this
+    reads every one it actually carries out of the text, so a variable
+    added to the guide is checked by the act of adding it rather than by
+    somebody remembering to extend a list.
+    """
+    shipped = _shipped_variables()
+    named = set(re.findall(r"\bKODEZART_[A-Z0-9_]+\b", _guide()))
+
+    assert named, "the guide names no configuration variable at all"
+    assert named <= shipped, named - shipped
 
 
 def test_the_guide_names_every_queue_state_the_code_addresses_by_name() -> None:
