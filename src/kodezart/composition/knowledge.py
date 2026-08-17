@@ -32,6 +32,14 @@ async def boot_knowledge_grant(
     list is empty, so that is the ordinary case, not the exception.
     """
     if not config.knowledge_session_grants:
+        await log.ainfo(
+            "knowledge_capability_unconfigured",
+            detail=(
+                "no session type is granted the knowledge MCP server; "
+                "the service runs without the capability and nothing "
+                "substitutes for it"
+            ),
+        )
         return config.knowledge_grant(knowledge_map="")
 
     knowledge_map = prompts.template_for(PromptKey.KNOWLEDGE_MAP).render({})

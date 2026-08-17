@@ -525,3 +525,34 @@ def test_the_pinned_legacy_combination_still_constructs_at_config_level(
 
     assert grant.server_url == "https://mcp.notion.com/mcp"
     assert grant.interactive_auth_hosts == ("mcp.notion.com",)
+
+
+# ---------------------------------------------------------------------------
+# KOD-129-AC-4 — absence is named at boot, and nothing substitutes for it
+# ---------------------------------------------------------------------------
+
+
+async def test_an_unconfigured_knowledge_store_is_named_at_boot_and_starts(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: object,
+) -> None:
+    """Boot names the unused capability, the service starts, and no local
+    file is written as a substitute."""
+    from pathlib import Path
+
+    from kodezart.main import create_app, lifespan
+
+    assert isinstance(tmp_path, Path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", raising=False)
+    monkeypatch.delenv(_TOKEN_VAR, raising=False)
+    monkeypatch.delenv(_GATEWAY_VAR, raising=False)
+
+    app = create_app()
+    async with lifespan(app):
+        assert app.state.workflow_engine is not None
+
+    emitted = capsys.readouterr().out + capsys.readouterr().err
+    assert "knowledge_capability_unconfigured" in emitted
+    assert list(tmp_path.iterdir()) == []
