@@ -923,8 +923,8 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
-#: sanitizer test and the dispatch-site guard both read this rather than
-#: keeping their own list.
+#: wire-contract tests and the dispatch-site guard both read this rather
+#: than keeping their own list.
 WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
     "ACCEPTANCE_CRITERIA_SCHEMA": ACCEPTANCE_CRITERIA_SCHEMA,
