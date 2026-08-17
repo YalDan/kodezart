@@ -2,7 +2,7 @@
 
 from typing import Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from kodezart.types.domain.gating import (
@@ -296,9 +296,14 @@ class AppConfig(BaseSettings):
         min_length=1,
         description="Scheme prefixing the tracker credential in its auth header.",
     )
-    tracker_token: str | None = Field(
+    tracker_token: SecretStr | None = Field(
         default=None,
-        description="Tracker credential for the MCP server. Environment only.",
+        exclude=True,
+        description=(
+            "Tracker credential for the MCP server. Environment only, "
+            "excluded from serialization, and masked in repr: a dumped "
+            "config is copied into logs, fixtures and error payloads."
+        ),
     )
     tracker_timeout_seconds: float = Field(
         default=30.0,

@@ -99,7 +99,10 @@ async def boot_tracker(
             tracker_token_present=config.tracker_token is not None,
         )
         return None
-    caller = make_mcp_tool_caller(config=config, token=config.tracker_token)
+    caller = make_mcp_tool_caller(
+        config=config,
+        token=config.tracker_token.get_secret_value(),
+    )
     await caller.open()
     try:
         tracker = build_tracker(config=config, operation=operation, caller=caller)
