@@ -12,12 +12,14 @@ Nothing here is tracker-shaped.  It speaks MCP and knows no tool names,
 so a second MCP-backed adapter reuses it unchanged.
 """
 
+import json
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from datetime import timedelta
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.types import CallToolResult, TextContent
 
 from kodezart.core.errors import McpTransportError
 from kodezart.core.logging import BoundLogger, get_logger
@@ -118,11 +120,58 @@ class HttpMcpToolCaller:
                 server_name=self._server_name,
                 tool_name=name,
             )
+        return self._structured_result(result, name)
+
+    def _structured_result(
+        self,
+        result: CallToolResult,
+        name: str,
+    ) -> Mapping[str, object]:
+        """The structured object from either source, in order.
+
+        ``structuredContent`` when present; otherwise a single text-content
+        block whose text parses as a JSON object — the spec makes the first
+        optional and the vendor's live server sends only the second.  Every
+        other shape is a refusal naming exactly what was absent or
+        undecodable, never a guessed-at result.
+        """
         structured = result.structuredContent
-        if structured is None:
+        if structured is not None:
+            return structured
+        blocks = result.content
+        if not blocks:
             raise McpTransportError(
-                "the MCP server returned no structured content",
+                "the MCP server returned no structured content and no "
+                "content blocks",
                 server_name=self._server_name,
                 tool_name=name,
             )
-        return structured
+        if len(blocks) > 1:
+            raise McpTransportError(
+                "the MCP server returned several content blocks where one "
+                "structured result was expected",
+                server_name=self._server_name,
+                tool_name=name,
+            )
+        block = blocks[0]
+        if not isinstance(block, TextContent):
+            raise McpTransportError(
+                "the MCP server's single content block is not text",
+                server_name=self._server_name,
+                tool_name=name,
+            )
+        try:
+            parsed: object = json.loads(block.text)
+        except json.JSONDecodeError as exc:
+            raise McpTransportError(
+                "the MCP server's text content is not valid JSON",
+                server_name=self._server_name,
+                tool_name=name,
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise McpTransportError(
+                "the MCP server's text content is JSON but not an object",
+                server_name=self._server_name,
+                tool_name=name,
+            )
+        return parsed
