@@ -197,3 +197,331 @@ def test_a_scheme_less_header_is_expressible_on_the_grant() -> None:
 
     assert grant.auth_header == "X-API-Key"
     assert grant.auth_scheme is None
+
+
+# ---------------------------------------------------------------------------
+# The configuration layer — env-sourced shapes and their boot refusals
+# ---------------------------------------------------------------------------
+
+
+_TRANSPORT_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_TRANSPORT"
+_TOKEN_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_TOKEN"
+_GATEWAY_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN"
+_COMMAND_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_COMMAND"
+_CREDENTIAL_ENV_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV"
+
+
+def _stdio_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fully specified stdio route in the environment."""
+    monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
+    monkeypatch.setenv(_COMMAND_VAR, _SERVER_COMMAND)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_ARGS", '["--stdio"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_ENV", '{"LOG_LEVEL": "debug"}')
+    monkeypatch.setenv(_CREDENTIAL_ENV_VAR, "KNOWLEDGE_TOKEN")
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+
+
+def test_the_transport_resolves_from_its_env_var_and_ships_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kodezart.core.config import AppConfig
+
+    assert AppConfig().knowledge_mcp_transport is KnowledgeTransport.HTTP
+    monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
+    monkeypatch.setenv(_COMMAND_VAR, _SERVER_COMMAND)
+    assert AppConfig().knowledge_mcp_transport is KnowledgeTransport.STDIO
+
+
+def test_the_shipped_default_configuration_is_exactly_as_shipped() -> None:
+    """No new field changes what a fresh deployment starts from."""
+    from kodezart.core.config import AppConfig
+
+    config = AppConfig()
+
+    assert config.knowledge_mcp_server_name == "notion"
+    assert config.knowledge_mcp_server_url == "https://mcp.notion.com/mcp"
+    assert config.knowledge_mcp_auth_header == "Authorization"
+    assert config.knowledge_mcp_auth_scheme == "Bearer"
+    assert config.knowledge_mcp_transport is KnowledgeTransport.HTTP
+    assert config.knowledge_mcp_token is None
+    assert config.knowledge_mcp_gateway_token is None
+    assert config.knowledge_mcp_command is None
+    assert config.knowledge_mcp_args == []
+    assert config.knowledge_mcp_env == {}
+    assert config.knowledge_mcp_credential_env is None
+    assert config.knowledge_session_grants == []
+
+
+def test_a_full_stdio_route_resolves_into_the_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KOD-129-AC-2, configuration half: every stdio field threads through."""
+    from kodezart.core.config import AppConfig
+
+    _stdio_env(monkeypatch)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+
+    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+    assert grant.transport is KnowledgeTransport.STDIO
+    assert grant.command == _SERVER_COMMAND
+    assert grant.args == ("--stdio",)
+    assert grant.env == {"LOG_LEVEL": "debug"}
+    assert grant.credential_env == "KNOWLEDGE_TOKEN"
+    assert grant.credential == _CREDENTIAL
+    assert grant.server_url is None
+    assert grant.auth_header is None
+    assert grant.auth_scheme is None
+
+
+def test_a_null_auth_scheme_loads_as_absence_not_a_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KOD-129-AC-3: the scheme-less header is expressible from the env."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME", "null")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_AUTH_HEADER", "X-API-Key")
+
+    config = AppConfig()
+
+    assert config.knowledge_mcp_auth_scheme is None
+    assert config.knowledge_mcp_auth_header == "X-API-Key"
+
+
+def test_the_gateway_credential_is_env_sourced_and_never_serialized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The new secret-bearing field carries the same hygiene as the first."""
+    import json
+
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
+
+    config = AppConfig()
+
+    assert config.knowledge_mcp_gateway_token == _GATEWAY_CREDENTIAL
+    assert _GATEWAY_CREDENTIAL not in json.dumps(config.model_dump(mode="json"))
+    assert _GATEWAY_CREDENTIAL not in config.model_dump_json()
+    monkeypatch.delenv(_GATEWAY_VAR)
+    assert AppConfig().knowledge_mcp_gateway_token is None
+
+
+async def test_no_boot_log_line_carries_the_gateway_credential(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from kodezart.main import create_app, lifespan
+
+    monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
+
+    app = create_app()
+    async with lifespan(app):
+        pass
+
+    emitted = capsys.readouterr().out + capsys.readouterr().err
+    assert '"event"' in emitted
+    assert _GATEWAY_CREDENTIAL not in emitted
+
+
+def test_a_gateway_credential_satisfies_the_grant_credential_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A self-hosted server holding its own upstream token needs no second."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
+    monkeypatch.delenv(_TOKEN_VAR, raising=False)
+
+    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+    assert grant.gateway_credential == _GATEWAY_CREDENTIAL
+    assert grant.credential is None
+
+
+def test_a_grant_with_neither_credential_still_aborts_boot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The amended cross-field rule names both variables."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.delenv(_TOKEN_VAR, raising=False)
+    monkeypatch.delenv(_GATEWAY_VAR, raising=False)
+
+    with pytest.raises(ValidationError) as excinfo:
+        AppConfig()
+
+    reported = str(excinfo.value)
+    assert _TOKEN_VAR in reported
+    assert _GATEWAY_VAR in reported
+
+
+@pytest.mark.parametrize(
+    ("var", "value"),
+    [
+        (_COMMAND_VAR, "/opt/knowledge/bin/server"),
+        (_CREDENTIAL_ENV_VAR, "KNOWLEDGE_TOKEN"),
+        ("KODEZART_KNOWLEDGE_MCP_ARGS", '["--stdio"]'),
+        ("KODEZART_KNOWLEDGE_MCP_ENV", '{"LOG_LEVEL": "debug"}'),
+    ],
+)
+def test_a_stdio_field_under_the_http_transport_aborts_boot_naming_it(
+    monkeypatch: pytest.MonkeyPatch,
+    var: str,
+    value: str,
+) -> None:
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv(var, value)
+    if var == _CREDENTIAL_ENV_VAR:
+        monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+
+    with pytest.raises(ValidationError, match=var):
+        AppConfig()
+
+
+@pytest.mark.parametrize(
+    "var",
+    [
+        "KODEZART_KNOWLEDGE_MCP_SERVER_URL",
+        "KODEZART_KNOWLEDGE_MCP_AUTH_HEADER",
+        "KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME",
+    ],
+)
+def test_an_http_field_explicitly_set_under_stdio_aborts_boot_naming_it(
+    monkeypatch: pytest.MonkeyPatch,
+    var: str,
+) -> None:
+    """Explicitly set is the offence; the inert shipped default is not."""
+    from kodezart.core.config import AppConfig
+
+    _stdio_env(monkeypatch)
+    monkeypatch.setenv(var, "Bearer" if "SCHEME" in var else "X-Value")
+
+    with pytest.raises(ValidationError, match=var):
+        AppConfig()
+
+
+def test_the_inert_http_defaults_are_legal_under_stdio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control for the explicit-set rule: defaults an operator never
+    wrote do not abort a stdio boot."""
+    from kodezart.core.config import AppConfig
+
+    _stdio_env(monkeypatch)
+
+    assert AppConfig().knowledge_mcp_transport is KnowledgeTransport.STDIO
+
+
+def test_a_gateway_credential_under_stdio_aborts_boot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kodezart.core.config import AppConfig
+
+    _stdio_env(monkeypatch)
+    monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
+
+    with pytest.raises(ValidationError, match=_GATEWAY_VAR):
+        AppConfig()
+
+
+def test_a_stdio_transport_without_a_command_aborts_boot_naming_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
+
+    with pytest.raises(ValidationError, match=_COMMAND_VAR):
+        AppConfig()
+
+
+def test_a_stdio_credential_without_its_delivery_entry_aborts_boot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
+    monkeypatch.setenv(_COMMAND_VAR, _SERVER_COMMAND)
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+
+    with pytest.raises(ValidationError, match=_CREDENTIAL_ENV_VAR):
+        AppConfig()
+
+
+def test_a_delivery_entry_without_a_credential_aborts_boot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv(_TRANSPORT_VAR, "stdio")
+    monkeypatch.setenv(_COMMAND_VAR, _SERVER_COMMAND)
+    monkeypatch.setenv(_CREDENTIAL_ENV_VAR, "KNOWLEDGE_TOKEN")
+    monkeypatch.delenv(_TOKEN_VAR, raising=False)
+
+    with pytest.raises(ValidationError, match="no credential to deliver"):
+        AppConfig()
+
+
+def test_a_delivery_entry_colliding_with_a_declared_env_member_aborts_boot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kodezart.core.config import AppConfig
+
+    _stdio_env(monkeypatch)
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE_MCP_ENV",
+        '{"KNOWLEDGE_TOKEN": "not-the-secret"}',
+    )
+
+    with pytest.raises(ValidationError, match="two writers"):
+        AppConfig()
+
+
+def test_a_relative_command_is_refused_when_the_grant_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The command-safety rules live on the grant value and fire at boot."""
+    from kodezart.core.config import AppConfig
+
+    _stdio_env(monkeypatch)
+    monkeypatch.setenv(_COMMAND_VAR, "knowledge-mcp-server")
+
+    with pytest.raises(ValidationError, match="absolute"):
+        AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+
+def test_a_package_runner_command_is_refused_when_the_grant_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kodezart.core.config import AppConfig
+
+    _stdio_env(monkeypatch)
+    monkeypatch.setenv(_COMMAND_VAR, "/usr/local/bin/npx")
+
+    with pytest.raises(ValidationError, match="package"):
+        AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+
+def test_the_pinned_legacy_combination_still_constructs_at_config_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal layer for the dead combination is the session mapping.
+
+    Recorded as a control: the protected suites pin this configuration as
+    legal at every boot layer, which is exactly why the fire-ruling of
+    2026-08-17 places the refusal at the mapping instead.
+    """
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+
+    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+    assert grant.server_url == "https://mcp.notion.com/mcp"
+    assert grant.interactive_auth_hosts == ("mcp.notion.com",)

@@ -270,3 +270,97 @@ def test_the_same_credential_against_a_self_hosted_url_maps_cleanly() -> None:
     mapped = map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
 
     assert set(mapped["mcp_servers"]) == {_SERVER}
+
+
+# ---------------------------------------------------------------------------
+# KOD-129-AC-1 + AC-2 through the real configuration origin
+# ---------------------------------------------------------------------------
+
+
+def test_the_shipped_default_endpoint_with_a_static_credential_never_maps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-1 wired through AppConfig: the dead combination refuses before
+    any session receives it, naming the shipped host and the variables."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", _CREDENTIAL)
+
+    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+    with pytest.raises(ValueError) as excinfo:
+        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
+
+    reported = str(excinfo.value)
+    assert "mcp.notion.com" in reported
+    assert "KODEZART_KNOWLEDGE_MCP_SERVER_URL" in reported
+    assert "KODEZART_KNOWLEDGE_MCP_TOKEN" in reported
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_a_stdio_route_round_trips_from_the_environment_to_the_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+    module: str,
+) -> None:
+    """AC-2 end to end: env vars to AppConfig to grant to SDK options."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TRANSPORT", "stdio")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_COMMAND", _COMMAND)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_ARGS", '["--stdio"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV", "KNOWLEDGE_TOKEN")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", _CREDENTIAL)
+
+    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+    session = await recorded_session(
+        module,
+        grant=grant,
+        session_type=SessionType.TICKET_FIRE,
+    )
+
+    assert session.options.strict_mcp_config is True
+    assert session.options.mcp_servers == {
+        "notion": {
+            "type": "stdio",
+            "command": _COMMAND,
+            "args": ["--stdio"],
+            "env": {"KNOWLEDGE_TOKEN": _CREDENTIAL},
+        },
+    }
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_a_self_hosted_http_route_round_trips_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    module: str,
+) -> None:
+    """AC-2 end to end for the http arm, against a self-hosted endpoint."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_SERVER_URL", _SELF_HOSTED_URL)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN", _GATEWAY_CREDENTIAL)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_AUTH_HEADER", "X-Upstream-Token")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME", "null")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", _CREDENTIAL)
+
+    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+    session = await recorded_session(
+        module,
+        grant=grant,
+        session_type=SessionType.TICKET_FIRE,
+    )
+
+    assert session.options.strict_mcp_config is True
+    assert session.options.mcp_servers == {
+        "notion": {
+            "type": "http",
+            "url": _SELF_HOSTED_URL,
+            "headers": {
+                "Authorization": f"Bearer {_GATEWAY_CREDENTIAL}",
+                "X-Upstream-Token": _CREDENTIAL,
+            },
+        },
+    }
