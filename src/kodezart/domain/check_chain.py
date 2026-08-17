@@ -5,17 +5,19 @@ comes out.  No I/O, no judgment, no tolerance — a failed step is a cascade
 exactly when some step it transitively depends on also failed, and a root
 otherwise.
 
-This is what the passes' honesty rule operates on.  Reporting three reds as
-three problems when two of them only ran-and-failed because the gate below
-them failed is the failure mode the rule names; a flat list of command
-strings cannot distinguish them, so the structure lives in the config model
+The grooming routine's honesty rule names the failure mode this arithmetic
+distinguishes: reporting three reds as three problems when two of them only
+ran-and-failed because the gate below them failed.  A flat list of command
+strings cannot tell them apart, so the structure lives in the config model
 and the arithmetic lives here.
 
-Restored under KOD-112 R5 after the deletion whose ground was "no caller":
-the caller is the reinstated pass path (KOD-60), which consumes this
-classification when reporting check results, and that assignment is
-recorded on the tracker before this restoration.  Deleting this again as
-unreferenced would have to be undone by the pass that lands the routine.
+Restored under KOD-112 R5 after a deletion whose ground was "no caller",
+on a consumer assignment that has since dissolved: the pass path it named
+became a rendered prompt whose session runs checks in its own context
+(KOD-60's design of record, 2026-08-12), so no production code imports
+this module — its only importer is its own test.  Whether it gains a
+caller on the check-reporting path or goes is an open decision recorded
+on KOD-60; this module takes neither side.
 """
 
 from collections.abc import Iterable, Sequence
