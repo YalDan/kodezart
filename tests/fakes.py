@@ -82,6 +82,11 @@ from kodezart.types.requests.agent import WorkflowRequest
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
 FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+#: The configured team key every fixture issue belongs to, and the one a
+#: fixture operation declares.  A test reaching for an issue OUTSIDE the
+#: declared containers passes its own key — or ``None`` for one whose team
+#: the configuration does not name at all.
+FIXTURE_TEAM_KEY: str = "engineering"
 DEFAULT_SETTING_SOURCES: list[SettingSource] = [
     SettingSource.USER,
     SettingSource.PROJECT,
@@ -1437,6 +1442,7 @@ class FakeMcpIssue:
     priority_raw: int = 0
     status: str = "Backlog"
     status_type: str = "backlog"
+    team: str = "fixture-team"
     labels: list[str] = field(default_factory=list)
     relations: list[tuple[str, str]] = field(default_factory=list)
     attachments: list[FakeMcpAsset] = field(default_factory=list)
@@ -1455,6 +1461,7 @@ class FakeMcpIssue:
             "priority": {"value": self.priority_raw},
             "status": self.status,
             "statusType": self.status_type,
+            "team": self.team,
             "labels": list(self.labels),
             "relations": [
                 {"type": kind, "identifier": key} for kind, key in self.relations
@@ -1608,10 +1615,12 @@ class FakeLinearMcpServer:
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
         label = arguments.get("label")
+        team = arguments.get("team")
         selected = [
             issue
             for issue in self.issues.values()
-            if label is None or label in issue.labels
+            if (label is None or label in issue.labels)
+            and (team is None or issue.team == team)
         ]
         limit = int(str(arguments.get("limit", len(selected))))
         return {"issues": [issue.wire() for issue in selected[:limit]]}
@@ -1895,6 +1904,7 @@ class FakeTrackerPort:
             issue
             for issue in self.issues.values()
             if (query.queue_state is None or query.queue_state in issue.queue_states)
+            and (query.team_key is None or issue.team_key == query.team_key)
             and (query.updated_since is None or issue.updated_at > query.updated_since)
         ]
         return tuple(matched[: query.page_size])
@@ -1920,6 +1930,7 @@ class FakeTrackerPort:
             state_name="Backlog",
             state_kind=WorkflowStateKind.BACKLOG,
             queue_states=frozenset(),
+            team_key=team_key,
             created_at=self._clock(),
             updated_at=self._clock(),
             url=f"https://tracker.invalid/issue/FAKE-{self._sequence}",
@@ -2214,6 +2225,7 @@ def make_tracker_issue(
     queue_states: Sequence[QueueState] = (QueueState.APPROVED,),
     blocked_by: Sequence[str] = (),
     parent_key: str | None = None,
+    team_key: str | None = FIXTURE_TEAM_KEY,
     created_at: datetime = FIXTURE_EPOCH,
     body: str = "fixture body",
 ) -> TrackerIssue:
@@ -2227,6 +2239,7 @@ def make_tracker_issue(
         state_name=state_name,
         state_kind=state_kind,
         queue_states=frozenset(queue_states),
+        team_key=team_key,
         relations=tuple(
             IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=key)
             for key in blocked_by

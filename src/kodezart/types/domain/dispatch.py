@@ -43,12 +43,20 @@ class DispatchOutcome(StrEnum):
 
 
 class ExclusionClause(StrEnum):
-    """The five eligibility clauses, as the reasons an issue was excluded.
+    """The six eligibility clauses, as the reasons an issue was excluded.
 
     Members are ordered as the predicate evaluates them, and an issue is
     annotated with the FIRST clause that excluded it, so the annotation is
     a function of the data rather than of evaluation luck.
     """
+
+    OUTSIDE_TEAM = "outside_team"
+    """The issue belongs to no team this operation declares.  Evaluated
+    first because it is the only clause that is true of an issue this
+    operation has no business reading at all: a workspace holds more than
+    one operation's board, and every clause below it would otherwise be
+    asked about another board's issue — approval provenance included, which
+    passes whenever the two boards share an approver."""
 
     NOT_APPROVED = "not_approved"
     NOT_OPEN = "not_open"

@@ -56,6 +56,12 @@ STATE_TYPES: dict[str, str] = {
 CLAIMED_ISSUE = "FIX-1"
 APPROVED_ISSUE = "FIX-2"
 ASSET_ISSUE = "FIX-3"
+#: An issue on a team the configuration does not declare.  A workspace
+#: holds more than one operation's board, and a fixture holding only one
+#: cannot express a container boundary at all — every scan would be trivially
+#: within scope and the port's scoping contract would be untested.
+FOREIGN_ISSUE = "OTHER-1"
+FOREIGN_TEAM = "fixture-other-team"
 
 DOCUMENT_KEY = "doc-1"
 DOCUMENT_TITLE = "checkpoint"
@@ -118,6 +124,18 @@ def fixture_server() -> FakeLinearMcpServer:
                 created_at=FIXTURE_NOW - timedelta(days=10),
                 updated_at=FIXTURE_NOW,
             ),
+            FakeMcpIssue(
+                id=FOREIGN_ISSUE,
+                title="another board's issue",
+                description="approved by the same person, on another team",
+                priority_raw=1,
+                status="Todo",
+                status_type="unstarted",
+                team=FOREIGN_TEAM,
+                labels=["queue:approved"],
+                created_at=FIXTURE_NOW - timedelta(days=30),
+                updated_at=FIXTURE_NOW,
+            ),
         ],
         documents=[
             FakeMcpDocument(
@@ -142,7 +160,7 @@ def fixture_server() -> FakeLinearMcpServer:
             ],
         },
         users=[APPROVER, BYSTANDER],
-        teams=["fixture-team"],
+        teams=["fixture-team", FOREIGN_TEAM],
         labels=list(QUEUE_STATE_LABELS.values()),
         statuses=list(STATE_TYPES),
         state_types=STATE_TYPES,
