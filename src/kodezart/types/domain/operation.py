@@ -371,6 +371,16 @@ class OperationConfig(OperationModel):
             if PrincipalRole.PRINCIPAL not in principal.roles
         )
 
+        # Two keys naming one team is not a synonym, it is an ambiguity: the
+        # adapter resolves an issue's team back onto the key a scan was
+        # scoped by, and with two candidates that answer is a coin toss.
+        names = [entry.name for entry in self.teams.values()]
+        failures.extend(
+            f"teams[{key!r}].name {entry.name!r} is not unique"
+            for key, entry in self.teams.items()
+            if names.count(entry.name) > 1
+        )
+
         if self.queue_states:
             for member in QueueState:
                 if member.value not in self.queue_states:

@@ -292,7 +292,7 @@ class FireDispatcher:
         )
 
     async def _scan(self, team_keys: Sequence[str]) -> tuple[TrackerIssue, ...]:
-        """Every approved issue on the declared teams, deduplicated by key.
+        """Every approved issue on the declared teams, in declaration order.
 
         One query per team, because ``IssueQuery`` scopes to one container
         and an operation may declare several.  Asking per team is what makes
@@ -300,21 +300,23 @@ class FireDispatcher:
         returns, so a query spanning a workspace that holds several boards
         can come back full without ever reaching this one's issues.
 
-        An issue reached by two of the queries is one issue: the union is
-        taken by key, in first-seen order, so the snapshot a report carries
-        never counts the same candidate twice.
+        The results concatenate rather than merge.  An issue sits in one
+        container, and two keys naming one container is a load-time failure,
+        so the scans are disjoint and a deduplication step here would be a
+        guard against a state the config cannot reach.
         """
-        found: dict[str, TrackerIssue] = {}
+        found: list[TrackerIssue] = []
         for team_key in team_keys:
-            for issue in await self._tracker.scan_issues(
-                query=IssueQuery(
-                    queue_state=QueueState.APPROVED,
-                    team_key=team_key,
-                    page_size=self._query_page_size,
+            found.extend(
+                await self._tracker.scan_issues(
+                    query=IssueQuery(
+                        queue_state=QueueState.APPROVED,
+                        team_key=team_key,
+                        page_size=self._query_page_size,
+                    ),
                 ),
-            ):
-                found.setdefault(issue.issue_key, issue)
-        return tuple(found.values())
+            )
+        return tuple(found)
 
     async def _exclude(
         self,
