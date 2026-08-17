@@ -18,11 +18,27 @@ the RESULT of the first rather than re-testing membership, so the two can
 never be answered differently for one session.
 """
 
-from typing import TypedDict
+from typing import Final, TypedDict
+from urllib.parse import urlsplit
 
-from claude_agent_sdk.types import McpHttpServerConfig, McpServerConfig
+from claude_agent_sdk.types import (
+    McpHttpServerConfig,
+    McpServerConfig,
+    McpStdioServerConfig,
+)
 
-from kodezart.types.domain.session import KnowledgeGrant, SessionType
+from kodezart.types.domain.session import (
+    KnowledgeGrant,
+    KnowledgeTransport,
+    SessionType,
+)
+
+#: The header and scheme a client presents a gateway credential in.  This is
+#: the documented self-hosted HTTP shape — the server sits behind a bearer
+#: gateway token — and it is fixed so the upstream pass-through header can
+#: never silently collide with it.
+_GATEWAY_HEADER: Final[str] = "Authorization"
+_GATEWAY_SCHEME: Final[str] = "Bearer"
 
 
 class McpSessionOptions(TypedDict):
@@ -45,25 +61,124 @@ def _described_servers(
     """The servers this process describes for *session_type*.
 
     Empty for a session the grant does not name — the shipped grant names
-    none, so this is the shipped answer for every session type.
+    none, so this is the shipped answer for every session type.  A named
+    session receives the definition its transport renders: the routes are
+    dispatched with ``if`` rather than ``match`` deliberately, so the
+    session-kind census below stays the module's only match statement.
     """
     if not grant.grants(session_type):
         return {}
+    if grant.transport is KnowledgeTransport.STDIO:
+        return {grant.server_name: _stdio_definition(grant, session_type)}
+    return {grant.server_name: _http_definition(grant, session_type)}
 
-    credential = grant.credential
-    if credential is None:
+
+def _http_definition(
+    grant: KnowledgeGrant,
+    session_type: SessionType,
+) -> McpHttpServerConfig:
+    """The HTTP server definition a granted session dials.
+
+    Three expressible header shapes: the upstream credential alone in its
+    configured header, the gateway credential alone as a bearer, or both at
+    once — the vendor's token pass-through, where the upstream header must
+    differ from the gateway's.  No headers at all is the dead configuration
+    and refuses rather than dialling unauthenticated.
+    """
+    headers: dict[str, str] = {}
+    if grant.gateway_credential is not None:
+        headers[_GATEWAY_HEADER] = f"{_GATEWAY_SCHEME} {grant.gateway_credential}"
+    if grant.credential is not None:
+        if grant.auth_header is None:
+            msg = (
+                f"knowledge grant carries a credential but no auth_header to "
+                f"present it in: set KODEZART_KNOWLEDGE_MCP_AUTH_HEADER, or "
+                f"unset the credential ({grant.server_name})"
+            )
+            raise ValueError(msg)
+        if (
+            grant.auth_header == _GATEWAY_HEADER
+            and grant.gateway_credential is not None
+        ):
+            msg = (
+                f"knowledge grant presents both credentials in "
+                f"{_GATEWAY_HEADER!r}: the gateway credential owns that "
+                f"header, so KODEZART_KNOWLEDGE_MCP_AUTH_HEADER must name the "
+                f"pass-through header the self-hosted server documents"
+            )
+            raise ValueError(msg)
+        composed = (
+            grant.credential
+            if grant.auth_scheme is None
+            else f"{grant.auth_scheme} {grant.credential}"
+        )
+        headers[grant.auth_header] = composed
+    if not headers:
         msg = (
             f"knowledge grant names {session_type.value} but carries no "
             f"credential: {grant.server_name} would be dialled unauthenticated"
         )
         raise ValueError(msg)
-
-    server: McpHttpServerConfig = {
+    if grant.server_url is None:
+        msg = (
+            f"knowledge grant carries no server_url for its http transport: "
+            f"{grant.server_name} has no endpoint to dial"
+        )
+        raise ValueError(msg)
+    host = urlsplit(grant.server_url).hostname
+    if host is not None and host in grant.interactive_auth_hosts:
+        msg = (
+            f"KODEZART_KNOWLEDGE_MCP_SERVER_URL names {host}, which "
+            f"authenticates interactively (OAuth) and accepts no static "
+            f"credential, but KODEZART_KNOWLEDGE_MCP_TOKEN / "
+            f"KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN compose one. This "
+            f"combination cannot succeed at any credential value: point the "
+            f"url at a self-hosted server, or use the stdio transport"
+        )
+        raise ValueError(msg)
+    return {
         "type": "http",
         "url": grant.server_url,
-        "headers": {grant.auth_header: f"{grant.auth_scheme} {credential}"},
+        "headers": headers,
     }
-    return {grant.server_name: server}
+
+
+def _stdio_definition(
+    grant: KnowledgeGrant,
+    session_type: SessionType,
+) -> McpStdioServerConfig:
+    """The stdio server definition a granted session spawns.
+
+    The credential is delivered as one environment entry of the spawned
+    process, under the name the server documents.  There is no URL and
+    there are no headers — that absence is the shape, not a gap in it.
+    """
+    if grant.command is None:
+        msg = (
+            f"knowledge grant carries no command for its stdio transport: "
+            f"{grant.server_name} has no process to spawn"
+        )
+        raise ValueError(msg)
+    if grant.credential is None:
+        msg = (
+            f"knowledge grant names {session_type.value} but carries no "
+            f"credential: {grant.server_name} would be spawned unauthenticated"
+        )
+        raise ValueError(msg)
+    if grant.credential_env is None:
+        msg = (
+            f"knowledge grant carries a credential but no credential_env "
+            f"entry to deliver it under: set "
+            f"KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV to the environment "
+            f"variable {grant.server_name} reads its token from"
+        )
+        raise ValueError(msg)
+    return {
+        "type": "stdio",
+        "command": grant.command,
+        "args": list(grant.args),
+        "env": {**grant.env, grant.credential_env: grant.credential},
+    }
 
 
 def map_knowledge_mcp(
