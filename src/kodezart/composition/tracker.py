@@ -23,9 +23,9 @@ from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
     """The vendor MCP transport this deployment dials.
 
-    One server definition, two consumers (KOD-57's mechanism ruling): the
-    programmatic client on the deterministic path, and the same server
-    attached to judgment-pass sessions.
+    One server definition, one consumer: this factory, which builds the
+    programmatic client on the deterministic path.  No session attaches
+    the tracker server.
     """
     return HttpMcpToolCaller(
         url=config.tracker_mcp_server_url,

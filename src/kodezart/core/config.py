@@ -278,8 +278,9 @@ class AppConfig(BaseSettings):
         default="linear",
         description=(
             "Identity of the vendor MCP server the tracker adapter dials. One "
-            "server definition, two consumers: the programmatic client on the "
-            "deterministic path and session attachment for judgment passes."
+            "consumer: the transport factory building the programmatic client "
+            "on the deterministic path, which stamps this name on every "
+            "transport log line and error."
         ),
     )
     tracker_mcp_server_url: str = Field(
