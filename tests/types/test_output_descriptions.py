@@ -10,42 +10,20 @@ import pytest
 from pydantic import BaseModel, Field
 
 from kodezart.types.domain.agent import WIRE_SCHEMAS
-
-#: Where a raw schema keeps the models its fields reference.
-DEFS = "$defs"
+from tests.types.schema_nodes import DEFS, properties_of, schema_nodes
 
 
-def described_fields(node: object, path: str) -> list[tuple[str, bool]]:
-    """Every property of *node*, with whether it carries a description.
+def described_fields(schema: object, name: str) -> list[tuple[str, bool]]:
+    """Every field of every node in *schema*, with whether it describes itself.
 
-    A raw schema carries a nested model as a bare ``$ref`` and keeps its
-    fields in ``$defs``, so descending properties alone reaches root fields
-    only.  Definitions are descended too — a definition is a schema, not a
-    field, so it contributes its own properties and no entry of its own.
+    A definition is a schema rather than a field, so it contributes its own
+    fields and no entry of its own.
     """
-    if not isinstance(node, dict):
-        return []
-    mapping: dict[str, object] = node
-    found: list[tuple[str, bool]] = []
-    properties = mapping.get("properties")
-    if isinstance(properties, dict):
-        entries: dict[str, object] = properties
-        for name, sub in entries.items():
-            described = isinstance(sub, dict) and bool(sub.get("description"))
-            found.append((f"{path}.{name}", described))
-            found.extend(described_fields(sub, f"{path}.{name}"))
-    definitions = mapping.get(DEFS)
-    if isinstance(definitions, dict):
-        models: dict[str, object] = definitions
-        for name, sub in models.items():
-            found.extend(described_fields(sub, f"{path}.{DEFS}.{name}"))
-    found.extend(described_fields(mapping.get("items"), f"{path}[]"))
-    branches = mapping.get("anyOf")
-    if isinstance(branches, list):
-        arms: list[object] = branches
-        for branch in arms:
-            found.extend(described_fields(branch, path))
-    return found
+    return [
+        (f"{path}.{field}", isinstance(sub, dict) and bool(sub.get("description")))
+        for path, node in schema_nodes(schema, name)
+        for field, sub in properties_of(node).items()
+    ]
 
 
 @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))

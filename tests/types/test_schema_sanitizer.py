@@ -36,6 +36,7 @@ from kodezart.types.domain.wire_schema import (
     WireSchemaError,
     sanitize_schema,
 )
+from tests.types.schema_nodes import DEFS, schema_nodes
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src" / "kodezart"
@@ -74,30 +75,6 @@ def is_rostered_argument(argument: str) -> bool:
     return argument in WIRE_SCHEMAS or argument == CALLER_SUPPLIED_SCHEMA
 
 
-def walk(node: object) -> list[dict[str, object]]:
-    """Every SCHEMA node, the root included.
-
-    A ``properties`` mapping is keyed by field name rather than by keyword,
-    so it is descended into without being read as a schema itself.
-    """
-    if not isinstance(node, dict):
-        return []
-    mapping: dict[str, object] = node
-    found = [mapping]
-    properties = mapping.get("properties")
-    if isinstance(properties, dict):
-        sub_schemas: dict[str, object] = properties
-        for value in sub_schemas.values():
-            found.extend(walk(value))
-    found.extend(walk(mapping.get("items")))
-    branches = mapping.get("anyOf")
-    if isinstance(branches, list):
-        entries: list[object] = branches
-        for branch in entries:
-            found.extend(walk(branch))
-    return found
-
-
 # ---------------------------------------------------------------------------
 # KOD-91-AC-1 — golden per schema, allowlist-only, inlined
 # ---------------------------------------------------------------------------
@@ -113,10 +90,11 @@ def test_sanitized_schema_matches_its_golden(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
 def test_sanitized_schema_uses_only_allowlist_keywords(name: str) -> None:
     """The stripper's own guarantee: nothing outside the allowlist survives."""
+    stripped = sanitize_schema(WIRE_SCHEMAS[name])
     offenders = sorted(
         {
             keyword
-            for node in walk(sanitize_schema(WIRE_SCHEMAS[name]))
+            for _path, node in schema_nodes(stripped, name)
             for keyword in node
             if keyword not in STRICT_MODE_KEYWORDS
         }
@@ -136,12 +114,30 @@ def test_sanitized_schema_has_no_references_left(name: str) -> None:
 def test_every_object_node_is_closed(name: str) -> None:
     """``additionalProperties: false`` on every object, not only the root."""
     open_nodes = [
-        node.get("title")
-        for node in walk(WIRE_SCHEMAS[name])
+        path
+        for path, node in schema_nodes(WIRE_SCHEMAS[name], name)
         if node.get("type") == "object"
         and node.get("additionalProperties") is not False
     ]
     assert open_nodes == []
+
+
+def test_the_closure_sweep_reads_nested_objects_and_not_only_roots() -> None:
+    """Non-vacuity, read off the same raw schemas the sweep above reads.
+
+    A raw schema names a nested model by reference and keeps that model's
+    object node in ``$defs``, so a sweep descending properties alone reaches
+    exactly one node per schema and closes nothing else.
+    """
+    objects = [
+        path
+        for name in WIRE_SCHEMAS
+        for path, node in schema_nodes(WIRE_SCHEMAS[name], name)
+        if node.get("type") == "object"
+    ]
+    roots = [path for path in objects if f".{DEFS}." not in path]
+    assert len(objects) > len(roots)
+    assert f"CONTENT_AUDIT_SCHEMA.{DEFS}.ContentAuditFinding" in objects
 
 
 def test_the_wire_schema_roster_is_every_precomputed_schema() -> None:
