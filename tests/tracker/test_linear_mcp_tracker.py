@@ -12,7 +12,7 @@ from datetime import timedelta
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
-from kodezart.core.errors import TrackerProtocolError
+from kodezart.core.errors import McpTransportError, TrackerProtocolError
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     ClaimStatus,
@@ -184,6 +184,62 @@ class TestTransientRetry:
         with pytest.raises(TransientAPIError):
             await tracker.read_issue(issue_key="T-3")
         assert len(server.tool_calls("get_issue")) == 2
+
+
+class TestTransportRetry:
+    """Transport failures are retried on the same knobs as transient ones.
+
+    The HTTP transport beneath the adapter raises ``McpTransportError``,
+    never ``TransientAPIError`` — a retry loop that only caught the latter
+    was live solely against the in-process fake (KOD-130 AC-2).
+    """
+
+    async def test_a_transport_failure_within_budget_is_retried(self) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-4")],
+            state_types=STATE_TYPES,
+            transport_failures={"get_issue": 2},
+        )
+        tracker = tracker_over(server, max_retries=2)
+        issue = await tracker.read_issue(issue_key="T-4")
+        assert issue.issue_key == "T-4"
+        assert len(server.tool_calls("get_issue")) == 3
+
+    async def test_exhausting_the_budget_raises_the_transport_error(self) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-5")],
+            state_types=STATE_TYPES,
+            transport_failures={"get_issue": 5},
+        )
+        tracker = tracker_over(server, max_retries=1)
+        with pytest.raises(McpTransportError):
+            await tracker.read_issue(issue_key="T-5")
+        assert len(server.tool_calls("get_issue")) == 2
+
+    async def test_each_retry_waits_the_configured_backoff(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Delays follow ``factor * base**attempt`` off the configured factor.
+
+        The fake yields with ``sleep(0)`` at every tool boundary, so the
+        backoff sequence is the nonzero delays.
+        """
+        recorded: list[float] = []
+
+        async def instant_sleep(delay: float) -> None:
+            recorded.append(delay)
+
+        monkeypatch.setattr("asyncio.sleep", instant_sleep)
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-6")],
+            state_types=STATE_TYPES,
+            transport_failures={"get_issue": 2},
+        )
+        tracker = tracker_over(server, max_retries=2, retry_backoff_factor=0.25)
+        await tracker.read_issue(issue_key="T-6")
+
+        assert [delay for delay in recorded if delay > 0] == [0.25, 0.5]
 
 
 class TestClaimMechanism:

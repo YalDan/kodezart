@@ -25,7 +25,11 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
 
-from kodezart.core.errors import TrackerEnsureConflictError, TrackerProtocolError
+from kodezart.core.errors import (
+    McpTransportError,
+    TrackerEnsureConflictError,
+    TrackerProtocolError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
@@ -776,7 +780,7 @@ class LinearMcpTracker:
         while True:
             try:
                 return await self._caller.call_tool(name=tool, arguments=arguments)
-            except TransientAPIError:
+            except (McpTransportError, TransientAPIError):
                 if attempt >= self._max_retries:
                     raise
                 delay = self._retry_backoff_factor * (_RETRY_BACKOFF_BASE**attempt)

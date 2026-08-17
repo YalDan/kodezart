@@ -14,7 +14,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
-from kodezart.core.errors import TrackerEnsureConflictError
+from kodezart.core.errors import McpTransportError, TrackerEnsureConflictError
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
 from kodezart.domain.errors import (
@@ -1531,6 +1531,7 @@ class FakeLinearMcpServer:
         actor: str = "fixture-actor",
         comment_instants: Sequence[datetime] = (),
         transient_failures: Mapping[str, int] | None = None,
+        transport_failures: Mapping[str, int] | None = None,
     ) -> None:
         self.issues: dict[str, FakeMcpIssue] = {issue.id: issue for issue in issues}
         self.comments: list[FakeMcpComment] = []
@@ -1550,6 +1551,7 @@ class FakeLinearMcpServer:
         self.calls: list[tuple[str, Mapping[str, object]]] = []
         self.comment_instants: list[datetime] = list(comment_instants)
         self._transient_failures: dict[str, int] = dict(transient_failures or {})
+        self._transport_failures: dict[str, int] = dict(transport_failures or {})
         self._sequence: int = 0
 
     async def call_tool(
@@ -1567,6 +1569,14 @@ class FakeLinearMcpServer:
         if remaining > 0:
             self._transient_failures[name] = remaining - 1
             raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
         handler = getattr(self, f"_tool_{name}", None)
         if handler is None:
             msg = f"fake MCP server exposes no tool named {name!r}"

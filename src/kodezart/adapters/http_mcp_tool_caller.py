@@ -104,7 +104,14 @@ class HttpMcpToolCaller:
                 server_name=self._server_name,
                 tool_name=name,
             )
-        result = await session.call_tool(name, dict(arguments))
+        try:
+            result = await session.call_tool(name, dict(arguments))
+        except Exception as exc:
+            raise McpTransportError(
+                "the MCP tool call failed in transport",
+                server_name=self._server_name,
+                tool_name=name,
+            ) from exc
         if result.isError:
             raise McpTransportError(
                 "the MCP server reported a tool error",
