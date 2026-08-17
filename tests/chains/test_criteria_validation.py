@@ -15,7 +15,7 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.redispatch import CORRECTION_HEADER
-from kodezart.domain.errors import CriteriaFanInError
+from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
@@ -34,7 +34,6 @@ from kodezart.types.domain.branch import (
 )
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
-    CorrectionOutcome,
     CriteriaArtifact,
     CriterionClass,
     CriterionVerdict,
@@ -946,7 +945,6 @@ async def test_an_ungrounded_feasible_verdict_is_corrected_in_flight() -> None:
         e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
     )
     assert sweep_event.correction is not None
-    assert sweep_event.correction.outcome is CorrectionOutcome.corrected
     assert sweep_event.correction.attempts == 2
     assert [b.breach_class for b in sweep_event.correction.breaches] == [
         "UngroundedVerdictError",
@@ -958,8 +956,8 @@ async def test_a_response_off_the_id_pattern_is_corrected_and_named() -> None:
 
     `AC-0` violates the criterion-id `pattern` — one of the keywords the
     schema filter deleted before any schema reached a model.  The response
-    is refused, corrected in flight, and the outcome is named on the wire
-    rather than raising out of the node.
+    is refused, corrected in flight, and the correction is named on the
+    wire rather than raising out of the node.
     """
     executor = ValidatorScriptExecutor(
         sweeps=[
@@ -985,12 +983,11 @@ async def test_a_response_off_the_id_pattern_is_corrected_and_named() -> None:
         e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
     )
     assert sweep_event.correction is not None
-    assert sweep_event.correction.outcome is CorrectionOutcome.corrected
     assert [b.breach_class for b in sweep_event.correction.breaches] == [
         "ValidationError",
     ]
     frame = sweep_event.model_dump(by_alias=True, exclude_none=True)
-    assert frame["correction"]["outcome"] == "corrected"
+    assert frame["correction"]["breaches"][0]["breachClass"] == "ValidationError"
 
 
 async def test_a_response_off_the_id_pattern_that_never_corrects_is_rejected() -> None:
@@ -1031,43 +1028,24 @@ async def test_an_inconsistent_response_that_never_corrects_terminates() -> None
     assert "names none as its smallest repair, not criterion_text" in named.error
 
 
-async def test_an_ungrounded_verdict_that_never_corrects_keeps_the_derivation() -> None:
-    """Exhaustion on the ungrounded class strikes the STATEMENT, not the run.
+async def test_an_ungrounded_verdict_that_never_corrects_terminates() -> None:
+    """Exhaustion on the ungrounded class still halts, with the refusal named.
 
-    The derivation is sound and is what caught the breach, so a spent
-    bound records `infeasible` — what the evidence says — and routes the
-    criterion to the regeneration it was owed.  The run reaches its own
-    terminal event; a guard whose exhaustion kills the run is a guard
-    nobody can afford to arm.
+    The bound buys recovery, not tolerance: a stated verdict its own
+    evidence never grounds is still standing when the bound is spent, and
+    it is the run's terminal event — named on the wire, not absorbed.
     """
     ungrounded = {"findings": [UNGROUNDED_A, FEASIBLE_B], "contradictions": []}
-    gate = FakeQualityGate(
-        events=[],
-        evaluation=make_passing_evaluation(),
-        last_commit_sha="a" * 40,
-    )
-    executor = ValidatorScriptExecutor(sweeps=[ungrounded] * 4)
+    executor = ValidatorScriptExecutor(sweeps=[ungrounded, ungrounded])
 
-    events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+    with pytest.raises(UngroundedVerdictError) as excinfo:
+        await _run(_engine(executor, max_rounds=1))
 
-    assert executor.sweep_calls == 4, "two dispatches per round, two rounds"
-    assert executor.criteria_calls == 2, "the derived verdict bought a round"
-    assert gate.calls == [], "the loop is still not reached on infeasible criteria"
-
-    sweeps = [e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)]
-    assert [e.regeneration_targets for e in sweeps] == [["AC-1"], ["AC-1"]]
-    verdicts = {v.criterion_id: v for v in sweeps[0].validation.verdicts}
-    assert verdicts["AC-1"].verdict is CriterionVerdict.infeasible
-    assert verdicts["AC-1"].undeclared_switch_arms == [
-        "the timeout arm",
-        "the retry arm",
-    ]
-    assert sweeps[0].correction is not None
-    assert sweeps[0].correction.outcome is CorrectionOutcome.derived
-    assert sweeps[0].correction.attempts == AppConfig().fan_in_max_attempts
-
-    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
-    assert complete.outcome is WorkflowOutcome.criteria_infeasible
+    assert executor.sweep_calls == AppConfig().fan_in_max_attempts
+    assert len(_corrections(executor)) == 1
+    named = build_error_event(excinfo.value)
+    assert named.error_kind == "UngroundedVerdictError"
+    assert "not derivable from its own evidence" in named.error
 
 
 async def test_the_permutation_guard_re_dispatches_without_restating_itself() -> None:

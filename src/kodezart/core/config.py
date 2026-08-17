@@ -173,11 +173,9 @@ class AppConfig(BaseSettings):
             "model rejects or a verdict its own evidence does not derive. "
             "Each attempt is a whole judgment session, and a contract "
             "refusal is restated to the next one because it repeats "
-            "verbatim otherwise. Exhaustion is not a run failure: the "
-            "evaluator falls through to fail-closed grading, and the "
-            "validator strikes the stated verdict and keeps the derivation. "
-            "It halts only where no derivation exists — nothing parsed, or "
-            "a criterion left with no finding at all."
+            "verbatim otherwise. Exhaustion grades fail-closed at the "
+            "evaluator and the post-merge review, and halts the criteria "
+            "validator on the refusal still standing."
         ),
     )
     retry_initial_interval: float = Field(

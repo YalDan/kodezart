@@ -1,10 +1,12 @@
 """Bounded re-dispatch until a session returns a conforming answer.
 
 Inside the node, and deliberately NOT the graph's ``RetryPolicy``: that
-policy re-runs the node and PROPAGATES once its attempts are spent, which
-ends the run, while an exhausted guard has to fall through to the arm its
-channel owns.  A guard whose exhaustion kills the run is a guard nobody
-can afford to arm.
+policy re-runs the whole node on a refusal the next session would answer
+in one dispatch, and it cannot restate what was refused.  This helper
+never decides what an exhausted bound MEANS — it returns the refusal
+still standing and the caller answers it, on the channels that own a
+fail-closed arm by falling through to it, and on the channel that owns
+none by halting.
 
 The bound is a caller-supplied configuration value, never a literal here:
 one attempt is a whole judgment session, so the number is a cost decision
@@ -21,11 +23,10 @@ hands it to the next dispatch.
 *check* raises the guard's error; this helper catches it and dispatches
 again, and RETURNS the one still standing when the bound is spent.  The
 caller decides what an unresolved breach means, because the channels
-answer differently — one grades fail-closed, one strikes the statement
-and keeps the derivation, one re-raises and halts.  The single case this
-helper decides itself is arithmetic rather than policy: when the spent
-attempt failed inside *dispatch* there is no output to hand back at all,
-so the breach propagates.
+answer differently — two grade fail-closed, one re-raises and halts.
+The single case this helper decides itself is arithmetic rather than
+policy: when the spent attempt failed inside *dispatch* there is no
+output to hand back at all, so the breach propagates.
 """
 
 from collections.abc import Awaitable, Callable
@@ -37,7 +38,6 @@ from kodezart.types.domain.agent import RaiseSite
 from kodezart.types.domain.criteria import (
     ContractBreach,
     ContractCorrection,
-    CorrectionOutcome,
 )
 
 CORRECTION_HEADER = (
@@ -151,13 +151,13 @@ async def until_conforming[T, E: Exception](
 
 def correction_report[T, E: Exception](
     redispatched: Redispatched[T, E],
-    *,
-    outcome: CorrectionOutcome,
 ) -> ContractCorrection | None:
     """The wire record of what the guard refused, or nothing to record.
 
     ``None`` when no attempt was refused, which is the fact "the first
-    answer conformed" — the outcome enum carries the other two.
+    answer conformed".  The record's presence means refused-then-corrected:
+    a refusal still standing when the bound is spent raises at the call
+    site instead of reaching the wire.
     """
     if not redispatched.breaches:
         return None
@@ -167,7 +167,6 @@ def correction_report[T, E: Exception](
             for breach in redispatched.breaches
         ],
         attempts=redispatched.attempts,
-        outcome=outcome,
     )
 
 

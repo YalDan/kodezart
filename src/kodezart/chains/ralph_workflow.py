@@ -56,7 +56,6 @@ from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
     regeneration_targets,
     sweep,
-    sweep_derived,
 )
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criteria_prompt import render_validation_findings
@@ -107,7 +106,6 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
-    CorrectionOutcome,
     CriteriaValidationOutput,
     FanInReport,
     ValidatedCriterion,
@@ -705,11 +703,11 @@ class RalphWorkflowEngine:
 
         The whole sweep is inside the re-dispatch guard, so a refusal it
         raises is answerable rather than fatal: the session is told what
-        was refused and asked again under the same bound.  The prompt
-        promises the refuter that a downstream pass decides consequences,
-        and a pass that ends the run on the material it asked for is not
-        one — so a spent bound strikes the statement and keeps the
-        derivation, which is what caught the breach in the first place.
+        was refused and asked again under the same bound.  A refusal still
+        standing when the bound is spent ends the run on that refusal.
+        This channel has no fail-closed arm and none is invented here — a
+        feasibility verdict nothing derived is exactly what the sweep
+        refuses, so the refusal is what reaches the wire.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -773,19 +771,10 @@ class RalphWorkflowEngine:
             site="criteria_validation",
             log=self._log,
         )
-        if redispatched.unresolved is None:
-            validation = sweep(criteria, redispatched.output)
-            outcome = CorrectionOutcome.corrected
-        else:
-            # The bound is spent, so the STATEMENT is struck and the
-            # derivation stands in its place: nothing is invented, and an
-            # unsupported verdict reaches the regeneration it was always
-            # owed rather than ending the run.  Where no derivation exists
-            # this raises instead — a criterion with no finding at all, or
-            # evidence that contradicts itself, derives nothing to keep.
-            validation = sweep_derived(criteria, redispatched.output)
-            outcome = CorrectionOutcome.derived
-        correction = correction_report(redispatched, outcome=outcome)
+        if redispatched.unresolved is not None:
+            raise redispatched.unresolved
+        validation = sweep(criteria, redispatched.output)
+        correction = correction_report(redispatched)
         targets = regeneration_targets(validation)
         rounds_used = state["criteria_regeneration_rounds"]
         bound_exhausted = (
@@ -804,7 +793,6 @@ class RalphWorkflowEngine:
             await self._log.awarning(
                 "criteria_contract_correction",
                 site="criteria_validation",
-                outcome=correction.outcome.value,
                 attempts=correction.attempts,
                 breach_classes=[b.breach_class for b in correction.breaches],
             )

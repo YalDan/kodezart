@@ -35,7 +35,7 @@ regeneration round and reach no halt; their consequence is the forced
 ``soft_signal`` downgrade in :mod:`kodezart.domain.criteria`.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from kodezart.domain.errors import UngroundedVerdictError
 from kodezart.domain.fan_in import fan_in_breach
@@ -307,38 +307,10 @@ def sweep(
     output: CriteriaValidationOutput,
 ) -> CriteriaValidation:
     """Reconcile the report, ground every verdict, fold the conjunction check."""
-    return _fold(criteria, output, _grounded)
-
-
-def sweep_derived(
-    criteria: Sequence[GeneratedCriterion],
-    output: CriteriaValidationOutput,
-) -> CriteriaValidation:
-    """The same sweep with the STATED verdict struck from the input.
-
-    What the run records is the derivation either way — ``_feasibility``
-    reads ``derived.verdict`` and never the statement — so the only thing
-    dropped here is the refusal to proceed when the two disagree.  The
-    statement becomes one more reported item and the derivation is what
-    stands.
-
-    It still raises where NO derivation exists: a correspondence hole
-    leaves a criterion with no finding to derive from, and evidence that
-    contradicts itself derives nothing.  Striking a statement cannot
-    manufacture a verdict, so those halt here exactly as before.
-    """
-    return _fold(criteria, output, classify_finding)
-
-
-def _fold(
-    criteria: Sequence[GeneratedCriterion],
-    output: CriteriaValidationOutput,
-    derive: Callable[[CriterionFinding], DerivedFeasibility],
-) -> CriteriaValidation:
     findings = reconcile(criteria, output)
     conflicts = minimal_conflicting_subsets(output.contradictions)
     return CriteriaValidation(
-        verdicts=[_feasibility(finding, derive(finding)) for finding in findings],
+        verdicts=[_feasibility(finding, _grounded(finding)) for finding in findings],
         conjunction=ConjunctionVerdict(
             satisfiable=not conflicts,
             contradictions=list(conflicts),
