@@ -25,7 +25,7 @@ from pydantic import ValidationError
 
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentExecutor, PromptProvider
+from kodezart.core.protocols import AgentExecutor, PromptSetProvider
 from kodezart.core.stream_drain import drain
 from kodezart.types.domain.agent import CONTENT_AUDIT_SCHEMA, ContentAuditOutput
 from kodezart.types.domain.gating import (
@@ -61,7 +61,7 @@ class AgentContentScanner:
         self,
         *,
         executor: AgentExecutor,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         neutral_cwd: str,
         skills: SkillsSelection,
         retry_max_attempts: int,
@@ -125,8 +125,14 @@ class AgentContentScanner:
                         cwd=self._neutral_cwd,
                         permission_mode=_AUDIT_PERMISSION_MODE,
                         allowed_tools=[],
-                        skills=self._skills,
+                        skills=self._prompts.session_skills(
+                            PromptKey.CONTENT_AUDIT,
+                            self._skills,
+                        ),
                         session_type=SessionType.CONTENT_AUDIT,
+                        session_policy=self._prompts.session_policy(
+                            PromptKey.CONTENT_AUDIT,
+                        ),
                         output_format={
                             "type": "json_schema",
                             "schema": CONTENT_AUDIT_SCHEMA,

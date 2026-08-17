@@ -80,6 +80,7 @@ ignore = [
 "tests/**/*.py"                       = ["S101", "ARG001", "ARG002", "ANN", "S105", "S108", "S603", "S607"]
 "src/kodezart/core/config.py"        = ["S108"]
 "src/kodezart/types/domain/prompts.py" = ["S105"]
+"tests/types/**/*.py"                 = ["A005"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["kodezart"]

@@ -27,6 +27,12 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
@@ -218,6 +224,8 @@ class AgentExecutor(Protocol):
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -226,6 +234,13 @@ class AgentExecutor(Protocol):
         *session_type* names what the session is for.  It carries no
         default: every caller states its kind, because the kind is what
         the knowledge grant is resolved against.
+
+        *agents* and *session_policy* are what makes a session role
+        expressible at the port instead of around it.  An empty *agents*
+        sequence is a guarantee that the session spawns nothing; an
+        unconfigured *session_policy* leaves construction-time
+        configuration in force and constructs the same options this port
+        constructed before it widened.
         """
         ...
 
@@ -664,6 +679,8 @@ class AgentRunner(Protocol):
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -685,6 +702,8 @@ class AgentRunner(Protocol):
         skills: SkillsSelection,
         session_type: SessionType,
         visibility: RepoVisibility,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -700,6 +719,8 @@ class AgentRunner(Protocol):
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -862,6 +883,48 @@ class PromptProvider(Protocol):
 
     def declared_skills(self, key: PromptKey) -> Sequence[str]:
         """Skill names the resolved set declares for *key*. Empty is legal."""
+        ...
+
+
+@runtime_checkable
+class PromptSetProvider(PromptProvider, Protocol):
+    """A prompt provider whose set also contributes SESSION content.
+
+    Templates are keyed by function; a set additionally carries content
+    that belongs to no single key — the lens definitions its generative
+    roles dispatch and the house rules every session is appended.  Both
+    are set data, so they are served by the same adapter, and both are
+    read by dispatch sites that already hold the provider.
+    """
+
+    def definitions(self) -> Sequence[AgentDefinition]:
+        """Typed lens definitions the resolved set declares. Empty is legal."""
+        ...
+
+    def system_prompt_append(self) -> str | None:
+        """The set's system-prompt append, or ``None`` when it declares none."""
+        ...
+
+    def session_skills(
+        self,
+        key: PromptKey,
+        configured: SkillsSelection,
+    ) -> SkillsSelection:
+        """*configured*, narrowed to what *key*'s role declares.
+
+        The deployment decides what is available and the set decides what
+        each role reaches for; what a dispatch gets is the intersection.
+        """
+        ...
+
+    def session_policy(self, key: PromptKey) -> SessionPolicy:
+        """What *key*'s dispatch declares about its session.
+
+        Read from the set, never decided at the call site: a dispatch site
+        asks the provider what this role runs at and passes the answer on.
+        Set content, so it lives on the extending port beside the lens
+        definitions and the house rules rather than on the keyed one.
+        """
         ...
 
 

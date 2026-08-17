@@ -79,7 +79,10 @@ class AgentHandler:
         try:
             cache_key = uuid.uuid4().hex
             output_format: dict[str, object] | None = (
-                {"type": "json_schema", "schema": request.output_schema}
+                {
+                    "type": "json_schema",
+                    "schema": request.output_schema,
+                }
                 if request.output_schema is not None
                 else None
             )

@@ -295,6 +295,24 @@ class PromptNamespaceCollisionError(Exception):
         self.colliding: tuple[str, ...] = tuple(colliding)
 
 
+class TicketReviewModeError(Exception):
+    """Raised at construction when the ticket loop's mode cannot be honoured.
+
+    Two shapes, one class, because they are one defect: a knob is
+    configured whose guarantee this composition cannot deliver.  An
+    explicit review budget under a mode that compiles no review arm would
+    be silently ignored, and a create-only mode over a prompt set that
+    declares no draft critic would run the single creator session with
+    nothing checking it at all.  Both name EVERY setting involved — a
+    message naming only the one that raised leaves an operator to guess
+    which pair disagreed.
+    """
+
+    def __init__(self, message: str, *, settings: Sequence[str]) -> None:
+        super().__init__(f"{message} ({', '.join(settings)})")
+        self.settings: tuple[str, ...] = tuple(settings)
+
+
 class ContentScannerBootError(Exception):
     """Raised at boot when the judgment scanner is enabled with nothing to judge.
 

@@ -22,12 +22,30 @@ from pathlib import Path
 from typing import Self
 
 from kodezart.core.errors import PromptResolutionError
-from kodezart.core.prompt_rendering import PromptTemplate
-from kodezart.types.domain.prompts import PromptKey, PromptSetMetadata
+from kodezart.core.prompt_rendering import (
+    PromptTemplate,
+    compose_set_member,
+    free_binding_names,
+)
+from kodezart.types.domain.prompts import (
+    OrchestrationPrimitive,
+    PromptKey,
+    PromptSetMetadata,
+)
+from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import AgentDefinition, SessionPolicy
+from kodezart.types.domain.ticket_review import TicketReviewMode
 
 _METADATA_FILE = "set.toml"
 _MEMBER_SUFFIX = ".md"
+_DEFINITIONS_DIR = "definitions"
 _SKILLS_FRAGMENT = "skills_reference"
+_SUPPRESSION_FRAGMENT = "suppression_proxy"
+_ORCHESTRATION_SLOT = "orchestration_block"
+_CRITIQUE_SLOT = "ticket_create_critique"
+_INVESTIGATION_SPEC_FRAGMENT = "investigation_spec"
+_INVESTIGATION_CAP_NAME = "investigation_cap"
+_ULTRACODE_FRAGMENT = "ultracode_instruction"
 _TEMPLATE_SOURCE_PREFIX = "template:"
 
 
@@ -54,9 +72,13 @@ class InRepoPromptRegistry:
         *,
         templates: Mapping[PromptKey, PromptTemplate],
         default_metadata: PromptSetMetadata,
+        fallback_model: str | None = None,
+        definitions: Sequence[AgentDefinition] = (),
     ) -> None:
         self._templates: Mapping[PromptKey, PromptTemplate] = templates
         self._default_metadata: PromptSetMetadata = default_metadata
+        self._fallback_model: str | None = fallback_model
+        self._definitions: tuple[AgentDefinition, ...] = tuple(definitions)
 
     @classmethod
     def load(
@@ -67,6 +89,9 @@ class InRepoPromptRegistry:
         set_overrides: Mapping[str, str],
         template_overrides: Mapping[str, str],
         bindings: Mapping[str, object],
+        investigation_cap: int,
+        ticket_review_mode: TicketReviewMode,
+        fallback_model: str | None = None,
     ) -> Self:
         """Resolve every function key or raise ``PromptResolutionError``."""
         available = _discover_sets(sets_root)
@@ -90,7 +115,7 @@ class InRepoPromptRegistry:
             failures=failures,
         )
         for key in PromptKey:
-            if key.value not in default_metadata.skills:
+            if default_metadata.skill_names(key.value) is None:
                 failures.append(key.value)
 
         templates: dict[PromptKey, PromptTemplate] = {}
@@ -108,13 +133,36 @@ class InRepoPromptRegistry:
                 continue
             body, source, owning_set = resolved
             owning_metadata = metadata.get(owning_set, default_metadata)
+            composed = _composed(owning_metadata, key.value, body)
+            slotted = _ORCHESTRATION_SLOT in free_binding_names(composed)
+            orchestration = (
+                _orchestration_block(owning_metadata, investigation_cap)
+                if slotted
+                else None
+            )
+            if slotted and orchestration is None:
+                if key.value not in failures:
+                    failures.append(key.value)
+                continue
+            critique = _critique_block(owning_metadata, ticket_review_mode)
+            critique_slotted = _CRITIQUE_SLOT in free_binding_names(composed)
+            if critique_slotted and _critique_is_owed(ticket_review_mode, critique):
+                if key.value not in failures:
+                    failures.append(key.value)
+                continue
             templates[key] = PromptTemplate(
                 key=key,
                 source=source,
-                body=body,
+                body=composed,
                 bindings={
                     **bindings,
                     _SKILLS_FRAGMENT: _skills_fragment(owning_metadata, key),
+                    **(
+                        {}
+                        if orchestration is None
+                        else {_ORCHESTRATION_SLOT: orchestration}
+                    ),
+                    **({} if critique is None else {_CRITIQUE_SLOT: critique}),
                 },
             )
 
@@ -126,7 +174,12 @@ class InRepoPromptRegistry:
                 available_sets=sorted(available),
             )
 
-        return cls(templates=templates, default_metadata=default_metadata)
+        return cls(
+            templates=templates,
+            default_metadata=default_metadata,
+            fallback_model=fallback_model,
+            definitions=_load_definitions(available[default_set], default_metadata),
+        )
 
     def template_for(self, key: PromptKey) -> PromptTemplate:
         """Return the unrendered template registered for *key*."""
@@ -142,7 +195,46 @@ class InRepoPromptRegistry:
 
     def declared_skills(self, key: PromptKey) -> Sequence[str]:
         """Skill names the default set declares for *key*."""
-        return tuple(self._default_metadata.skills[key.value])
+        return tuple(self._default_metadata.skill_names(key.value) or ())
+
+    def session_skills(
+        self,
+        key: PromptKey,
+        configured: SkillsSelection,
+    ) -> SkillsSelection:
+        """*configured*, narrowed to what *key*'s role declares.
+
+        The deployment's selection is the caller's and stays there; this
+        answers only what the SET says the role reaches for.  A set that
+        declares no roles narrows nothing and hands the selection straight
+        back, which is what leaves the legacy set's dispatches unchanged.
+        """
+        if not self._default_metadata.session_roles:
+            return configured
+        return configured.narrowed_to(self.declared_skills(key))
+
+    def session_policy(self, key: PromptKey) -> SessionPolicy:
+        """What *key*'s dispatch declares about its session.
+
+        One object per dispatch rather than four parallel parameters: the
+        house rules the set appends, the effort its role runs at, and the
+        configured refusal fallback all arrive together, and a set that
+        declares no roles produces exactly the policy every dispatch
+        expressed before this existed.
+        """
+        return SessionPolicy(
+            system_prompt_append=self._default_metadata.fragments.house_rules,
+            effort=self._default_metadata.effort_of(key.value),
+            fallback_model=self._fallback_model,
+        )
+
+    def definitions(self) -> Sequence[AgentDefinition]:
+        """Typed lens definitions the default set declares, name-ordered."""
+        return self._definitions
+
+    def system_prompt_append(self) -> str | None:
+        """The default set's house rules, delivered as a system-prompt append."""
+        return self._default_metadata.fragments.house_rules
 
 
 def _discover_sets(sets_root: Path) -> dict[str, Path]:
@@ -206,8 +298,115 @@ def _resolve_key(
     return (_read_member(member), set_name, set_name)
 
 
+def _composed(metadata: PromptSetMetadata, name: str, body: str) -> str:
+    """One member, assembled from *body* plus the set's fragment content.
+
+    Which fragments a member receives is a property of the SET: the
+    suppression proxy where a member asks for it by name, and the
+    reasoning-depth block appended to every role outside the declared
+    utility roster.  A set that declares neither composes unchanged.
+    """
+    fragments = metadata.fragments
+    substitutions = (
+        {_SUPPRESSION_FRAGMENT: fragments.suppression_proxy}
+        if fragments.suppression_proxy is not None
+        else {}
+    )
+    appendix = (
+        None if name in metadata.utility_keys else fragments.ultrathink_instruction
+    )
+    return compose_set_member(body, substitutions=substitutions, appendix=appendix)
+
+
+def _orchestration_block(metadata: PromptSetMetadata, cap: int) -> str | None:
+    """The block that fills a member's orchestration slot for this set.
+
+    Which fragment fills the slot is read from the set's declared
+    primitive — the value the harness enumeration measured — never judged
+    by an engine reading a conditional instruction.  ``None`` means the set
+    cannot fill the slot at all: either it declares no primitive, or the
+    fragment the primitive selects is absent.  Both are boot failures for
+    any member that asks for the slot, which is why the caller reports the
+    key rather than rendering an empty block.
+
+    The cap is substituted here rather than at render time because the
+    renderer substitutes into a template body, not into a value it has
+    just bound: a bound value carrying a tag would reach the session with
+    the tag intact.
+    """
+    fragments = metadata.fragments
+    selected = {
+        OrchestrationPrimitive.WORKFLOW: fragments.orchestration_workflow,
+        OrchestrationPrimitive.AGENT: fragments.orchestration_agents,
+    }
+    if metadata.orchestration_primitive is None:
+        return None
+    body = selected[metadata.orchestration_primitive]
+    spec = fragments.investigation_spec
+    if body is None or spec is None:
+        return None
+    substitutions = {
+        _INVESTIGATION_SPEC_FRAGMENT: compose_set_member(
+            spec,
+            substitutions={_INVESTIGATION_CAP_NAME: str(cap)},
+            appendix=None,
+        ),
+    }
+    if fragments.ultracode_instruction is not None:
+        substitutions[_ULTRACODE_FRAGMENT] = fragments.ultracode_instruction
+    return compose_set_member(body, substitutions=substitutions, appendix=None)
+
+
+def _critique_block(
+    metadata: PromptSetMetadata,
+    mode: TicketReviewMode,
+) -> str | None:
+    """The in-session critique this MODE composes into a slotted member.
+
+    Read from the mode rather than from a sentence the session evaluates:
+    whether a draft is critiqued before it ships is a property of how the
+    loop was compiled, and a template that asks the session to decide
+    would make it a judgement call in the one place the mode removed the
+    judge.
+    """
+    if mode is not TicketReviewMode.CREATE_ONLY:
+        return None
+    return metadata.fragments.ticket_create_critique
+
+
+def _critique_is_owed(mode: TicketReviewMode, critique: str | None) -> bool:
+    """Whether a member asked for the critique slot and the set cannot fill it.
+
+    A boot failure rather than an empty render, for the reason the mode
+    exists: under create-only that fragment is the only review the artifact
+    receives, so a set that declares none must not resolve into a run that
+    reports success with nothing having read the draft.
+    """
+    return mode is TicketReviewMode.CREATE_ONLY and critique is None
+
+
+def _load_definitions(
+    set_dir: Path,
+    metadata: PromptSetMetadata,
+) -> tuple[AgentDefinition, ...]:
+    """Build every declared lens from its metadata plus its prompt file."""
+    return tuple(
+        AgentDefinition(
+            name=name,
+            description=spec.description,
+            prompt=_composed(
+                metadata,
+                name,
+                _read_member(set_dir / _DEFINITIONS_DIR / f"{name}{_MEMBER_SUFFIX}"),
+            ),
+            tools=tuple(spec.tools),
+        )
+        for name, spec in sorted(metadata.definitions.items())
+    )
+
+
 def _skills_fragment(metadata: PromptSetMetadata, key: PromptKey) -> str:
-    names = metadata.skills.get(key.value, [])
+    names = metadata.skill_names(key.value) or []
     if not names:
         return ""
     listed = "".join(f"\n- {name}" for name in names)

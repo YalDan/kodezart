@@ -6,6 +6,7 @@ three-state type below therefore has NO ``None`` inhabitant: every mode maps
 to an explicit SDK value.
 """
 
+from collections.abc import Sequence
 from enum import StrEnum
 from typing import Self
 
@@ -42,6 +43,26 @@ class SkillsSelection(CamelCaseModel):
 
     mode: SkillsMode
     allowlist: tuple[str, ...] = ()
+
+    def narrowed_to(self, names: Sequence[str]) -> Self:
+        """This selection, narrowed to *names*.
+
+        Effective availability is the INTERSECTION of what the deployment
+        allows and what the role declares — two independent bounds, either
+        of which can bind.  Suppression therefore always wins: a role
+        declaring skills under ``NONE`` still loads none, because the
+        operator's switch is not a role's to reopen.
+        """
+        if self.mode is SkillsMode.NONE:
+            return self
+        wanted = [
+            name
+            for name in names
+            if self.mode is SkillsMode.ALL or name in self.allowlist
+        ]
+        if not wanted:
+            return type(self)(mode=SkillsMode.NONE)
+        return type(self)(mode=SkillsMode.EXPLICIT, allowlist=tuple(wanted))
 
     @model_validator(mode="after")
     def _check_mode_allowlist_agreement(self) -> Self:

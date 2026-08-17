@@ -214,22 +214,28 @@ ids clears them on `terminal` from either frame.
 | ------------------------------ | ----------------------------------------------- |
 | `workflow_ticket_draft`        | `iteration`, `draft`                            |
 | `workflow_ticket_review`       | `iteration`, `approved`, `feedback`, `suggestions` |
-| `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`            |
+| `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`, `mode`    |
 | `workflow_scope_base`          | `baseBranch`, `baseRole`, `inputs`              |
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
-| `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets` |
+| `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets`, `correction` (present only when a refused response was re-dispatched) |
 | `workflow_artifacts`           | `status`, `branch`                              |
 | `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
-| `workflow_review`              | `passed`, `evaluation`, `fixRound`              |
+| `workflow_review`              | `passed`, `evaluation`, `fixRoundsUsed`         |
 | `workflow_remediation`         | `entry`, `roundIndex`, `ticket`, `baseRef`      |
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
-| `workflow_ci`                  | `passed`, `summary`, `ref`                      |
-| `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `error` |
+| `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
+| `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.
+
+`workflow_ticket.approved` is three-state (`approved`, `unapproved`,
+`not_reviewed`) and rides beside `mode`. `not_reviewed` says no reviewer ran
+at all, which under the `create_only` mode is the compiled shape of the loop
+rather than a failure: a draft its reviewer rejected, a draft whose review
+budget ran out, and a draft nobody reviewed are three different facts.
 
 `workflow_artifacts.status` is three-state (`persisted`, `unchanged`,
 `ignored_by_target`). `ignored_by_target` is not a variant of success: the

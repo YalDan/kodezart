@@ -1,31 +1,34 @@
 """Agent event domain models for SSE streaming."""
 
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import (
     ConfigDict,
     Field,
-    SerializerFunctionWrapHandler,
     field_validator,
-    model_serializer,
 )
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
+    ContractCorrection,
     CriteriaValidation,
     CriteriaValidationOutput,
     CriterionId,
     DraftedCriterion,
+    FanInReport,
     GeneratedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
 
 # ---------------------------------------------------------------------------
@@ -61,17 +64,132 @@ RaiseSite = Literal[
 class CodeReference(CamelCaseModel):
     """A reference to a specific location in the codebase."""
 
-    location: str = Field(min_length=1)
-    note: str = Field(min_length=1)
+    location: str = Field(
+        min_length=1,
+        description=(
+            "Where in the repository this points: a file path, optionally "
+            "with a line range or a symbol name."
+        ),
+    )
+    note: str = Field(
+        min_length=1,
+        description="What the implementer needs to know about this location.",
+    )
 
 
 class FileChange(CamelCaseModel):
     """A single file-level change required to implement the ticket."""
 
-    file_path: str = Field(min_length=1)
-    change_type: Literal["create", "modify", "delete"]
-    description: str = Field(min_length=1)
-    rationale: str = Field(min_length=1)
+    file_path: str = Field(
+        min_length=1,
+        description="Repository-relative path of the file this change touches.",
+    )
+    change_type: Literal["create", "modify", "delete"] = Field(
+        description="Whether the file is created, modified or deleted.",
+    )
+    description: str = Field(
+        min_length=1,
+        description="What changes in this file, stated as an observable outcome.",
+    )
+    rationale: str = Field(
+        min_length=1,
+        description="Why this change is required by the task, not merely useful.",
+    )
+
+
+class CritiqueSeverity(StrEnum):
+    """How much a critique finding costs if it ships unaddressed."""
+
+    BLOCKING = "blocking"
+    SIGNIFICANT = "significant"
+    MINOR = "minor"
+
+
+class CritiqueFinding(CamelCaseModel):
+    """One defect the fresh-context critic found in a drafted artifact."""
+
+    quoted_passage: str = Field(
+        min_length=1,
+        description=(
+            "The offending passage, quoted from the draft so the reader can "
+            "locate it without re-deriving the finding."
+        ),
+    )
+    defect: str = Field(
+        min_length=1,
+        description="What is wrong with that passage, stated as a defect.",
+    )
+    severity: CritiqueSeverity = Field(
+        description=(
+            "blocking: the draft cannot be acted on. significant: it can, but "
+            "the result will miss the task. minor: everything else."
+        ),
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "How sure you are the defect is real, from 0 to 1. Report low "
+            "confidence rather than filtering — routing downstream decides."
+        ),
+    )
+
+
+class CritiqueFlag(CamelCaseModel):
+    """One thing the critic flags for a supervisor's attention.
+
+    The channel the persona rewrite had to preserve: a finding about WHY a
+    component exists rather than whether it works — over-implementation,
+    machinery no measured failure justifies, a goal quietly substituted.
+    It is a typed, routable item because a flag that cannot be routed is a
+    persona artefact with a new name.
+
+    Distinct from the accept gate's ``SherlockFlag``, which anchors to a
+    criterion id: this one anchors to a passage of a drafted artifact,
+    which has no criteria yet.  Same wire field name on two producers,
+    two anchors, one definition each.
+    """
+
+    subject: str = Field(
+        min_length=1,
+        description=(
+            "What is flagged: the component, claim, or decision the "
+            "supervisor should look at, named precisely enough to find."
+        ),
+    )
+    reason: str = Field(
+        min_length=1,
+        description=(
+            "Why it is flagged: the measured failure that would justify it "
+            "and is absent, or the goal it serves that the task never asked "
+            "for."
+        ),
+    )
+
+
+class DraftCritiqueOutput(CamelCaseModel):
+    """The draft-critic lens's whole verdict on one drafted artifact."""
+
+    sound: bool = Field(
+        description=(
+            "Whether the draft satisfies the task as it stands: true only "
+            "when no blocking or significant finding remains."
+        ),
+    )
+    findings: list[CritiqueFinding] = Field(
+        default_factory=list,
+        description=(
+            "Every defect found, unfiltered by severity or confidence; "
+            "empty when the draft is sound."
+        ),
+    )
+    sherlock_flags: list[CritiqueFlag] = Field(
+        default_factory=list,
+        description=(
+            "Findings about why the draft's parts exist rather than whether "
+            "they work; empty when nothing warrants a supervisor's attention."
+        ),
+    )
 
 
 class TicketDraftOutput(CamelCaseModel):
@@ -81,21 +199,67 @@ class TicketDraftOutput(CamelCaseModel):
     observable acceptance criteria from the full formatted ticket.
     """
 
-    title: str = Field(min_length=1, max_length=120)
-    summary: str = Field(min_length=1)
-    context: str = Field(min_length=1)
-    references: list[CodeReference] = Field(default_factory=list)
-    required_changes: list[FileChange] = Field(min_length=1)
-    out_of_scope: list[str] = Field(default_factory=list)
-    open_questions: list[str] = Field(default_factory=list)
+    title: str = Field(
+        min_length=1,
+        max_length=120,
+        description="One line naming what the ticket delivers.",
+    )
+    summary: str = Field(
+        min_length=1,
+        description=(
+            "What the change accomplishes, for a reader with no other context."
+        ),
+    )
+    context: str = Field(
+        min_length=1,
+        description=(
+            "The repository facts the implementation rests on, including the "
+            "documentation sources consulted."
+        ),
+    )
+    references: list[CodeReference] = Field(
+        default_factory=list,
+        description="Locations in the repository the implementer starts from.",
+    )
+    required_changes: list[FileChange] = Field(
+        min_length=1,
+        description="Every file the change must touch, one entry per file.",
+    )
+    out_of_scope: list[str] = Field(
+        default_factory=list,
+        description="Work this ticket deliberately excludes.",
+    )
+    open_questions: list[str] = Field(
+        default_factory=list,
+        description="Questions the ticket could not settle from the repository.",
+    )
+    sherlock_flags: list[CritiqueFlag] = Field(
+        default_factory=list,
+        description=(
+            "Every flag the draft critic raised about why a part of this "
+            "ticket exists rather than whether it works, carried out "
+            "unchanged; empty when none was raised."
+        ),
+    )
 
 
 class TicketReviewOutput(CamelCaseModel):
     """Structured output for a ticket review."""
 
-    approved: bool
-    feedback: str = Field(min_length=1)
-    suggestions: list[str] = Field(default_factory=list)
+    approved: bool = Field(
+        description=(
+            "Whether the draft is fit to implement: false while any blocking "
+            "or significant finding remains."
+        ),
+    )
+    feedback: str = Field(
+        min_length=1,
+        description="Every finding, with its severity and your confidence in it.",
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Concrete revisions that would resolve the findings.",
+    )
 
 
 class AgentEvent(CamelCaseModel):
@@ -318,8 +482,18 @@ class RateLimitWarningEvent(AgentEvent):
 class CommitMessageOutput(CamelCaseModel):
     """Structured output schema for agent-generated commit messages."""
 
-    title: str = Field(min_length=1, max_length=72)
-    body: str = Field(default="")
+    title: str = Field(
+        min_length=1,
+        max_length=72,
+        description=(
+            "Conventional-commit summary line saying what the change does, "
+            "in the imperative."
+        ),
+    )
+    body: str = Field(
+        default="",
+        description="Why the change was made; empty when the why is obvious.",
+    )
 
 
 class CriterionResult(CamelCaseModel):
@@ -347,10 +521,30 @@ class CriterionResult(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
-    criterion: str = Field(min_length=1)
-    passed: bool
-    reasoning: str = Field(min_length=1)
+    criterion_id: CriterionId = Field(
+        pattern=CRITERION_ID_PATTERN,
+        description=(
+            "The dispatched criterion's id, echoed exactly. Return one result "
+            "per dispatched id and invent none."
+        ),
+    )
+    criterion: str = Field(
+        min_length=1,
+        description="The criterion's text as dispatched.",
+    )
+    passed: bool = Field(
+        description=(
+            "Whether the changeset satisfies this criterion. Insufficient "
+            "evidence is a fail."
+        ),
+    )
+    reasoning: str = Field(
+        min_length=1,
+        description=(
+            "The evidence for the verdict, citing output you ran: file paths "
+            "with line numbers, test names, lint rule identifiers."
+        ),
+    )
 
 
 class AcceptanceCriteriaOutput(CamelCaseModel):
@@ -362,14 +556,32 @@ class AcceptanceCriteriaOutput(CamelCaseModel):
     rides the iteration event and reaches the pull-request body.
     """
 
-    criteria_results: list[CriterionResult] = Field(min_length=1)
-    sherlock_flags: list[SherlockFlag] = Field(default_factory=list)
+    criteria_results: list[CriterionResult] = Field(
+        min_length=1,
+        description=(
+            "Exactly one result per dispatched criterion id, covering every id."
+        ),
+    )
+    sherlock_flags: list[SherlockFlag] = Field(
+        default_factory=list,
+        description=(
+            "Reasoning concerns raised in your own name rather than against "
+            "one criterion's verdict."
+        ),
+    )
 
 
 class BranchNameOutput(CamelCaseModel):
     """Agent-generated branch name slug."""
 
-    slug: str = Field(min_length=1, max_length=50)
+    slug: str = Field(
+        min_length=1,
+        max_length=50,
+        description=(
+            "Lowercase hyphen-separated branch slug saying what the change "
+            "does. No prefix."
+        ),
+    )
 
 
 class ContentAuditFinding(CamelCaseModel):
@@ -380,15 +592,37 @@ class ContentAuditFinding(CamelCaseModel):
     excise, and the gate blocks rather than redacting such a finding.
     """
 
-    start: int | None = Field(default=None, ge=0)
-    end: int | None = Field(default=None, ge=0)
-    rationale: str = Field(min_length=1)
+    start: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Character offset where the leaking span starts, counted from the "
+            "start of the payload. Absent when the leak is carried by a "
+            "passage rather than a substring."
+        ),
+    )
+    end: int | None = Field(
+        default=None,
+        ge=0,
+        description="Character offset just past the leaking span, on the same terms.",
+    )
+    rationale: str = Field(
+        min_length=1,
+        description=(
+            "One sentence saying what a stranger would learn, and why it matters."
+        ),
+    )
 
 
 class ContentAuditOutput(CamelCaseModel):
     """The audit session's whole verdict: every finding, or none."""
 
-    findings: list[ContentAuditFinding] = Field(default_factory=list)
+    findings: list[ContentAuditFinding] = Field(
+        default_factory=list,
+        description=(
+            "One finding per distinct thing a stranger would learn; empty when none."
+        ),
+    )
 
 
 class GeneratedCriteriaOutput(CamelCaseModel):
@@ -405,15 +639,34 @@ class GeneratedCriteriaOutput(CamelCaseModel):
     third, not round one's ``AC-3``.
     """
 
-    criteria: list[DraftedCriterion] = Field(min_length=1)
-    reasoning: str = Field(min_length=1)
+    criteria: list[DraftedCriterion] = Field(
+        min_length=1,
+        description=(
+            "The smallest set of falsifiable checks that, all passing, "
+            "establish the ticket is done."
+        ),
+    )
+    reasoning: str = Field(
+        min_length=1,
+        description="How the set was derived from the ticket and the repository.",
+    )
 
 
 class PRDescriptionOutput(CamelCaseModel):
     """Structured output for agent-generated PR descriptions."""
 
-    title: str = Field(min_length=1, max_length=120)
-    description: str = Field(min_length=1)
+    title: str = Field(
+        min_length=1,
+        max_length=120,
+        description="Pull-request title: what changed, in one line.",
+    )
+    description: str = Field(
+        min_length=1,
+        description=(
+            "Pull-request body: what changed and why, how each acceptance "
+            "criterion is met, and what a reviewer should scrutinize first."
+        ),
+    )
 
 
 class WorkflowReviewEvent(AgentEvent):
@@ -422,7 +675,8 @@ class WorkflowReviewEvent(AgentEvent):
     type: Literal["workflow_review"] = "workflow_review"
     passed: bool
     evaluation: AcceptanceCriteriaOutput
-    fix_round: int
+    fix_rounds_used: int
+    fan_in: FanInReport | None = None
 
 
 class WorkflowPREvent(AgentEvent):
@@ -436,22 +690,17 @@ class WorkflowPREvent(AgentEvent):
 
 
 class WorkflowCIEvent(AgentEvent):
-    """Emitted after CI monitoring completes or is skipped."""
+    """Emitted after CI monitoring completes or is skipped.
+
+    ``ci_status`` is a required enum, so it serializes on every frame
+    without a wrap serializer forcing the key back in — which is what a
+    nullable tri-state bool needed under ``exclude_none=True``.
+    """
 
     type: Literal["workflow_ci"] = "workflow_ci"
-    passed: bool | None
+    ci_status: CIStatus
     summary: str
     ref: str
-
-    @model_serializer(mode="wrap")
-    def _force_ci_field(
-        self,
-        handler: SerializerFunctionWrapHandler,
-    ) -> dict[str, object]:
-        result: dict[str, object] = handler(self)
-        if "passed" not in result:
-            result["passed"] = None
-        return result
 
 
 class WorkflowIterationEvent(AgentEvent):
@@ -473,6 +722,7 @@ class WorkflowIterationEvent(AgentEvent):
     verdict: AcceptVerdict
     evaluation: AcceptanceCriteriaOutput
     trajectory: LoopTrajectory
+    fan_in: FanInReport | None = None
 
 
 class WorkflowConsolidationEvent(AgentEvent):
@@ -527,7 +777,10 @@ class WorkflowCompleteEvent(AgentEvent):
 
     ``outcome`` is the sole terminal discriminator — required and
     non-nullable, so ``exclude_none=True`` can never drop it and no
-    serializer hack is needed to force it onto the wire.
+    serializer hack is needed to force it onto the wire.  ``ci_status``
+    now holds on the same ground, and ``merge_error`` says what its
+    string actually carries: the merge failure, never a general error
+    channel.
     """
 
     type: Literal["workflow_complete"] = "workflow_complete"
@@ -538,24 +791,12 @@ class WorkflowCompleteEvent(AgentEvent):
     outcome: WorkflowOutcome
     merged: bool = False
     final_commit_sha: str | None = None
-    error: str | None = None
+    merge_error: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None
-    ci_passed: bool | None = None
+    ci_status: CIStatus = CIStatus.not_monitored
     trajectory: LoopTrajectory | None = None
     criteria_validation: CriteriaValidation | None = None
-
-    @model_serializer(mode="wrap")
-    def _force_ci_field(
-        self,
-        handler: SerializerFunctionWrapHandler,
-    ) -> dict[str, object]:
-        result: dict[str, object] = handler(self)
-        # ci_passed is a three-state field (True/False/None) — must always appear
-        key = "ciPassed" if "featureBranch" in result else "ci_passed"
-        if key not in result:
-            result[key] = None
-        return result
 
 
 class WorkflowVisibilityEvent(AgentEvent):
@@ -606,12 +847,18 @@ class WorkflowCriteriaEvent(AgentEvent):
 
 
 class WorkflowCriteriaValidationEvent(AgentEvent):
-    """Emitted after every feasibility sweep over a generated criteria set."""
+    """Emitted after every feasibility sweep over a generated criteria set.
+
+    ``correction`` is present only when the validator's first answer was
+    refused and the node argued with it under the re-dispatch bound, so
+    absent means the first response conformed.
+    """
 
     type: Literal["workflow_criteria_validation"] = "workflow_criteria_validation"
     regeneration_round: int
     validation: CriteriaValidation
     regeneration_targets: list[str]
+    correction: ContractCorrection | None = None
 
 
 class WorkflowTicketDraftEvent(AgentEvent):
@@ -633,15 +880,23 @@ class WorkflowTicketReviewEvent(AgentEvent):
 
 
 class WorkflowTicketEvent(AgentEvent):
-    """Emitted when ticket generation finishes."""
+    """Emitted when ticket generation finishes.
+
+    ``approved`` and ``mode`` ride together because either alone is
+    ambiguous: ``not_reviewed`` says no reviewer ran and the mode says why
+    nobody expected one to.
+    """
 
     type: Literal["workflow_ticket"] = "workflow_ticket"
     ticket: TicketDraftOutput
     review_rounds: int
-    approved: bool
+    approved: TicketApproval
+    mode: TicketReviewMode
 
 
-# Pre-computed JSON schemas for structured agent output via output_format
+# Pre-computed WIRE schemas for structured agent output via output_format.
+# Each is the model's OWN schema: the contract the model is shown is the
+# contract its response is judged against, constraints included.
 COMMIT_MESSAGE_SCHEMA: dict[str, object] = CommitMessageOutput.model_json_schema()
 # Schema for acceptance criteria evaluation results
 ACCEPTANCE_CRITERIA_SCHEMA: dict[str, object] = (
@@ -664,3 +919,21 @@ TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
 PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
 # Schema for the judgment scanner's structured audit verdict
 CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
+# Schema for the draft-critic lens's verdict on a drafted artifact
+DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
+
+#: Every wire schema this system dispatches, by constant name. The
+#: wire-contract tests and the dispatch-site guard both read this rather
+#: than keeping their own list.
+WIRE_SCHEMAS: dict[str, dict[str, object]] = {
+    "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
+    "ACCEPTANCE_CRITERIA_SCHEMA": ACCEPTANCE_CRITERIA_SCHEMA,
+    "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
+    "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
+    "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
+    "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
+    "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
+    "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
+    "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
+    "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
+}

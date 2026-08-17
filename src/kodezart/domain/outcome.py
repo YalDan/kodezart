@@ -31,6 +31,7 @@ terminal route cannot ship undiscriminated.
 """
 
 from kodezart.domain.accept_gate import gate_cleared
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.workflow import WorkflowState
 
@@ -43,7 +44,7 @@ def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
     remediation_rounds_used = state["remediation_rounds_used"]
     review_passed = state["review_passed"]
     pr_url = state["pr_url"]
-    ci_passed = state["ci_passed"]
+    ci_status = state["ci_status"]
     ci_summary = state["ci_summary"]
     trajectory = state["trajectory"]
 
@@ -71,19 +72,19 @@ def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
         return WorkflowOutcome.review_passed_no_pr_adapter
     if merged and review_passed is False and pr_url is None:
         return WorkflowOutcome.review_failed_fix_budget_exhausted
-    if pr_url is not None and ci_passed is None and ci_summary is None:
+    if pr_url is not None and ci_status is CIStatus.not_monitored:
         return WorkflowOutcome.pr_opened
-    if pr_url is not None and ci_passed is True:
+    if pr_url is not None and ci_status is CIStatus.passed:
         return WorkflowOutcome.ci_passed
-    if pr_url is not None and ci_passed is None and ci_summary is not None:
+    if pr_url is not None and ci_status is CIStatus.not_configured:
         return WorkflowOutcome.ci_not_configured
-    if pr_url is not None and ci_passed is False:
+    if pr_url is not None and ci_status is CIStatus.failed:
         return WorkflowOutcome.ci_failed_fix_budget_exhausted
 
     msg = (
         "Unclassifiable terminal state: "
         f"accepted={accepted!r} merged={merged!r} merge_error={merge_error!r} "
         f"review_passed={review_passed!r} pr_url={pr_url!r} "
-        f"ci_passed={ci_passed!r} ci_summary={ci_summary!r}"
+        f"ci_status={ci_status.value!r} ci_summary={ci_summary!r}"
     )
     raise ValueError(msg)

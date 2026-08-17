@@ -45,9 +45,15 @@ from kodezart.types.domain.prompts import (
     PromptSetFragments,
     PromptSetMetadata,
 )
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import as_validated
+from tests.prompt_census import configured_investigation_cap
 
 DEFAULT_SET = "claude-opus"
+#: The configured fan-out cap, read off the field declaration rather than a
+#: constructed config: the suite must not depend on the ambient environment
+#: to know what the application ships.
+CONFIGURED_INVESTIGATION_CAP: int = configured_investigation_cap()
 GOLDENS = Path(__file__).parent / "goldens" / "claude_opus_empty_skills"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -248,14 +254,29 @@ def load_registry(
     set_overrides: dict[str, str] | None = None,
     template_overrides: dict[str, str] | None = None,
     bindings: dict[str, object] | None = None,
+    investigation_cap: int | None = None,
+    ticket_review_mode: TicketReviewMode = TicketReviewMode.REVIEWED,
+    fallback_model: str | None = None,
 ) -> InRepoPromptRegistry:
-    """Load a registry addressing the set BY NAME (never via environment)."""
+    """Load a registry addressing the set BY NAME (never via environment).
+
+    ``ticket_review_mode`` defaults to the reviewed arm because that is
+    what every suite calling this helper is about; the mode's own effect on
+    resolution is asserted where a case passes the other value explicitly.
+    """
     return InRepoPromptRegistry.load(
         sets_root=sets_root if sets_root is not None else default_sets_root(),
         default_set=default_set,
         set_overrides=set_overrides or {},
         template_overrides=template_overrides or {},
         bindings=bindings or {},
+        investigation_cap=(
+            investigation_cap
+            if investigation_cap is not None
+            else CONFIGURED_INVESTIGATION_CAP
+        ),
+        ticket_review_mode=ticket_review_mode,
+        fallback_model=fallback_model,
     )
 
 
@@ -921,3 +942,72 @@ def test_prompt_set_fragments_reject_unknown_keys() -> None:
         PromptSetFragments.model_validate(
             {"skills_reference_header": "x", "extra_fragment": "y"},
         )
+
+
+# ---------------------------------------------------------------------------
+# KOD-90-AC-6 (registry half) — a slot the mode owes and the set cannot fill
+# ---------------------------------------------------------------------------
+
+CRITIQUE_SLOT = "{{#if ticket_create_critique}}{{ticket_create_critique}}{{/if}}"
+
+
+def test_a_slotted_create_member_without_a_critique_fragment_fails_create_only(
+    tmp_path: Path,
+) -> None:
+    """The mode's only review cannot be silently absent: boot names the key."""
+    members = complete_members("base")
+    members[PromptKey.TICKET_CREATE.value] += CRITIQUE_SLOT
+    write_set(tmp_path, "base", members)
+
+    with pytest.raises(PromptResolutionError) as excinfo:
+        load_registry(
+            sets_root=tmp_path,
+            default_set="base",
+            ticket_review_mode=TicketReviewMode.CREATE_ONLY,
+        )
+
+    assert PromptKey.TICKET_CREATE.value in excinfo.value.failing_keys
+
+
+def test_the_same_set_resolves_under_the_reviewed_mode(tmp_path: Path) -> None:
+    """Non-vacuity: the refusal is the MODE's, not the slot's."""
+    members = complete_members("base")
+    members[PromptKey.TICKET_CREATE.value] += CRITIQUE_SLOT
+    write_set(tmp_path, "base", members)
+
+    registry = load_registry(
+        sets_root=tmp_path,
+        default_set="base",
+        ticket_review_mode=TicketReviewMode.REVIEWED,
+    )
+
+    assert (
+        registry.template_for(PromptKey.TICKET_CREATE).render({})
+        == "base:ticket_create"
+    )
+
+
+def test_a_declared_critique_fills_the_slot_under_create_only(tmp_path: Path) -> None:
+    """The fragment reaches the render from set metadata, not from the caller."""
+    members = complete_members("base")
+    members[PromptKey.TICKET_CREATE.value] += CRITIQUE_SLOT
+    set_dir = write_set(tmp_path, "base", members)
+    metadata = set_dir / "set.toml"
+    metadata.write_text(
+        metadata.read_text(encoding="utf-8").replace(
+            "[fragments]\n",
+            '[fragments]\nticket_create_critique = "critique the draft"\n',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    registry = load_registry(
+        sets_root=tmp_path,
+        default_set="base",
+        ticket_review_mode=TicketReviewMode.CREATE_ONLY,
+    )
+
+    assert "critique the draft" in registry.template_for(
+        PromptKey.TICKET_CREATE
+    ).render({})

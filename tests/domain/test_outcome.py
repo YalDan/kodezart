@@ -7,6 +7,7 @@ import pytest
 from kodezart.domain import outcome as outcome_module
 from kodezart.domain.outcome import classify_outcome
 from kodezart.types.domain.accept import AcceptVerdict
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
@@ -23,7 +24,7 @@ def _state(
     review_passed: bool = False,
     pr_url: str | None = None,
     pr_number: int | None = None,
-    ci_passed: bool | None = None,
+    ci_status: CIStatus = CIStatus.not_monitored,
     ci_summary: str | None = None,
     trajectory: LoopTrajectory | None = None,
     criteria_infeasible: bool = False,
@@ -54,7 +55,7 @@ def _state(
         best_iteration_sha=best_iteration_sha,
         pr_url=pr_url,
         pr_number=pr_number,
-        ci_passed=ci_passed,
+        ci_status=ci_status,
         ci_summary=ci_summary,
         repo_url=None,
         trajectory=trajectory,
@@ -271,7 +272,7 @@ def test_pr_opened() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=None,
+        ci_status=CIStatus.not_monitored,
         ci_summary=None,
     )
     assert classify_outcome(state) is WorkflowOutcome.pr_opened
@@ -284,7 +285,7 @@ def test_ci_passed() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=True,
+        ci_status=CIStatus.passed,
         ci_summary="All CI checks passed.",
     )
     assert classify_outcome(state) is WorkflowOutcome.ci_passed
@@ -297,7 +298,7 @@ def test_ci_not_configured() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=None,
+        ci_status=CIStatus.not_configured,
         ci_summary="No CI checks are configured for this repository.",
     )
     assert classify_outcome(state) is WorkflowOutcome.ci_not_configured
@@ -310,14 +311,14 @@ def test_ci_failed_fix_budget_exhausted() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=False,
+        ci_status=CIStatus.failed,
         ci_summary="CI failed: ci/test",
     )
     assert classify_outcome(state) is WorkflowOutcome.ci_failed_fix_budget_exhausted
 
 
 def test_review_failure_after_pr_with_failing_ci_is_a_ci_failure() -> None:
-    """The withdrawn disambiguation: pr_url set + ci_passed False wins.
+    """The withdrawn disambiguation: pr_url set + a failed CI status wins.
 
     A review-failure exit that already opened a PR whose CI failed
     classifies as ci_failed_fix_budget_exhausted — the outcome that
@@ -331,7 +332,7 @@ def test_review_failure_after_pr_with_failing_ci_is_a_ci_failure() -> None:
         review_passed=False,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=False,
+        ci_status=CIStatus.failed,
         ci_summary="CI failed: ci/test",
     )
     assert classify_outcome(state) is WorkflowOutcome.ci_failed_fix_budget_exhausted
@@ -352,7 +353,7 @@ def test_divergent_fix_after_failed_ci_is_a_fix_consolidation_failure() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=False,
+        ci_status=CIStatus.failed,
         ci_summary="CI failed: ci/test",
     )
     assert classify_outcome(state) is WorkflowOutcome.fix_consolidation_failed

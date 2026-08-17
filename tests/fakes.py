@@ -19,7 +19,11 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.prompt_rendering import PromptTemplate
-from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
+from kodezart.core.protocols import (
+    AgentExecutor,
+    PromptSetProvider,
+    WorkflowEngine,
+)
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import (
@@ -74,6 +78,13 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
+from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -95,6 +106,7 @@ from kodezart.types.domain.tracker import (
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest
 from kodezart.types.requests.agent import WorkflowRequest
+from tests.prompt_census import configured_investigation_cap
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
 #: The kind a fake session reports when a test does not care which kind it
@@ -153,10 +165,16 @@ EXECUTOR_MODULES: list[str] = [
 ]
 
 
-def executor_for(module: str, grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT):
+def executor_for(
+    module: str,
+    grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT,
+    *,
+    model: str | None = None,
+):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("claude_client_executor"):
         return ClaudeClientExecutor(
+            model=model,
             setting_sources=DEFAULT_SETTING_SOURCES,
             knowledge_grant=grant,
         )
@@ -225,6 +243,9 @@ async def recorded_session(
     prompt: str = "p",
     cwd: str = "/tmp/fake",
     skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+    agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+    session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+    model: str | None = None,
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -234,7 +255,7 @@ async def recorded_session(
         if target == "ClaudeSDKClient"
         else _recording_query(recorded)
     )
-    executor = executor_for(module, grant)
+    executor = executor_for(module, grant, model=model)
 
     with patch(f"{module}.{target}", replacement):
         async for _event in executor.stream(
@@ -244,6 +265,8 @@ async def recorded_session(
             allowed_tools=[],
             skills=skills,
             session_type=session_type,
+            agents=agents,
+            session_policy=session_policy,
         ):
             pass
 
@@ -560,6 +583,8 @@ class FakeAgentExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -728,6 +753,8 @@ class FakeRaisingExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -793,6 +820,8 @@ class FakeChangePersister:
         backup_ref_id_prefix: str,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> PersistResult | None:
         self.calls.append(
@@ -888,6 +917,8 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -916,6 +947,8 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         create_branch: bool = True,
         cache_key: str | None = None,
@@ -941,6 +974,8 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -989,6 +1024,8 @@ class ScriptedFakeExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -1575,9 +1612,17 @@ class SequentialCIMonitor:
 class FakeTicketGenerator:
     """Fake TicketGenerator for testing the outer workflow pipeline."""
 
-    def __init__(self, ticket: TicketDraftOutput | None = None) -> None:
+    def __init__(
+        self,
+        ticket: TicketDraftOutput | None = None,
+        *,
+        approved: TicketApproval = TicketApproval.APPROVED,
+        mode: TicketReviewMode = TicketReviewMode.REVIEWED,
+    ) -> None:
         self.calls: list[dict[str, object]] = []
         self._ticket = ticket or make_ticket_draft()
+        self._approved = approved
+        self._mode = mode
 
     async def run(
         self,
@@ -1600,7 +1645,8 @@ class FakeTicketGenerator:
         yield WorkflowTicketEvent(
             ticket=self._ticket,
             review_rounds=1,
-            approved=True,
+            approved=self._approved,
+            mode=self._mode,
         )
 
 
@@ -1653,6 +1699,8 @@ def make_prompt_provider() -> InRepoPromptRegistry:
         set_overrides={},
         template_overrides={},
         bindings={},
+        investigation_cap=configured_investigation_cap(),
+        ticket_review_mode=TicketReviewMode.REVIEWED,
     )
 
 
@@ -1668,10 +1716,10 @@ class _RecordingTemplate(PromptTemplate):
 
 
 class RecordingPromptProvider:
-    """PromptProvider that records the key and variables of every render."""
+    """PromptSetProvider that records the key and variables of every render."""
 
-    def __init__(self, inner: PromptProvider) -> None:
-        self._inner = inner
+    def __init__(self, inner: PromptSetProvider) -> None:
+        self._inner: PromptSetProvider = inner
         self.renders: list[tuple[PromptKey, dict[str, object]]] = []
 
     def template_for(self, key: PromptKey) -> PromptTemplate:
@@ -1689,6 +1737,22 @@ class RecordingPromptProvider:
 
     def declared_skills(self, key: PromptKey) -> Sequence[str]:
         return self._inner.declared_skills(key)
+
+    def definitions(self) -> Sequence[AgentDefinition]:
+        return self._inner.definitions()
+
+    def system_prompt_append(self) -> str | None:
+        return self._inner.system_prompt_append()
+
+    def session_policy(self, key: PromptKey) -> SessionPolicy:
+        return self._inner.session_policy(key)
+
+    def session_skills(
+        self,
+        key: PromptKey,
+        configured: SkillsSelection,
+    ) -> SkillsSelection:
+        return self._inner.session_skills(key, configured)
 
     def variables_for(self, key: PromptKey) -> list[dict[str, object]]:
         """Every recorded variable mapping rendered under *key*."""

@@ -9,6 +9,7 @@ from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriteriaValidation,
@@ -18,6 +19,7 @@ from kodezart.types.domain.criteria import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
 
@@ -118,14 +120,20 @@ class RalphLoopContext(ExecutionContext):
 
 
 class TicketGenerationState(TypedDict):
-    """State for the ticket generation sub-graph."""
+    """State for the ticket generation sub-graph.
+
+    ``approved`` starts at ``NOT_REVIEWED`` and stays there unless a review
+    node writes a verdict, which is what makes the create-only run's
+    terminal value a fact about the graph rather than an initial value that
+    happened to survive.
+    """
 
     draft_iteration: int
     review_count: int
     current_draft: TicketDraftOutput | None
     review_feedback: str | None
     review_suggestions: list[str]
-    approved: bool
+    approved: TicketApproval
 
 
 class RalphLoopState(TypedDict):
@@ -190,7 +198,7 @@ class WorkflowState(TypedDict):
     best_iteration_sha: str | None
     pr_url: str | None
     pr_number: int | None
-    ci_passed: bool | None
+    ci_status: CIStatus
     ci_summary: str | None
     repo_url: str | None
     repo_visibility: RepoVisibility

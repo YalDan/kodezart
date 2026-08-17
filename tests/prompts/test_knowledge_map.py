@@ -7,6 +7,7 @@ existing golden byte untouched.
 """
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
@@ -23,6 +24,12 @@ from kodezart.core.prompt_rendering import free_binding_names
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from tests.fakes import EXECUTOR_MODULES, knowledge_grant_for, recorded_session
 from tests.prompts.test_prompt_wiring import load_registry, write_set
 
@@ -126,6 +133,8 @@ async def test_a_granted_session_prompt_carries_the_map(module: str) -> None:
 async def test_every_non_granted_session_prompt_is_byte_identical(
     module: str,
     session_type: SessionType,
+    agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+    session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
 ) -> None:
     """AC-3: not a spot check — each type outside the grant, byte for byte."""
     grant = knowledge_grant_for(SessionType.TICKET_FIRE)

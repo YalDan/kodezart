@@ -35,12 +35,14 @@ from kodezart.types.domain.operation import (
     TeamEntry,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     MappingKind,
     MappingRef,
 )
 from tests.fakes import FakeTrackerPort
+from tests.prompt_census import configured_investigation_cap
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
@@ -405,6 +407,8 @@ class TestReconciledConfig:
             set_overrides={},
             template_overrides={},
             bindings=dict(bindings_for(self._fresh())),
+            investigation_cap=configured_investigation_cap(),
+            ticket_review_mode=TicketReviewMode.REVIEWED,
         )
 
         with pytest.raises(PromptRenderError) as caught:
@@ -427,6 +431,8 @@ class TestReconciledConfig:
             set_overrides={},
             template_overrides={},
             bindings=dict(bindings_for(reconciliation.config)),
+            investigation_cap=configured_investigation_cap(),
+            ticket_review_mode=TicketReviewMode.REVIEWED,
         )
 
         rendered = registry.template_for(PromptKey.FIRE_PREP_PASS).render({})

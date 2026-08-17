@@ -36,8 +36,19 @@ class SherlockFlag(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: CriterionId | None = None
-    concern: str = Field(min_length=1)
+    criterion_id: CriterionId | None = Field(
+        default=None,
+        description=(
+            "The criterion this concern is about; absent when the concern is "
+            "about the set rather than one criterion."
+        ),
+    )
+    concern: str = Field(
+        min_length=1,
+        description=(
+            "The reasoning concern, stated so a downstream reader can act on it."
+        ),
+    )
 
 
 class FlaggedItem(CamelCaseModel):

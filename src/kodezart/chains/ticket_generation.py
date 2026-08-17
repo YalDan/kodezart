@@ -1,7 +1,7 @@
 """Ticket generation loop — draft + review until approved or exhausted."""
 
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -11,9 +11,9 @@ from langgraph.types import RetryPolicy
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, TICKET_TOOLS
 from kodezart.core.error_egress import build_error_event
-from kodezart.core.errors import soft_failure
+from kodezart.core.errors import TicketReviewModeError, soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, PromptProvider, WorkspaceProvider
+from kodezart.core.protocols import AgentRunner, PromptSetProvider, WorkspaceProvider
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WorkspaceError
@@ -32,13 +32,81 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import AgentDefinition
+from kodezart.types.domain.ticket_review import (
+    DEFAULT_MAX_REVIEWS,
+    DRAFT_CRITIC_LENS,
+    TicketApproval,
+    TicketReviewMode,
+)
 from kodezart.types.domain.workflow import TicketGenerationState, WorkflowContext
+
+
+def _refuse_an_unhonourable_mode(
+    *,
+    review_mode: TicketReviewMode,
+    max_reviews: int | None,
+    definitions: Sequence[AgentDefinition],
+) -> None:
+    """Raise when the configured mode's guarantee cannot be delivered.
+
+    Both refusals are one defect wearing two faces: a knob is configured
+    whose effect this composition cannot produce.  Under ``create_only`` a
+    review budget bounds nothing that gets compiled — silently accepting it
+    is how a deployment comes to believe it has two review rounds — and a
+    resolved set with no draft critic leaves the single creator session
+    with nothing checking it while the mode's contract says otherwise.
+    """
+    if review_mode is not TicketReviewMode.CREATE_ONLY:
+        return
+    if max_reviews is not None:
+        msg = (
+            "max_reviews is configured under a ticket review mode that "
+            "compiles no review node for it to bound"
+        )
+        raise TicketReviewModeError(
+            msg,
+            settings=(
+                f"ticket_review_mode={review_mode.value}",
+                f"max_reviews={max_reviews}",
+            ),
+        )
+    if not any(definition.name == DRAFT_CRITIC_LENS for definition in definitions):
+        msg = (
+            "the resolved prompt set declares no draft-critic lens, and it is "
+            "the only review a ticket receives under this mode"
+        )
+        raise TicketReviewModeError(
+            msg,
+            settings=(
+                f"ticket_review_mode={review_mode.value}",
+                "prompt_set declares "
+                + (
+                    ", ".join(definition.name for definition in definitions)
+                    or "no lens at all"
+                ),
+            ),
+        )
 
 
 class TicketGenerationLoop:
     """Iterates ticket drafting and review until approved or max reviews.
 
-    Graph: START -> create -> review -> [conditional: create or finalize] -> END
+    Two graphs, chosen once at construction:
+
+    * ``reviewed``    — START -> create -> review -> [create | finalize] -> END
+    * ``create_only`` — START -> create -> finalize -> END
+
+    The review node is not added and the conditional edge does not exist
+    under ``create_only``.  A precondition belongs in routing rather than
+    in a node body: a graph that compiles the reviewer and then asks each
+    time whether to run it can still reach it, and "cannot happen" is a
+    stronger statement than "does not happen".
+
+    Under ``create_only`` the draft critic is dispatched inside the
+    creator's own session and is the only review the ticket receives, so
+    a set that declares no such lens is refused here rather than resolved
+    into a run that reports success with nothing having checked it.
 
     NO node resumes a session.  Two runs died identically at the creator
     raise site because a revision resumed the draft session: the draft's
@@ -56,18 +124,25 @@ class TicketGenerationLoop:
         service: AgentRunner,
         workspace: WorkspaceProvider,
         *,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         skills: SkillsSelection,
-        max_reviews: int = 2,
+        review_mode: TicketReviewMode = TicketReviewMode.REVIEWED,
+        max_reviews: int | None = None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int = 3,
         retry_initial_interval: float = 1.0,
     ) -> None:
         self._service = service
         self._workspace = workspace
-        self._prompts: PromptProvider = prompts
+        self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
-        self._max_reviews = max_reviews
+        self._review_mode = review_mode
+        _refuse_an_unhonourable_mode(
+            review_mode=review_mode,
+            max_reviews=max_reviews,
+            definitions=prompts.definitions(),
+        )
+        self._max_reviews = DEFAULT_MAX_REVIEWS if max_reviews is None else max_reviews
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
             initial_interval=retry_initial_interval,
@@ -154,7 +229,7 @@ class TicketGenerationLoop:
                 "current_draft": None,
                 "review_feedback": None,
                 "review_suggestions": [],
-                "approved": False,
+                "approved": TicketApproval.NOT_REVIEWED,
             }
 
             async for event in self._compiled.astream(
@@ -228,8 +303,20 @@ class TicketGenerationLoop:
                 workspace_path=ctx.workspace_path,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=TICKET_TOOLS,
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.TICKET_CREATE
+                    if iteration == 1
+                    else PromptKey.TICKET_REVISION,
+                    self._skills,
+                ),
                 session_type=SessionType.TICKET_FIRE,
+                # Generative: the set's lenses are dispatchable from here.
+                agents=self._prompts.definitions(),
+                session_policy=self._prompts.session_policy(
+                    PromptKey.TICKET_CREATE
+                    if iteration == 1
+                    else PromptKey.TICKET_REVISION,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_DRAFT_SCHEMA,
@@ -297,8 +384,13 @@ class TicketGenerationLoop:
                 workspace_path=ctx.workspace_path,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=TICKET_TOOLS,
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.TICKET_REVIEW, self._skills
+                ),
                 session_type=SessionType.TICKET_FIRE,
+                session_policy=self._prompts.session_policy(
+                    PromptKey.TICKET_REVIEW,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_REVIEW_SCHEMA,
@@ -330,7 +422,11 @@ class TicketGenerationLoop:
         )
         return {
             "review_count": count,
-            "approved": output.approved,
+            "approved": (
+                TicketApproval.APPROVED
+                if output.approved
+                else TicketApproval.UNAPPROVED
+            ),
             "review_feedback": output.feedback,
             "review_suggestions": output.suggestions,
         }
@@ -351,6 +447,7 @@ class TicketGenerationLoop:
                 ticket=current_draft,
                 review_rounds=state["review_count"],
                 approved=state["approved"],
+                mode=self._review_mode,
             ),
         )
         return {}
@@ -359,7 +456,8 @@ class TicketGenerationLoop:
         self,
         state: TicketGenerationState,
     ) -> str:
-        if state["approved"] or state["review_count"] >= self._max_reviews:
+        approved = state["approved"] is TicketApproval.APPROVED
+        if approved or state["review_count"] >= self._max_reviews:
             return "finalize"
         return "create"
 
@@ -375,9 +473,13 @@ class TicketGenerationLoop:
             TicketGenerationState,
         ] = StateGraph(TicketGenerationState)
         graph.add_node("create", self._create_node, retry_policy=self._retry)
-        graph.add_node("review", self._review_node, retry_policy=self._retry)
         graph.add_node("finalize", self._finalize_node)
         graph.add_edge(START, "create")
+        if self._review_mode is TicketReviewMode.CREATE_ONLY:
+            graph.add_edge("create", "finalize")
+            graph.add_edge("finalize", END)
+            return graph
+        graph.add_node("review", self._review_node, retry_policy=self._retry)
         graph.add_edge("create", "review")
         graph.add_conditional_edges(
             "review",

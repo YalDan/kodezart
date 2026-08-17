@@ -13,6 +13,10 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.ticket_review import (
+    DEFAULT_MAX_REVIEWS,
+    TicketReviewMode,
+)
 from kodezart.types.domain.tracker import TrackerBackend
 
 # Credential shapes are the one category that ships populated: a credential
@@ -135,16 +139,44 @@ class AppConfig(BaseSettings):
         description="Maximum criteria regeneration rounds after an infeasible verdict.",
     )
     max_reviews: int = Field(
-        default=2,
+        default=DEFAULT_MAX_REVIEWS,
         ge=1,
         le=10,
         description="Maximum ticket review rounds before accepting.",
+    )
+    ticket_review_mode: TicketReviewMode = Field(
+        default=TicketReviewMode.CREATE_ONLY,
+        description=(
+            "Whether the ticket loop runs a harness-level reviewer session "
+            "(reviewed) or one creator session that critiques its own draft "
+            "in-session (create_only). Under create_only the review budget "
+            "above compiles nothing, so configuring both is refused rather "
+            "than resolved. The shipped default requires a prompt set "
+            "declaring a draft-critic lens; reviewed is the legacy pairing "
+            "and the mode half of the rollback."
+        ),
     )
     retry_max_attempts: int = Field(
         default=3,
         ge=1,
         le=10,
         description="LangGraph node retry attempts on failure.",
+    )
+    fan_in_max_attempts: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description=(
+            "Dispatches a node spends while the answer that came back is "
+            "refused: an id set that is not a permutation of the dispatched "
+            "one, and — at the criteria validator — a response the response "
+            "model rejects or a verdict its own evidence does not derive. "
+            "Each attempt is a whole judgment session, and a contract "
+            "refusal is restated to the next one because it repeats "
+            "verbatim otherwise. Exhaustion grades fail-closed at the "
+            "evaluator and the post-merge review, and halts the criteria "
+            "validator on the refusal still standing."
+        ),
     )
     retry_initial_interval: float = Field(
         default=1.0,
@@ -195,6 +227,15 @@ class AppConfig(BaseSettings):
     model: str | None = Field(
         default=None,
         description="Claude model override. None uses SDK default.",
+    )
+    fallback_model: str | None = Field(
+        default=None,
+        description=(
+            "Engine a session falls back to when the primary declines a "
+            "request. None declares no fallback, which is not a default "
+            "naming an engine: an installation that has not decided which "
+            "second engine it may reach sends none."
+        ),
     )
     remediation_max_rounds: int = Field(
         default=1,
@@ -440,10 +481,27 @@ class AppConfig(BaseSettings):
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
     )
     prompt_set: str = Field(
-        default="claude-opus",
+        default="anthropic_v5",
         description=(
             "Default prompt set name (a directory under prompts/sets/). "
-            "Deliberately independent of the model knob."
+            "Deliberately independent of the model knob. claude-opus is the "
+            "legacy set, kept complete and byte-frozen, and remains fully "
+            "selectable as the corpus half of the rollback."
+        ),
+    )
+    investigation_cap: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description=(
+            "Read-only investigator sessions one generative dispatch may fan "
+            "out to. The default is the width the prose dispatch protocol "
+            "this set replaces actually instructed — five parallel dispatches "
+            "— so the migration changes how the fan-out is coordinated and "
+            "counted, not how wide it runs. The floor of one keeps the "
+            "rendered spec coherent; the ceiling of ten is twice that "
+            "measured width, because every unit above it is another whole "
+            "session charged against one draft."
         ),
     )
     prompt_set_overrides: dict[str, str] = Field(
@@ -677,6 +735,17 @@ class AppConfig(BaseSettings):
             mode=self.skills_mode,
             allowlist=tuple(self.skills_allowlist),
         )
+
+    def explicit_max_reviews(self) -> int | None:
+        """``max_reviews`` when the deployment configured one, else ``None``.
+
+        The distinction the ticket loop needs and no other reader does: a
+        budget sitting at its shipped default expresses no decision, while
+        one an operator set does, and only the second contradicts a mode
+        that compiles no review arm.  Answered here because this model is
+        the only place that knows which fields were supplied.
+        """
+        return self.max_reviews if "max_reviews" in self.model_fields_set else None
 
     def knowledge_grant(self, *, knowledge_map: str) -> KnowledgeGrant:
         """The resolved grant threaded to executor sessions.
