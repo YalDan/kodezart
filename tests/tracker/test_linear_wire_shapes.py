@@ -41,6 +41,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearCommentListWire,
     LinearCommentWire,
     LinearDocumentListWire,
+    LinearDocumentWire,
     LinearIssueDetailWire,
     LinearIssueListWire,
     LinearIssueWire,
@@ -272,6 +273,32 @@ LIST_DOCUMENTS: Mapping[str, object] = {
     "hasNextPage": False,
 }
 
+#: ``get_document``, whole. Wider than the listing entry and differently
+#: shaped in one place that matters: ``project`` is an object here and
+#: ``null`` on the entry above, which is the same key carrying an owner and
+#: carrying none.
+GET_DOCUMENT: Mapping[str, object] = {
+    "id": "1ad11111-0000-4000-8000-000000000001",
+    "title": "a fixture document",
+    "content": "the body, whole",
+    "icon": "Book",
+    "color": None,
+    "url": "https://tracker.invalid/document/fixture",
+    "slugId": "1ad11111",
+    "createdAt": "2031-02-12T08:15:01.300Z",
+    "updatedAt": "2031-02-13T08:15:01.400Z",
+    "archivedAt": None,
+    "creator": {"id": APPROVER_ID, "name": APPROVER_NAME},
+    "updatedBy": {"id": APPROVER_ID, "name": APPROVER_NAME},
+    "project": {
+        "id": "1a311111-0000-4000-8000-000000000001",
+        "name": "a delivery project",
+    },
+    "initiative": None,
+    "team": None,
+    "issue": None,
+}
+
 CAPTURES: Mapping[str, McpToolResult] = {
     "list_issue_labels": LIST_ISSUE_LABELS,
     "list_teams": LIST_TEAMS,
@@ -281,6 +308,7 @@ CAPTURES: Mapping[str, McpToolResult] = {
     "get_issue": GET_ISSUE,
     "list_comments": LIST_COMMENTS,
     "list_documents": LIST_DOCUMENTS,
+    "get_document": GET_DOCUMENT,
 }
 
 
@@ -446,6 +474,55 @@ class TestIssueShapes:
             )
 
 
+class TestDocumentReadShape:
+    """``get_document`` answers with a wide object; one field is declared."""
+
+    def test_the_whole_document_payload_validates(self) -> None:
+        document = LinearDocumentWire.model_validate(GET_DOCUMENT)
+        assert document.content == "the body, whole"
+
+    def test_the_declared_surface_is_exactly_what_the_adapter_reads(self) -> None:
+        """The other fifteen measured keys are carried, not required.
+
+        Declaring them would make a read of the document's TEXT fail on a
+        vendor that stopped sending its slug, which is a requirement no
+        caller of this path has.  The capture's key set is pinned beside
+        it so the gap between "measured" and "declared" is visible rather
+        than inferred.
+        """
+        assert set(LinearDocumentWire.model_fields) == {"content"}
+        assert set(GET_DOCUMENT) == {
+            "id",
+            "title",
+            "content",
+            "icon",
+            "color",
+            "url",
+            "slugId",
+            "createdAt",
+            "updatedAt",
+            "archivedAt",
+            "creator",
+            "updatedBy",
+            "project",
+            "initiative",
+            "team",
+            "issue",
+        }
+
+    def test_the_owner_keys_are_null_rather_than_absent(self) -> None:
+        """Three of the four owners are ``null``; the fourth is an object.
+
+        The distinction is the vendor's own and is kept because it is a
+        different fact: a document with no team says so, and a payload
+        that dropped the key would be saying nothing.
+        """
+        assert GET_DOCUMENT["initiative"] is None
+        assert GET_DOCUMENT["team"] is None
+        assert GET_DOCUMENT["issue"] is None
+        assert GET_DOCUMENT["project"] is not None
+
+
 class TestCommentShape:
     """The comment names its author and does not name its issue."""
 
@@ -510,6 +587,12 @@ class TestTheAdapterOverTheCaptures:
         (comment,) = comments
         assert comment.author_key == APPROVER_NAME
         assert comment.issue_key == "FIX-12"
+
+    async def test_the_document_read_answers_with_its_text(self) -> None:
+        content = await tracker_over(CaptureCaller()).read_document(
+            document_key="1ad11111-0000-4000-8000-000000000001",
+        )
+        assert content == "the body, whole"
 
     async def test_every_mapping_kind_resolves_against_the_captures(self) -> None:
         """The read that boot died on, over the shapes the server sends."""

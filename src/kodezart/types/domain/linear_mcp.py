@@ -258,9 +258,24 @@ LINEAR_NAMED_ARRAY: TypeAdapter[list[LinearNamedWire]] = TypeAdapter(
 
 
 class LinearDocumentWire(LinearWireModel):
-    """The ``get_document`` payload."""
+    """The ``get_document`` payload — measured, and far wider than this.
 
-    id: str
+    The capture carries ``id``, ``title``, ``content``, ``icon``,
+    ``color``, ``url``, ``slugId``, ``createdAt``, ``updatedAt``,
+    ``archivedAt``, ``creator`` and ``updatedBy`` as ``{id, name}``
+    objects, and four nullable owners — ``project`` as ``{id, name}`` when
+    the document has one, ``initiative``, ``team`` and ``issue`` as
+    ``null`` beside it.
+
+    One field is declared, because the adapter reads one field: the read
+    path answers with the document's text and nothing else.  Declaring
+    the rest would state a requirement no caller has, so a vendor that
+    stopped sending ``slugId`` would fail a read that never wanted it.
+    The measured shape is recorded above so the next reader learns it
+    from here rather than by probing again; the day something reads one
+    of those fields, it is declared then, with the capture behind it.
+    """
+
     content: str
 
 
