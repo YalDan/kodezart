@@ -342,11 +342,28 @@ class TestAssets:
     """Attachment and document metadata, and document reads."""
 
     async def test_issue_assets_carry_metadata(self, tracker: TrackerPort) -> None:
+        """Identity and title reach the consumer; type and size read absent.
+
+        ``content_type`` and ``size_bytes`` are ``None`` because no
+        captured vendor payload carries either field: every measured asset
+        array holds ``id``, ``title``, ``subtitle`` and ``url`` and nothing
+        else.  The fixture used to supply both values and this row used to
+        assert they arrived — a pass-through pinned over an input
+        production cannot produce.  ``None`` is what the workspace
+        actually reports, and :class:`TrackerAsset` owns what it means:
+        "the tracker did not report one", which is not any particular
+        value.
+
+        The pass-through CODE is untouched, so a vendor that starts
+        sending either field delivers it here unchanged; the wire model
+        keeps both optional for exactly that (KOD-143 fire-ruling,
+        2026-08-25).
+        """
         assets = await tracker.list_issue_assets(issue_key=ASSET_ISSUE)
         by_key = {asset.asset_key: asset for asset in assets}
         assert by_key["asset-1"].title == "spec.pdf"
-        assert by_key["asset-1"].content_type == "application/pdf"
-        assert by_key["asset-1"].size_bytes == 1024
+        assert by_key["asset-1"].content_type is None
+        assert by_key["asset-1"].size_bytes is None
         assert DOCUMENT_KEY in by_key
 
     async def test_an_issue_without_assets_reports_none(

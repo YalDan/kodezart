@@ -109,8 +109,6 @@ def fixture_server() -> FakeLinearMcpServer:
                         id="asset-1",
                         title="spec.pdf",
                         url="https://tracker.invalid/asset-1",
-                        content_type="application/pdf",
-                        size=1024,
                     ),
                 ],
                 documents=[

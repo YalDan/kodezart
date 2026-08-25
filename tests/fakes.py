@@ -1400,13 +1400,21 @@ async def attached_job_queue(
 
 @dataclass
 class FakeMcpAsset:
-    """One attachment or document reference the fake server serves."""
+    """One attachment or document reference the fake server serves.
+
+    Four keys, because four keys were measured: every captured asset array
+    carries ``id``, ``title``, ``subtitle`` and ``url`` and nothing else.
+    ``contentType`` and ``size`` were served here and are gone — a fake
+    that sends what the vendor never sends lets a consumer be tested over
+    an input production cannot produce (KOD-143 fire-ruling, 2026-08-25).
+    The wire model keeps both as optional: ``TrackerAsset`` owns what
+    their absence means, and the day the vendor sends one it flows through
+    unchanged.
+    """
 
     id: str
     title: str
     url: str
-    content_type: str | None = None
-    size: int | None = None
 
     def wire(self) -> dict[str, object]:
         return {
@@ -1414,8 +1422,6 @@ class FakeMcpAsset:
             "title": self.title,
             "subtitle": None,
             "url": self.url,
-            "contentType": self.content_type,
-            "size": self.size,
         }
 
 
