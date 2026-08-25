@@ -43,29 +43,46 @@ def _build_graph() -> StateGraph[_CounterState, None, _CounterState, _CounterSta
     async def bump(state: _CounterState) -> dict[str, int]:
         return {"value": state["value"] + 1}
 
+    async def bump_again(state: _CounterState) -> dict[str, int]:
+        return {"value": state["value"] + 1}
+
     graph.add_node("bump", bump)
+    graph.add_node("bump_again", bump_again)
     graph.add_edge(START, "bump")
-    graph.add_edge("bump", END)
+    graph.add_edge("bump", "bump_again")
+    graph.add_edge("bump_again", END)
     return graph
 
 
 async def test_async_saver_persists_and_resumes_state() -> None:
-    """A checkpointed run over the async saver round-trips through the DB."""
+    """An interrupted run persists mid-graph; a fresh connection resumes it.
+
+    Resuming with ``None`` proceeds from the last checkpoint, so the thread
+    must be interrupted mid-graph for anything to run — a completed thread
+    has no next node on any backend.
+    """
     thread_id = uuid.uuid4().hex
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
     async with make_checkpointer(_dsn()) as saver:
         assert saver is not None
-        compiled = _build_graph().compile(checkpointer=saver)
+        compiled = _build_graph().compile(
+            checkpointer=saver,
+            interrupt_before=["bump_again"],
+        )
         first = await compiled.ainvoke({"value": 0}, config=config)
         assert first["value"] == 1
 
-    # A fresh connection reads the checkpoint written by the first one.
+    # A fresh connection reads the interrupted checkpoint and completes it.
     async with make_checkpointer(_dsn()) as saver:
         assert saver is not None
-        compiled = _build_graph().compile(checkpointer=saver)
+        compiled = _build_graph().compile(
+            checkpointer=saver,
+            interrupt_before=["bump_again"],
+        )
         snapshot = await compiled.aget_state(config)
         assert snapshot.values["value"] == 1
+        assert snapshot.next == ("bump_again",)
         resumed = await compiled.ainvoke(None, config=config)
         assert resumed["value"] == 2
 
