@@ -23,6 +23,7 @@ from mcp.types import CallToolResult, TextContent
 
 from kodezart.core.errors import McpTransportError
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.protocols import McpToolResult
 
 
 class HttpMcpToolCaller:
@@ -97,7 +98,7 @@ class HttpMcpToolCaller:
         *,
         name: str,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
+    ) -> McpToolResult:
         """Invoke the named tool and return its structured result."""
         session = self._session
         if session is None:
@@ -126,12 +127,15 @@ class HttpMcpToolCaller:
         self,
         result: CallToolResult,
         name: str,
-    ) -> Mapping[str, object]:
-        """The structured object from either source, in order.
+    ) -> McpToolResult:
+        """The structured result from either source, in order.
 
         ``structuredContent`` when present; otherwise a single text-content
-        block whose text parses as a JSON object — the spec makes the first
-        optional and the vendor's live server sends only the second.  Every
+        block whose text parses as a JSON object OR a JSON array — the spec
+        makes the first optional and the vendor's live server sends only the
+        second.  An array is a shape a tool really answers with
+        (``list_issue_statuses``, measured under KOD-143), so refusing one
+        here would make that tool unreachable from every adapter.  Every
         other shape is a refusal naming exactly what was absent or
         undecodable, never a guessed-at result.
         """
@@ -168,9 +172,10 @@ class HttpMcpToolCaller:
                 server_name=self._server_name,
                 tool_name=name,
             ) from exc
-        if not isinstance(parsed, dict):
+        if not isinstance(parsed, dict | list):
             raise McpTransportError(
-                "the MCP server's text content is JSON but not an object",
+                "the MCP server's text content is JSON but neither an object "
+                "nor an array",
                 server_name=self._server_name,
                 tool_name=name,
             )

@@ -354,6 +354,14 @@ class DeliveryProbe(Protocol):
         ...
 
 
+#: What a tool call answers with.  A JSON object OR a JSON array: the MCP
+#: spec constrains neither, and the live Linear server answers
+#: ``list_issue_statuses`` with a bare array carrying no envelope at all
+#: (KOD-143, measured).  Narrowing this to an object would put that tool's
+#: real payload out of reach of every adapter above the transport.
+type McpToolResult = Mapping[str, object] | Sequence[object]
+
+
 @runtime_checkable
 class McpToolCaller(Protocol):
     """Speaks MCP to one server: a tool name plus arguments, in, result out.
@@ -369,7 +377,7 @@ class McpToolCaller(Protocol):
         *,
         name: str,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
+    ) -> McpToolResult:
         """Invoke the named tool and return its structured result."""
         ...
 

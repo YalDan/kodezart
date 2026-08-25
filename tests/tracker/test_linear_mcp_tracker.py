@@ -7,12 +7,14 @@ conformance suite covers what every adapter must do; this module covers
 what THIS adapter does to get there.
 """
 
+from collections.abc import Mapping
 from datetime import timedelta
 
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.errors import McpTransportError, TrackerProtocolError
+from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     ClaimStatus,
@@ -121,8 +123,8 @@ class TestShapeRefusal:
                 self,
                 *,
                 name: str,
-                arguments: object,
-            ) -> dict[str, object]:
+                arguments: Mapping[str, object],
+            ) -> McpToolResult:
                 return {"id": "T-1"}
 
         server = TruncatingServer(state_types=STATE_TYPES)

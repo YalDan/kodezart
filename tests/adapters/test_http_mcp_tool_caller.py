@@ -7,11 +7,12 @@ or the network-layer call itself raising — surfaces as
 retry loop reachable in production (KOD-130 AC-2): a failure class the
 transport did not claim would bypass the knobs entirely.
 
-The structured object comes from either source, in order:
+The structured result comes from either source, in order:
 ``structuredContent`` when present, else a single text-content block
-whose text parses as a JSON object — the spec makes the first optional
-and the vendor's live server sends only the second (KOD-142).  Every
-refusal names its ground; no silent arm.
+whose text parses as a JSON object OR a JSON array — the spec makes the
+first optional and the vendor's live server sends only the second
+(KOD-142), and one of its tools answers with a bare array (KOD-143).
+Every refusal names its ground; no silent arm.
 """
 
 from collections.abc import Mapping
@@ -153,11 +154,39 @@ class TestTextContentResults:
         with pytest.raises(McpTransportError, match="not valid JSON"):
             await caller.call_tool(name="get_issue", arguments={})
 
-    async def test_a_json_array_is_refused_by_name(self) -> None:
+    async def test_a_json_array_passes_through_unchanged(self) -> None:
+        """A bare array is a shape the vendor really answers with (KOD-143).
+
+        ``list_issue_statuses`` returns one, with no envelope at all, so a
+        transport that refused arrays would put the tool out of reach of
+        every adapter above it.
+        """
         caller = self.caller_over(
             CallToolResult(
-                content=[TextContent(type="text", text='[{"labels": []}]')],
+                content=[
+                    TextContent(
+                        type="text",
+                        text='[{"id": "state-1", "type": "backlog", '
+                        '"name": "Backlog"}]',
+                    ),
+                ],
             ),
         )
-        with pytest.raises(McpTransportError, match="JSON but not an object"):
+        assert await caller.call_tool(
+            name="list_issue_statuses",
+            arguments={},
+        ) == [{"id": "state-1", "type": "backlog", "name": "Backlog"}]
+
+    async def test_json_that_is_neither_object_nor_array_is_refused_by_name(
+        self,
+    ) -> None:
+        caller = self.caller_over(
+            CallToolResult(
+                content=[TextContent(type="text", text='"a bare string"')],
+            ),
+        )
+        with pytest.raises(
+            McpTransportError,
+            match="neither an object nor an array",
+        ):
             await caller.call_tool(name="get_issue", arguments={})

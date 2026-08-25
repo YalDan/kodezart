@@ -31,7 +31,7 @@ from kodezart.core.errors import (
     TrackerProtocolError,
 )
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import McpToolCaller
+from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.linear_mcp import (
@@ -778,7 +778,7 @@ class LinearMcpTracker:
         self,
         tool: str,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
+    ) -> McpToolResult:
         attempt = 0
         while True:
             try:
@@ -799,7 +799,7 @@ class LinearMcpTracker:
     def _validate[WireT: LinearWireModel](
         self,
         shape: type[WireT],
-        payload: Mapping[str, object],
+        payload: McpToolResult,
         tool: str,
     ) -> WireT:
         try:

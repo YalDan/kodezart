@@ -16,7 +16,12 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.core.errors import McpTransportError, TrackerEnsureConflictError
 from kodezart.core.prompt_rendering import PromptTemplate
-from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
+from kodezart.core.protocols import (
+    AgentExecutor,
+    McpToolResult,
+    PromptProvider,
+    WorkflowEngine,
+)
 from kodezart.domain.errors import (
     DuplicateWorkRefError,
     MergeConflictError,
@@ -1566,7 +1571,7 @@ class FakeLinearMcpServer:
         *,
         name: str,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
+    ) -> McpToolResult:
         # Yield to the scheduler at every tool boundary so concurrent callers
         # genuinely interleave: a claim race that never interleaves proves
         # nothing about exactly-once semantics.
@@ -1588,7 +1593,7 @@ class FakeLinearMcpServer:
         if handler is None:
             msg = f"fake MCP server exposes no tool named {name!r}"
             raise LookupError(msg)
-        result: Mapping[str, object] = handler(arguments)
+        result: McpToolResult = handler(arguments)
         return result
 
     def tool_calls(self, name: str) -> list[Mapping[str, object]]:
