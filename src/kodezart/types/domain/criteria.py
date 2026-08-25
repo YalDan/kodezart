@@ -280,7 +280,12 @@ class CriterionFinding(CamelCaseModel):
     )
     smallest_repair: RepairKind = Field(
         description=(
-            "The least change to the criterion text that would resolve the verdict."
+            "The smallest repair that would settle the criterion, bound to "
+            "the verdict: feasible names none, infeasible names "
+            "criterion_text (the criterion's own text must change), "
+            "unverifiable names environment_supply (something absent must "
+            "be supplied to the environment — not a text change). Any "
+            "other pairing is refused."
         ),
     )
     refutation: str | None = Field(
@@ -293,8 +298,11 @@ class CriterionFinding(CamelCaseModel):
     missing_resource: str | None = Field(
         default=None,
         description=(
-            "The file, symbol, binding or rule the criterion depends on and that "
-            "does not exist."
+            "The file, symbol, binding or rule that must be SUPPLIED before "
+            "the criterion can be decided. Its absence is a lack in the "
+            "environment, not a fault in the criterion's text: it pairs "
+            "with unverifiable and environment_supply, never with "
+            "infeasible."
         ),
     )
     cost_claim: CostClaim | None = Field(
@@ -318,7 +326,14 @@ class CriterionFinding(CamelCaseModel):
     )
     undeclared_switch_arms: list[str] = Field(
         default_factory=list,
-        description="Enum members or branches the criterion leaves unspecified.",
+        description=(
+            "Cases the criterion names that the declared type does not "
+            "have. Naming ANY arm here makes the criterion infeasible — "
+            "the fault is in the criterion's own text, and nothing "
+            "supplied to a runner makes an arm exist. A type that could "
+            "not be found at all is a missingResource, not an undeclared "
+            "arm."
+        ),
     )
 
     @model_validator(mode="after")
@@ -507,4 +522,31 @@ class FanInReport(CamelCaseModel):
     unknown_ids: list[CriterionIdItem] = Field(default_factory=list)
     duplicate_ids: list[CriterionIdItem] = Field(default_factory=list)
     dispatched_count: int = Field(ge=1)
+    attempts: int = Field(ge=1)
+
+
+class ContractBreach(CamelCaseModel):
+    """One refused response, named by the class that refused it."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    breach_class: str = Field(min_length=1)
+    detail: str = Field(min_length=1)
+
+
+class ContractCorrection(CamelCaseModel):
+    """A contract violation the node corrected in flight.
+
+    Carried on the criteria-validation event ONLY when a response was
+    refused and a later one conformed: absent means the first answer
+    conformed, and a refusal that never corrects raises instead of
+    reaching this event at all.  A run that had to argue with its
+    validator costs whole judgment sessions, and a reader who cannot see
+    WHICH rule was broken cannot tell a model that misread the contract
+    from criteria the sweep genuinely refuses.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    breaches: list[ContractBreach] = Field(min_length=1)
     attempts: int = Field(ge=1)

@@ -10,29 +10,20 @@ import pytest
 from pydantic import BaseModel, Field
 
 from kodezart.types.domain.agent import WIRE_SCHEMAS
-from kodezart.types.domain.wire_schema import sanitize_schema
+from tests.types.schema_nodes import DEFS, properties_of, schema_nodes
 
 
-def described_fields(node: object, path: str) -> list[tuple[str, bool]]:
-    """Every property of *node*, with whether it carries a description."""
-    if not isinstance(node, dict):
-        return []
-    mapping: dict[str, object] = node
-    found: list[tuple[str, bool]] = []
-    properties = mapping.get("properties")
-    if isinstance(properties, dict):
-        entries: dict[str, object] = properties
-        for name, sub in entries.items():
-            described = isinstance(sub, dict) and bool(sub.get("description"))
-            found.append((f"{path}.{name}", described))
-            found.extend(described_fields(sub, f"{path}.{name}"))
-    found.extend(described_fields(mapping.get("items"), f"{path}[]"))
-    branches = mapping.get("anyOf")
-    if isinstance(branches, list):
-        arms: list[object] = branches
-        for branch in arms:
-            found.extend(described_fields(branch, path))
-    return found
+def described_fields(schema: object, name: str) -> list[tuple[str, bool]]:
+    """Every field of every node in *schema*, with whether it describes itself.
+
+    A definition is a schema rather than a field, so it contributes its own
+    fields and no entry of its own.
+    """
+    return [
+        (f"{path}.{field}", isinstance(sub, dict) and bool(sub.get("description")))
+        for path, node in schema_nodes(schema, name)
+        for field, sub in properties_of(node).items()
+    ]
 
 
 @pytest.mark.parametrize("name", sorted(WIRE_SCHEMAS))
@@ -47,14 +38,20 @@ def test_every_field_on_every_output_model_has_a_description(name: str) -> None:
 
 
 def test_the_sweep_reads_nested_fields_and_not_only_roots() -> None:
-    """Non-vacuity: the sweep descends, so passing means more than nine roots."""
+    """Non-vacuity, read off the same raw schemas the sweep above reads.
+
+    Descending properties alone stops at the roots, because a raw schema
+    names a nested model by reference and keeps its fields in ``$defs``.  The
+    named path is a field of a model no root property spells out.
+    """
     counted = [
         path
         for name in WIRE_SCHEMAS
-        for path, _ in described_fields(sanitize_schema(WIRE_SCHEMAS[name]), name)
+        for path, _ in described_fields(WIRE_SCHEMAS[name], name)
     ]
-    assert len(counted) > len(WIRE_SCHEMAS)
-    assert any("[]." in path for path in counted)
+    roots = [path for path in counted if f".{DEFS}." not in path]
+    assert len(counted) > len(roots)
+    assert f"CONTENT_AUDIT_SCHEMA.{DEFS}.ContentAuditFinding.rationale" in counted
 
 
 def test_a_new_field_without_a_description_fails_the_sweep() -> None:
@@ -66,7 +63,7 @@ def test_a_new_field_without_a_description_fails_the_sweep() -> None:
         described: str = Field(description="this one says what it is")
         undescribed: str
 
-    schema = sanitize_schema(Added.model_json_schema())
+    schema = Added.model_json_schema()
     undescribed = [
         path for path, described in described_fields(schema, "Added") if not described
     ]

@@ -218,7 +218,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_scope_base`          | `baseBranch`, `baseRole`, `inputs`              |
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
-| `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets` |
+| `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets`, `correction` (present only when a refused response was re-dispatched) |
 | `workflow_artifacts`           | `status`, `branch`                              |
 | `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |

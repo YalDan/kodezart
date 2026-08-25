@@ -27,6 +27,7 @@ Live only (``pytest -m live``): each arm dispatches real engine sessions.
 
 import asyncio
 import time
+import traceback
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -147,6 +148,26 @@ class ArmObservation:
     error_kinds: tuple[str, ...]
     failure: str | None
     seconds: float
+
+
+def failure_diagnostics(raised: BaseException) -> dict[str, str]:
+    """The full record of one failure, keyed for the run log.
+
+    ``failure`` is the one-line summary the paired record consumes,
+    unchanged in shape.  ``exception`` carries EVERY line of the message —
+    for a validation error that is the field path and the offending value
+    the first line omits — and ``traceback`` carries the frames.  The
+    2026-08-12 failures cost roughly an hour of compute each and were
+    undiagnosable afterwards because only the first line survived capture
+    (KOD-133); the summary that reaches a tracker comment gains nothing
+    here.
+    """
+    rendered = f"{type(raised).__name__}: {raised}"
+    return {
+        "failure": rendered.splitlines()[0],
+        "exception": rendered,
+        "traceback": "".join(traceback.format_exception(raised)),
+    }
 
 
 ARMS: tuple[Arm, ...] = (
@@ -365,7 +386,15 @@ async def run_arm(
         ):
             events.append(event)
     except Exception as raised:
-        failure = f"{type(raised).__name__}: {raised}".splitlines()[0]
+        diagnostics = failure_diagnostics(raised)
+        failure = diagnostics["failure"]
+        await log.aerror(
+            "ab_smoke_arm_failed",
+            arm=arm.label,
+            prompt_set=arm.prompt_set,
+            review_mode=arm.review_mode.value,
+            **diagnostics,
+        )
     seconds = time.monotonic() - started
     await log.ainfo(
         "ab_smoke_arm_finished",

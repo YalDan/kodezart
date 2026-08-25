@@ -16,6 +16,7 @@ from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
+    ContractCorrection,
     CriteriaValidation,
     CriteriaValidationOutput,
     CriterionId,
@@ -846,12 +847,18 @@ class WorkflowCriteriaEvent(AgentEvent):
 
 
 class WorkflowCriteriaValidationEvent(AgentEvent):
-    """Emitted after every feasibility sweep over a generated criteria set."""
+    """Emitted after every feasibility sweep over a generated criteria set.
+
+    ``correction`` is present only when the validator's first answer was
+    refused and the node argued with it under the re-dispatch bound, so
+    absent means the first response conformed.
+    """
 
     type: Literal["workflow_criteria_validation"] = "workflow_criteria_validation"
     regeneration_round: int
     validation: CriteriaValidation
     regeneration_targets: list[str]
+    correction: ContractCorrection | None = None
 
 
 class WorkflowTicketDraftEvent(AgentEvent):
@@ -916,8 +923,8 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
-#: sanitizer test and the dispatch-site guard both read this rather than
-#: keeping their own list.
+#: wire-contract tests and the dispatch-site guard both read this rather
+#: than keeping their own list.
 WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
     "ACCEPTANCE_CRITERIA_SCHEMA": ACCEPTANCE_CRITERIA_SCHEMA,
