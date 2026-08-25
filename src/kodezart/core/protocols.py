@@ -354,10 +354,12 @@ class DeliveryProbe(Protocol):
 
 
 #: What a tool call answers with.  A JSON object OR a JSON array: the MCP
-#: spec constrains neither, and the live Linear server answers
-#: ``list_issue_statuses`` with a bare array carrying no envelope at all
-#: (KOD-143, measured).  Narrowing this to an object would put that tool's
-#: real payload out of reach of every adapter above the transport.
+#: spec constrains a tool result to neither shape, and a measured server
+#: answered some of its tools with a bare array carrying no envelope at
+#: all (KOD-143).  Narrowing this to an object would put those payloads
+#: out of reach of every adapter above the transport.  WHICH server and
+#: which tool is an adapter's knowledge; this seam holds only the fact
+#: that both shapes are legal.
 type McpToolResult = Mapping[str, object] | Sequence[object]
 
 

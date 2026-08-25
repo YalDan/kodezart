@@ -118,13 +118,18 @@ class OperationModel(BaseModel):
 class Principal(OperationModel):
     """A tracker user, the role granting their authority, and how they are named.
 
-    ``tracker_user`` is the identifier authority is checked against — a
-    provenance record answers "who set this state" with it.  ``handle`` is
-    the identifier a mention is RECOGNISED by: the string a person writes
-    when addressing this principal in a body or a comment.  The two are
-    routinely different, and a model carrying only the first cannot express
-    the mention sweep at all — that sweep is text matching, and it has no
-    identifier to match on.
+    ``tracker_user`` is the DISPLAY identity the tracker attributes acts
+    and mentions to: the value the workspace's user listing reports, which
+    boot resolves this principal against, and the name an authored comment
+    comes back under.  It checks no authority — nothing on the measured
+    tracker surface attests who set a state, so the dispatch predicate
+    turns on a state's presence rather than on its author (KOD-144).
+
+    ``handle`` is the identifier a mention is RECOGNISED by: the string a
+    person writes when addressing this principal in a body or a comment.
+    The two are routinely different, and a model carrying only the first
+    cannot express the mention sweep at all — that sweep is text matching,
+    and it has no identifier to match on.
     """
 
     tracker_user: str
@@ -449,8 +454,8 @@ class OperationConfig(OperationModel):
         """The single principal holding APPROVER authority.
 
         Refuses when no principal carries the role — an empty board loads,
-        and the cost lands here, on the consumer that needs the approval
-        act attributed.
+        and the cost lands here, on the consumer that needs the approving
+        role named.
         """
         for principal in self.principals:
             if PrincipalRole.APPROVER in principal.roles:
@@ -458,8 +463,8 @@ class OperationConfig(OperationModel):
         raise OperationMemberAbsentError(
             missing="principal carrying the APPROVER role",
             stops=(
-                "approval provenance cannot be attributed, "
-                "so nothing can be dispatched"
+                "the operation cannot state who may promote work into the "
+                "queue, so nothing can be dispatched"
             ),
         )
 

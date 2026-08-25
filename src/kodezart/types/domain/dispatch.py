@@ -55,8 +55,11 @@ class ExclusionClause(StrEnum):
     first because it is the only clause that is true of an issue this
     operation has no business reading at all: a workspace holds more than
     one operation's board, and every clause below it would otherwise be
-    asked about another board's issue — approval provenance included, which
-    passes whenever the two boards share an approver."""
+    asked about another board's issue — the approved-state clause
+    included, which reads the presence of a queue state and nothing more,
+    so it passes on any board using the same queue vocabulary (KOD-144).
+    Since that clause carries no attestation of WHO put the state there,
+    this one is the whole of the containment."""
 
     NOT_APPROVED = "not_approved"
     NOT_OPEN = "not_open"
