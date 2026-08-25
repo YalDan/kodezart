@@ -502,12 +502,37 @@ class TrackerPort(Protocol):
         """
         ...
 
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        """Extend a claim *holder* already holds, so it outlives its lease.
+
+        Returns the claim as it now stands — expiring no earlier than
+        *lease_seconds* from now — when *holder* holds a live claim on the
+        issue.  Returns ``None``, writing NOTHING, when it does not.
+
+        Renewal EXTENDS and never acquires.  A claim that has already
+        lapsed stays lapsed and the issue stays claimable: the lapse is how
+        a process that died mid-run hands its work back, and a renewal that
+        could resurrect one would take that recovery away.
+        """
+        ...
+
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         """Release a claim held by *holder*. A claim it does not hold is a no-op."""
         ...
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
-        """The unexpired claim on the issue, or ``None`` when unclaimed."""
+        """The unexpired claim on the issue, or ``None`` when unclaimed.
+
+        ``expires_at`` is when the CLAIM lapses, not when any one write
+        that carried it does: a holder that renewed holds until the last of
+        its renewals runs out.
+        """
         ...
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:

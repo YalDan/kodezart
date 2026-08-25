@@ -1974,6 +1974,11 @@ class FakeTrackerPort:
         }
         self.recorded_base_specs: dict[str, BaseSpec] = dict(recorded_base_specs or {})
         self.claims: dict[str, ClaimResult] = {}
+        #: Every renewal ATTEMPT, granted or refused, as (issue, holder).
+        #: A heartbeat that has stopped is observed as a count that stopped
+        #: growing, which a record of grants alone cannot tell from a
+        #: heartbeat still ticking against a claim it no longer holds.
+        self.renewals: list[tuple[str, str]] = []
         self.comments: list[TrackerComment] = []
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
         #: Every put-back the failure arm made, as (issue, state name).
@@ -2155,6 +2160,29 @@ class FakeTrackerPort:
         )
         self.claims[issue_key] = granted
         return granted
+
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        await asyncio.sleep(0)
+        self.renewals.append((issue_key, holder))
+        held = self.claims.get(issue_key)
+        if held is None or held.holder != holder or held.expires_at <= self._clock():
+            return None
+        renewed = held.model_copy(
+            update={
+                "expires_at": max(
+                    self._clock() + timedelta(seconds=lease_seconds),
+                    held.expires_at,
+                ),
+            },
+        )
+        self.claims[issue_key] = renewed
+        return renewed
 
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         held = self.claims.get(issue_key)

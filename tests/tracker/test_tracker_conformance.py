@@ -357,6 +357,151 @@ class TestAtomicClaim:
         assert granted.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
 
 
+class TestRenewingAClaim:
+    """Renewal extends a live claim and never acquires a lapsed one.
+
+    The clock these implementations run on is frozen, so a renewal is
+    observed by asking for a LONGER lease than the claim carried rather
+    than by waiting: what an advancing clock would show as an expiry moving
+    ahead of the wall is shown here as an expiry moving ahead of the one
+    the claim was granted with.  The temporal half — a job outliving its
+    lease keeping a live claim — is asserted over the heartbeat that drives
+    these calls, where the clock is a collaborator.
+    """
+
+    async def test_renewal_extends_a_claim_the_holder_already_holds(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        renewed = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        assert renewed is not None
+        assert renewed.status is ClaimStatus.GRANTED
+        assert renewed.expires_at == FIXTURE_NOW + timedelta(
+            seconds=LEASE_SECONDS * 2,
+        )
+
+    async def test_the_extension_is_what_a_later_reader_sees(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A renewal nobody else can observe protects nothing."""
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        renewed = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+
+        assert renewed is not None
+        assert held is not None
+        assert held.holder == "pass-a"
+        assert held.expires_at == renewed.expires_at
+
+    async def test_renewal_never_acquires_an_unclaimed_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The crash arm: a lapsed claim stays lapsed and stays claimable."""
+        assert (
+            await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            is None
+        )
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+        taken = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert taken.status is ClaimStatus.GRANTED
+
+    async def test_a_non_holder_renews_nothing_and_moves_nothing(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        refused = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        assert refused is None
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == "pass-a"
+        assert held.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
+
+    async def test_a_renewed_claim_still_defeats_a_second_claimant(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The whole point: the TRACKER excludes the second claimant."""
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        loser = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert loser.status is ClaimStatus.LOST
+
+    async def test_release_frees_a_renewed_claim_whole(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Every write the renewals made goes, not merely the newest."""
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+
+
 class TestAssets:
     """Attachment and document metadata, and document reads."""
 

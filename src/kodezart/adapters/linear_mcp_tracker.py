@@ -14,6 +14,13 @@ with server-assigned timestamps.  A claimant appends its marker, then reads
 the log back and takes the EARLIEST unexpired marker as the holder.  Every
 concurrent claimant computes the same winner from the same log, so exactly
 one observes ``GRANTED``.
+
+A renewal is another marker by the same holder, appended and never
+substituted for the one before it.  Deleting the marker that won the order
+would hand the claim to whatever marker a losing claimant left behind, so
+the holder's markers accumulate for the life of the run and every one of
+them lapses on its own.  The claim therefore runs until the LAST of them
+does, which is the expiry ``active_claim`` reports.
 """
 
 import asyncio
@@ -452,15 +459,10 @@ class LinearMcpTracker:
     ) -> ClaimResult:
         """Append a claim marker, then read the log back to learn the winner."""
         expires_at = self._clock() + timedelta(seconds=lease_seconds)
-        await self._call(
-            _TOOL_SAVE_COMMENT,
-            {
-                "issueId": issue_key,
-                "body": (
-                    f'<!-- kodezart-claim holder="{holder}" '
-                    f'expires-at="{expires_at.isoformat()}" -->'
-                ),
-            },
+        await self._append_claim_marker(
+            issue_key=issue_key,
+            holder=holder,
+            expires_at=expires_at,
         )
         winner = await self.active_claim(issue_key=issue_key)
         if winner is not None and winner.holder == holder:
@@ -472,17 +474,69 @@ class LinearMcpTracker:
             expires_at=expires_at,
         )
 
-    async def release_claim(self, *, issue_key: str, holder: str) -> None:
-        """Delete every claim marker *holder* wrote on the issue."""
-        for wire in await self._comment_wires(issue_key):
-            match = _CLAIM_MARKER.search(wire.body)
-            if match is not None and match.group("holder") == holder:
-                await self._call(_TOOL_DELETE_COMMENT, {"id": wire.id})
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        """Append a further marker, on the strength of one already live.
 
-    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
-        """The earliest unexpired claim marker on the issue, or ``None``."""
+        The holder's OWN unexpired markers are the whole precondition, and
+        not who currently wins the log's order: a losing claimant's marker
+        outliving the winner's first one takes the order for as long as it
+        lasts, and a run whose work is still in flight may not stop
+        renewing over that.
+        """
+        mine = tuple(
+            marker
+            for marker in await self._unexpired_claim_markers(issue_key)
+            if marker.holder == holder
+        )
+        if not mine:
+            return None
+        expires_at = max(
+            self._clock() + timedelta(seconds=lease_seconds),
+            *(marker.expires_at for marker in mine),
+        )
+        await self._append_claim_marker(
+            issue_key=issue_key,
+            holder=holder,
+            expires_at=expires_at,
+        )
+        return ClaimResult(
+            issue_key=issue_key,
+            status=ClaimStatus.GRANTED,
+            holder=holder,
+            expires_at=expires_at,
+        )
+
+    async def _append_claim_marker(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        expires_at: datetime,
+    ) -> None:
+        await self._call(
+            _TOOL_SAVE_COMMENT,
+            {
+                "issueId": issue_key,
+                "body": (
+                    f'<!-- kodezart-claim holder="{holder}" '
+                    f'expires-at="{expires_at.isoformat()}" -->'
+                ),
+            },
+        )
+
+    async def _unexpired_claim_markers(
+        self,
+        issue_key: str,
+    ) -> tuple[_ClaimMarker, ...]:
+        """Every claim marker on the issue that has not yet lapsed."""
         now = self._clock()
-        candidates: list[_ClaimMarker] = []
+        markers: list[_ClaimMarker] = []
         for wire in await self._comment_wires(issue_key):
             match = _CLAIM_MARKER.search(wire.body)
             if match is None:
@@ -493,7 +547,7 @@ class LinearMcpTracker:
             )
             if expires_at <= now:
                 continue
-            candidates.append(
+            markers.append(
                 _ClaimMarker(
                     created_at=wire.created_at,
                     comment_key=wire.id,
@@ -501,6 +555,18 @@ class LinearMcpTracker:
                     expires_at=expires_at,
                 ),
             )
+        return tuple(markers)
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        """Delete every claim marker *holder* wrote on the issue."""
+        for wire in await self._comment_wires(issue_key):
+            match = _CLAIM_MARKER.search(wire.body)
+            if match is not None and match.group("holder") == holder:
+                await self._call(_TOOL_DELETE_COMMENT, {"id": wire.id})
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        """The earliest unexpired claim marker's holder, or ``None``."""
+        candidates = await self._unexpired_claim_markers(issue_key)
         if not candidates:
             return None
         # Total order over an append-only log: server timestamp first, comment
@@ -513,7 +579,11 @@ class LinearMcpTracker:
             issue_key=issue_key,
             status=ClaimStatus.GRANTED,
             holder=winner.holder,
-            expires_at=winner.expires_at,
+            expires_at=max(
+                marker.expires_at
+                for marker in candidates
+                if marker.holder == winner.holder
+            ),
         )
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
@@ -885,8 +955,7 @@ class LinearMcpTracker:
         workspace = {entry.name for entry in await self._label_entries({})}
         by_team = {
             identifier: {
-                entry.name
-                for entry in await self._label_entries({"team": identifier})
+                entry.name for entry in await self._label_entries({"team": identifier})
             }
             for identifier in sorted(set(self._team_identifiers.values()))
         }
