@@ -20,6 +20,7 @@ from kodezart.types.domain.tracker import (
     ClaimStatus,
     IssuePriority,
     IssueQuery,
+    IssueRelationKind,
     priority_rank,
 )
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
@@ -109,13 +110,64 @@ class TestShapeRefusal:
         with pytest.raises(TrackerProtocolError):
             await tracker_over(server).read_issue(issue_key="S-1")
 
-    async def test_an_unknown_relation_kind_raises(self) -> None:
+    async def test_every_measured_relation_arm_maps_to_a_domain_kind(self) -> None:
+        """The vendor's relations object has four arms and the adapter reads all.
+
+        Conformed to the measured shape under KOD-143: relations arrive as
+        ONE object keyed by relation kind, not as a list of typed edges, so
+        an arm's name is a key rather than a ``type`` string.
+        """
         server = FakeLinearMcpServer(
-            issues=[FakeMcpIssue(id="R-1", relations=[("invented", "R-2")])],
+            issues=[
+                FakeMcpIssue(
+                    id="R-1",
+                    relations=[
+                        ("blocks", "R-2"),
+                        ("blockedBy", "R-3"),
+                        ("relatedTo", "R-4"),
+                        ("duplicateOf", "R-5"),
+                    ],
+                ),
+            ],
             state_types=STATE_TYPES,
         )
-        with pytest.raises(TrackerProtocolError):
-            await tracker_over(server).read_issue(issue_key="R-1")
+        issue = await tracker_over(server).read_issue(issue_key="R-1")
+        assert {
+            (relation.kind, relation.issue_key) for relation in issue.relations
+        } == {
+            (IssueRelationKind.BLOCKS, "R-2"),
+            (IssueRelationKind.BLOCKED_BY, "R-3"),
+            (IssueRelationKind.RELATED, "R-4"),
+            (IssueRelationKind.DUPLICATE, "R-5"),
+        }
+
+    async def test_an_arm_the_adapter_does_not_know_is_left_alone(self) -> None:
+        """A fifth arm is the vendor's business, not a refusal.
+
+        The old list-of-edges shape made an unrecognised relation a typed
+        error.  The measured object shape makes it a key, and this module
+        ignores keys it did not declare — the vendor extending its own
+        payload is not a protocol violation.
+        """
+
+        class ExtraArmServer(FakeLinearMcpServer):
+            def _tool_get_issue(
+                self,
+                arguments: Mapping[str, object],
+            ) -> Mapping[str, object]:
+                issue = self._issue(arguments, "id")
+                relations = issue.relations_wire()
+                relations["invented"] = [{"id": "R-9"}]
+                return {**issue.wire(), "relations": relations}
+
+        server = ExtraArmServer(
+            issues=[FakeMcpIssue(id="R-6", relations=[("blocks", "R-7")])],
+            state_types=STATE_TYPES,
+        )
+        issue = await tracker_over(server).read_issue(issue_key="R-6")
+        assert [(r.kind, r.issue_key) for r in issue.relations] == [
+            (IssueRelationKind.BLOCKS, "R-7"),
+        ]
 
     async def test_a_malformed_payload_raises_naming_the_tool(self) -> None:
         class TruncatingServer(FakeLinearMcpServer):

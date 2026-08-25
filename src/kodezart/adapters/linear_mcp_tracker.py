@@ -35,15 +35,20 @@ from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.linear_mcp import (
+    LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
     LinearCommentWire,
     LinearDocumentListWire,
     LinearDocumentSummaryWire,
     LinearDocumentWire,
     LinearHistoryWire,
+    LinearIssueDetailWire,
     LinearIssueListWire,
     LinearIssueWire,
-    LinearNamedListWire,
+    LinearLabelListWire,
+    LinearNamedWire,
+    LinearTeamListWire,
+    LinearUserListWire,
     LinearWireModel,
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -98,13 +103,15 @@ _RAW_BY_PRIORITY: Mapping[IssuePriority, int] = {
     priority: raw for raw, priority in _PRIORITY_BY_RAW.items()
 }
 
-_RELATION_KIND_BY_WIRE: Mapping[str, IssueRelationKind] = {
+#: What each arm of the vendor's relations object means in the domain,
+#: keyed by the vendor's own spelling.  ``PARENT`` and ``CHILD`` have no
+#: arm: the vendor reports a parent as ``parentId`` on the issue itself
+#: and reports children nowhere, so nothing here invents an edge for them.
+_RELATION_KIND_BY_ARM: Mapping[str, IssueRelationKind] = {
     "blocks": IssueRelationKind.BLOCKS,
     "blockedBy": IssueRelationKind.BLOCKED_BY,
-    "parent": IssueRelationKind.PARENT,
-    "child": IssueRelationKind.CHILD,
-    "related": IssueRelationKind.RELATED,
-    "duplicate": IssueRelationKind.DUPLICATE,
+    "relatedTo": IssueRelationKind.RELATED,
+    "duplicateOf": IssueRelationKind.DUPLICATE,
 }
 
 _MAPPING_TOOL_BY_KIND: Mapping[MappingKind, str] = {
@@ -340,12 +347,14 @@ class LinearMcpTracker:
         )
         return self._to_comment(
             self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT),
+            issue_key=issue_key,
         )
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         """Every comment on the issue, oldest first."""
         return tuple(
-            self._to_comment(wire) for wire in await self._comment_wires(issue_key)
+            self._to_comment(wire, issue_key=issue_key)
+            for wire in await self._comment_wires(issue_key)
         )
 
     async def claim_issue(
@@ -734,10 +743,8 @@ class LinearMcpTracker:
 
     async def _label_definitions(self) -> dict[str, str | None]:
         """Every queue-state label the workspace holds, with its container."""
-        tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
-        payload = await self._call(tool, {})
-        listing = self._validate(LinearNamedListWire, payload, tool)
-        return {entry.name: entry.team_id for entry in listing.entries}
+        entries = await self._named_entries(MappingKind.QUEUE_STATE)
+        return {entry.name: entry.team_id for entry in entries}
 
     async def _document_definitions(self) -> dict[str, str]:
         """Every document the workspace holds, id to title."""
@@ -757,17 +764,32 @@ class LinearMcpTracker:
         """
         if kind is MappingKind.DOCUMENT:
             return frozenset(await self._document_definitions())
+        return frozenset(entry.name for entry in await self._named_entries(kind))
+
+    async def _named_entries(self, kind: MappingKind) -> Sequence[LinearNamedWire]:
+        """Every named entity the workspace lists for *kind*.
+
+        One shape per tool, because that is what the server sends: each
+        listing names its array after itself, and ``list_issue_statuses``
+        sends a bare array under no key at all.  There is no envelope key
+        shared across them to read generically.
+        """
         tool = _MAPPING_TOOL_BY_KIND[kind]
         payload = await self._call(tool, {})
-        listing = self._validate(LinearNamedListWire, payload, tool)
-        return frozenset(entry.name for entry in listing.entries)
+        if kind is MappingKind.USER:
+            return self._validate(LinearUserListWire, payload, tool).users
+        if kind is MappingKind.TEAM:
+            return self._validate(LinearTeamListWire, payload, tool).teams
+        if kind is MappingKind.QUEUE_STATE:
+            return self._validate(LinearLabelListWire, payload, tool).labels
+        return self._validate_named_array(payload, tool)
 
-    async def _read_issue_wire(self, issue_key: str) -> LinearIssueWire:
+    async def _read_issue_wire(self, issue_key: str) -> LinearIssueDetailWire:
         payload = await self._call(
             _TOOL_GET_ISSUE,
             {"id": issue_key, "includeRelations": True},
         )
-        return self._validate(LinearIssueWire, payload, _TOOL_GET_ISSUE)
+        return self._validate(LinearIssueDetailWire, payload, _TOOL_GET_ISSUE)
 
     async def _comment_wires(self, issue_key: str) -> Sequence[LinearCommentWire]:
         payload = await self._call(_TOOL_LIST_COMMENTS, {"issueId": issue_key})
@@ -804,6 +826,21 @@ class LinearMcpTracker:
     ) -> WireT:
         try:
             return shape.model_validate(payload)
+        except ValidationError as exc:
+            raise TrackerProtocolError(
+                "tracker response does not match its declared shape",
+                tool=tool,
+                detail=str(exc),
+            ) from exc
+
+    def _validate_named_array(
+        self,
+        payload: McpToolResult,
+        tool: str,
+    ) -> Sequence[LinearNamedWire]:
+        """The bare-array listing shape, refused on the same terms."""
+        try:
+            return LINEAR_NAMED_ARRAY.validate_python(payload)
         except ValidationError as exc:
             raise TrackerProtocolError(
                 "tracker response does not match its declared shape",
@@ -858,15 +895,12 @@ class LinearMcpTracker:
                 detail=f"issue={wire.id} status_type={wire.status_type!r}",
             ) from exc
         relations: list[IssueRelation] = []
-        for edge in wire.relations:
-            kind = _RELATION_KIND_BY_WIRE.get(edge.type)
-            if kind is None:
-                raise TrackerProtocolError(
-                    "tracker relation type has no domain mapping",
-                    tool=_TOOL_GET_ISSUE,
-                    detail=f"issue={wire.id} type={edge.type!r}",
+        if wire.relations is not None:
+            for arm, edges in wire.relations.arms():
+                kind = _RELATION_KIND_BY_ARM[arm]
+                relations.extend(
+                    IssueRelation(kind=kind, issue_key=edge.id) for edge in edges
                 )
-            relations.append(IssueRelation(kind=kind, issue_key=edge.identifier))
         return TrackerIssue(
             issue_key=wire.id,
             title=wire.title,
@@ -888,11 +922,24 @@ class LinearMcpTracker:
             url=wire.url,
         )
 
-    def _to_comment(self, wire: LinearCommentWire) -> TrackerComment:
+    def _to_comment(
+        self,
+        wire: LinearCommentWire,
+        *,
+        issue_key: str,
+    ) -> TrackerComment:
+        """The port's comment, on the issue the CALLER asked about.
+
+        The vendor's comment entry names no issue, so the issue key comes
+        from the read that produced it rather than from the payload — the
+        one place it is known for certain.  The author is the name the
+        vendor attributes the comment to, which is the only authorship
+        this surface attests at all.
+        """
         return TrackerComment(
             comment_key=wire.id,
-            issue_key=wire.issue_id,
-            author_key=wire.user,
+            issue_key=issue_key,
+            author_key=wire.author.name,
             body=wire.body,
             created_at=wire.created_at,
         )

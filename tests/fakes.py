@@ -1413,6 +1413,7 @@ class FakeMcpAsset:
         return {
             "id": self.id,
             "title": self.title,
+            "subtitle": None,
             "url": self.url,
             "contentType": self.content_type,
             "size": self.size,
@@ -1458,21 +1459,23 @@ class FakeMcpIssue:
     updated_at: datetime = FIXTURE_EPOCH
     url: str = ""
 
-    def wire(self) -> dict[str, object]:
+    def entry(self) -> dict[str, object]:
+        """The issue as a ``list_issues`` ENTRY reports it.
+
+        No relations, no attachments, no documents: the live listing
+        carries none of the three, and a fake that sent them would let the
+        adapter read a field the vendor never fills (KOD-143).
+        """
         return {
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "priority": {"value": self.priority_raw},
+            "priority": {"value": self.priority_raw, "name": "fixture"},
             "status": self.status,
             "statusType": self.status_type,
             "team": self.team,
+            "teamId": f"{self.team}-id",
             "labels": list(self.labels),
-            "relations": [
-                {"type": kind, "identifier": key} for kind, key in self.relations
-            ],
-            "attachments": [asset.wire() for asset in self.attachments],
-            "documents": [asset.wire() for asset in self.documents],
             "parentId": self.parent_id,
             "assignee": self.assignee,
             "createdAt": self.created_at.isoformat(),
@@ -1480,24 +1483,70 @@ class FakeMcpIssue:
             "url": self.url or f"https://tracker.invalid/issue/{self.id}",
         }
 
+    def wire(self) -> dict[str, object]:
+        """The issue as ``get_issue`` reports it, relations included.
+
+        The relations object is keyed by relation kind — three arrays and
+        one nullable single — exactly as the vendor answers a read that
+        passed ``includeRelations``.
+        """
+        return {
+            **self.entry(),
+            "relations": self.relations_wire(),
+            "attachments": [asset.wire() for asset in self.attachments],
+            "documents": [asset.wire() for asset in self.documents],
+        }
+
+    def relations_wire(self) -> dict[str, object]:
+        """The relations object, with every arm present as measured.
+
+        An arm the live vendor does not have is refused rather than
+        served: a fixture that invented one would let a test pass on a
+        payload the workspace can never send.
+        """
+        arms: dict[str, list[dict[str, object]]] = {
+            "blocks": [],
+            "blockedBy": [],
+            "relatedTo": [],
+        }
+        duplicate_of: dict[str, object] | None = None
+        for kind, key in self.relations:
+            edge: dict[str, object] = {"id": key, "title": f"issue {key}"}
+            if kind == "duplicateOf":
+                duplicate_of = edge
+            elif kind in arms:
+                arms[kind].append(edge)
+            else:
+                msg = f"the vendor's relations object has no arm named {kind!r}"
+                raise LookupError(msg)
+        return {**arms, "duplicateOf": duplicate_of}
+
 
 @dataclass
 class FakeMcpComment:
-    """One comment in the fake workspace's append-only log."""
+    """One comment in the fake workspace's append-only log.
+
+    ``issue_id`` is workspace state — which issue the log entry belongs to
+    — and is deliberately NOT on the wire: the vendor's comment entry
+    names no issue, so a reader learns that from the call it made.
+    """
 
     id: str
     issue_id: str
-    user: str
+    author: str
     body: str
     created_at: datetime
 
     def wire(self) -> dict[str, object]:
         return {
             "id": self.id,
-            "issueId": self.issue_id,
-            "user": self.user,
+            "author": {"id": f"{self.author}-id", "name": self.author},
             "body": self.body,
             "createdAt": self.created_at.isoformat(),
+            "parentId": None,
+            "resolvedAt": None,
+            "quotedText": None,
+            "onBehalfOf": None,
         }
 
 
@@ -1628,7 +1677,10 @@ class FakeLinearMcpServer:
             and (team is None or issue.team == team)
         ]
         limit = int(str(arguments.get("limit", len(selected))))
-        return {"issues": [issue.wire() for issue in selected[:limit]]}
+        return {
+            "issues": [issue.entry() for issue in selected[:limit]],
+            "hasNextPage": len(selected) > limit,
+        }
 
     def _tool_get_issue(
         self,
@@ -1686,7 +1738,7 @@ class FakeLinearMcpServer:
         comment = FakeMcpComment(
             id=f"comment-{self._sequence:04d}",
             issue_id=str(arguments["issueId"]),
-            user=self.actor,
+            author=self.actor,
             body=str(arguments["body"]),
             created_at=created_at,
         )
@@ -1703,7 +1755,8 @@ class FakeLinearMcpServer:
                 comment.wire()
                 for comment in self.comments
                 if comment.issue_id == issue_id
-            ]
+            ],
+            "hasNextPage": False,
         }
 
     def _tool_delete_comment(
@@ -1735,6 +1788,7 @@ class FakeLinearMcpServer:
     ) -> Mapping[str, object]:
         return {
             "documents": [document.summary() for document in self.documents.values()],
+            "hasNextPage": False,
         }
 
     def _tool_save_document(
@@ -1758,20 +1812,29 @@ class FakeLinearMcpServer:
         self.documents[document.id] = document
         return document.summary()
 
-    def _named(self, names: Sequence[str]) -> Mapping[str, object]:
-        return {"entries": [{"name": name} for name in names]}
+    def _named(self, key: str, names: Sequence[str]) -> Mapping[str, object]:
+        """A list envelope under the key the TOOL names, never a shared one.
+
+        Each list tool keys its array after itself — ``users``, ``teams``,
+        ``labels`` — which is what the live server does and what the wire
+        models declare (KOD-143).
+        """
+        return {
+            key: [{"id": f"{name}-id", "name": name} for name in names],
+            "hasNextPage": False,
+        }
 
     def _tool_list_users(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        return self._named(self.users)
+        return self._named("users", self.users)
 
     def _tool_list_teams(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        return self._named(self.teams)
+        return self._named("teams", self.teams)
 
     def _tool_list_issue_labels(
         self,
@@ -1782,15 +1845,22 @@ class FakeLinearMcpServer:
         A label seeded into the fixture reports NO container, exactly as a
         listing that does not carry the field would: the fake states what
         the workspace knows and never invents workspace scope for a label
-        nobody said anything about.
+        nobody said anything about.  (The live listing carries no container
+        field at all, which is precisely that case.)
         """
         return {
-            "entries": [
-                {"name": name}
+            "labels": [
+                {"id": f"{name}-id", "name": name, "color": "#000000"}
                 if self.label_containers.get(name) is None
-                else {"name": name, "teamId": self.label_containers[name]}
+                else {
+                    "id": f"{name}-id",
+                    "name": name,
+                    "color": "#000000",
+                    "teamId": self.label_containers[name],
+                }
                 for name in self.labels
             ],
+            "hasNextPage": False,
         }
 
     def _tool_create_issue_label(
@@ -1810,8 +1880,16 @@ class FakeLinearMcpServer:
     def _tool_list_issue_statuses(
         self,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
-        return self._named(self.statuses)
+    ) -> Sequence[Mapping[str, object]]:
+        """A BARE ARRAY — this tool sends no envelope at all, measured."""
+        return [
+            {
+                "id": f"{name}-id",
+                "type": self.state_types.get(name, "backlog"),
+                "name": name,
+            }
+            for name in self.statuses
+        ]
 
 
 class ManagedFakeLinearMcpServer(FakeLinearMcpServer):

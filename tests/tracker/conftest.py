@@ -92,7 +92,7 @@ def fixture_server() -> FakeLinearMcpServer:
                 status="Backlog",
                 status_type="backlog",
                 labels=["queue:approved"],
-                relations=[("blockedBy", CLAIMED_ISSUE), ("child", ASSET_ISSUE)],
+                relations=[("blockedBy", CLAIMED_ISSUE), ("relatedTo", ASSET_ISSUE)],
                 parent_id="FIX-0",
                 assignee=BYSTANDER,
                 created_at=FIXTURE_NOW - timedelta(days=1),
