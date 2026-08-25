@@ -195,20 +195,6 @@ class TrackerComment(TrackerModel):
     created_at: datetime
 
 
-class StateTransition(TrackerModel):
-    """Who set a state on an issue, and when.
-
-    This is the provenance record every adapter must be able to answer
-    with: authority binds to the approver's ACT, so the actor is the
-    load-bearing field, not the resulting state.
-    """
-
-    issue_key: str = Field(min_length=1)
-    queue_state: QueueState
-    actor_key: str = Field(min_length=1)
-    occurred_at: datetime
-
-
 class ClaimResult(TrackerModel):
     """The outcome of one atomic claim attempt."""
 
