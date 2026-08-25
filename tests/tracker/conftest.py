@@ -14,13 +14,12 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.protocols import TrackerPort
-from kodezart.types.domain.operation import LifecycleStage, QueueState
-from kodezart.types.domain.tracker import IssueQuery, StateTransition
+from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.tracker import IssueQuery
 from tests.fakes import (
     FakeLinearMcpServer,
     FakeMcpAsset,
     FakeMcpDocument,
-    FakeMcpHistoryEntry,
     FakeMcpIssue,
     FakeTrackerPort,
 )
@@ -144,21 +143,6 @@ def fixture_server() -> FakeLinearMcpServer:
                 content=DOCUMENT_CONTENT,
             ),
         ],
-        history={
-            APPROVED_ISSUE: [
-                FakeMcpHistoryEntry(
-                    actor=BYSTANDER,
-                    created_at=FIXTURE_NOW - timedelta(days=2),
-                    added_labels=["queue:proposed"],
-                ),
-                FakeMcpHistoryEntry(
-                    actor=APPROVER,
-                    created_at=FIXTURE_NOW - timedelta(days=1),
-                    added_labels=["queue:approved"],
-                    removed_labels=["queue:proposed"],
-                ),
-            ],
-        },
         users=[APPROVER, BYSTANDER],
         teams=["fixture-team", FOREIGN_TEAM],
         labels=list(QUEUE_STATE_LABELS.values()),
@@ -188,18 +172,8 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
         for issue in await source.scan_issues(query=IssueQuery(page_size=PAGE_SIZE))
     ]
     issues = [await source.read_issue(issue_key=key) for key in keys]
-    provenance: dict[tuple[str, QueueState], StateTransition] = {}
-    for key in keys:
-        for state in QueueState:
-            transition = await source.queue_state_provenance(
-                issue_key=key,
-                state=state,
-            )
-            if transition is not None:
-                provenance[(key, state)] = transition
     return FakeTrackerPort(
         issues=issues,
-        provenance=provenance,
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),

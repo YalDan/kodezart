@@ -76,7 +76,6 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingOutcome,
     MappingRef,
-    StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
@@ -1550,24 +1549,6 @@ class FakeMcpComment:
         }
 
 
-@dataclass
-class FakeMcpHistoryEntry:
-    """One label-change history entry — the provenance record."""
-
-    actor: str
-    created_at: datetime
-    added_labels: list[str] = field(default_factory=list)
-    removed_labels: list[str] = field(default_factory=list)
-
-    def wire(self) -> dict[str, object]:
-        return {
-            "actor": self.actor,
-            "addedLabels": list(self.added_labels),
-            "removedLabels": list(self.removed_labels),
-            "createdAt": self.created_at.isoformat(),
-        }
-
-
 class FakeLinearMcpServer:
     """In-process MCP server satisfying ``McpToolCaller``.
 
@@ -1582,7 +1563,6 @@ class FakeLinearMcpServer:
         *,
         issues: Sequence[FakeMcpIssue] = (),
         documents: Sequence[FakeMcpDocument] = (),
-        history: Mapping[str, Sequence[FakeMcpHistoryEntry]] | None = None,
         users: Sequence[str] = (),
         teams: Sequence[str] = (),
         labels: Sequence[str] = (),
@@ -1598,9 +1578,6 @@ class FakeLinearMcpServer:
         self.comments: list[FakeMcpComment] = []
         self.documents: dict[str, FakeMcpDocument] = {
             document.id: document for document in documents
-        }
-        self.history: dict[str, list[FakeMcpHistoryEntry]] = {
-            key: list(entries) for key, entries in (history or {}).items()
         }
         self.users: list[str] = list(users)
         self.teams: list[str] = list(teams)
@@ -1714,18 +1691,6 @@ class FakeLinearMcpServer:
             raw_labels = arguments["labels"]
             assert isinstance(raw_labels, list)
             new_labels = [str(entry) for entry in raw_labels]
-            self.history.setdefault(issue.id, []).append(
-                FakeMcpHistoryEntry(
-                    actor=self.actor,
-                    created_at=self._next_instant(),
-                    added_labels=[
-                        label for label in new_labels if label not in issue.labels
-                    ],
-                    removed_labels=[
-                        label for label in issue.labels if label not in new_labels
-                    ],
-                )
-            )
             issue.labels = new_labels
         return issue.wire()
 
@@ -1766,13 +1731,6 @@ class FakeLinearMcpServer:
         comment_id = str(arguments["id"])
         self.comments = [c for c in self.comments if c.id != comment_id]
         return {}
-
-    def _tool_list_issue_history(
-        self,
-        arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
-        entries = self.history.get(str(arguments["id"]), [])
-        return {"history": [entry.wire() for entry in entries]}
 
     def _tool_get_document(
         self,
@@ -1939,7 +1897,6 @@ class FakeTrackerPort:
         self,
         *,
         issues: Sequence[TrackerIssue] = (),
-        provenance: Mapping[tuple[str, QueueState], StateTransition] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         document_titles: Mapping[str, str] | None = None,
@@ -1960,9 +1917,6 @@ class FakeTrackerPort:
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
         self.queue_writes: list[tuple[str, QueueState]] = []
         self.scans: list[IssueQuery] = []
-        self._provenance: dict[tuple[str, QueueState], StateTransition] = dict(
-            provenance or {}
-        )
         self._assets: dict[str, tuple[TrackerAsset, ...]] = {
             key: tuple(value) for key, value in (assets or {}).items()
         }
@@ -2122,15 +2076,6 @@ class FakeTrackerPort:
         if held is None or held.expires_at <= self._clock():
             return None
         return held
-
-    async def queue_state_provenance(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> StateTransition | None:
-        await asyncio.sleep(0)
-        return self._provenance.get((issue_key, state))
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
         return self._assets.get(issue_key, ())
@@ -2330,24 +2275,6 @@ def make_tracker_issue(
         created_at=created_at,
         updated_at=created_at,
         url=f"https://tracker.invalid/issue/{issue_key}",
-    )
-
-
-def approved_by(
-    issue_key: str,
-    actor_key: str,
-    *,
-    occurred_at: datetime = FIXTURE_EPOCH,
-) -> tuple[tuple[str, QueueState], StateTransition]:
-    """One provenance entry for ``FakeTrackerPort(provenance=dict([...]))``."""
-    return (
-        (issue_key, QueueState.APPROVED),
-        StateTransition(
-            issue_key=issue_key,
-            queue_state=QueueState.APPROVED,
-            actor_key=actor_key,
-            occurred_at=occurred_at,
-        ),
     )
 
 

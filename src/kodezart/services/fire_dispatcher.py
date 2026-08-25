@@ -339,19 +339,10 @@ class FireDispatcher:
                 clause=ExclusionClause.OUTSIDE_TEAM,
                 detail="" if issue.team_key is None else issue.team_key,
             )
-        provenance = await self._tracker.queue_state_provenance(
-            issue_key=issue.issue_key,
-            state=QueueState.APPROVED,
-        )
-        if not clause_approved(
-            issue,
-            provenance=provenance,
-            approver_key=self._operation.approver().tracker_user,
-        ):
+        if not clause_approved(issue):
             return IssueExclusion(
                 issue_key=issue.issue_key,
                 clause=ExclusionClause.NOT_APPROVED,
-                detail="" if provenance is None else provenance.actor_key,
             )
         if not clause_open(issue):
             return IssueExclusion(

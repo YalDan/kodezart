@@ -27,22 +27,9 @@ from kodezart.types.domain.tracker import (
     ClaimResult,
     ClaimStatus,
     IssuePriority,
-    StateTransition,
     WorkflowStateKind,
 )
 from tests.fakes import FIXTURE_EPOCH, make_tracker_issue
-
-APPROVER = "the-approver"
-IMPOSTOR = "not-the-approver"
-
-
-def transition(actor: str) -> StateTransition:
-    return StateTransition(
-        issue_key="K-1",
-        queue_state=QueueState.APPROVED,
-        actor_key=actor,
-        occurred_at=FIXTURE_EPOCH,
-    )
 
 
 class TestClauseOneInTeam:
@@ -81,36 +68,26 @@ class TestClauseOneInTeam:
 
 
 class TestClauseTwoApproved:
-    """The queue state is APPROVED and the APPROVER set it."""
+    """The queue state is APPROVED — its presence, and nothing more.
 
-    def test_approved_by_the_approver_holds(self) -> None:
-        assert clause_approved(
-            make_tracker_issue("K-1"),
-            provenance=transition(APPROVER),
-            approver_key=APPROVER,
-        )
+    Under the founder's KOD-144 ruling of 2026-08-25 this clause reads the
+    state and no longer asks who set it: the vendor surface attests no
+    label transition's actor, so the arm that did had nothing to read.
+    The tests that asserted the actor exclusion are removed under that
+    ruling, not edited to green.
+    """
+
+    def test_the_approved_state_holds(self) -> None:
+        assert clause_approved(make_tracker_issue("K-1"))
 
     def test_a_missing_queue_state_fails(self) -> None:
+        """The paired negative, excluded by a named clause rather than silently."""
         assert not clause_approved(
             make_tracker_issue("K-1", queue_states=[QueueState.PROPOSED]),
-            provenance=transition(APPROVER),
-            approver_key=APPROVER,
         )
 
-    def test_the_state_set_by_someone_else_fails(self) -> None:
-        """Authority binds to the approving ACT, not to the resulting state."""
-        assert not clause_approved(
-            make_tracker_issue("K-1"),
-            provenance=transition(IMPOSTOR),
-            approver_key=APPROVER,
-        )
-
-    def test_the_state_with_no_provenance_at_all_fails(self) -> None:
-        assert not clause_approved(
-            make_tracker_issue("K-1"),
-            provenance=None,
-            approver_key=APPROVER,
-        )
+    def test_no_queue_state_at_all_fails(self) -> None:
+        assert not clause_approved(make_tracker_issue("K-1", queue_states=[]))
 
 
 class TestClauseThreeOpen:

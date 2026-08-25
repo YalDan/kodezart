@@ -46,7 +46,6 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTrackerPort,
     PassThroughGate,
-    approved_by,
     make_tracker_issue,
 )
 
@@ -184,7 +183,6 @@ async def test_a_delta_runs_the_pass_and_the_work_reaches_the_queue() -> None:
     """AC-19: something moved, so the expensive half runs and produces a job."""
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
-        provenance=dict([approved_by("K-1", APPROVER)]),
     )
     pass_, queue = tick(tracker)
 
@@ -213,7 +211,6 @@ async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:
     """The mark carries between ticks, so a settled board stops waking."""
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
-        provenance=dict([approved_by("K-1", APPROVER)]),
     )
     pass_, queue = tick(tracker)
     await pass_.run()
@@ -280,7 +277,6 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
     """AC-20: the built object is wired, not merely shaped like one."""
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
-        provenance=dict([approved_by("K-1", APPROVER)]),
     )
     queue = FakeJobQueue()
     passes = build_dispatch_passes(
@@ -316,7 +312,6 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     """
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
-        provenance=dict([approved_by("K-1", APPROVER)]),
     )
     queue = FakeJobQueue(
         events=[

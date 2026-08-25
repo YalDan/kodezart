@@ -338,46 +338,6 @@ class TestAtomicClaim:
         assert granted.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
 
 
-class TestProvenance:
-    """Who set this state — the question authority binds to."""
-
-    async def test_the_port_names_the_actor_of_a_state_transition(
-        self,
-        tracker: TrackerPort,
-    ) -> None:
-        """AC: the port answers "who set this state" from fixture history."""
-        transition = await tracker.queue_state_provenance(
-            issue_key=APPROVED_ISSUE,
-            state=QueueState.APPROVED,
-        )
-        assert transition is not None
-        assert transition.actor_key == APPROVER
-        assert transition.queue_state is QueueState.APPROVED
-        assert transition.issue_key == APPROVED_ISSUE
-
-    async def test_a_different_state_names_its_own_actor(
-        self,
-        tracker: TrackerPort,
-    ) -> None:
-        transition = await tracker.queue_state_provenance(
-            issue_key=APPROVED_ISSUE,
-            state=QueueState.PROPOSED,
-        )
-        assert transition is None, "the fixture removed this state again"
-
-    async def test_a_state_never_set_has_no_provenance(
-        self,
-        tracker: TrackerPort,
-    ) -> None:
-        assert (
-            await tracker.queue_state_provenance(
-                issue_key=APPROVED_ISSUE,
-                state=QueueState.DECISION,
-            )
-            is None
-        )
-
-
 class TestAssets:
     """Attachment and document metadata, and document reads."""
 

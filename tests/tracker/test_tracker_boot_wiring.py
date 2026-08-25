@@ -118,7 +118,6 @@ def server() -> ManagedFakeLinearMcpServer:
     managed = ManagedFakeLinearMcpServer()
     managed.issues = source.issues
     managed.documents = source.documents
-    managed.history = source.history
     managed.users = source.users
     managed.teams = source.teams
     managed.labels = source.labels

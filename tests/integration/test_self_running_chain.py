@@ -39,11 +39,9 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTrackerPort,
     PassThroughGate,
-    approved_by,
     make_tracker_issue,
 )
 from tests.services.test_dispatch_pass import (
-    APPROVER,
     INTEGRATION_DIR,
     operation_config,
 )
@@ -102,7 +100,6 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
     config = AppConfig()
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE)],
-        provenance=dict([approved_by(ISSUE, APPROVER)]),
     )
     engine = _MergingEngine()
     queue = AsyncioJobQueue(

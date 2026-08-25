@@ -31,7 +31,6 @@ from kodezart.types.domain.tracker import (
     IssueQuery,
     MappingOutcome,
     MappingRef,
-    StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
@@ -488,15 +487,6 @@ class TrackerPort(Protocol):
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
         """The unexpired claim on the issue, or ``None`` when unclaimed."""
-        ...
-
-    async def queue_state_provenance(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> StateTransition | None:
-        """Who most recently set *state*, or ``None`` if it never was set."""
         ...
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:

@@ -56,7 +56,6 @@ from tests.fakes import (
     FakeRepoCache,
     FakeTrackerPort,
     PassThroughGate,
-    approved_by,
     make_tracker_issue,
 )
 
@@ -250,13 +249,28 @@ class UnscopedTrackerPort(FakeTrackerPort):
         )
 
 
+class UnfilteredTrackerPort(FakeTrackerPort):
+    """A port whose backend does not honour the scan's queue-state filter.
+
+    The queue-state twin of :class:`UnscopedTrackerPort`, and it exists for
+    the same reason: a scoped scan asks the BACKEND to narrow, and clause 2
+    decides eligibility over what actually came back. Without a backend
+    that ignores the filter there is no way to reach the clause at all, and
+    an unreachable clause is an untested one.
+    """
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        return await super().scan_issues(
+            query=query.model_copy(update={"queue_state": None}),
+        )
+
+
 class TestTheContainerBoundary:
     """A pass claims from the operation's own board and from nowhere else."""
 
     async def test_the_scan_is_scoped_to_every_declared_team(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         operation = operation_config(
             teams={
@@ -306,12 +320,6 @@ class TestTheContainerBoundary:
                     team_key="somebody-elses-board",
                 ),
             ],
-            provenance=dict(
-                [
-                    approved_by("K-1", APPROVER),
-                    approved_by("OTHER-1", APPROVER),
-                ],
-            ),
         )
         fire, queue, _ = dispatcher(tracker)
         report = await fire.run_pass()
@@ -326,7 +334,6 @@ class TestTheContainerBoundary:
     async def test_clause_one_excludes_an_issue_with_no_configured_team(self) -> None:
         tracker = UnscopedTrackerPort(
             issues=[make_tracker_issue("OTHER-1", team_key=None)],
-            provenance=dict([approved_by("OTHER-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker)
         report = await fire.run_pass()
@@ -338,7 +345,6 @@ class TestTheContainerBoundary:
     async def test_an_operation_declaring_no_team_refuses_before_scanning(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker, operation=operation_config(teams={}))
         with pytest.raises(OperationMemberAbsentError) as caught:
@@ -355,7 +361,6 @@ class TestClauseDrivenExclusion:
     async def test_an_eligible_issue_is_enqueued(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker)
         report = await fire.run_pass()
@@ -364,16 +369,23 @@ class TestClauseDrivenExclusion:
         assert len(queue.submissions) == 1
         assert queue.submissions[0][0] == LANE
 
-    async def test_clause_two_excludes_a_state_set_by_a_non_approver(self) -> None:
-        tracker = FakeTrackerPort(
-            issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", IMPOSTOR)]),
+    async def test_clause_two_excludes_an_issue_not_carrying_the_state(self) -> None:
+        """The paired negative, over a backend that ignored the scan filter.
+
+        Under the founder's KOD-144 ruling of 2026-08-25 the predicate is
+        the approved state's PRESENCE, so its negative is the state's
+        absence — and the only way an absent-state issue reaches the clause
+        at all is a backend that did not honour the queue-state filter. The
+        test that asserted the old actor exclusion is removed under that
+        ruling: no tool on the vendor surface attests who set a label.
+        """
+        tracker = UnfilteredTrackerPort(
+            issues=[make_tracker_issue("K-1", queue_states=[QueueState.PROPOSED])],
         )
         fire, queue, _ = dispatcher(tracker)
         report = await fire.run_pass()
         assert report.outcome is DispatchOutcome.empty_eligible_set
         assert report.exclusions[0].clause is ExclusionClause.NOT_APPROVED
-        assert report.exclusions[0].detail == IMPOSTOR
         assert queue.submissions == []
 
     async def test_clause_three_excludes_a_closed_issue(self) -> None:
@@ -385,7 +397,6 @@ class TestClauseDrivenExclusion:
                     state_name="Done",
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, _, _ = dispatcher(tracker)
         report = await fire.run_pass()
@@ -398,7 +409,6 @@ class TestClauseDrivenExclusion:
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, _, _ = dispatcher(tracker)
         report = await fire.run_pass()
@@ -418,7 +428,6 @@ class TestClauseDrivenExclusion:
                     state_kind=WorkflowStateKind.COMPLETED,
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
             recorded_work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
         )
         fire, _, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
@@ -429,7 +438,6 @@ class TestClauseDrivenExclusion:
     async def test_clause_five_excludes_an_issue_another_pass_holds(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         await tracker.claim_issue(
             issue_key="K-1",
@@ -445,7 +453,6 @@ class TestClauseDrivenExclusion:
     async def test_clause_five_excludes_an_issue_with_a_live_run(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker)
         first = await fire.run_pass()
@@ -458,7 +465,6 @@ class TestClauseDrivenExclusion:
     async def test_clause_six_excludes_an_issue_an_open_pr_delivers(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, delivery = dispatcher(
             tracker,
@@ -490,7 +496,6 @@ class TestCrashedVersusDeliveredInReview:
                     state_name="In Review",
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(
             tracker,
@@ -513,7 +518,6 @@ class TestCrashedVersusDeliveredInReview:
                     state_name="In Progress",
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker)
         first = await fire.run_pass()
@@ -538,7 +542,6 @@ class TestCrashedVersusDeliveredInReview:
                     state_name="In Review",
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         delivered_tracker = FakeTrackerPort(
             issues=[
@@ -548,7 +551,6 @@ class TestCrashedVersusDeliveredInReview:
                     state_name="In Review",
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         crashed, _, _ = dispatcher(crashed_tracker)
         delivered, _, _ = dispatcher(
@@ -571,7 +573,6 @@ class TestPriorityRanking:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
         fire, _, _ = dispatcher(tracker)
         report = await fire.run_pass()
@@ -593,7 +594,6 @@ class TestPriorityRanking:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
         fire, _, _ = dispatcher(tracker)
         assert (await fire.run_pass()).claimed_issue_key == "RAW-LOW"
@@ -685,7 +685,6 @@ class TestTieBreak:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
         fire, _, _ = dispatcher(tracker, draw=_forbidden_draw)
         report = await fire.run_pass()
@@ -701,7 +700,6 @@ class TestTieBreak:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
         fire, _, _ = dispatcher(tracker, draw=lambda keys: keys[1])
         with structlog.testing.capture_logs() as logs:
@@ -718,7 +716,6 @@ class TestTieBreak:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
         fire, _, _ = dispatcher(tracker, draw=lambda keys: keys[0])
         with structlog.testing.capture_logs() as logs:
@@ -741,7 +738,6 @@ class TestClaimRace:
     ) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         queue = FakeJobQueue()
         first, _, _ = dispatcher(tracker, queue=queue, holder="pass-a")
@@ -768,7 +764,6 @@ class TestClaimRace:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
         queue = FakeJobQueue()
         fire, _, _ = dispatcher(tracker, queue=queue, holder="loser")
@@ -809,7 +804,6 @@ class TestClaimRace:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
         await tracker.claim_issue(
             issue_key="TOP",
@@ -824,7 +818,6 @@ class TestClaimRace:
     async def test_the_loser_reports_claim_lost_without_retrying(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         queue = FakeJobQueue()
         fire, _, _ = dispatcher(tracker, queue=queue, holder="loser")
@@ -871,18 +864,9 @@ class TestEmptyEligibleSet:
                 state_kind=WorkflowStateKind.CANCELED,
                 state_name="Canceled",
             ),
-            make_tracker_issue("UNAPPROVED"),
+            make_tracker_issue("UNAPPROVED", queue_states=[QueueState.PROPOSED]),
         ]
-        tracker = FakeTrackerPort(
-            issues=issues,
-            provenance=dict(
-                [
-                    approved_by("BLOCKED", APPROVER),
-                    approved_by("CLOSED", APPROVER),
-                    approved_by("UNAPPROVED", IMPOSTOR),
-                ]
-            ),
-        )
+        tracker = UnfilteredTrackerPort(issues=issues)
         fire, queue, _ = dispatcher(tracker)
         report = await fire.run_pass()
         assert report.outcome is DispatchOutcome.empty_eligible_set
@@ -890,6 +874,7 @@ class TestEmptyEligibleSet:
         by_key = {item.issue_key: item.clause for item in report.exclusions}
         assert by_key == {
             "BLOCKED": ExclusionClause.LIVE_BLOCKER,
+            "LIVE": ExclusionClause.NOT_APPROVED,
             "CLOSED": ExclusionClause.NOT_OPEN,
             "UNAPPROVED": ExclusionClause.NOT_APPROVED,
         }
@@ -901,7 +886,6 @@ class TestEmptyEligibleSet:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict([approved_by("BLOCKED", APPROVER)]),
         )
         fire, _, _ = dispatcher(tracker)
         report = await fire.run_pass()
@@ -910,7 +894,7 @@ class TestEmptyEligibleSet:
         assert report.snapshot[0].priority is IssuePriority.NONE
 
     async def test_the_outcome_uses_the_shared_discriminator(self) -> None:
-        tracker = FakeTrackerPort(issues=[], provenance={})
+        tracker = FakeTrackerPort(issues=[])
         fire, _, _ = dispatcher(tracker)
         report = await fire.run_pass()
         assert report.outcome is DispatchOutcome.empty_eligible_set
@@ -918,9 +902,10 @@ class TestEmptyEligibleSet:
         assert report.eligible == ()
 
     async def test_the_empty_set_is_logged_machine_readably(self) -> None:
-        tracker = FakeTrackerPort(
-            issues=[make_tracker_issue("UNAPPROVED")],
-            provenance=dict([approved_by("UNAPPROVED", IMPOSTOR)]),
+        tracker = UnfilteredTrackerPort(
+            issues=[
+                make_tracker_issue("UNAPPROVED", queue_states=[QueueState.PROPOSED]),
+            ],
         )
         fire, _, _ = dispatcher(tracker)
         with structlog.testing.capture_logs() as logs:
@@ -944,7 +929,6 @@ class TestSingleWinner:
         ]
         tracker = FakeTrackerPort(
             issues=issues,
-            provenance=dict(approved_by(issue.issue_key, APPROVER) for issue in issues),
         )
         fire, queue, _ = dispatcher(tracker, draw=lambda keys: keys[0])
         await fire.run_pass()
@@ -952,7 +936,7 @@ class TestSingleWinner:
         assert len(tracker.claims) == 1
 
     async def test_the_query_uses_the_configured_page_size(self) -> None:
-        tracker = FakeTrackerPort(issues=[], provenance={})
+        tracker = FakeTrackerPort(issues=[])
         fire, _, _ = dispatcher(tracker)
         await fire.run_pass()
         assert tracker.scans[0].page_size == PAGE_SIZE
@@ -980,7 +964,6 @@ class TestTheBaseIsReadOffTheGraph:
 
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker)
 
@@ -1004,7 +987,6 @@ class TestTheBaseIsReadOffTheGraph:
                     state_kind=WorkflowStateKind.COMPLETED,
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
             recorded_work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
         )
         fire, queue, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
@@ -1035,7 +1017,6 @@ class TestTheBaseIsReadOffTheGraph:
                     state_kind=WorkflowStateKind.COMPLETED,
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker)
 
@@ -1062,7 +1043,6 @@ class TestTheBaseIsReadOffTheGraph:
                     state_kind=WorkflowStateKind.COMPLETED,
                 ),
             ],
-            provenance=dict([approved_by("K-1", APPROVER)]),
             recorded_work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
         )
         absent = FakeGitService(remote_branch_shas={BLOCKER_BRANCH: None})
@@ -1088,7 +1068,6 @@ class TestTheDispatchedBaseIsRecordedAndCompared:
     async def test_the_dispatched_base_is_recorded_on_the_issue(self) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, _, _ = dispatcher(tracker)
 
@@ -1100,7 +1079,6 @@ class TestTheDispatchedBaseIsRecordedAndCompared:
         """No recorded spec is a first dispatch, never a stale base."""
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, _, _ = dispatcher(tracker)
 
@@ -1133,7 +1111,6 @@ class TestTheDispatchedBaseIsRecordedAndCompared:
     ) -> None:
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker)
         first = await fire.run_pass()
@@ -1155,7 +1132,6 @@ class TestTheDispatchedBaseIsRecordedAndCompared:
         """
         tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
-            provenance=dict([approved_by("K-1", APPROVER)]),
         )
         fire, queue, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
         first = await fire.run_pass()

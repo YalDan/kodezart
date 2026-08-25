@@ -21,7 +21,6 @@ from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
     IssueRelationKind,
-    StateTransition,
     TrackerIssue,
     is_open,
     priority_rank,
@@ -34,8 +33,8 @@ def clause_in_team(issue: TrackerIssue, *, team_keys: Collection[str]) -> bool:
     The container boundary, as a property of the issue rather than of the
     query that found it.  A scan is narrowed to the declared teams and this
     clause decides eligibility over what came back — the same division
-    :func:`clause_approved` already keeps between the queue-state filter and
-    the approving act.
+    :func:`clause_approved` keeps between the queue-state filter a scan
+    asks the backend to honour and the state this operation may act on.
 
     An issue whose ``team_key`` is ``None`` belongs to a team the
     configuration does not name, which is outside the boundary by
@@ -46,22 +45,27 @@ def clause_in_team(issue: TrackerIssue, *, team_keys: Collection[str]) -> bool:
     return issue.team_key is not None and issue.team_key in team_keys
 
 
-def clause_approved(
-    issue: TrackerIssue,
-    *,
-    provenance: StateTransition | None,
-    approver_key: str,
-) -> bool:
-    """Clause 2: the issue carries APPROVED, set by the configured approver.
+def clause_approved(issue: TrackerIssue) -> bool:
+    """Clause 2: the issue carries the APPROVED queue state.
 
-    Authority binds to the approver's ACT, so carrying the state is not
-    enough — the transition must have been performed by the approver.
-    Approval is the only human act in the loop, and kodezart never
-    performs it.
+    The state's PRESENCE is the whole predicate, by the founder's ruling
+    of 2026-08-25 on KOD-144.  This clause used to require more: that the
+    transition into the state had been performed by the configured
+    approver.  That requirement is unobtainable on the measured vendor
+    surface — no tool on the live server attests who added a label, the
+    tool the provenance read called does not exist there, and the issue
+    payload's state history carries no actor at all.  The design's own
+    sentence, "carrying the state is not enough", is GIVEN UP here rather
+    than left standing over an attestation nothing can supply.
+
+    What still guards the boundary: the credential is scoped when it is
+    minted, and only workspace members can label anything.  Approval
+    remains the only human act in the loop and kodezart never performs it
+    — what changed is that the tracker cannot say WHICH human performed
+    it.  If the vendor ever exposes transition actors, reinstating the arm
+    is a new decision on KOD-144.
     """
-    if QueueState.APPROVED not in issue.queue_states:
-        return False
-    return provenance is not None and provenance.actor_key == approver_key
+    return QueueState.APPROVED in issue.queue_states
 
 
 def clause_open(issue: TrackerIssue) -> bool:

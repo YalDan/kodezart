@@ -3,8 +3,7 @@
 Every read and write on the deterministic path is a named tool call with
 no model in the loop.  The adapter owns everything vendor-shaped: the
 identifier translation, queue-state-as-label mechanics, the atomic-claim
-mechanism, the priority encoding, and provenance reads from issue history.
-None of it crosses the port.
+mechanism and the priority encoding.  None of it crosses the port.
 
 This is the FIRST adapter, not the design centre.  A GitHub Issues or Jira
 adapter is a peer module implementing the same protocol; consumers change
@@ -41,7 +40,6 @@ from kodezart.types.domain.linear_mcp import (
     LinearDocumentListWire,
     LinearDocumentSummaryWire,
     LinearDocumentWire,
-    LinearHistoryWire,
     LinearIssueDetailWire,
     LinearIssueListWire,
     LinearIssueWire,
@@ -64,7 +62,6 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingOutcome,
     MappingRef,
-    StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
@@ -77,7 +74,6 @@ _TOOL_SAVE_ISSUE = "save_issue"
 _TOOL_SAVE_COMMENT = "save_comment"
 _TOOL_LIST_COMMENTS = "list_comments"
 _TOOL_DELETE_COMMENT = "delete_comment"
-_TOOL_LIST_ISSUE_HISTORY = "list_issue_history"
 _TOOL_GET_DOCUMENT = "get_document"
 _TOOL_LIST_DOCUMENTS = "list_documents"
 _TOOL_SAVE_DOCUMENT = "save_document"
@@ -429,33 +425,6 @@ class LinearMcpTracker:
             holder=winner.holder,
             expires_at=winner.expires_at,
         )
-
-    async def queue_state_provenance(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> StateTransition | None:
-        """Who most recently set *state*, or ``None`` if it never was set."""
-        label = self._label_for(state)
-        payload = await self._call(_TOOL_LIST_ISSUE_HISTORY, {"id": issue_key})
-        history = self._validate(
-            LinearHistoryWire,
-            payload,
-            _TOOL_LIST_ISSUE_HISTORY,
-        )
-        latest: StateTransition | None = None
-        for entry in history.history:
-            if label in entry.removed_labels:
-                latest = None
-            if label in entry.added_labels:
-                latest = StateTransition(
-                    issue_key=issue_key,
-                    queue_state=state,
-                    actor_key=entry.actor,
-                    occurred_at=entry.created_at,
-                )
-        return latest
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
         """Attachment and document metadata referenced by the issue."""

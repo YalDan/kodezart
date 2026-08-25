@@ -195,27 +195,6 @@ class LinearCommentListWire(LinearWireModel):
     comments: list[LinearCommentWire]
 
 
-class LinearHistoryEntryWire(LinearWireModel):
-    """One issue-history entry: who changed which labels, and when.
-
-    This is the provenance source.  Linear's history records the actor of
-    every label change, which is what makes "who set this state"
-    answerable at all — the approving act is a label transition performed
-    by a person, and authority binds to that act.
-    """
-
-    actor: str
-    added_labels: list[str] = Field(default_factory=list)
-    removed_labels: list[str] = Field(default_factory=list)
-    created_at: datetime
-
-
-class LinearHistoryWire(LinearWireModel):
-    """The ``list_issue_history`` envelope."""
-
-    history: list[LinearHistoryEntryWire]
-
-
 class LinearNamedWire(LinearWireModel):
     """A named workspace entity — a user, team, label or status.
 
