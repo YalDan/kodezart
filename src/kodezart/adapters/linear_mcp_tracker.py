@@ -101,9 +101,10 @@ _RAW_BY_PRIORITY: Mapping[IssuePriority, int] = {
 }
 
 #: What each arm of the vendor's relations object means in the domain,
-#: keyed by the vendor's own spelling.  ``PARENT`` and ``CHILD`` have no
-#: arm: the vendor reports a parent as ``parentId`` on the issue itself
-#: and reports children nowhere, so nothing here invents an edge for them.
+#: keyed by the vendor's own spelling.  Four arms, four kinds: the vendor
+#: reports a parent as ``parentId`` on the issue itself, which the adapter
+#: carries as ``parent_key`` rather than as an edge, and reports children
+#: nowhere at all.
 _RELATION_KIND_BY_ARM: Mapping[str, IssueRelationKind] = {
     "blocks": IssueRelationKind.BLOCKS,
     "blockedBy": IssueRelationKind.BLOCKED_BY,

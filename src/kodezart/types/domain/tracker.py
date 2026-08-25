@@ -85,12 +85,18 @@ def is_open(kind: WorkflowStateKind) -> bool:
 
 
 class IssueRelationKind(StrEnum):
-    """The relation kinds the port carries."""
+    """The relation kinds the port carries.
+
+    Four, because four are carried.  ``PARENT`` and ``CHILD`` were here
+    and were never produced or read: parentage is not an edge on this
+    port — an issue names its own parent through ``parent_key`` — and no
+    backend measured so far reports children at all.  A member no
+    adapter can emit and no consumer can branch on is vocabulary that
+    reads as a capability (KOD-143).
+    """
 
     BLOCKED_BY = "blocked_by"
     BLOCKS = "blocks"
-    PARENT = "parent"
-    CHILD = "child"
     RELATED = "related"
     DUPLICATE = "duplicate"
 
