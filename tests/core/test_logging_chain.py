@@ -29,10 +29,17 @@ from kodezart.core.logging import configure_logging, get_logger
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.requests.agent import WorkflowRequest
+from tests.services.test_pass_scheduler import Metronome
 
 FAILURE = "the creator produced no structured output"
 LANE = "tracker"
-SETTLE_TRIES = 500
+INTERVAL_SECONDS = 11.5
+
+#: Generous: every wait below is on a condition, so this only ever bounds
+#: a genuine hang.  Waiting a fixed number of event-loop yields instead
+#: would be a guess about how many turns a failure path costs — the guess
+#: that held locally and under-ran on a slower runner.
+SETTLE_TIMEOUT = 5.0
 
 
 @contextmanager
@@ -95,27 +102,15 @@ class Exploder:
         raise RuntimeError(FAILURE)
 
 
-class Metronome:
-    """A substituted sleep: no test here waits for a real interval."""
+async def drain(queue: AsyncioJobQueue, *, job_id: str) -> None:
+    """Read the job's stream to its close.
 
-    def __init__(self, *, limit: int) -> None:
-        self._limit = limit
-        self.ticks: int = 0
-
-    async def sleep(self, seconds: float) -> None:
-        if self.ticks >= self._limit:
-            await asyncio.sleep(3600)
-        self.ticks += 1
-        await asyncio.sleep(0)
-
-
-async def settle(condition: object) -> None:
-    """Yield to the loop until *condition* holds."""
-    assert callable(condition)
-    for _ in range(SETTLE_TRIES):
-        if condition():
-            return
-        await asyncio.sleep(0)
+    The exact wait for "the run is over": the queue closes the stream when
+    the run ends, and ``job_failed`` is logged — and therefore written —
+    before the error frame that arrives on it.
+    """
+    async for _ in queue.attach(job_id=job_id):
+        pass
 
 
 def assert_names_its_frames(rendered: object) -> None:
@@ -156,11 +151,14 @@ async def test_the_queues_failure_event_carries_the_traceback() -> None:
         )
         await queue.start()
         try:
-            await queue.submit(
+            record = await queue.submit(
                 lane=LANE,
                 request=WorkflowRequest(prompt="do the thing", repo_path="/tmp/fake"),
             )
-            await settle(lambda: bool(json_events(buffer, event="job_finished")))
+            await asyncio.wait_for(
+                drain(queue, job_id=record.job_id),
+                timeout=SETTLE_TIMEOUT,
+            )
         finally:
             await queue.stop()
 
@@ -185,16 +183,17 @@ async def test_the_schedulers_failure_event_carries_the_traceback() -> None:
             passes=[
                 ScheduledPass(
                     name="dispatch",
-                    interval_seconds=1.0,
+                    interval_seconds=INTERVAL_SECONDS,
                     run=exploder.run,
                 ),
             ],
             sleep=metronome.sleep,
         )
         await scheduler.start()
-        await settle(
-            lambda: bool(json_events(buffer, event="scheduled_pass_failed")),
-        )
+        # The metronome parks the driver once its budget is gone, and a
+        # driver sleeps BEFORE it runs — so the park is requested only
+        # after the failing run and its log call have both completed.
+        await asyncio.wait_for(metronome.parked.wait(), timeout=SETTLE_TIMEOUT)
         await scheduler.stop()
 
     (payload,) = json_events(buffer, event="scheduled_pass_failed")

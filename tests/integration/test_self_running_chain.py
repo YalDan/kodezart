@@ -57,6 +57,10 @@ FEATURE_BRANCH = "kodezart/k-1"
 PRE_CLAIM_STATE = "Backlog"
 CREATOR_FAILURE = "Creator produced no structured output."
 
+#: Generous: every wait here is on a condition, so this only ever bounds
+#: a genuine hang.
+SETTLE_TIMEOUT = 5.0
+
 
 class _MergingEngine:
     """A ``WorkflowEngine`` whose run opens a pull request and merges.
@@ -95,12 +99,24 @@ class _MergingEngine:
         )
 
 
-async def _until(condition: object, *, tries: int = 500) -> None:
-    """Yield to the loop until *condition* holds, or give the test its failure."""
+async def _until(condition: object, *, timeout: float = SETTLE_TIMEOUT) -> None:
+    """Yield to the loop until *condition* holds, or fail on a real clock.
+
+    Bounded by wall-clock rather than by a count of event-loop yields.
+    Every lifecycle write is awaited through structlog's executor, so the
+    number of turns one costs is a property of the machine and not of the
+    code: a fixed count held here and under-ran on a slower runner, which
+    is the same lesson ``tests/services/test_pass_scheduler`` records
+    about its own settle.  Exhaustion now fails loudly rather than
+    returning quietly into a downstream assertion.
+    """
     assert callable(condition)
-    for _ in range(tries):
-        if condition():
-            return
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not condition():
+        if loop.time() >= deadline:
+            msg = "condition never became true"
+            raise AssertionError(msg)
         await asyncio.sleep(0)
 
 
