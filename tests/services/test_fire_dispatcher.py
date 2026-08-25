@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from kodezart.domain.dispatch import DOMAIN_PRIORITY_ORDER
 from kodezart.services.base_resolver import BaseResolver
+from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
@@ -42,6 +43,7 @@ from kodezart.types.domain.operation import (
     TeamEntry,
 )
 from kodezart.types.domain.tracker import (
+    ClaimStatus,
     IssuePriority,
     IssueQuery,
     TrackerIssue,
@@ -58,6 +60,7 @@ from tests.fakes import (
     PassThroughGate,
     make_tracker_issue,
 )
+from tests.services.test_claim_heartbeat import MovingClock, run_until
 
 APPROVER = "the-approver"
 IMPOSTOR = "not-the-approver"
@@ -68,6 +71,10 @@ INTEGRATION_DIR = "/tmp/fixture-integration"
 LANE = "tracker"
 HOLDER = "pass-a"
 LEASE_SECONDS = 600.0
+RENEWAL_FRACTION = 0.25
+#: Five renewals of a 600-second lease at a quarter of it puts the run at
+#: 750 seconds, which is past the lease it was granted with.
+RENEWALS_PAST_THE_LEASE = 5
 PAGE_SIZE = 50
 ASSET_MAX_COUNT = 20
 ASSET_MAX_BYTES = 262144
@@ -1211,3 +1218,117 @@ class TestThePreClaimStateIsCaptured:
 
         assert report.outcome is DispatchOutcome.empty_eligible_set
         assert report.claimed_state_name is None
+
+
+class TestTheClaimSurvivesTheProcessThatMadeIt:
+    """The property the in-process registry was standing in for (KOD-147).
+
+    Every case here runs a SECOND dispatcher built from scratch over the
+    same tracker: a fresh queue, a fresh registry, and a ``FireDispatcher``
+    whose jobs-by-issue map has never held anything.  That is a restarted
+    service, and it is the shape the old guard could not survive — the
+    registry it consulted was empty and the tracker's claim had expired
+    under a run that was still going, so the next pass fired the issue a
+    second time.
+
+    Nothing below reads process state, because the second dispatcher has
+    none to read.  The exclusion has to come off the tracker or not at all.
+    """
+
+    async def test_a_restarted_process_cannot_claim_an_issue_being_renewed(
+        self,
+    ) -> None:
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")], clock=clock)
+        first, _, _ = dispatcher(tracker, holder=HOLDER)
+        assert (await first.run_pass()).outcome is DispatchOutcome.fire_enqueued
+
+        beat = ClaimHeartbeat(
+            tracker=tracker,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+            renewal_fraction=RENEWAL_FRACTION,
+            sleep=clock.sleep,
+        )
+        async with beat.renewing(issue_key="K-1"):
+            await run_until(tracker, renewals=RENEWALS_PAST_THE_LEASE)
+            second, second_queue, _ = dispatcher(tracker, holder=HOLDER)
+            report = await second.run_pass()
+
+        assert clock.now > FIXTURE_EPOCH + timedelta(seconds=LEASE_SECONDS), (
+            "the run must have outlived the lease for this to be the case at all"
+        )
+        assert report.outcome is DispatchOutcome.empty_eligible_set
+        assert [(item.issue_key, item.clause) for item in report.exclusions] == [
+            ("K-1", ExclusionClause.CLAIMED_OR_IN_FLIGHT),
+        ]
+        assert second_queue.submissions == []
+
+    async def test_a_second_instance_racing_a_renewed_claim_loses_it(self) -> None:
+        """A different holder, not a restart: the log still has one winner."""
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")], clock=clock)
+        first, _, _ = dispatcher(tracker, holder="pass-a")
+        assert (await first.run_pass()).outcome is DispatchOutcome.fire_enqueued
+
+        beat = ClaimHeartbeat(
+            tracker=tracker,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+            renewal_fraction=RENEWAL_FRACTION,
+            sleep=clock.sleep,
+        )
+        async with beat.renewing(issue_key="K-1"):
+            await run_until(tracker, renewals=RENEWALS_PAST_THE_LEASE)
+            rival = await tracker.claim_issue(
+                issue_key="K-1",
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+
+        assert rival.status is ClaimStatus.LOST
+
+    async def test_the_crash_arm_still_hands_the_issue_back(self) -> None:
+        """With nothing renewing, the lease runs out and a later pass fires.
+
+        The recovery the lease was introduced for, pinned unchanged: the
+        renewal is what a LIVE process does, so a process that is gone
+        renews nothing and the expiry does its job.
+        """
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")], clock=clock)
+        first, _, _ = dispatcher(tracker, holder=HOLDER)
+        assert (await first.run_pass()).outcome is DispatchOutcome.fire_enqueued
+
+        clock.advance(seconds=LEASE_SECONDS)
+        second, second_queue, _ = dispatcher(tracker, holder=HOLDER)
+        report = await second.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert report.claimed_issue_key == "K-1"
+        assert len(second_queue.submissions) == 1
+
+    async def test_the_issue_is_held_only_while_something_is_renewing_it(self) -> None:
+        """The two arms as one case: held during the run, free after it."""
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")], clock=clock)
+        first, _, _ = dispatcher(tracker, holder=HOLDER)
+        await first.run_pass()
+        beat = ClaimHeartbeat(
+            tracker=tracker,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+            renewal_fraction=RENEWAL_FRACTION,
+            sleep=clock.sleep,
+        )
+
+        async with beat.renewing(issue_key="K-1"):
+            await run_until(tracker, renewals=RENEWALS_PAST_THE_LEASE)
+            during, _, _ = dispatcher(tracker, holder=HOLDER)
+            held = await during.run_pass()
+        clock.advance(seconds=LEASE_SECONDS)
+        after, _, _ = dispatcher(tracker, holder=HOLDER)
+        freed = await after.run_pass()
+
+        assert held.outcome is DispatchOutcome.empty_eligible_set
+        assert freed.outcome is DispatchOutcome.fire_enqueued

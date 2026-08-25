@@ -343,6 +343,18 @@ class AppConfig(BaseSettings):
             "becomes eligible again."
         ),
     )
+    tracker_claim_renewal_fraction: float = Field(
+        default=0.25,
+        gt=0.0,
+        le=0.5,
+        description=(
+            "Fraction of the claim lease at which a job in flight renews its "
+            "claim. Expressed against the lease so renewal outpaces expiry by "
+            "construction, whatever the lease is set to: at 0.25 three "
+            "consecutive renewal failures are survivable before the claim "
+            "lapses, and the 0.5 bound leaves at least one."
+        ),
+    )
     tracker_query_page_size: int = Field(
         default=50,
         ge=1,

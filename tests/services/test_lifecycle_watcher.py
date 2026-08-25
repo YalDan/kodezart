@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator
 import pytest
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
@@ -43,6 +44,9 @@ ISSUE = "K-1"
 #: crashed run has to be put back into.
 PRE_CLAIM_STATE = "Todo"
 MODEL = "fixture-model"
+HOLDER = "pass-a"
+LEASE_SECONDS = 600.0
+RENEWAL_FRACTION = 0.25
 REPO_URL = "https://forge.invalid/owner/repo"
 
 PR_EVENT = WorkflowPREvent(
@@ -64,6 +68,21 @@ def complete(*, merged: bool, outcome: WorkflowOutcome) -> WorkflowCompleteEvent
     )
 
 
+def claim_heartbeat(tracker: FakeTrackerPort) -> ClaimHeartbeat:
+    """The shipped heartbeat, over a lease no case here ever reaches.
+
+    Renewal is asserted in ``test_claim_heartbeat``, where the clock is a
+    collaborator.  Here it is present so the watch under test is the one
+    that ships, and quiet because nothing advances the clock.
+    """
+    return ClaimHeartbeat(
+        tracker=tracker,
+        holder=HOLDER,
+        lease_seconds=LEASE_SECONDS,
+        renewal_fraction=RENEWAL_FRACTION,
+    )
+
+
 def watcher(
     *events: AgentEvent,
 ) -> tuple[LifecycleWatcher, FakeTrackerPort, FakeJobQueue]:
@@ -74,6 +93,7 @@ def watcher(
         LifecycleWatcher(
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
         ),
         tracker,
         queue,
@@ -265,6 +285,7 @@ class TestThePremiseAgainstTheShippedQueue:
                     tracker=tracker,
                     gate=PassThroughGate(),
                 ),
+                heartbeat=claim_heartbeat(tracker),
             )
             record = await queue.submit(
                 lane="lane",
@@ -306,6 +327,7 @@ class TestTheWatcherIsUnknownJobSafe:
         watch = LifecycleWatcher(
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
         )
 
         with pytest.raises(KeyError):

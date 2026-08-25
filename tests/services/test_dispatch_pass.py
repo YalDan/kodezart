@@ -19,6 +19,7 @@ from kodezart.composition.passes import build_dispatch_passes, delivery_probe_fo
 from kodezart.core.config import AppConfig
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.services.base_resolver import BaseResolver
+from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
@@ -67,6 +68,7 @@ PAGE_SIZE = 50
 ASSET_MAX_COUNT = 20
 ASSET_MAX_BYTES = 262144
 ASSET_FETCH_TIMEOUT_SECONDS = 30.0
+RENEWAL_FRACTION = 0.25
 SETTLE_TRIES = 500
 SETTLE_DELAY_SECONDS = 0.01
 
@@ -147,6 +149,12 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
         lifecycle=LifecycleWatcher(
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=ClaimHeartbeat(
+                tracker=tracker,
+                holder=HOLDER,
+                lease_seconds=LEASE_SECONDS,
+                renewal_fraction=RENEWAL_FRACTION,
+            ),
         ),
         gate=PassGate(
             tracker=tracker,
@@ -348,8 +356,10 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     # terminal chain it asserts on: the DONE transition, then the comment
     # that ``LifecycleWatcher`` posts after it.
     await settled(
-        lambda: ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
-        and bool(tracker.comments),
+        lambda: (
+            ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
+            and bool(tracker.comments)
+        ),
     )
 
     assert queue.attached == ["job-0001"]

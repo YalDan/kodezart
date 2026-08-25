@@ -20,6 +20,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver
+from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
@@ -113,6 +114,12 @@ def build_dispatch_passes(
     lifecycle = LifecycleWatcher(
         queue=queue,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
+        heartbeat=ClaimHeartbeat(
+            tracker=tracker,
+            holder=config.dispatch_holder,
+            lease_seconds=config.tracker_claim_lease_seconds,
+            renewal_fraction=config.tracker_claim_renewal_fraction,
+        ),
     )
     resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
     passes: list[ScheduledPass] = []

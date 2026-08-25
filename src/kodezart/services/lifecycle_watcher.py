@@ -26,12 +26,21 @@ was told — the in-progress stage — is contradicted by reality with nothing
 saying so.  The end of the stream is the exact signal: the queue closes it
 whether the run finished or raised, so no timeout and no second surface is
 involved (KOD-146).
+
+**The claim heartbeat rides here** for the same reason (KOD-147).  A claim
+has to stay live for exactly as long as the job does, and this watch is the
+one component whose lifetime already IS the job's: it begins when the
+dispatch pass enqueues, it ends when the stream ends, and it ends by both
+paths.  The renewal starts before the first frame rather than after it,
+because a job sitting in the queue longer than the lease loses its issue
+just as surely as a job running longer than one.
 """
 
 import asyncio
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue
+from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -49,9 +58,11 @@ class LifecycleWatcher:
         *,
         queue: JobQueue,
         writer: TrackerLifecycleWriter,
+        heartbeat: ClaimHeartbeat,
     ) -> None:
         self._queue: JobQueue = queue
         self._writer: TrackerLifecycleWriter = writer
+        self._heartbeat: ClaimHeartbeat = heartbeat
         self._following: set[asyncio.Task[None]] = set()
         self._log: BoundLogger = get_logger(__name__)
 
@@ -95,27 +106,28 @@ class LifecycleWatcher:
         started = False
         terminal = False
         failure: ErrorEvent | None = None
-        async for event in self._queue.attach(job_id=job_id):
-            if not started:
-                started = True
-                await self._writer.on_dequeue(issue_key=issue_key)
-            if isinstance(event, WorkflowCompleteEvent):
-                terminal = True
-            if isinstance(event, ErrorEvent):
-                failure = event
-            await self._apply(issue_key=issue_key, job_id=job_id, event=event)
-        # A run that never started moved nothing, so there is nothing to
-        # put back: the failure arm answers for a run that WAS dequeued —
-        # the write that moved it to the in-progress stage — and that
-        # reached no terminal outcome.
-        if started and not terminal:
-            await self._writer.on_run_failed(
-                issue_key=issue_key,
-                job_id=job_id,
-                pre_claim_state=pre_claim_state,
-                failure_class=None if failure is None else failure.error_kind,
-                step=None if failure is None else failure.raise_site,
-            )
+        async with self._heartbeat.renewing(issue_key=issue_key):
+            async for event in self._queue.attach(job_id=job_id):
+                if not started:
+                    started = True
+                    await self._writer.on_dequeue(issue_key=issue_key)
+                if isinstance(event, WorkflowCompleteEvent):
+                    terminal = True
+                if isinstance(event, ErrorEvent):
+                    failure = event
+                await self._apply(issue_key=issue_key, job_id=job_id, event=event)
+            # A run that never started moved nothing, so there is nothing to
+            # put back: the failure arm answers for a run that WAS dequeued —
+            # the write that moved it to the in-progress stage — and that
+            # reached no terminal outcome.
+            if started and not terminal:
+                await self._writer.on_run_failed(
+                    issue_key=issue_key,
+                    job_id=job_id,
+                    pre_claim_state=pre_claim_state,
+                    failure_class=None if failure is None else failure.error_kind,
+                    step=None if failure is None else failure.raise_site,
+                )
         await self._log.ainfo(
             "lifecycle_watch_finished",
             issue_key=issue_key,
