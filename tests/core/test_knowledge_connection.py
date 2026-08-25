@@ -308,6 +308,30 @@ def test_the_gateway_credential_is_env_sourced_and_never_serialized(
     assert AppConfig().knowledge_mcp_gateway_token is None
 
 
+def test_no_credential_value_appears_in_any_repr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The repr surface carries no secret either, on config or on grant.
+
+    A model repr reaches tracebacks, debuggers and log payloads by paths
+    that never call a serializer, so exclusion alone leaves it uncovered.
+    """
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+    monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
+
+    config = AppConfig()
+    grant = _http_grant(gateway_credential=_GATEWAY_CREDENTIAL)
+
+    assert config.knowledge_mcp_token == _CREDENTIAL
+    assert grant.gateway_credential == _GATEWAY_CREDENTIAL
+    assert _CREDENTIAL not in repr(config)
+    assert _GATEWAY_CREDENTIAL not in repr(config)
+    assert _CREDENTIAL not in repr(grant)
+    assert _GATEWAY_CREDENTIAL not in repr(grant)
+
+
 async def test_no_boot_log_line_carries_the_gateway_credential(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

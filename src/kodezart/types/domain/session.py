@@ -74,8 +74,8 @@ class KnowledgeGrant(CamelCaseModel):
     server_url: str | None = None
     auth_header: str | None = None
     auth_scheme: str | None = None
-    credential: str | None = Field(default=None, exclude=True)
-    gateway_credential: str | None = Field(default=None, exclude=True)
+    credential: str | None = Field(default=None, exclude=True, repr=False)
+    gateway_credential: str | None = Field(default=None, exclude=True, repr=False)
     command: str | None = None
     args: tuple[str, ...] = ()
     env: dict[str, str] = Field(default_factory=dict)

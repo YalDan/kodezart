@@ -394,6 +394,7 @@ class AppConfig(BaseSettings):
     knowledge_mcp_token: str | None = Field(
         default=None,
         exclude=True,
+        repr=False,
         description=(
             "Credential for the knowledge MCP server. "
             "Environment only, and excluded from serialization: a dumped "
@@ -445,6 +446,7 @@ class AppConfig(BaseSettings):
     knowledge_mcp_gateway_token: str | None = Field(
         default=None,
         exclude=True,
+        repr=False,
         description=(
             "Gateway credential a client presents to a SELF-HOSTED knowledge "
             "server, as a bearer in the Authorization header. Distinct from "
