@@ -146,7 +146,10 @@ def fixture_server() -> FakeLinearMcpServer:
         users=[APPROVER, BYSTANDER],
         teams=["fixture-team", FOREIGN_TEAM],
         labels=list(QUEUE_STATE_LABELS.values()),
-        statuses=list(STATE_TYPES),
+        # Both boards in the fixture workspace offer the whole vocabulary:
+        # the states are read per team, and a fixture where they differed
+        # would make the ordinary case the divergent one.
+        statuses={team: list(STATE_TYPES) for team in ("fixture-team", FOREIGN_TEAM)},
         state_types=STATE_TYPES,
         actor=APPROVER,
     )

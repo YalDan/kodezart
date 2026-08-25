@@ -26,6 +26,7 @@ from pydantic import ValidationError
 
 from kodezart.core.errors import (
     McpTransportError,
+    TrackerBootValidationError,
     TrackerEnsureConflictError,
     TrackerProtocolError,
 )
@@ -559,14 +560,57 @@ class LinearMcpTracker:
         A ref carrying no identifier resolves to nothing by construction —
         it names something the workspace has not assigned a value to yet —
         so it is reported rather than looked up.
+
+        A workflow state is resolved PER TEAM and must resolve on EVERY
+        team the operation declares (the fire-ruling of 2026-08-25 on
+        KOD-143).  A state one declared team cannot express is not a
+        narrower vocabulary, it is a hole exactly where the lifecycle
+        writer sets that state on an issue dispatched from that team, so
+        a vocabulary the operation's teams do not share is refused HERE,
+        naming the team and the state, rather than surviving boot to fail
+        on a live issue.  A state no declared team holds at all is the
+        ordinary unresolved case and is reported through the return value
+        like every other kind, because there is no one team to name.
         """
         known: dict[MappingKind, frozenset[str]] = {}
+        states_by_team: Mapping[str, frozenset[str]] | None = None
         unresolved: list[MappingRef] = []
+        divergent: list[str] = []
         for ref in refs:
+            if ref.kind is MappingKind.WORKFLOW_STATE:
+                if states_by_team is None:
+                    states_by_team = await self._workflow_states_by_team()
+                # No declared team is no vocabulary to resolve against: the
+                # tool cannot be called without one, so nothing was checked
+                # and nothing may pass as checked.
+                if not states_by_team:
+                    unresolved.append(ref)
+                    continue
+                absent = [
+                    team
+                    for team, states in states_by_team.items()
+                    if ref.identifier is None or ref.identifier not in states
+                ]
+                if not absent:
+                    continue
+                if len(absent) == len(states_by_team):
+                    unresolved.append(ref)
+                    continue
+                divergent.extend(
+                    f"{ref.describe()} on team {team!r}" for team in absent
+                )
+                continue
             if ref.kind not in known:
                 known[ref.kind] = await self._identifiers_of(ref.kind)
             if ref.identifier is None or ref.identifier not in known[ref.kind]:
                 unresolved.append(ref)
+        if divergent:
+            raise TrackerBootValidationError(
+                "the operation's teams do not share one workflow-state "
+                "vocabulary, so the lifecycle writer cannot set a declared "
+                "state on every board it dispatches from",
+                unresolved=divergent,
+            )
         return tuple(unresolved)
 
     async def ensure_mappings(
@@ -786,13 +830,43 @@ class LinearMcpTracker:
             return frozenset(await self._document_definitions())
         return frozenset(entry.name for entry in await self._named_entries(kind))
 
+    async def _workflow_states_by_team(self) -> Mapping[str, frozenset[str]]:
+        """The workflow-state vocabulary of each DECLARED team, held apart.
+
+        One call per declared team, because the tool takes one: its input
+        schema declares ``team`` required, and a call without it is a 400
+        rather than a workspace-wide answer.  The vendor replies with a
+        BARE ARRAY of ``{id, type, name}`` — no envelope to unwrap.
+
+        The results are never merged.  These are per-team entities on this
+        backend, so a union would let a state one team holds stand in for
+        a team that cannot express it, and the operation would boot with a
+        hole exactly where the lifecycle writer needs that state.  The
+        adapter reads the NAME because the name is what it writes back:
+        ``save_issue`` takes a state by name, so the id is a field nothing
+        on this path has a use for.
+
+        Empty when the operation declares no team, which is not an empty
+        vocabulary — it is no vocabulary read at all, and the caller
+        treats it as such.
+        """
+        tool = _MAPPING_TOOL_BY_KIND[MappingKind.WORKFLOW_STATE]
+        by_team: dict[str, frozenset[str]] = {}
+        for identifier in sorted(set(self._team_identifiers.values())):
+            payload = await self._call(tool, {"team": identifier})
+            by_team[identifier] = frozenset(
+                entry.name for entry in self._validate_named_array(payload, tool)
+            )
+        return by_team
+
     async def _named_entries(self, kind: MappingKind) -> Sequence[LinearNamedWire]:
         """Every named entity the workspace lists for *kind*.
 
         One shape per tool, because that is what the server sends: each
-        listing names its array after itself, and ``list_issue_statuses``
-        sends a bare array under no key at all.  There is no envelope key
-        shared across them to read generically.
+        listing names its array after itself, and there is no envelope key
+        shared across them to read generically.  ``WORKFLOW_STATE`` is not
+        served here at all — its tool answers for one team and only for
+        one team, which :meth:`_workflow_states_by_team` is.
         """
         if kind is MappingKind.TEAM:
             return await self._team_listing()
@@ -800,9 +874,7 @@ class LinearMcpTracker:
         payload = await self._call(tool, {})
         if kind is MappingKind.USER:
             return self._validate(LinearUserListWire, payload, tool).users
-        if kind is MappingKind.QUEUE_STATE:
-            return self._validate(LinearLabelListWire, payload, tool).labels
-        return self._validate_named_array(payload, tool)
+        return self._validate(LinearLabelListWire, payload, tool).labels
 
     async def _read_issue_wire(self, issue_key: str) -> LinearIssueDetailWire:
         payload = await self._call(

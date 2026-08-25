@@ -276,17 +276,17 @@ LIVE_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
 }
 
 
-#: The one tool whose REQUIRED argument the adapter does not send, pinned
-#: so a second one cannot appear unnoticed.  ``list_issue_statuses``
-#: declares ``team`` required and the adapter calls it with no arguments
-#: at all; the remedy is not mechanically decidable from the schema — an
-#: operation declaring several teams has several status vocabularies, and
-#: whether "the workspace resolves this state" means their union or their
-#: intersection is a decision the config model does not carry.  Reported
-#: rather than guessed (KOD-143 sweep, 2026-08-25).
-KNOWN_UNMET_REQUIREMENTS: Mapping[str, frozenset[str]] = {
-    "list_issue_statuses": frozenset({"team"}),
-}
+#: Every required argument of every tool the adapter calls is sent.  The
+#: set is EMPTY and the tripwire asserts exactly that, rather than holding
+#: a list of forgiven omissions that a second omission could join
+#: unnoticed.
+#:
+#: It held one entry until the fire-ruling of 2026-08-25 on KOD-143 gave
+#: ``list_issue_statuses`` the semantics its ``team`` argument needs: the
+#: vocabulary resolves per declared team, all-must-resolve, because it is
+#: a WRITE contract — the lifecycle writer sets these states on whichever
+#: declared team's issue was dispatched.
+KNOWN_UNMET_REQUIREMENTS: Mapping[str, frozenset[str]] = {}
 
 
 async def sent_arguments() -> Mapping[str, set[str]]:
@@ -390,21 +390,23 @@ async def test_every_argument_key_is_a_declared_property(
     assert undeclared == {}
 
 
-async def test_the_only_unmet_requirement_is_the_known_one(
+async def test_every_required_argument_is_sent(
     sent: Mapping[str, set[str]],
 ) -> None:
-    """The stop-point, pinned as a tripwire rather than left silent.
+    """No tool is called short of what its own schema demands.
 
-    The gap itself is real and boot will meet it — this asserts only that
-    it is the whole gap, so a second omitted required argument fails here
-    instead of on the workspace.
+    The last gap — ``list_issue_statuses`` called with ``{}`` against a
+    schema requiring ``team`` — was the next boot wall, and it is closed.
+    Asserted against the empty set rather than against a forgiven list, so
+    a new omission fails here instead of on the workspace.
     """
     unmet = {
         tool: LIVE_INPUT_SCHEMAS[tool].required - keys
         for tool, keys in sorted(sent.items())
         if LIVE_INPUT_SCHEMAS[tool].required - keys
     }
-    assert unmet == dict(KNOWN_UNMET_REQUIREMENTS)
+    assert unmet == {}
+    assert KNOWN_UNMET_REQUIREMENTS == {}
 
 
 async def test_the_team_container_argument_is_sent_as_a_uuid(

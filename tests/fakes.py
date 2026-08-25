@@ -1567,7 +1567,7 @@ class FakeLinearMcpServer:
         teams: Sequence[str] = (),
         labels: Sequence[str] = (),
         label_containers: Mapping[str, str] | None = None,
-        statuses: Sequence[str] = (),
+        statuses: Mapping[str, Sequence[str]] | None = None,
         state_types: Mapping[str, str] | None = None,
         actor: str = "fixture-actor",
         comment_instants: Sequence[datetime] = (),
@@ -1583,7 +1583,13 @@ class FakeLinearMcpServer:
         self.teams: list[str] = list(teams)
         self.labels: list[str] = list(labels)
         self.label_containers: dict[str, str] = dict(label_containers or {})
-        self.statuses: list[str] = list(statuses)
+        #: The workflow-state vocabulary each team offers, keyed by team.
+        #: Per team rather than per workspace because that is what the
+        #: backend holds: the listing tool takes a team and answers for it
+        #: alone, and two teams' vocabularies routinely differ.
+        self.statuses: dict[str, list[str]] = {
+            team: list(names) for team, names in (statuses or {}).items()
+        }
         self.state_types: dict[str, str] = dict(state_types or {})
         self.actor: str = actor
         self.calls: list[tuple[str, Mapping[str, object]]] = []
@@ -1839,14 +1845,25 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Sequence[Mapping[str, object]]:
-        """A BARE ARRAY — this tool sends no envelope at all, measured."""
+        """One team's vocabulary, as a BARE ARRAY — no envelope, measured.
+
+        ``team`` is required by the tool's declared input schema, so a
+        call without one is a refusal here as it is there.  The ids are
+        scoped to the team that answered: a status is a per-team entity on
+        this backend and two teams never share one.
+        """
+        team = str(arguments["team"])
+        names = self.statuses.get(team)
+        if names is None:
+            msg = f"fake workspace holds no team {team!r}"
+            raise LookupError(msg)
         return [
             {
-                "id": f"{name}-id",
+                "id": f"{team}-{name}-id",
                 "type": self.state_types.get(name, "backlog"),
                 "name": name,
             }
-            for name in self.statuses
+            for name in names
         ]
 
 
