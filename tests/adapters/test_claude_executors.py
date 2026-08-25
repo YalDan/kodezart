@@ -448,7 +448,7 @@ async def test_a_granted_session_carries_the_knowledge_server(module) -> None:
     assert definition["type"] == "http"
     assert definition["url"] == grant.server_url
     assert definition["headers"] == {
-        grant.auth_header: f"{grant.auth_scheme} {grant.credential}",
+        grant.auth_header: f"{grant.auth_scheme} {grant.credential.get_secret_value()}",
     }
 
 
@@ -553,7 +553,11 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
         FIXTURE_KNOWLEDGE_SERVER: {
             "type": "http",
             "url": "https://knowledge.invalid/mcp",
-            "headers": {"Authorization": f"Bearer {knowledge_grant_for().credential}"},
+            "headers": {
+                "Authorization": (
+                    f"Bearer {knowledge_grant_for().credential.get_secret_value()}"
+                )
+            },
         },
     }
 

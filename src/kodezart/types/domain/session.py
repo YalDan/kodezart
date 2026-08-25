@@ -11,7 +11,7 @@ from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Final, Self
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, SecretStr, model_validator
 
 from kodezart.types.base import CamelCaseModel
 
@@ -80,8 +80,8 @@ class KnowledgeGrant(CamelCaseModel):
     server_url: str | None = None
     auth_header: str | None = None
     auth_scheme: str | None = None
-    credential: str | None = Field(default=None, exclude=True, repr=False)
-    gateway_credential: str | None = Field(default=None, exclude=True, repr=False)
+    credential: SecretStr | None = Field(default=None, exclude=True)
+    gateway_credential: SecretStr | None = Field(default=None, exclude=True)
     command: str | None = None
     args: tuple[str, ...] = ()
     env: dict[str, str] = Field(default_factory=dict)

@@ -87,7 +87,9 @@ def _http_definition(
     """
     headers: dict[str, str] = {}
     if grant.gateway_credential is not None:
-        headers[_GATEWAY_HEADER] = f"{_GATEWAY_SCHEME} {grant.gateway_credential}"
+        headers[_GATEWAY_HEADER] = (
+            f"{_GATEWAY_SCHEME} {grant.gateway_credential.get_secret_value()}"
+        )
     if grant.credential is not None:
         if grant.auth_header is None:
             msg = (
@@ -108,9 +110,9 @@ def _http_definition(
             )
             raise ValueError(msg)
         composed = (
-            grant.credential
+            grant.credential.get_secret_value()
             if grant.auth_scheme is None
-            else f"{grant.auth_scheme} {grant.credential}"
+            else f"{grant.auth_scheme} {grant.credential.get_secret_value()}"
         )
         headers[grant.auth_header] = composed
     if not headers:
@@ -177,7 +179,7 @@ def _stdio_definition(
         "type": "stdio",
         "command": grant.command,
         "args": list(grant.args),
-        "env": {**grant.env, grant.credential_env: grant.credential},
+        "env": {**grant.env, grant.credential_env: grant.credential.get_secret_value()},
     }
 
 

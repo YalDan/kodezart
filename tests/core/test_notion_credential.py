@@ -34,7 +34,7 @@ def test_the_credential_resolves_from_its_kodezart_env_var(
     """The field is env-sourced under the shared prefix."""
     monkeypatch.setenv(_ENV_VAR, _FIXTURE_CREDENTIAL)
 
-    assert AppConfig().knowledge_mcp_token == _FIXTURE_CREDENTIAL
+    assert AppConfig().knowledge_mcp_token.get_secret_value() == _FIXTURE_CREDENTIAL
 
 
 def test_an_unset_environment_yields_none_not_a_placeholder(
@@ -74,7 +74,7 @@ def test_the_field_is_still_readable_after_being_excluded(
     """
     monkeypatch.setenv(_ENV_VAR, _FIXTURE_CREDENTIAL)
 
-    assert AppConfig().knowledge_mcp_token == _FIXTURE_CREDENTIAL
+    assert AppConfig().knowledge_mcp_token.get_secret_value() == _FIXTURE_CREDENTIAL
 
 
 async def test_no_boot_log_line_carries_the_credential(

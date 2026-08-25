@@ -550,9 +550,7 @@ class TestCommentShape:
         assert comment.author.name == APPROVER_NAME
         assert comment.author.id == APPROVER_ID
         assert comment.body == "a fixture comment"
-        assert comment.created_at == datetime(
-            2031, 2, 11, 8, 15, 1, 200000, tzinfo=UTC
-        )
+        assert comment.created_at == datetime(2031, 2, 11, 8, 15, 1, 200000, tzinfo=UTC)
 
     def test_the_invented_user_and_issue_id_comment_no_longer_validates(self) -> None:
         """Two required fields the vendor never sends — the boot-killer class."""

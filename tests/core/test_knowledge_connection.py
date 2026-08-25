@@ -169,8 +169,8 @@ def test_neither_credential_survives_grant_serialization() -> None:
     """Both secret-bearing fields are excluded from both serializations."""
     grant = _http_grant(gateway_credential=_GATEWAY_CREDENTIAL)
 
-    assert grant.credential == _CREDENTIAL
-    assert grant.gateway_credential == _GATEWAY_CREDENTIAL
+    assert grant.credential.get_secret_value() == _CREDENTIAL
+    assert grant.gateway_credential.get_secret_value() == _GATEWAY_CREDENTIAL
     assert _CREDENTIAL not in grant.model_dump_json()
     assert _GATEWAY_CREDENTIAL not in grant.model_dump_json()
     assert _CREDENTIAL not in str(grant.model_dump())
@@ -185,8 +185,8 @@ def test_the_two_layer_shape_is_expressible_on_the_grant() -> None:
         auth_scheme=None,
     )
 
-    assert grant.gateway_credential == _GATEWAY_CREDENTIAL
-    assert grant.credential == _CREDENTIAL
+    assert grant.gateway_credential.get_secret_value() == _GATEWAY_CREDENTIAL
+    assert grant.credential.get_secret_value() == _CREDENTIAL
     assert grant.auth_header == "X-Upstream-Token"
     assert grant.auth_scheme is None
 
@@ -268,7 +268,7 @@ def test_a_full_stdio_route_resolves_into_the_grant(
     assert grant.args == ("--stdio",)
     assert grant.env == {"LOG_LEVEL": "debug"}
     assert grant.credential_env == "KNOWLEDGE_TOKEN"
-    assert grant.credential == _CREDENTIAL
+    assert grant.credential.get_secret_value() == _CREDENTIAL
     assert grant.server_url is None
     assert grant.auth_header is None
     assert grant.auth_scheme is None
@@ -301,7 +301,7 @@ def test_the_gateway_credential_is_env_sourced_and_never_serialized(
 
     config = AppConfig()
 
-    assert config.knowledge_mcp_gateway_token == _GATEWAY_CREDENTIAL
+    assert config.knowledge_mcp_gateway_token.get_secret_value() == _GATEWAY_CREDENTIAL
     assert _GATEWAY_CREDENTIAL not in json.dumps(config.model_dump(mode="json"))
     assert _GATEWAY_CREDENTIAL not in config.model_dump_json()
     monkeypatch.delenv(_GATEWAY_VAR)
@@ -324,8 +324,8 @@ def test_no_credential_value_appears_in_any_repr(
     config = AppConfig()
     grant = _http_grant(gateway_credential=_GATEWAY_CREDENTIAL)
 
-    assert config.knowledge_mcp_token == _CREDENTIAL
-    assert grant.gateway_credential == _GATEWAY_CREDENTIAL
+    assert config.knowledge_mcp_token.get_secret_value() == _CREDENTIAL
+    assert grant.gateway_credential.get_secret_value() == _GATEWAY_CREDENTIAL
     assert _CREDENTIAL not in repr(config)
     assert _GATEWAY_CREDENTIAL not in repr(config)
     assert _CREDENTIAL not in repr(grant)
@@ -361,7 +361,7 @@ def test_a_gateway_credential_satisfies_the_grant_credential_rule(
 
     grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
 
-    assert grant.gateway_credential == _GATEWAY_CREDENTIAL
+    assert grant.gateway_credential.get_secret_value() == _GATEWAY_CREDENTIAL
     assert grant.credential is None
 
 

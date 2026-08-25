@@ -40,8 +40,7 @@ def test_the_one_line_summary_is_unchanged_in_shape() -> None:
     raised = _validation_error()
     diagnostics = failure_diagnostics(raised)
     assert (
-        diagnostics["failure"]
-        == f"{type(raised).__name__}: {raised}".splitlines()[0]
+        diagnostics["failure"] == f"{type(raised).__name__}: {raised}".splitlines()[0]
     )
 
 

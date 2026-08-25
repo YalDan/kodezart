@@ -512,10 +512,9 @@ class AppConfig(BaseSettings):
         le=300.0,
         description="Time one asset fetch may take before the fire fails to build.",
     )
-    knowledge_mcp_token: str | None = Field(
+    knowledge_mcp_token: SecretStr | None = Field(
         default=None,
         exclude=True,
-        repr=False,
         description=(
             "Credential for the knowledge MCP server. "
             "Environment only, and excluded from serialization: a dumped "
@@ -564,10 +563,9 @@ class AppConfig(BaseSettings):
             "which optional fields happen to be set."
         ),
     )
-    knowledge_mcp_gateway_token: str | None = Field(
+    knowledge_mcp_gateway_token: SecretStr | None = Field(
         default=None,
         exclude=True,
-        repr=False,
         description=(
             "Gateway credential a client presents to a SELF-HOSTED knowledge "
             "server, as a bearer in the Authorization header. Distinct from "

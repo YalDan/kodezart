@@ -188,5 +188,5 @@ def test_a_grant_never_serializes_its_credential() -> None:
     grant = knowledge_grant_for(SessionType.TICKET_FIRE)
 
     assert grant.credential is not None
-    assert grant.credential not in grant.model_dump_json()
+    assert grant.credential.get_secret_value() not in grant.model_dump_json()
     assert NO_KNOWLEDGE_GRANT.granted == ()
