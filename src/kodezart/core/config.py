@@ -11,7 +11,11 @@ from kodezart.types.domain.gating import (
     GateVerdict,
     RedactionCategory,
 )
-from kodezart.types.domain.session import KnowledgeGrant, SessionType
+from kodezart.types.domain.session import (
+    KnowledgeGrant,
+    KnowledgeTransport,
+    SessionType,
+)
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
@@ -44,6 +48,11 @@ class AppConfig(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="forbid",
+        # The library's own mechanism for expressing None through the
+        # environment: a nullable field set to the literal string "null"
+        # loads as absent.  Needed because absence is a first-class state
+        # here — a scheme-less auth header is "scheme is None", never "".
+        env_parse_none_str="null",
     )
 
     project_name: str = Field(
@@ -506,6 +515,7 @@ class AppConfig(BaseSettings):
     knowledge_mcp_token: str | None = Field(
         default=None,
         exclude=True,
+        repr=False,
         description=(
             "Credential for the knowledge MCP server. "
             "Environment only, and excluded from serialization: a dumped "
@@ -536,10 +546,74 @@ class AppConfig(BaseSettings):
         min_length=1,
         description="Request header the knowledge credential is presented in.",
     )
-    knowledge_mcp_auth_scheme: str = Field(
+    knowledge_mcp_auth_scheme: str | None = Field(
         default="Bearer",
         min_length=1,
-        description="Scheme prefixing the knowledge credential in its auth header.",
+        description=(
+            "Scheme prefixing the knowledge credential in its auth header. "
+            "The literal value null means no scheme: the credential rides "
+            "raw in its header."
+        ),
+    )
+    knowledge_mcp_transport: KnowledgeTransport = Field(
+        default=KnowledgeTransport.HTTP,
+        description=(
+            "How a granted session reaches the knowledge MCP server: http "
+            "dials the configured endpoint with headers, stdio spawns the "
+            "configured command. The route is stated, never inferred from "
+            "which optional fields happen to be set."
+        ),
+    )
+    knowledge_mcp_gateway_token: str | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        description=(
+            "Gateway credential a client presents to a SELF-HOSTED knowledge "
+            "server, as a bearer in the Authorization header. Distinct from "
+            "the upstream credential the server uses against the vendor API. "
+            "Environment only, and excluded from serialization."
+        ),
+    )
+    knowledge_mcp_command: str | None = Field(
+        default=None,
+        description=(
+            "Absolute path of the self-hosted knowledge server binary a "
+            "granted session spawns under the stdio transport. Package "
+            "runners are refused by name: they resolve or fetch their "
+            "payload at spawn time, in a working directory a cloned "
+            "repository controls."
+        ),
+    )
+    knowledge_mcp_args: list[str] = Field(
+        default_factory=list,
+        description="Arguments the stdio knowledge server is spawned with.",
+    )
+    knowledge_mcp_env: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Non-secret environment entries for the stdio knowledge server. "
+            "The credential never rides here — it is delivered separately, "
+            "under the entry KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV names."
+        ),
+    )
+    knowledge_mcp_credential_env: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Name of the environment entry the stdio knowledge server reads "
+            "its credential from. The value comes from "
+            "KODEZART_KNOWLEDGE_MCP_TOKEN; this names only where it lands."
+        ),
+    )
+    knowledge_mcp_interactive_auth_hosts: list[str] = Field(
+        default_factory=lambda: ["mcp.notion.com"],
+        description=(
+            "Hosts that authenticate interactively (OAuth) and accept no "
+            "static credential. A session mapping that composes a static "
+            "header for one of these refuses, naming the conflict. The "
+            "vendor lives in the value, never in the schema."
+        ),
     )
     checkpoint_url: str | None = Field(
         default=None,
@@ -769,7 +843,11 @@ class AppConfig(BaseSettings):
         cannot authenticate against, which fails at the first tool call
         with a vendor error rather than at boot with a configuration one.
         """
-        if self.knowledge_session_grants and self.knowledge_mcp_token is None:
+        if (
+            self.knowledge_session_grants
+            and self.knowledge_mcp_token is None
+            and self.knowledge_mcp_gateway_token is None
+        ):
             granted = ", ".join(
                 session_type.value for session_type in self.knowledge_session_grants
             )
@@ -777,7 +855,119 @@ class AppConfig(BaseSettings):
                 f"KODEZART_KNOWLEDGE_SESSION_GRANTS names {granted} but "
                 f"KODEZART_KNOWLEDGE_MCP_TOKEN is unset: a granted session would "
                 f"attach an unauthenticated knowledge server. Set the "
-                f"credential, or empty the grant list."
+                f"credential (or, for a self-hosted http server holding its "
+                f"own upstream token, KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN), "
+                f"or empty the grant list."
+            )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _check_the_knowledge_transport_reads_what_is_set(self) -> Self:
+        """A field the declared route never reads is refused, never ignored.
+
+        Configuration dialled by nothing is the defect class the knowledge
+        connection was refiled over, so a stray member under the wrong
+        transport aborts boot naming it.  Fields that carry shipped
+        defaults are judged by whether a source actually SET them — an
+        inert default under the other route is legal, an explicit value is
+        not.
+        """
+        if self.knowledge_mcp_transport is KnowledgeTransport.HTTP:
+            stray = [
+                name
+                for name, value in (
+                    ("KODEZART_KNOWLEDGE_MCP_COMMAND", self.knowledge_mcp_command),
+                    (
+                        "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV",
+                        self.knowledge_mcp_credential_env,
+                    ),
+                    ("KODEZART_KNOWLEDGE_MCP_ARGS", self.knowledge_mcp_args or None),
+                    ("KODEZART_KNOWLEDGE_MCP_ENV", self.knowledge_mcp_env or None),
+                )
+                if value is not None
+            ]
+            if stray:
+                msg = (
+                    f"the http knowledge transport reads none of: "
+                    f"{', '.join(stray)}. These belong to the stdio "
+                    f"transport; set KODEZART_KNOWLEDGE_MCP_TRANSPORT=stdio "
+                    f"or unset them."
+                )
+                raise ValueError(msg)
+            return self
+        if self.knowledge_mcp_command is None:
+            msg = (
+                "KODEZART_KNOWLEDGE_MCP_TRANSPORT is stdio but "
+                "KODEZART_KNOWLEDGE_MCP_COMMAND is unset: there is no process "
+                "for a granted session to spawn."
+            )
+            raise ValueError(msg)
+        if self.knowledge_mcp_gateway_token is not None:
+            msg = (
+                "KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN is set under the stdio "
+                "knowledge transport: a spawned process has no headers to "
+                "present a gateway credential in."
+            )
+            raise ValueError(msg)
+        stray = [
+            name
+            for field, name in (
+                ("knowledge_mcp_server_url", "KODEZART_KNOWLEDGE_MCP_SERVER_URL"),
+                ("knowledge_mcp_auth_header", "KODEZART_KNOWLEDGE_MCP_AUTH_HEADER"),
+                ("knowledge_mcp_auth_scheme", "KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME"),
+            )
+            if field in self.model_fields_set
+        ]
+        if stray:
+            msg = (
+                f"the stdio knowledge transport has no endpoint and no "
+                f"headers, so it reads none of: {', '.join(stray)}. Unset "
+                f"them, or use the http transport."
+            )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _check_a_stdio_credential_has_exactly_one_delivery_entry(self) -> Self:
+        """The credential and its landing entry are a pair, both or neither.
+
+        A credential with nowhere to land and an entry with nothing to
+        deliver are the two half-shapes; a delivery entry that collides
+        with a declared env member is two writers of one entry.
+        """
+        if self.knowledge_mcp_transport is not KnowledgeTransport.STDIO:
+            return self
+        if (
+            self.knowledge_mcp_token is not None
+            and self.knowledge_mcp_credential_env is None
+        ):
+            msg = (
+                "KODEZART_KNOWLEDGE_MCP_TOKEN is set under the stdio "
+                "knowledge transport but KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV "
+                "is not: the credential has no environment entry to be "
+                "delivered under."
+            )
+            raise ValueError(msg)
+        if (
+            self.knowledge_mcp_credential_env is not None
+            and self.knowledge_mcp_token is None
+        ):
+            msg = (
+                "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV is set but "
+                "KODEZART_KNOWLEDGE_MCP_TOKEN is not: a delivery entry with "
+                "no credential to deliver."
+            )
+            raise ValueError(msg)
+        if (
+            self.knowledge_mcp_credential_env is not None
+            and self.knowledge_mcp_credential_env in self.knowledge_mcp_env
+        ):
+            msg = (
+                f"KODEZART_KNOWLEDGE_MCP_ENV already carries "
+                f"{self.knowledge_mcp_credential_env!r}, the entry "
+                f"KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV names: two writers "
+                f"of one environment entry."
             )
             raise ValueError(msg)
         return self
@@ -810,13 +1000,28 @@ class AppConfig(BaseSettings):
         defaulted map is a grant that silently attaches a server and tells
         the session nothing about what it reaches.
         """
+        if self.knowledge_mcp_transport is KnowledgeTransport.STDIO:
+            return KnowledgeGrant(
+                granted=tuple(self.knowledge_session_grants),
+                transport=KnowledgeTransport.STDIO,
+                server_name=self.knowledge_mcp_server_name,
+                command=self.knowledge_mcp_command,
+                args=tuple(self.knowledge_mcp_args),
+                env=dict(self.knowledge_mcp_env),
+                credential_env=self.knowledge_mcp_credential_env,
+                credential=self.knowledge_mcp_token,
+                knowledge_map=knowledge_map,
+            )
         return KnowledgeGrant(
             granted=tuple(self.knowledge_session_grants),
+            transport=KnowledgeTransport.HTTP,
             server_name=self.knowledge_mcp_server_name,
             server_url=self.knowledge_mcp_server_url,
             auth_header=self.knowledge_mcp_auth_header,
             auth_scheme=self.knowledge_mcp_auth_scheme,
             credential=self.knowledge_mcp_token,
+            gateway_credential=self.knowledge_mcp_gateway_token,
+            interactive_auth_hosts=tuple(self.knowledge_mcp_interactive_auth_hosts),
             knowledge_map=knowledge_map,
         )
 
