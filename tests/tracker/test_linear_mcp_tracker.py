@@ -18,9 +18,12 @@ from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     ClaimStatus,
+    EnsureAction,
     IssuePriority,
     IssueQuery,
     IssueRelationKind,
+    MappingKind,
+    MappingRef,
     priority_rank,
 )
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
@@ -356,3 +359,122 @@ class TestDeterministicPath:
             query=IssueQuery(page_size=7),
         )
         assert server.tool_calls("list_issues")[0]["limit"] == 7
+
+
+class TestLabelScopedReading:
+    """Labels are read as a UNION of listings, one of them per declared team.
+
+    ``list_issue_labels`` answers with the workspace-level labels when it
+    is sent no team and with a team's own labels when it is sent one, so
+    neither answer is "the labels this workspace holds".  Reading only the
+    unscoped one is what made a boot invisible to itself: it had created
+    ``queue:done`` team-scoped, per its ref's scope, and the next boot
+    could not see it, re-created it, and was refused by name (KOD-143, the
+    label addendum of 2026-08-25).
+
+    Every row here turns on WHICH listing carried an entry.  None of them
+    can be satisfied by reading a container off the entry itself, which is
+    the reading the addendum forbids and which no live payload supports.
+    """
+
+    TEAM = TEAM_IDENTIFIERS["engineering"]
+    LABEL = "queue:scoped"
+
+    def _ref(self, identifier: str, scope: str | None) -> MappingRef:
+        return MappingRef(
+            kind=MappingKind.QUEUE_STATE,
+            name="scoped",
+            identifier=identifier,
+            scope=scope,
+        )
+
+    def _server(self, **overrides: object) -> FakeLinearMcpServer:
+        kwargs: dict[str, object] = {
+            "teams": [self.TEAM],
+            "labels": [],
+            "users": [],
+            "statuses": {self.TEAM: list(STATE_TYPES)},
+            "state_types": STATE_TYPES,
+        }
+        kwargs.update(overrides)
+        return FakeLinearMcpServer(**kwargs)  # type: ignore[arg-type]
+
+    async def test_the_read_is_the_unscoped_listing_and_one_per_declared_team(
+        self,
+    ) -> None:
+        """Both listings, every time: neither one answers for the other."""
+        server = self._server()
+        await tracker_over(server).resolve_mappings(
+            refs=[self._ref(self.LABEL, None)],
+        )
+
+        assert server.tool_calls("list_issue_labels") == [{}, {"team": self.TEAM}]
+
+    async def test_a_team_scoped_label_the_unscoped_listing_hides_is_adopted(
+        self,
+    ) -> None:
+        """Boot five, as a fixture: the label a boot created, next boot.
+
+        The workspace holds it on the declared team and the unscoped
+        listing does not report it at all.  A reader of that listing alone
+        calls it absent and re-creates it, which is the write the vendor
+        refuses by name — so the assertion is that nothing was written.
+        """
+        server = self._server(
+            labels=[self.LABEL],
+            label_containers={self.LABEL: f"{self.TEAM}-id"},
+        )
+        tracker = tracker_over(server)
+        assert server.tool_calls("list_issue_labels") == []
+
+        (outcome,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.LABEL, self.TEAM)],
+        )
+
+        assert outcome.action is EnsureAction.ADOPTED
+        assert server.tool_calls("create_issue_label") == []
+        # And the validation pass that follows an ensure resolves it too:
+        # boot four got that far and then could not see its own label.
+        assert await tracker.resolve_mappings(refs=[self._ref(self.LABEL, None)]) == ()
+
+    async def test_a_label_no_listing_carries_is_created_once_in_the_refs_scope(
+        self,
+    ) -> None:
+        """Absent from both listings is the one case that writes."""
+        server = self._server()
+        tracker = tracker_over(server)
+
+        (outcome,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.LABEL, self.TEAM)],
+        )
+
+        assert outcome.action is EnsureAction.CREATED
+        assert server.tool_calls("create_issue_label") == [
+            {"name": self.LABEL, "teamId": f"{self.TEAM}-id"},
+        ]
+        assert server.label_containers[self.LABEL] == f"{self.TEAM}-id"
+        # Exactly once: the second boot reads the label its first one made.
+        (again,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.LABEL, self.TEAM)],
+        )
+        assert again.action is EnsureAction.ADOPTED
+        assert len(server.tool_calls("create_issue_label")) == 1
+
+    async def test_a_workspace_level_label_resolves_and_serves_any_scope(
+        self,
+    ) -> None:
+        """The unscoped listing's own entries still answer, for every ref.
+
+        A workspace-level label is addressable on every board, so a ref
+        declaring a team adopts it rather than making a second one.
+        """
+        server = self._server(labels=[self.LABEL])
+        tracker = tracker_over(server)
+
+        assert await tracker.resolve_mappings(refs=[self._ref(self.LABEL, None)]) == ()
+        (outcome,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.LABEL, self.TEAM)],
+        )
+
+        assert outcome.action is EnsureAction.ADOPTED
+        assert server.tool_calls("create_issue_label") == []

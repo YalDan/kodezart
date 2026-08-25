@@ -199,11 +199,14 @@ class LinearNamedWire(LinearWireModel):
     """A named workspace entity — a user, team, label or status.
 
     ``team_id`` is the container the entity is defined in, when the vendor
-    reports one.  Absent means the listing did not say, which is NOT the
-    same fact as "defined at workspace scope" and is never read as one.
-    No measured listing carries the field at all, so today it is always
-    absent; the distinction is kept because the ensure path's refusal
-    turns on it.
+    reports one — and NOTHING resolves an entity's container from it.  No
+    measured listing carries the field at all, so a reader of it would see
+    every team-scoped label as workspace-level; the adapter takes the
+    container from WHICH listing answered instead, that being the only
+    statement about scope these payloads actually make (KOD-143, the label
+    addendum of 2026-08-25).  The declaration stays because the field is
+    the vendor's own and optional, as the asset wire's unmeasured fields
+    are.
     """
 
     name: str

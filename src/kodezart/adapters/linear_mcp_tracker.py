@@ -192,6 +192,54 @@ def _utc_now() -> datetime:
     return datetime.now(tz=UTC)
 
 
+@dataclass
+class _LabelListings:
+    """Every label listing this adapter read, kept apart by which one answered.
+
+    ``list_issue_labels`` answers a DIFFERENT set depending on whether
+    ``team`` was sent, so "does the workspace hold this label?" has no
+    single answer — it has one per listing, and which listing carried an
+    entry is what that entry's container IS.
+
+    The entries' own ``teamId`` is never consulted for this.  The
+    workspace-level listing carries no such field at all, so reading it
+    would file every team-scoped label under workspace scope: exactly the
+    misreading that made a freshly created label invisible to the boot
+    that created it (KOD-143, the label addendum of 2026-08-25).
+    """
+
+    workspace: set[str]
+    by_team: dict[str, set[str]]
+
+    def names(self) -> frozenset[str]:
+        """Every label name any listing answered with."""
+        return frozenset(self.workspace).union(*self.by_team.values())
+
+    def serves(self, name: str, scope: str | None) -> bool:
+        """Whether *name* as already held serves a ref declaring *scope*.
+
+        A workspace-level label serves a ref on any team — it is
+        addressable on every board — and a team's own label serves only a
+        ref declaring that team.
+        """
+        return name in self.workspace or (
+            scope is not None and name in self.by_team.get(scope, set())
+        )
+
+    def teams_holding(self, name: str) -> tuple[str, ...]:
+        """The declared teams whose own listing carried *name*."""
+        return tuple(
+            sorted(team for team, names in self.by_team.items() if name in names)
+        )
+
+    def record(self, name: str, scope: str | None) -> None:
+        """Hold a label this adapter just created, in the scope it made it."""
+        if scope is None:
+            self.workspace.add(name)
+        else:
+            self.by_team.setdefault(scope, set()).add(name)
+
+
 @dataclass(frozen=True)
 class _ClaimMarker:
     """One parsed claim marker from the issue comment log. Adapter-private."""
@@ -626,13 +674,20 @@ class LinearMcpTracker:
         workspace writes nothing at all.
 
         R8's definition of "an existing definition" is ``(name, container)``,
-        which is exactly what a create writes.  A label the workspace
-        reports under a container other than the declared one would have to
-        be re-scoped to serve this ref, so it raises and nothing is written
-        — not for that ref and not for any ref after it, since the loop
-        aborts.  A listing that reports NO container has said nothing to
-        differ from and the label is adopted: refusing on the backend's
-        silence would read absence as a positive fact about the workspace.
+        which is exactly what a create writes, and the container is the
+        LISTING that answered with the label rather than any field on the
+        entry.  A label a declared team holds and this ref does not declare
+        would have to be re-scoped to serve it, so it raises and nothing is
+        written — not for that ref and not for any ref after it, since the
+        loop aborts.  A workspace-level label is adopted by a ref of any
+        scope: it is already addressable on every board.
+
+        What no listing carried is CREATED, even when the workspace holds
+        the name somewhere no declared team owns.  That container is
+        unobservable — no read this adapter is licensed to make reports it
+        — and the vendor's own by-name refusal is what stops the write,
+        loudly.  Tolerating that refusal here would be the same guess in
+        the other direction (KOD-143 addendum 2 of 2026-08-25).
 
         Documents are instated by TITLE and carry a server-assigned id, so
         their arm of R8's definition is ``(title, id)`` and the outcome
@@ -666,15 +721,7 @@ class LinearMcpTracker:
             declared = (
                 None if ref.scope is None else await self._team_container(ref.scope)
             )
-            if identifier in definitions:
-                container = definitions[identifier]
-                if container is not None and container != declared:
-                    raise TrackerEnsureConflictError(
-                        "the workspace defines this value in another container; "
-                        f"declared {ref.scope!r} ({declared!r}), "
-                        f"found {container!r}",
-                        entry=ref.describe(),
-                    )
+            if definitions.serves(identifier, ref.scope):
                 outcomes.append(
                     MappingOutcome(
                         ref=ref,
@@ -683,11 +730,19 @@ class LinearMcpTracker:
                     ),
                 )
                 continue
+            held = definitions.teams_holding(identifier)
+            if held:
+                raise TrackerEnsureConflictError(
+                    "the workspace defines this value in another container; "
+                    f"declared {ref.scope!r}, "
+                    f"found {', '.join(repr(team) for team in held)}",
+                    entry=ref.describe(),
+                )
             await self._call(
                 _TOOL_CREATE_ISSUE_LABEL,
                 _label_arguments(identifier, declared),
             )
-            definitions[identifier] = declared
+            definitions.record(identifier, ref.scope)
             outcomes.append(
                 MappingOutcome(
                     ref=ref,
@@ -767,16 +822,42 @@ class LinearMcpTracker:
             identifier=created.id,
         )
 
-    async def _label_definitions(self) -> dict[str, str | None]:
-        """Every queue-state label the workspace holds, with its container.
+    async def _label_definitions(self) -> _LabelListings:
+        """Every queue-state label the workspace resolves, by listing.
 
-        The container is whatever the listing reports, which is a team
-        UUID when it reports one at all — the same unit
-        :meth:`_team_container` resolves a declared team name into, so the
-        ensure path compares like with like.
+        The workspace-level listing UNION one team-scoped listing per
+        DECLARED team, because the unscoped call answers with the
+        workspace-level labels ALONE.  A boot that read only that one
+        re-created the team-scoped label its own previous boot had made,
+        and the vendor refused it by name (KOD-143, the label addendum of
+        2026-08-25).  Idempotence comes from reading both listings, never
+        from forgiving that refusal.
+
+        One call per declared team, for the same reason the workflow-state
+        vocabulary is read that way: the tool answers for one team, so
+        several teams are several answers and no listing spans them.  The
+        teams are named the way the configuration names them — ``team``
+        takes "name or ID", and only ``create_issue_label.teamId`` insists
+        on the UUID.
         """
-        entries = await self._named_entries(MappingKind.QUEUE_STATE)
-        return {entry.name: entry.team_id for entry in entries}
+        workspace = {entry.name for entry in await self._label_entries({})}
+        by_team = {
+            identifier: {
+                entry.name
+                for entry in await self._label_entries({"team": identifier})
+            }
+            for identifier in sorted(set(self._team_identifiers.values()))
+        }
+        return _LabelListings(workspace=workspace, by_team=by_team)
+
+    async def _label_entries(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Sequence[LinearNamedWire]:
+        """One label listing, scoped by *arguments* or not scoped at all."""
+        tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
+        payload = await self._call(tool, arguments)
+        return self._validate(LinearLabelListWire, payload, tool).labels
 
     async def _team_listing(self) -> Sequence[LinearTeamWire]:
         """Every team the workspace holds, with the UUID it is addressed by."""
@@ -825,9 +906,18 @@ class LinearMcpTracker:
 
         A document is addressed by its id and everything else by its name,
         which is why this is not one listing read one way.
+
+        A queue state resolves against the WHOLE union of label listings.
+        The refs this answers carry no container — the validation pass
+        names what the workspace must hold, not where — so a label on a
+        declared team resolves one as readily as a workspace-level label
+        does.  Reading the unscoped listing alone left the boot that had
+        just created a team-scoped label unable to see it.
         """
         if kind is MappingKind.DOCUMENT:
             return frozenset(await self._document_definitions())
+        if kind is MappingKind.QUEUE_STATE:
+            return (await self._label_definitions()).names()
         return frozenset(entry.name for entry in await self._named_entries(kind))
 
     async def _workflow_states_by_team(self) -> Mapping[str, frozenset[str]]:
@@ -860,21 +950,22 @@ class LinearMcpTracker:
         return by_team
 
     async def _named_entries(self, kind: MappingKind) -> Sequence[LinearNamedWire]:
-        """Every named entity the workspace lists for *kind*.
+        """Every named entity the workspace lists for *kind* — users, teams.
 
         One shape per tool, because that is what the server sends: each
         listing names its array after itself, and there is no envelope key
-        shared across them to read generically.  ``WORKFLOW_STATE`` is not
-        served here at all — its tool answers for one team and only for
-        one team, which :meth:`_workflow_states_by_team` is.
+        shared across them to read generically.  Two kinds are absent from
+        here, each because one listing is not what they are:
+        ``WORKFLOW_STATE`` answers for one team and only one team
+        (:meth:`_workflow_states_by_team`), and ``QUEUE_STATE`` answers a
+        different set scoped than unscoped, so it is a union of listings
+        rather than a listing (:meth:`_label_definitions`).
         """
         if kind is MappingKind.TEAM:
             return await self._team_listing()
         tool = _MAPPING_TOOL_BY_KIND[kind]
         payload = await self._call(tool, {})
-        if kind is MappingKind.USER:
-            return self._validate(LinearUserListWire, payload, tool).users
-        return self._validate(LinearLabelListWire, payload, tool).labels
+        return self._validate(LinearUserListWire, payload, tool).users
 
     async def _read_issue_wire(self, issue_key: str) -> LinearIssueDetailWire:
         payload = await self._call(

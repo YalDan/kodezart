@@ -38,6 +38,7 @@ from tests.tracker.conftest import (
     CLAIMED_ISSUE,
     DOCUMENT_KEY,
     FIXTURE_NOW,
+    QUEUE_STATE_LABELS,
     fixture_server,
     linear_over_fake_mcp,
 )
@@ -433,6 +434,33 @@ async def test_the_team_container_argument_is_sent_as_a_uuid(
     (created,) = server.tool_calls("create_issue_label")
     assert created["teamId"] == "fixture-team-id"
     assert created["teamId"] != "fixture-team"
+
+
+async def test_the_label_listing_is_read_unscoped_and_once_per_declared_team(
+    sent: Mapping[str, set[str]],
+) -> None:
+    """``list_issue_labels`` takes a team, and the adapter now sends it.
+
+    Declared OPTIONAL, unlike ``list_issue_statuses.team``, so no required
+    check would ever have caught its absence — what the omission cost was
+    a listing that answers with the workspace-level labels alone, and a
+    boot re-creating the team-scoped label it had made itself.  The
+    argument is sent in ADDITION to the unscoped read, never instead of
+    it: a ref resolves at either level, so both listings get asked
+    (KOD-143, the label addendum of 2026-08-25).
+    """
+    assert "team" in sent["list_issue_labels"]
+    server = fixture_server()
+    await linear_over_fake_mcp(server).resolve_mappings(
+        refs=[
+            MappingRef(
+                kind=MappingKind.QUEUE_STATE,
+                name="approved",
+                identifier=QUEUE_STATE_LABELS["approved"],
+            ),
+        ],
+    )
+    assert server.tool_calls("list_issue_labels") == [{}, {"team": "fixture-team"}]
 
 
 async def test_a_team_the_workspace_does_not_hold_is_refused_by_name() -> None:

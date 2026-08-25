@@ -1810,33 +1810,49 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        """Labels with the container the workspace holds each one in.
+        """One label listing, answering for a team or for the workspace.
 
-        A label seeded into the fixture reports NO container, exactly as a
-        listing that does not carry the field would: the fake states what
-        the workspace knows and never invents workspace scope for a label
-        nobody said anything about.  (The live listing carries no container
-        field at all, which is precisely that case.)
+        Unscoped, this answers with the workspace-level labels ALONE — a
+        team's labels are invisible to it, which is the fact boot five
+        measured and the label addendum ruled on (KOD-143).  Sent a
+        ``team``, it answers with that team's labels.
+
+        Neither answer carries a container field, because the live listing
+        carries none: WHICH listing answered is the only thing either one
+        says about scope, and a reader that wants the container has to ask
+        the question that way.
         """
+        team = arguments.get("team")
+        container = None if team is None else self._team_id(str(team))
         return {
             "labels": [
                 {"id": f"{name}-id", "name": name, "color": "#000000"}
-                if self.label_containers.get(name) is None
-                else {
-                    "id": f"{name}-id",
-                    "name": name,
-                    "color": "#000000",
-                    "teamId": self.label_containers[name],
-                }
                 for name in self.labels
+                if self.label_containers.get(name) == container
             ],
             "hasNextPage": False,
         }
+
+    def _team_id(self, team: str) -> str:
+        """The id the fake addresses *team* by; ``team`` takes a name or an id."""
+        if team in self.teams:
+            return f"{team}-id"
+        if team in {f"{name}-id" for name in self.teams}:
+            return team
+        msg = f"fake workspace holds no team {team!r}"
+        raise LookupError(msg)
 
     def _tool_create_issue_label(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
+        """Create one label, refusing a name the workspace already carries.
+
+        By NAME, not by (name, container): that is what the live server
+        did to the boot that re-created its own team-scoped label, and the
+        adapter is not permitted to tolerate it — so the fake has to be
+        able to produce it.
+        """
         name = str(arguments["name"])
         if name in self.labels:
             msg = f"fake workspace already carries the label {name!r}"
