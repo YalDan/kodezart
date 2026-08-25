@@ -9,6 +9,15 @@ five of its shapes were structurally wrong, so a fixture written from the
 model rather than from a capture would agree with the model and disagree
 with the workspace — which is exactly the failure that shipped.
 
+"Only the values are synthesized" is a rule with a second edge, and this
+repository is public: no value below may be copied from the capture.
+Every instant, identifier, colour and presence string here is INVENTED —
+shape-valid and nothing else — so that a reader learns the vendor's shape
+and nothing about the workspace it was measured on.  What is left in the
+vendor's own spelling is only what is shape rather than content: the
+keys, and the enum-like tokens a consumer must match on (state kinds,
+default status names, the operation's own ``queue:`` vocabulary).
+
 The server declares no ``outputSchema`` for any of its sixty tools, so
 measurement is not a phase that ends: it is the only way these shapes can
 ever be known, and re-measuring is what changing one costs.
@@ -61,13 +70,13 @@ LIST_ISSUE_LABELS: Mapping[str, object] = {
         {
             "id": "1ab11111-0000-4000-8000-000000000001",
             "name": "queue:approved",
-            "color": "#4cb782",
+            "color": "#22bb66",
             "description": "Approved to fire. Promotion = fire authorization.",
         },
         {
             "id": "1ab11111-0000-4000-8000-000000000002",
             "name": "queue:proposed",
-            "color": "#e2a336",
+            "color": "#bb8822",
             "description": None,
         },
     ],
@@ -79,8 +88,8 @@ LIST_TEAMS: Mapping[str, object] = {
         {
             "id": TEAM_ID,
             "name": TEAM_NAME,
-            "createdAt": "2026-07-14T12:42:41.420Z",
-            "updatedAt": "2026-08-25T00:18:46.363Z",
+            "createdAt": "2031-02-03T08:15:00.100Z",
+            "updatedAt": "2031-02-04T08:15:00.200Z",
         },
     ],
     "hasNextPage": False,
@@ -96,9 +105,9 @@ LIST_USERS: Mapping[str, object] = {
             "isAdmin": True,
             "isGuest": False,
             "isActive": True,
-            "createdAt": "2026-07-13T10:49:05.790Z",
-            "updatedAt": "2026-08-23T21:29:02.673Z",
-            "status": "Offline (last seen 2026-08-24T20:34:31.103Z)",
+            "createdAt": "2031-02-05T08:15:00.300Z",
+            "updatedAt": "2031-02-06T08:15:00.400Z",
+            "status": "Offline (last seen 2031-02-06T19:45:00.500Z)",
         },
     ],
     "hasNextPage": False,
@@ -136,11 +145,11 @@ LIST_ISSUES_ENTRY: Mapping[str, object] = {
     "priority": {"value": 2, "name": "High"},
     "url": "https://tracker.invalid/issue/fix-11",
     "gitBranchName": "fixture/fix-11-a-fixture-issue",
-    "createdAt": "2026-08-12T18:37:24.011Z",
-    "updatedAt": "2026-08-25T09:21:51.622Z",
+    "createdAt": "2031-02-07T08:15:00.600Z",
+    "updatedAt": "2031-02-08T08:15:00.700Z",
     "archivedAt": None,
     "completedAt": None,
-    "startedAt": "2026-08-17T06:52:52.439Z",
+    "startedAt": "2031-02-07T09:30:00.800Z",
     "canceledAt": None,
     "dueDate": None,
     "slaStartedAt": None,
@@ -176,11 +185,11 @@ GET_ISSUE: Mapping[str, object] = {
     "priority": {"value": 1, "name": "Urgent"},
     "url": "https://tracker.invalid/issue/fix-12",
     "gitBranchName": "fixture/fix-12-a-fixture-issue-with-relations",
-    "createdAt": "2026-07-24T12:56:00.185Z",
-    "updatedAt": "2026-08-25T09:26:39.217Z",
+    "createdAt": "2031-02-09T08:15:00.900Z",
+    "updatedAt": "2031-02-10T08:15:01.000Z",
     "archivedAt": None,
     "completedAt": None,
-    "startedAt": "2026-08-09T13:19:28.435Z",
+    "startedAt": "2031-02-09T10:00:01.100Z",
     "canceledAt": None,
     "dueDate": None,
     "slaStartedAt": None,
@@ -206,7 +215,7 @@ GET_ISSUE: Mapping[str, object] = {
                 "name": "Backlog",
                 "type": "backlog",
             },
-            "startedAt": "2026-07-24T12:56:00.185Z",
+            "startedAt": "2031-02-09T08:15:00.900Z",
             "endedAt": None,
         },
     ],
@@ -227,8 +236,8 @@ LIST_COMMENTS: Mapping[str, object] = {
         {
             "id": "1ac11111-0000-4000-8000-000000000001",
             "body": "a fixture comment",
-            "createdAt": "2026-08-25T09:28:45.273Z",
-            "updatedAt": "2026-08-25T09:28:45.260Z",
+            "createdAt": "2031-02-11T08:15:01.200Z",
+            "updatedAt": "2031-02-11T08:15:01.190Z",
             "parentId": None,
             "resolvedAt": None,
             "quotedText": None,
@@ -249,8 +258,8 @@ LIST_DOCUMENTS: Mapping[str, object] = {
             "color": None,
             "url": "https://tracker.invalid/document/fixture",
             "slugId": "1ad11111",
-            "createdAt": "2026-08-17T18:59:02.853Z",
-            "updatedAt": "2026-08-18T16:08:09.276Z",
+            "createdAt": "2031-02-12T08:15:01.300Z",
+            "updatedAt": "2031-02-13T08:15:01.400Z",
             "archivedAt": None,
             "creator": {"id": APPROVER_ID, "name": APPROVER_NAME},
             "updatedBy": {"id": APPROVER_ID, "name": APPROVER_NAME},
@@ -447,7 +456,7 @@ class TestCommentShape:
         assert comment.author.id == APPROVER_ID
         assert comment.body == "a fixture comment"
         assert comment.created_at == datetime(
-            2026, 8, 25, 9, 28, 45, 273000, tzinfo=UTC
+            2031, 2, 11, 8, 15, 1, 200000, tzinfo=UTC
         )
 
     def test_the_invented_user_and_issue_id_comment_no_longer_validates(self) -> None:
@@ -459,7 +468,7 @@ class TestCommentShape:
                     "issueId": "FIX-12",
                     "user": APPROVER_NAME,
                     "body": "a fixture comment",
-                    "createdAt": "2026-08-25T09:28:45.273Z",
+                    "createdAt": "2031-02-11T08:15:01.200Z",
                 },
             )
 
