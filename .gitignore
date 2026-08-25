@@ -42,5 +42,11 @@ coverage.xml
 .env.local
 .env.*.local
 
+# Operation config. Carries tracker handles and a forge identity, and this
+# board mirrors to a public repository. Root-anchored so the annotated
+# examples under docs/ stay tracked.
+/operation.toml
+/operation.*.toml
+
 # macOS
 .DS_Store

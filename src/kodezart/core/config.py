@@ -2,7 +2,7 @@
 
 from typing import Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from kodezart.types.domain.dispatch import PassSignal
@@ -304,8 +304,9 @@ class AppConfig(BaseSettings):
         default="linear",
         description=(
             "Identity of the vendor MCP server the tracker adapter dials. One "
-            "server definition, two consumers: the programmatic client on the "
-            "deterministic path and session attachment for judgment passes."
+            "consumer: the transport factory building the programmatic client "
+            "on the deterministic path, which stamps this name on every "
+            "transport log line and error."
         ),
     )
     tracker_mcp_server_url: str = Field(
@@ -322,15 +323,30 @@ class AppConfig(BaseSettings):
         min_length=1,
         description="Scheme prefixing the tracker credential in its auth header.",
     )
-    tracker_token: str | None = Field(
+    tracker_token: SecretStr | None = Field(
         default=None,
-        description="Tracker credential for the MCP server. Environment only.",
+        exclude=True,
+        description=(
+            "Tracker credential for the MCP server. Environment only, "
+            "excluded from serialization, and masked in repr: a dumped "
+            "config is copied into logs, fixtures and error payloads."
+        ),
     )
     tracker_timeout_seconds: float = Field(
         default=30.0,
         ge=5.0,
         le=120.0,
         description="Timeout for one tracker MCP tool call.",
+    )
+    tracker_mcp_error_detail_limit: int = Field(
+        default=500,
+        ge=80,
+        le=8000,
+        description=(
+            "Characters of the server's OWN error text carried into a "
+            "tracker MCP transport failure. A refusal that drops the "
+            "vendor's diagnosis costs a whole boot cycle to recover it."
+        ),
     )
     tracker_max_retries: int = Field(
         default=3,
@@ -351,6 +367,18 @@ class AppConfig(BaseSettings):
         description=(
             "Lease an atomic claim holds before it expires and the issue "
             "becomes eligible again."
+        ),
+    )
+    tracker_claim_renewal_fraction: float = Field(
+        default=0.25,
+        gt=0.0,
+        le=0.5,
+        description=(
+            "Fraction of the claim lease at which a job in flight renews its "
+            "claim. Expressed against the lease so renewal outpaces expiry by "
+            "construction, whatever the lease is set to: at 0.25 three "
+            "consecutive renewal failures are survivable before the claim "
+            "lapses, and the 0.5 bound leaves at least one."
         ),
     )
     tracker_query_page_size: int = Field(

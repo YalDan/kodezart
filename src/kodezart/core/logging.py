@@ -25,11 +25,25 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
         structlog.processors.UnicodeDecoder(),
     ]
 
+    # An exception reaches this chain as an ``exc_info`` triple, and
+    # something has to turn it into frames: without that, the triple is
+    # rendered as its members' reprs — the traceback OBJECT printed, so
+    # not one frame survives, and a two-minute engine dispatch that raised
+    # leaves a single sentence (KOD-146).  Which processor does it is the
+    # renderer's business, so the choice lives beside the renderer:
+    # ``ConsoleRenderer`` formats exceptions itself, in colour and with
+    # source context, and warns if handed a pre-formatted string;
+    # ``JSONRenderer`` has no exception handling of its own.
     renderer: structlog.types.Processor
+    formatter_processors: list[structlog.types.Processor] = [
+        structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+    ]
     if pretty:
         renderer = structlog.dev.ConsoleRenderer(colors=True)
     else:
+        formatter_processors.append(structlog.processors.format_exc_info)
         renderer = structlog.processors.JSONRenderer()
+    formatter_processors.append(renderer)
 
     structlog.configure(
         processors=[
@@ -42,10 +56,7 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
     )
 
     formatter = structlog.stdlib.ProcessorFormatter(
-        processors=[
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            renderer,
-        ],
+        processors=formatter_processors,
         foreign_pre_chain=shared_processors,
     )
 

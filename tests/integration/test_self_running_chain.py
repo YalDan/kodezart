@@ -26,8 +26,10 @@ from collections.abc import AsyncIterator
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.composition.passes import build_dispatch_passes
 from kodezart.core.config import AppConfig
+from kodezart.core.errors import NoStructuredOutputError
 from kodezart.types.domain.agent import (
     AgentEvent,
+    AssistantTextEvent,
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
@@ -35,23 +37,31 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
     FakeRepoCache,
     FakeTrackerPort,
     PassThroughGate,
-    approved_by,
     make_tracker_issue,
 )
 from tests.services.test_dispatch_pass import (
-    APPROVER,
     INTEGRATION_DIR,
     operation_config,
 )
 
 ISSUE = "K-1"
 FEATURE_BRANCH = "kodezart/k-1"
+#: A state the operation's ``workflow_states`` mapping never names — the
+#: shape a claimed issue really has, and the one no ``LifecycleStage``
+#: could put back.
+PRE_CLAIM_STATE = "Backlog"
+CREATOR_FAILURE = "Creator produced no structured output."
+
+#: Generous: every wait here is on a condition, so this only ever bounds
+#: a genuine hang.
+SETTLE_TIMEOUT = 5.0
 
 
 class _MergingEngine:
@@ -93,12 +103,24 @@ class _MergingEngine:
         )
 
 
-async def _until(condition: object, *, tries: int = 500) -> None:
-    """Yield to the loop until *condition* holds, or give the test its failure."""
+async def _until(condition: object, *, timeout: float = SETTLE_TIMEOUT) -> None:
+    """Yield to the loop until *condition* holds, or fail on a real clock.
+
+    Bounded by wall-clock rather than by a count of event-loop yields.
+    Every lifecycle write is awaited through structlog's executor, so the
+    number of turns one costs is a property of the machine and not of the
+    code: a fixed count held here and under-ran on a slower runner, which
+    is the same lesson ``tests/services/test_pass_scheduler`` records
+    about its own settle.  Exhaustion now fails loudly rather than
+    returning quietly into a downstream assertion.
+    """
     assert callable(condition)
-    for _ in range(tries):
-        if condition():
-            return
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not condition():
+        if loop.time() >= deadline:
+            msg = "condition never became true"
+            raise AssertionError(msg)
         await asyncio.sleep(0)
 
 
@@ -106,7 +128,6 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
     config = AppConfig()
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue(ISSUE)],
-        provenance=dict([approved_by(ISSUE, APPROVER)]),
     )
     engine = _MergingEngine()
     queue = AsyncioJobQueue(
@@ -199,5 +220,88 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
         assert tracker.claims == {}
         assert tracker.comments == []
         assert QueueState.APPROVED not in {state for _, state in tracker.queue_writes}
+    finally:
+        await queue.stop()
+
+
+class _CrashingEngine:
+    """A ``WorkflowEngine`` that dies where the first live fire died.
+
+    The measured shape: the run raises inside ticket generation, two
+    minutes in, having produced frames but no ``WorkflowCompleteEvent``.
+    """
+
+    def run(self, **kwargs: object) -> AsyncIterator[AgentEvent]:
+        return self._frames()
+
+    async def _frames(self) -> AsyncIterator[AgentEvent]:
+        await asyncio.sleep(0)
+        yield AssistantTextEvent(text="drafting the ticket", model="fixture-model")
+        raise NoStructuredOutputError(
+            CREATOR_FAILURE,
+            raise_site="ticket_creator",
+            result_event=None,
+        )
+
+
+async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
+    """The whole chain's failure arm, over the shipped queue (KOD-146).
+
+    Before this, the arc ended at ``lifecycle_in_progress``: the run died
+    and the board asserted a run that was not running, indefinitely, with
+    no record that anything had been attempted.
+    """
+    config = AppConfig()
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(
+                ISSUE,
+                state_name=PRE_CLAIM_STATE,
+                state_kind=WorkflowStateKind.BACKLOG,
+            ),
+        ],
+    )
+    queue = AsyncioJobQueue(
+        engine=_CrashingEngine(),
+        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
+        max_depth_per_lane=config.queue_max_depth_per_lane,
+        terminal_retention_seconds=config.queue_terminal_retention_seconds,
+        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
+        event_buffer_capacity=config.queue_event_buffer_capacity,
+    )
+    await queue.start()
+    try:
+        passes = build_dispatch_passes(
+            config=config,
+            operation=operation_config(),
+            tracker=tracker,
+            delivery=FakeDeliveryProbe(),
+            queue=queue,
+            registry=queue,
+            gate=PassThroughGate(),
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            integration_workspace_dir=INTEGRATION_DIR,
+        )
+
+        await passes[0].run()
+        await _until(lambda: bool(tracker.comments))
+
+        # 1. the lifecycle still walked forward while the run was live
+        assert tracker.workflow_writes == [(ISSUE, LifecycleStage.IN_PROGRESS)]
+
+        # 2. and then the issue went back to the state the pass found it in
+        assert tracker.restored_states == [(ISSUE, PRE_CLAIM_STATE)]
+        assert tracker.issues[ISSUE].state_name == PRE_CLAIM_STATE
+
+        # 3. the failure is named on the ticket: class, step, job id
+        (comment,) = tracker.comments
+        assert comment.issue_key == ISSUE
+        assert "NoStructuredOutputError" in comment.body
+        assert "ticket_creator" in comment.body
+
+        # 4. and nothing was reported as delivered
+        assert tracker.queue_writes == []
+        assert (ISSUE, LifecycleStage.DONE) not in tracker.workflow_writes
     finally:
         await queue.stop()

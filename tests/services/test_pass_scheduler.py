@@ -180,6 +180,65 @@ async def test_a_failing_pass_keeps_its_loop_and_says_what_broke() -> None:
     assert failures[0]["error"] == "the pass could not reach the tracker"
 
 
+async def test_a_failure_event_carries_the_traceback_that_produced_it() -> None:
+    """The summary names WHAT broke; only the traceback names where.
+
+    The first live run crash-looped for half an hour on
+    ``ValueError: Cannot extract owner/repo from file:// URL`` — a message
+    naming neither the call site nor the collaborator that raised, so the
+    log alone could not diagnose the loop it was reporting (KOD-145).
+
+    Carried as a formatted string rather than as ``exc_info``: the
+    configured renderer chain has no exception processor, so ``exc_info``
+    reaches a JSON log as the exception's repr, which is the summary again
+    under a third key.
+    """
+    exploder = Exploder()
+    metronome = Metronome(limit=1)
+    events: list[structlog.typing.EventDict] = []
+
+    def capture(
+        _logger: object,
+        _name: str,
+        event_dict: structlog.typing.EventDict,
+    ) -> structlog.typing.EventDict:
+        events.append(dict(event_dict))
+        raise structlog.DropEvent
+
+    structlog.configure(processors=[capture])
+    try:
+        scheduler = PassScheduler(
+            passes=[
+                ScheduledPass(
+                    name="dispatch",
+                    interval_seconds=FAST_INTERVAL,
+                    run=exploder.run,
+                ),
+            ],
+            sleep=metronome.sleep,
+        )
+        await scheduler.start()
+        await _settle(metronome)
+        await scheduler.stop()
+    finally:
+        structlog.reset_defaults()
+
+    (failure,) = [
+        event for event in events if event["event"] == "scheduled_pass_failed"
+    ]
+    rendered = failure["traceback"]
+    assert isinstance(rendered, str)
+    assert rendered.startswith("Traceback (most recent call last):")
+    # The frames the one-line summary could not name: the driver that
+    # caught it, and the collaborator whose source line actually raised.
+    assert "pass_scheduler.py" in rendered
+    assert "raise RuntimeError(msg)" in rendered
+    assert "RuntimeError: the pass could not reach the tracker" in rendered
+    # The summary fields stay: the traceback is an addition, not a swap.
+    assert failure["error_type"] == "RuntimeError"
+    assert failure["error"] == "the pass could not reach the tracker"
+
+
 async def test_stopping_cancels_every_driver_and_the_scheduler_goes_quiet() -> None:
     """Shutdown unwinds the loops rather than leaving them behind."""
     recorder = Recorder()

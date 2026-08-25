@@ -6,15 +6,19 @@ and a test asserts the absence structurally rather than by reading, so a
 hardcoded "every five minutes" cannot be added without failing the suite.
 
 A pass that raises does not kill its loop and does not vanish either: the
-failure is logged with its type and the loop continues on the next tick.
-Silently swallowing it would make a permanently failing pass
-indistinguishable from a quiet board, which is the state this whole lane
-exists to make legible.
+failure is logged with its type, its message and its TRACEBACK, and the
+loop continues on the next tick.  Silently swallowing it would make a
+permanently failing pass indistinguishable from a quiet board, which is
+the state this whole lane exists to make legible — and a one-line summary
+is that same problem one step along: the first live run crash-looped for
+half an hour on a ``ValueError`` whose event named neither the call site
+nor the collaborator that raised it (KOD-145).
 """
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from traceback import format_exception
 
 from kodezart.core.logging import BoundLogger, get_logger
 
@@ -89,9 +93,12 @@ class PassScheduler:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                # The traceback rides the event under this pass's own key,
+                # and no ``exc_info`` is passed, so it appears once.
                 await self._log.aerror(
                     "scheduled_pass_failed",
                     name=entry.name,
                     error_type=type(exc).__name__,
                     error=str(exc),
+                    traceback="".join(format_exception(exc)),
                 )

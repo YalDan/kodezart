@@ -9,6 +9,7 @@ a service that no longer behaves that way.
 
 import re
 import tomllib
+from fnmatch import fnmatch
 from pathlib import Path
 
 from kodezart.core import errors
@@ -24,6 +25,7 @@ from kodezart.types.domain.operation import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README = REPO_ROOT / "README.md"
+GITIGNORE = REPO_ROOT / ".gitignore"
 SRC = REPO_ROOT / "src" / "kodezart"
 
 GUIDE_HEADING = "### Setting up the self-running service"
@@ -50,7 +52,9 @@ CITED_ERRORS: frozenset[str] = frozenset(
     },
 )
 
-#: Every environment variable the guide instructs the operator to set.
+#: Every environment variable the guide MUST instruct the operator to set.
+#: A floor, not an inventory: the guide may name more, and every name it
+#: does carry is checked against the shipped model by the test below.
 CITED_VARIABLES: frozenset[str] = frozenset(
     {
         "KODEZART_TRACKER_TOKEN",
@@ -149,16 +153,36 @@ def test_every_failure_class_the_guide_names_exists() -> None:
         assert name in guide, name
 
 
-def test_every_variable_the_guide_sets_is_a_shipped_config_field() -> None:
-    """The guide instructs against the env surface the code actually reads."""
+def _shipped_variables() -> set[str]:
+    """Every environment name ``AppConfig`` actually reads."""
     from kodezart.core.config import AppConfig
 
-    shipped = {f"KODEZART_{name.upper()}" for name in AppConfig.model_fields}
+    return {f"KODEZART_{name.upper()}" for name in AppConfig.model_fields}
+
+
+def test_every_variable_the_guide_sets_is_a_shipped_config_field() -> None:
+    """The guide instructs against the env surface the code actually reads."""
+    shipped = _shipped_variables()
     guide = _guide()
 
     for variable in CITED_VARIABLES:
         assert variable in shipped, variable
         assert variable in guide, variable
+
+
+def test_the_guide_names_no_variable_the_config_does_not_ship() -> None:
+    """The other direction, derived: an invented or misspelled name reds here.
+
+    The floor above says which variables the guide owes an operator; this
+    reads every one it actually carries out of the text, so a variable
+    added to the guide is checked by the act of adding it rather than by
+    somebody remembering to extend a list.
+    """
+    shipped = _shipped_variables()
+    named = set(re.findall(r"\bKODEZART_[A-Z0-9_]+\b", _guide()))
+
+    assert named, "the guide names no configuration variable at all"
+    assert named <= shipped, named - shipped
 
 
 def test_the_guide_names_every_queue_state_the_code_addresses_by_name() -> None:
@@ -259,3 +283,70 @@ def test_the_guide_states_the_count_invariants_the_loader_enforces() -> None:
         assert f"`{role.lower()}`" in guide, role
     assert "exactly one" in guide
     assert "at most one" in guide
+
+
+def _guide_config_destinations() -> set[str]:
+    """Every operation-config path the guide tells an operator to WRITE.
+
+    The annotated examples under ``docs/`` are excluded: those are the
+    tracked side, and the whole point of the anchoring below is that they
+    stay tracked.  So are globs, which the guide quotes when it states the
+    ignore rules themselves — a rule matches itself and would assert
+    nothing.
+    """
+    cited = re.findall(r"`(/?[\w./*-]*operation[\w.*-]*\.toml)`", _guide())
+    return {
+        path.lstrip("/")
+        for path in cited
+        if not path.lstrip("/").startswith("docs/") and "*" not in path
+    }
+
+
+def _root_anchored_toml_ignores() -> set[str]:
+    """The root-anchored ``.toml`` rules ``.gitignore`` carries."""
+    lines = (GITIGNORE.read_text(encoding="utf-8")).splitlines()
+    return {
+        line.strip().lstrip("/")
+        for line in lines
+        if line.strip().startswith("/") and line.strip().endswith(".toml")
+    }
+
+
+def test_every_config_path_the_guide_names_is_ignored() -> None:
+    """A guide telling you where to write real identifiers must not walk
+    you into committing them.
+
+    Both sides are derived: the destinations come out of the README and
+    the rules out of ``.gitignore``.  Renaming the file in the guide
+    without extending the ignore rules makes this red, which is the drift
+    that would otherwise be found by an operator's handles appearing in a
+    public repository.
+    """
+    destinations = _guide_config_destinations()
+    patterns = _root_anchored_toml_ignores()
+
+    assert destinations, "the guide must name where the filled-in config goes"
+    for path in sorted(destinations):
+        assert any(fnmatch(path, rule) for rule in patterns), (
+            f"the guide names {path!r} and no root-anchored rule ignores it: "
+            f"{sorted(patterns)}"
+        )
+
+
+def test_the_ignore_rules_are_anchored_so_the_examples_stay_tracked() -> None:
+    """The examples the guide tells you to COPY must remain in the tree.
+
+    An unanchored ``operation*.toml`` rule would ignore them too, and the
+    guide's first instruction would point at a file a fresh clone does not
+    have.
+    """
+    patterns = _root_anchored_toml_ignores()
+    examples = sorted(
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "docs").glob("operation*.toml")
+    )
+
+    assert examples, "the guide's step 5 copies an example that must exist"
+    for example in examples:
+        assert Path(REPO_ROOT / example).is_file()
+        assert not any(fnmatch(example, rule) for rule in patterns), example

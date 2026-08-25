@@ -32,6 +32,7 @@ from kodezart.domain.dispatch import (
     Selection,
     blocker_keys,
     clause_approved,
+    clause_in_team,
     clause_open,
     clause_unclaimed,
     clause_undelivered,
@@ -109,17 +110,18 @@ class FireDispatcher:
         self._jobs_by_issue: dict[str, str] = {}
 
     async def run_pass(self) -> DispatchReport:
-        """Execute one pass and return its machine-readable report."""
-        snapshot = await self._tracker.scan_issues(
-            query=IssueQuery(
-                queue_state=QueueState.APPROVED,
-                page_size=self._query_page_size,
-            ),
-        )
+        """Execute one pass and return its machine-readable report.
+
+        The declared teams are read ONCE, at the top, and bound both the
+        scan and the eligibility of everything it returns.  An operation
+        declaring none refuses here, before any query is issued.
+        """
+        team_keys = self._operation.team_keys()
+        snapshot = await self._scan(team_keys)
         eligible: list[TrackerIssue] = []
         exclusions: list[IssueExclusion] = []
         for issue in snapshot:
-            exclusion = await self._exclude(issue)
+            exclusion = await self._exclude(issue, team_keys=team_keys)
             if exclusion is None:
                 eligible.append(issue)
             else:
@@ -286,26 +288,68 @@ class FireDispatcher:
             eligible=eligible_keys,
             tied_candidates=selection.tied,
             claimed_issue_key=winner.issue_key,
+            # The pre-claim state, read off the snapshot this pass claimed
+            # from: the last reading taken before the lifecycle writes In
+            # Progress, and the only place a crashed run's put-back can
+            # come from.
+            claimed_state_name=winner.state_name,
             job_id=record.job_id,
             base=spec,
             superseded_base=superseded,
         )
 
-    async def _exclude(self, issue: TrackerIssue) -> IssueExclusion | None:
-        """The FIRST clause excluding *issue*, or ``None`` when eligible."""
-        provenance = await self._tracker.queue_state_provenance(
-            issue_key=issue.issue_key,
-            state=QueueState.APPROVED,
-        )
-        if not clause_approved(
-            issue,
-            provenance=provenance,
-            approver_key=self._operation.approver().tracker_user,
-        ):
+    async def _scan(self, team_keys: Sequence[str]) -> tuple[TrackerIssue, ...]:
+        """Every approved issue on the declared teams, in declaration order.
+
+        One query per team, because ``IssueQuery`` scopes to one container
+        and an operation may declare several.  Asking per team is what makes
+        the page this operation's: ``page_size`` bounds what the backend
+        returns, so a query spanning a workspace that holds several boards
+        can come back full without ever reaching this one's issues.
+
+        The results concatenate rather than merge.  An issue sits in one
+        container, and two keys naming one container is a load-time failure,
+        so the scans are disjoint and a deduplication step here would be a
+        guard against a state the config cannot reach.
+        """
+        found: list[TrackerIssue] = []
+        for team_key in team_keys:
+            found.extend(
+                await self._tracker.scan_issues(
+                    query=IssueQuery(
+                        queue_state=QueueState.APPROVED,
+                        team_key=team_key,
+                        page_size=self._query_page_size,
+                    ),
+                ),
+            )
+        return tuple(found)
+
+    async def _exclude(
+        self,
+        issue: TrackerIssue,
+        *,
+        team_keys: Sequence[str],
+    ) -> IssueExclusion | None:
+        """The FIRST clause excluding *issue*, or ``None`` when eligible.
+
+        The container clause runs first and reads the issue rather than the
+        query that found it.  Narrowing the scan asks the backend to honour
+        a boundary; this decides eligibility against the operation's own
+        declaration, so a backend that cannot push the scope down, or an
+        adapter that stops sending it, changes what a pass reads and not
+        what it may claim.
+        """
+        if not clause_in_team(issue, team_keys=team_keys):
+            return IssueExclusion(
+                issue_key=issue.issue_key,
+                clause=ExclusionClause.OUTSIDE_TEAM,
+                detail="" if issue.team_key is None else issue.team_key,
+            )
+        if not clause_approved(issue):
             return IssueExclusion(
                 issue_key=issue.issue_key,
                 clause=ExclusionClause.NOT_APPROVED,
-                detail="" if provenance is None else provenance.actor_key,
             )
         if not clause_open(issue):
             return IssueExclusion(

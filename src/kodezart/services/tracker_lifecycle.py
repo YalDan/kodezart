@@ -16,6 +16,7 @@ to, and the queue state to its terminal member.
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.types.domain.agent import RaiseSite
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -70,6 +71,67 @@ class TrackerLifecycleWriter:
             state=QueueState.DONE,
         )
         await self._log.ainfo("lifecycle_done", issue_key=issue_key)
+
+    async def on_run_failed(
+        self,
+        *,
+        issue_key: str,
+        job_id: str,
+        pre_claim_state: str,
+        failure_class: str | None,
+        step: RaiseSite | None,
+    ) -> None:
+        """The run ended with no terminal outcome: undo, then say so.
+
+        The vocabulary this operation declares has no failure state — only
+        in-progress, in-review and done — so the issue goes back to the
+        state the pass found it in, and a comment carries the rest.  The
+        in-progress stage with nothing running is the lie the criterion
+        exists to prevent, and a comment alone does not remove it
+        (KOD-146, ruled).
+
+        Order matches the success path: the state lands before the comment
+        reports it, so no reader sees the note beside a stale state.  The
+        claim is NOT released — its lease ageing out is what lets the next
+        pass re-fire, and that recovery is correct as it stands.
+        """
+        await self._tracker.restore_workflow_state(
+            issue_key=issue_key,
+            state_name=pre_claim_state,
+        )
+        # Three states on both halves: a failure class the producer did
+        # not name, and a step it did not name, are reported as absent
+        # rather than guessed at.  ``raise_site`` is the enumeration this
+        # codebase already keeps for "which step raised".
+        named_failure = (
+            "an unnamed failure class" if failure_class is None else failure_class
+        )
+        named_step = "no step named" if step is None else f"step {step}"
+        # DERIVED for the reason the outcome comment is: a job id, an
+        # exception class name and a RaiseSite member are all readable off
+        # the job-status surface by a process that never held the session.
+        body = await gated_write(
+            gate=self._gate,
+            log=self._log,
+            content=(
+                f"job {job_id} ended without a terminal outcome — "
+                f"{named_failure}, {named_step}. "
+                "The issue is back in the state it held before the claim."
+            ),
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.TRACKER_COMMENT,
+            content_class=ContentClass.DERIVED,
+        )
+        await self._tracker.post_comment(issue_key=issue_key, body=body)
+        await self._log.aerror(
+            "lifecycle_run_failed",
+            issue_key=issue_key,
+            job_id=job_id,
+            restored_state=pre_claim_state,
+            failure_class=failure_class,
+            step=step,
+        )
 
     async def on_terminal_outcome(
         self,

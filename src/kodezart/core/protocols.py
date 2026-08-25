@@ -40,7 +40,6 @@ from kodezart.types.domain.tracker import (
     MappingOutcome,
     MappingRef,
     ReviewQuery,
-    StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
@@ -413,6 +412,16 @@ class DeliveryProbe(Protocol):
         ...
 
 
+#: What a tool call answers with.  A JSON object OR a JSON array: the MCP
+#: spec constrains a tool result to neither shape, and a measured server
+#: answered some of its tools with a bare array carrying no envelope at
+#: all (KOD-143).  Narrowing this to an object would put those payloads
+#: out of reach of every adapter above the transport.  WHICH server and
+#: which tool is an adapter's knowledge; this seam holds only the fact
+#: that both shapes are legal.
+type McpToolResult = Mapping[str, object] | Sequence[object]
+
+
 @runtime_checkable
 class McpToolCaller(Protocol):
     """Speaks MCP to one server: a tool name plus arguments, in, result out.
@@ -428,7 +437,7 @@ class McpToolCaller(Protocol):
         *,
         name: str,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
+    ) -> McpToolResult:
         """Invoke the named tool and return its structured result."""
         ...
 
@@ -515,6 +524,25 @@ class TrackerPort(Protocol):
         """Move the issue to the state the configuration binds *stage* to."""
         ...
 
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        """Put the issue back in the state a reader found it in.
+
+        The undo of ``set_workflow_state``, and the only write naming a
+        backend state directly.  It has to: the operation's mapping binds
+        three lifecycle stages, and the state a fire finds its issue in is
+        almost never one of them — a claimed issue comes from the backlog,
+        which the mapping never named and no ``LifecycleStage`` can
+        express.  ``state_name`` is not vendor vocabulary leaking inward:
+        it is the value this port already reports on every
+        ``TrackerIssue``, handed straight back.
+        """
+        ...
+
     async def set_queue_state(
         self,
         *,
@@ -547,21 +575,37 @@ class TrackerPort(Protocol):
         """
         ...
 
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        """Extend a claim *holder* already holds, so it outlives its lease.
+
+        Returns the claim as it now stands — expiring no earlier than
+        *lease_seconds* from now — when *holder* holds a live claim on the
+        issue.  Returns ``None``, writing NOTHING, when it does not.
+
+        Renewal EXTENDS and never acquires.  A claim that has already
+        lapsed stays lapsed and the issue stays claimable: the lapse is how
+        a process that died mid-run hands its work back, and a renewal that
+        could resurrect one would take that recovery away.
+        """
+        ...
+
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         """Release a claim held by *holder*. A claim it does not hold is a no-op."""
         ...
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
-        """The unexpired claim on the issue, or ``None`` when unclaimed."""
-        ...
+        """The unexpired claim on the issue, or ``None`` when unclaimed.
 
-    async def queue_state_provenance(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> StateTransition | None:
-        """Who most recently set *state*, or ``None`` if it never was set."""
+        ``expires_at`` is when the CLAIM lapses, not when any one write
+        that carried it does: a holder that renewed holds until the last of
+        its renewals runs out.
+        """
         ...
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:

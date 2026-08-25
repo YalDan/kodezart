@@ -5,6 +5,7 @@ import pytest
 from kodezart.domain.git_url import (
     cache_dir_for_repo,
     extract_owner_repo,
+    is_forge_less_origin,
     parse_repo_url,
     resolve_repo_url,
 )
@@ -100,3 +101,34 @@ def test_extract_owner_repo_file_url_raises() -> None:
 def test_extract_owner_repo_invalid_raises() -> None:
     with pytest.raises(ValueError, match="Cannot extract owner/repo"):
         extract_owner_repo("not-valid")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file:///tmp/repo",
+        "file:///tmp/repo.git",
+        "file:///Users/somebody/origins/kodezart.git",
+    ],
+)
+def test_a_file_url_is_a_forge_less_origin(url: str) -> None:
+    assert is_forge_less_origin(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/o/r.git",
+        "https://gitlab.com/o/r",
+        "o/r",
+    ],
+)
+def test_everything_else_is_left_to_the_adapter_that_owns_it(url: str) -> None:
+    """A predicate, not a taxonomy: the question is only "is there a forge?".
+
+    Shorthand counts as forge-shaped for the same reason a URL this
+    function has never seen does — the adapter that owns the scheme is
+    what says whether it can serve one, and it raises when it cannot
+    (KOD-145).
+    """
+    assert not is_forge_less_origin(url)

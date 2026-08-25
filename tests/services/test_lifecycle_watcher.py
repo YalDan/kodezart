@@ -18,11 +18,13 @@ from collections.abc import AsyncIterator
 import pytest
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
+    ErrorEvent,
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
@@ -38,7 +40,13 @@ from tests.fakes import (
 )
 
 ISSUE = "K-1"
+#: The state ``make_tracker_issue`` seeds, and therefore the state a
+#: crashed run has to be put back into.
+PRE_CLAIM_STATE = "Todo"
 MODEL = "fixture-model"
+HOLDER = "pass-a"
+LEASE_SECONDS = 600.0
+RENEWAL_FRACTION = 0.25
 REPO_URL = "https://forge.invalid/owner/repo"
 
 PR_EVENT = WorkflowPREvent(
@@ -60,6 +68,21 @@ def complete(*, merged: bool, outcome: WorkflowOutcome) -> WorkflowCompleteEvent
     )
 
 
+def claim_heartbeat(tracker: FakeTrackerPort) -> ClaimHeartbeat:
+    """The shipped heartbeat, over a lease no case here ever reaches.
+
+    Renewal is asserted in ``test_claim_heartbeat``, where the clock is a
+    collaborator.  Here it is present so the watch under test is the one
+    that ships, and quiet because nothing advances the clock.
+    """
+    return ClaimHeartbeat(
+        tracker=tracker,
+        holder=HOLDER,
+        lease_seconds=LEASE_SECONDS,
+        renewal_fraction=RENEWAL_FRACTION,
+    )
+
+
 def watcher(
     *events: AgentEvent,
 ) -> tuple[LifecycleWatcher, FakeTrackerPort, FakeJobQueue]:
@@ -70,6 +93,7 @@ def watcher(
         LifecycleWatcher(
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
         ),
         tracker,
         queue,
@@ -88,7 +112,11 @@ class TestTheTransitionsAJobStreamProduces:
             complete(merged=True, outcome=WorkflowOutcome.ci_passed),
         )
 
-        await watch.watch(issue_key=ISSUE, job_id="job-0001")
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
 
         assert tracker.workflow_writes == [
             (ISSUE, LifecycleStage.IN_PROGRESS),
@@ -102,7 +130,11 @@ class TestTheTransitionsAJobStreamProduces:
             complete(merged=True, outcome=WorkflowOutcome.ci_passed),
         )
 
-        await watch.watch(issue_key=ISSUE, job_id="job-0001")
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
 
         assert [comment.body for comment in tracker.comments] == [
             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
@@ -119,7 +151,11 @@ class TestTheTransitionsAJobStreamProduces:
             ),
         )
 
-        await watch.watch(issue_key=ISSUE, job_id="job-0001")
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
 
         assert (ISSUE, LifecycleStage.DONE) not in tracker.workflow_writes
         assert tracker.queue_writes == []
@@ -132,7 +168,11 @@ class TestTheTransitionsAJobStreamProduces:
         """No dequeue, no transition — the issue keeps the state it had."""
         watch, tracker, _ = watcher()
 
-        await watch.watch(issue_key=ISSUE, job_id="job-0001")
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
 
         assert tracker.workflow_writes == []
         assert tracker.comments == []
@@ -146,7 +186,11 @@ class TestTheTransitionsAJobStreamProduces:
             AssistantTextEvent(text="three", model=MODEL),
         )
 
-        await watch.watch(issue_key=ISSUE, job_id="job-0001")
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
 
         assert tracker.workflow_writes == [(ISSUE, LifecycleStage.IN_PROGRESS)]
 
@@ -160,7 +204,11 @@ class TestFollowingInTheBackground:
             complete(merged=True, outcome=WorkflowOutcome.ci_passed),
         )
 
-        watch.follow(issue_key=ISSUE, job_id="job-0001")
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
         assert watch.following, "the task must be referenced, not left to the GC"
         await asyncio.gather(*watch.following)
 
@@ -237,6 +285,7 @@ class TestThePremiseAgainstTheShippedQueue:
                     tracker=tracker,
                     gate=PassThroughGate(),
                 ),
+                heartbeat=claim_heartbeat(tracker),
             )
             record = await queue.submit(
                 lane="lane",
@@ -244,7 +293,11 @@ class TestThePremiseAgainstTheShippedQueue:
             )
 
             await asyncio.wait_for(
-                watch.watch(issue_key=ISSUE, job_id=record.job_id),
+                watch.watch(
+                    issue_key=ISSUE,
+                    job_id=record.job_id,
+                    pre_claim_state=PRE_CLAIM_STATE,
+                ),
                 timeout=5.0,
             )
 
@@ -274,7 +327,160 @@ class TestTheWatcherIsUnknownJobSafe:
         watch = LifecycleWatcher(
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
         )
 
         with pytest.raises(KeyError):
-            await watch.watch(issue_key=ISSUE, job_id="never-submitted")
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id="never-submitted",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+
+class TestTheFailureArm:
+    """A run that reaches no terminal outcome writes back too (KOD-146).
+
+    The measured hole: the dispatch arc wrote ``in-progress``, the run died
+    two minutes later, and the board said nothing for the rest of its life.
+    Every act below is observed on the tracker, so a watcher that stopped
+    calling the writer fails here.
+    """
+
+    async def test_a_crashed_run_is_put_back_where_the_pass_found_it(self) -> None:
+        watch, tracker, _ = watcher(
+            AssistantTextEvent(text="drafting", model=MODEL),
+            ErrorEvent(
+                error="Creator produced no structured output.",
+                error_kind="NoStructuredOutputError",
+                raise_site="ticket_creator",
+            ),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert tracker.workflow_writes == [(ISSUE, LifecycleStage.IN_PROGRESS)]
+        assert tracker.restored_states == [(ISSUE, PRE_CLAIM_STATE)]
+        assert tracker.issues[ISSUE].state_name == PRE_CLAIM_STATE
+
+    async def test_the_comment_names_the_failure_class_the_step_and_the_job(
+        self,
+    ) -> None:
+        watch, tracker, _ = watcher(
+            ErrorEvent(
+                error="Creator produced no structured output.",
+                error_kind="NoStructuredOutputError",
+                raise_site="ticket_creator",
+            ),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        (comment,) = tracker.comments
+        assert comment.issue_key == ISSUE
+        assert "NoStructuredOutputError" in comment.body
+        assert "ticket_creator" in comment.body
+        assert "job-0001" in comment.body
+
+    async def test_a_stream_that_names_no_failure_says_so_rather_than_guessing(
+        self,
+    ) -> None:
+        """Three states, not two: what the run did not report is named."""
+        watch, tracker, _ = watcher(AssistantTextEvent(text="working", model=MODEL))
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert tracker.restored_states == [(ISSUE, PRE_CLAIM_STATE)]
+        (comment,) = tracker.comments
+        assert "an unnamed failure class" in comment.body
+        assert "no step named" in comment.body
+
+    async def test_the_put_back_lands_before_the_comment_reports_it(self) -> None:
+        """A reader who sees the note never sees a stale state beside it."""
+        watch, tracker, _ = watcher(
+            ErrorEvent(error="boom", error_kind="RuntimeError"),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert tracker.issues[ISSUE].state_name == PRE_CLAIM_STATE
+        assert len(tracker.comments) == 1
+
+    async def test_a_run_reaching_a_terminal_outcome_is_untouched_by_the_arm(
+        self,
+    ) -> None:
+        """The paired positive: the success path writes exactly what it did."""
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert tracker.restored_states == []
+        assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+            (ISSUE, LifecycleStage.DONE),
+        ]
+        assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
+        ]
+
+    async def test_a_terminal_outcome_after_an_error_frame_is_still_terminal(
+        self,
+    ) -> None:
+        """An ErrorEvent alone is not the signal — reaching no terminal is.
+
+        The ticket loop yields an ``ErrorEvent`` on a soft failure and can
+        still complete, so the arm turns on the absence of a terminal
+        outcome rather than on an error frame having appeared.
+        """
+        watch, tracker, _ = watcher(
+            ErrorEvent(error="soft", error_kind="WorkspaceError"),
+            complete(merged=False, outcome=WorkflowOutcome.loop_not_accepted),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert tracker.restored_states == []
+        assert [comment.body for comment in tracker.comments] == [
+            f"job job-0001 reached outcome {WorkflowOutcome.loop_not_accepted.value}",
+        ]
+
+    async def test_a_run_that_never_started_is_left_alone(self) -> None:
+        """Nothing moved it, so there is nothing to put back."""
+        watch, tracker, _ = watcher()
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert tracker.restored_states == []
+        assert tracker.comments == []

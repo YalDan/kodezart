@@ -1149,3 +1149,24 @@ class TestOpenDeliveryProbe:
             repo_url="https://github.com/owner/repo",
             issue_key="KOD-58",
         )
+
+    async def test_an_origin_this_forge_does_not_own_raises_rather_than_answers(
+        self,
+    ) -> None:
+        """UNCHANGED by KOD-145, and pinned so it stays that way.
+
+        This adapter answers for the forge it is a client of, and it cannot
+        see a local bare origin at all.  The remedy for the crash that
+        caused is probe SELECTION at the composition root — a forge-less
+        origin is wired to the probe that can answer for it — never a
+        fallback here.  An adapter that quietly returned False for an
+        origin it cannot read would be guessing, and the guess would be
+        indistinguishable from a real answer.
+        """
+        client = await self._client([])
+
+        with pytest.raises(ValueError, match="file://"):
+            await client.open_delivery_exists(
+                repo_url="file:///tmp/local-origin.git",
+                issue_key="KOD-58",
+            )

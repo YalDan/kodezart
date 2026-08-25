@@ -118,13 +118,18 @@ class OperationModel(BaseModel):
 class Principal(OperationModel):
     """A tracker user, the role granting their authority, and how they are named.
 
-    ``tracker_user`` is the identifier authority is checked against — a
-    provenance record answers "who set this state" with it.  ``handle`` is
-    the identifier a mention is RECOGNISED by: the string a person writes
-    when addressing this principal in a body or a comment.  The two are
-    routinely different, and a model carrying only the first cannot express
-    the mention sweep at all — that sweep is text matching, and it has no
-    identifier to match on.
+    ``tracker_user`` is the DISPLAY identity the tracker attributes acts
+    and mentions to: the value the workspace's user listing reports, which
+    boot resolves this principal against, and the name an authored comment
+    comes back under.  It checks no authority — nothing on the measured
+    tracker surface attests who set a state, so the dispatch predicate
+    turns on a state's presence rather than on its author (KOD-144).
+
+    ``handle`` is the identifier a mention is RECOGNISED by: the string a
+    person writes when addressing this principal in a body or a comment.
+    The two are routinely different, and a model carrying only the first
+    cannot express the mention sweep at all — that sweep is text matching,
+    and it has no identifier to match on.
     """
 
     tracker_user: str
@@ -371,6 +376,16 @@ class OperationConfig(OperationModel):
             if PrincipalRole.PRINCIPAL not in principal.roles
         )
 
+        # Two keys naming one team is not a synonym, it is an ambiguity: the
+        # adapter resolves an issue's team back onto the key a scan was
+        # scoped by, and with two candidates that answer is a coin toss.
+        names = [entry.name for entry in self.teams.values()]
+        failures.extend(
+            f"teams[{key!r}].name {entry.name!r} is not unique"
+            for key, entry in self.teams.items()
+            if names.count(entry.name) > 1
+        )
+
         if self.queue_states:
             for member in QueueState:
                 if member.value not in self.queue_states:
@@ -439,8 +454,8 @@ class OperationConfig(OperationModel):
         """The single principal holding APPROVER authority.
 
         Refuses when no principal carries the role — an empty board loads,
-        and the cost lands here, on the consumer that needs the approval
-        act attributed.
+        and the cost lands here, on the consumer that needs the approving
+        role named.
         """
         for principal in self.principals:
             if PrincipalRole.APPROVER in principal.roles:
@@ -448,7 +463,8 @@ class OperationConfig(OperationModel):
         raise OperationMemberAbsentError(
             missing="principal carrying the APPROVER role",
             stops=(
-                "approval provenance cannot be attributed, so nothing can be dispatched"
+                "the operation cannot state who may promote work into the "
+                "queue, so nothing can be dispatched"
             ),
         )
 
@@ -473,6 +489,26 @@ class OperationConfig(OperationModel):
                 "no target, so a pass that assigns them refuses to run"
             ),
         )
+
+    def team_keys(self) -> tuple[str, ...]:
+        """Every team key this operation declares, in declaration order.
+
+        The container boundary a dispatch scan is narrowed to and every
+        candidate is judged against.  Refuses when the config declares no
+        team: a workspace holds more than one operation's board, so an
+        unbounded scan is not "the whole operation" — it is somebody else's
+        work, reachable by an approval act this operation does not own.
+        """
+        if not self.teams:
+            raise OperationMemberAbsentError(
+                missing="teams entry",
+                stops=(
+                    "a dispatch scan has no container to be bounded by, so "
+                    "nothing distinguishes this operation's board from any "
+                    "other in the workspace and no issue can be selected"
+                ),
+            )
+        return tuple(self.teams)
 
     def checkpoint_document(self) -> DocumentEntry:
         """The read-side document the scan-window marker lives in.

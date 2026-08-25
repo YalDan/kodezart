@@ -17,10 +17,11 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
-from kodezart.core.errors import TrackerEnsureConflictError
+from kodezart.core.errors import McpTransportError, TrackerEnsureConflictError
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import (
     AgentExecutor,
+    McpToolResult,
     PromptSetProvider,
     WorkflowEngine,
 )
@@ -98,7 +99,6 @@ from kodezart.types.domain.tracker import (
     MappingOutcome,
     MappingRef,
     ReviewQuery,
-    StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
@@ -151,6 +151,11 @@ def knowledge_grant_for(
 #: with a knowledge server at all.
 NO_KNOWLEDGE_GRANT: KnowledgeGrant = knowledge_grant_for()
 FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+#: The configured team key every fixture issue belongs to, and the one a
+#: fixture operation declares.  A test reaching for an issue OUTSIDE the
+#: declared containers passes its own key — or ``None`` for one whose team
+#: the configuration does not name at all.
+FIXTURE_TEAM_KEY: str = "engineering"
 DEFAULT_SETTING_SOURCES: list[SettingSource] = [
     SettingSource.USER,
     SettingSource.PROJECT,
@@ -1900,21 +1905,28 @@ async def attached_job_queue(
 
 @dataclass
 class FakeMcpAsset:
-    """One attachment or document reference the fake server serves."""
+    """One attachment or document reference the fake server serves.
+
+    Four keys, because four keys were measured: every captured asset array
+    carries ``id``, ``title``, ``subtitle`` and ``url`` and nothing else.
+    ``contentType`` and ``size`` were served here and are gone — a fake
+    that sends what the vendor never sends lets a consumer be tested over
+    an input production cannot produce (KOD-143 fire-ruling, 2026-08-25).
+    The wire model keeps both as optional: ``TrackerAsset`` owns what
+    their absence means, and the day the vendor sends one it flows through
+    unchanged.
+    """
 
     id: str
     title: str
     url: str
-    content_type: str | None = None
-    size: int | None = None
 
     def wire(self) -> dict[str, object]:
         return {
             "id": self.id,
             "title": self.title,
+            "subtitle": None,
             "url": self.url,
-            "contentType": self.content_type,
-            "size": self.size,
         }
 
 
@@ -1946,6 +1958,7 @@ class FakeMcpIssue:
     priority_raw: int = 0
     status: str = "Backlog"
     status_type: str = "backlog"
+    team: str = "fixture-team"
     labels: list[str] = field(default_factory=list)
     relations: list[tuple[str, str]] = field(default_factory=list)
     attachments: list[FakeMcpAsset] = field(default_factory=list)
@@ -1956,20 +1969,23 @@ class FakeMcpIssue:
     updated_at: datetime = FIXTURE_EPOCH
     url: str = ""
 
-    def wire(self) -> dict[str, object]:
+    def entry(self) -> dict[str, object]:
+        """The issue as a ``list_issues`` ENTRY reports it.
+
+        No relations, no attachments, no documents: the live listing
+        carries none of the three, and a fake that sent them would let the
+        adapter read a field the vendor never fills (KOD-143).
+        """
         return {
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "priority": {"value": self.priority_raw},
+            "priority": {"value": self.priority_raw, "name": "fixture"},
             "status": self.status,
             "statusType": self.status_type,
+            "team": self.team,
+            "teamId": f"{self.team}-id",
             "labels": list(self.labels),
-            "relations": [
-                {"type": kind, "identifier": key} for kind, key in self.relations
-            ],
-            "attachments": [asset.wire() for asset in self.attachments],
-            "documents": [asset.wire() for asset in self.documents],
             "parentId": self.parent_id,
             "assignee": self.assignee,
             "createdAt": self.created_at.isoformat(),
@@ -1977,42 +1993,70 @@ class FakeMcpIssue:
             "url": self.url or f"https://tracker.invalid/issue/{self.id}",
         }
 
+    def wire(self) -> dict[str, object]:
+        """The issue as ``get_issue`` reports it, relations included.
+
+        The relations object is keyed by relation kind — three arrays and
+        one nullable single — exactly as the vendor answers a read that
+        passed ``includeRelations``.
+        """
+        return {
+            **self.entry(),
+            "relations": self.relations_wire(),
+            "attachments": [asset.wire() for asset in self.attachments],
+            "documents": [asset.wire() for asset in self.documents],
+        }
+
+    def relations_wire(self) -> dict[str, object]:
+        """The relations object, with every arm present as measured.
+
+        An arm the live vendor does not have is refused rather than
+        served: a fixture that invented one would let a test pass on a
+        payload the workspace can never send.
+        """
+        arms: dict[str, list[dict[str, object]]] = {
+            "blocks": [],
+            "blockedBy": [],
+            "relatedTo": [],
+        }
+        duplicate_of: dict[str, object] | None = None
+        for kind, key in self.relations:
+            edge: dict[str, object] = {"id": key, "title": f"issue {key}"}
+            if kind == "duplicateOf":
+                duplicate_of = edge
+            elif kind in arms:
+                arms[kind].append(edge)
+            else:
+                msg = f"the vendor's relations object has no arm named {kind!r}"
+                raise LookupError(msg)
+        return {**arms, "duplicateOf": duplicate_of}
+
 
 @dataclass
 class FakeMcpComment:
-    """One comment in the fake workspace's append-only log."""
+    """One comment in the fake workspace's append-only log.
+
+    ``issue_id`` is workspace state — which issue the log entry belongs to
+    — and is deliberately NOT on the wire: the vendor's comment entry
+    names no issue, so a reader learns that from the call it made.
+    """
 
     id: str
     issue_id: str
-    user: str
+    author: str
     body: str
     created_at: datetime
 
     def wire(self) -> dict[str, object]:
         return {
             "id": self.id,
-            "issueId": self.issue_id,
-            "user": self.user,
+            "author": {"id": f"{self.author}-id", "name": self.author},
             "body": self.body,
             "createdAt": self.created_at.isoformat(),
-        }
-
-
-@dataclass
-class FakeMcpHistoryEntry:
-    """One label-change history entry — the provenance record."""
-
-    actor: str
-    created_at: datetime
-    added_labels: list[str] = field(default_factory=list)
-    removed_labels: list[str] = field(default_factory=list)
-
-    def wire(self) -> dict[str, object]:
-        return {
-            "actor": self.actor,
-            "addedLabels": list(self.added_labels),
-            "removedLabels": list(self.removed_labels),
-            "createdAt": self.created_at.isoformat(),
+            "parentId": None,
+            "resolvedAt": None,
+            "quotedText": None,
+            "onBehalfOf": None,
         }
 
 
@@ -2030,35 +2074,39 @@ class FakeLinearMcpServer:
         *,
         issues: Sequence[FakeMcpIssue] = (),
         documents: Sequence[FakeMcpDocument] = (),
-        history: Mapping[str, Sequence[FakeMcpHistoryEntry]] | None = None,
         users: Sequence[str] = (),
         teams: Sequence[str] = (),
         labels: Sequence[str] = (),
         label_containers: Mapping[str, str] | None = None,
-        statuses: Sequence[str] = (),
+        statuses: Mapping[str, Sequence[str]] | None = None,
         state_types: Mapping[str, str] | None = None,
         actor: str = "fixture-actor",
         comment_instants: Sequence[datetime] = (),
         transient_failures: Mapping[str, int] | None = None,
+        transport_failures: Mapping[str, int] | None = None,
     ) -> None:
         self.issues: dict[str, FakeMcpIssue] = {issue.id: issue for issue in issues}
         self.comments: list[FakeMcpComment] = []
         self.documents: dict[str, FakeMcpDocument] = {
             document.id: document for document in documents
         }
-        self.history: dict[str, list[FakeMcpHistoryEntry]] = {
-            key: list(entries) for key, entries in (history or {}).items()
-        }
         self.users: list[str] = list(users)
         self.teams: list[str] = list(teams)
         self.labels: list[str] = list(labels)
         self.label_containers: dict[str, str] = dict(label_containers or {})
-        self.statuses: list[str] = list(statuses)
+        #: The workflow-state vocabulary each team offers, keyed by team.
+        #: Per team rather than per workspace because that is what the
+        #: backend holds: the listing tool takes a team and answers for it
+        #: alone, and two teams' vocabularies routinely differ.
+        self.statuses: dict[str, list[str]] = {
+            team: list(names) for team, names in (statuses or {}).items()
+        }
         self.state_types: dict[str, str] = dict(state_types or {})
         self.actor: str = actor
         self.calls: list[tuple[str, Mapping[str, object]]] = []
         self.comment_instants: list[datetime] = list(comment_instants)
         self._transient_failures: dict[str, int] = dict(transient_failures or {})
+        self._transport_failures: dict[str, int] = dict(transport_failures or {})
         self._sequence: int = 0
 
     async def call_tool(
@@ -2066,7 +2114,7 @@ class FakeLinearMcpServer:
         *,
         name: str,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
+    ) -> McpToolResult:
         # Yield to the scheduler at every tool boundary so concurrent callers
         # genuinely interleave: a claim race that never interleaves proves
         # nothing about exactly-once semantics.
@@ -2076,11 +2124,19 @@ class FakeLinearMcpServer:
         if remaining > 0:
             self._transient_failures[name] = remaining - 1
             raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
         handler = getattr(self, f"_tool_{name}", None)
         if handler is None:
             msg = f"fake MCP server exposes no tool named {name!r}"
             raise LookupError(msg)
-        result: Mapping[str, object] = handler(arguments)
+        result: McpToolResult = handler(arguments)
         return result
 
     def tool_calls(self, name: str) -> list[Mapping[str, object]]:
@@ -2107,13 +2163,18 @@ class FakeLinearMcpServer:
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
         label = arguments.get("label")
+        team = arguments.get("team")
         selected = [
             issue
             for issue in self.issues.values()
-            if label is None or label in issue.labels
+            if (label is None or label in issue.labels)
+            and (team is None or issue.team == team)
         ]
         limit = int(str(arguments.get("limit", len(selected))))
-        return {"issues": [issue.wire() for issue in selected[:limit]]}
+        return {
+            "issues": [issue.entry() for issue in selected[:limit]],
+            "hasNextPage": len(selected) > limit,
+        }
 
     def _tool_get_issue(
         self,
@@ -2147,18 +2208,6 @@ class FakeLinearMcpServer:
             raw_labels = arguments["labels"]
             assert isinstance(raw_labels, list)
             new_labels = [str(entry) for entry in raw_labels]
-            self.history.setdefault(issue.id, []).append(
-                FakeMcpHistoryEntry(
-                    actor=self.actor,
-                    created_at=self._next_instant(),
-                    added_labels=[
-                        label for label in new_labels if label not in issue.labels
-                    ],
-                    removed_labels=[
-                        label for label in issue.labels if label not in new_labels
-                    ],
-                )
-            )
             issue.labels = new_labels
         return issue.wire()
 
@@ -2171,7 +2220,7 @@ class FakeLinearMcpServer:
         comment = FakeMcpComment(
             id=f"comment-{self._sequence:04d}",
             issue_id=str(arguments["issueId"]),
-            user=self.actor,
+            author=self.actor,
             body=str(arguments["body"]),
             created_at=created_at,
         )
@@ -2188,7 +2237,8 @@ class FakeLinearMcpServer:
                 comment.wire()
                 for comment in self.comments
                 if comment.issue_id == issue_id
-            ]
+            ],
+            "hasNextPage": False,
         }
 
     def _tool_delete_comment(
@@ -2198,13 +2248,6 @@ class FakeLinearMcpServer:
         comment_id = str(arguments["id"])
         self.comments = [c for c in self.comments if c.id != comment_id]
         return {}
-
-    def _tool_list_issue_history(
-        self,
-        arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
-        entries = self.history.get(str(arguments["id"]), [])
-        return {"history": [entry.wire() for entry in entries]}
 
     def _tool_get_document(
         self,
@@ -2220,6 +2263,7 @@ class FakeLinearMcpServer:
     ) -> Mapping[str, object]:
         return {
             "documents": [document.summary() for document in self.documents.values()],
+            "hasNextPage": False,
         }
 
     def _tool_save_document(
@@ -2243,45 +2287,99 @@ class FakeLinearMcpServer:
         self.documents[document.id] = document
         return document.summary()
 
-    def _named(self, names: Sequence[str]) -> Mapping[str, object]:
-        return {"entries": [{"name": name} for name in names]}
+    def _named(self, key: str, names: Sequence[str]) -> Mapping[str, object]:
+        """A list envelope under the key the TOOL names, never a shared one.
+
+        Each list tool keys its array after itself — ``users``, ``teams``,
+        ``labels`` — which is what the live server does and what the wire
+        models declare (KOD-143).
+        """
+        return {
+            key: [{"id": f"{name}-id", "name": name} for name in names],
+            "hasNextPage": False,
+        }
+
+    def display_name(self, name: str) -> str:
+        """The handle a mention addresses *name* by — never *name* itself."""
+        return name.replace("-", ".")
 
     def _tool_list_users(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        return self._named(self.users)
+        """Users under BOTH identities the workspace answers to.
+
+        Every measured entry carries a ``displayName`` — the handle a
+        mention addresses — and on no measured entry does it equal the
+        account name.  The fake holds them distinct for that reason: a
+        reader that knows only one of the two is then visibly reading half
+        the listing (KOD-143 addendum 3).
+        """
+        return {
+            "users": [
+                {
+                    "id": f"{name}-id",
+                    "name": name,
+                    "displayName": self.display_name(name),
+                }
+                for name in self.users
+            ],
+            "hasNextPage": False,
+        }
 
     def _tool_list_teams(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        return self._named(self.teams)
+        return self._named("teams", self.teams)
 
     def _tool_list_issue_labels(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        """Labels with the container the workspace holds each one in.
+        """One label listing, answering for a team or for the workspace.
 
-        A label seeded into the fixture reports NO container, exactly as a
-        listing that does not carry the field would: the fake states what
-        the workspace knows and never invents workspace scope for a label
-        nobody said anything about.
+        Unscoped, this answers with the workspace-level labels ALONE — a
+        team's labels are invisible to it, which is the fact boot five
+        measured and the label addendum ruled on (KOD-143).  Sent a
+        ``team``, it answers with that team's labels.
+
+        Neither answer carries a container field, because the live listing
+        carries none: WHICH listing answered is the only thing either one
+        says about scope, and a reader that wants the container has to ask
+        the question that way.
         """
+        team = arguments.get("team")
+        container = None if team is None else self._team_id(str(team))
         return {
-            "entries": [
-                {"name": name}
-                if self.label_containers.get(name) is None
-                else {"name": name, "teamId": self.label_containers[name]}
+            "labels": [
+                {"id": f"{name}-id", "name": name, "color": "#000000"}
                 for name in self.labels
+                if self.label_containers.get(name) == container
             ],
+            "hasNextPage": False,
         }
+
+    def _team_id(self, team: str) -> str:
+        """The id the fake addresses *team* by; ``team`` takes a name or an id."""
+        if team in self.teams:
+            return f"{team}-id"
+        if team in {f"{name}-id" for name in self.teams}:
+            return team
+        msg = f"fake workspace holds no team {team!r}"
+        raise LookupError(msg)
 
     def _tool_create_issue_label(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
+        """Create one label, refusing a name the workspace already carries.
+
+        By NAME, not by (name, container): that is what the live server
+        did to the boot that re-created its own team-scoped label, and the
+        adapter is not permitted to tolerate it — so the fake has to be
+        able to produce it.
+        """
         name = str(arguments["name"])
         if name in self.labels:
             msg = f"fake workspace already carries the label {name!r}"
@@ -2295,8 +2393,27 @@ class FakeLinearMcpServer:
     def _tool_list_issue_statuses(
         self,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
-        return self._named(self.statuses)
+    ) -> Sequence[Mapping[str, object]]:
+        """One team's vocabulary, as a BARE ARRAY — no envelope, measured.
+
+        ``team`` is required by the tool's declared input schema, so a
+        call without one is a refusal here as it is there.  The ids are
+        scoped to the team that answered: a status is a per-team entity on
+        this backend and two teams never share one.
+        """
+        team = str(arguments["team"])
+        names = self.statuses.get(team)
+        if names is None:
+            msg = f"fake workspace holds no team {team!r}"
+            raise LookupError(msg)
+        return [
+            {
+                "id": f"{team}-{name}-id",
+                "type": self.state_types.get(name, "backlog"),
+                "name": name,
+            }
+            for name in names
+        ]
 
 
 class ManagedFakeLinearMcpServer(FakeLinearMcpServer):
@@ -2346,7 +2463,6 @@ class FakeTrackerPort:
         self,
         *,
         issues: Sequence[TrackerIssue] = (),
-        provenance: Mapping[tuple[str, QueueState], StateTransition] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         document_titles: Mapping[str, str] | None = None,
@@ -2363,8 +2479,22 @@ class FakeTrackerPort:
         }
         self.recorded_base_specs: dict[str, BaseSpec] = dict(recorded_base_specs or {})
         self.claims: dict[str, ClaimResult] = {}
+        #: Every renewal ATTEMPT, granted or refused, as (issue, holder).
+        #: A heartbeat that has stopped is observed as a count that stopped
+        #: growing, which a record of grants alone cannot tell from a
+        #: heartbeat still ticking against a claim it no longer holds.
+        self.renewals: list[tuple[str, str]] = []
         self.comments: list[TrackerComment] = []
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
+        #: Every put-back the failure arm made, as (issue, state name).
+        #: Kept apart from ``workflow_writes`` because a restore names a
+        #: backend state and a stage write names a mapped one.
+        self.restored_states: list[tuple[str, str]] = []
+        #: The kind of every state this fake has seen, so a put-back can
+        #: answer with the state's own kind rather than inventing one.
+        self._state_kinds: dict[str, WorkflowStateKind] = {
+            issue.state_name: issue.state_kind for issue in issues
+        }
         self.queue_writes: list[tuple[str, QueueState]] = []
         self.scans: list[IssueQuery] = []
         #: Reviews this double reports, and the queries it was asked.  A
@@ -2372,9 +2502,6 @@ class FakeTrackerPort:
         #: object class: seeding one must not make an issue scan see it.
         self.reviews: list[TrackerReview] = []
         self.review_scans: list[ReviewQuery] = []
-        self._provenance: dict[tuple[str, QueueState], StateTransition] = dict(
-            provenance or {}
-        )
         self._assets: dict[str, tuple[TrackerAsset, ...]] = {
             key: tuple(value) for key, value in (assets or {}).items()
         }
@@ -2399,6 +2526,7 @@ class FakeTrackerPort:
             issue
             for issue in self.issues.values()
             if (query.queue_state is None or query.queue_state in issue.queue_states)
+            and (query.team_key is None or issue.team_key == query.team_key)
             and (query.updated_since is None or issue.updated_at > query.updated_since)
         ]
         return tuple(matched[: query.page_size])
@@ -2438,6 +2566,7 @@ class FakeTrackerPort:
             state_name="Backlog",
             state_kind=WorkflowStateKind.BACKLOG,
             queue_states=frozenset(),
+            team_key=team_key,
             created_at=self._clock(),
             updated_at=self._clock(),
             url=f"https://tracker.invalid/issue/FAKE-{self._sequence}",
@@ -2470,11 +2599,32 @@ class FakeTrackerPort:
     ) -> TrackerIssue:
         self.workflow_writes.append((issue_key, stage))
         issue = self.issues[issue_key]
+        self._state_kinds[issue.state_name] = issue.state_kind
+        self._state_kinds[stage.value] = _STAGE_KIND[stage]
         updated = issue.model_copy(
             update={
                 "state_name": stage.value,
                 "state_kind": _STAGE_KIND[stage],
             },
+        )
+        self.issues[issue_key] = updated
+        return updated
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        # A backend knows the kind of every state it defines, so the fake
+        # does too: seeded from the fixture's issues and extended by every
+        # write. An unknown name is a state no backend defined, and it
+        # raises rather than inventing a kind for it.
+        kind = self._state_kinds[state_name]
+        self.restored_states.append((issue_key, state_name))
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(
+            update={"state_name": state_name, "state_kind": kind},
         )
         self.issues[issue_key] = updated
         return updated
@@ -2535,6 +2685,29 @@ class FakeTrackerPort:
         self.claims[issue_key] = granted
         return granted
 
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        await asyncio.sleep(0)
+        self.renewals.append((issue_key, holder))
+        held = self.claims.get(issue_key)
+        if held is None or held.holder != holder or held.expires_at <= self._clock():
+            return None
+        renewed = held.model_copy(
+            update={
+                "expires_at": max(
+                    self._clock() + timedelta(seconds=lease_seconds),
+                    held.expires_at,
+                ),
+            },
+        )
+        self.claims[issue_key] = renewed
+        return renewed
+
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         held = self.claims.get(issue_key)
         if held is not None and held.holder == holder:
@@ -2546,15 +2719,6 @@ class FakeTrackerPort:
         if held is None or held.expires_at <= self._clock():
             return None
         return held
-
-    async def queue_state_provenance(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> StateTransition | None:
-        await asyncio.sleep(0)
-        return self._provenance.get((issue_key, state))
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
         return self._assets.get(issue_key, ())
@@ -2741,6 +2905,7 @@ def make_tracker_issue(
     queue_states: Sequence[QueueState] = (QueueState.APPROVED,),
     blocked_by: Sequence[str] = (),
     parent_key: str | None = None,
+    team_key: str | None = FIXTURE_TEAM_KEY,
     created_at: datetime = FIXTURE_EPOCH,
     body: str = "fixture body",
 ) -> TrackerIssue:
@@ -2754,6 +2919,7 @@ def make_tracker_issue(
         state_name=state_name,
         state_kind=state_kind,
         queue_states=frozenset(queue_states),
+        team_key=team_key,
         relations=tuple(
             IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=key)
             for key in blocked_by
@@ -2761,24 +2927,6 @@ def make_tracker_issue(
         created_at=created_at,
         updated_at=created_at,
         url=f"https://tracker.invalid/issue/{issue_key}",
-    )
-
-
-def approved_by(
-    issue_key: str,
-    actor_key: str,
-    *,
-    occurred_at: datetime = FIXTURE_EPOCH,
-) -> tuple[tuple[str, QueueState], StateTransition]:
-    """One provenance entry for ``FakeTrackerPort(provenance=dict([...]))``."""
-    return (
-        (issue_key, QueueState.APPROVED),
-        StateTransition(
-            issue_key=issue_key,
-            queue_state=QueueState.APPROVED,
-            actor_key=actor_key,
-            occurred_at=occurred_at,
-        ),
     )
 
 

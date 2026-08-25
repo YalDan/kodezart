@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from functools import partial
 from pathlib import Path
 
+from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.logging import BoundLogger
@@ -22,7 +23,9 @@ from kodezart.core.protocols import (
     RepoCache,
     TrackerPort,
 )
+from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver
+from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
@@ -36,6 +39,27 @@ from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+
+
+def delivery_probe_for(repo_url: str, *, forge: DeliveryProbe) -> DeliveryProbe:
+    """The probe that can answer "already delivered?" about *repo_url*.
+
+    Chosen per ORIGIN, because the question is not answerable the same way
+    for all of them.  The forge client's first act is to parse an owner and
+    a repository out of the URL, which raises on an origin that has no
+    forge behind it — and unlike the visibility resolver, the delivery
+    probe has no containment, so that exception unwound the whole dispatch
+    tick.  Every 300 seconds for half an hour on the first live run, before
+    any claim was attempted (KOD-145).
+
+    Selection lives HERE because this is where origins are known.  It is
+    not a fallback inside the forge client, which keeps raising loudly on
+    URLs it does not own: one adapter answers for forge origins and
+    another answers for forge-less ones, and both answers are true.
+    """
+    if is_forge_less_origin(repo_url):
+        return NoForgeDeliveryProbe()
+    return forge
 
 
 def build_gate(
@@ -140,6 +164,11 @@ def build_dispatch_passes(
     Every repository in the config, not a chosen one: the dispatcher
     claims per repository, and picking one would leave the rest of the
     operation's declared surface unserved with nothing saying so.
+
+    *delivery* is the FORGE probe, and it reaches only the repositories
+    whose origin has a forge; the rest get the probe that can answer for
+    theirs.  See :func:`delivery_probe_for` — the selection is per
+    repository because the origins are.
     """
     assembler = FireContextAssembler(
         tracker=tracker,
@@ -154,6 +183,12 @@ def build_dispatch_passes(
     lifecycle = LifecycleWatcher(
         queue=queue,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
+        heartbeat=ClaimHeartbeat(
+            tracker=tracker,
+            holder=config.dispatch_holder,
+            lease_seconds=config.tracker_claim_lease_seconds,
+            renewal_fraction=config.tracker_claim_renewal_fraction,
+        ),
     )
     resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
     passes: list[ScheduledPass] = []
@@ -169,7 +204,7 @@ def build_dispatch_passes(
                 tracker=tracker,
                 queue=queue,
                 registry=registry,
-                delivery=delivery,
+                delivery=delivery_probe_for(repo.url, forge=delivery),
                 operation=operation,
                 repo_url=repo.url,
                 lane=config.dispatch_lane,

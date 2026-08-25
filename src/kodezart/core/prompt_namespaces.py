@@ -189,7 +189,9 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         absent=not config.initiatives,
     )
     # ``handle`` is the identifier a MENTION is recognised by and
-    # ``tracker_user`` the one authority is checked against. A sweep
+    # ``tracker_user`` the display identity the tracker names the principal
+    # by — what its user listing reports and what an authored act comes
+    # back attributed to, never an authority check (KOD-144). A sweep
     # given only the second has nothing to match on.  ``forge_handle`` is
     # the same principal's name on the forge; a principal who never
     # appears there has none, and the absent case is named.  Beside the

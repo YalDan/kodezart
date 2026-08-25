@@ -7,21 +7,28 @@ conformance suite covers what every adapter must do; this module covers
 what THIS adapter does to get there.
 """
 
+from collections.abc import Mapping
 from datetime import timedelta
 
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
-from kodezart.core.errors import TrackerProtocolError
+from kodezart.core.errors import McpTransportError, TrackerProtocolError
+from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     ClaimStatus,
+    EnsureAction,
     IssuePriority,
     IssueQuery,
+    IssueRelationKind,
+    MappingKind,
+    MappingRef,
     priority_rank,
 )
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
 from tests.tracker.conftest import (
+    APPROVER,
     CLAIMED_ISSUE,
     FIXTURE_NOW,
     QUEUE_STATE_LABELS,
@@ -107,13 +114,64 @@ class TestShapeRefusal:
         with pytest.raises(TrackerProtocolError):
             await tracker_over(server).read_issue(issue_key="S-1")
 
-    async def test_an_unknown_relation_kind_raises(self) -> None:
+    async def test_every_measured_relation_arm_maps_to_a_domain_kind(self) -> None:
+        """The vendor's relations object has four arms and the adapter reads all.
+
+        Conformed to the measured shape under KOD-143: relations arrive as
+        ONE object keyed by relation kind, not as a list of typed edges, so
+        an arm's name is a key rather than a ``type`` string.
+        """
         server = FakeLinearMcpServer(
-            issues=[FakeMcpIssue(id="R-1", relations=[("invented", "R-2")])],
+            issues=[
+                FakeMcpIssue(
+                    id="R-1",
+                    relations=[
+                        ("blocks", "R-2"),
+                        ("blockedBy", "R-3"),
+                        ("relatedTo", "R-4"),
+                        ("duplicateOf", "R-5"),
+                    ],
+                ),
+            ],
             state_types=STATE_TYPES,
         )
-        with pytest.raises(TrackerProtocolError):
-            await tracker_over(server).read_issue(issue_key="R-1")
+        issue = await tracker_over(server).read_issue(issue_key="R-1")
+        assert {
+            (relation.kind, relation.issue_key) for relation in issue.relations
+        } == {
+            (IssueRelationKind.BLOCKS, "R-2"),
+            (IssueRelationKind.BLOCKED_BY, "R-3"),
+            (IssueRelationKind.RELATED, "R-4"),
+            (IssueRelationKind.DUPLICATE, "R-5"),
+        }
+
+    async def test_an_arm_the_adapter_does_not_know_is_left_alone(self) -> None:
+        """A fifth arm is the vendor's business, not a refusal.
+
+        The old list-of-edges shape made an unrecognised relation a typed
+        error.  The measured object shape makes it a key, and this module
+        ignores keys it did not declare — the vendor extending its own
+        payload is not a protocol violation.
+        """
+
+        class ExtraArmServer(FakeLinearMcpServer):
+            def _tool_get_issue(
+                self,
+                arguments: Mapping[str, object],
+            ) -> Mapping[str, object]:
+                issue = self._issue(arguments, "id")
+                relations = issue.relations_wire()
+                relations["invented"] = [{"id": "R-9"}]
+                return {**issue.wire(), "relations": relations}
+
+        server = ExtraArmServer(
+            issues=[FakeMcpIssue(id="R-6", relations=[("blocks", "R-7")])],
+            state_types=STATE_TYPES,
+        )
+        issue = await tracker_over(server).read_issue(issue_key="R-6")
+        assert [(r.kind, r.issue_key) for r in issue.relations] == [
+            (IssueRelationKind.BLOCKS, "R-7"),
+        ]
 
     async def test_a_malformed_payload_raises_naming_the_tool(self) -> None:
         class TruncatingServer(FakeLinearMcpServer):
@@ -121,8 +179,8 @@ class TestShapeRefusal:
                 self,
                 *,
                 name: str,
-                arguments: object,
-            ) -> dict[str, object]:
+                arguments: Mapping[str, object],
+            ) -> McpToolResult:
                 return {"id": "T-1"}
 
         server = TruncatingServer(state_types=STATE_TYPES)
@@ -186,6 +244,62 @@ class TestTransientRetry:
         assert len(server.tool_calls("get_issue")) == 2
 
 
+class TestTransportRetry:
+    """Transport failures are retried on the same knobs as transient ones.
+
+    The HTTP transport beneath the adapter raises ``McpTransportError``,
+    never ``TransientAPIError`` — a retry loop that only caught the latter
+    was live solely against the in-process fake (KOD-130 AC-2).
+    """
+
+    async def test_a_transport_failure_within_budget_is_retried(self) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-4")],
+            state_types=STATE_TYPES,
+            transport_failures={"get_issue": 2},
+        )
+        tracker = tracker_over(server, max_retries=2)
+        issue = await tracker.read_issue(issue_key="T-4")
+        assert issue.issue_key == "T-4"
+        assert len(server.tool_calls("get_issue")) == 3
+
+    async def test_exhausting_the_budget_raises_the_transport_error(self) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-5")],
+            state_types=STATE_TYPES,
+            transport_failures={"get_issue": 5},
+        )
+        tracker = tracker_over(server, max_retries=1)
+        with pytest.raises(McpTransportError):
+            await tracker.read_issue(issue_key="T-5")
+        assert len(server.tool_calls("get_issue")) == 2
+
+    async def test_each_retry_waits_the_configured_backoff(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Delays follow ``factor * base**attempt`` off the configured factor.
+
+        The fake yields with ``sleep(0)`` at every tool boundary, so the
+        backoff sequence is the nonzero delays.
+        """
+        recorded: list[float] = []
+
+        async def instant_sleep(delay: float) -> None:
+            recorded.append(delay)
+
+        monkeypatch.setattr("asyncio.sleep", instant_sleep)
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-6")],
+            state_types=STATE_TYPES,
+            transport_failures={"get_issue": 2},
+        )
+        tracker = tracker_over(server, max_retries=2, retry_backoff_factor=0.25)
+        await tracker.read_issue(issue_key="T-6")
+
+        assert [delay for delay in recorded if delay > 0] == [0.25, 0.5]
+
+
 class TestClaimMechanism:
     """The comment-log claim, including the same-instant tie-break."""
 
@@ -246,3 +360,215 @@ class TestDeterministicPath:
             query=IssueQuery(page_size=7),
         )
         assert server.tool_calls("list_issues")[0]["limit"] == 7
+
+
+class TestLabelScopedReading:
+    """Labels are read as a UNION of listings, one of them per declared team.
+
+    ``list_issue_labels`` answers with the workspace-level labels when it
+    is sent no team and with a team's own labels when it is sent one, so
+    neither answer is "the labels this workspace holds".  Reading only the
+    unscoped one is what made a boot invisible to itself: it had created
+    ``queue:done`` team-scoped, per its ref's scope, and the next boot
+    could not see it, re-created it, and was refused by name (KOD-143, the
+    label addendum of 2026-08-25).
+
+    Every row here turns on WHICH listing carried an entry.  None of them
+    can be satisfied by reading a container off the entry itself, which is
+    the reading the addendum forbids and which no live payload supports.
+    """
+
+    TEAM = TEAM_IDENTIFIERS["engineering"]
+    LABEL = "queue:scoped"
+
+    def _ref(self, identifier: str, scope: str | None) -> MappingRef:
+        return MappingRef(
+            kind=MappingKind.QUEUE_STATE,
+            name="scoped",
+            identifier=identifier,
+            scope=scope,
+        )
+
+    def _server(self, **overrides: object) -> FakeLinearMcpServer:
+        kwargs: dict[str, object] = {
+            "teams": [self.TEAM],
+            "labels": [],
+            "users": [],
+            "statuses": {self.TEAM: list(STATE_TYPES)},
+            "state_types": STATE_TYPES,
+        }
+        kwargs.update(overrides)
+        return FakeLinearMcpServer(**kwargs)  # type: ignore[arg-type]
+
+    async def test_the_read_is_the_unscoped_listing_and_one_per_declared_team(
+        self,
+    ) -> None:
+        """Both listings, every time: neither one answers for the other."""
+        server = self._server()
+        await tracker_over(server).resolve_mappings(
+            refs=[self._ref(self.LABEL, None)],
+        )
+
+        assert server.tool_calls("list_issue_labels") == [{}, {"team": self.TEAM}]
+
+    async def test_a_team_scoped_label_the_unscoped_listing_hides_is_adopted(
+        self,
+    ) -> None:
+        """Boot five, as a fixture: the label a boot created, next boot.
+
+        The workspace holds it on the declared team and the unscoped
+        listing does not report it at all.  A reader of that listing alone
+        calls it absent and re-creates it, which is the write the vendor
+        refuses by name — so the assertion is that nothing was written.
+        """
+        server = self._server(
+            labels=[self.LABEL],
+            label_containers={self.LABEL: f"{self.TEAM}-id"},
+        )
+        tracker = tracker_over(server)
+        assert server.tool_calls("list_issue_labels") == []
+
+        (outcome,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.LABEL, self.TEAM)],
+        )
+
+        assert outcome.action is EnsureAction.ADOPTED
+        assert server.tool_calls("create_issue_label") == []
+        # And the validation pass that follows an ensure resolves it too:
+        # boot four got that far and then could not see its own label.
+        assert await tracker.resolve_mappings(refs=[self._ref(self.LABEL, None)]) == ()
+
+    async def test_a_label_no_listing_carries_is_created_once_in_the_refs_scope(
+        self,
+    ) -> None:
+        """Absent from both listings is the one case that writes."""
+        server = self._server()
+        tracker = tracker_over(server)
+
+        (outcome,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.LABEL, self.TEAM)],
+        )
+
+        assert outcome.action is EnsureAction.CREATED
+        assert server.tool_calls("create_issue_label") == [
+            {"name": self.LABEL, "teamId": f"{self.TEAM}-id"},
+        ]
+        assert server.label_containers[self.LABEL] == f"{self.TEAM}-id"
+        # Exactly once: the second boot reads the label its first one made.
+        (again,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.LABEL, self.TEAM)],
+        )
+        assert again.action is EnsureAction.ADOPTED
+        assert len(server.tool_calls("create_issue_label")) == 1
+
+    async def test_a_workspace_level_label_resolves_and_serves_any_scope(
+        self,
+    ) -> None:
+        """The unscoped listing's own entries still answer, for every ref.
+
+        A workspace-level label is addressable on every board, so a ref
+        declaring a team adopts it rather than making a second one.
+        """
+        server = self._server(labels=[self.LABEL])
+        tracker = tracker_over(server)
+
+        assert await tracker.resolve_mappings(refs=[self._ref(self.LABEL, None)]) == ()
+        (outcome,) = await tracker.ensure_mappings(
+            refs=[self._ref(self.LABEL, self.TEAM)],
+        )
+
+        assert outcome.action is EnsureAction.ADOPTED
+        assert server.tool_calls("create_issue_label") == []
+
+
+class TestUserIdentityResolution:
+    """A user answers to TWO names, and a config may spell either of them.
+
+    The listing reports an account ``name`` and a ``displayName`` — the
+    handle a mention addresses — and no measured entry has them equal.
+    The operation config's identity convention puts the mention handle
+    first, so a resolution knowing only the account name leaves exactly
+    that entry unresolvable and no real config can pass boot.  And because
+    the pass templates are byte-identical to the literals the routine
+    texts substitute, the configured spelling may carry the mention's own
+    leading ``@`` (KOD-143 addendum 3).
+
+    The ``@`` is syntax and comes off the CONFIG side before matching.
+    Nothing else is normalised: no case-folding is added here.
+    """
+
+    def _ref(self, identifier: str) -> MappingRef:
+        return MappingRef(
+            kind=MappingKind.USER,
+            name="agent",
+            identifier=identifier,
+        )
+
+    async def test_an_identity_that_is_only_a_display_name_resolves(self) -> None:
+        """Boot six's one leftover: the agent's mention handle."""
+        server = fixture_server()
+        handle = server.display_name(APPROVER)
+        assert handle != APPROVER
+
+        unresolved = await linear_over_fake_mcp(server).resolve_mappings(
+            refs=[self._ref(handle)],
+        )
+
+        assert unresolved == ()
+
+    async def test_a_display_name_spelled_as_a_mention_resolves(self) -> None:
+        """One leading ``@`` is the vendor's syntax, not part of the name."""
+        server = fixture_server()
+        ref = self._ref(f"@{server.display_name(APPROVER)}")
+
+        assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == ()
+
+    async def test_an_account_name_spelled_as_a_mention_resolves(self) -> None:
+        """Either identity may carry the syntax; neither one is privileged."""
+        server = fixture_server()
+
+        unresolved = await linear_over_fake_mcp(server).resolve_mappings(
+            refs=[self._ref(f"@{APPROVER}")],
+        )
+
+        assert unresolved == ()
+
+    async def test_a_second_at_sign_belongs_to_the_name_and_is_not_stripped(
+        self,
+    ) -> None:
+        """EXACTLY one comes off, so ``@@x`` asks for a user named ``@x``."""
+        server = fixture_server()
+        ref = self._ref(f"@@{server.display_name(APPROVER)}")
+
+        assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == (ref,)
+
+    async def test_an_identity_matching_neither_is_reported_as_configured(
+        self,
+    ) -> None:
+        """The refusal quotes the operator's own spelling, ``@`` and all.
+
+        Stripping is a step in the MATCH, never a rewrite of the ref: what
+        comes back unresolved is the ref as configured, so the boot failure
+        names a string the operator can find in their own config file
+        rather than an internal form nothing there contains.
+        """
+        server = fixture_server()
+        ref = self._ref("@nobody.at.all")
+
+        (unresolved,) = await linear_over_fake_mcp(server).resolve_mappings(refs=[ref])
+
+        assert unresolved is ref
+        assert "'@nobody.at.all'" in ref.describe()
+
+    async def test_no_other_kind_gains_a_second_name_or_the_mention_syntax(
+        self,
+    ) -> None:
+        """Only USER changed: every other kind is addressed by its name alone."""
+        server = fixture_server()
+        ref = MappingRef(
+            kind=MappingKind.TEAM,
+            name="board",
+            identifier=f"@{TEAM_IDENTIFIERS['engineering']}",
+        )
+
+        assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == (ref,)
