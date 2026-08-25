@@ -28,6 +28,7 @@ from kodezart.types.domain.tracker import (
 )
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
 from tests.tracker.conftest import (
+    APPROVER,
     CLAIMED_ISSUE,
     FIXTURE_NOW,
     QUEUE_STATE_LABELS,
@@ -478,3 +479,96 @@ class TestLabelScopedReading:
 
         assert outcome.action is EnsureAction.ADOPTED
         assert server.tool_calls("create_issue_label") == []
+
+
+class TestUserIdentityResolution:
+    """A user answers to TWO names, and a config may spell either of them.
+
+    The listing reports an account ``name`` and a ``displayName`` — the
+    handle a mention addresses — and no measured entry has them equal.
+    The operation config's identity convention puts the mention handle
+    first, so a resolution knowing only the account name leaves exactly
+    that entry unresolvable and no real config can pass boot.  And because
+    the pass templates are byte-identical to the literals the routine
+    texts substitute, the configured spelling may carry the mention's own
+    leading ``@`` (KOD-143 addendum 3).
+
+    The ``@`` is syntax and comes off the CONFIG side before matching.
+    Nothing else is normalised: no case-folding is added here.
+    """
+
+    def _ref(self, identifier: str) -> MappingRef:
+        return MappingRef(
+            kind=MappingKind.USER,
+            name="agent",
+            identifier=identifier,
+        )
+
+    async def test_an_identity_that_is_only_a_display_name_resolves(self) -> None:
+        """Boot six's one leftover: the agent's mention handle."""
+        server = fixture_server()
+        handle = server.display_name(APPROVER)
+        assert handle != APPROVER
+
+        unresolved = await linear_over_fake_mcp(server).resolve_mappings(
+            refs=[self._ref(handle)],
+        )
+
+        assert unresolved == ()
+
+    async def test_a_display_name_spelled_as_a_mention_resolves(self) -> None:
+        """One leading ``@`` is the vendor's syntax, not part of the name."""
+        server = fixture_server()
+        ref = self._ref(f"@{server.display_name(APPROVER)}")
+
+        assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == ()
+
+    async def test_an_account_name_spelled_as_a_mention_resolves(self) -> None:
+        """Either identity may carry the syntax; neither one is privileged."""
+        server = fixture_server()
+
+        unresolved = await linear_over_fake_mcp(server).resolve_mappings(
+            refs=[self._ref(f"@{APPROVER}")],
+        )
+
+        assert unresolved == ()
+
+    async def test_a_second_at_sign_belongs_to_the_name_and_is_not_stripped(
+        self,
+    ) -> None:
+        """EXACTLY one comes off, so ``@@x`` asks for a user named ``@x``."""
+        server = fixture_server()
+        ref = self._ref(f"@@{server.display_name(APPROVER)}")
+
+        assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == (ref,)
+
+    async def test_an_identity_matching_neither_is_reported_as_configured(
+        self,
+    ) -> None:
+        """The refusal quotes the operator's own spelling, ``@`` and all.
+
+        Stripping is a step in the MATCH, never a rewrite of the ref: what
+        comes back unresolved is the ref as configured, so the boot failure
+        names a string the operator can find in their own config file
+        rather than an internal form nothing there contains.
+        """
+        server = fixture_server()
+        ref = self._ref("@nobody.at.all")
+
+        (unresolved,) = await linear_over_fake_mcp(server).resolve_mappings(refs=[ref])
+
+        assert unresolved is ref
+        assert "'@nobody.at.all'" in ref.describe()
+
+    async def test_no_other_kind_gains_a_second_name_or_the_mention_syntax(
+        self,
+    ) -> None:
+        """Only USER changed: every other kind is addressed by its name alone."""
+        server = fixture_server()
+        ref = MappingRef(
+            kind=MappingKind.TEAM,
+            name="board",
+            identifier=f"@{TEAM_IDENTIFIERS['engineering']}",
+        )
+
+        assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == (ref,)

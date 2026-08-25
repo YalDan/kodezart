@@ -1794,11 +1794,33 @@ class FakeLinearMcpServer:
             "hasNextPage": False,
         }
 
+    def display_name(self, name: str) -> str:
+        """The handle a mention addresses *name* by — never *name* itself."""
+        return name.replace("-", ".")
+
     def _tool_list_users(
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        return self._named("users", self.users)
+        """Users under BOTH identities the workspace answers to.
+
+        Every measured entry carries a ``displayName`` — the handle a
+        mention addresses — and on no measured entry does it equal the
+        account name.  The fake holds them distinct for that reason: a
+        reader that knows only one of the two is then visibly reading half
+        the listing (KOD-143 addendum 3).
+        """
+        return {
+            "users": [
+                {
+                    "id": f"{name}-id",
+                    "name": name,
+                    "displayName": self.display_name(name),
+                }
+                for name in self.users
+            ],
+            "hasNextPage": False,
+        }
 
     def _tool_list_teams(
         self,

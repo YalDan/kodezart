@@ -379,6 +379,24 @@ class TestListingEnvelopes:
         listing = LinearUserListWire.model_validate(LIST_USERS)
         assert [entry.name for entry in listing.users] == [APPROVER_NAME]
 
+    def test_a_user_entry_carries_both_identities_it_answers_to(self) -> None:
+        """``displayName`` is on every measured entry, and never the name.
+
+        Declared once resolution read it and not before: a configured
+        identity may be the mention handle rather than the account name,
+        so both have to be matchable (KOD-143 addendum 3).
+        """
+        (entry,) = LinearUserListWire.model_validate(LIST_USERS).users
+        assert entry.display_name == "fixture.approver"
+        assert entry.display_name != entry.name
+
+    def test_a_user_entry_without_a_display_name_no_longer_validates(self) -> None:
+        """Required, because every measured entry carries it."""
+        with pytest.raises(ValidationError):
+            LinearUserListWire.model_validate(
+                {"users": [{"id": APPROVER_ID, "name": APPROVER_NAME}]},
+            )
+
     def test_the_document_listing_is_keyed_documents(self) -> None:
         listing = LinearDocumentListWire.model_validate(LIST_DOCUMENTS)
         assert [entry.title for entry in listing.documents] == ["a fixture document"]

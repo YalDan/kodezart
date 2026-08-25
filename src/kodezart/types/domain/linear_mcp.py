@@ -245,10 +245,24 @@ class LinearTeamListWire(LinearWireModel):
     teams: list[LinearTeamWire]
 
 
+class LinearUserWire(LinearNamedWire):
+    """One user, under BOTH identities the workspace answers to.
+
+    ``display_name`` is the handle a mention addresses, and it is not the
+    account name: every measured entry carries both and no measured entry
+    has them equal.  It is declared because it is now READ — a configured
+    identity may legitimately be either spelling, so user resolution
+    matches the union of the two (KOD-143 addendum 3).  Declaring it
+    before anything read it would have been the module's own rule broken.
+    """
+
+    display_name: str
+
+
 class LinearUserListWire(LinearWireModel):
     """The ``list_users`` envelope — the array is keyed ``users``."""
 
-    users: list[LinearNamedWire]
+    users: list[LinearUserWire]
 
 
 #: ``list_issue_statuses`` answers with a BARE ARRAY of ``{id, type, name}``

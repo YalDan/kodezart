@@ -49,6 +49,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearTeamListWire,
     LinearTeamWire,
     LinearUserListWire,
+    LinearUserWire,
     LinearWireModel,
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -185,6 +186,24 @@ def _label_arguments(identifier: str, container: str | None) -> dict[str, object
     if container is not None:
         arguments["teamId"] = container
     return arguments
+
+
+def _without_mention_syntax(identity: str) -> str:
+    """*identity* with the vendor's mention syntax off it: one leading ``@``.
+
+    A configured identity may be spelled the way a routine text mentions
+    it, because the byte-identity gate on the pass templates wants the
+    config to hold the literal those texts substitute.  The ``@`` is
+    SYNTAX and the identity is what follows it, so exactly one comes off:
+    a second ``@`` belongs to the name being claimed, not to a second
+    mention marker (KOD-143 addendum 3).
+
+    Nothing else is normalised here — case in particular.  Whether a
+    lowercased identity is a config defect or a prose-versus-identity
+    distinction is a question about that config, and folding it here
+    would answer it silently for every workspace.
+    """
+    return identity.removeprefix("@")
 
 
 def _utc_now() -> datetime:
@@ -609,6 +628,13 @@ class LinearMcpTracker:
         it names something the workspace has not assigned a value to yet —
         so it is reported rather than looked up.
 
+        A USER resolves under either identity the workspace answers to,
+        its account name or its mention handle, and the configured
+        spelling may carry the mention's leading ``@`` (KOD-143 addendum
+        3).  What comes BACK unresolved is the ref exactly as configured,
+        so the refusal names the spelling the operator wrote rather than
+        an internal form nothing in their config contains.
+
         A workflow state is resolved PER TEAM and must resolve on EVERY
         team the operation declares (the fire-ruling of 2026-08-25 on
         KOD-143).  A state one declared team cannot express is not a
@@ -650,7 +676,10 @@ class LinearMcpTracker:
                 continue
             if ref.kind not in known:
                 known[ref.kind] = await self._identifiers_of(ref.kind)
-            if ref.identifier is None or ref.identifier not in known[ref.kind]:
+            identifier = ref.identifier
+            if identifier is not None and ref.kind is MappingKind.USER:
+                identifier = _without_mention_syntax(identifier)
+            if identifier is None or identifier not in known[ref.kind]:
                 unresolved.append(ref)
         if divergent:
             raise TrackerBootValidationError(
@@ -907,6 +936,10 @@ class LinearMcpTracker:
         A document is addressed by its id and everything else by its name,
         which is why this is not one listing read one way.
 
+        A user answers to TWO names — the account name and the mention
+        handle — and both are identities a config may legitimately carry,
+        so both are here.  No other kind has a second spelling.
+
         A queue state resolves against the WHOLE union of label listings.
         The refs this answers carry no container — the validation pass
         names what the workspace must hold, not where — so a label on a
@@ -918,7 +951,13 @@ class LinearMcpTracker:
             return frozenset(await self._document_definitions())
         if kind is MappingKind.QUEUE_STATE:
             return (await self._label_definitions()).names()
-        return frozenset(entry.name for entry in await self._named_entries(kind))
+        if kind is MappingKind.USER:
+            return frozenset(
+                identity
+                for entry in await self._user_listing()
+                for identity in (entry.name, entry.display_name)
+            )
+        return frozenset(entry.name for entry in await self._team_listing())
 
     async def _workflow_states_by_team(self) -> Mapping[str, frozenset[str]]:
         """The workflow-state vocabulary of each DECLARED team, held apart.
@@ -949,21 +988,19 @@ class LinearMcpTracker:
             )
         return by_team
 
-    async def _named_entries(self, kind: MappingKind) -> Sequence[LinearNamedWire]:
-        """Every named entity the workspace lists for *kind* — users, teams.
+    async def _user_listing(self) -> Sequence[LinearUserWire]:
+        """Every user the workspace holds, under both names it answers to.
 
-        One shape per tool, because that is what the server sends: each
-        listing names its array after itself, and there is no envelope key
-        shared across them to read generically.  Two kinds are absent from
-        here, each because one listing is not what they are:
-        ``WORKFLOW_STATE`` answers for one team and only one team
-        (:meth:`_workflow_states_by_team`), and ``QUEUE_STATE`` answers a
-        different set scoped than unscoped, so it is a union of listings
-        rather than a listing (:meth:`_label_definitions`).
+        One method per listing, because that is what the server sends:
+        each list tool keys its array after itself and there is no shared
+        envelope to read generically.  Nothing dispatches over the kind
+        here — a listing that answers for one team only
+        (:meth:`_workflow_states_by_team`) and one that answers a
+        different set scoped than unscoped (:meth:`_label_definitions`)
+        are not the same act as this one, and pretending otherwise is what
+        hid both of those from their readers.
         """
-        if kind is MappingKind.TEAM:
-            return await self._team_listing()
-        tool = _MAPPING_TOOL_BY_KIND[kind]
+        tool = _MAPPING_TOOL_BY_KIND[MappingKind.USER]
         payload = await self._call(tool, {})
         return self._validate(LinearUserListWire, payload, tool).users
 
