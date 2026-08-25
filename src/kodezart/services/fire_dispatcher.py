@@ -286,6 +286,11 @@ class FireDispatcher:
             eligible=eligible_keys,
             tied_candidates=selection.tied,
             claimed_issue_key=winner.issue_key,
+            # The pre-claim state, read off the snapshot this pass claimed
+            # from: the last reading taken before the lifecycle writes In
+            # Progress, and the only place a crashed run's put-back can
+            # come from.
+            claimed_state_name=winner.state_name,
             job_id=record.job_id,
             base=spec,
             superseded_base=superseded,

@@ -1976,6 +1976,15 @@ class FakeTrackerPort:
         self.claims: dict[str, ClaimResult] = {}
         self.comments: list[TrackerComment] = []
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
+        #: Every put-back the failure arm made, as (issue, state name).
+        #: Kept apart from ``workflow_writes`` because a restore names a
+        #: backend state and a stage write names a mapped one.
+        self.restored_states: list[tuple[str, str]] = []
+        #: The kind of every state this fake has seen, so a put-back can
+        #: answer with the state's own kind rather than inventing one.
+        self._state_kinds: dict[str, WorkflowStateKind] = {
+            issue.state_name: issue.state_kind for issue in issues
+        }
         self.queue_writes: list[tuple[str, QueueState]] = []
         self.scans: list[IssueQuery] = []
         self._assets: dict[str, tuple[TrackerAsset, ...]] = {
@@ -2061,11 +2070,32 @@ class FakeTrackerPort:
     ) -> TrackerIssue:
         self.workflow_writes.append((issue_key, stage))
         issue = self.issues[issue_key]
+        self._state_kinds[issue.state_name] = issue.state_kind
+        self._state_kinds[stage.value] = _STAGE_KIND[stage]
         updated = issue.model_copy(
             update={
                 "state_name": stage.value,
                 "state_kind": _STAGE_KIND[stage],
             },
+        )
+        self.issues[issue_key] = updated
+        return updated
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        # A backend knows the kind of every state it defines, so the fake
+        # does too: seeded from the fixture's issues and extended by every
+        # write. An unknown name is a state no backend defined, and it
+        # raises rather than inventing a kind for it.
+        kind = self._state_kinds[state_name]
+        self.restored_states.append((issue_key, state_name))
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(
+            update={"state_name": state_name, "state_kind": kind},
         )
         self.issues[issue_key] = updated
         return updated

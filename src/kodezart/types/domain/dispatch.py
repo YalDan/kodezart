@@ -109,6 +109,13 @@ class DispatchReport(DispatchModel):
     eligible: tuple[str, ...]
     tied_candidates: tuple[str, ...] = ()
     claimed_issue_key: str | None = None
+    claimed_state_name: str | None = None
+    """The workflow state the claimed issue held when this pass READ it.
+
+    Captured here because the pass is the only reader that sees it before
+    the lifecycle moves it: a run that crashes has to be put back where it
+    was found, and by then the tracker's copy holds the in-progress
+    stage.  ``None`` on every outcome that claimed nothing."""
     job_id: str | None = None
     base: BaseSpec | None = None
     """The base the fire was dispatched on, and everything it was computed

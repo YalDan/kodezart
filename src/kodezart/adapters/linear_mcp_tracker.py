@@ -385,6 +385,19 @@ class LinearMcpTracker:
                 tool=_TOOL_SAVE_ISSUE,
                 detail=f"stage={stage.value}",
             )
+        return await self._save_state(issue_key=issue_key, state_name=state_name)
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        """Put the issue back in the state a reader found it in."""
+        return await self._save_state(issue_key=issue_key, state_name=state_name)
+
+    async def _save_state(self, *, issue_key: str, state_name: str) -> TrackerIssue:
+        """Write one backend state name. The two state writers' shared tail."""
         payload = await self._call(
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},

@@ -1154,3 +1154,60 @@ class TestTheDispatchedBaseIsRecordedAndCompared:
         assert second.base is not None
         assert second.base.base_branch == BLOCKER_BRANCH
         assert await tracker.read_base_spec(issue_key="K-1") == second.base
+
+
+class TestThePreClaimStateIsCaptured:
+    """The reading a crashed run has to be put back to (KOD-146).
+
+    The pass is the only reader that sees the issue's workflow state
+    before the lifecycle moves it: by the time a run has failed, the
+    tracker's copy has been overwritten, so the value has to leave the
+    pass on the report or it is gone.
+    """
+
+    async def test_the_report_carries_the_state_the_pass_read(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "K-1",
+                    state_name="Backlog",
+                    state_kind=WorkflowStateKind.BACKLOG,
+                ),
+            ],
+        )
+        fire, _, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert report.claimed_state_name == "Backlog"
+
+    async def test_the_captured_state_is_one_no_lifecycle_stage_names(self) -> None:
+        """Which is why a stage cannot express it, and a name must."""
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "K-1",
+                    state_name="Backlog",
+                    state_kind=WorkflowStateKind.BACKLOG,
+                ),
+            ],
+        )
+        fire, _, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.claimed_state_name not in {
+            stage.value for stage in LifecycleStage
+        }
+
+    async def test_a_pass_that_claimed_nothing_carries_no_state(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("K-1", queue_states=[QueueState.PROPOSED])],
+        )
+        fire, _, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.empty_eligible_set
+        assert report.claimed_state_name is None

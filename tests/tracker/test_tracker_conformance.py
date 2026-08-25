@@ -195,6 +195,25 @@ class TestWrites:
         )
         assert updated.state_kind is WorkflowStateKind.STARTED
 
+    async def test_restore_workflow_state_puts_back_what_a_reader_read(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The undo the failure arm needs, over a state no stage names."""
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        await tracker.set_workflow_state(
+            issue_key=APPROVED_ISSUE,
+            stage=LifecycleStage.IN_PROGRESS,
+        )
+
+        restored = await tracker.restore_workflow_state(
+            issue_key=APPROVED_ISSUE,
+            state_name=before.state_name,
+        )
+
+        assert restored.state_name == before.state_name
+        assert restored.state_kind is before.state_kind
+
     async def test_set_queue_state_replaces_the_previous_member(
         self,
         tracker: TrackerPort,

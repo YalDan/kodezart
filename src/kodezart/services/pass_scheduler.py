@@ -93,10 +93,8 @@ class PassScheduler:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                # Formatted here rather than handed over as ``exc_info``:
-                # the configured renderer chain carries no exception
-                # processor, so ``exc_info`` reaches a JSON log as the
-                # exception's repr — the summary again, under a third key.
+                # The traceback rides the event under this pass's own key,
+                # and no ``exc_info`` is passed, so it appears once.
                 await self._log.aerror(
                     "scheduled_pass_failed",
                     name=entry.name,

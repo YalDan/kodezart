@@ -50,9 +50,16 @@ class GatedDispatchPass:
         # follow — never an empty watch started "just in case".
         if report.outcome is not DispatchOutcome.fire_enqueued:
             return
-        if report.claimed_issue_key is None or report.job_id is None:
+        if (
+            report.claimed_issue_key is None
+            or report.job_id is None
+            or report.claimed_state_name is None
+        ):
             return
+        # The pre-claim state travels with the watch, because the watch is
+        # what puts it back when the run reaches no terminal outcome.
         self._lifecycle.follow(
             issue_key=report.claimed_issue_key,
             job_id=report.job_id,
+            pre_claim_state=report.claimed_state_name,
         )

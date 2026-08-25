@@ -451,6 +451,25 @@ class TrackerPort(Protocol):
         """Move the issue to the state the configuration binds *stage* to."""
         ...
 
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        """Put the issue back in the state a reader found it in.
+
+        The undo of ``set_workflow_state``, and the only write naming a
+        backend state directly.  It has to: the operation's mapping binds
+        three lifecycle stages, and the state a fire finds its issue in is
+        almost never one of them — a claimed issue comes from the backlog,
+        which the mapping never named and no ``LifecycleStage`` can
+        express.  ``state_name`` is not vendor vocabulary leaking inward:
+        it is the value this port already reports on every
+        ``TrackerIssue``, handed straight back.
+        """
+        ...
+
     async def set_queue_state(
         self,
         *,
