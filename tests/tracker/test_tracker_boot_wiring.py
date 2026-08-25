@@ -248,8 +248,11 @@ async def test_an_absent_queue_label_is_created_at_boot_not_a_failure(
         pass
 
     assert "queue:terminal" in wired.labels
+    # `teamId` takes the team's UUID and nothing else — the live server
+    # answers a name with "teamId must be a UUID" and a 400 (KOD-143). The
+    # adapter resolves the declared team NAME through the teams listing.
     assert wired.tool_calls("create_issue_label") == [
-        {"name": "queue:terminal", "teamId": "fixture-team"},
+        {"name": "queue:terminal", "teamId": "fixture-team-id"},
     ]
     reconciled = [
         event
@@ -368,7 +371,7 @@ async def test_a_label_the_workspace_holds_elsewhere_aborts_boot_and_writes_noth
     """
     contested = "queue:terminal"
     wired.labels.append(contested)
-    wired.label_containers[contested] = "some-other-team"
+    wired.label_containers[contested] = "some-other-team-id"
     _configure(
         monkeypatch,
         tmp_path,

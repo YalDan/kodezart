@@ -221,10 +221,25 @@ class LinearLabelListWire(LinearWireModel):
     labels: list[LinearNamedWire]
 
 
+class LinearTeamWire(LinearNamedWire):
+    """One team, carrying the UUID some tool arguments insist on.
+
+    Almost every argument this adapter sends a team to takes "name or ID",
+    which is why the configuration names teams the way a person does.
+    ``create_issue_label.teamId`` is the exception: its declared input
+    schema says "Team UUID", and the live server answers a name with
+    ``teamId must be a UUID`` and a 400.  So the id is declared here — on
+    teams only, because teams are the only listing this adapter reads one
+    from.
+    """
+
+    id: str
+
+
 class LinearTeamListWire(LinearWireModel):
     """The ``list_teams`` envelope — the array is keyed ``teams``."""
 
-    teams: list[LinearNamedWire]
+    teams: list[LinearTeamWire]
 
 
 class LinearUserListWire(LinearWireModel):

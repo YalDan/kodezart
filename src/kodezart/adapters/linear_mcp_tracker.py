@@ -46,6 +46,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearLabelListWire,
     LinearNamedWire,
     LinearTeamListWire,
+    LinearTeamWire,
     LinearUserListWire,
     LinearWireModel,
 )
@@ -167,17 +168,20 @@ def _work_ref_marker(ref: WorkRef) -> str:
 _RETRY_BACKOFF_BASE = 2.0
 
 
-def _label_arguments(ref: MappingRef, identifier: str) -> dict[str, object]:
+def _label_arguments(identifier: str, container: str | None) -> dict[str, object]:
     """Create-arguments for one queue-state label.
 
-    A ref carrying a scope creates the label on that team; one carrying
-    none creates it at workspace scope, which is what a queue vocabulary
-    spanning several configured teams requires — a per-team label would
-    leave the same state unaddressable on another team's issues.
+    *container* is the team's UUID, which is the only thing ``teamId``
+    accepts: its declared input schema says "Team UUID (omit for workspace
+    label)", and the live server answers a name with ``teamId must be a
+    UUID`` and a 400.  ``None`` creates the label at workspace scope,
+    which is what a queue vocabulary spanning several configured teams
+    requires — a per-team label would leave the same state unaddressable
+    on another team's issues.
     """
     arguments: dict[str, object] = {"name": identifier}
-    if ref.scope is not None:
-        arguments["teamId"] = ref.scope
+    if container is not None:
+        arguments["teamId"] = container
     return arguments
 
 
@@ -225,6 +229,10 @@ class LinearMcpTracker:
         self._team_key_by_identifier: dict[str, str] = {
             identifier: team_key for team_key, identifier in team_identifiers.items()
         }
+        #: Team name to the UUID the workspace addresses it by, read once
+        #: from the teams listing.  ``None`` means "not read yet", which is
+        #: not the same state as "the workspace holds no teams".
+        self._team_containers: Mapping[str, str] | None = None
         self._log: BoundLogger = get_logger(__name__)
 
         known = {member.value for member in QueueState}
@@ -610,12 +618,16 @@ class LinearMcpTracker:
                     "carries none",
                     entry=ref.describe(),
                 )
+            declared = (
+                None if ref.scope is None else await self._team_container(ref.scope)
+            )
             if identifier in definitions:
                 container = definitions[identifier]
-                if container is not None and container != ref.scope:
+                if container is not None and container != declared:
                     raise TrackerEnsureConflictError(
                         "the workspace defines this value in another container; "
-                        f"declared {ref.scope!r}, found {container!r}",
+                        f"declared {ref.scope!r} ({declared!r}), "
+                        f"found {container!r}",
                         entry=ref.describe(),
                     )
                 outcomes.append(
@@ -628,9 +640,9 @@ class LinearMcpTracker:
                 continue
             await self._call(
                 _TOOL_CREATE_ISSUE_LABEL,
-                _label_arguments(ref, identifier),
+                _label_arguments(identifier, declared),
             )
-            definitions[identifier] = ref.scope
+            definitions[identifier] = declared
             outcomes.append(
                 MappingOutcome(
                     ref=ref,
@@ -711,9 +723,47 @@ class LinearMcpTracker:
         )
 
     async def _label_definitions(self) -> dict[str, str | None]:
-        """Every queue-state label the workspace holds, with its container."""
+        """Every queue-state label the workspace holds, with its container.
+
+        The container is whatever the listing reports, which is a team
+        UUID when it reports one at all — the same unit
+        :meth:`_team_container` resolves a declared team name into, so the
+        ensure path compares like with like.
+        """
         entries = await self._named_entries(MappingKind.QUEUE_STATE)
         return {entry.name: entry.team_id for entry in entries}
+
+    async def _team_listing(self) -> Sequence[LinearTeamWire]:
+        """Every team the workspace holds, with the UUID it is addressed by."""
+        tool = _MAPPING_TOOL_BY_KIND[MappingKind.TEAM]
+        payload = await self._call(tool, {})
+        return self._validate(LinearTeamListWire, payload, tool).teams
+
+    async def _team_container(self, name: str) -> str:
+        """The UUID the workspace addresses the team *name* by.
+
+        Read once and held: a team's identifier does not move under a
+        running process, and the ensure loop asks for the same one per
+        declared queue state.
+
+        This translation exists because exactly one argument this adapter
+        sends demands the UUID form — ``create_issue_label.teamId``.
+        Everywhere else the vendor takes "name or ID", which is why the
+        operation config names teams the way a person does and why this
+        does not belong in that config.
+        """
+        cached = self._team_containers
+        if cached is None:
+            cached = {entry.name: entry.id for entry in await self._team_listing()}
+            self._team_containers = cached
+        container = cached.get(name)
+        if container is None:
+            raise TrackerProtocolError(
+                "the workspace holds no team under this name",
+                tool=_TOOL_CREATE_ISSUE_LABEL,
+                detail=f"team={name!r}",
+            )
+        return container
 
     async def _document_definitions(self) -> dict[str, str]:
         """Every document the workspace holds, id to title."""
@@ -743,12 +793,12 @@ class LinearMcpTracker:
         sends a bare array under no key at all.  There is no envelope key
         shared across them to read generically.
         """
+        if kind is MappingKind.TEAM:
+            return await self._team_listing()
         tool = _MAPPING_TOOL_BY_KIND[kind]
         payload = await self._call(tool, {})
         if kind is MappingKind.USER:
             return self._validate(LinearUserListWire, payload, tool).users
-        if kind is MappingKind.TEAM:
-            return self._validate(LinearTeamListWire, payload, tool).teams
         if kind is MappingKind.QUEUE_STATE:
             return self._validate(LinearLabelListWire, payload, tool).labels
         return self._validate_named_array(payload, tool)
