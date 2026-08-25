@@ -14,8 +14,10 @@ object, one per declared repository, carrying the configured cadence.
 import asyncio
 from collections.abc import Callable
 
-from kodezart.composition.passes import build_dispatch_passes
+from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
+from kodezart.composition.passes import build_dispatch_passes, delivery_probe_for
 from kodezart.core.config import AppConfig
+from kodezart.domain.git_url import extract_owner_repo
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
@@ -52,6 +54,9 @@ from tests.fakes import (
 APPROVER = "the-approver"
 PRIMARY_REPO = "https://example.invalid/owner/primary"
 SECOND_REPO = "https://example.invalid/owner/second"
+#: A local bare repository — the sanctioned smoke origin, and the one the
+#: first live run's dispatch tick died on every interval (KOD-145).
+FILE_ORIGIN = "file:///tmp/fixture-origin.git"
 LANE = "tracker"
 TRUNK = "trunk"
 REMOTE = "fixture-remote"
@@ -354,3 +359,96 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     ]
     assert tracker.queue_writes == [("K-1", QueueState.DONE)]
     assert [comment.issue_key for comment in tracker.comments] == ["K-1"]
+
+
+class ForgeOnlyDeliveryProbe:
+    """A probe that parses the URL first, exactly as the forge client does.
+
+    ``GitHubAPIClient.open_delivery_exists`` opens with
+    ``extract_owner_repo(repo_url)``, so this stands in for it by calling
+    the SAME function rather than by counting calls: a composition that
+    hands a forge-less origin to the forge probe fails here by raising the
+    error the first live run crash-looped on, not by an assertion about
+    what was wired (KOD-145).
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
+        extract_owner_repo(repo_url)
+        self.calls.append(issue_key)
+        return False
+
+
+async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
+    """Boot 25 as a fixture: the crash-loop, reproduced and no longer fatal.
+
+    The scheduler ticked every 300 seconds for half an hour and every tick
+    died identically at the eligibility phase — ``ValueError: Cannot
+    extract owner/repo from file:// URL`` — before any claim was
+    attempted.  The service stayed healthy while its one purpose
+    crash-looped.
+
+    A local bare origin is the sanctioned smoke shape, so the issue is
+    ELIGIBLE here: no open pull request delivers it, because on this
+    origin none can exist.  The forge probe is never asked (KOD-145).
+    """
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+    queue = FakeJobQueue()
+    forge = ForgeOnlyDeliveryProbe()
+    passes = build_dispatch_passes(
+        config=AppConfig(),
+        operation=operation_config(repos=(FILE_ORIGIN,)),
+        tracker=tracker,
+        delivery=forge,
+        queue=queue,
+        registry=queue,
+        gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+    await passes[0].run()
+
+    assert len(queue.submissions) == 1
+    _, request = queue.submissions[0]
+    assert request.repo_url == FILE_ORIGIN
+    assert tracker.claims["K-1"].holder == AppConfig().dispatch_holder
+    assert forge.calls == []
+
+
+async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
+    """The other arm: selection, not removal. A forge origin keeps its probe."""
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+    queue = FakeJobQueue()
+    forge = ForgeOnlyDeliveryProbe()
+    passes = build_dispatch_passes(
+        config=AppConfig(),
+        operation=operation_config(repos=(PRIMARY_REPO,)),
+        tracker=tracker,
+        delivery=forge,
+        queue=queue,
+        registry=queue,
+        gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+    await passes[0].run()
+
+    assert forge.calls == ["K-1"]
+    assert len(queue.submissions) == 1
+
+
+def test_each_repository_gets_the_probe_its_own_origin_can_answer() -> None:
+    """One operation, two origins, two probes — the selection is per repo."""
+    forge = ForgeOnlyDeliveryProbe()
+
+    assert delivery_probe_for(PRIMARY_REPO, forge=forge) is forge
+    assert isinstance(
+        delivery_probe_for(FILE_ORIGIN, forge=forge),
+        NoForgeDeliveryProbe,
+    )
