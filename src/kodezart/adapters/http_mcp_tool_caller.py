@@ -38,6 +38,7 @@ class HttpMcpToolCaller:
         timeout_seconds: float,
         auth_header_name: str,
         auth_scheme: str,
+        error_detail_limit: int,
     ) -> None:
         self._url: str = url
         self._server_name: str = server_name
@@ -45,6 +46,7 @@ class HttpMcpToolCaller:
         self._timeout_seconds: float = timeout_seconds
         self._auth_header_name: str = auth_header_name
         self._auth_scheme: str = auth_scheme
+        self._error_detail_limit: int = error_detail_limit
         self._stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
         self._log: BoundLogger = get_logger(__name__)
@@ -117,11 +119,31 @@ class HttpMcpToolCaller:
             ) from exc
         if result.isError:
             raise McpTransportError(
-                "the MCP server reported a tool error",
+                "the MCP server reported a tool error: "
+                f"{self._error_detail(result)}",
                 server_name=self._server_name,
                 tool_name=name,
             )
         return self._structured_result(result, name)
+
+    def _error_detail(self, result: CallToolResult) -> str:
+        """The server's OWN words about the refusal, bounded.
+
+        An error result carries the vendor's diagnosis in its content
+        blocks — the field that was wrong, the type it wanted, the status
+        it answered.  Dropping it and raising a bare "the server reported
+        a tool error" leaves a caller knowing only that something failed,
+        which cost a whole boot cycle to recover once (KOD-143): the
+        server had said "teamId must be a UUID" and nothing carried it.
+        """
+        text = " ".join(
+            block.text for block in result.content if isinstance(block, TextContent)
+        ).strip()
+        if not text:
+            return "the server sent no readable diagnosis"
+        if len(text) <= self._error_detail_limit:
+            return text
+        return f"{text[: self._error_detail_limit]}…"
 
     def _structured_result(
         self,

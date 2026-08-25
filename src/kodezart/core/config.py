@@ -312,6 +312,16 @@ class AppConfig(BaseSettings):
         le=120.0,
         description="Timeout for one tracker MCP tool call.",
     )
+    tracker_mcp_error_detail_limit: int = Field(
+        default=500,
+        ge=80,
+        le=8000,
+        description=(
+            "Characters of the server's OWN error text carried into a "
+            "tracker MCP transport failure. A refusal that drops the "
+            "vendor's diagnosis costs a whole boot cycle to recover it."
+        ),
+    )
     tracker_max_retries: int = Field(
         default=3,
         ge=0,

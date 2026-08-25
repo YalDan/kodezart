@@ -25,6 +25,7 @@ from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.core.errors import McpTransportError
 
 _FIXTURE_TOKEN: Final[str] = "fixture-tracker-token"
+_ERROR_DETAIL_LIMIT: Final[int] = 500
 
 
 def caller_fixture() -> HttpMcpToolCaller:
@@ -35,6 +36,7 @@ def caller_fixture() -> HttpMcpToolCaller:
         timeout_seconds=5.0,
         auth_header_name="Authorization",
         auth_scheme="Bearer",
+        error_detail_limit=_ERROR_DETAIL_LIMIT,
     )
 
 
@@ -79,13 +81,64 @@ async def test_a_network_failure_mid_call_surfaces_as_the_transport_error() -> N
     assert excinfo.value.tool_name == "get_issue"
 
 
-async def test_a_reported_tool_error_surfaces_as_the_transport_error() -> None:
-    caller = caller_fixture()
-    caller._session = _StubSession(
-        CallToolResult(content=[], isError=True),
-    )
-    with pytest.raises(McpTransportError):
-        await caller.call_tool(name="get_issue", arguments={})
+class TestReportedToolErrors:
+    """A refusal carries the server's OWN diagnosis, never just its fact."""
+
+    @staticmethod
+    def caller_over(result: CallToolResult) -> HttpMcpToolCaller:
+        caller = caller_fixture()
+        caller._session = _StubSession(result)
+        return caller
+
+    async def test_a_reported_tool_error_surfaces_as_the_transport_error(
+        self,
+    ) -> None:
+        caller = self.caller_over(CallToolResult(content=[], isError=True))
+        with pytest.raises(McpTransportError):
+            await caller.call_tool(name="get_issue", arguments={})
+
+    async def test_the_servers_own_message_reaches_the_raised_error(self) -> None:
+        """The 400 that cost a boot cycle to diagnose (KOD-143).
+
+        The server had said exactly which argument was wrong and in which
+        unit; the transport raised "the MCP server reported a tool error"
+        and threw the sentence away.
+        """
+        body = (
+            '{"error":"invalid_request","message":"teamId must be a UUID.",'
+            '"status":400}'
+        )
+        caller = self.caller_over(
+            CallToolResult(
+                content=[TextContent(type="text", text=body)],
+                isError=True,
+            ),
+        )
+        with pytest.raises(McpTransportError) as excinfo:
+            await caller.call_tool(name="create_issue_label", arguments={})
+        assert "teamId must be a UUID." in str(excinfo.value)
+        assert excinfo.value.tool_name == "create_issue_label"
+
+    async def test_an_error_with_no_readable_text_says_so(self) -> None:
+        caller = self.caller_over(CallToolResult(content=[], isError=True))
+        with pytest.raises(
+            McpTransportError,
+            match="no readable diagnosis",
+        ):
+            await caller.call_tool(name="get_issue", arguments={})
+
+    async def test_a_long_diagnosis_is_bounded(self) -> None:
+        """Bounded by configuration, not by a number written here."""
+        caller = self.caller_over(
+            CallToolResult(
+                content=[TextContent(type="text", text="x" * 5_000)],
+                isError=True,
+            ),
+        )
+        with pytest.raises(McpTransportError) as excinfo:
+            await caller.call_tool(name="get_issue", arguments={})
+        assert "x" * _ERROR_DETAIL_LIMIT in str(excinfo.value)
+        assert "x" * (_ERROR_DETAIL_LIMIT + 1) not in str(excinfo.value)
 
 
 class TestTextContentResults:

@@ -34,6 +34,7 @@ def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCall
         timeout_seconds=config.tracker_timeout_seconds,
         auth_header_name=config.tracker_mcp_auth_header,
         auth_scheme=config.tracker_mcp_auth_scheme,
+        error_detail_limit=config.tracker_mcp_error_detail_limit,
     )
 
 
