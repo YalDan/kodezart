@@ -17,7 +17,9 @@ import asyncio
 import io
 import json
 import logging
+import re
 import sys
+import warnings
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 
@@ -208,15 +210,41 @@ async def test_the_console_renderer_also_names_the_frames() -> None:
     raising frame is named and no traceback object is printed — and not
     the JSON renderer's formatting.
     """
-    with configured_chain(pretty=True) as buffer:
-        log = get_logger("kodezart.tests.logging_chain")
-        try:
-            raise RuntimeError(FAILURE)
-        except RuntimeError:
-            await log.aexception("job_failed", job_id="job-0001")
+    with warnings.catch_warnings(record=True) as raised:
+        warnings.simplefilter("always")
+        with configured_chain(pretty=True) as buffer:
+            log = get_logger("kodezart.tests.logging_chain")
+            try:
+                raise RuntimeError(FAILURE)
+            except RuntimeError:
+                await log.aexception("job_failed", job_id="job-0001")
 
     rendered = buffer.getvalue()
-    assert "test_logging_chain.py" in rendered
+    # ``ConsoleRenderer`` draws a COLOURED, BOXED panel. It wraps to the
+    # console width mid-token AND draws a border between the halves, so a
+    # long absolute path arrives as ``…test_logging_chain.│ │py:218`` —
+    # split by SGR escapes, a newline, and two box glyphs. None of that is
+    # a property worth asserting, and all of it moves with how deep the
+    # checkout sits: this assertion passed in CI at a 68-character path
+    # and failed locally at 79, which read as a lane defect and was not
+    # one. Strip the decoration, then ask the only question that matters.
+    undecorated = re.sub(r"\x1b\[[0-9;]*m|[│╭╮╰╯─❱]|\s+", "", rendered)
+    assert "test_logging_chain.py" in undecorated
     assert "RuntimeError" in rendered
     assert FAILURE in rendered
     assert "<traceback object at" not in rendered
+
+    # The renderer must receive the exc_info TRIPLE, never a string another
+    # processor already formatted. Handed a string it still prints frames —
+    # so every assertion above passes — but it prints them as plain stdlib
+    # text and warns, and the coloured, source-context traceback this
+    # deployment exists for is silently gone. That is exactly how two lanes'
+    # mutually exclusive fixes for the same bug survived a union merge: they
+    # touched different lines, git kept both, and this test stayed green.
+    pre_formatted = [
+        warning for warning in raised if "format_exc_info" in str(warning.message)
+    ]
+    assert not pre_formatted, (
+        "ConsoleRenderer was handed a pre-formatted exception; "
+        "the coloured traceback this deployment exists for is gone"
+    )
