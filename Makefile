@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := check
-.PHONY: install format lint lint-fix type-check test check clean \
+.PHONY: install format format-check lint lint-fix type-check test check clean \
 	verify-no-origin-literal
 
 install:
@@ -9,12 +9,20 @@ format:
 	uv run ruff format src/ tests/
 	uv run ruff check --select I --fix src/ tests/
 
+format-check:
+	uv run ruff format --check src/ tests/
+
 lint:
 	uv run ruff check src/ tests/
 
 lint-fix:
 	uv run ruff check --fix src/ tests/
 
+# tests/ is deliberately outside the type gate — measured 2026-08-31:
+# 149 strict-mode errors in 23 files, structural (invariance classes),
+# a workstream and not gate hygiene. The tests tree is exercised by
+# execution on every gate run; this line is the recorded decision
+# KOD-140 requires for anything the gate excludes.
 type-check:
 	uv run mypy src/
 
@@ -27,7 +35,7 @@ verify-no-origin-literal:
 		exit 1 ; \
 	fi
 
-check: verify-no-origin-literal lint type-check test
+check: verify-no-origin-literal format-check lint type-check test
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
