@@ -388,7 +388,8 @@ def test_the_lane_touches_no_source_surface_outside_its_declared_diff() -> None:
     blocks name — the two executors and their mapping helper, the session
     vocabulary, the configuration that resolves the grant, the composition
     that renders the map, the prompt vocabulary and set, the threading seam,
-    and the egress redaction the credential joined.
+    the egress redaction the credential joined, and the package docstring
+    whose worked example a future author copies a construction from.
     """
     declared = {
         "src/kodezart/adapters/_mcp_mapping.py",
@@ -396,6 +397,7 @@ def test_the_lane_touches_no_source_surface_outside_its_declared_diff() -> None:
         "src/kodezart/adapters/claude_agent_executor.py",
         "src/kodezart/adapters/claude_client_executor.py",
         "src/kodezart/adapters/git_change_persister.py",
+        "src/kodezart/agents/__init__.py",
         "src/kodezart/chains/ralph_loop.py",
         "src/kodezart/chains/ralph_workflow.py",
         "src/kodezart/chains/ticket_generation.py",

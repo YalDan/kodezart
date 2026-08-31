@@ -228,14 +228,19 @@ composition root** (`main.py:32` uses `ClaudeClientExecutor`).
 A session runs with `cwd` set to a worktree holding an arbitrary cloned
 repository, so a `.mcp.json` committed into that repository would otherwise be
 loaded into a session that already holds credentials — attacker-authored tool
-injection. The invariant that closes it: **wherever a session is configured
-with `mcp_servers`, the same option source also sets
-`strict_mcp_config=True`**, which is why the two are built together by one
-mapping helper rather than passed separately at each construction site.
-`tests/adapters/test_mcp_strictness.py` enforces the pairing over every
-`ClaudeAgentOptions` construction in `src/kodezart/`, resolving `**`-unpacked
-option sources and failing on any it cannot read, so a future site cannot
-quietly escape it.
+injection. The invariant that closes it: **every `ClaudeAgentOptions`
+construction sets `strict_mcp_config=True`**, whether or not it also
+configures `mcp_servers` — the guard answers the working directory, so a
+session that describes no server of its own needs it exactly as much as one
+that does. One mapping helper builds both keywords together rather than
+passing them separately at each construction site.
+`tests/adapters/test_mcp_strictness.py` enforces it over every
+`ClaudeAgentOptions` construction in `src/kodezart/`, merging the explicit
+keywords with every `**`-unpacked option source — one merged set per branch
+a builder can return, so a guard set on one branch never answers for
+another — matching the callable through the names each module's imports
+bind it to, and failing on any source it cannot read, so a future site
+cannot quietly escape it.
 
 ### Permission Modes
 
