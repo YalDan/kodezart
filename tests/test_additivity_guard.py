@@ -25,7 +25,12 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 
 #: The pre-fire stack tip this lane was cut from — every "unchanged" claim
 #: below is measured against this commit and against no other.
-BASE_SHA: Final[str] = "b4c30d92bab550641496c5c05aa17131fb6446ba"
+# Advanced 2026-08-31: the stack tip moved when the v0.2 close-out
+# landed thirteen lane-6 commits and this lane merged them (Ruling B —
+# a dependent lane stacks on its blocker's branch).  The baseline is
+# the lane's own definition of "upstream", so it moves with the stack
+# and never with trunk; the provenance tests below hold it honest.
+BASE_SHA: Final[str] = "61b4b5ee3a0d8ac6570110e50585ad6c36610419"
 
 #: Trunk at the time the lane's issues were written.  Present only so the
 #: provenance assertions can show the baseline is NOT this commit.

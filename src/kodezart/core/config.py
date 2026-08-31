@@ -2,7 +2,7 @@
 
 from typing import Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from kodezart.types.domain.gating import (
@@ -421,6 +421,38 @@ class AppConfig(BaseSettings):
             "boot rather than attaching an unauthenticated server."
         ),
     )
+    @field_validator("knowledge_session_grants", mode="before")
+    @classmethod
+    def _grant_entries_name_session_types(cls, value: object) -> object:
+        """Name every offending grant entry, deliberately and safely.
+
+        ``hide_input_in_errors`` keeps raw input out of every validation
+        message because an arbitrary env value can be a credential.  A
+        grant entry is the one input that must come BACK in the error —
+        the boot contract names the offender and the legal values — and
+        it is safe to name, because the legal vocabulary is a closed enum
+        and an offender is by definition not a secret this field accepts.
+        So this field names its own offenders before the enum coercion
+        would hide them, and the global rule stays intact for every
+        other field.
+        """
+        if not isinstance(value, list):
+            return value
+        legal = {member.value for member in SessionType}
+        offending = [
+            str(entry) for entry in value if not isinstance(entry, SessionType)
+            if str(entry) not in legal
+        ]
+        if offending:
+            named = ", ".join(repr(entry) for entry in offending)
+            allowed = ", ".join(sorted(legal))
+            msg = (
+                f"knowledge_session_grants names no session type: {named} "
+                f"— the legal values are: {allowed}"
+            )
+            raise ValueError(msg)
+        return value
+
     knowledge_mcp_server_name: str = Field(
         default="notion",
         min_length=1,
