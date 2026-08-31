@@ -123,7 +123,7 @@ class TrackerLifecycleWriter:
         state the pass found it in, and a comment carries the rest.  The
         in-progress stage with nothing running is the lie the criterion
         exists to prevent, and a comment alone does not remove it
-        (KOD-146, ruled).
+        (KOD-146, ruled 2026-08-26: option (a)).
 
         Order matches the success path: the state lands before the comment
         reports it, so no reader sees the note beside a stale state.  The
