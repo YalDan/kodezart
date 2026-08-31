@@ -33,6 +33,36 @@ class RateLimitError(TransientAPIError):
         self.utilization: float | None = utilization
 
 
+class ForgeAPIError(Exception):
+    """Raised when a forge request failed in a way no retry would change.
+
+    The other half of the forge taxonomy: ``TransientAPIError`` and its
+    ``RateLimitError`` subclass carry the retry-eligible failures, and
+    every remaining one arrives here, so no vendor exception type
+    crosses ``PRCreator``, ``CIMonitor``, ``DeliveryProbe`` or
+    ``RepoVisibilityResolver``.  ``status_code`` is a field rather than
+    prose because consumers route on it — a 404 on a check-runs page is
+    a ref not yet visible, not a failure.
+
+    ``status_code`` is ``None`` when the request failed before any
+    status existed: a body that would not decode, a redirect loop, a URL
+    the client would not build.  Those are forge failures all the same —
+    the request did not complete and no retry completes it — and a
+    taxonomy admitting only the status-carrying ones would leave exactly
+    those to cross the port wearing the transport's own exception types.
+
+    ``detail`` names the request that failed.  Never the response body:
+    vendor text of unbounded shape is the surface ``redact_credentials``
+    exists to keep out of egress, and a request target carries no
+    credential to begin with.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None, detail: str) -> None:
+        super().__init__(f"{message} (status: {status_code}; request: {detail})")
+        self.status_code: int | None = status_code
+        self.detail: str = detail
+
+
 class AgentSDKError(Exception):
     """Raised when the Claude Agent SDK reports a non-transient failure.
 

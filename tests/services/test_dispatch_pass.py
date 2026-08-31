@@ -14,6 +14,7 @@ object, one per declared repository, carrying the configured cadence.
 import asyncio
 from collections.abc import Callable
 
+import pytest
 import structlog.testing
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
@@ -29,7 +30,7 @@ from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import WorkflowCompleteEvent
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import DispatchOutcome, DispatchReport, PassSignal
 from kodezart.types.domain.gating import OutboundDestination, RepoVisibility
 from kodezart.types.domain.operation import (
     CheckStep,
@@ -252,6 +253,73 @@ async def test_a_quiet_board_never_wakes_the_dispatcher() -> None:
     assert tracker.claims == {}
     # One scan: the gate's. The dispatcher's own query never happened.
     assert len(tracker.scans) == 1
+
+
+class ReportOnlyDispatcher:
+    """Answers with one prepared report and touches nothing.
+
+    The one stand-in this module admits, and only because the shape it
+    produces is one the shipped ``FireDispatcher`` cannot: the claimed
+    key, the job id and the pre-claim state are written together at the
+    enqueue, so no real pass can report ``fire_enqueued`` without them.
+    """
+
+    def __init__(self, report: DispatchReport) -> None:
+        self._report = report
+
+    async def run_pass(self) -> DispatchReport:
+        return self._report
+
+
+@pytest.mark.parametrize(
+    "absent_field",
+    ["claimed_issue_key", "job_id", "claimed_state_name"],
+)
+async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -> None:
+    """The impossible shape aborts the tick instead of returning quietly.
+
+    Returning left a fire running with no watch on it: nothing renews
+    its claim and nothing puts the issue back when the run reaches no
+    terminal outcome, and the tick that dropped it said nothing.  The
+    three fields are optional on the report because two of the three
+    outcomes claim nothing — under ``fire_enqueued`` they are not.
+    """
+    claimed: dict[str, str | None] = {
+        "claimed_issue_key": "K-1",
+        "job_id": "job-1",
+        "claimed_state_name": "In Progress",
+    }
+    claimed[absent_field] = None
+    tracker = FakeTrackerPort()
+    queue = FakeJobQueue()
+    lifecycle = LifecycleWatcher(
+        queue=queue,
+        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        heartbeat=ClaimHeartbeat(
+            tracker=tracker,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+            renewal_fraction=RENEWAL_FRACTION,
+        ),
+    )
+    pass_ = GatedDispatchPass(
+        gate=None,
+        dispatcher=ReportOnlyDispatcher(
+            DispatchReport(
+                outcome=DispatchOutcome.fire_enqueued,
+                snapshot=(),
+                exclusions=(),
+                eligible=("K-1",),
+                **claimed,
+            ),
+        ),
+        lifecycle=lifecycle,
+    )
+
+    with pytest.raises(RuntimeError, match=absent_field):
+        await pass_.run()
+
+    assert lifecycle.following == frozenset()
 
 
 async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:

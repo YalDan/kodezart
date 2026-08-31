@@ -219,6 +219,10 @@ def _engine(
         criteria_max_regeneration_rounds=max_rounds,
         artifact_persister=artifact_persister,
         pr_creator=pr_creator,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 

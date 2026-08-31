@@ -203,6 +203,9 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         cache=FakeRepoCache(),
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -217,6 +220,11 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=persister,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -284,6 +292,9 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         cache=FakeRepoCache(),
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -297,6 +308,11 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     _ = [
@@ -338,6 +354,9 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
         cache=FakeRepoCache(),
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
 
     _ = [

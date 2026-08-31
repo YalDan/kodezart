@@ -422,6 +422,50 @@ def test_a_stdio_field_under_the_http_transport_aborts_boot_naming_it(
 
 
 @pytest.mark.parametrize(
+    ("var", "value"),
+    [
+        ("KODEZART_KNOWLEDGE_MCP_ARGS", "[]"),
+        ("KODEZART_KNOWLEDGE_MCP_ENV", "{}"),
+    ],
+)
+def test_an_empty_stdio_collection_under_http_aborts_boot_naming_it(
+    monkeypatch: pytest.MonkeyPatch,
+    var: str,
+    value: str,
+) -> None:
+    """Explicitly empty is explicitly SET, and the http route reads neither.
+
+    The escape this closes: the arm used to test the VALUE, and an empty
+    list is falsy, so a source that wrote ``[]`` under the route that
+    never reads it was indistinguishable from a source that wrote
+    nothing.  Both arms now ask the set, which is the question the
+    refusal is actually about.
+    """
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv(var, value)
+
+    with pytest.raises(ValidationError, match=var):
+        AppConfig()
+
+
+def test_the_inert_stdio_defaults_are_legal_under_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control for the set-based rule: shipped defaults abort nothing."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.delenv("KODEZART_KNOWLEDGE_MCP_ARGS", raising=False)
+    monkeypatch.delenv("KODEZART_KNOWLEDGE_MCP_ENV", raising=False)
+
+    config = AppConfig()
+
+    assert config.knowledge_mcp_transport is KnowledgeTransport.HTTP
+    assert config.knowledge_mcp_args == []
+    assert config.knowledge_mcp_env == {}
+
+
+@pytest.mark.parametrize(
     "var",
     [
         "KODEZART_KNOWLEDGE_MCP_SERVER_URL",

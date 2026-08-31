@@ -361,6 +361,11 @@ def _engine(
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ref_publisher=ref_publisher or FakeRefPublisher(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 
@@ -681,6 +686,9 @@ def _engine_over_a_real_loop(
             cache=FakeRepoCache(),
             prompts=prompts,
             skills=SUPPRESS_ALL_SKILLS,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            fan_in_max_attempts=2,
         ),
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
@@ -689,6 +697,11 @@ def _engine_over_a_real_loop(
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 

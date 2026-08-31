@@ -33,6 +33,7 @@ from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
     APPROVER,
     CLAIMED_ISSUE,
+    DOCUMENT_KEY,
     FIXTURE_NOW,
     QUEUE_STATE_LABELS,
     STATE_TYPES,
@@ -733,6 +734,83 @@ class TestLabelScopedReading:
 
         assert outcome.action is EnsureAction.ADOPTED
         assert server.tool_calls("create_issue_label") == []
+
+
+class TestIdentifierListingPerKind:
+    """Each kind is answered by the listing that can answer for it, and only it.
+
+    The resolution used to be an if-chain whose trailing return handed
+    every unlisted kind the TEAM names — an implicit wildcard, so a sixth
+    ``MappingKind`` would have booted resolving against a listing nobody
+    chose for it, and passed.  The arms are now explicit and total: the
+    four kinds with a workspace-wide listing each name theirs, and the
+    fifth says it has none.
+    """
+
+    def _ref(self, kind: MappingKind, identifier: str) -> MappingRef:
+        return MappingRef(kind=kind, name="fixture", identifier=identifier)
+
+    @pytest.mark.parametrize(
+        ("kind", "identifier"),
+        [
+            (MappingKind.USER, APPROVER),
+            (MappingKind.TEAM, TEAM_IDENTIFIERS["engineering"]),
+            (MappingKind.QUEUE_STATE, QUEUE_STATE_LABELS["approved"]),
+            (MappingKind.DOCUMENT, DOCUMENT_KEY),
+        ],
+    )
+    async def test_a_kind_resolves_against_its_own_listing(
+        self,
+        kind: MappingKind,
+        identifier: str,
+    ) -> None:
+        """Every current member keeps the answer it had before the match."""
+        server = fixture_server()
+
+        unresolved = await linear_over_fake_mcp(server).resolve_mappings(
+            refs=[self._ref(kind, identifier)],
+        )
+
+        assert unresolved == ()
+
+    @pytest.mark.parametrize(
+        "kind",
+        [MappingKind.USER, MappingKind.QUEUE_STATE, MappingKind.DOCUMENT],
+    )
+    async def test_a_team_name_resolves_no_other_kind(
+        self,
+        kind: MappingKind,
+    ) -> None:
+        """The wildcard's fingerprint: a team name answering for something else."""
+        server = fixture_server()
+        ref = self._ref(kind, TEAM_IDENTIFIERS["engineering"])
+
+        assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == (ref,)
+
+    async def test_a_workflow_state_has_no_workspace_wide_listing(self) -> None:
+        """The kind with no answer raises rather than borrowing the team names.
+
+        Its caller routes it to the per-team read before this call, so
+        reaching here means that guard is gone — and a silent team-name
+        answer would resolve every declared state against a listing that
+        holds none of them.
+        """
+        tracker = linear_over_fake_mcp(fixture_server())
+
+        with pytest.raises(RuntimeError, match="workflow state resolves per team"):
+            await tracker._identifiers_of(MappingKind.WORKFLOW_STATE)
+
+    async def test_the_caller_never_sends_a_workflow_state_to_that_listing(
+        self,
+    ) -> None:
+        """The guard is intact: the per-team read answers, and nothing raises."""
+        server = fixture_server()
+        ref = self._ref(
+            MappingKind.WORKFLOW_STATE,
+            WORKFLOW_STATE_NAMES[LifecycleStage.IN_PROGRESS],
+        )
+
+        assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == ()
 
 
 class TestUserIdentityResolution:

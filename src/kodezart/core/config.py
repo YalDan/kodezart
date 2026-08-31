@@ -922,20 +922,27 @@ class AppConfig(BaseSettings):
         defaults are judged by whether a source actually SET them — an
         inert default under the other route is legal, an explicit value is
         not.
+
+        BOTH arms ask the same question, of the set rather than of the
+        value.  A truthiness test cannot tell an unset list from one an
+        operator wrote ``[]`` into, so the empty collections a source
+        explicitly declared under the route that never reads them used to
+        pass as untouched defaults — the exact escape this docstring
+        promises to refuse.
         """
         if self.knowledge_mcp_transport is KnowledgeTransport.HTTP:
             stray = [
                 name
-                for name, value in (
-                    ("KODEZART_KNOWLEDGE_MCP_COMMAND", self.knowledge_mcp_command),
+                for field, name in (
+                    ("knowledge_mcp_command", "KODEZART_KNOWLEDGE_MCP_COMMAND"),
                     (
+                        "knowledge_mcp_credential_env",
                         "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV",
-                        self.knowledge_mcp_credential_env,
                     ),
-                    ("KODEZART_KNOWLEDGE_MCP_ARGS", self.knowledge_mcp_args or None),
-                    ("KODEZART_KNOWLEDGE_MCP_ENV", self.knowledge_mcp_env or None),
+                    ("knowledge_mcp_args", "KODEZART_KNOWLEDGE_MCP_ARGS"),
+                    ("knowledge_mcp_env", "KODEZART_KNOWLEDGE_MCP_ENV"),
                 )
-                if value is not None
+                if field in self.model_fields_set
             ]
             if stray:
                 msg = (

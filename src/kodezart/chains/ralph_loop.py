@@ -62,9 +62,9 @@ class RalphLoop:
         prompts: PromptSetProvider,
         skills: SkillsSelection,
         checkpointer: BaseCheckpointSaver[str] | None = None,
-        retry_max_attempts: int = 3,
-        retry_initial_interval: float = 1.0,
-        fan_in_max_attempts: int = 2,
+        retry_max_attempts: int,
+        retry_initial_interval: float,
+        fan_in_max_attempts: int,
     ) -> None:
         self._service = service
         self._max_iterations = max_iterations

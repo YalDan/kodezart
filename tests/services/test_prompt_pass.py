@@ -19,13 +19,14 @@ import pytest
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.prompt_namespaces import bindings_for
-from kodezart.core.protocols import PromptProvider
+from kodezart.core.protocols import PromptSetProvider
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.prompt_pass import run_prompt_pass
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
@@ -43,22 +44,34 @@ WORKSPACE = "/tmp/kodezart-scheduled-pass"
 PERMISSION_MODE = "bypassPermissions"
 PAGE_SIZE = 50
 LATER = FIXTURE_EPOCH + timedelta(hours=1)
+#: The shipped set that declares a session role covering both pass keys.
+POLICIED_SET = "anthropic_v5"
+ALL_SKILLS = SkillsSelection(mode=SkillsMode.ALL)
 
 
 def example_config() -> OperationConfig:
     return load_operation_config(EXAMPLE)
 
 
-def bound_registry() -> PromptProvider:
+def bound_registry() -> PromptSetProvider:
     return load_registry(bindings=dict(bindings_for(example_config())))
+
+
+def policied_registry() -> PromptSetProvider:
+    """A bound registry over the set that declares roles for the pass keys."""
+    return load_registry(
+        default_set=POLICIED_SET,
+        bindings=dict(bindings_for(example_config())),
+    )
 
 
 async def run(
     *,
-    prompts: PromptProvider,
+    prompts: PromptSetProvider,
     runner: FakeAgentRunner,
     gate: PassGate | None = None,
     key: PromptKey = PromptKey.GROOMING_PASS,
+    skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
 ) -> None:
     await run_prompt_pass(
         key=key,
@@ -68,7 +81,7 @@ async def run(
         workspace_path=WORKSPACE,
         permission_mode=PERMISSION_MODE,
         allowed_tools=["Bash"],
-        skills=SUPPRESS_ALL_SKILLS,
+        skills=skills,
         session_type=SessionType.SCHEDULED_PASS,
     )
 
@@ -106,8 +119,49 @@ async def test_the_session_receives_the_rendered_prompt_and_its_grant() -> None:
             "workspace_path": WORKSPACE,
             "session_id": None,
             "session_type": SessionType.SCHEDULED_PASS,
+            "skills": SUPPRESS_ALL_SKILLS,
+            "session_policy": registry.session_policy(PromptKey.GROOMING_PASS),
         },
     ]
+
+
+@pytest.mark.parametrize(
+    "key",
+    [PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS],
+)
+async def test_a_pass_runs_under_the_policy_its_own_set_declares(
+    key: PromptKey,
+) -> None:
+    """The set states what a pass costs, and the pass is sent at that.
+
+    A scheduled pass is a dispatch like any other: its set declares the
+    role its key runs under, and the effort and the skill loadout of
+    that role are what reach the session.  The pass used to send the
+    deployment-wide selection with no policy at all, so the two most
+    expensive judgment sessions the deployment runs unattended were the
+    only ones the set could not dial.
+    """
+    registry = policied_registry()
+    runner = FakeAgentRunner(events=[])
+
+    await run(prompts=registry, runner=runner, key=key, skills=ALL_SKILLS)
+
+    (call,) = runner.calls
+    assert call["session_policy"] == registry.session_policy(key)
+    assert call["session_policy"].effort == "xhigh"
+    assert call["skills"] == registry.session_skills(key, ALL_SKILLS)
+    assert call["skills"] != ALL_SKILLS
+
+
+async def test_a_deployment_suppression_is_not_reopened_by_the_set() -> None:
+    """Narrowing intersects two bounds; it never widens the operator's one."""
+    registry = policied_registry()
+    runner = FakeAgentRunner(events=[])
+
+    await run(prompts=registry, runner=runner, skills=SUPPRESS_ALL_SKILLS)
+
+    (call,) = runner.calls
+    assert call["skills"] == SUPPRESS_ALL_SKILLS
 
 
 async def test_a_prompt_that_cannot_render_starts_no_session() -> None:

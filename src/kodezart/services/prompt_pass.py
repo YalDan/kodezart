@@ -18,7 +18,7 @@ session is ever started on a prompt with a hole in it.
 """
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, PromptProvider
+from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
@@ -30,7 +30,7 @@ _log: BoundLogger = get_logger(__name__)
 async def run_prompt_pass(
     *,
     key: PromptKey,
-    prompts: PromptProvider,
+    prompts: PromptSetProvider,
     runner: AgentRunner,
     gate: PassGate | None,
     workspace_path: str,
@@ -51,6 +51,13 @@ async def run_prompt_pass(
     all be resolved refuses to run rather than running on a hole.  The
     render is attempted only after the gate has said there is work, so a
     quiet board never pays for a render either.
+
+    *skills* is the DEPLOYMENT's selection and is narrowed by the set
+    before it reaches the session, the same consumer shape every other
+    dispatch site uses: the deployment decides what is available and the
+    set decides what a role reaches for.  The effort the set declares
+    for *key* travels with it, so a pass runs at the level its own set
+    states rather than at whatever the harness happens to default to.
     """
     if gate is not None and not (await gate.delta()).has_delta():
         await _log.ainfo("prompt_pass_skipped_no_delta", name=key.value)
@@ -61,8 +68,9 @@ async def run_prompt_pass(
         workspace_path=workspace_path,
         permission_mode=permission_mode,
         allowed_tools=allowed_tools,
-        skills=skills,
+        skills=prompts.session_skills(key, skills),
         session_type=session_type,
+        session_policy=prompts.session_policy(key),
     ):
         continue
     await _log.ainfo("prompt_pass_finished", name=key.value)

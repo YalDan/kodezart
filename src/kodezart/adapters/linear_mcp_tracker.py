@@ -1161,18 +1161,33 @@ class LinearMcpTracker:
         declared team resolves one as readily as a workspace-level label
         does.  Reading the unscoped listing alone left the boot that had
         just created a team-scoped label unable to see it.
+
+        A workflow state has no answer here and says so: it resolves per
+        team, against a vocabulary this listing cannot express, and the
+        caller routes it away before reaching this call.  Exhaustive over
+        the vocabulary with no default arm, so a kind added later fails
+        to type-check rather than being answered with team names.
         """
-        if kind is MappingKind.DOCUMENT:
-            return frozenset(await self._document_definitions())
-        if kind is MappingKind.QUEUE_STATE:
-            return (await self._label_definitions()).names()
-        if kind is MappingKind.USER:
-            return frozenset(
-                identity
-                for entry in await self._user_listing()
-                for identity in (entry.name, entry.display_name)
-            )
-        return frozenset(entry.name for entry in await self._team_listing())
+        match kind:
+            case MappingKind.DOCUMENT:
+                return frozenset(await self._document_definitions())
+            case MappingKind.QUEUE_STATE:
+                return (await self._label_definitions()).names()
+            case MappingKind.USER:
+                return frozenset(
+                    identity
+                    for entry in await self._user_listing()
+                    for identity in (entry.name, entry.display_name)
+                )
+            case MappingKind.TEAM:
+                return frozenset(entry.name for entry in await self._team_listing())
+            case MappingKind.WORKFLOW_STATE:
+                msg = (
+                    "a workflow state resolves per team and has no "
+                    "workspace-wide identifier listing; its caller reads "
+                    "_workflow_states_by_team instead of reaching here"
+                )
+                raise RuntimeError(msg)
 
     async def _workflow_states_by_team(self) -> Mapping[str, frozenset[str]]:
         """The workflow-state vocabulary of each DECLARED team, held apart.

@@ -320,6 +320,8 @@ async def creator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunner:
         prompts=provider,
         skills=SUPPRESS_ALL_SKILLS,
         retry_max_attempts=1,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_initial_interval=1.0,
     )
     with pytest.raises(NoStructuredOutputError):
         async for _event in loop.run(
@@ -375,6 +377,9 @@ async def evaluator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunne
         cache=FakeRepoCache(),
         prompts=provider,
         skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
     async for _event in loop.run(
         prompt="fix it",

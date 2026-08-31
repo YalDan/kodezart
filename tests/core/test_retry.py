@@ -3,13 +3,12 @@
 import inspect
 from typing import Final
 
-import httpx
 import pytest
 
 from kodezart.core import retry as retry_module
 from kodezart.core.errors import NoStructuredOutputError, soft_failure
 from kodezart.core.retry import should_retry
-from kodezart.domain.errors import RateLimitError, TransientAPIError
+from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.agent import RaiseSite
 
 
@@ -28,28 +27,42 @@ def test_connection_error_is_retryable() -> None:
     assert should_retry(ConnectionError("reset")) is True
 
 
-def test_http_429_is_retryable() -> None:
-    """httpx.HTTPStatusError with 429 triggers retry."""
-    request = httpx.Request("GET", "https://api.github.com/test")
-    response = httpx.Response(429, request=request)
-    exc = httpx.HTTPStatusError("rate limited", request=request, response=response)
-    assert should_retry(exc) is True
+@pytest.mark.parametrize("status_code", [422, 429, 502, None])
+def test_a_forge_api_error_is_never_retryable(status_code: int | None) -> None:
+    """``ForgeAPIError`` is the non-retryable arm — whatever status it carries.
 
+    The adapter classifies first: a 429 or a 5xx that is still worth
+    retrying never becomes a ``ForgeAPIError`` at all, it becomes a
+    ``RateLimitError`` or a ``TransientAPIError`` once the adapter's own
+    budget is spent.  Re-deciding that here on the status code would put
+    a second classifier behind the first, and the two would drift.
 
-def test_http_502_is_retryable() -> None:
-    """httpx.HTTPStatusError with 502 triggers retry."""
-    request = httpx.Request("GET", "https://api.github.com/test")
-    response = httpx.Response(502, request=request)
-    exc = httpx.HTTPStatusError("bad gateway", request=request, response=response)
-    assert should_retry(exc) is True
+    ``None`` is the statusless arm — a decode failure, a redirect loop,
+    a URL that would not build — and a predicate reading the status to
+    decide would have no answer for it at all.
+    """
+    exc = ForgeAPIError(
+        "refused",
+        status_code=status_code,
+        detail="POST /repos/owner/repo/pulls",
+    )
 
-
-def test_http_422_not_retryable() -> None:
-    """httpx.HTTPStatusError with 422 does not trigger retry."""
-    request = httpx.Request("GET", "https://api.github.com/test")
-    response = httpx.Response(422, request=request)
-    exc = httpx.HTTPStatusError("unprocessable", request=request, response=response)
     assert should_retry(exc) is False
+
+
+def test_the_predicate_names_no_vendor_exception_type() -> None:
+    """No transport's exception types reach this decision — domain shapes only.
+
+    The escape this closes: a vendor error classified HERE is classified
+    a second time, after the adapter that owns the vendor already
+    classified it, and nothing keeps the two statements in agreement.
+    The module is swept for the transport it used to read, because a
+    behavioural test cannot see an arm that only a re-introduced import
+    would make reachable.
+    """
+    source = inspect.getsource(retry_module)
+
+    assert "httpx" not in source
 
 
 def test_runtime_error_not_retryable() -> None:

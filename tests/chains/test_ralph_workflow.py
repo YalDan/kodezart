@@ -9,9 +9,11 @@ from collections.abc import AsyncGenerator, Mapping, Sequence
 from pathlib import Path
 
 import pytest
+import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 
+from kodezart.chains import ralph_workflow as ralph_workflow_module
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
@@ -19,7 +21,12 @@ from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
 from kodezart.domain.accept_gate import accept_verdict
-from kodezart.domain.errors import CriteriaFanInError, StaleBaseError
+from kodezart.domain.errors import (
+    CriteriaFanInError,
+    ForgeAPIError,
+    StaleBaseError,
+    TransientAPIError,
+)
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -163,6 +170,8 @@ def _make_engine(
         artifact_persister=artifact_persister,
         retry_initial_interval=retry_initial_interval,
         retry_max_attempts=retry_max_attempts,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 
@@ -674,6 +683,11 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     from kodezart.core.errors import NoStructuredOutputError
@@ -910,6 +924,11 @@ async def test_criteria_receives_formatted_ticket() -> None:
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     _ = [
@@ -1292,6 +1311,10 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         remediator=FakeRemediator(),
         remediation_max_rounds=2,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -1596,6 +1619,11 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         ci_monitor=None,
         remediator=None,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -1750,6 +1778,10 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         remediator=FakeRemediator(),
         remediation_max_rounds=1,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -2829,6 +2861,10 @@ def _make_engine_with_executor(
         ci_monitor=ci_monitor,
         remediation_max_rounds=remediation_max_rounds,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 
@@ -2951,6 +2987,11 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         git=git,
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     _ = [
@@ -3024,6 +3065,11 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         git=git,
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     _ = [
@@ -3104,6 +3150,11 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         git=git,
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events: list[AgentEvent] = []
@@ -3172,6 +3223,187 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
     }
     with pytest.raises(RuntimeError, match="review_base_sha"):
         await engine._review_against_ticket_node(state, config)
+
+
+# ---------------------------------------------------------------------------
+# Forge-node preconditions: the three nodes that need an adapter all say so
+# the same way.  Held as a class rather than as one test on the node the
+# defect was reported against, because a soft skip on one of them is the
+# same defect wherever it reappears.
+# ---------------------------------------------------------------------------
+
+
+class TestForgeNodePreconditions:
+    """A forge node without its adapter RAISES — it never returns an empty result.
+
+    ``_open_pr_node`` used to log a warning and answer
+    ``{"pr_url": None, "pr_number": None}``, which is indistinguishable
+    from a pull request that was opened and produced nothing: the run
+    completes, reports no pull request, and nothing says the delivery
+    step was skipped rather than attempted.  Its two siblings raised on
+    the identical precondition, so the soft arm was also the odd one out.
+
+    The routing guards (``_route_after_review``, ``_route_after_ci``)
+    only ever send these nodes work when the adapter is present, so
+    these raises are unreachable by the graph and that is the point:
+    reaching one means a router stopped agreeing with its node, which is
+    a defect and must not be absorbed.
+    """
+
+    def _config(self) -> RunnableConfig:
+        return {
+            "configurable": {
+                "prompt": "fix it",
+                "repo_path": "/tmp/fake",
+                "repo_url": "https://github.com/owner/repo",
+                "cache_key": "test-cache",
+                "base_spec": trunk_base("main"),
+                "permission_mode": "bypassPermissions",
+                "allowed_tools": ["Bash"],
+            }
+        }
+
+    def _state(self) -> WorkflowState:
+        state: WorkflowState = {
+            "feature_branch": "kodezart/test",
+            "ralph_branch": "kodezart/test-ralph-abc",
+            "feature_tip_sha": "a" * 40,
+            "pr_url": None,
+            "pr_number": 1,
+            "remediation_rounds_used": 1,
+            "review_feedback": None,
+            "ci_summary": None,
+            "repo_visibility": RepoVisibility.PRIVATE,
+        }
+        return state
+
+    def _writer(self, monkeypatch: pytest.MonkeyPatch) -> list[AgentEvent]:
+        """The stream writer these nodes take before reaching their guard.
+
+        Outside a compiled graph there is no runnable context to take one
+        from, so it is supplied here — and it records, so a node that
+        emitted something on its way to the raise would be visible.
+        """
+        written: list[AgentEvent] = []
+        monkeypatch.setattr(
+            ralph_workflow_module,
+            "get_stream_writer",
+            lambda: written.append,
+        )
+        return written
+
+    async def test_the_open_pr_node_raises_without_a_pr_creator(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """No soft skip: the node names the missing adapter and stops."""
+        written = self._writer(monkeypatch)
+        engine = _make_engine(pr_creator=None)
+
+        with pytest.raises(RuntimeError, match="open_pr requires pr_creator"):
+            await engine._open_pr_node(self._state(), self._config())
+
+        assert written == []
+
+    async def test_the_monitor_ci_node_raises_without_a_ci_monitor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The sibling this node's raise is modelled on."""
+        written = self._writer(monkeypatch)
+        engine = _make_engine(ci_monitor=None)
+
+        with pytest.raises(RuntimeError, match="monitor_ci requires ci_monitor"):
+            await engine._monitor_ci_node(self._state(), self._config())
+
+        assert written == []
+
+    async def test_the_comment_failure_node_raises_without_a_pr_creator(self) -> None:
+        """The other sibling, on the same precondition as ``_open_pr_node``."""
+        engine = _make_engine(pr_creator=None)
+
+        with pytest.raises(RuntimeError, match="comment_failure requires pr_creator"):
+            await engine._comment_failure_node(self._state(), self._config())
+
+
+# ---------------------------------------------------------------------------
+# What a failed failure-report is allowed to cost.
+# ---------------------------------------------------------------------------
+
+
+class TestCommentFailureContainment:
+    """The forge's refusal is contained; anything else is a defect and escapes.
+
+    The node used to catch bare ``Exception``, which absorbed its own
+    programming errors along with the forge's refusals and reported both
+    as the same log line.  The containment is now exactly the forge
+    taxonomy the port raises, so a run that crashes here crashes for a
+    reason worth seeing.
+    """
+
+    async def _run(self, pr_creator: FakePRCreator) -> list[AgentEvent]:
+        engine = _make_engine(
+            quality_gate=FakeQualityGate(
+                events=[],
+                evaluation=make_passing_evaluation(),
+                total_iterations=1,
+                last_commit_sha="a" * 40,
+            ),
+            pr_creator=pr_creator,
+            ci_monitor=FakeCIMonitor(passed=False, summary="CI failed: ci/test"),
+            remediator=FakeRemediator(),
+            remediation_max_rounds=1,
+        )
+        return [
+            event
+            async for event in engine.run(
+                prompt="fix it",
+                repo_path="/tmp/fake",
+                repo_url="https://github.com/owner/repo",
+                base_spec=trunk_base("main"),
+                permission_mode="bypassPermissions",
+                allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
+            )
+        ]
+
+    @pytest.mark.parametrize(
+        "refusal",
+        [
+            ForgeAPIError(
+                "refused",
+                status_code=403,
+                detail="POST /repos/owner/repo/issues/1/comments",
+            ),
+            TransientAPIError("Server error 502 on /comments"),
+        ],
+    )
+    async def test_a_forge_refusal_is_logged_and_the_run_still_terminates(
+        self,
+        refusal: Exception,
+    ) -> None:
+        """The comment is lost, the outcome is not.
+
+        The comment reports a failure the terminal event reports again,
+        so a crash here would trade the whole outcome for the one line
+        of it that did not post.
+        """
+        pr_creator = FakePRCreator(fail_comment=refusal)
+
+        with structlog.testing.capture_logs() as logs:
+            events = await self._run(pr_creator)
+
+        failed = [e for e in logs if e["event"] == "comment_failure_failed"]
+        assert len(failed) == 1
+        assert failed[0]["error_kind"] == type(refusal).__name__
+        assert len([e for e in events if isinstance(e, WorkflowCompleteEvent)]) == 1
+
+    async def test_a_non_forge_exception_propagates_out_of_the_run(self) -> None:
+        """A defect in this node is not a forge refusal and is not filed as one."""
+        pr_creator = FakePRCreator(fail_comment=ValueError("not a forge refusal"))
+
+        with pytest.raises(ValueError, match="not a forge refusal"):
+            await self._run(pr_creator)
 
 
 # ---------------------------------------------------------------------------
@@ -3260,6 +3492,11 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     with pytest.raises(NoStructuredOutputError, match="branch name") as excinfo:
@@ -3586,6 +3823,10 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
         remediator=FakeRemediator(),
         remediation_max_rounds=2,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -3840,6 +4081,11 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=FakePRCreator(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     with pytest.raises(RuntimeError, match="requires ref_publisher"):

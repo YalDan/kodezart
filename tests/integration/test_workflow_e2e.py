@@ -212,6 +212,9 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         plateau_window=2,
         git=git,
         cache=cache,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -219,6 +222,9 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         service=service,
         workspace=workspace,
         max_reviews=2,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -233,6 +239,11 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -348,6 +359,9 @@ async def test_workflow_e2e_exhausts_iterations(
         plateau_window=2,
         git=git,
         cache=cache,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -355,6 +369,9 @@ async def test_workflow_e2e_exhausts_iterations(
         service=service,
         workspace=workspace,
         max_reviews=2,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -369,6 +386,11 @@ async def test_workflow_e2e_exhausts_iterations(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -538,6 +560,9 @@ async def test_workflow_e2e_divergent_base_branch(
         plateau_window=2,
         git=git,
         cache=cache,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -545,6 +570,9 @@ async def test_workflow_e2e_divergent_base_branch(
         service=service,
         workspace=workspace,
         max_reviews=2,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -559,6 +587,11 @@ async def test_workflow_e2e_divergent_base_branch(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     _ = [
@@ -823,6 +856,9 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         plateau_window=2,
         git=git,
         cache=cache,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -830,6 +866,9 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         service=service,
         workspace=workspace,
         max_reviews=2,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -844,6 +883,11 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -1101,6 +1145,11 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
         git_remote=remote_name,
         git=FakeGitService(remote_branch_shas={"main": None}),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     with pytest.raises(RuntimeError) as excinfo:
@@ -1227,6 +1276,11 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         git=fault_git,
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service
@@ -1377,6 +1431,9 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
             plateau_window=config.loop_plateau_window,
             git=git,
             cache=cache,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            fan_in_max_attempts=2,
         ),
         ticket_generator=TicketGenerationLoop(
             skills=SUPPRESS_ALL_SKILLS,
@@ -1385,6 +1442,8 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
             workspace=workspace,
             review_mode=config.ticket_review_mode,
             max_reviews=config.explicit_max_reviews(),
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
         ),
         merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
         git_base_url="https://github.com",
@@ -1392,6 +1451,11 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     events = [
@@ -1463,6 +1527,8 @@ async def test_the_flipped_defaults_attach_the_sets_lenses_to_the_creator(
         workspace=workspace,
         review_mode=config.ticket_review_mode,
         max_reviews=config.explicit_max_reviews(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
 
     events = [

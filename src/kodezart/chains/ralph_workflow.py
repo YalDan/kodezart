@@ -59,7 +59,12 @@ from kodezart.domain.criteria_feasibility import (
 )
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criteria_prompt import render_validation_findings
-from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
+from kodezart.domain.errors import (
+    CriteriaFanInError,
+    ForgeAPIError,
+    TransientAPIError,
+    UngroundedVerdictError,
+)
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
@@ -163,15 +168,15 @@ class RalphWorkflowEngine:
         gate: OutboundContentGate,
         visibility_resolver: RepoVisibilityResolver | None = None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
-        retry_max_attempts: int = 3,
-        retry_initial_interval: float = 1.0,
+        retry_max_attempts: int,
+        retry_initial_interval: float,
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
         ref_publisher: RefPublisher | None = None,
         remediator: Remediator | None = None,
-        remediation_max_rounds: int = 1,
-        criteria_max_regeneration_rounds: int = 1,
-        fan_in_max_attempts: int = 2,
+        remediation_max_rounds: int,
+        criteria_max_regeneration_rounds: int,
+        fan_in_max_attempts: int,
         artifact_persister: ArtifactPersister | None = None,
     ) -> None:
         self._service: AgentRunner = service
@@ -1579,18 +1584,14 @@ class RalphWorkflowEngine:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        if self._pr_creator is None:
-            await self._log.awarning("pr_creator_not_configured")
-            return {"pr_url": None, "pr_number": None}
+        pr_creator = self._pr_creator
+        if pr_creator is None:
+            msg = "open_pr requires pr_creator but self._pr_creator is None"
+            raise RuntimeError(msg)
 
         repo_url = ctx.repo_url
         if repo_url is None:
             msg = "open_pr requires repo_url but ctx.repo_url is None"
-            raise RuntimeError(msg)
-
-        pr_creator = self._pr_creator
-        if pr_creator is None:
-            msg = "open_pr requires pr_creator but self._pr_creator is None"
             raise RuntimeError(msg)
 
         ticket = current_ticket(state)
@@ -1743,7 +1744,17 @@ class RalphWorkflowEngine:
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Post a comment on the PR about exhausted fix budget."""
+        """Post a comment on the PR about exhausted fix budget.
+
+        A forge refusal on this last write is LOGGED and the run continues
+        to its terminal event: the comment reports a failure the terminal
+        event also reports, so crashing here would lose the whole outcome
+        in order to report that one line of it did not post.  The
+        containment is exactly the forge taxonomy — ``ForgeAPIError`` and
+        ``TransientAPIError`` — and every other exception propagates,
+        because a defect in this node is not a forge refusal and must not
+        be filed as one.
+        """
         ctx = ExecutionContext.from_configurable(config)
 
         pr_creator = self._pr_creator
@@ -1790,10 +1801,11 @@ class RalphWorkflowEngine:
                 pr_number=pr_number,
                 body=comment_body,
             )
-        except Exception as exc:
+        except (ForgeAPIError, TransientAPIError) as exc:
             await self._log.aerror(
                 "comment_failure_failed",
                 error=str(exc),
+                error_kind=type(exc).__name__,
             )
 
         return {}

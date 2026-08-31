@@ -993,6 +993,8 @@ class FakeAgentRunner:
                 "workspace_path": workspace_path,
                 "session_id": session_id,
                 "session_type": session_type,
+                "skills": skills,
+                "session_policy": session_policy,
             }
         )
         for event in self._events:

@@ -38,6 +38,12 @@ class GatedDispatchPass:
         The alternative — a gate holding no signals — would report an
         empty delta forever and silently pin the pass shut, which is why
         "no signals configured" resolves to no gate rather than to one.
+
+        A ``fire_enqueued`` report missing the issue, the job or the
+        pre-claim state RAISES.  The dispatcher cannot emit that shape,
+        so meeting it means the report and the enqueue disagree — and
+        returning on it would leave a running fire with no watch and no
+        way to be put back, which is the state the watch exists for.
         """
         changed: tuple[str, ...] = ()
         if self._gate is not None:
@@ -64,7 +70,13 @@ class GatedDispatchPass:
             or report.job_id is None
             or report.claimed_state_name is None
         ):
-            return
+            msg = (
+                "fire_enqueued report is missing what the enqueue produced: "
+                f"claimed_issue_key={report.claimed_issue_key!r} "
+                f"job_id={report.job_id!r} "
+                f"claimed_state_name={report.claimed_state_name!r}"
+            )
+            raise RuntimeError(msg)
         # The pre-claim state travels with the watch, because the watch is
         # what puts it back when the run reaches no terminal outcome — and
         # the board's visibility posture travels the same way, because the

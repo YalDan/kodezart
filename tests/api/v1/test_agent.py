@@ -234,6 +234,11 @@ async def _workflow_client(
         git=FakeGitService(),
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service
@@ -259,6 +264,8 @@ async def create_only_workflow_client() -> AsyncGenerator[AsyncClient, None]:
         prompts=v5_provider(TicketReviewMode.CREATE_ONLY),
         skills=SUPPRESS_ALL_SKILLS,
         review_mode=TicketReviewMode.CREATE_ONLY,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
     async with _workflow_client(loop) as client:
         yield client
@@ -498,6 +505,11 @@ async def _workflow_client_with(
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service

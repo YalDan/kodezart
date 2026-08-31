@@ -20,7 +20,7 @@ from kodezart.core.protocols import (
     JobQueue,
     JobRegistry,
     OutboundContentGate,
-    PromptProvider,
+    PromptSetProvider,
     RepoCache,
     TrackerPort,
 )
@@ -117,7 +117,7 @@ def build_gate(
 def build_prompt_passes(
     *,
     config: AppConfig,
-    prompts: PromptProvider,
+    prompts: PromptSetProvider,
     tracker: TrackerPort | None,
     runner: AgentRunner,
     skills: SkillsSelection,
@@ -275,7 +275,7 @@ async def build_dispatch_runtime(
     gate: OutboundContentGate,
     git: GitService,
     cache: RepoCache,
-    prompts: PromptProvider,
+    prompts: PromptSetProvider,
     runner: AgentRunner,
     skills: SkillsSelection,
     log: BoundLogger,

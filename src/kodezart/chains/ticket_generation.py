@@ -126,11 +126,11 @@ class TicketGenerationLoop:
         *,
         prompts: PromptSetProvider,
         skills: SkillsSelection,
-        review_mode: TicketReviewMode = TicketReviewMode.REVIEWED,
+        review_mode: TicketReviewMode,
         max_reviews: int | None = None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
-        retry_max_attempts: int = 3,
-        retry_initial_interval: float = 1.0,
+        retry_max_attempts: int,
+        retry_initial_interval: float,
     ) -> None:
         self._service = service
         self._workspace = workspace

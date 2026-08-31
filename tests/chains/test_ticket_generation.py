@@ -61,6 +61,9 @@ def _make_loop(
         service=service,
         workspace=FakeWorkspaceProvider(),
         max_reviews=max_reviews,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
 
 
@@ -682,6 +685,9 @@ def _make_loop_with_workspace(
         service=service,
         workspace=workspace,
         max_reviews=max_reviews,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
 
 
@@ -863,6 +869,8 @@ def _v5_loop(
         workspace=FakeWorkspaceProvider(),
         review_mode=review_mode,
         max_reviews=max_reviews,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
     )
 
 
@@ -1110,6 +1118,8 @@ def test_create_only_refuses_a_set_that_declares_no_critic() -> None:
             service=service,
             workspace=FakeWorkspaceProvider(),
             review_mode=TicketReviewMode.CREATE_ONLY,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
         )
 
     assert excinfo.value.settings == (

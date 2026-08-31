@@ -259,6 +259,11 @@ def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngi
         gate=PassThroughGate(),
         checkpointer=checkpointer,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 
@@ -400,6 +405,10 @@ def _mid_run_engine(
         remediator=FakeRemediator(),
         remediation_max_rounds=1,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 

@@ -34,6 +34,7 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     PassThroughGate,
@@ -170,6 +171,9 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
             plateau_window=2,
             git=git,
             cache=cache,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            fan_in_max_attempts=2,
         ),
         ticket_generator=TicketGenerationLoop(
             skills=SUPPRESS_ALL_SKILLS,
@@ -177,6 +181,9 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
             service=service,
             workspace=workspace,
             max_reviews=1,
+            review_mode=TicketReviewMode.REVIEWED,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
         ),
         merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
         git_base_url="https://github.com",
@@ -184,6 +191,11 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 

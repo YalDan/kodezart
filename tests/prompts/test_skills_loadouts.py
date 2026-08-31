@@ -249,6 +249,11 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         cache=FakeRepoCache(),
         prompts=make_prompt_provider(),
         skills=selection,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
     _ = [
@@ -280,6 +285,9 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
         cache=FakeRepoCache(),
         prompts=make_prompt_provider(),
         skills=selection,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
     with pytest.raises(NoStructuredOutputError):
         _ = [

@@ -9,7 +9,7 @@ import structlog
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.composition.forge import build_forge_client
 from kodezart.core.config import AppConfig
-from kodezart.domain.errors import RateLimitError, TransientAPIError
+from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.gating import RepoVisibility
 
 _FAKE_PAT = "test-token"
@@ -148,13 +148,20 @@ async def test_create_pr_success() -> None:
 
 
 async def test_create_pr_http_error() -> None:
-    """create_pr raises httpx.HTTPStatusError on 422."""
+    """create_pr raises the domain ForgeAPIError on 422, never a vendor type.
+
+    The port is ``PRCreator`` and it speaks the domain taxonomy: a caller
+    that had to name ``httpx`` to catch this would be importing the
+    adapter's transport in order to use the port.  The status travels as
+    a field so a consumer can route on it, and the detail names the
+    refused request rather than the response body.
+    """
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(422, json={"message": "Validation Failed"})
 
     client = _make_client(handler)
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(ForgeAPIError) as caught:
         await client.create_pr(
             repo_url="https://github.com/owner/repo",
             title="feat: test",
@@ -162,6 +169,9 @@ async def test_create_pr_http_error() -> None:
             head="branch",
             base="main",
         )
+    assert caught.value.status_code == 422
+    assert caught.value.detail == "POST /repos/owner/repo/pulls"
+    assert "Validation Failed" not in str(caught.value)
     await client.close()
 
 
@@ -299,7 +309,7 @@ async def test_non_retryable_422_propagates_immediately() -> None:
         return httpx.Response(422, json={"message": "Validation Failed"})
 
     client = _make_client(handler, max_retries=3, retry_backoff_factor=0.01)
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(ForgeAPIError):
         await client.create_pr(
             repo_url="https://github.com/owner/repo",
             title="feat: test",
@@ -309,6 +319,239 @@ async def test_non_retryable_422_propagates_immediately() -> None:
         )
     assert call_count == 1
     await client.close()
+
+
+#: One instance per family under every root in the adapter's
+#: ``_VENDOR_FAILURE``, so the arms are exercised as a partition rather
+#: than as a list of the two the residual happened to name.
+_STATUSLESS_FAILURES = [
+    httpx.DecodingError("body would not decode"),
+    httpx.TooManyRedirects("redirect loop"),
+    httpx.InvalidURL("not a url this client will build"),
+    httpx.CookieConflict("two cookies of one name"),
+    httpx.StreamConsumed(),
+]
+#: The other arm, which keeps its retry-then-``TransientAPIError`` path.
+_TRANSPORT_FAILURES = [
+    httpx.ConnectError("connection refused"),
+    httpx.ReadTimeout("read timed out"),
+    httpx.RemoteProtocolError("bad framing"),
+]
+#: The two ways a body that ARRIVED still fails to become a wire model.
+#: Both are ``ValueError`` — the decoder's and pydantic's — which is why
+#: one arm covers them, and both are answered with a real 200.
+_UNREADABLE_BODIES = [
+    httpx.Response(200, content=b"<html>upstream error page</html>"),
+    httpx.Response(200, json={"unexpected": True}),
+]
+#: The port methods that read a body. ``comment_on_pr`` reads none and is
+#: the control below.
+_BODY_READING_METHODS = ["create_pr", "open_delivery_exists", "wait_for_checks"]
+
+
+class TestVendorFailureTranslation:
+    """No NON-DOMAIN type crosses a public method — plumbing and bodies alike.
+
+    A status the server answered with is the common failure and was
+    always translated.  The rest of what httpx can raise — a body that
+    would not decode, a redirect loop, a URL the client would not build,
+    a stream already consumed — used to travel out of the adapter as the
+    transport's own class, which put the vendor on the port for exactly
+    the failures nobody writes a test for.
+
+    A body that ARRIVED and is unusable is the same defect one layer in:
+    the JSON decoder and the wire model both refuse with a ``ValueError``,
+    and both used to cross the port as one.  ``ValueError`` is not the
+    ports' vocabulary — a consumer catching it would be catching pydantic
+    through the seam that exists to hide pydantic.
+
+    The plumbing failures carry no status, because no request completed.
+    The unreadable bodies carry the real one, because the request was
+    answered and what came back was unusable.
+    """
+
+    REPO_URL = "https://github.com/owner/repo"
+
+    def _raising(self, failure: Exception):
+        """A transport that fails *failure*'s way on every request."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise failure
+
+        return handler
+
+    def _answering(self, body: httpx.Response):
+        """A transport that answers *body* to every request."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return body
+
+        return handler
+
+    async def _call(self, client: GitHubAPIClient, port_method: str) -> object:
+        calls = {
+            "create_pr": lambda: client.create_pr(
+                repo_url=self.REPO_URL,
+                title="feat: test",
+                body="body",
+                head="branch",
+                base="main",
+            ),
+            "comment_on_pr": lambda: client.comment_on_pr(
+                repo_url=self.REPO_URL,
+                pr_number=1,
+                body="body",
+            ),
+            "open_delivery_exists": lambda: client.open_delivery_exists(
+                repo_url=self.REPO_URL,
+                issue_key="KOD-1",
+            ),
+            "wait_for_checks": lambda: client.wait_for_checks(
+                repo_url=self.REPO_URL,
+                ref="abc123",
+            ),
+        }
+        return await calls[port_method]()
+
+    @pytest.mark.parametrize("failure", _STATUSLESS_FAILURES)
+    async def test_a_statusless_vendor_failure_is_not_retried(
+        self,
+        failure: Exception,
+    ) -> None:
+        """One attempt, then the domain error — the retry budget goes unspent.
+
+        Nothing about a body that would not decode or a URL that would
+        not build is changed by sending the identical request again, so
+        these keep the 4xx path's cost rather than the transport path's.
+        """
+        attempts = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            raise failure
+
+        client = _make_client(handler, max_retries=3, retry_backoff_factor=0.01)
+        with pytest.raises(ForgeAPIError) as caught:
+            await self._call(client, "create_pr")
+
+        assert attempts == 1
+        assert caught.value.status_code is None
+        assert caught.value.detail == "POST /repos/owner/repo/pulls"
+        assert type(failure).__name__ in str(caught.value)
+        await client.close()
+
+    @pytest.mark.parametrize(
+        "port_method",
+        ["create_pr", "comment_on_pr", "open_delivery_exists", "wait_for_checks"],
+    )
+    @pytest.mark.parametrize("failure", [*_STATUSLESS_FAILURES, *_TRANSPORT_FAILURES])
+    async def test_only_domain_errors_leave_a_port_method(
+        self,
+        port_method: str,
+        failure: Exception,
+    ) -> None:
+        """The boundary asserted as TOTAL: every family, every port method."""
+        client = _make_client(
+            self._raising(failure),
+            max_retries=0,
+            retry_backoff_factor=0.01,
+        )
+        with pytest.raises((ForgeAPIError, TransientAPIError)) as caught:
+            await self._call(client, port_method)
+
+        assert not isinstance(caught.value, httpx.HTTPError)
+        await client.close()
+
+    @pytest.mark.parametrize("failure", [*_STATUSLESS_FAILURES, *_TRANSPORT_FAILURES])
+    async def test_the_visibility_resolver_still_fails_closed(
+        self,
+        failure: Exception,
+    ) -> None:
+        """The one method that answers rather than raises answers UNKNOWN."""
+        client = _make_client(
+            self._raising(failure),
+            max_retries=0,
+            retry_backoff_factor=0.01,
+        )
+
+        assert (
+            await client.resolve_visibility(repo_url=self.REPO_URL)
+            is RepoVisibility.UNKNOWN
+        )
+        await client.close()
+
+    @pytest.mark.parametrize("port_method", _BODY_READING_METHODS)
+    @pytest.mark.parametrize("body", _UNREADABLE_BODIES)
+    async def test_an_unreadable_body_leaves_as_a_domain_error(
+        self,
+        port_method: str,
+        body: httpx.Response,
+    ) -> None:
+        """Bytes that will not decode and a shape the model refuses, both.
+
+        ``ValidationError`` is a ``ValueError``, so a consumer that
+        wanted to contain this had to catch ``ValueError`` — which is to
+        say catch pydantic, through the very seam that exists so no
+        consumer knows this adapter parses anything.
+        """
+        client = _make_client(self._answering(body), max_retries=0)
+        with pytest.raises(ForgeAPIError) as caught:
+            await self._call(client, port_method)
+
+        assert not isinstance(caught.value, ValueError)
+        assert caught.value.status_code == 200
+        assert caught.value.detail.startswith(("GET /repos/", "POST /repos/"))
+        await client.close()
+
+    @pytest.mark.parametrize("body", _UNREADABLE_BODIES)
+    async def test_a_method_that_reads_no_body_is_untouched_by_one(
+        self,
+        body: httpx.Response,
+    ) -> None:
+        """The control: the seam is where a body is READ, not on every call.
+
+        ``comment_on_pr`` wants the status and nothing else, so a
+        response it never parses is not a failure it should invent.
+        """
+        client = _make_client(self._answering(body), max_retries=0)
+
+        await client.comment_on_pr(repo_url=self.REPO_URL, pr_number=1, body="body")
+        await client.close()
+
+    async def test_an_unreadable_workflows_listing_never_ends_the_call(self) -> None:
+        """The probe's own invariant, held through the new translation.
+
+        A probe only ever selects a grace window, so a listing it cannot
+        classify is ``INDETERMINATE`` — never a raise out of
+        ``wait_for_checks``, which would end a run over a body nothing
+        was waiting on.
+        """
+        runs_calls = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal runs_calls
+            if "actions/workflows" in str(request.url):
+                return httpx.Response(200, content=b"<html>not json</html>")
+            runs_calls += 1
+            return _empty_runs()
+
+        client = _make_client(
+            handler,
+            ci_no_checks_grace_polls=2,
+            ci_no_workflows_grace_polls=1,
+            ci_grace_poll_interval_seconds=0.0,
+        )
+        with structlog.testing.capture_logs() as logs:
+            passed, summary = await client.wait_for_checks(
+                repo_url=self.REPO_URL, ref="abc123"
+            )
+
+        assert passed is None
+        assert summary == "No CI checks appeared for this ref after 2 polls."
+        assert runs_calls == 2
+        assert [e["event"] for e in logs].count("ci_workflows_probe_failed") == 1
+        await client.close()
 
 
 # -- CIMonitor tests ---------------------------------------------------------
@@ -1064,7 +1307,7 @@ async def test_non_404_status_error_propagates_from_wait_for_checks() -> None:
         return httpx.Response(403, json={"message": "Forbidden"})
 
     client = _make_client(handler)
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(ForgeAPIError):
         await client.wait_for_checks(
             repo_url="https://github.com/owner/repo", ref="abc123"
         )

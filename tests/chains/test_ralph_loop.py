@@ -89,6 +89,9 @@ def _make_loop(
         plateau_window=plateau_window,
         git=git or FakeGitService(),
         cache=cache or FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
 
 
@@ -318,6 +321,9 @@ async def test_loop_second_iteration_succeeds() -> None:
         plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
 
     events = [e async for e in loop.run(**_run_kwargs())]
@@ -762,6 +768,9 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
         plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
 
     events = [e async for e in loop.run(**_run_kwargs())]
@@ -885,6 +894,9 @@ async def test_the_first_iteration_is_dispatched_with_the_recorded_base() -> Non
         plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
     )
 
     with pytest.raises(NoStructuredOutputError):

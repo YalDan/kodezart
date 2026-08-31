@@ -171,6 +171,11 @@ def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
         pr_creator=forge,
         ci_monitor=forge,
         artifact_persister=FakeArtifactPersister(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 

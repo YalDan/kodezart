@@ -402,7 +402,21 @@ class PRCreator(Protocol):
         repo_url: str,
         pr_number: int,
         body: str,
-    ) -> None: ...
+    ) -> None:
+        """Post *body* on the pull request, or raise the forge's refusal.
+
+        Refusals are typed — ``ForgeAPIError`` for a status no retry
+        changes, ``TransientAPIError`` once the adapter's own budget is
+        spent — and NEVER the transport's own exception types, so a
+        consumer contains them without importing an adapter's vendor.
+
+        A failure-report comment is the one write whose failure is
+        logged rather than fatal: it reports an outcome the run reports
+        again terminally, so crashing here would lose more than it
+        reports.  That containment is the CALLER's (see
+        ``_comment_failure_node``); this port always raises.
+        """
+        ...
 
 
 @runtime_checkable
