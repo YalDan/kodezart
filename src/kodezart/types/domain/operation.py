@@ -155,7 +155,7 @@ class Principal(OperationModel):
 
 
 class TeamEntry(OperationModel):
-    """A tracker team: its display name and its short key.
+    """A tracker team: its display name, its short key, and where it fires.
 
     Two identifiers because the routines use both, in one sentence: the
     display name is what a human reads and what boot resolves against the
@@ -168,6 +168,16 @@ class TeamEntry(OperationModel):
 
     name: str = Field(min_length=1)
     key: str = Field(min_length=1)
+    #: The url of the ``repos`` entry this team's issues are fired into.
+    #:
+    #: Optional, and the two states are two different operations.  One
+    #: declared repository is a TOTAL binding with nothing to declare —
+    #: every team fires into the only candidate there is.  A second
+    #: repository makes the binding a real choice, and every team must
+    #: then carry it: each repository's tick scans the teams bound to it,
+    #: so an unbound team is an issue fired into whichever tick claims it
+    #: first, which is tick order deciding a routing question (KOD-157).
+    repository: str | None = None
 
 
 class CheckStep(OperationModel):
@@ -386,6 +396,26 @@ class OperationConfig(OperationModel):
             if names.count(entry.name) > 1
         )
 
+        # The repository binding, checked in both directions. A binding
+        # naming a repository the config does not declare routes issues
+        # nowhere; a team carrying none where there is a choice to make
+        # routes them by tick order.
+        declared_repos = {repo.url for repo in self.repos}
+        failures.extend(
+            f"teams[{key!r}].repository {entry.repository!r} names no declared "
+            f"repository"
+            for key, entry in self.teams.items()
+            if entry.repository is not None and entry.repository not in declared_repos
+        )
+        if len(self.repos) > 1:
+            failures.extend(
+                f"teams[{key!r}] must declare a repository: the operation declares "
+                f"{len(self.repos)} of them, so nothing derives which one this "
+                f"team's issues fire into"
+                for key, entry in self.teams.items()
+                if entry.repository is None
+            )
+
         if self.queue_states:
             for member in QueueState:
                 if member.value not in self.queue_states:
@@ -509,6 +539,47 @@ class OperationConfig(OperationModel):
                 ),
             )
         return tuple(self.teams)
+
+    def teams_bound_to(self, repo_url: str) -> tuple[str, ...]:
+        """Every team key bound to the repository at *repo_url*.
+
+        The binding rule, in one place.  An operation acting on ONE
+        repository binds every team to it implicitly — there is no second
+        candidate to choose between — and one acting on several binds
+        explicitly, with load refusing a team that named none.
+
+        An empty answer is legal and is a NAMED state: a repository no
+        team fires into gets no dispatch pass scheduled for it, rather
+        than a tick that scans nothing every interval forever.
+        """
+        implicit = len(self.repos) == 1 and self.repos[0].url == repo_url
+        return tuple(
+            key
+            for key, entry in self.teams.items()
+            if entry.repository == repo_url
+            or (entry.repository is None and implicit)
+        )
+
+    def team_keys_for_repo(self, repo_url: str) -> tuple[str, ...]:
+        """The container boundary a dispatch scan over *repo_url* is narrowed to.
+
+        :meth:`teams_bound_to` under the refusal :meth:`team_keys` carries,
+        narrowed to one repository.  A pass whose repository has no team
+        bound to it has no container to be bounded by, and composition
+        builds no such pass; one built any other way refuses here rather
+        than scanning.
+        """
+        bound = self.teams_bound_to(repo_url)
+        if not bound:
+            raise OperationMemberAbsentError(
+                missing=f"teams entry bound to {repo_url}",
+                stops=(
+                    "a dispatch scan has no container to be bounded by, so "
+                    "nothing distinguishes this operation's board from any "
+                    "other in the workspace and no issue can be selected"
+                ),
+            )
+        return bound
 
     def checkpoint_document(self) -> DocumentEntry:
         """The read-side document the scan-window marker lives in.

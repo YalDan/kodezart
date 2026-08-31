@@ -112,11 +112,15 @@ class FireDispatcher:
     async def run_pass(self) -> DispatchReport:
         """Execute one pass and return its machine-readable report.
 
-        The declared teams are read ONCE, at the top, and bound both the
-        scan and the eligibility of everything it returns.  An operation
-        declaring none refuses here, before any query is issued.
+        The teams BOUND TO this pass's repository are read ONCE, at the
+        top, and bound both the scan and the eligibility of everything it
+        returns.  The declared teams that fire elsewhere are not this
+        pass's candidates: a pass that scanned them would claim an issue
+        into whichever repository's tick reached it first (KOD-157).  A
+        repository no team is bound to refuses here, before any query is
+        issued.
         """
-        team_keys = self._operation.team_keys()
+        team_keys = self._operation.team_keys_for_repo(self._repo_url)
         snapshot = await self._scan(team_keys)
         eligible: list[TrackerIssue] = []
         exclusions: list[IssueExclusion] = []

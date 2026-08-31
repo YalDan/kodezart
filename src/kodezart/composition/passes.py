@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.core.config import AppConfig
-from kodezart.core.logging import BoundLogger
+from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     DeliveryProbe,
     GitService,
@@ -80,7 +80,7 @@ def delivery_probe_for(repo_url: str, *, forge: DeliveryProbe) -> DeliveryProbe:
     return forge
 
 
-def build_dispatch_passes(
+async def build_dispatch_passes(
     *,
     config: AppConfig,
     operation: OperationConfig,
@@ -93,17 +93,21 @@ def build_dispatch_passes(
     cache: RepoCache,
     integration_workspace_dir: str,
 ) -> DispatchPasses:
-    """One gated dispatch pass per repository the operation acts on.
+    """One gated dispatch pass per repository a declared team fires into.
 
-    Every repository in the config, not a chosen one: the dispatcher
-    claims per repository, and picking one would leave the rest of the
-    operation's declared surface unserved with nothing saying so.
+    Every such repository, not a chosen one: the dispatcher claims per
+    repository, and picking one would leave the rest of the operation's
+    declared surface unserved with nothing saying so.  A repository no
+    team is bound to is the other arm and it is NAMED rather than
+    silent — it gets no pass, because a tick that scans nothing is noise
+    every interval forever (KOD-157).
 
     *delivery* is the FORGE probe, and it reaches only the repositories
     whose origin has a forge; the rest get the probe that can answer for
     theirs.  See :func:`delivery_probe_for` — the selection is per
     repository because the origins are.
     """
+    log: BoundLogger = get_logger(__name__)
     assembler = FireContextAssembler(
         tracker=tracker,
         gate=gate,
@@ -127,6 +131,9 @@ def build_dispatch_passes(
     resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
     passes: list[ScheduledPass] = []
     for repo in operation.repos:
+        if not operation.teams_bound_to(repo.url):
+            await log.ainfo("dispatch_pass_unbound_repository", repo_url=repo.url)
+            continue
         tick = GatedDispatchPass(
             lifecycle=lifecycle,
             gate=PassGate(
@@ -186,7 +193,7 @@ async def build_dispatch_runtime(
     # named, never inferred from an empty schedule.
     built: DispatchPasses | None = None
     if tracker is not None and operation is not None and github_api is not None:
-        built = build_dispatch_passes(
+        built = await build_dispatch_passes(
             config=config,
             operation=operation,
             tracker=tracker,

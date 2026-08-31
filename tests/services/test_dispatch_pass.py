@@ -14,6 +14,8 @@ object, one per declared repository, carrying the configured cadence.
 import asyncio
 from collections.abc import Callable
 
+import structlog.testing
+
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.passes import build_dispatch_passes, delivery_probe_for
 from kodezart.core.config import AppConfig
@@ -42,6 +44,7 @@ from kodezart.types.domain.operation import (
     TeamEntry,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.tracker import IssuePriority
 from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
@@ -88,7 +91,36 @@ async def settled(condition: Callable[[], bool]) -> None:
         await asyncio.sleep(SETTLE_DELAY_SECONDS)
 
 
-def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationConfig:
+#: One board per repository, in declaration order. The first key is the one
+#: ``make_tracker_issue`` puts on every fixture issue.
+TEAM_KEYS: tuple[str, ...] = ("engineering", "design")
+#: Ticket bodies that say which board an enqueued fire came from.
+ENGINEERING_BODY = "the engineering board's work"
+DESIGN_BODY = "the design board's work"
+
+
+def teams_for(repos: tuple[str, ...]) -> dict[str, TeamEntry]:
+    """A board per declared repository, bound to it (KOD-157).
+
+    A single-repository operation declares no binding at all — every team
+    binds to the only candidate implicitly — so the fixture exercises both
+    shapes off the same argument.
+    """
+    return {
+        key: TeamEntry(
+            name=f"fixture-{key}",
+            key=key[:3].upper(),
+            repository=None if len(repos) == 1 else url,
+        )
+        for key, url in zip(TEAM_KEYS[: len(repos)], repos, strict=True)
+    }
+
+
+def operation_config(
+    *,
+    repos: tuple[str, ...] = (PRIMARY_REPO,),
+    teams: dict[str, TeamEntry] | None = None,
+) -> OperationConfig:
     return OperationConfig(
         operation_name="fixture",
         workspace="fixture-workspace",
@@ -106,7 +138,7 @@ def operation_config(*, repos: tuple[str, ...] = (PRIMARY_REPO,)) -> OperationCo
             ),
         ],
         agent_identities=[],
-        teams={"engineering": TeamEntry(name="fixture-team", key="ENG")},
+        teams=teams_for(repos) if teams is None else teams,
         queue_states={member.value: f"queue:{member.value}" for member in QueueState},
         workflow_states={
             LifecycleStage.IN_PROGRESS: "In Progress",
@@ -235,11 +267,11 @@ async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:
     assert len(queue.submissions) == 1
 
 
-def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
+async def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
     """AC-20: every repository the operation acts on gets its own pass."""
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
-    built = build_dispatch_passes(
+    built = await build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
@@ -261,7 +293,100 @@ def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
     )
 
 
-def test_the_root_gives_every_pass_the_configured_cadence() -> None:
+async def test_an_issue_only_fires_into_the_repository_its_team_is_bound_to() -> None:
+    """KOD-157: two teams, two repositories, and no crossing.
+
+    The failure this asserts against is the shape as shipped: every pass
+    scanned EVERY declared team, so the pool each repository's tick chose
+    from was the union of both boards and an issue went wherever the
+    first tick reached it.  ``K-DES`` outranks ``K-ENG``, so under that
+    shape the primary repository's tick claims the design board's issue
+    outright — a fact, not a draw.
+    """
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(
+                "K-ENG",
+                team_key="engineering",
+                body=ENGINEERING_BODY,
+            ),
+            make_tracker_issue(
+                "K-DES",
+                team_key="design",
+                body=DESIGN_BODY,
+                priority=IssuePriority.URGENT,
+            ),
+        ],
+    )
+    queue = FakeJobQueue()
+    built = await build_dispatch_passes(
+        config=AppConfig(),
+        operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
+        tracker=tracker,
+        delivery=FakeDeliveryProbe(),
+        queue=queue,
+        registry=queue,
+        gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+    await built.passes[0].run()
+    await built.passes[1].run()
+
+    # The body is what identifies the issue inside the fire: it is the one
+    # part of the request that came from the ticket the pass claimed.
+    fired = [
+        (request.repo_url, ENGINEERING_BODY in request.prompt)
+        for _, request in queue.submissions
+    ]
+    assert fired == [(PRIMARY_REPO, True), (SECOND_REPO, False)]
+    assert DESIGN_BODY in queue.submissions[1][1].prompt
+
+
+async def test_a_repository_no_team_is_bound_to_gets_a_named_skip() -> None:
+    """The other arm: no pass, and the log says which repository, once.
+
+    A tick over a repository nobody fires into scans nothing every
+    interval forever, which is noise rather than coverage — but a
+    schedule that is silently one pass short is worse, so the state is
+    named at build.
+    """
+    tracker = FakeTrackerPort()
+    queue = FakeJobQueue()
+    with structlog.testing.capture_logs() as logs:
+        built = await build_dispatch_passes(
+            config=AppConfig(),
+            operation=operation_config(
+                repos=(PRIMARY_REPO, SECOND_REPO),
+                teams={
+                    "engineering": TeamEntry(
+                        name="fixture-engineering",
+                        key="ENG",
+                        repository=PRIMARY_REPO,
+                    ),
+                },
+            ),
+            tracker=tracker,
+            delivery=FakeDeliveryProbe(),
+            queue=queue,
+            registry=queue,
+            gate=PassThroughGate(),
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            integration_workspace_dir=INTEGRATION_DIR,
+        )
+
+    assert [entry.name for entry in built.passes] == [f"dispatch:{PRIMARY_REPO}"]
+    assert [
+        entry["repo_url"]
+        for entry in logs
+        if entry["event"] == "dispatch_pass_unbound_repository"
+    ] == [SECOND_REPO]
+
+
+async def test_the_root_gives_every_pass_the_configured_cadence() -> None:
     """AC-20: ``tracker_scheduler_pass_interval_seconds`` has a real consumer."""
     unusual = 41.0
     config = AppConfig(tracker_scheduler_pass_interval_seconds=unusual)
@@ -272,7 +397,7 @@ def test_the_root_gives_every_pass_the_configured_cadence() -> None:
 
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
-    built = build_dispatch_passes(
+    built = await build_dispatch_passes(
         config=config,
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
@@ -294,7 +419,7 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
         issues=[make_tracker_issue("K-1")],
     )
     queue = FakeJobQueue()
-    built = build_dispatch_passes(
+    built = await build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(repos=(SECOND_REPO,)),
         tracker=tracker,
@@ -340,7 +465,7 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
             ),
         ],
     )
-    built = build_dispatch_passes(
+    built = await build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(),
         tracker=tracker,
@@ -409,7 +534,7 @@ async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
     queue = FakeJobQueue()
     forge = ForgeOnlyDeliveryProbe()
-    built = build_dispatch_passes(
+    built = await build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(repos=(FILE_ORIGIN,)),
         tracker=tracker,
@@ -436,7 +561,7 @@ async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
     queue = FakeJobQueue()
     forge = ForgeOnlyDeliveryProbe()
-    built = build_dispatch_passes(
+    built = await build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO,)),
         tracker=tracker,

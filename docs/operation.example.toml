@@ -77,13 +77,24 @@ handle = "@example-oncall"
 # display name and its short tracker key — the identifier issues are
 # prefixed with. A rendered prompt that names one cannot derive the other,
 # so both are declared.
+#
+# `repository` names the `[[repos]]` entry this team's issues are fired
+# into, and it must be one of the urls declared below. It is REQUIRED here
+# because this example declares two repositories: each repository's
+# dispatch tick scans only the teams bound to it, so a team bound to none
+# would have its issues fired into whichever tick claimed them first. An
+# operation declaring exactly ONE repository omits the field entirely —
+# every team binds to the only candidate there is — and a repository no
+# team is bound to gets no dispatch pass, logged by name at boot.
 [teams.primary]
 name = "Example Team"
 key = "EXA"
+repository = "https://example.invalid/example-org/example-repo"
 
 [teams.agent]
 name = "example-agent-team"
 key = "EXG"
+repository = "https://example.invalid/example-org/second-repo"
 
 # Queue states. An OPEN mapping: the five members code addresses by name are
 # required present, and any additional member is legal as a pure configuration

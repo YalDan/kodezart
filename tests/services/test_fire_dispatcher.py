@@ -356,7 +356,7 @@ class TestTheContainerBoundary:
         fire, queue, _ = dispatcher(tracker, operation=operation_config(teams={}))
         with pytest.raises(OperationMemberAbsentError) as caught:
             await fire.run_pass()
-        assert caught.value.missing == "teams entry"
+        assert caught.value.missing == f"teams entry bound to {REPO_URL}"
         assert "no issue can be selected" in caught.value.stops
         assert tracker.scans == []
         assert queue.submissions == []
