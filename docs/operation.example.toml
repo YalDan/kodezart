@@ -206,6 +206,10 @@ system = "tracker"
 name = "Example Run Log"
 id = "example-checkpoint-document-id"
 
+# Every `system = "knowledge"` entry below requires the deployment to grant
+# the knowledge server to the scheduled passes (KODEZART_KNOWLEDGE_SESSION_GRANTS
+# includes "scheduled_pass") — a destination no pass can reach is refused at
+# boot, naming each such entry. Tracker-side entries need no grant.
 # A knowledge-store document is not this operation's to create, so its id is
 # declared rather than adopted.
 [documents.house_rules]

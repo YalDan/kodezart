@@ -52,11 +52,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Reconciliation comes FIRST, because everything below binds to the
     # config it produces (KOD-57 R9). A document the operation owns has no
     # id until boot adopts one, so a registry bound to the declared copy
-    # would carry a placeholder into every rendered pass prompt. With no
-    # tracker there is nothing to reconcile against, the declared copy is
-    # the whole truth, and no pass is scheduled — the wiring gate checks
-    # presence (tracker, operation, delivery probe), not adoption
-    # (KOD-160).
+    # would carry a placeholder into every rendered pass prompt. Scheduling
+    # does not check adoption — the prompt passes are wired on the
+    # operation's presence alone — and a reference the bound copy cannot
+    # resolve is caught by their boot render (KOD-160).
     dialled = await boot_tracker(config=config, operation=declared, log=log)
     operation = declared if dialled is None else dialled.operation
     tracker: TrackerPort | None = None if dialled is None else dialled.tracker

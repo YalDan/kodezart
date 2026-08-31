@@ -12,7 +12,11 @@ from pathlib import Path
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
-from kodezart.core.errors import PassGateCapabilityError, PromptRenderError
+from kodezart.core.errors import (
+    PassGateCapabilityError,
+    PassKnowledgeCapabilityError,
+    PromptRenderError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
@@ -37,7 +41,7 @@ from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import run_prompt_pass
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.dispatch import PassSignal
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import DocumentSystem, OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -399,6 +403,56 @@ async def _verify_wired_gates(
     )
 
 
+def _verify_knowledge_destinations(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+) -> None:
+    """Refuse to boot when a wired pass is sent to a store it cannot open.
+
+    The mismatch lives across two files and neither half is wrong alone:
+    the operation names a destination in the knowledge system, and the
+    deployment grants the knowledge server to no session type.  Composed,
+    they render an instruction into every scheduled pass to write
+    somewhere its session holds no capability for — and the only place
+    that can fail is inside the session, where it looks like a pass that
+    ran and recorded nothing.
+
+    Checked HERE, on the same predicate the prompt-pass wiring below uses:
+    a deployment that schedules no prompt pass renders no such
+    instruction, and refusing boot over a destination nothing reads would
+    hold it hostage to configuration nobody acts on.
+
+    Every affected entry is named at once, because an operator moving one
+    destination at a time pays a boot cycle per entry.  A destination in
+    the TRACKER system is untouched — a pass reaches the tracker through
+    the server the host attaches, whatever the knowledge grant says.
+    """
+    if operation is None:
+        return
+    if SessionType.SCHEDULED_PASS in config.knowledge_session_grants:
+        return
+    destinations = [
+        f"documents.{key} ({entry.name})"
+        for key, entry in operation.documents.items()
+        if entry.system is DocumentSystem.KNOWLEDGE
+    ]
+    destinations.extend(
+        f"records.{key} ({entry.name})"
+        for key, entry in operation.records.items()
+        if entry.system is DocumentSystem.KNOWLEDGE
+    )
+    if not destinations:
+        return
+    raise PassKnowledgeCapabilityError(
+        f"the operation declares {DocumentSystem.KNOWLEDGE.value} destinations "
+        f"but {SessionType.SCHEDULED_PASS.value} is not named in "
+        f"knowledge_session_grants, so the passes rendering them hold no "
+        f"capability to reach one",
+        destinations=destinations,
+    )
+
+
 async def build_dispatch_runtime(
     *,
     config: AppConfig,
@@ -423,8 +477,12 @@ async def build_dispatch_runtime(
     Every gate this deployment is about to wire is verified against the
     credential BEFORE anything is built, and a refusal is the end of the
     boot.  A deployment with no tracker port asks nothing: its passes are
-    ungated, which is a state already named in the log below.
+    ungated, which is a state already named in the log below.  The
+    knowledge destinations the passes would be instructed to write to are
+    checked on the same terms, and first, because that answer is already
+    in hand and the gate probe is a round trip.
     """
+    _verify_knowledge_destinations(config=config, operation=operation)
     await _verify_wired_gates(
         config=config,
         operation=operation,

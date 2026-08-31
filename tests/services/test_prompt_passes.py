@@ -8,6 +8,7 @@ against a literal in the code, which is the one thing this has to catch.
 """
 
 import ast
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -19,13 +20,22 @@ from kodezart.composition.passes import (
     build_prompt_passes,
 )
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import PassGateCapabilityError, PromptRenderError
+from kodezart.core.errors import (
+    PassGateCapabilityError,
+    PassKnowledgeCapabilityError,
+    PromptRenderError,
+)
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.dispatch import PassSignal
-from kodezart.types.domain.operation import QueueState
+from kodezart.types.domain.operation import (
+    DocumentSystem,
+    OperationConfig,
+    QueueState,
+)
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentRunner,
@@ -33,8 +43,9 @@ from tests.fakes import (
     FakeTrackerPort,
     make_tracker_issue,
 )
+from tests.prompts.test_claude_opus_goldens import V5_SET
 from tests.prompts.test_operation_config import raw_example, write_toml
-from tests.prompts.test_prompt_wiring import load_registry
+from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
 from tests.services.test_pass_scheduler import Metronome, _settle
 from tests.services.test_prompt_pass import example_config
 
@@ -58,15 +69,25 @@ FIRE_PREP_TIMEOUT = 401.0
 GROOMING_TIMEOUT = 809.0
 
 
+#: The shipped example declares documents and records in the knowledge
+#: system, so a deployment wiring its passes must grant them that store —
+#: and a grant carries a credential.  Both are overridable, because the
+#: mismatch between the two halves is itself one of the cases below.
+KNOWLEDGE_TOKEN = "knowledge-credential"
+
+
 def _config(tmp_path: Path, **overrides: object) -> AppConfig:
-    return AppConfig(
-        fire_prep_pass_interval_seconds=FIRE_PREP_INTERVAL,
-        fire_prep_pass_timeout_seconds=FIRE_PREP_TIMEOUT,
-        grooming_pass_interval_seconds=GROOMING_INTERVAL,
-        grooming_pass_timeout_seconds=GROOMING_TIMEOUT,
-        scheduled_pass_working_dir=str(tmp_path / "pass"),
-        **overrides,  # type: ignore[arg-type]
-    )
+    settings: dict[str, object] = {
+        "fire_prep_pass_interval_seconds": FIRE_PREP_INTERVAL,
+        "fire_prep_pass_timeout_seconds": FIRE_PREP_TIMEOUT,
+        "grooming_pass_interval_seconds": GROOMING_INTERVAL,
+        "grooming_pass_timeout_seconds": GROOMING_TIMEOUT,
+        "scheduled_pass_working_dir": str(tmp_path / "pass"),
+        "knowledge_session_grants": [SessionType.SCHEDULED_PASS],
+        "knowledge_mcp_token": KNOWLEDGE_TOKEN,
+    }
+    settings.update(overrides)
+    return AppConfig(**settings)  # type: ignore[arg-type]
 
 
 def _registrations(
@@ -101,14 +122,16 @@ async def _runtime(
     *,
     tracker: FakeTrackerPort | None,
     runner: FakeAgentRunner,
+    operation: OperationConfig | None = None,
+    prompt_set: str = DEFAULT_SET,
     **overrides: object,
 ) -> DispatchRuntime:
     """Boot the scheduled-pass runtime exactly as the composition root does."""
-    operation = example_config()
+    declared = example_config() if operation is None else operation
     queue = FakeJobQueue()
     return await build_dispatch_runtime(
         config=_config(tmp_path, **overrides),
-        operation=operation,
+        operation=declared,
         tracker=tracker,
         github_api=None,
         queue=queue,
@@ -116,7 +139,10 @@ async def _runtime(
         gate=None,
         git=None,  # type: ignore[arg-type]
         cache=None,  # type: ignore[arg-type]
-        prompts=load_registry(bindings=dict(bindings_for(operation))),
+        prompts=load_registry(
+            default_set=prompt_set,
+            bindings=dict(bindings_for(declared)),
+        ),
         runner=runner,
         skills=SUPPRESS_ALL_SKILLS,
         log=get_logger(__name__),
@@ -370,6 +396,159 @@ def test_the_shipped_example_wires_without_a_render_refusal(tmp_path: Path) -> N
     assert len(_registrations(tmp_path)[0]) == len(
         (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
     )
+
+
+# ---------------------------------------------------------------------------
+# KOD-160: a knowledge destination the grant cannot serve
+# ---------------------------------------------------------------------------
+
+#: The shipped grant list: no session type is named, so no session reaches
+#: the knowledge store.  Written out rather than left to the default,
+#: because what these cases turn on is the grant and it must be visible.
+UNGRANTED: dict[str, object] = {
+    "knowledge_session_grants": [],
+    "knowledge_mcp_token": None,
+}
+
+#: Every entry of the shipped example that lives in the knowledge system,
+#: spelled as the refusal spells it.  Literal rather than derived from the
+#: config: a list derived from the same predicate the production check
+#: reads would agree with it however either one drifted.
+KNOWLEDGE_ENTRIES = (
+    "documents.house_rules",
+    "documents.constitution",
+    "records.run_log",
+    "records.grooming_log",
+)
+
+#: The one entry of the same registries that lives tracker-side.
+TRACKER_ENTRY = "documents.checkpoint"
+
+
+def _tracker_side(raw: dict[str, object]) -> None:
+    """Move every declared destination into the tracker's own system."""
+    for field in ("documents", "records"):
+        registry = raw[field]
+        assert isinstance(registry, dict)
+        for entry in registry.values():
+            entry["system"] = DocumentSystem.TRACKER.value
+
+
+def _without_stores(raw: dict[str, object]) -> None:
+    """The M1 deployment: a tracker, and no store or record beside it."""
+    for field in ("documents", "records", "knowledge"):
+        del raw[field]
+
+
+def _mutated(tmp_path: Path, mutate: Callable[[dict[str, object]], None]) -> Path:
+    """The annotated example, mutated, written back as TOML."""
+    raw = raw_example()
+    mutate(raw)
+    return write_toml(tmp_path, raw)
+
+
+async def test_a_knowledge_destination_no_pass_can_reach_aborts_boot(
+    tmp_path: Path,
+) -> None:
+    """Two halves, legal apart, an instruction to nowhere together.
+
+    The operation names destinations in the knowledge system and the
+    deployment grants that store to no session type, so every tick would
+    tell a pass to write where its session holds no capability — and the
+    only place that can fail is inside the session, where it looks like a
+    pass that ran and recorded nothing.  Every affected entry is named at
+    once, and the tracker-side one is not among them.
+    """
+    with pytest.raises(PassKnowledgeCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=None,
+            runner=FakeAgentRunner(events=[]),
+            **UNGRANTED,
+        )
+
+    named = str(caught.value)
+    for entry in KNOWLEDGE_ENTRIES:
+        assert entry in named, entry
+    assert len(caught.value.destinations) == len(KNOWLEDGE_ENTRIES)
+    assert TRACKER_ENTRY not in named
+    assert SessionType.SCHEDULED_PASS.value in named
+
+
+async def test_the_same_config_boots_with_its_destinations_tracker_side(
+    tmp_path: Path,
+) -> None:
+    """The registries stay populated; only the system they name changes.
+
+    Non-vacuity for the refusal above, and the first-class M1 shape: an
+    operation that keeps its checkpoint and its run log on the tracker
+    needs no knowledge grant to wire a pass.
+    """
+    operation = load_operation_config(_mutated(tmp_path, _tracker_side))
+
+    runtime = await _runtime(
+        tmp_path,
+        tracker=None,
+        runner=FakeAgentRunner(events=[]),
+        operation=operation,
+        **UNGRANTED,
+    )
+
+    assert operation.documents
+    assert operation.records
+    assert {entry.name for entry in runtime.scheduler.passes} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
+
+
+async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
+    tmp_path: Path,
+) -> None:
+    """M1 at the wiring seam: a tracker, an operation, and no store at all.
+
+    The other arm of the refusal — destinations removed rather than moved —
+    and the running half of what the three-state render promises.  Both
+    passes wire, their boot render succeeds, and the text a tick actually
+    sends carries the record-nothing-outside-the-tracker instruction rather
+    than a hole where a destination would be.
+    """
+    operation = load_operation_config(_mutated(tmp_path, _without_stores))
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(
+                "FIX-1",
+                team_key=operation.team_keys()[0],
+                queue_states=[QueueState.TRIAGE],
+            ),
+        ],
+    )
+    runner = FakeAgentRunner(events=[])
+
+    runtime = await _runtime(
+        tmp_path,
+        tracker=tracker,
+        runner=runner,
+        operation=operation,
+        prompt_set=V5_SET,
+        **UNGRANTED,
+    )
+
+    assert {entry.name for entry in runtime.scheduler.passes} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
+    for entry in runtime.scheduler.passes:
+        await entry.run()
+    assert len(runner.calls) == len(runtime.scheduler.passes)
+    for call in runner.calls:
+        prompt = str(call["prompt"])
+        assert "{{" not in prompt
+        assert "No record destination is configured. Nothing outside the tracker" in (
+            prompt
+        )
+        assert "No store is configured beside the tracker" in prompt
+        assert "No checkpoint is configured" in prompt
 
 
 async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:

@@ -23,6 +23,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kodezart.types.domain.gating import RepoVisibility
 
+#: The two stable keys the structure validators below and the pass templates
+#: address by name; neither carries an accessor that refuses on absence, because
+#: an absent entry is answered by the three-state render — a bootstrap census
+#: and a record-nothing-outside-the-tracker instruction — and a declared one no
+#: session can reach is refused at boot, where both halves of that mismatch are
+#: visible at once.
 CHECKPOINT_DOCUMENT_KEY = "checkpoint"
 RUN_LOG_RECORD_KEY = "run_log"
 
@@ -635,46 +641,6 @@ class OperationConfig(OperationModel):
         if entry is not None and entry.visibility is RepoVisibility.PRIVATE:
             return RepoVisibility.PRIVATE
         return RepoVisibility.PUBLIC
-
-    def checkpoint_document(self) -> DocumentEntry:
-        """The read-side document the scan-window marker lives in.
-
-        Refuses when the registry declares no checkpoint entry.  Its
-        reader is the reinstated pass path (KOD-60): a scheduled pass
-        establishes its scan window from this document and refuses to run
-        without one.  Defined here for the same one-writer reason as
-        :meth:`assignee`.
-        """
-        entry = self.documents.get(CHECKPOINT_DOCUMENT_KEY)
-        if entry is None:
-            raise OperationMemberAbsentError(
-                missing=(f"documents entry under the {CHECKPOINT_DOCUMENT_KEY!r} key"),
-                stops=(
-                    "the scan-window marker cannot be read, so a scheduled "
-                    "pass cannot establish its window and refuses to run"
-                ),
-            )
-        return entry
-
-    def run_log_record(self) -> RecordDestination:
-        """The write-side destination a pass records its run-log row to.
-
-        Refuses when the registry declares no run-log entry.  Its reader
-        is the reinstated pass path (KOD-60): a pass that records a run-log
-        row calls this at the point of writing and refuses without a
-        destination.  Defined here for the same one-writer reason as
-        :meth:`assignee`.
-        """
-        entry = self.records.get(RUN_LOG_RECORD_KEY)
-        if entry is None:
-            raise OperationMemberAbsentError(
-                missing=f"records entry under the {RUN_LOG_RECORD_KEY!r} key",
-                stops=(
-                    "a pass has no destination for its run-log row and "
-                    "refuses to record one"
-                ),
-            )
-        return entry
 
 
 #: Which class every declared field belongs to, and therefore what boot does

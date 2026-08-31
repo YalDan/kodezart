@@ -119,7 +119,7 @@ system = "tracker"
 name = "{document_title}"{declared_id}
 
 [records.run_log]
-system = "knowledge"
+system = "tracker"
 name = "Run log"
 id = "record-1"
 append_only = true

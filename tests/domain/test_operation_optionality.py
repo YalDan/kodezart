@@ -181,20 +181,6 @@ def test_the_assignee_refusal_names_the_role_and_what_stops() -> None:
     assert "refuses to run" in excinfo.value.stops
 
 
-def test_the_checkpoint_refusal_names_the_key_and_what_stops() -> None:
-    with pytest.raises(OperationMemberAbsentError) as excinfo:
-        minimal_config().checkpoint_document()
-    assert CHECKPOINT_DOCUMENT_KEY in excinfo.value.missing
-    assert "scan-window" in excinfo.value.stops
-
-
-def test_the_run_log_refusal_names_the_key_and_what_stops() -> None:
-    with pytest.raises(OperationMemberAbsentError) as excinfo:
-        minimal_config().run_log_record()
-    assert RUN_LOG_RECORD_KEY in excinfo.value.missing
-    assert "run-log" in excinfo.value.stops
-
-
 def test_the_accessors_return_the_member_when_it_is_declared() -> None:
     """The present case: each accessor is a reader, not only a refusal."""
     config = OperationConfig(
@@ -220,5 +206,16 @@ def test_the_accessors_return_the_member_when_it_is_declared() -> None:
         },
     )
     assert config.assignee().tracker_user == "user-a"
-    assert config.checkpoint_document().name == "checkpoint"
-    assert config.run_log_record().append_only is True
+
+
+def test_the_two_registry_keys_carry_no_point_of_need_accessor() -> None:
+    """The registries refuse nowhere on this model, and that is the design.
+
+    An absent checkpoint or run-log entry is answered by the three-state
+    render — a bootstrap census, a record-nothing-outside-the-tracker
+    instruction — and a declared destination no session can reach is
+    refused at boot.  An accessor here would be a third refusal for a
+    state the other two already answer, and no production caller had one.
+    """
+    for name in ("checkpoint_document", "run_log_record"):
+        assert not hasattr(minimal_config(), name), name

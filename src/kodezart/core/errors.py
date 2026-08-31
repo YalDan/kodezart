@@ -269,6 +269,24 @@ class PassGateCapabilityError(Exception):
         self.refusals: tuple[str, ...] = tuple(refusals)
 
 
+class PassKnowledgeCapabilityError(Exception):
+    """Raised at boot when a pass is told to reach a store it holds no grant to.
+
+    Lists EVERY affected entry at once, so one boot failure names the whole
+    gap rather than one registry entry per boot cycle.  The two halves of
+    the mismatch are declared in different files and neither one is wrong
+    on its own: an operation may name a knowledge destination and a
+    deployment may grant the knowledge server to no session type.  Together
+    they instruct a scheduled pass to write where its session cannot
+    reach — an instruction that can only fail inside the session, on a
+    board nobody is watching, with the pass reporting an ordinary run.
+    """
+
+    def __init__(self, message: str, *, destinations: Sequence[str]) -> None:
+        super().__init__(f"{message} ({'; '.join(destinations)})")
+        self.destinations: tuple[str, ...] = tuple(destinations)
+
+
 class TrackerEnsureConflictError(Exception):
     """Raised when instating an OWNED value would ALTER an existing definition.
 
