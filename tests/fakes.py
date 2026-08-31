@@ -1224,6 +1224,52 @@ def make_prompt_provider() -> InRepoPromptRegistry:
 
 
 @dataclass(frozen=True)
+class RecordedLogEvent:
+    """One emission: the level it was sent at, its name, and its fields."""
+
+    level: str
+    event: str
+    fields: Mapping[str, object]
+
+
+class RecordingLogger:
+    """A LogEmitter double that keeps what it was told.
+
+    Injecting this is how a test reads emitted events without touching
+    structlog's global configuration — no ``configure``, no
+    ``reset_defaults``, so nothing has to be restored and no other test in
+    the suite can be disturbed by this one.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[RecordedLogEvent] = []
+
+    async def ainfo(self, event: str, **kwargs: object) -> None:
+        self._record("info", event, kwargs)
+
+    async def adebug(self, event: str, **kwargs: object) -> None:
+        self._record("debug", event, kwargs)
+
+    async def awarning(self, event: str, **kwargs: object) -> None:
+        self._record("warning", event, kwargs)
+
+    async def aerror(self, event: str, **kwargs: object) -> None:
+        self._record("error", event, kwargs)
+
+    async def aexception(self, event: str, **kwargs: object) -> None:
+        self._record("exception", event, kwargs)
+
+    def _record(self, level: str, event: str, fields: Mapping[str, object]) -> None:
+        self.events.append(
+            RecordedLogEvent(level=level, event=event, fields=dict(fields))
+        )
+
+    def named(self, event: str) -> list[RecordedLogEvent]:
+        """Every recorded emission carrying *event* as its name."""
+        return [entry for entry in self.events if entry.event == event]
+
+
+@dataclass(frozen=True)
 class _RecordingTemplate(PromptTemplate):
     """Template that appends every render call to a shared recorder."""
 

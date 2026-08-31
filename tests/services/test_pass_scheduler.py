@@ -18,6 +18,7 @@ from pathlib import Path
 import structlog
 
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
+from tests.fakes import RecordingLogger
 
 SCHEDULER_SOURCE = (
     Path(__file__).resolve().parents[2]
@@ -141,43 +142,39 @@ async def test_a_pass_runs_only_after_its_interval_has_elapsed() -> None:
 
 
 async def test_a_failing_pass_keeps_its_loop_and_says_what_broke() -> None:
-    """A permanently failing pass must not read as a quiet board."""
+    """A permanently failing pass must not read as a quiet board.
+
+    The emitter is injected rather than configured globally (KOD-124): the
+    scheduler takes a ``LogEmitter``, so what it emitted is read off a
+    double instead of off structlog's process-wide state.  There is nothing
+    to reset afterwards, and no way for this test to leak into another.
+    """
     exploder = Exploder()
     metronome = Metronome(limit=TICKS)
-    events: list[structlog.typing.EventDict] = []
+    log = RecordingLogger()
 
-    def capture(
-        _logger: object,
-        _name: str,
-        event_dict: structlog.typing.EventDict,
-    ) -> structlog.typing.EventDict:
-        events.append(dict(event_dict))
-        raise structlog.DropEvent
-
-    structlog.configure(processors=[capture])
-    try:
-        scheduler = PassScheduler(
-            passes=[
-                ScheduledPass(
-                    name="dispatch",
-                    interval_seconds=FAST_INTERVAL,
-                    run=exploder.run,
-                ),
-            ],
-            sleep=metronome.sleep,
-        )
-        await scheduler.start()
-        await _settle(metronome)
-        await scheduler.stop()
-    finally:
-        structlog.reset_defaults()
+    scheduler = PassScheduler(
+        passes=[
+            ScheduledPass(
+                name="dispatch",
+                interval_seconds=FAST_INTERVAL,
+                run=exploder.run,
+            ),
+        ],
+        sleep=metronome.sleep,
+        log=log,
+    )
+    await scheduler.start()
+    await _settle(metronome)
+    await scheduler.stop()
 
     assert exploder.calls == TICKS
-    failures = [event for event in events if event["event"] == "scheduled_pass_failed"]
+    failures = log.named("scheduled_pass_failed")
     assert len(failures) == TICKS
-    assert failures[0]["name"] == "dispatch"
-    assert failures[0]["error_type"] == "RuntimeError"
-    assert failures[0]["error"] == "the pass could not reach the tracker"
+    assert all(entry.level == "error" for entry in failures)
+    assert failures[0].fields["name"] == "dispatch"
+    assert failures[0].fields["error_type"] == "RuntimeError"
+    assert failures[0].fields["error"] == "the pass could not reach the tracker"
 
 
 async def test_a_failure_event_carries_the_traceback_that_produced_it() -> None:

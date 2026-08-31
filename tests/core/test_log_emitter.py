@@ -1,0 +1,144 @@
+"""The logging port, and the four facts that keep it honest (KOD-124).
+
+``LogEmitter`` exists so that 35 annotation sites and 123 call sites name a
+port this codebase owns rather than a vendor class it does not.  Nothing
+about the running system changes: ``get_logger`` returns what it always
+returned, and the adapter is not a wrapper but an ASSERTION — structlog's
+configured wrapper class already satisfies the port, and the test below is
+what says so.
+
+The set of methods is derived, not declared.  A reading of the call sites
+is exactly the kind of thing that goes stale — the port's first census
+counted four methods and missed ``aexception``'s five call sites — so the
+census here is taken from the syntax tree every time the suite runs.
+"""
+
+import ast
+import inspect
+import pathlib
+
+import structlog
+
+from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.protocols import LogEmitter
+from tests.fakes import RecordingLogger
+
+SRC_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "kodezart"
+
+#: The names this codebase binds a logger to.  A call on any other receiver
+#: is not a logging call, and a logging call on any other receiver would be
+#: a naming violation the census is entitled to miss.
+LOGGER_RECEIVERS = frozenset({"log", "_log", "logger", "_logger"})
+
+#: The one module permitted to name structlog.
+STRUCTLOG_IMPORT_SITE = SRC_ROOT / "core" / "logging.py"
+
+
+def _source_files() -> list[pathlib.Path]:
+    return sorted(SRC_ROOT.rglob("*.py"))
+
+
+def _receiver_name(node: ast.expr) -> str | None:
+    """The bound name a call is made on: ``x`` or the ``y`` of ``self.y``."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def _methods_called_on_loggers() -> set[str]:
+    """Every method awaited on a logger anywhere in ``src``, from the AST."""
+    called: set[str] = set()
+    for path in _source_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute):
+                continue
+            if _receiver_name(func.value) in LOGGER_RECEIVERS:
+                called.add(func.attr)
+    return called
+
+
+def _protocol_methods() -> set[str]:
+    """The port's own method set, read off the Protocol."""
+    return {name for name in LogEmitter.__protocol_attrs__ if not name.startswith("__")}
+
+
+def test_the_configured_wrapper_class_satisfies_the_port() -> None:
+    """The adapter IS this assertion — there is no wrapper class to write.
+
+    ``configure_logging`` installs ``structlog.stdlib.BoundLogger`` as the
+    wrapper class, so that is the object every call site eventually awaits.
+    Asserting it against the port is what makes ``get_logger``'s annotation
+    a claim rather than a hope: if structlog ever renames or de-async-ifies
+    one of the five, this fails instead of the production call site.
+    """
+    wrapper = structlog.stdlib.BoundLogger
+
+    for name in sorted(_protocol_methods()):
+        method = getattr(wrapper, name, None)
+        assert method is not None, f"structlog's wrapper class has no {name}"
+        assert inspect.iscoroutinefunction(method), f"{name} is not awaitable"
+
+    # And an actual instance passes the runtime check, not merely the class.
+    instance = wrapper(structlog.get_logger("port-probe"), [], {})
+    assert isinstance(instance, LogEmitter)
+
+
+def test_the_recording_double_satisfies_the_port() -> None:
+    """The test double is bound by the same port as the real emitter."""
+    assert isinstance(RecordingLogger(), LogEmitter)
+
+
+def test_the_alias_denotes_the_port_and_not_the_vendor_class() -> None:
+    """``BoundLogger`` is the port; the 35 annotations keep compiling."""
+    assert BoundLogger is LogEmitter
+    assert get_logger(__name__) is not None
+
+
+def test_structlog_is_named_at_exactly_one_site_in_src() -> None:
+    """One module owns the vendor; every other names only the port.
+
+    This passes today.  It is pinned so that the next module to reach for
+    ``structlog`` directly has to justify itself against a red test rather
+    than slip in beside the annotations that already look like the port.
+    """
+    offenders: list[str] = []
+    for path in _source_files():
+        if path == STRUCTLOG_IMPORT_SITE:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            if any(name.split(".")[0] == "structlog" for name in names):
+                offenders.append(f"{path.relative_to(SRC_ROOT)}:{node.lineno}")
+
+    assert offenders == [], f"structlog imported outside the port's module: {offenders}"
+
+
+def test_the_port_declares_exactly_the_methods_src_calls() -> None:
+    """Declared and used are the same set, checked both directions.
+
+    A method called but not declared means an annotation lies about what
+    its logger can do.  A method declared but never called means the port
+    is carrying a member nothing needs — which is how the original census
+    came to claim four methods while five were in use.
+    """
+    declared = _protocol_methods()
+    called = _methods_called_on_loggers()
+
+    assert called - declared == set(), (
+        f"awaited on a logger but absent from LogEmitter: {sorted(called - declared)}"
+    )
+    assert declared - called == set(), (
+        f"declared on LogEmitter but never awaited: {sorted(declared - called)}"
+    )

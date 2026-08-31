@@ -9,6 +9,8 @@ import sys
 
 import structlog
 
+from kodezart.core.protocols import LogEmitter
+
 
 def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
     """Configure structlog and stdlib logging. Call once in lifespan."""
@@ -70,10 +72,13 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def get_logger(name: str) -> structlog.stdlib.BoundLogger:
+def get_logger(name: str) -> LogEmitter:
     """Return a bound logger for the given module name."""
-    bound: structlog.stdlib.BoundLogger = structlog.get_logger(name)
+    bound: LogEmitter = structlog.get_logger(name)
     return bound
 
 
-BoundLogger = structlog.stdlib.BoundLogger
+#: The name 35 annotation sites already spell.  It now denotes the PORT
+#: rather than the vendor class, so this module is the only one in ``src``
+#: that names structlog at all; a test pins that it stays the only one.
+BoundLogger = LogEmitter
