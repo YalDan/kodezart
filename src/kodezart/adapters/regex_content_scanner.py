@@ -1,9 +1,7 @@
 """Deny-pattern scanning engine — a configured pattern set per category.
 
 The engine holds no patterns of its own: every pattern originates in
-AppConfig.  A second configured pattern set runs through this same class
-with zero engine changes, which is what makes it reusable by the hygiene
-scan without duplication.
+AppConfig.
 
 This is the ARITHMETIC half of the outbound gate.  ``gh[posu]_`` either
 matches or it does not, so it stays deterministic and stays first in the
@@ -16,22 +14,15 @@ to cover.
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import TypeVar
 
 from kodezart.types.domain.gating import (
     UNCONDITIONAL_ROUTING,
     OutboundDestination,
-    ScanCategory,
+    RedactionCategory,
     ScanHit,
     ScannerRouting,
     ScanResult,
 )
-
-#: The pattern set's own category vocabulary.  Bound rather than fixed:
-#: a ``Mapping`` key is invariant, so a concrete deny set and a concrete
-#: hygiene set could not both reach one fixed-key signature — which would
-#: have forced the second pattern set into a second engine.
-_Category = TypeVar("_Category", bound=ScanCategory)
 
 
 class RegexContentScanner:
@@ -40,9 +31,9 @@ class RegexContentScanner:
     def __init__(
         self,
         *,
-        patterns: Mapping[_Category, Sequence[str]],
+        patterns: Mapping[RedactionCategory, Sequence[str]],
     ) -> None:
-        self._compiled: dict[ScanCategory, list[re.Pattern[str]]] = {
+        self._compiled: dict[RedactionCategory, list[re.Pattern[str]]] = {
             category: [re.compile(pattern) for pattern in category_patterns]
             for category, category_patterns in patterns.items()
             if category_patterns

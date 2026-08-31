@@ -32,6 +32,7 @@ from tests.tracker.conftest import (
     BYSTANDER,
     DOCUMENT_KEY,
     DOCUMENT_TITLE,
+    FOREIGN_TEAM,
     QUEUE_STATE_LABELS,
     fixture_server,
 )
@@ -42,11 +43,22 @@ TOKEN = "fixture-tracker-token"
 #: inside a test: what is asserted is the wiring of the knob, not a tick.
 UNUSUAL_INTERVAL = 607.0
 
+#: The single board every case here runs on unless it needs two.
+ONE_TEAM: dict[str, str] = {"engineering": "fixture-team"}
+
+#: Two boards of the fixture workspace, both declared.  An operation
+#: declaring several teams scopes its queue vocabulary at WORKSPACE level
+#: (one label has to be addressable on every board it dispatches from),
+#: which is the only shape in which a container disagreement is a fact the
+#: adapter can observe (KOD-143 addendum 2).
+TWO_TEAMS: dict[str, str] = {**ONE_TEAM, "platform": FOREIGN_TEAM}
+
 
 def _operation_toml(
     *,
     approver: str = APPROVER,
     queue_states: dict[str, str] | None = None,
+    teams: dict[str, str] | None = None,
     document_title: str = DOCUMENT_TITLE,
     document_id: str | None = DOCUMENT_KEY,
 ) -> str:
@@ -55,9 +67,18 @@ def _operation_toml(
     ``document_id`` at ``None`` is the fresh-workspace shape: the operation
     names the checkpoint document and boot adopts whatever id the workspace
     assigns it.
+
+    ``teams`` maps the operation's own key for a board to the name the
+    workspace holds it under, which is how many boards this operation
+    dispatches from — and therefore whether its queue vocabulary is
+    scoped to one team or to the workspace.
     """
     labels = dict(QUEUE_STATE_LABELS if queue_states is None else queue_states)
     rendered = "\n".join(f'{name} = "{label}"' for name, label in labels.items())
+    boards = "\n".join(
+        f'[teams.{key}]\nname = "{name}"\nkey = "{key[:3].upper()}"'
+        for key, name in (ONE_TEAM if teams is None else teams).items()
+    )
     declared_id = "" if document_id is None else f'\nid = "{document_id}"'
     return f"""
 operation_name = "fixture"
@@ -75,9 +96,7 @@ tracker_user = "{BYSTANDER}"
 roles = ["principal"]
 handle = "@bystander"
 
-[teams.engineering]
-name = "fixture-team"
-key = "ENG"
+{boards}
 
 [queue_states]
 {rendered}
@@ -118,7 +137,6 @@ def server() -> ManagedFakeLinearMcpServer:
     managed = ManagedFakeLinearMcpServer()
     managed.issues = source.issues
     managed.documents = source.documents
-    managed.history = source.history
     managed.users = source.users
     managed.teams = source.teams
     managed.labels = source.labels
@@ -249,8 +267,11 @@ async def test_an_absent_queue_label_is_created_at_boot_not_a_failure(
         pass
 
     assert "queue:terminal" in wired.labels
+    # `teamId` takes the team's UUID and nothing else — the live server
+    # answers a name with "teamId must be a UUID" and a 400 (KOD-143). The
+    # adapter resolves the declared team NAME through the teams listing.
     assert wired.tool_calls("create_issue_label") == [
-        {"name": "queue:terminal", "teamId": "fixture-team"},
+        {"name": "queue:terminal", "teamId": "fixture-team-id"},
     ]
     reconciled = [
         event
@@ -366,14 +387,24 @@ async def test_a_label_the_workspace_holds_elsewhere_aborts_boot_and_writes_noth
     container.  Adopting it would repurpose a value that team means
     something by, and creating it would be the cross-container write R3
     forbids — so boot aborts naming the entry instead.
+
+    Grounded on two DECLARED boards, because that is where the fact is
+    observable: an operation declaring several teams scopes its queue
+    vocabulary at workspace level, so a label held inside a declared
+    team's container is a container this adapter reads and a disagreement
+    it can name.  The undeclared-team shape is a different case with its
+    own row below (KOD-143 addendum 2).
     """
     contested = "queue:terminal"
     wired.labels.append(contested)
-    wired.label_containers[contested] = "some-other-team"
+    wired.label_containers[contested] = f"{FOREIGN_TEAM}-id"
     _configure(
         monkeypatch,
         tmp_path,
-        _operation_toml(queue_states={**QUEUE_STATE_LABELS, "done": contested}),
+        _operation_toml(
+            teams=TWO_TEAMS,
+            queue_states={**QUEUE_STATE_LABELS, "done": contested},
+        ),
     )
 
     with pytest.raises(TrackerEnsureConflictError) as caught:
@@ -381,7 +412,51 @@ async def test_a_label_the_workspace_holds_elsewhere_aborts_boot_and_writes_noth
             pass
 
     assert contested in caught.value.entry
+    assert FOREIGN_TEAM in str(caught.value)
     assert wired.tool_calls("create_issue_label") == []
+    assert wired.closes == 1
+
+
+async def test_a_label_in_an_undeclared_container_is_refused_by_the_vendor_itself(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """The refusal relocates from pre-flight to the vendor's own mouth.
+
+    A label held in a container no declared team owns is invisible to
+    every read this adapter is licensed to make: the workspace-level
+    listing does not carry it, and neither does any declared team's.  So
+    the pre-flight refusal cannot fire — it would be firing on a fact
+    nothing observed — and boot attempts the create, which the vendor
+    refuses BY NAME.
+
+    Asserted rather than left silent, because the tolerance that would
+    swallow it is precisely what the label addendum forbids: idempotence
+    is to come from reading both listings, never from forgiving an
+    already-exists (KOD-143 addendum 2).
+    """
+    contested = "queue:terminal"
+    wired.labels.append(contested)
+    wired.label_containers[contested] = "some-other-team-id"
+    _configure(
+        monkeypatch,
+        tmp_path,
+        _operation_toml(queue_states={**QUEUE_STATE_LABELS, "done": contested}),
+    )
+
+    with pytest.raises(LookupError) as caught:
+        async with lifespan(create_app()):
+            pass
+
+    assert contested in str(caught.value)
+    assert wired.tool_calls("create_issue_label") == [
+        {"name": contested, "teamId": "fixture-team-id"},
+    ]
+    # The write the vendor refused left the workspace as it was: one
+    # label, still in the container it was already held in.
+    assert wired.labels.count(contested) == 1
+    assert wired.label_containers[contested] == "some-other-team-id"
     assert wired.closes == 1
 
 

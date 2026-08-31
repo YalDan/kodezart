@@ -41,6 +41,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_TRACKER_ASSET_FETCH_TIMEOUT_SECONDS` | `float` | `30.0` | >= 1.0, <= 300.0 | Time one asset fetch may take before the fire fails to build. |
 | `KODEZART_TRACKER_ASSET_MAX_BYTES` | `int` | `10485760` | >= 1024, <= 104857600 | Largest single asset admitted into a fire context. An asset over the bound is a typed failure, never a truncation. |
 | `KODEZART_TRACKER_ASSET_MAX_COUNT` | `int` | `20` | >= 1, <= 200 | Assets one fire's ticket may reference. A ticket referencing more fails loudly rather than being fetched in part. |
+| `KODEZART_CI_CHECK_RUNS_MAX_PAGES` | `int` | `10` | >= 1, <= 100 | Maximum check-runs pages read per CI poll. However many pages a poll reads, it costs exactly one CI_POLL_MAX_ATTEMPTS unit; a poll that hits this cap leaves the run set short of the reported total_count, which is pending, never a verdict and never an error. |
 | `KODEZART_CI_GRACE_POLL_INTERVAL_SECONDS` | `float` | `10.0` | >= 1.0, <= 60.0 | Seconds between check-runs polls while no check run has been observed yet. |
 | `KODEZART_CI_NO_CHECKS_GRACE_POLLS` | `int` | `10` | >= 1, <= 20 | Consecutive empty check-runs polls before concluding no CI checks appeared for the ref (workflows present or probe indeterminate). |
 | `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS` | `int` | `3` | >= 1, <= 20 | Consecutive empty check-runs polls before concluding no CI when the repository has no active workflows. |
@@ -61,7 +62,6 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_FORGE_API_MAX_RETRIES` | `int` | `3` | >= 0, <= 10 | Maximum retry attempts for code hosting platform API 429/5xx responses. |
 | `KODEZART_FORGE_API_RETRY_BACKOFF_FACTOR` | `float` | `1.0` | >= 0.1, <= 30.0 | Base backoff multiplier in seconds for code hosting platform API retries. |
 | `KODEZART_FORGE_API_TIMEOUT_SECONDS` | `float` | `30.0` | >= 5.0, <= 120.0 | HTTP timeout for code hosting platform API requests. |
-| `KODEZART_HYGIENE_PATTERNS` | `dict[HygieneCategory, list[str]]` | `(shipped set)` |  | JSON object mapping a fire-body hygiene category to its regex pattern list. Runs through the same scanner engine as the deny set and answers a different question: whether the implementer receiving the body can act on it alone. Ships populated for `orchestration_vocabulary`, `tracker_shorthand` and `evaluator_material`. |
 | `KODEZART_MAX_FIX_ROUNDS` | `int` | `2` | >= 0, <= 10 | Maximum automatic fix attempts after review feedback. |
 | `KODEZART_MODEL` | `str \| None` | `None` |  | Claude model override. None uses SDK default. |
 | `KODEZART_OPERATION_CONFIG` | `str \| None` | `None` |  | Filesystem path to the operation config TOML. None means no operation config is loaded and its binding namespace is empty. |
@@ -76,12 +76,14 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_TRACKER_RETRY_BACKOFF_FACTOR` | `float` | `1.0` | >= 0.1, <= 30.0 | Base backoff multiplier in seconds for tracker MCP retries. |
 | `KODEZART_TRACKER_TIMEOUT_SECONDS` | `float` | `30.0` | >= 5.0, <= 120.0 | Timeout for one tracker MCP tool call. |
 | `KODEZART_TRACKER_CLAIM_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Lease an atomic claim holds before it expires and the issue becomes eligible again. |
+| `KODEZART_TRACKER_CLAIM_RENEWAL_FRACTION` | `float` | `0.25` | > 0.0, <= 0.5 | Fraction of the claim lease at which a job in flight renews its claim. Expressed against the lease so renewal outpaces expiry by construction, whatever the lease is set to: at 0.25 three consecutive renewal failures are survivable before the claim lapses, and the 0.5 bound leaves at least one. |
 | `KODEZART_TRACKER_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the tracker credential is presented in. |
+| `KODEZART_TRACKER_MCP_ERROR_DETAIL_LIMIT` | `int` | `500` | >= 80, <= 8000 | Characters of the server's OWN error text carried into a tracker MCP transport failure. A refusal that drops the vendor's diagnosis costs a whole boot cycle to recover it. |
 | `KODEZART_TRACKER_MCP_AUTH_SCHEME` | `str` | `Bearer` | min length 1 | Scheme prefixing the tracker credential in its auth header. |
-| `KODEZART_TRACKER_MCP_SERVER_NAME` | `str` | `linear` |  | Identity of the vendor MCP server the tracker adapter dials. One server definition, two consumers: the programmatic client on the deterministic path and session attachment for judgment passes. |
+| `KODEZART_TRACKER_MCP_SERVER_NAME` | `str` | `linear` |  | Identity of the vendor MCP server the tracker adapter dials. One consumer: the transport factory building the programmatic client on the deterministic path, which stamps this name on every transport log line and error. |
 | `KODEZART_TRACKER_MCP_SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
-| `KODEZART_TRACKER_TOKEN` | `str \| None` | `None` |  | Tracker credential for the MCP server. Environment only. |
+| `KODEZART_TRACKER_TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
 | `KODEZART_KNOWLEDGE_MCP_TOKEN` | `str \| None` | `None` |  | Credential for the knowledge MCP server. Environment only. |
 | `KODEZART_KNOWLEDGE_SESSION_GRANTS` | `list[SessionType]` | `[]` |  | Session types the knowledge MCP server is attached to, named one by one. No wildcard value. |
 | `KODEZART_KNOWLEDGE_MCP_SERVER_NAME` | `str` | `notion` | min length 1 | Identity the knowledge MCP server carries in a granted session. |

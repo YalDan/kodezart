@@ -7,6 +7,8 @@ import pytest
 import structlog
 
 from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.composition.forge import build_forge_client
+from kodezart.core.config import AppConfig
 from kodezart.domain.errors import RateLimitError, TransientAPIError
 from kodezart.types.domain.gating import RepoVisibility
 
@@ -27,6 +29,7 @@ def _make_client(
     ci_no_workflows_grace_polls: int = 3,
     ci_grace_poll_interval_seconds: float = 10.0,
     ci_ref_not_found_grace_polls: int = 3,
+    ci_check_runs_max_pages: int = 10,
     timeout_seconds: float = 5.0,
     max_retries: int = 1,
     retry_backoff_factor: float = 0.01,
@@ -45,6 +48,7 @@ def _make_client(
         ci_no_workflows_grace_polls=ci_no_workflows_grace_polls,
         ci_grace_poll_interval_seconds=ci_grace_poll_interval_seconds,
         ci_ref_not_found_grace_polls=ci_ref_not_found_grace_polls,
+        ci_check_runs_max_pages=ci_check_runs_max_pages,
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
         retry_backoff_factor=retry_backoff_factor,
@@ -1149,3 +1153,215 @@ class TestOpenDeliveryProbe:
             repo_url="https://github.com/owner/repo",
             issue_key="KOD-58",
         )
+
+    async def test_an_origin_this_forge_does_not_own_raises_rather_than_answers(
+        self,
+    ) -> None:
+        """UNCHANGED by KOD-145, and pinned so it stays that way.
+
+        This adapter answers for the forge it is a client of, and it cannot
+        see a local bare origin at all.  The remedy for the crash that
+        caused is probe SELECTION at the composition root — a forge-less
+        origin is wired to the probe that can answer for it — never a
+        fallback here.  An adapter that quietly returned False for an
+        origin it cannot read would be guessing, and the guess would be
+        indistinguishable from a real answer.
+        """
+        client = await self._client([])
+
+        with pytest.raises(ValueError, match="file://"):
+            await client.open_delivery_exists(
+                repo_url="file:///tmp/local-origin.git",
+                issue_key="KOD-58",
+            )
+
+
+# -- Paginated check runs (KOD-99) -------------------------------------------
+
+
+def _run(index: int, *, conclusion: str = "success") -> dict[str, object]:
+    """One completed check run, named so a failure is identifiable."""
+    return {
+        "id": index,
+        "name": f"ci/test-{index}",
+        "status": "completed",
+        "conclusion": conclusion,
+    }
+
+
+def _page_of(runs: list[dict[str, object]], *, total: int) -> httpx.Response:
+    """A check-runs page reporting *total* while carrying *runs*."""
+    return httpx.Response(200, json={"total_count": total, "check_runs": runs})
+
+
+def _page_number(request: httpx.Request) -> int:
+    """The ``page`` query parameter the walk asked for."""
+    return int(request.url.params.get("page", "1"))
+
+
+async def test_a_failure_on_the_second_page_still_fails_the_ref() -> None:
+    """The verdict is drawn from the whole run set, not the first page.
+
+    One hundred passing runs fill page one and the only failing run is on
+    page two.  Reading a single page reports a pass the ref does not have —
+    which is the defect: a green verdict over evidence never collected.
+    """
+    passing = [_run(index) for index in range(1, 101)]
+    failing = [_run(101, conclusion="failure")]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        if _page_number(request) == 1:
+            return _page_of(passing, total=101)
+        return _page_of(failing, total=101)
+
+    client = _make_client(handler)
+    result = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert result == (False, "CI failed: ci/test-101")
+    await client.close()
+
+
+async def test_a_count_the_api_never_enumerates_is_pending_not_a_pass() -> None:
+    """``total_count`` over an empty list is the degenerate short listing.
+
+    Nothing is enumerated, so nothing completed and nothing passed.  The
+    old rule ("no run has a failing conclusion") called that a pass; the
+    short-listing rule calls it pending, which is what it is.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        return _page_of([], total=3)
+
+    client = _make_client(handler, ci_poll_max_attempts=2)
+    result = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert result == (False, "CI checks still running after 2 polls.")
+    await client.close()
+
+
+async def test_one_complete_page_costs_exactly_one_request() -> None:
+    """A run set that fits on one page must not ask for a second."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        return _page_of([_run(1)], total=1)
+
+    client = _make_client(handler)
+    result = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert result == (True, "All CI checks passed.")
+    assert runs_calls == 1
+    await client.close()
+
+
+async def test_the_page_walk_stops_at_the_configured_cap() -> None:
+    """A listing that never ends is bounded by configuration, not by luck.
+
+    Every page is full and ``total_count`` always exceeds what has been
+    collected, so the walk would run forever unbounded.  It stops at the
+    cap, and what it collected is short — therefore pending.
+    """
+    runs_calls = 0
+    cap = 4
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        return _page_of([_run(index) for index in range(100)], total=100_000)
+
+    client = _make_client(
+        handler,
+        ci_check_runs_max_pages=cap,
+        ci_poll_max_attempts=1,
+    )
+    result = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    # Pending, so the poll budget runs out — never a TransientAPIError and
+    # never a verdict drawn from the pages that did arrive.
+    assert result == (False, "CI checks still running after 1 polls.")
+    assert runs_calls == cap
+    await client.close()
+
+
+async def test_one_poll_spends_one_attempt_however_many_pages_it_reads() -> None:
+    """The ruled accounting: pages are requests, but a poll is a poll.
+
+    Two polls over a four-page cap make eight requests and spend two
+    attempts — not eight.  A page is a unit of transport; an attempt is a
+    unit of waiting for CI, and conflating them would shrink the poll
+    budget by whatever the run set happens to be sized at.
+    """
+    runs_calls = 0
+    cap = 4
+    attempts = 2
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        return _page_of([_run(index) for index in range(100)], total=100_000)
+
+    client = _make_client(
+        handler,
+        ci_check_runs_max_pages=cap,
+        ci_poll_max_attempts=attempts,
+    )
+    result = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert result == (False, f"CI checks still running after {attempts} polls.")
+    assert runs_calls == cap * attempts
+    await client.close()
+
+
+async def test_the_walk_stops_early_on_a_page_that_carries_no_runs() -> None:
+    """An empty page ends the walk rather than spending the whole cap."""
+    runs_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal runs_calls
+        if "actions/workflows" in str(request.url):
+            return _workflows(active=True)
+        runs_calls += 1
+        if _page_number(request) == 1:
+            return _page_of([_run(index) for index in range(100)], total=250)
+        return _page_of([], total=250)
+
+    client = _make_client(handler, ci_check_runs_max_pages=10, ci_poll_max_attempts=1)
+    result = await client.wait_for_checks(
+        repo_url="https://github.com/owner/repo", ref="abc123"
+    )
+    assert result == (False, "CI checks still running after 1 polls.")
+    assert runs_calls == 2
+    await client.close()
+
+
+def test_the_page_bound_is_threaded_from_config_to_the_forge_client() -> None:
+    """The knob is configuration end to end, not a constant in the adapter."""
+    config = AppConfig(github_token=_FAKE_PAT, ci_check_runs_max_pages=7)
+    client = build_forge_client(config=config)
+
+    assert client is not None
+    assert client._ci_check_runs_max_pages == 7
+
+    # And the shipped default is the field's own, not a literal in the adapter.
+    default_client = build_forge_client(config=AppConfig(github_token=_FAKE_PAT))
+    assert default_client is not None
+    assert (
+        default_client._ci_check_runs_max_pages == AppConfig().ci_check_runs_max_pages
+    )

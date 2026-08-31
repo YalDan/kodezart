@@ -40,6 +40,7 @@ from tests.tracker.conftest import (
     DOCUMENT_CONTENT,
     DOCUMENT_KEY,
     FIXTURE_NOW,
+    FOREIGN_ISSUE,
     TEAM_IDENTIFIERS,
 )
 
@@ -60,9 +61,40 @@ class TestScanAndRead:
         assert {issue.issue_key for issue in found} == {
             CLAIMED_ISSUE,
             APPROVED_ISSUE,
+            FOREIGN_ISSUE,
         }
         for issue in found:
             assert QueueState.APPROVED in issue.queue_states
+
+    async def test_a_scan_scoped_to_a_team_returns_only_that_team(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        found = await tracker.scan_issues(
+            query=IssueQuery(
+                queue_state=QueueState.APPROVED,
+                team_key="engineering",
+                page_size=10,
+            ),
+        )
+        assert {issue.issue_key for issue in found} == {
+            CLAIMED_ISSUE,
+            APPROVED_ISSUE,
+        }
+
+    async def test_an_issue_carries_the_configured_key_of_its_team(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        issue = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        assert issue.team_key == "engineering"
+
+    async def test_an_issue_on_an_undeclared_team_carries_no_key(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        issue = await tracker.read_issue(issue_key=FOREIGN_ISSUE)
+        assert issue.team_key is None
 
     async def test_scan_page_size_bounds_the_result(
         self,
@@ -162,6 +194,25 @@ class TestWrites:
             stage=LifecycleStage.IN_PROGRESS,
         )
         assert updated.state_kind is WorkflowStateKind.STARTED
+
+    async def test_restore_workflow_state_puts_back_what_a_reader_read(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The undo the failure arm needs, over a state no stage names."""
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        await tracker.set_workflow_state(
+            issue_key=APPROVED_ISSUE,
+            stage=LifecycleStage.IN_PROGRESS,
+        )
+
+        restored = await tracker.restore_workflow_state(
+            issue_key=APPROVED_ISSUE,
+            state_name=before.state_name,
+        )
+
+        assert restored.state_name == before.state_name
+        assert restored.state_kind is before.state_kind
 
     async def test_set_queue_state_replaces_the_previous_member(
         self,
@@ -297,6 +348,88 @@ class TestAtomicClaim:
         assert held is not None
         assert held.holder == "pass-a"
 
+    async def test_releasing_twice_is_the_same_as_releasing_once(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Idempotent: the caller cannot know which arm already released.
+
+        The dispatcher releases what it could not resolve a base for and
+        the watch releases what its job finished with; a second release is
+        an ordinary state and not an error.
+        """
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+        again = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert again.status is ClaimStatus.GRANTED
+
+    async def test_a_second_release_never_frees_the_next_holders_claim(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Idempotence is not amnesia: a release frees THIS holder's claim."""
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == "pass-b"
+
+    async def test_a_losing_claimant_leaves_nothing_that_outlives_the_winner(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A claim that was refused is not a claim, and holds nothing.
+
+        The measured failure was in the winner's release: the loser's
+        attempt had left something behind that went on excluding every
+        later claimant, for the whole of a lease nobody was renewing
+        (KOD-152).
+        """
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        lost = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert lost.status is ClaimStatus.LOST
+
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+        next_pass = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-c",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert next_pass.status is ClaimStatus.GRANTED
+
     async def test_the_lease_bounds_the_claim(self, tracker: TrackerPort) -> None:
         granted = await tracker.claim_issue(
             issue_key=CLAIMED_ISSUE,
@@ -306,55 +439,215 @@ class TestAtomicClaim:
         assert granted.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
 
 
-class TestProvenance:
-    """Who set this state — the question authority binds to."""
+class TestRenewingAClaim:
+    """Renewal extends a live claim and never acquires a lapsed one.
 
-    async def test_the_port_names_the_actor_of_a_state_transition(
+    The clock these implementations run on is frozen, so a renewal is
+    observed by asking for a LONGER lease than the claim carried rather
+    than by waiting: what an advancing clock would show as an expiry moving
+    ahead of the wall is shown here as an expiry moving ahead of the one
+    the claim was granted with.  The temporal half — a job outliving its
+    lease keeping a live claim — is asserted over the heartbeat that drives
+    these calls, where the clock is a collaborator.
+    """
+
+    async def test_renewal_extends_a_claim_the_holder_already_holds(
         self,
         tracker: TrackerPort,
     ) -> None:
-        """AC: the port answers "who set this state" from fixture history."""
-        transition = await tracker.queue_state_provenance(
-            issue_key=APPROVED_ISSUE,
-            state=QueueState.APPROVED,
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
         )
-        assert transition is not None
-        assert transition.actor_key == APPROVER
-        assert transition.queue_state is QueueState.APPROVED
-        assert transition.issue_key == APPROVED_ISSUE
 
-    async def test_a_different_state_names_its_own_actor(
-        self,
-        tracker: TrackerPort,
-    ) -> None:
-        transition = await tracker.queue_state_provenance(
-            issue_key=APPROVED_ISSUE,
-            state=QueueState.PROPOSED,
+        renewed = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
         )
-        assert transition is None, "the fixture removed this state again"
 
-    async def test_a_state_never_set_has_no_provenance(
+        assert renewed is not None
+        assert renewed.status is ClaimStatus.GRANTED
+        assert renewed.expires_at == FIXTURE_NOW + timedelta(
+            seconds=LEASE_SECONDS * 2,
+        )
+
+    async def test_the_extension_is_what_a_later_reader_sees(
         self,
         tracker: TrackerPort,
     ) -> None:
+        """A renewal nobody else can observe protects nothing."""
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        renewed = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+
+        assert renewed is not None
+        assert held is not None
+        assert held.holder == "pass-a"
+        assert held.expires_at == renewed.expires_at
+
+    async def test_renewal_never_acquires_an_unclaimed_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The crash arm: a lapsed claim stays lapsed and stays claimable."""
         assert (
-            await tracker.queue_state_provenance(
-                issue_key=APPROVED_ISSUE,
-                state=QueueState.DECISION,
+            await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
             )
             is None
         )
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+        taken = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert taken.status is ClaimStatus.GRANTED
+
+    async def test_a_non_holder_renews_nothing_and_moves_nothing(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        refused = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        assert refused is None
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == "pass-a"
+        assert held.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
+
+    async def test_a_renewed_claim_still_defeats_a_second_claimant(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The whole point: the TRACKER excludes the second claimant."""
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        loser = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert loser.status is ClaimStatus.LOST
+
+    async def test_a_renewal_across_a_competitors_claim_still_holds_the_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The competitor arrives BETWEEN renewals and changes nothing.
+
+        A renewal may not cost the holder its place: whatever a refused
+        claimant did while the run was working, the run that is still
+        working is the one holding the issue.
+        """
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        renewed = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+
+        assert renewed is not None
+        assert held is not None
+        assert held.holder == "pass-a"
+        assert held.expires_at == renewed.expires_at
+
+    async def test_release_frees_a_renewed_claim_whole(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Every write the renewals made goes, not merely the newest."""
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
 
 
 class TestAssets:
     """Attachment and document metadata, and document reads."""
 
     async def test_issue_assets_carry_metadata(self, tracker: TrackerPort) -> None:
+        """Identity and title reach the consumer; type and size read absent.
+
+        ``content_type`` and ``size_bytes`` are ``None`` because no
+        captured vendor payload carries either field: every measured asset
+        array holds ``id``, ``title``, ``subtitle`` and ``url`` and nothing
+        else.  The fixture used to supply both values and this row used to
+        assert they arrived — a pass-through pinned over an input
+        production cannot produce.  ``None`` is what the workspace
+        actually reports, and :class:`TrackerAsset` owns what it means:
+        "the tracker did not report one", which is not any particular
+        value.
+
+        The pass-through CODE is untouched, so a vendor that starts
+        sending either field delivers it here unchanged; the wire model
+        keeps both optional for exactly that (KOD-143 fire-ruling,
+        2026-08-25).
+        """
         assets = await tracker.list_issue_assets(issue_key=ASSET_ISSUE)
         by_key = {asset.asset_key: asset for asset in assets}
         assert by_key["asset-1"].title == "spec.pdf"
-        assert by_key["asset-1"].content_type == "application/pdf"
-        assert by_key["asset-1"].size_bytes == 1024
+        assert by_key["asset-1"].content_type is None
+        assert by_key["asset-1"].size_bytes is None
         assert DOCUMENT_KEY in by_key
 
     async def test_an_issue_without_assets_reports_none(

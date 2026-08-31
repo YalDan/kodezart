@@ -1,4 +1,4 @@
-"""The five eligibility clauses and the three-level ranking, clause by clause.
+"""The six eligibility clauses and the three-level ranking, clause by clause.
 
 Every case here is a pure function over data the port already returned, so
 a clause is falsifiable without standing up a pass.  Nothing in this module
@@ -13,6 +13,7 @@ from kodezart.domain.dispatch import (
     DOMAIN_PRIORITY_ORDER,
     blocker_keys,
     clause_approved,
+    clause_in_team,
     clause_open,
     clause_unclaimed,
     clause_undelivered,
@@ -26,81 +27,104 @@ from kodezart.types.domain.tracker import (
     ClaimResult,
     ClaimStatus,
     IssuePriority,
-    StateTransition,
     WorkflowStateKind,
 )
 from tests.fakes import FIXTURE_EPOCH, make_tracker_issue
 
-APPROVER = "the-approver"
-IMPOSTOR = "not-the-approver"
 
+class TestClauseOneInTeam:
+    """The issue belongs to a team the operation declares."""
 
-def transition(actor: str) -> StateTransition:
-    return StateTransition(
-        issue_key="K-1",
-        queue_state=QueueState.APPROVED,
-        actor_key=actor,
-        occurred_at=FIXTURE_EPOCH,
-    )
-
-
-class TestClauseOneApproved:
-    """The queue state is APPROVED and the APPROVER set it."""
-
-    def test_approved_by_the_approver_holds(self) -> None:
-        assert clause_approved(
-            make_tracker_issue("K-1"),
-            provenance=transition(APPROVER),
-            approver_key=APPROVER,
+    def test_an_issue_on_a_declared_team_holds(self) -> None:
+        assert clause_in_team(
+            make_tracker_issue("K-1", team_key="engineering"),
+            team_keys=("engineering",),
         )
+
+    def test_an_issue_on_another_declared_team_holds(self) -> None:
+        assert clause_in_team(
+            make_tracker_issue("K-1", team_key="design"),
+            team_keys=("engineering", "design"),
+        )
+
+    def test_an_issue_on_an_undeclared_team_fails(self) -> None:
+        """The defect: another board's issue, approved by the same person."""
+        assert not clause_in_team(
+            make_tracker_issue("K-1", team_key="somebody-elses-board"),
+            team_keys=("engineering",),
+        )
+
+    def test_an_issue_with_no_configured_team_fails(self) -> None:
+        assert not clause_in_team(
+            make_tracker_issue("K-1", team_key=None),
+            team_keys=("engineering",),
+        )
+
+    def test_no_declared_team_admits_nothing(self) -> None:
+        assert not clause_in_team(
+            make_tracker_issue("K-1", team_key="engineering"),
+            team_keys=(),
+        )
+
+
+class TestClauseTwoApproved:
+    """The queue state is APPROVED — its presence, and nothing more.
+
+    Under the founder's KOD-144 ruling of 2026-08-25 this clause reads the
+    state and no longer asks who set it: the vendor surface attests no
+    label transition's actor, so the arm that did had nothing to read.
+    The tests that asserted the actor exclusion are removed under that
+    ruling, not edited to green.
+    """
+
+    def test_the_approved_state_holds(self) -> None:
+        assert clause_approved(make_tracker_issue("K-1"))
 
     def test_a_missing_queue_state_fails(self) -> None:
+        """The paired negative, excluded by a named clause rather than silently."""
         assert not clause_approved(
             make_tracker_issue("K-1", queue_states=[QueueState.PROPOSED]),
-            provenance=transition(APPROVER),
-            approver_key=APPROVER,
         )
 
-    def test_the_state_set_by_someone_else_fails(self) -> None:
-        """Authority binds to the approving ACT, not to the resulting state."""
-        assert not clause_approved(
-            make_tracker_issue("K-1"),
-            provenance=transition(IMPOSTOR),
-            approver_key=APPROVER,
-        )
-
-    def test_the_state_with_no_provenance_at_all_fails(self) -> None:
-        assert not clause_approved(
-            make_tracker_issue("K-1"),
-            provenance=None,
-            approver_key=APPROVER,
-        )
+    def test_no_queue_state_at_all_fails(self) -> None:
+        assert not clause_approved(make_tracker_issue("K-1", queue_states=[]))
 
 
-class TestClauseTwoOpen:
-    """Neither completed nor canceled."""
+OPEN_KINDS: list[WorkflowStateKind] = [
+    WorkflowStateKind.TRIAGE,
+    WorkflowStateKind.BACKLOG,
+    WorkflowStateKind.UNSTARTED,
+    WorkflowStateKind.STARTED,
+]
+CLOSED_KINDS: list[WorkflowStateKind] = [
+    WorkflowStateKind.COMPLETED,
+    WorkflowStateKind.CANCELED,
+    WorkflowStateKind.DUPLICATE,
+]
 
-    @pytest.mark.parametrize(
-        "kind",
-        [
-            WorkflowStateKind.TRIAGE,
-            WorkflowStateKind.BACKLOG,
-            WorkflowStateKind.UNSTARTED,
-            WorkflowStateKind.STARTED,
-        ],
-    )
+
+class TestClauseThreeOpen:
+    """None of the closed kinds."""
+
+    def test_every_kind_is_classified_by_one_of_the_two_cases(self) -> None:
+        """The exhaustiveness guard: a new vendor kind lands classified.
+
+        A member added to the enum and left out of both lists below is the
+        defect KOD-156 was — the kind existed on the board and no clause
+        said what it meant.
+        """
+        assert sorted(OPEN_KINDS + CLOSED_KINDS) == sorted(WorkflowStateKind)
+
+    @pytest.mark.parametrize("kind", OPEN_KINDS)
     def test_open_kinds_hold(self, kind: WorkflowStateKind) -> None:
         assert clause_open(make_tracker_issue("K-1", state_kind=kind))
 
-    @pytest.mark.parametrize(
-        "kind",
-        [WorkflowStateKind.COMPLETED, WorkflowStateKind.CANCELED],
-    )
+    @pytest.mark.parametrize("kind", CLOSED_KINDS)
     def test_closed_kinds_fail(self, kind: WorkflowStateKind) -> None:
         assert not clause_open(make_tracker_issue("K-1", state_kind=kind))
 
 
-class TestClauseThreeBlockers:
+class TestClauseFourBlockers:
     """Zero blockedBy edges to LIVE issues."""
 
     def test_no_edges_is_unblocked(self) -> None:
@@ -138,7 +162,7 @@ class TestClauseThreeBlockers:
         assert live_blocker(issue, blockers=blockers) == "K-3"
 
 
-class TestClauseFourClaimAndRun:
+class TestClauseFiveClaimAndRun:
     """No unexpired claim, no active run or queue entry."""
 
     def test_unclaimed_and_idle_holds(self) -> None:
@@ -157,7 +181,7 @@ class TestClauseFourClaimAndRun:
         assert not clause_unclaimed(claim=None, run_is_live=True)
 
 
-class TestClauseFiveDelivery:
+class TestClauseSixDelivery:
     """The discrimination workflow state alone cannot make."""
 
     def test_delivered_in_review_is_excluded(self) -> None:

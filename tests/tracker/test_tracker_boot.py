@@ -1,6 +1,8 @@
 """Boot validation: one bad mapping aborts startup naming exactly that entry."""
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -8,9 +10,11 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.errors import PromptRenderError, TrackerBootValidationError
 from kodezart.core.prompt_namespaces import bindings_for
+from kodezart.core.protocols import TrackerPort
 from kodezart.services.tracker_boot import (
     OWNED_REF_BUILDERS,
     configured_mappings,
@@ -40,11 +44,12 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingRef,
 )
-from tests.fakes import FakeTrackerPort
+from tests.fakes import FakeLinearMcpServer, FakeTrackerPort
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
     QUEUE_STATE_LABELS,
+    STATE_TYPES,
     TEAM_IDENTIFIERS,
     WORKFLOW_STATE_NAMES,
     fixture_server,
@@ -434,3 +439,134 @@ class TestReconciledConfig:
         adopted = reconciliation.config.documents[CHECKPOINT_DOCUMENT_KEY].id
         assert adopted is not None
         assert adopted in rendered
+
+
+class TestWorkflowStatesResolvePerTeam:
+    """The status vocabulary is read per declared team, all-must-resolve.
+
+    Ruled on KOD-143, 2026-08-25: ``list_issue_statuses`` takes a team and
+    answers for that team alone, so an operation declaring several teams
+    has several vocabularies and boot has to say what it means by "the
+    workspace resolves this state".  It means every declared team resolves
+    it — the declared states are a WRITE contract, and the lifecycle
+    writer sets them on whichever declared team's issue was dispatched, so
+    a team that cannot express one is unsound exactly there.  Union
+    semantics would convert that unsoundness into a runtime failure on a
+    live issue instead of a refusal at boot.
+    """
+
+    SECOND_TEAM = "fixture-second-team"
+    DECLARED_TEAMS: ClassVar[dict[str, str]] = {
+        "engineering": "fixture-team",
+        "platform": SECOND_TEAM,
+    }
+
+    def _server(self, second: Sequence[str]) -> FakeLinearMcpServer:
+        """A workspace of two boards, the second offering *second* only."""
+        return FakeLinearMcpServer(
+            users=[APPROVER, BYSTANDER],
+            teams=["fixture-team", self.SECOND_TEAM],
+            labels=list(QUEUE_STATE_LABELS.values()),
+            statuses={
+                "fixture-team": list(STATE_TYPES),
+                self.SECOND_TEAM: list(second),
+            },
+            state_types=STATE_TYPES,
+            actor=APPROVER,
+        )
+
+    def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
+        return LinearMcpTracker(
+            caller=server,
+            queue_state_labels=QUEUE_STATE_LABELS,
+            workflow_state_names=WORKFLOW_STATE_NAMES,
+            team_identifiers=dict(self.DECLARED_TEAMS),
+            max_retries=0,
+            retry_backoff_factor=1.0,
+        )
+
+    def _config(self) -> OperationConfig:
+        return operation_config().model_copy(
+            update={
+                "teams": {
+                    key: TeamEntry(name=name, key=key[:3].upper())
+                    for key, name in self.DECLARED_TEAMS.items()
+                },
+            },
+        )
+
+    def _refs(self) -> list[MappingRef]:
+        return [
+            MappingRef(
+                kind=MappingKind.WORKFLOW_STATE,
+                name=stage.value,
+                identifier=identifier,
+            )
+            for stage, identifier in WORKFLOW_STATE_NAMES.items()
+        ]
+
+    async def test_the_tool_is_called_once_per_declared_team_naming_it(self) -> None:
+        """The argument the schema requires, sent once for each board."""
+        server = self._server(STATE_TYPES)
+        await self._tracker(server).resolve_mappings(refs=self._refs())
+
+        assert server.tool_calls("list_issue_statuses") == [
+            {"team": self.SECOND_TEAM},
+            {"team": "fixture-team"},
+        ]
+
+    async def test_a_vocabulary_both_boards_share_resolves(self) -> None:
+        """The passing case: every declared state on every declared team."""
+        tracker = self._tracker(self._server(STATE_TYPES))
+        assert await tracker.resolve_mappings(refs=self._refs()) == ()
+
+    async def test_a_state_one_board_lacks_refuses_naming_the_team_and_state(
+        self,
+    ) -> None:
+        """The refusal case, at boot, through the shipped validation path."""
+        without_review = [name for name in STATE_TYPES if name != "In Review"]
+        tracker = self._tracker(self._server(without_review))
+
+        with pytest.raises(TrackerBootValidationError) as caught:
+            await validate_tracker_mappings(tracker=tracker, config=self._config())
+
+        assert caught.value.unresolved == (
+            f"workflow_state 'in_review' -> 'In Review' on team '{self.SECOND_TEAM}'",
+        )
+
+    async def test_the_two_vocabularies_are_never_merged(self) -> None:
+        """Each board holds half the states; their union holds all of them.
+
+        A merged read would resolve every declared state and boot clean,
+        leaving both boards unable to express half the lifecycle.
+        """
+        server = self._server(["In Progress", "Done"])
+        server.statuses["fixture-team"] = ["In Progress", "In Review"]
+        tracker = self._tracker(server)
+
+        with pytest.raises(TrackerBootValidationError) as caught:
+            await tracker.resolve_mappings(refs=self._refs())
+
+        assert caught.value.unresolved == (
+            f"workflow_state 'in_review' -> 'In Review' on team '{self.SECOND_TEAM}'",
+            "workflow_state 'done' -> 'Done' on team 'fixture-team'",
+        )
+
+    async def test_a_state_no_board_holds_is_reported_rather_than_refused(
+        self,
+    ) -> None:
+        """No team to name, so it is the ordinary unresolved entry.
+
+        The distinction is real: "this state is missing from the whole
+        workspace" is a typo in the config, and "these two boards disagree
+        about it" is a workspace the operation cannot run on.  Both stop
+        boot; only the second one has a team to point at.
+        """
+        tracker = self._tracker(self._server(STATE_TYPES))
+        nowhere = MappingRef(
+            kind=MappingKind.WORKFLOW_STATE,
+            name="done",
+            identifier="Shipped",
+        )
+
+        assert await tracker.resolve_mappings(refs=[nowhere]) == (nowhere,)

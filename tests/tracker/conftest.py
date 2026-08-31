@@ -14,13 +14,12 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.protocols import TrackerPort
-from kodezart.types.domain.operation import LifecycleStage, QueueState
-from kodezart.types.domain.tracker import IssueQuery, StateTransition
+from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.tracker import IssueQuery
 from tests.fakes import (
     FakeLinearMcpServer,
     FakeMcpAsset,
     FakeMcpDocument,
-    FakeMcpHistoryEntry,
     FakeMcpIssue,
     FakeTrackerPort,
 )
@@ -51,11 +50,18 @@ STATE_TYPES: dict[str, str] = {
     "In Review": "started",
     "Done": "completed",
     "Canceled": "canceled",
+    "Duplicate": "duplicate",
 }
 
 CLAIMED_ISSUE = "FIX-1"
 APPROVED_ISSUE = "FIX-2"
 ASSET_ISSUE = "FIX-3"
+#: An issue on a team the configuration does not declare.  A workspace
+#: holds more than one operation's board, and a fixture holding only one
+#: cannot express a container boundary at all — every scan would be trivially
+#: within scope and the port's scoping contract would be untested.
+FOREIGN_ISSUE = "OTHER-1"
+FOREIGN_TEAM = "fixture-other-team"
 
 DOCUMENT_KEY = "doc-1"
 DOCUMENT_TITLE = "checkpoint"
@@ -86,7 +92,7 @@ def fixture_server() -> FakeLinearMcpServer:
                 status="Backlog",
                 status_type="backlog",
                 labels=["queue:approved"],
-                relations=[("blockedBy", CLAIMED_ISSUE), ("child", ASSET_ISSUE)],
+                relations=[("blockedBy", CLAIMED_ISSUE), ("relatedTo", ASSET_ISSUE)],
                 parent_id="FIX-0",
                 assignee=BYSTANDER,
                 created_at=FIXTURE_NOW - timedelta(days=1),
@@ -104,8 +110,6 @@ def fixture_server() -> FakeLinearMcpServer:
                         id="asset-1",
                         title="spec.pdf",
                         url="https://tracker.invalid/asset-1",
-                        content_type="application/pdf",
-                        size=1024,
                     ),
                 ],
                 documents=[
@@ -118,6 +122,18 @@ def fixture_server() -> FakeLinearMcpServer:
                 created_at=FIXTURE_NOW - timedelta(days=10),
                 updated_at=FIXTURE_NOW,
             ),
+            FakeMcpIssue(
+                id=FOREIGN_ISSUE,
+                title="another board's issue",
+                description="approved by the same person, on another team",
+                priority_raw=1,
+                status="Todo",
+                status_type="unstarted",
+                team=FOREIGN_TEAM,
+                labels=["queue:approved"],
+                created_at=FIXTURE_NOW - timedelta(days=30),
+                updated_at=FIXTURE_NOW,
+            ),
         ],
         documents=[
             FakeMcpDocument(
@@ -126,25 +142,13 @@ def fixture_server() -> FakeLinearMcpServer:
                 content=DOCUMENT_CONTENT,
             ),
         ],
-        history={
-            APPROVED_ISSUE: [
-                FakeMcpHistoryEntry(
-                    actor=BYSTANDER,
-                    created_at=FIXTURE_NOW - timedelta(days=2),
-                    added_labels=["queue:proposed"],
-                ),
-                FakeMcpHistoryEntry(
-                    actor=APPROVER,
-                    created_at=FIXTURE_NOW - timedelta(days=1),
-                    added_labels=["queue:approved"],
-                    removed_labels=["queue:proposed"],
-                ),
-            ],
-        },
         users=[APPROVER, BYSTANDER],
-        teams=["fixture-team"],
+        teams=["fixture-team", FOREIGN_TEAM],
         labels=list(QUEUE_STATE_LABELS.values()),
-        statuses=list(STATE_TYPES),
+        # Both boards in the fixture workspace offer the whole vocabulary:
+        # the states are read per team, and a fixture where they differed
+        # would make the ordinary case the divergent one.
+        statuses={team: list(STATE_TYPES) for team in ("fixture-team", FOREIGN_TEAM)},
         state_types=STATE_TYPES,
         actor=APPROVER,
     )
@@ -170,18 +174,8 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
         for issue in await source.scan_issues(query=IssueQuery(page_size=PAGE_SIZE))
     ]
     issues = [await source.read_issue(issue_key=key) for key in keys]
-    provenance: dict[tuple[str, QueueState], StateTransition] = {}
-    for key in keys:
-        for state in QueueState:
-            transition = await source.queue_state_provenance(
-                issue_key=key,
-                state=state,
-            )
-            if transition is not None:
-                provenance[(key, state)] = transition
     return FakeTrackerPort(
         issues=issues,
-        provenance=provenance,
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),

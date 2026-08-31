@@ -36,6 +36,7 @@ does not exist.
 
 | Protocol          | Adapter Implementation   | Notes                                                |
 | ----------------- | ------------------------ | ---------------------------------------------------- |
+| LogEmitter        | structlog `stdlib.BoundLogger` | The five awaited emitters. No adapter class: the configured wrapper already satisfies the port, and a test asserts it |
 | GitService        | SubprocessGitService     | Git CLI via asyncio subprocess                       |
 | RepoCache         | LocalBareRepoCache       | Bare repo clones in a cache directory                |
 | AgentExecutor     | ClaudeClientExecutor     | **Default.** Persistent sessions via ClaudeSDKClient |

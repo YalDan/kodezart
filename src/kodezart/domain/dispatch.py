@@ -5,14 +5,14 @@ The reason is operational, not aesthetic: a wrong judgment produces no
 error, no log line to falsify and no recovery path, while a wrong
 computation produces a reproducible bug fixable once.
 
-Each of the five clauses is a separate total function of data the port
+Each of the six clauses is a separate total function of data the port
 already returned, so a clause can be tested without standing up a pass.
 Ranking is likewise a pure key function; only the tie-break draw is
 injected, because a uniform draw is the one thing that cannot be a pure
 function of the data.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -21,33 +21,55 @@ from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
     IssueRelationKind,
-    StateTransition,
     TrackerIssue,
     is_open,
     priority_rank,
 )
 
 
-def clause_approved(
-    issue: TrackerIssue,
-    *,
-    provenance: StateTransition | None,
-    approver_key: str,
-) -> bool:
-    """Clause 1: the issue carries APPROVED, set by the configured approver.
+def clause_in_team(issue: TrackerIssue, *, team_keys: Collection[str]) -> bool:
+    """Clause 1: the issue belongs to a team this operation declares.
 
-    Authority binds to the approver's ACT, so carrying the state is not
-    enough — the transition must have been performed by the approver.
-    Approval is the only human act in the loop, and kodezart never
-    performs it.
+    The container boundary, as a property of the issue rather than of the
+    query that found it.  A scan is narrowed to the declared teams and this
+    clause decides eligibility over what came back — the same division
+    :func:`clause_approved` keeps between the queue-state filter a scan
+    asks the backend to honour and the state this operation may act on.
+
+    An issue whose ``team_key`` is ``None`` belongs to a team the
+    configuration does not name, which is outside the boundary by
+    definition.  Nothing here reads an issue key, a prefix or any other
+    spelling: a key that happens to look like a team's is not membership in
+    it, and on a backend that prefixes nothing there is no spelling to read.
     """
-    if QueueState.APPROVED not in issue.queue_states:
-        return False
-    return provenance is not None and provenance.actor_key == approver_key
+    return issue.team_key is not None and issue.team_key in team_keys
+
+
+def clause_approved(issue: TrackerIssue) -> bool:
+    """Clause 2: the issue carries the APPROVED queue state.
+
+    The state's PRESENCE is the whole predicate, by the founder's ruling
+    of 2026-08-25 on KOD-144.  This clause used to require more: that the
+    transition into the state had been performed by the configured
+    approver.  That requirement is unobtainable on the measured vendor
+    surface — no tool on the live server attests who added a label, the
+    tool the provenance read called does not exist there, and the issue
+    payload's state history carries no actor at all.  The design's own
+    sentence, "carrying the state is not enough", is GIVEN UP here rather
+    than left standing over an attestation nothing can supply.
+
+    What still guards the boundary: the credential is scoped when it is
+    minted, and only workspace members can label anything.  Approval
+    remains the only human act in the loop and kodezart never performs it
+    — what changed is that the tracker cannot say WHICH human performed
+    it.  If the vendor ever exposes transition actors, reinstating the arm
+    is a new decision on KOD-144.
+    """
+    return QueueState.APPROVED in issue.queue_states
 
 
 def clause_open(issue: TrackerIssue) -> bool:
-    """Clause 2: the workflow state is neither completed nor canceled."""
+    """Clause 3: the workflow state is none of the closed kinds."""
     return is_open(issue.state_kind)
 
 
@@ -65,11 +87,11 @@ def live_blocker(
     *,
     blockers: Mapping[str, TrackerIssue],
 ) -> str | None:
-    """Clause 3: the first live blocker's key, or ``None`` when unblocked.
+    """Clause 4: the first live blocker's key, or ``None`` when unblocked.
 
-    A blocker is live iff it is itself open.  An edge to a completed or
-    canceled issue does not block — a closed blocker is a finished
-    dependency, not a standing one.
+    A blocker is live iff it is itself open.  An edge to a closed issue
+    does not block — a closed blocker is a finished dependency, not a
+    standing one.
     """
     for key in blocker_keys(issue):
         blocker = blockers.get(key)
@@ -83,12 +105,12 @@ def clause_unclaimed(
     claim: ClaimResult | None,
     run_is_live: bool,
 ) -> bool:
-    """Clause 4: no unexpired claim, and no active run or queue entry."""
+    """Clause 5: no unexpired claim, and no active run or queue entry."""
     return claim is None and not run_is_live
 
 
 def clause_undelivered(*, has_open_delivery: bool) -> bool:
-    """Clause 5: no open pull request already delivers the issue.
+    """Clause 6: no open pull request already delivers the issue.
 
     This is the clause that separates the two open-and-unclaimed cases the
     predicate would otherwise conflate.  DELIVERED-IN-REVIEW: an issue the

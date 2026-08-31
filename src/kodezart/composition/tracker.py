@@ -23,9 +23,9 @@ from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
     """The vendor MCP transport this deployment dials.
 
-    One server definition, two consumers (KOD-57's mechanism ruling): the
-    programmatic client on the deterministic path, and the same server
-    attached to judgment-pass sessions.
+    One server definition, one consumer: this factory, which builds the
+    programmatic client on the deterministic path.  No session attaches
+    the tracker server.
     """
     return HttpMcpToolCaller(
         url=config.tracker_mcp_server_url,
@@ -34,6 +34,7 @@ def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCall
         timeout_seconds=config.tracker_timeout_seconds,
         auth_header_name=config.tracker_mcp_auth_header,
         auth_scheme=config.tracker_mcp_auth_scheme,
+        error_detail_limit=config.tracker_mcp_error_detail_limit,
     )
 
 
@@ -55,8 +56,7 @@ def build_tracker(
                 queue_state_labels=operation.queue_states,
                 workflow_state_names=operation.workflow_states,
                 team_identifiers={
-                    team_key: entry.name
-                    for team_key, entry in operation.teams.items()
+                    team_key: entry.name for team_key, entry in operation.teams.items()
                 },
                 max_retries=config.tracker_max_retries,
                 retry_backoff_factor=config.tracker_retry_backoff_factor,
@@ -99,7 +99,10 @@ async def boot_tracker(
             tracker_token_present=config.tracker_token is not None,
         )
         return None
-    caller = make_mcp_tool_caller(config=config, token=config.tracker_token)
+    caller = make_mcp_tool_caller(
+        config=config,
+        token=config.tracker_token.get_secret_value(),
+    )
     await caller.open()
     try:
         tracker = build_tracker(config=config, operation=operation, caller=caller)

@@ -164,6 +164,89 @@ def test_unknown_field_is_rejected(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# KOD-157 — the issue to repository binding
+# ---------------------------------------------------------------------------
+
+
+def test_every_unbound_team_is_named_at_once(tmp_path: Path) -> None:
+    """Two repositories and no binding: both offenders in one error.
+
+    Never the first one only.  An unbound team's issues are fired into
+    whichever repository's tick claims them first, so the operator has to
+    see every team that is in that state, not one of them.
+    """
+    raw = raw_example()
+    for entry in raw["teams"].values():
+        del entry["repository"]
+
+    with pytest.raises(OperationConfigError) as excinfo:
+        load_operation_config(_write_toml(tmp_path, raw))
+
+    failures = " ".join(excinfo.value.failures)
+    for key in raw["teams"]:
+        assert f"teams['{key}']" in failures
+
+
+def test_a_binding_naming_an_undeclared_repository_is_refused(tmp_path: Path) -> None:
+    """The same refusal, naming the team and the url nothing declares."""
+    unknown = "https://example.invalid/example-org/no-such-repo"
+    raw = raw_example()
+    raw["teams"]["primary"]["repository"] = unknown
+
+    with pytest.raises(OperationConfigError) as excinfo:
+        load_operation_config(_write_toml(tmp_path, raw))
+
+    failures = " ".join(excinfo.value.failures)
+    assert "teams['primary']" in failures
+    assert unknown in failures
+
+
+def test_a_single_repository_operation_declares_no_binding(tmp_path: Path) -> None:
+    """The shipped single-repository shape keeps loading unchanged.
+
+    One repository is a TOTAL binding — every team fires into the only
+    candidate there is — so the config says nothing and every team is
+    still bound.
+    """
+    raw = raw_example()
+    raw["repos"] = [raw["repos"][0]]
+    for entry in raw["teams"].values():
+        del entry["repository"]
+
+    config = load_operation_config(_write_toml(tmp_path, raw))
+
+    assert set(config.teams_bound_to(config.repos[0].url)) == set(config.teams)
+
+
+def test_a_board_is_private_postured_only_where_its_team_says_so() -> None:
+    """Per board, and fail-closed everywhere the posture is not declared.
+
+    ``PRIVATE`` is the value that exempts a payload from the outbound
+    gate, so an issue on no declared team, on a team this operation does
+    not know, or on a board that declared nothing all resolve public.
+    """
+    config = example_config()
+
+    assert config.board_visibility("agent") is RepoVisibility.PRIVATE
+    assert config.board_visibility("primary") is RepoVisibility.PUBLIC
+    assert config.board_visibility("somebody-elses-board") is RepoVisibility.PUBLIC
+    assert config.board_visibility(None) is RepoVisibility.PUBLIC
+
+
+def test_a_board_declaring_no_posture_inherits_the_public_one(
+    tmp_path: Path,
+) -> None:
+    """The third state: absent, and it is not a fourth kind of private."""
+    raw = raw_example()
+    del raw["teams"]["agent"]["visibility"]
+
+    config = load_operation_config(_write_toml(tmp_path, raw))
+
+    assert config.teams["agent"].visibility is None
+    assert config.board_visibility("agent") is RepoVisibility.PUBLIC
+
+
+# ---------------------------------------------------------------------------
 # AC-3b / AC-4a — authority binds to a role
 # ---------------------------------------------------------------------------
 

@@ -17,6 +17,7 @@ from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.tracker import IssuePriority
 
 
@@ -43,12 +44,23 @@ class DispatchOutcome(StrEnum):
 
 
 class ExclusionClause(StrEnum):
-    """The five eligibility clauses, as the reasons an issue was excluded.
+    """The six eligibility clauses, as the reasons an issue was excluded.
 
     Members are ordered as the predicate evaluates them, and an issue is
     annotated with the FIRST clause that excluded it, so the annotation is
     a function of the data rather than of evaluation luck.
     """
+
+    OUTSIDE_TEAM = "outside_team"
+    """The issue belongs to no team this operation declares.  Evaluated
+    first because it is the only clause that is true of an issue this
+    operation has no business reading at all: a workspace holds more than
+    one operation's board, and every clause below it would otherwise be
+    asked about another board's issue — the approved-state clause
+    included, which reads the presence of a queue state and nothing more,
+    so it passes on any board using the same queue vocabulary (KOD-144).
+    Since that clause carries no attestation of WHO put the state there,
+    this one is the whole of the containment."""
 
     NOT_APPROVED = "not_approved"
     NOT_OPEN = "not_open"
@@ -98,6 +110,23 @@ class DispatchReport(DispatchModel):
     eligible: tuple[str, ...]
     tied_candidates: tuple[str, ...] = ()
     claimed_issue_key: str | None = None
+    claimed_state_name: str | None = None
+    """The workflow state the claimed issue held when this pass READ it.
+
+    Captured here because the pass is the only reader that sees it before
+    the lifecycle moves it: a run that crashes has to be put back where it
+    was found, and by then the tracker's copy holds the in-progress
+    stage.  ``None`` on every outcome that claimed nothing."""
+    claimed_visibility: RepoVisibility = RepoVisibility.PUBLIC
+    """The visibility posture of the board the claimed issue sits on.
+
+    Carried for the reason ``claimed_state_name`` is: the pass is where
+    the winning issue's team is known, and the writer that scrubs the
+    comments written back onto that issue is several hops away.
+
+    ``PUBLIC`` rather than absent on every outcome that claimed nothing,
+    because there is no fourth state to be in: the value is a posture to
+    write under, and the unresolved one is the fail-closed one."""
     job_id: str | None = None
     base: BaseSpec | None = None
     """The base the fire was dispatched on, and everything it was computed

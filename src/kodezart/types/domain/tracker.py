@@ -63,7 +63,13 @@ class WorkflowStateKind(StrEnum):
 
     ``state_name`` on an issue carries the backend's own state name; this
     is the part consumers may branch on.  An issue is OPEN iff its kind is
-    neither ``COMPLETED`` nor ``CANCELED`` — read through ``is_open``.
+    none of ``COMPLETED``, ``CANCELED`` and ``DUPLICATE`` — read through
+    ``is_open``.
+
+    ``DUPLICATE`` is the kind an issue closed AS a duplicate of another
+    carries.  It is a closed kind: the work is delivered on the issue that
+    absorbed it, so a duplicate is neither claimable nor a dispatch
+    candidate, and an edge to one does not block.
     """
 
     TRIAGE = "triage"
@@ -72,25 +78,36 @@ class WorkflowStateKind(StrEnum):
     STARTED = "started"
     COMPLETED = "completed"
     CANCELED = "canceled"
+    DUPLICATE = "duplicate"
 
 
 _CLOSED_STATE_KINDS: frozenset[WorkflowStateKind] = frozenset(
-    {WorkflowStateKind.COMPLETED, WorkflowStateKind.CANCELED},
+    {
+        WorkflowStateKind.COMPLETED,
+        WorkflowStateKind.CANCELED,
+        WorkflowStateKind.DUPLICATE,
+    },
 )
 
 
 def is_open(kind: WorkflowStateKind) -> bool:
-    """True iff *kind* is neither completed nor canceled."""
+    """True iff *kind* is none of the closed kinds."""
     return kind not in _CLOSED_STATE_KINDS
 
 
 class IssueRelationKind(StrEnum):
-    """The relation kinds the port carries."""
+    """The relation kinds the port carries.
+
+    Four, because four are carried.  ``PARENT`` and ``CHILD`` were here
+    and were never produced or read: parentage is not an edge on this
+    port — an issue names its own parent through ``parent_key`` — and no
+    backend measured so far reports children at all.  A member no
+    adapter can emit and no consumer can branch on is vocabulary that
+    reads as a capability (KOD-143).
+    """
 
     BLOCKED_BY = "blocked_by"
     BLOCKS = "blocks"
-    PARENT = "parent"
-    CHILD = "child"
     RELATED = "related"
     DUPLICATE = "duplicate"
 
@@ -159,6 +176,14 @@ class TrackerIssue(TrackerModel):
     ``queue_states`` holds only semantic members: whatever the backend
     marks an issue with that the configured mapping does NOT name is not a
     queue state and never reaches a consumer.
+
+    ``team_key`` is the same discipline applied to the issue's container:
+    it carries the configured key of the team the issue belongs to, and
+    ``None`` when the issue belongs to a team the configuration does not
+    declare.  The two states are the whole partition an eligibility clause
+    needs, and neither is the absence of an answer — every backend puts an
+    issue somewhere, and the adapter is what decides whether that somewhere
+    is one of the operation's own.
     """
 
     issue_key: str = Field(min_length=1)
@@ -168,6 +193,7 @@ class TrackerIssue(TrackerModel):
     state_name: str
     state_kind: WorkflowStateKind
     queue_states: frozenset[QueueState]
+    team_key: str | None
     relations: tuple[IssueRelation, ...] = ()
     parent_key: str | None = None
     assignee_key: str | None = None
@@ -184,20 +210,6 @@ class TrackerComment(TrackerModel):
     author_key: str = Field(min_length=1)
     body: str
     created_at: datetime
-
-
-class StateTransition(TrackerModel):
-    """Who set a state on an issue, and when.
-
-    This is the provenance record every adapter must be able to answer
-    with: authority binds to the approver's ACT, so the actor is the
-    load-bearing field, not the resulting state.
-    """
-
-    issue_key: str = Field(min_length=1)
-    queue_state: QueueState
-    actor_key: str = Field(min_length=1)
-    occurred_at: datetime
 
 
 class ClaimResult(TrackerModel):

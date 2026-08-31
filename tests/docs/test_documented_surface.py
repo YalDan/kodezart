@@ -264,6 +264,34 @@ def test_the_sse_event_table_has_rows_at_all() -> None:
     assert len(_documented_event_types()) > 10
 
 
+def _attribute_reads_of(field_name: str) -> list[str]:
+    """Every module under ``src/`` that reads ``<something>.<field_name>``."""
+    sites: list[str] = []
+    for source in sorted((REPO_ROOT / "src").rglob("*.py")):
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        if any(
+            isinstance(node, ast.Attribute) and node.attr == field_name
+            for node in ast.walk(tree)
+        ):
+            sites.append(source.relative_to(REPO_ROOT).as_posix())
+    return sites
+
+
+def test_the_tracker_server_name_has_exactly_the_consumer_its_description_claims() -> (
+    None
+):
+    """The field's description says one consumer — the transport factory.
+
+    The claim it replaced — a second consumer in session attachment — is
+    contradicted by exactly this derivation: no module under ``src/``
+    reads the field but the factory's.  A second reader appearing makes
+    this red until the description tells the truth again.
+    """
+    assert _attribute_reads_of("tracker_mcp_server_name") == [
+        "src/kodezart/composition/tracker.py",
+    ]
+
+
 def _documented_protocols() -> set[str]:
     """Every protocol named in the architecture doc's Protocol Map."""
     section = ARCHITECTURE_DOC.read_text(encoding="utf-8").split("## Protocol Map")[1]

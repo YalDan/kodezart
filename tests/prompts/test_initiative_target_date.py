@@ -42,7 +42,9 @@ CLAUSE = "initiative target"
 
 _DATED = [
     {"id": "dated", "target_date": "2026-12-31"},
-    {"id": "second", },
+    {
+        "id": "second",
+    },
 ]
 _UNDATED = [
     {"id": "undated"},

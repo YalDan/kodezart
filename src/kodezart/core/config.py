@@ -2,13 +2,12 @@
 
 from typing import Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from kodezart.types.domain.gating import (
     PATTERNLESS_CATEGORIES,
     GateVerdict,
-    HygieneCategory,
     RedactionCategory,
 )
 from kodezart.types.domain.session import (
@@ -30,35 +29,6 @@ _SHIPPED_CREDENTIAL_PATTERNS: list[str] = [
     r"\b(?:ntn_|secret_)[A-Za-z0-9]{40,}",
 ]
 
-# The quality-vocabulary set the pre-promotion hygiene scan runs through the
-# SAME engine as the deny set.  These ship non-empty, unlike the deny set: a
-# fire body's readability is a property of this project's own writing, not of
-# a deployment's private surface, so there is nothing for an operator to
-# supply before the scan means something.
-_SHIPPED_HYGIENE_PATTERNS: dict[HygieneCategory, list[str]] = {
-    # Words that belong to the machinery that scheduled the work.  An
-    # implementer reading its own dispatch mechanics is reading noise.
-    HygieneCategory.ORCHESTRATION_VOCABULARY: [
-        r"(?i)\bqueue:[a-z_]+\b",
-        r"(?i)\bdispatch(?:er|ed)?\s+pass\b",
-        r"(?i)\bfire[- ]?(?:queue|runner|prep)\b",
-        r"(?i)\bscheduled\s+routine\b",
-    ],
-    # Identifiers that resolve only against the board.  A body that leans on
-    # one is unreadable to anybody who cannot open the tracker.
-    HygieneCategory.TRACKER_SHORTHAND: [
-        r"\b[A-Z]{2,5}-\d+\b",
-        r"(?i)\bAC-\d+\b",
-    ],
-    # The evaluator's own answer sheet.  A body carrying it grades itself.
-    HygieneCategory.EVALUATOR_MATERIAL: [
-        r"(?i)\bacceptance criteri(?:on|a)\b",
-        r"```diff",
-        r"(?m)^[+-]{3} [ab]/",
-        r"(?m)^@@ -\d+",
-    ],
-}
-
 
 class AppConfig(BaseSettings):
     """Application configuration via ``KODEZART_`` env prefix.
@@ -78,6 +48,7 @@ class AppConfig(BaseSettings):
         # loads as absent.  Needed because absence is a first-class state
         # here — a scheme-less auth header is "scheme is None", never "".
         env_parse_none_str="null",
+        hide_input_in_errors=True,
     )
 
     project_name: str = Field(
@@ -252,6 +223,17 @@ class AppConfig(BaseSettings):
             "a transient API failure."
         ),
     )
+    ci_check_runs_max_pages: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description=(
+            "Maximum check-runs pages read per CI poll. However many pages a "
+            "poll reads, it costs exactly one CI_POLL_MAX_ATTEMPTS unit; a poll "
+            "that hits this cap leaves the run set short of the reported "
+            "total_count, which is pending, never a verdict and never an error."
+        ),
+    )
     forge_api_timeout_seconds: float = Field(
         default=30.0,
         ge=5.0,
@@ -289,8 +271,9 @@ class AppConfig(BaseSettings):
         default="linear",
         description=(
             "Identity of the vendor MCP server the tracker adapter dials. One "
-            "server definition, two consumers: the programmatic client on the "
-            "deterministic path and session attachment for judgment passes."
+            "consumer: the transport factory building the programmatic client "
+            "on the deterministic path, which stamps this name on every "
+            "transport log line and error."
         ),
     )
     tracker_mcp_server_url: str = Field(
@@ -307,15 +290,30 @@ class AppConfig(BaseSettings):
         min_length=1,
         description="Scheme prefixing the tracker credential in its auth header.",
     )
-    tracker_token: str | None = Field(
+    tracker_token: SecretStr | None = Field(
         default=None,
-        description="Tracker credential for the MCP server. Environment only.",
+        exclude=True,
+        description=(
+            "Tracker credential for the MCP server. Environment only, "
+            "excluded from serialization, and masked in repr: a dumped "
+            "config is copied into logs, fixtures and error payloads."
+        ),
     )
     tracker_timeout_seconds: float = Field(
         default=30.0,
         ge=5.0,
         le=120.0,
         description="Timeout for one tracker MCP tool call.",
+    )
+    tracker_mcp_error_detail_limit: int = Field(
+        default=500,
+        ge=80,
+        le=8000,
+        description=(
+            "Characters of the server's OWN error text carried into a "
+            "tracker MCP transport failure. A refusal that drops the "
+            "vendor's diagnosis costs a whole boot cycle to recover it."
+        ),
     )
     tracker_max_retries: int = Field(
         default=3,
@@ -336,6 +334,18 @@ class AppConfig(BaseSettings):
         description=(
             "Lease an atomic claim holds before it expires and the issue "
             "becomes eligible again."
+        ),
+    )
+    tracker_claim_renewal_fraction: float = Field(
+        default=0.25,
+        gt=0.0,
+        le=0.5,
+        description=(
+            "Fraction of the claim lease at which a job in flight renews its "
+            "claim. Expressed against the lease so renewal outpaces expiry by "
+            "construction, whatever the lease is set to: at 0.25 three "
+            "consecutive renewal failures are survivable before the claim "
+            "lapses, and the 0.5 bound leaves at least one."
         ),
     )
     tracker_query_page_size: int = Field(
@@ -572,18 +582,6 @@ class AppConfig(BaseSettings):
         description=(
             "JSON object mapping a redaction category to the verdict a hit "
             "in that category yields. A payload takes the max severity."
-        ),
-    )
-    hygiene_patterns: dict[HygieneCategory, list[str]] = Field(
-        default_factory=lambda: {
-            category: list(patterns)
-            for category, patterns in _SHIPPED_HYGIENE_PATTERNS.items()
-        },
-        description=(
-            "JSON object mapping a fire-body hygiene category to its regex "
-            "pattern list. Runs through the same scanner engine as the deny "
-            "set and answers a different question: whether the implementer "
-            "receiving the body can act on it alone."
         ),
     )
     operation_config: str | None = Field(

@@ -3,8 +3,7 @@
 Every read and write on the deterministic path is a named tool call with
 no model in the loop.  The adapter owns everything vendor-shaped: the
 identifier translation, queue-state-as-label mechanics, the atomic-claim
-mechanism, the priority encoding, and provenance reads from issue history.
-None of it crosses the port.
+mechanism and the priority encoding.  None of it crosses the port.
 
 This is the FIRST adapter, not the design centre.  A GitHub Issues or Jira
 adapter is a peer module implementing the same protocol; consumers change
@@ -15,6 +14,14 @@ with server-assigned timestamps.  A claimant appends its marker, then reads
 the log back and takes the EARLIEST unexpired marker as the holder.  Every
 concurrent claimant computes the same winner from the same log, so exactly
 one observes ``GRANTED``.
+
+A renewal EDITS the holder's earliest marker rather than appending a second
+one, so one claim costs one comment however long the run it guards lasts.
+Everything that would otherwise pile up on the log is removed by the writer
+that put it there: a renewal deletes this holder's own duplicates, and a
+claimant whose read-back says LOST deletes the marker it just appended.
+Neither ever touches a marker another holder wrote, so the order the log
+records stays the order every claimant computes from it.
 """
 
 import asyncio
@@ -25,21 +32,32 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
 
-from kodezart.core.errors import TrackerEnsureConflictError, TrackerProtocolError
+from kodezart.core.errors import (
+    McpTransportError,
+    TrackerBootValidationError,
+    TrackerEnsureConflictError,
+    TrackerProtocolError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import McpToolCaller
+from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.linear_mcp import (
+    LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
     LinearCommentWire,
     LinearDocumentListWire,
     LinearDocumentSummaryWire,
     LinearDocumentWire,
-    LinearHistoryWire,
+    LinearIssueDetailWire,
     LinearIssueListWire,
     LinearIssueWire,
-    LinearNamedListWire,
+    LinearLabelListWire,
+    LinearNamedWire,
+    LinearTeamListWire,
+    LinearTeamWire,
+    LinearUserListWire,
+    LinearUserWire,
     LinearWireModel,
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -55,7 +73,6 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingOutcome,
     MappingRef,
-    StateTransition,
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
@@ -68,7 +85,6 @@ _TOOL_SAVE_ISSUE = "save_issue"
 _TOOL_SAVE_COMMENT = "save_comment"
 _TOOL_LIST_COMMENTS = "list_comments"
 _TOOL_DELETE_COMMENT = "delete_comment"
-_TOOL_LIST_ISSUE_HISTORY = "list_issue_history"
 _TOOL_GET_DOCUMENT = "get_document"
 _TOOL_LIST_DOCUMENTS = "list_documents"
 _TOOL_SAVE_DOCUMENT = "save_document"
@@ -94,13 +110,23 @@ _RAW_BY_PRIORITY: Mapping[IssuePriority, int] = {
     priority: raw for raw, priority in _PRIORITY_BY_RAW.items()
 }
 
-_RELATION_KIND_BY_WIRE: Mapping[str, IssueRelationKind] = {
+#: The workflow-state kinds the domain carries, keyed by the value the
+#: vendor spells them with.  Derived from the enum, so the vocabulary this
+#: adapter recognises cannot drift from the one consumers branch on.
+_STATE_KIND_BY_VALUE: Mapping[str, WorkflowStateKind] = {
+    kind.value: kind for kind in WorkflowStateKind
+}
+
+#: What each arm of the vendor's relations object means in the domain,
+#: keyed by the vendor's own spelling.  Four arms, four kinds: the vendor
+#: reports a parent as ``parentId`` on the issue itself, which the adapter
+#: carries as ``parent_key`` rather than as an edge, and reports children
+#: nowhere at all.
+_RELATION_KIND_BY_ARM: Mapping[str, IssueRelationKind] = {
     "blocks": IssueRelationKind.BLOCKS,
     "blockedBy": IssueRelationKind.BLOCKED_BY,
-    "parent": IssueRelationKind.PARENT,
-    "child": IssueRelationKind.CHILD,
-    "related": IssueRelationKind.RELATED,
-    "duplicate": IssueRelationKind.DUPLICATE,
+    "relatedTo": IssueRelationKind.RELATED,
+    "duplicateOf": IssueRelationKind.DUPLICATE,
 }
 
 _MAPPING_TOOL_BY_KIND: Mapping[MappingKind, str] = {
@@ -160,23 +186,92 @@ def _work_ref_marker(ref: WorkRef) -> str:
 _RETRY_BACKOFF_BASE = 2.0
 
 
-def _label_arguments(ref: MappingRef, identifier: str) -> dict[str, object]:
+def _label_arguments(identifier: str, container: str | None) -> dict[str, object]:
     """Create-arguments for one queue-state label.
 
-    A ref carrying a scope creates the label on that team; one carrying
-    none creates it at workspace scope, which is what a queue vocabulary
-    spanning several configured teams requires — a per-team label would
-    leave the same state unaddressable on another team's issues.
+    *container* is the team's UUID, which is the only thing ``teamId``
+    accepts: its declared input schema says "Team UUID (omit for workspace
+    label)", and the live server answers a name with ``teamId must be a
+    UUID`` and a 400.  ``None`` creates the label at workspace scope,
+    which is what a queue vocabulary spanning several configured teams
+    requires — a per-team label would leave the same state unaddressable
+    on another team's issues.
     """
     arguments: dict[str, object] = {"name": identifier}
-    if ref.scope is not None:
-        arguments["teamId"] = ref.scope
+    if container is not None:
+        arguments["teamId"] = container
     return arguments
+
+
+def _without_mention_syntax(identity: str) -> str:
+    """*identity* with the vendor's mention syntax off it: one leading ``@``.
+
+    A configured identity may be spelled the way a routine text mentions
+    it, because the byte-identity gate on the pass templates wants the
+    config to hold the literal those texts substitute.  The ``@`` is
+    SYNTAX and the identity is what follows it, so exactly one comes off:
+    a second ``@`` belongs to the name being claimed, not to a second
+    mention marker (KOD-143 addendum 3).
+
+    Nothing else is normalised here — case in particular.  Whether a
+    lowercased identity is a config defect or a prose-versus-identity
+    distinction is a question about that config, and folding it here
+    would answer it silently for every workspace.
+    """
+    return identity.removeprefix("@")
 
 
 def _utc_now() -> datetime:
     """Current instant in UTC — the adapter's default clock."""
     return datetime.now(tz=UTC)
+
+
+@dataclass
+class _LabelListings:
+    """Every label listing this adapter read, kept apart by which one answered.
+
+    ``list_issue_labels`` answers a DIFFERENT set depending on whether
+    ``team`` was sent, so "does the workspace hold this label?" has no
+    single answer — it has one per listing, and which listing carried an
+    entry is what that entry's container IS.
+
+    The entries' own ``teamId`` is never consulted for this.  The
+    workspace-level listing carries no such field at all, so reading it
+    would file every team-scoped label under workspace scope: exactly the
+    misreading that made a freshly created label invisible to the boot
+    that created it (KOD-143, the label addendum of 2026-08-25).
+    """
+
+    workspace: set[str]
+    by_team: dict[str, set[str]]
+
+    def names(self) -> frozenset[str]:
+        """Every label name any listing answered with."""
+        return frozenset(self.workspace).union(*self.by_team.values())
+
+    def serves(self, name: str, scope: str | None) -> bool:
+        """Whether *name* as already held serves a ref declaring *scope*.
+
+        A workspace-level label serves a ref on any team — it is
+        addressable on every board — and a team's own label serves only a
+        ref declaring that team.
+        """
+        return name in self.workspace or (
+            scope is not None and name in self.by_team.get(scope, set())
+        )
+
+    def teams_holding(self, name: str) -> tuple[str, ...]:
+        """The declared teams whose own listing carried *name*."""
+        return tuple(
+            sorted(team for team, names in self.by_team.items() if name in names)
+        )
+
+    def record(self, name: str, scope: str | None) -> None:
+        """Hold a label this adapter just created, in the scope it made it."""
+        if scope is None:
+            self.workspace.add(name)
+        else:
+            self.by_team.setdefault(scope, set()).add(name)
 
 
 @dataclass(frozen=True)
@@ -187,6 +282,18 @@ class _ClaimMarker:
     comment_key: str
     holder: str
     expires_at: datetime
+
+
+def _claim_marker_body(*, holder: str, expires_at: datetime) -> str:
+    """The marker's wire form, written once so the writer and the reader agree.
+
+    ``_CLAIM_MARKER`` parses what this produces; a second spelling of the
+    same comment is how the two drift apart.
+    """
+    return (
+        f'<!-- kodezart-claim holder="{holder}" '
+        f'expires-at="{expires_at.isoformat()}" -->'
+    )
 
 
 class LinearMcpTracker:
@@ -215,6 +322,13 @@ class LinearMcpTracker:
         self._clock: Callable[[], datetime] = clock
         self._workflow_state_names: Mapping[LifecycleStage, str] = workflow_state_names
         self._team_identifiers: Mapping[str, str] = team_identifiers
+        self._team_key_by_identifier: dict[str, str] = {
+            identifier: team_key for team_key, identifier in team_identifiers.items()
+        }
+        #: Team name to the UUID the workspace addresses it by, read once
+        #: from the teams listing.  ``None`` means "not read yet", which is
+        #: not the same state as "the workspace holds no teams".
+        self._team_containers: Mapping[str, str] | None = None
         self._log: BoundLogger = get_logger(__name__)
 
         known = {member.value for member in QueueState}
@@ -228,7 +342,20 @@ class LinearMcpTracker:
         }
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
-        """Issues matching *query*, in backend order."""
+        """Issues matching *query*, in backend order.
+
+        An issue carrying a workflow-state kind the domain does not name is
+        EXCLUDED from the answer rather than unwinding the scan, and it is
+        named as it goes: its key, the tool that returned it and the raw
+        value the vendor sent, once per issue.  A scan reads a whole board,
+        so one such issue took every pass that read it down with it, for as
+        long as it sat there — one groomed duplicate crash-looped the
+        dispatch pass (KOD-156).
+
+        The containment stops at this seam.  :meth:`read_issue` still
+        raises on the same value, because there the issue the caller asked
+        about IS the answer and excluding it would return nothing at all.
+        """
         arguments: dict[str, object] = {"limit": query.page_size}
         if query.queue_state is not None:
             arguments["label"] = self._label_for(query.queue_state)
@@ -238,7 +365,18 @@ class LinearMcpTracker:
             arguments["updatedAt"] = query.updated_since.isoformat()
         payload = await self._call(_TOOL_LIST_ISSUES, arguments)
         listing = self._validate(LinearIssueListWire, payload, _TOOL_LIST_ISSUES)
-        return tuple(self._to_issue(wire) for wire in listing.issues)
+        found: list[TrackerIssue] = []
+        for wire in listing.issues:
+            if wire.status_type not in _STATE_KIND_BY_VALUE:
+                await self._log.aerror(
+                    "tracker_scan_issue_excluded",
+                    issue_key=wire.id,
+                    tool=_TOOL_LIST_ISSUES,
+                    status_type=wire.status_type,
+                )
+                continue
+            found.append(self._to_issue(wire))
+        return tuple(found)
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
@@ -298,6 +436,19 @@ class LinearMcpTracker:
                 tool=_TOOL_SAVE_ISSUE,
                 detail=f"stage={stage.value}",
             )
+        return await self._save_state(issue_key=issue_key, state_name=state_name)
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        """Put the issue back in the state a reader found it in."""
+        return await self._save_state(issue_key=issue_key, state_name=state_name)
+
+    async def _save_state(self, *, issue_key: str, state_name: str) -> TrackerIssue:
+        """Write one backend state name. The two state writers' shared tail."""
         payload = await self._call(
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},
@@ -333,12 +484,14 @@ class LinearMcpTracker:
         )
         return self._to_comment(
             self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT),
+            issue_key=issue_key,
         )
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         """Every comment on the issue, oldest first."""
         return tuple(
-            self._to_comment(wire) for wire in await self._comment_wires(issue_key)
+            self._to_comment(wire, issue_key=issue_key)
+            for wire in await self._comment_wires(issue_key)
         )
 
     async def claim_issue(
@@ -348,21 +501,32 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> ClaimResult:
-        """Append a claim marker, then read the log back to learn the winner."""
+        """Append a claim marker, then read the log back to learn the winner.
+
+        A LOSER deletes the marker it just appended.  The append has to
+        happen before the read-back — that append is what the race is
+        decided over — so the decision itself is untouched, and the delete
+        lands strictly after it.
+
+        What the delete removes is a claim nobody holds.  A loser's marker
+        used to sit on the log for its whole lease: it outranked every
+        claimant that arrived after it, it survived the WINNER's release,
+        and nothing renewed it or cleaned it up, so an issue whose work had
+        long finished stayed unclaimable until that lease ran out.  The
+        marker is deleted by the identifier the server assigned this
+        append, so no marker another claimant wrote can be reached from
+        here.
+        """
         expires_at = self._clock() + timedelta(seconds=lease_seconds)
-        await self._call(
-            _TOOL_SAVE_COMMENT,
-            {
-                "issueId": issue_key,
-                "body": (
-                    f'<!-- kodezart-claim holder="{holder}" '
-                    f'expires-at="{expires_at.isoformat()}" -->'
-                ),
-            },
+        appended = await self._append_claim_marker(
+            issue_key=issue_key,
+            holder=holder,
+            expires_at=expires_at,
         )
         winner = await self.active_claim(issue_key=issue_key)
         if winner is not None and winner.holder == holder:
             return winner
+        await self._call(_TOOL_DELETE_COMMENT, {"id": appended})
         return ClaimResult(
             issue_key=issue_key,
             status=ClaimStatus.LOST,
@@ -370,17 +534,101 @@ class LinearMcpTracker:
             expires_at=expires_at,
         )
 
-    async def release_claim(self, *, issue_key: str, holder: str) -> None:
-        """Delete every claim marker *holder* wrote on the issue."""
-        for wire in await self._comment_wires(issue_key):
-            match = _CLAIM_MARKER.search(wire.body)
-            if match is not None and match.group("holder") == holder:
-                await self._call(_TOOL_DELETE_COMMENT, {"id": wire.id})
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        """Carry the holder's own marker forward, EDITED rather than appended.
 
-    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
-        """The earliest unexpired claim marker on the issue, or ``None``."""
+        The holder's OWN unexpired markers are the whole precondition, and
+        not who currently wins the log's order: a losing claimant's marker
+        outliving the winner's first one takes the order for as long as it
+        lasts, and a run whose work is still in flight may not stop
+        renewing over that.
+
+        The marker that moves is the holder's EARLIEST, under the same total
+        order ``active_claim`` computes, and it is updated in place.  Two
+        properties follow, and both are the reason this is an edit:
+
+        ``created_at`` is the primary sort key, so editing keeps the holder
+        exactly where it already stood in the order — for the whole life of
+        the claim, however many times it renews.  Appending could not: a
+        renewal marker carries a LATER ``created_at``, so once the original
+        lapsed the holder's remaining marker could lose the order to a
+        claimant that started after it.
+
+        And a renewal costs no comment.  Appending wrote one every renewal
+        interval for as long as the job ran, which on measured fire
+        durations is dozens of machine comments on one issue, in a log a
+        person is expected to read and on a board that mirrors publicly.
+
+        Any FURTHER unexpired marker this holder owns is deleted in the same
+        pass: they are this holder's own duplicates, they can only muddy the
+        order, and converging on one marker per claim is what makes the
+        first property hold.
+        """
+        mine = sorted(
+            (
+                marker
+                for marker in await self._unexpired_claim_markers(issue_key)
+                if marker.holder == holder
+            ),
+            key=lambda marker: (marker.created_at, marker.comment_key),
+        )
+        if not mine:
+            return None
+        expires_at = max(
+            self._clock() + timedelta(seconds=lease_seconds),
+            *(marker.expires_at for marker in mine),
+        )
+        earliest, *duplicates = mine
+        await self._call(
+            _TOOL_SAVE_COMMENT,
+            {
+                "id": earliest.comment_key,
+                "body": _claim_marker_body(holder=holder, expires_at=expires_at),
+            },
+        )
+        for duplicate in duplicates:
+            await self._call(_TOOL_DELETE_COMMENT, {"id": duplicate.comment_key})
+        return ClaimResult(
+            issue_key=issue_key,
+            status=ClaimStatus.GRANTED,
+            holder=holder,
+            expires_at=expires_at,
+        )
+
+    async def _append_claim_marker(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        expires_at: datetime,
+    ) -> str:
+        """Append one marker, answering with the key the server assigned it.
+
+        The key is what makes a losing claimant able to delete its OWN
+        append and nothing else.
+        """
+        payload = await self._call(
+            _TOOL_SAVE_COMMENT,
+            {
+                "issueId": issue_key,
+                "body": _claim_marker_body(holder=holder, expires_at=expires_at),
+            },
+        )
+        return self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT).id
+
+    async def _unexpired_claim_markers(
+        self,
+        issue_key: str,
+    ) -> tuple[_ClaimMarker, ...]:
+        """Every claim marker on the issue that has not yet lapsed."""
         now = self._clock()
-        candidates: list[_ClaimMarker] = []
+        markers: list[_ClaimMarker] = []
         for wire in await self._comment_wires(issue_key):
             match = _CLAIM_MARKER.search(wire.body)
             if match is None:
@@ -391,7 +639,7 @@ class LinearMcpTracker:
             )
             if expires_at <= now:
                 continue
-            candidates.append(
+            markers.append(
                 _ClaimMarker(
                     created_at=wire.created_at,
                     comment_key=wire.id,
@@ -399,6 +647,18 @@ class LinearMcpTracker:
                     expires_at=expires_at,
                 ),
             )
+        return tuple(markers)
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        """Delete every claim marker *holder* wrote on the issue."""
+        for wire in await self._comment_wires(issue_key):
+            match = _CLAIM_MARKER.search(wire.body)
+            if match is not None and match.group("holder") == holder:
+                await self._call(_TOOL_DELETE_COMMENT, {"id": wire.id})
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        """The earliest unexpired claim marker's holder, or ``None``."""
+        candidates = await self._unexpired_claim_markers(issue_key)
         if not candidates:
             return None
         # Total order over an append-only log: server timestamp first, comment
@@ -411,35 +671,12 @@ class LinearMcpTracker:
             issue_key=issue_key,
             status=ClaimStatus.GRANTED,
             holder=winner.holder,
-            expires_at=winner.expires_at,
+            expires_at=max(
+                marker.expires_at
+                for marker in candidates
+                if marker.holder == winner.holder
+            ),
         )
-
-    async def queue_state_provenance(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> StateTransition | None:
-        """Who most recently set *state*, or ``None`` if it never was set."""
-        label = self._label_for(state)
-        payload = await self._call(_TOOL_LIST_ISSUE_HISTORY, {"id": issue_key})
-        history = self._validate(
-            LinearHistoryWire,
-            payload,
-            _TOOL_LIST_ISSUE_HISTORY,
-        )
-        latest: StateTransition | None = None
-        for entry in history.history:
-            if label in entry.removed_labels:
-                latest = None
-            if label in entry.added_labels:
-                latest = StateTransition(
-                    issue_key=issue_key,
-                    queue_state=state,
-                    actor_key=entry.actor,
-                    occurred_at=entry.created_at,
-                )
-        return latest
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
         """Attachment and document metadata referenced by the issue."""
@@ -565,14 +802,67 @@ class LinearMcpTracker:
         A ref carrying no identifier resolves to nothing by construction —
         it names something the workspace has not assigned a value to yet —
         so it is reported rather than looked up.
+
+        A USER resolves under either identity the workspace answers to,
+        its account name or its mention handle, and the configured
+        spelling may carry the mention's leading ``@`` (KOD-143 addendum
+        3).  What comes BACK unresolved is the ref exactly as configured,
+        so the refusal names the spelling the operator wrote rather than
+        an internal form nothing in their config contains.
+
+        A workflow state is resolved PER TEAM and must resolve on EVERY
+        team the operation declares (the fire-ruling of 2026-08-25 on
+        KOD-143).  A state one declared team cannot express is not a
+        narrower vocabulary, it is a hole exactly where the lifecycle
+        writer sets that state on an issue dispatched from that team, so
+        a vocabulary the operation's teams do not share is refused HERE,
+        naming the team and the state, rather than surviving boot to fail
+        on a live issue.  A state no declared team holds at all is the
+        ordinary unresolved case and is reported through the return value
+        like every other kind, because there is no one team to name.
         """
         known: dict[MappingKind, frozenset[str]] = {}
+        states_by_team: Mapping[str, frozenset[str]] | None = None
         unresolved: list[MappingRef] = []
+        divergent: list[str] = []
         for ref in refs:
+            if ref.kind is MappingKind.WORKFLOW_STATE:
+                if states_by_team is None:
+                    states_by_team = await self._workflow_states_by_team()
+                # No declared team is no vocabulary to resolve against: the
+                # tool cannot be called without one, so nothing was checked
+                # and nothing may pass as checked.
+                if not states_by_team:
+                    unresolved.append(ref)
+                    continue
+                absent = [
+                    team
+                    for team, states in states_by_team.items()
+                    if ref.identifier is None or ref.identifier not in states
+                ]
+                if not absent:
+                    continue
+                if len(absent) == len(states_by_team):
+                    unresolved.append(ref)
+                    continue
+                divergent.extend(
+                    f"{ref.describe()} on team {team!r}" for team in absent
+                )
+                continue
             if ref.kind not in known:
                 known[ref.kind] = await self._identifiers_of(ref.kind)
-            if ref.identifier is None or ref.identifier not in known[ref.kind]:
+            identifier = ref.identifier
+            if identifier is not None and ref.kind is MappingKind.USER:
+                identifier = _without_mention_syntax(identifier)
+            if identifier is None or identifier not in known[ref.kind]:
                 unresolved.append(ref)
+        if divergent:
+            raise TrackerBootValidationError(
+                "the operation's teams do not share one workflow-state "
+                "vocabulary, so the lifecycle writer cannot set a declared "
+                "state on every board it dispatches from",
+                unresolved=divergent,
+            )
         return tuple(unresolved)
 
     async def ensure_mappings(
@@ -588,13 +878,20 @@ class LinearMcpTracker:
         workspace writes nothing at all.
 
         R8's definition of "an existing definition" is ``(name, container)``,
-        which is exactly what a create writes.  A label the workspace
-        reports under a container other than the declared one would have to
-        be re-scoped to serve this ref, so it raises and nothing is written
-        — not for that ref and not for any ref after it, since the loop
-        aborts.  A listing that reports NO container has said nothing to
-        differ from and the label is adopted: refusing on the backend's
-        silence would read absence as a positive fact about the workspace.
+        which is exactly what a create writes, and the container is the
+        LISTING that answered with the label rather than any field on the
+        entry.  A label a declared team holds and this ref does not declare
+        would have to be re-scoped to serve it, so it raises and nothing is
+        written — not for that ref and not for any ref after it, since the
+        loop aborts.  A workspace-level label is adopted by a ref of any
+        scope: it is already addressable on every board.
+
+        What no listing carried is CREATED, even when the workspace holds
+        the name somewhere no declared team owns.  That container is
+        unobservable — no read this adapter is licensed to make reports it
+        — and the vendor's own by-name refusal is what stops the write,
+        loudly.  Tolerating that refusal here would be the same guess in
+        the other direction (KOD-143 addendum 2 of 2026-08-25).
 
         Documents are instated by TITLE and carry a server-assigned id, so
         their arm of R8's definition is ``(title, id)`` and the outcome
@@ -625,14 +922,10 @@ class LinearMcpTracker:
                     "carries none",
                     entry=ref.describe(),
                 )
-            if identifier in definitions:
-                container = definitions[identifier]
-                if container is not None and container != ref.scope:
-                    raise TrackerEnsureConflictError(
-                        "the workspace defines this value in another container; "
-                        f"declared {ref.scope!r}, found {container!r}",
-                        entry=ref.describe(),
-                    )
+            declared = (
+                None if ref.scope is None else await self._team_container(ref.scope)
+            )
+            if definitions.serves(identifier, ref.scope):
                 outcomes.append(
                     MappingOutcome(
                         ref=ref,
@@ -641,11 +934,19 @@ class LinearMcpTracker:
                     ),
                 )
                 continue
+            held = definitions.teams_holding(identifier)
+            if held:
+                raise TrackerEnsureConflictError(
+                    "the workspace defines this value in another container; "
+                    f"declared {ref.scope!r}, "
+                    f"found {', '.join(repr(team) for team in held)}",
+                    entry=ref.describe(),
+                )
             await self._call(
                 _TOOL_CREATE_ISSUE_LABEL,
-                _label_arguments(ref, identifier),
+                _label_arguments(identifier, declared),
             )
-            definitions[identifier] = ref.scope
+            definitions.record(identifier, ref.scope)
             outcomes.append(
                 MappingOutcome(
                     ref=ref,
@@ -725,12 +1026,73 @@ class LinearMcpTracker:
             identifier=created.id,
         )
 
-    async def _label_definitions(self) -> dict[str, str | None]:
-        """Every queue-state label the workspace holds, with its container."""
+    async def _label_definitions(self) -> _LabelListings:
+        """Every queue-state label the workspace resolves, by listing.
+
+        The workspace-level listing UNION one team-scoped listing per
+        DECLARED team, because the unscoped call answers with the
+        workspace-level labels ALONE.  A boot that read only that one
+        re-created the team-scoped label its own previous boot had made,
+        and the vendor refused it by name (KOD-143, the label addendum of
+        2026-08-25).  Idempotence comes from reading both listings, never
+        from forgiving that refusal.
+
+        One call per declared team, for the same reason the workflow-state
+        vocabulary is read that way: the tool answers for one team, so
+        several teams are several answers and no listing spans them.  The
+        teams are named the way the configuration names them — ``team``
+        takes "name or ID", and only ``create_issue_label.teamId`` insists
+        on the UUID.
+        """
+        workspace = {entry.name for entry in await self._label_entries({})}
+        by_team = {
+            identifier: {
+                entry.name for entry in await self._label_entries({"team": identifier})
+            }
+            for identifier in sorted(set(self._team_identifiers.values()))
+        }
+        return _LabelListings(workspace=workspace, by_team=by_team)
+
+    async def _label_entries(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Sequence[LinearNamedWire]:
+        """One label listing, scoped by *arguments* or not scoped at all."""
         tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
+        payload = await self._call(tool, arguments)
+        return self._validate(LinearLabelListWire, payload, tool).labels
+
+    async def _team_listing(self) -> Sequence[LinearTeamWire]:
+        """Every team the workspace holds, with the UUID it is addressed by."""
+        tool = _MAPPING_TOOL_BY_KIND[MappingKind.TEAM]
         payload = await self._call(tool, {})
-        listing = self._validate(LinearNamedListWire, payload, tool)
-        return {entry.name: entry.team_id for entry in listing.entries}
+        return self._validate(LinearTeamListWire, payload, tool).teams
+
+    async def _team_container(self, name: str) -> str:
+        """The UUID the workspace addresses the team *name* by.
+
+        Read once and held: a team's identifier does not move under a
+        running process, and the ensure loop asks for the same one per
+        declared queue state.
+
+        This translation exists because exactly one argument this adapter
+        sends demands the UUID form — ``create_issue_label.teamId``.
+        Everywhere else the vendor takes "name or ID", which is why the
+        operation config names teams the way a person does and why this
+        does not belong in that config.
+        """
+        cached = self._team_containers
+        if cached is None:
+            cached = {entry.name: entry.id for entry in await self._team_listing()}
+            self._team_containers = cached
+        container = cached.get(name)
+        if container is None:
+            raise TrackerProtocolError(
+                "the workspace holds no team under this name",
+                tool=_TOOL_CREATE_ISSUE_LABEL,
+                detail=f"team={name!r}",
+            )
+        return container
 
     async def _document_definitions(self) -> dict[str, str]:
         """Every document the workspace holds, id to title."""
@@ -747,20 +1109,81 @@ class LinearMcpTracker:
 
         A document is addressed by its id and everything else by its name,
         which is why this is not one listing read one way.
+
+        A user answers to TWO names — the account name and the mention
+        handle — and both are identities a config may legitimately carry,
+        so both are here.  No other kind has a second spelling.
+
+        A queue state resolves against the WHOLE union of label listings.
+        The refs this answers carry no container — the validation pass
+        names what the workspace must hold, not where — so a label on a
+        declared team resolves one as readily as a workspace-level label
+        does.  Reading the unscoped listing alone left the boot that had
+        just created a team-scoped label unable to see it.
         """
         if kind is MappingKind.DOCUMENT:
             return frozenset(await self._document_definitions())
-        tool = _MAPPING_TOOL_BY_KIND[kind]
-        payload = await self._call(tool, {})
-        listing = self._validate(LinearNamedListWire, payload, tool)
-        return frozenset(entry.name for entry in listing.entries)
+        if kind is MappingKind.QUEUE_STATE:
+            return (await self._label_definitions()).names()
+        if kind is MappingKind.USER:
+            return frozenset(
+                identity
+                for entry in await self._user_listing()
+                for identity in (entry.name, entry.display_name)
+            )
+        return frozenset(entry.name for entry in await self._team_listing())
 
-    async def _read_issue_wire(self, issue_key: str) -> LinearIssueWire:
+    async def _workflow_states_by_team(self) -> Mapping[str, frozenset[str]]:
+        """The workflow-state vocabulary of each DECLARED team, held apart.
+
+        One call per declared team, because the tool takes one: its input
+        schema declares ``team`` required, and a call without it is a 400
+        rather than a workspace-wide answer.  The vendor replies with a
+        BARE ARRAY of ``{id, type, name}`` — no envelope to unwrap.
+
+        The results are never merged.  These are per-team entities on this
+        backend, so a union would let a state one team holds stand in for
+        a team that cannot express it, and the operation would boot with a
+        hole exactly where the lifecycle writer needs that state.  The
+        adapter reads the NAME because the name is what it writes back:
+        ``save_issue`` takes a state by name, so the id is a field nothing
+        on this path has a use for.
+
+        Empty when the operation declares no team, which is not an empty
+        vocabulary — it is no vocabulary read at all, and the caller
+        treats it as such.
+        """
+        tool = _MAPPING_TOOL_BY_KIND[MappingKind.WORKFLOW_STATE]
+        by_team: dict[str, frozenset[str]] = {}
+        for identifier in sorted(set(self._team_identifiers.values())):
+            payload = await self._call(tool, {"team": identifier})
+            by_team[identifier] = frozenset(
+                entry.name for entry in self._validate_named_array(payload, tool)
+            )
+        return by_team
+
+    async def _user_listing(self) -> Sequence[LinearUserWire]:
+        """Every user the workspace holds, under both names it answers to.
+
+        One method per listing, because that is what the server sends:
+        each list tool keys its array after itself and there is no shared
+        envelope to read generically.  Nothing dispatches over the kind
+        here — a listing that answers for one team only
+        (:meth:`_workflow_states_by_team`) and one that answers a
+        different set scoped than unscoped (:meth:`_label_definitions`)
+        are not the same act as this one, and pretending otherwise is what
+        hid both of those from their readers.
+        """
+        tool = _MAPPING_TOOL_BY_KIND[MappingKind.USER]
+        payload = await self._call(tool, {})
+        return self._validate(LinearUserListWire, payload, tool).users
+
+    async def _read_issue_wire(self, issue_key: str) -> LinearIssueDetailWire:
         payload = await self._call(
             _TOOL_GET_ISSUE,
             {"id": issue_key, "includeRelations": True},
         )
-        return self._validate(LinearIssueWire, payload, _TOOL_GET_ISSUE)
+        return self._validate(LinearIssueDetailWire, payload, _TOOL_GET_ISSUE)
 
     async def _comment_wires(self, issue_key: str) -> Sequence[LinearCommentWire]:
         payload = await self._call(_TOOL_LIST_COMMENTS, {"issueId": issue_key})
@@ -771,12 +1194,12 @@ class LinearMcpTracker:
         self,
         tool: str,
         arguments: Mapping[str, object],
-    ) -> Mapping[str, object]:
+    ) -> McpToolResult:
         attempt = 0
         while True:
             try:
                 return await self._caller.call_tool(name=tool, arguments=arguments)
-            except TransientAPIError:
+            except (McpTransportError, TransientAPIError):
                 if attempt >= self._max_retries:
                     raise
                 delay = self._retry_backoff_factor * (_RETRY_BACKOFF_BASE**attempt)
@@ -792,11 +1215,26 @@ class LinearMcpTracker:
     def _validate[WireT: LinearWireModel](
         self,
         shape: type[WireT],
-        payload: Mapping[str, object],
+        payload: McpToolResult,
         tool: str,
     ) -> WireT:
         try:
             return shape.model_validate(payload)
+        except ValidationError as exc:
+            raise TrackerProtocolError(
+                "tracker response does not match its declared shape",
+                tool=tool,
+                detail=str(exc),
+            ) from exc
+
+    def _validate_named_array(
+        self,
+        payload: McpToolResult,
+        tool: str,
+    ) -> Sequence[LinearNamedWire]:
+        """The bare-array listing shape, refused on the same terms."""
+        try:
+            return LINEAR_NAMED_ARRAY.validate_python(payload)
         except ValidationError as exc:
             raise TrackerProtocolError(
                 "tracker response does not match its declared shape",
@@ -842,24 +1280,20 @@ class LinearMcpTracker:
                 tool=_TOOL_GET_ISSUE,
                 detail=f"issue={wire.id} raw={wire.priority.value}",
             )
-        try:
-            state_kind = WorkflowStateKind(wire.status_type)
-        except ValueError as exc:
+        state_kind = _STATE_KIND_BY_VALUE.get(wire.status_type)
+        if state_kind is None:
             raise TrackerProtocolError(
                 "tracker workflow state kind has no domain mapping",
                 tool=_TOOL_GET_ISSUE,
                 detail=f"issue={wire.id} status_type={wire.status_type!r}",
-            ) from exc
+            )
         relations: list[IssueRelation] = []
-        for edge in wire.relations:
-            kind = _RELATION_KIND_BY_WIRE.get(edge.type)
-            if kind is None:
-                raise TrackerProtocolError(
-                    "tracker relation type has no domain mapping",
-                    tool=_TOOL_GET_ISSUE,
-                    detail=f"issue={wire.id} type={edge.type!r}",
+        if wire.relations is not None:
+            for arm, edges in wire.relations.arms():
+                kind = _RELATION_KIND_BY_ARM[arm]
+                relations.extend(
+                    IssueRelation(kind=kind, issue_key=edge.id) for edge in edges
                 )
-            relations.append(IssueRelation(kind=kind, issue_key=edge.identifier))
         return TrackerIssue(
             issue_key=wire.id,
             title=wire.title,
@@ -872,6 +1306,7 @@ class LinearMcpTracker:
                 for label in wire.labels
                 if label in self._queue_state_by_label
             ),
+            team_key=self._team_key_by_identifier.get(wire.team),
             relations=tuple(relations),
             parent_key=wire.parent_id,
             assignee_key=wire.assignee,
@@ -880,11 +1315,24 @@ class LinearMcpTracker:
             url=wire.url,
         )
 
-    def _to_comment(self, wire: LinearCommentWire) -> TrackerComment:
+    def _to_comment(
+        self,
+        wire: LinearCommentWire,
+        *,
+        issue_key: str,
+    ) -> TrackerComment:
+        """The port's comment, on the issue the CALLER asked about.
+
+        The vendor's comment entry names no issue, so the issue key comes
+        from the read that produced it rather than from the payload — the
+        one place it is known for certain.  The author is the name the
+        vendor attributes the comment to, which is the only authorship
+        this surface attests at all.
+        """
         return TrackerComment(
             comment_key=wire.id,
-            issue_key=wire.issue_id,
-            author_key=wire.user,
+            issue_key=issue_key,
+            author_key=wire.author.name,
             body=wire.body,
             created_at=wire.created_at,
         )
