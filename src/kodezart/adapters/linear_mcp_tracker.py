@@ -276,6 +276,18 @@ class _ClaimMarker:
     expires_at: datetime
 
 
+def _claim_marker_body(*, holder: str, expires_at: datetime) -> str:
+    """The marker's wire form, written once so the writer and the reader agree.
+
+    ``_CLAIM_MARKER`` parses what this produces; a second spelling of the
+    same comment is how the two drift apart.
+    """
+    return (
+        f'<!-- kodezart-claim holder="{holder}" '
+        f'expires-at="{expires_at.isoformat()}" -->'
+    )
+
+
 class LinearMcpTracker:
     """``TrackerPort`` over the Linear MCP server.
 
@@ -481,18 +493,42 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> ClaimResult | None:
-        """Append a further marker, on the strength of one already live.
+        """Carry the holder's own marker forward, EDITED rather than appended.
 
         The holder's OWN unexpired markers are the whole precondition, and
         not who currently wins the log's order: a losing claimant's marker
         outliving the winner's first one takes the order for as long as it
         lasts, and a run whose work is still in flight may not stop
         renewing over that.
+
+        The marker that moves is the holder's EARLIEST, under the same total
+        order ``active_claim`` computes, and it is updated in place.  Two
+        properties follow, and both are the reason this is an edit:
+
+        ``created_at`` is the primary sort key, so editing keeps the holder
+        exactly where it already stood in the order — for the whole life of
+        the claim, however many times it renews.  Appending could not: a
+        renewal marker carries a LATER ``created_at``, so once the original
+        lapsed the holder's remaining marker could lose the order to a
+        claimant that started after it.
+
+        And a renewal costs no comment.  Appending wrote one every renewal
+        interval for as long as the job ran, which on measured fire
+        durations is dozens of machine comments on one issue, in a log a
+        person is expected to read and on a board that mirrors publicly.
+
+        Any FURTHER unexpired marker this holder owns is deleted in the same
+        pass: they are this holder's own duplicates, they can only muddy the
+        order, and converging on one marker per claim is what makes the
+        first property hold.
         """
-        mine = tuple(
-            marker
-            for marker in await self._unexpired_claim_markers(issue_key)
-            if marker.holder == holder
+        mine = sorted(
+            (
+                marker
+                for marker in await self._unexpired_claim_markers(issue_key)
+                if marker.holder == holder
+            ),
+            key=lambda marker: (marker.created_at, marker.comment_key),
         )
         if not mine:
             return None
@@ -500,11 +536,16 @@ class LinearMcpTracker:
             self._clock() + timedelta(seconds=lease_seconds),
             *(marker.expires_at for marker in mine),
         )
-        await self._append_claim_marker(
-            issue_key=issue_key,
-            holder=holder,
-            expires_at=expires_at,
+        earliest, *duplicates = mine
+        await self._call(
+            _TOOL_SAVE_COMMENT,
+            {
+                "id": earliest.comment_key,
+                "body": _claim_marker_body(holder=holder, expires_at=expires_at),
+            },
         )
+        for duplicate in duplicates:
+            await self._call(_TOOL_DELETE_COMMENT, {"id": duplicate.comment_key})
         return ClaimResult(
             issue_key=issue_key,
             status=ClaimStatus.GRANTED,
@@ -523,10 +564,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT,
             {
                 "issueId": issue_key,
-                "body": (
-                    f'<!-- kodezart-claim holder="{holder}" '
-                    f'expires-at="{expires_at.isoformat()}" -->'
-                ),
+                "body": _claim_marker_body(holder=holder, expires_at=expires_at),
             },
         )
 

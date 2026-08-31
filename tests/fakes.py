@@ -1710,6 +1710,19 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
+        # The vendor's tool is save, not create: an ``id`` updates that
+        # comment in place and its parent reference is ignored. Modelling
+        # only the create arm would let an adapter that edits pass here and
+        # fail against the real server.
+        if "id" in arguments:
+            comment_id = str(arguments["id"])
+            for existing in self.comments:
+                if existing.id == comment_id:
+                    # ``created_at`` survives an edit, which is the whole
+                    # property the claim order depends on.
+                    existing.body = str(arguments["body"])
+                    return existing.wire()
+            raise KeyError(f"no comment {comment_id} to update")
         created_at = self._next_instant()
         self._sequence += 1
         comment = FakeMcpComment(
