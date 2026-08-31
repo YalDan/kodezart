@@ -12,6 +12,11 @@ neither a second set nor a flipped default to test against:
 The golden corpus KOD-63 shipped is EXTENDED, never forked: the thirteen keys
 it covers keep their cases verbatim and the five it left uncovered gain
 theirs, all in the same directory.
+
+The freeze bars a SILENT edit, not a recorded one.  The 2026-08-31 founder
+roster ruling amended both pass templates to enumerate every declared team
+and repository rather than name fixed slots, and the manifest and goldens
+moved with it in one commit: what is pinned here is the amended bytes.
 """
 
 import hashlib
@@ -176,7 +181,13 @@ def test_goldens_hold_under_flipped_default(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_legacy_source_hashes_unchanged() -> None:
-    """A legacy source edit fails HERE, naming the key, not by re-baselining."""
+    """A legacy source edit fails HERE, naming the key, not by re-baselining.
+
+    The manifest pins the bytes the set ships TODAY, which after the
+    2026-08-31 roster ruling are the amended pass templates: a recorded
+    amendment moves the manifest in the same commit, an unrecorded edit
+    fails here.
+    """
     manifest: dict[str, str] = json.loads(MANIFEST.read_text(encoding="utf-8"))
     measured = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()

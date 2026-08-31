@@ -88,6 +88,11 @@ class PromptSetFragments(BaseModel):
     #: whether a session critiques its draft is never a conditional the
     #: session evaluates for itself.
     ticket_create_critique: str | None = None
+    #: The scan-window, run-record and knowledge-destination clauses every
+    #: scheduled pass of a set shares.  One source and one clause per
+    #: mechanism, because each pass owes the same three and a copy per
+    #: member is a copy that can drift.
+    pass_mechanisms: str | None = None
 
 
 class SessionRole(StrEnum):

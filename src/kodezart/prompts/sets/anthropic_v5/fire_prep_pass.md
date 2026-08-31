@@ -1,6 +1,12 @@
-Prepare the tracker for the next fire in the {{teams.primary.name}} team of operation
-{{operation_name}}.
+Prepare the tracker for the next fire in operation {{operation_name}}.
 
+The teams this operation declares, and the repository each one's issues are fired into:
+{{#each teams}}- {{this.name}} ({{this.key}}){{#if this.repository}} — {{this.repository}}{{/if}}{{#if this.repository_absent}} — the only repository this operation declares{{/if}}
+{{/each}}
+The repositories it acts on, each with the branch a lane carrying no blockers is based
+on:
+{{#each repos}}- {{this.slug}} — trunk {{this.trunk}}
+{{/each}}
 The goal is a queue whose next item can be picked up and worked without a question
 being asked first. Work over the issues already on the board: judge each against what
 the operation is for, and change the board so that judgment is legible to whoever
@@ -20,3 +26,5 @@ proceed under.
 
 Ground every claim you write in something you read. A claim you did not verify does
 not go on the board.
+
+{{pass_mechanisms}}

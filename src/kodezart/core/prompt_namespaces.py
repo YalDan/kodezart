@@ -85,17 +85,26 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     document id, a gate step's dependency — is three-state: the value, or
     the paired absent marker, never a hole.
 
-    The verbatim pass templates address the sequence-shaped collections by
-    FLAT dotted paths (KOD-60 R16): a role for a principal
-    (``principals.approver``, ``principals.assignee``) and a position for
-    everything ordered (``principals.1``, ``repos.0.checks.2``,
-    ``agent_identities.0``, ``initiatives.1``).  The namespaces are
-    therefore mappings keyed by role and by decimal position — the renderer
-    resolves them without a loop construct, which is what byte-identity to
-    the routine prose requires: the renderer has no separator construct, so
-    an enumeration with a conjunction cannot be loop-rendered.  A role or
-    position the config does not declare is an unbound placeholder and the
-    render refuses, naming it — the refusal at the point of need.
+    Two shapes, chosen by how a template addresses the collection.
+
+    A collection a pass ENUMERATES is a LIST, iterated with ``{{#each}}``:
+    ``teams`` and ``repos`` are the operation's declared roster, and a pass
+    renders every member of it.  Whatever the config declares renders, in
+    declaration order, so a third team or a third repository reaches the
+    prompt without a template edit.  The enumeration-with-a-conjunction
+    concern that ruled these into flat positions (KOD-60 R16) dissolves
+    with the prose it was about: the rewritten roster passages enumerate as
+    lines, one member per line, and a line list needs no separator
+    construct the renderer does not have.
+
+    A collection a pass addresses SINGLY stays keyed, because a role or a
+    position is what the template names: ``principals.approver``,
+    ``principals.assignee`` and ``principals.1`` by role and position,
+    ``agent_identities.0`` and ``initiatives.1`` by position, and
+    ``documents``, ``records``, ``knowledge``, ``queue_states``,
+    ``workflow_states`` and ``endpoints`` by their configured key.  A role,
+    position or key the config does not declare is an unbound placeholder
+    and the render refuses, naming it — the refusal at the point of need.
     """
     bindings: dict[str, object] = {
         "operation_name": config.operation_name,
@@ -113,13 +122,22 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         {stage.value: label for stage, label in config.workflow_states.items()},
         absent=not config.workflow_states,
     )
+    # The roster a pass enumerates. ``repository`` is three-state per
+    # entry: an operation declaring one repository binds every team to it
+    # implicitly and declares nothing, so the absent marker is what a
+    # template says "the only declared repository" with.
     _bind_absentable(
         bindings,
         "teams",
-        {
-            team_key: {"name": entry.name, "key": entry.key}
-            for team_key, entry in config.teams.items()
-        },
+        [
+            {
+                "name": entry.name,
+                "key": entry.key,
+                "repository": entry.repository,
+                "repository_absent": True if entry.repository is None else None,
+            }
+            for entry in config.teams.values()
+        ],
         absent=not config.teams,
     )
     # An id alone renders as an opaque token no reader can resolve, so
@@ -242,13 +260,14 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     _bind_absentable(
         bindings,
         "repos",
-        {
-            str(index): {
+        [
+            {
                 "url": repo.url,
                 "name": _repo_display(repo.url)[0],
                 "slug": _repo_display(repo.url)[1],
-                "checks": {
-                    str(step_index): {
+                "trunk": repo.trunk,
+                "checks": [
+                    {
                         "name": step.name,
                         "command": step.command,
                         "depends_on": step.depends_on,
@@ -256,11 +275,11 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                             True if step.depends_on is None else None
                         ),
                     }
-                    for step_index, step in enumerate(repo.checks)
-                },
+                    for step in repo.checks
+                ],
             }
-            for index, repo in enumerate(config.repos)
-        },
+            for repo in config.repos
+        ],
         absent=not config.repos,
     )
     return bindings

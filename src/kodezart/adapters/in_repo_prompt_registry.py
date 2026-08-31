@@ -41,6 +41,7 @@ _MEMBER_SUFFIX = ".md"
 _DEFINITIONS_DIR = "definitions"
 _SKILLS_FRAGMENT = "skills_reference"
 _SUPPRESSION_FRAGMENT = "suppression_proxy"
+_MECHANISMS_FRAGMENT = "pass_mechanisms"
 _ORCHESTRATION_SLOT = "orchestration_block"
 _CRITIQUE_SLOT = "ticket_create_critique"
 _INVESTIGATION_SPEC_FRAGMENT = "investigation_spec"
@@ -302,16 +303,17 @@ def _composed(metadata: PromptSetMetadata, name: str, body: str) -> str:
     """One member, assembled from *body* plus the set's fragment content.
 
     Which fragments a member receives is a property of the SET: the
-    suppression proxy where a member asks for it by name, and the
-    reasoning-depth block appended to every role outside the declared
-    utility roster.  A set that declares neither composes unchanged.
+    suppression proxy and the shared pass mechanisms where a member asks
+    for one by name, and the reasoning-depth block appended to every role
+    outside the declared utility roster.  A set that declares none of them
+    composes unchanged.
     """
     fragments = metadata.fragments
-    substitutions = (
-        {_SUPPRESSION_FRAGMENT: fragments.suppression_proxy}
-        if fragments.suppression_proxy is not None
-        else {}
-    )
+    declared = {
+        _SUPPRESSION_FRAGMENT: fragments.suppression_proxy,
+        _MECHANISMS_FRAGMENT: fragments.pass_mechanisms,
+    }
+    substitutions = {name: text for name, text in declared.items() if text is not None}
     appendix = (
         None if name in metadata.utility_keys else fragments.ultrathink_instruction
     )

@@ -1,5 +1,13 @@
-Prepare the tracker for the next fire in the Example Team team of operation
-example-operation.
+Prepare the tracker for the next fire in operation example-operation.
+
+The teams this operation declares, and the repository each one's issues are fired into:
+- Example Team (EXA) — https://example.invalid/example-org/example-repo
+- example-agent-team (EXG) — https://example.invalid/example-org/second-repo
+
+The repositories it acts on, each with the branch a lane carrying no blockers is based
+on:
+- example-org/example-repo — trunk main
+- example-org/second-repo — trunk main
 
 The goal is a queue whose next item can be picked up and worked without a question
 being asked first. Work over the issues already on the board: judge each against what
@@ -20,6 +28,25 @@ proceed under.
 
 Ground every claim you write in something you read. A claim you did not verify does
 not go on the board.
+
+Window. Establish what this pass covers before you read the board. The
+tracker checkpoint (example-checkpoint-document-id) carries the marker the last
+completed pass left, and the timestamp on its most recent entry is where this window
+starts. A checkpoint with no entry means no pass has completed yet — cover the whole
+board once as a bootstrap census, and say so in your report.
+
+Record. When the work is done, record this pass as one row in
+Example Run Log, the knowledge destination example-run-log-destination-id: this pass's start time, what you
+examined, what you changed, and what you could not do and why. That row is where the next
+pass's window starts, so it is written after the work rather than before it — and a pass
+that changed nothing writes one too, because a gap in the record cannot be told apart from
+a pass that never ran.
+
+Store. This operation keeps a private store beside the tracker, and what
+lives at which destination is stated in the map this session is preluded with. Read from
+it before re-deciding something an earlier pass settled, and write what a later pass will
+need to the destination that holds that kind of content. Nothing read there reaches a
+public surface.
 
 Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly
 as the task warrants before you act.

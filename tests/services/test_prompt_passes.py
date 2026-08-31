@@ -12,13 +12,14 @@ from pathlib import Path
 
 import pytest
 
+from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.passes import (
     DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
 )
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import PassGateCapabilityError
+from kodezart.core.errors import PassGateCapabilityError, PromptRenderError
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
@@ -32,6 +33,7 @@ from tests.fakes import (
     FakeTrackerPort,
     make_tracker_issue,
 )
+from tests.prompts.test_operation_config import raw_example, write_toml
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_pass_scheduler import Metronome, _settle
 from tests.services.test_prompt_pass import example_config
@@ -333,6 +335,41 @@ async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
     await fire_prep.run()
 
     assert len(runner.calls) == 1
+
+
+def test_a_pass_whose_prompt_has_a_hole_refuses_at_wiring(tmp_path: Path) -> None:
+    """KOD-150: the hole is a boot refusal naming the pass and the placeholders.
+
+    The operation configuration is boot-static, so the hole a tick would
+    find is exactly the hole this finds — and a pass that fails on the tick
+    that found it fails silently, every interval, on a board nobody is
+    watching. The refusal carries the same type and the same ``missing``
+    list the tick would have raised.
+    """
+    raw = raw_example()
+    del raw["endpoints"]
+    operation = load_operation_config(write_toml(tmp_path, raw))
+
+    with pytest.raises(PromptRenderError) as caught:
+        build_prompt_passes(
+            config=_config(tmp_path),
+            operation=operation,
+            prompts=load_registry(bindings=dict(bindings_for(operation))),
+            tracker=None,
+            runner=FakeAgentRunner(events=[]),
+            skills=SUPPRESS_ALL_SKILLS,
+        )
+
+    assert PromptKey.FIRE_PREP_PASS.value in str(caught.value)
+    assert "endpoints.host_runner" in caught.value.missing
+    assert "endpoints.host_runner" in str(caught.value)
+
+
+def test_the_shipped_example_wires_without_a_render_refusal(tmp_path: Path) -> None:
+    """Non-vacuity: the refusal above is the config's, not the check's."""
+    assert len(_registrations(tmp_path)[0]) == len(
+        (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+    )
 
 
 async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:

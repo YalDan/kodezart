@@ -1,4 +1,12 @@
-Groom the backlog of the Example Team team of operation example-operation.
+Groom the backlog of operation example-operation.
+
+The teams this operation declares, and the repository each one's issues are fired into:
+- Example Team (EXA) — https://example.invalid/example-org/example-repo
+- example-agent-team (EXG) — https://example.invalid/example-org/second-repo
+
+The repositories it acts on, each with the branch its work is measured against:
+- example-org/example-repo — trunk main
+- example-org/second-repo — trunk main
 
 Grooming is a judgment pass over what the board says, not a reorganisation of it. Read
 the issues, the initiatives they serve, and the repositories they name; then correct
@@ -15,6 +23,25 @@ What to correct, in order of cost if left wrong:
 State every correction as an edit to the board plus a comment saying what you read to
 justify it. Never set queue:approved. Leave an issue you cannot decide in
 place, with the question recorded on it under queue:decision.
+
+Window. Establish what this pass covers before you read the board. The
+tracker checkpoint (example-checkpoint-document-id) carries the marker the last
+completed pass left, and the timestamp on its most recent entry is where this window
+starts. A checkpoint with no entry means no pass has completed yet — cover the whole
+board once as a bootstrap census, and say so in your report.
+
+Record. When the work is done, record this pass as one row in
+Example Run Log, the knowledge destination example-run-log-destination-id: this pass's start time, what you
+examined, what you changed, and what you could not do and why. That row is where the next
+pass's window starts, so it is written after the work rather than before it — and a pass
+that changed nothing writes one too, because a gap in the record cannot be told apart from
+a pass that never ran.
+
+Store. This operation keeps a private store beside the tracker, and what
+lives at which destination is stated in the map this session is preluded with. Read from
+it before re-deciding something an earlier pass settled, and write what a later pass will
+need to the destination that holds that kind of content. Nothing read there reaches a
+public surface.
 
 Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly
 as the task warrants before you act.

@@ -68,6 +68,37 @@ deterministic proxy for the policy; claims of the form "the tool exits 0" requir
 and are not a substitute for it.\
 """
 
+# The three mechanisms every scheduled pass owes: the window it covers, the
+# record it leaves, and the store it reads from and writes to. One source,
+# composed into every pass member, because each pass owes the same three and
+# a copy per member is a copy that can drift. Each clause is three-state: a
+# deployment that configures no checkpoint, no record destination or no
+# knowledge store renders the instruction its absence implies, never a hole.
+pass_mechanisms = """\
+Window. {{#if documents}}Establish what this pass covers before you read the board. The
+{{documents.checkpoint.system}} checkpoint{{#if documents.checkpoint.id}} ({{documents.checkpoint.id}}){{/if}} carries the marker the last
+completed pass left, and the timestamp on its most recent entry is where this window
+starts. A checkpoint with no entry means no pass has completed yet — cover the whole
+board once as a bootstrap census, and say so in your report.{{/if}}{{#if documents_absent}}No checkpoint is configured, so no
+window carries between passes: cover the whole board as a bootstrap census, and say so in
+your report.{{/if}}
+
+Record. {{#if records}}When the work is done, record this pass as one row in
+{{records.run_log.name}}, the {{records.run_log.system}} destination {{records.run_log.id}}: this pass's start time, what you
+examined, what you changed, and what you could not do and why. That row is where the next
+pass's window starts, so it is written after the work rather than before it — and a pass
+that changed nothing writes one too, because a gap in the record cannot be told apart from
+a pass that never ran.{{/if}}{{#if records_absent}}No record destination is configured. Nothing outside the tracker
+records this pass, and nothing is written outside it.{{/if}}
+
+Store. {{#if knowledge}}This operation keeps a private store beside the tracker, and what
+lives at which destination is stated in the map this session is preluded with. Read from
+it before re-deciding something an earlier pass settled, and write what a later pass will
+need to the destination that holds that kind of content. Nothing read there reaches a
+public surface.{{/if}}{{#if knowledge_absent}}No store is configured beside the tracker: nothing is read from one and
+nothing is written to one.{{/if}}\
+"""
+
 # Appended as the final block of every member outside the utility roster,
 # and of every lens definition.
 ultrathink_instruction = """\

@@ -197,6 +197,13 @@ def test_no_golden_diverges_from_its_baseline_unless_its_own_template_did() -> N
     the licence is read from B's own sources — its template and its set's
     metadata, the two authored inputs its render composes from — and never
     from another member of the set.
+
+    Both sides are read from the SAME tree.  The golden is read off disk, so
+    its licence is too: comparing a working-tree golden against a committed
+    template compares two different trees, and reports every lockstep update
+    as an offence for exactly as long as it is uncommitted.  On a clean tree
+    the two readings are the same bytes, so the check is unchanged; on a
+    dirty one it now measures the edit that is actually in front of it.
     """
     goldens = sorted(GOLDENS_DIR.rglob("*.txt"))
     assert goldens, "no golden files found"
@@ -212,7 +219,8 @@ def test_no_golden_diverges_from_its_baseline_unless_its_own_template_did() -> N
             for path in licences_for_golden(golden)
         ]
         if any(
-            blob_at("HEAD", licence) != blob_at(introducing, licence)
+            (REPO_ROOT / licence).read_text(encoding="utf-8")
+            != blob_at(introducing, licence)
             for licence in licences
         ):
             continue

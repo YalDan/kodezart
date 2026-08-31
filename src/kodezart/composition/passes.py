@@ -12,7 +12,7 @@ from pathlib import Path
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
-from kodezart.core.errors import PassGateCapabilityError
+from kodezart.core.errors import PassGateCapabilityError, PromptRenderError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
@@ -143,6 +143,24 @@ def build_gate(
     )
 
 
+def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
+    """Render *key* and discard it, or refuse naming the pass and its holes.
+
+    The rendered text is not kept: what is being established is that one
+    exists at all.  The refusal carries the same type and the same
+    ``missing`` list a tick would raise, with the pass named in the message
+    because a boot wiring several of them owes an operator that.
+    """
+    try:
+        prompts.template_for(key).render({})
+    except PromptRenderError as error:
+        msg = (
+            f"scheduled pass {key.value} cannot render from this operation "
+            f"configuration; unbound: {', '.join(error.missing)}"
+        )
+        raise PromptRenderError(msg, missing=error.missing) from error
+
+
 def build_prompt_passes(
     *,
     config: AppConfig,
@@ -161,9 +179,18 @@ def build_prompt_passes(
     second render path to keep in parity with the first, which is the
     defect this shape exists to remove.
 
-    The ``PromptKey`` is bound rather than the rendered string: rendering
-    inside the tick means a configuration that stopped resolving fails on
-    the tick that found it, instead of taking boot down for every pass.
+    Every scheduled template is RENDERED once here and the result thrown
+    away, so a pass whose prompt has a hole in it is a boot refusal naming
+    the pass and every unbound placeholder.  The operation configuration is
+    boot-static: a template that renders at boot renders identically at
+    every tick, so the hole a tick would find is exactly the hole this
+    finds, and finding it at boot costs one startup instead of one silent
+    interval after another (KOD-150).  Same act, same failure and same
+    error type as the knowledge map's boot render.
+
+    The ``PromptKey`` is still what the tick is bound to, not the rendered
+    string: the render stays inside the tick, where the gate has already
+    said there is work, so a quiet board pays for neither.
     ``functools.partial`` rather than a closure, because a closure over
     the loop variable would hand every pass the LAST key and one prompt
     would silently never be sent.
@@ -193,6 +220,8 @@ def build_prompt_passes(
     gated = tracker is not None and any(row.signals for row in schedule.values())
     team_keys = operation.team_keys() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
+    for key in schedule:
+        _assert_renders(key=key, prompts=prompts)
     return [
         ScheduledPass(
             name=key.value,

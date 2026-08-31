@@ -87,6 +87,16 @@ def test_a_guarded_template_names_the_absence() -> None:
     assert render_template(body, operation_bindings(example_config())) == "declared"
 
 
+def test_a_team_carries_the_repository_pair_per_item() -> None:
+    """The roster is a list, and each entry names one of the two states."""
+    teams = operation_bindings(example_config())["teams"]
+    assert isinstance(teams, list)
+    assert teams
+    for entry in teams:
+        assert isinstance(entry, dict)
+        assert (entry["repository"] is None) != (entry["repository_absent"] is None)
+
+
 def test_a_principal_carries_the_forge_handle_pair_per_item() -> None:
     """The example declares both states, and each item names exactly one.
 
@@ -136,9 +146,9 @@ def test_an_unadopted_document_id_is_named_not_blank() -> None:
 def test_a_gate_step_names_its_gatehood_instead_of_a_missing_ancestor() -> None:
     bindings = operation_bindings(example_config())
     repos = bindings["repos"]
-    assert isinstance(repos, dict)
-    steps = repos["0"]["checks"]
-    by_name = {step["name"]: step for step in steps.values()}
+    assert isinstance(repos, list)
+    steps = repos[0]["checks"]
+    by_name = {step["name"]: step for step in steps}
     assert by_name["install"]["depends_on"] is None
     assert by_name["install"]["depends_on_absent"] is True
     assert by_name["typecheck"]["depends_on"] == "install"

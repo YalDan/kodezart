@@ -31,9 +31,11 @@ live with the cutover work itself.
 Each dimension names the template and the section carrying it. A test asserts
 every referenced section exists in the referenced template.
 
-The templates carry the routines' verbatim prose (KOD-60, byte-identity
-gate), so a section cell names a distinctive clause of that prose rather
-than a markdown heading the condensation invented.
+The templates carry the routines' prose (KOD-60, byte-identity gate), so a
+section cell names a distinctive clause of that prose rather than a markdown
+heading the condensation invented. The prose is verbatim everywhere the
+routines named a fixed team or repository slot, where it is amended: those
+passages enumerate the declared roster instead, one member per line.
 
 | Dimension | Template | Section |
 | --- | --- | --- |
@@ -52,10 +54,15 @@ reachable from at least one template. A test asserts both directions, and the
 second one is derived from `OperationConfig.model_fields` rather than from the
 rows below, so the table can never be checked against itself.
 
-The verbatim templates address every sequence-shaped collection by FLAT
-dotted path (KOD-60 R16): a role for a principal, a decimal position for
-everything ordered. No pass template loops over the operation namespace, so
-every reference below is a placeholder in its own right.
+Two shapes, chosen by how a template addresses the collection. The declared
+roster a pass ENUMERATES — `teams` and `repos` — is one placeholder each: the
+template iterates it and renders every member, so a third team or a third
+repository reaches the prompt without a template edit, and the per-member
+names read inside the loop are members of the iterated item rather than
+placeholders of their own. Everything a template addresses SINGLY stays a
+placeholder in its own right: by role for a principal, by decimal position for
+the remaining ordered collections, and by configured key for the keyed
+registries.
 
 | Placeholder | OperationConfig path |
 | --- | --- |
@@ -69,9 +76,7 @@ every reference below is a placeholder in its own right.
 | principals.1.tracker_user | principals |
 | principals.2.tracker_user | principals |
 | principals.2.handle | principals |
-| teams.primary.name | teams |
-| teams.primary.key | teams |
-| teams.agent.name | teams |
+| teams | teams |
 | queue_states.triage | queue_states |
 | queue_states.proposed | queue_states |
 | queue_states.approved | queue_states |
@@ -80,20 +85,7 @@ every reference below is a placeholder in its own right.
 | workflow_states.in_progress | workflow_states |
 | workflow_states.in_review | workflow_states |
 | workflow_states.done | workflow_states |
-| repos.0.name | repos |
-| repos.0.slug | repos |
-| repos.0.checks.0.command | repos |
-| repos.0.checks.1.name | repos |
-| repos.0.checks.2.name | repos |
-| repos.0.checks.3.name | repos |
-| repos.0.checks.4.name | repos |
-| repos.0.checks.5.name | repos |
-| repos.1.name | repos |
-| repos.1.slug | repos |
-| repos.1.checks.0.command | repos |
-| repos.1.checks.1.name | repos |
-| repos.1.checks.2.name | repos |
-| repos.1.checks.3.name | repos |
+| repos | repos |
 | documents.checkpoint.id | documents |
 | documents.constitution.id | documents |
 | records.run_log.name | records |
