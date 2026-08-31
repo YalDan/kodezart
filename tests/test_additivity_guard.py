@@ -40,7 +40,10 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 BASE_SHA: Final[str] = "61b4b5ee3a0d8ac6570110e50585ad6c36610419"
 
 #: This lane's own tip — the far end of the interval every claim measures.
-LANE_SHA: Final[str] = "0920a601fa4c38333c8c8eae742d0d0b6da9e8e6"
+#: Advanced with the lane's 2026-08-31 close-out (the re-anchor on the
+#: lane-6 baseline above, KOD-129 deliverable 1, KOD-136): the two pins
+#: move together or the interval inverts and measures phantom deletions.
+LANE_SHA: Final[str] = "e0b385641ebcea93b9659f3176ca2068a7d6b214"
 
 #: Trunk at the time the lane's issues were written.  Present only so the
 #: provenance assertions can show the baseline is NOT this commit.
