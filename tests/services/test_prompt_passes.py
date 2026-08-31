@@ -10,15 +10,20 @@ against a literal in the code, which is the one thing this has to catch.
 import ast
 from pathlib import Path
 
+import pytest
+
 from kodezart.composition.passes import (
+    DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
 )
 from kodezart.core.config import AppConfig
+from kodezart.core.errors import PassGateCapabilityError
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.operation import QueueState
 from kodezart.types.domain.prompts import PromptKey
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -67,12 +72,44 @@ def _registrations(
     return (
         build_prompt_passes(
             config=_config(tmp_path, **overrides),
+            operation=operation,
             prompts=prompts,
             tracker=tracker,
             runner=runner,
             skills=SUPPRESS_ALL_SKILLS,
         ),
         runner,
+    )
+
+
+#: The vendor's own words when a credential holds no scope for a scan.
+DIAGNOSIS = "auth_insufficient_scope: this credential cannot read those"
+
+
+async def _runtime(
+    tmp_path: Path,
+    *,
+    tracker: FakeTrackerPort | None,
+    runner: FakeAgentRunner,
+    **overrides: object,
+) -> DispatchRuntime:
+    """Boot the scheduled-pass runtime exactly as the composition root does."""
+    operation = example_config()
+    queue = FakeJobQueue()
+    return await build_dispatch_runtime(
+        config=_config(tmp_path, **overrides),
+        operation=operation,
+        tracker=tracker,
+        github_api=None,
+        queue=queue,
+        registry=queue,
+        gate=None,
+        git=None,  # type: ignore[arg-type]
+        cache=None,  # type: ignore[arg-type]
+        prompts=load_registry(bindings=dict(bindings_for(operation))),
+        runner=runner,
+        skills=SUPPRESS_ALL_SKILLS,
+        log=get_logger(__name__),
     )
 
 
@@ -125,7 +162,7 @@ def test_the_pass_composition_holds_no_numeric_literal() -> None:
 async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
     tmp_path: Path,
 ) -> None:
-    """Fire-prep ships gated on its three streams; grooming ships ungated.
+    """Fire-prep ships gated on two of its streams; grooming ships ungated.
 
     Asserted through a tick rather than by reading the wiring: what
     matters is that a quiet board skips one pass and still runs the other.
@@ -143,11 +180,13 @@ async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
     assert [call["prompt"] for call in runner.calls] == [
         prompts.template_for(PromptKey.GROOMING_PASS).render({}),
     ], "grooming verifies the tree, which is work even when nothing changed"
-    # Three port calls and no session: fire-prep asked its three questions,
-    # got nothing, and never opened one.
-    assert len(tracker.scans) + len(tracker.review_scans) == len(
-        AppConfig().fire_prep_pass_gate_signals,
-    )
+    # Port calls and no session: fire-prep asked its questions, got
+    # nothing, and never opened one. Every one of them named a board, and
+    # none of them was a review scan — the shipped set carries neither an
+    # unscoped question nor the review signal.
+    assert tracker.scans, "fire-prep consulted its gate rather than skipping it"
+    assert tracker.review_scans == []
+    assert [query for query in tracker.scans if query.team_key is None] == []
 
 
 async def test_an_operator_can_gate_or_ungate_any_pass(tmp_path: Path) -> None:
@@ -196,23 +235,10 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
     schedule filtered to dispatch entries, so the two prompt passes could
     have stopped being registered with the suite still green.
     """
-    operation = example_config()
-    prompts = load_registry(bindings=dict(bindings_for(operation)))
-    queue = FakeJobQueue()
-    runtime = await build_dispatch_runtime(
-        config=_config(tmp_path),
-        operation=operation,
+    runtime = await _runtime(
+        tmp_path,
         tracker=None,
-        github_api=None,
-        queue=queue,
-        registry=queue,
-        gate=None,
-        git=None,  # type: ignore[arg-type]
-        cache=None,  # type: ignore[arg-type]
-        prompts=prompts,
         runner=FakeAgentRunner(events=[]),
-        skills=SUPPRESS_ALL_SKILLS,
-        log=get_logger(__name__),
     )
 
     assert {entry.name for entry in runtime.scheduler.passes} == {
@@ -220,6 +246,73 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
         PromptKey.GROOMING_PASS.value,
     }
     assert runtime.lifecycle is None
+
+
+async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
+    tmp_path: Path,
+) -> None:
+    """KOD-151: the silent failure, made the loudest thing a deployment has.
+
+    A gate whose scan the credential is not scoped for answers "nothing
+    moved" every tick, which is exactly what a quiet board answers. The
+    pass it guards never runs again and nothing says so — so boot asks
+    first, and dies naming the signal, the pass and the vendor's reason.
+    """
+    tracker = FakeTrackerPort(scan_refusals={PassSignal.reviews_changed: DIAGNOSIS})
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=FakeAgentRunner(events=[]),
+            fire_prep_pass_gate_signals=[
+                PassSignal.issues_changed,
+                PassSignal.reviews_changed,
+            ],
+        )
+
+    named = str(caught.value)
+    assert PassSignal.reviews_changed.value in named
+    assert PromptKey.FIRE_PREP_PASS.value in named
+    assert DIAGNOSIS in named
+    assert PassSignal.issues_changed.value not in named, (
+        "a signal the credential can answer is not part of the refusal"
+    )
+
+
+async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
+    """The other arm, end to end: what ships boots, and the pass it wired works.
+
+    Nothing here restates the defaults. Boot probes exactly the signals the
+    shipped configuration carries, the credential answers, and the gate the
+    composition built — containers and all — wakes fire-prep on a board
+    with a standing triage backlog.
+    """
+    operation = example_config()
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(
+                "FIX-1",
+                team_key=operation.team_keys()[0],
+                queue_states=[QueueState.TRIAGE],
+            ),
+        ],
+    )
+    runner = FakeAgentRunner(events=[])
+
+    runtime = await _runtime(tmp_path, tracker=tracker, runner=runner)
+
+    assert tracker.capability_probes == [
+        tuple(AppConfig().fire_prep_pass_gate_signals),
+    ]
+    fire_prep = next(
+        entry
+        for entry in runtime.scheduler.passes
+        if entry.name == PromptKey.FIRE_PREP_PASS.value
+    )
+    await fire_prep.run()
+
+    assert len(runner.calls) == 1
 
 
 async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
@@ -230,7 +323,9 @@ async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
     existing one proves the shape carries its own key, interval and gate
     rather than any of the three being wired per pass.
     """
-    tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1")])
+    tracker = FakeTrackerPort(
+        issues=[make_tracker_issue("FIX-1", team_key=example_config().team_keys()[0])],
+    )
     registered, runner = _registrations(
         tmp_path,
         tracker=tracker,

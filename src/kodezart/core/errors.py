@@ -236,6 +236,39 @@ class TrackerBootValidationError(Exception):
         self.unresolved: tuple[str, ...] = tuple(unresolved)
 
 
+class PassGateScopeError(Exception):
+    """Raised at construction when a container cannot serve a gate's signal.
+
+    The other half of the container partition, and not the same failure as
+    an absent one: this container is DECLARED and cannot answer the
+    question anyway.  Refused where the containers meet the signal rather
+    than on the tick that reaches one, because a gate built over such a
+    container raises on every tick forever and the pass it guards never
+    runs again.
+    """
+
+    def __init__(self, message: str, *, signal: str, container: str) -> None:
+        super().__init__(f"{message} (signal: {signal}; container: {container})")
+        self.signal: str = signal
+        self.container: str = container
+
+
+class PassGateCapabilityError(Exception):
+    """Raised at boot when the credential cannot answer a wired gate's signal.
+
+    Lists EVERY refused signal at once, each carrying the pass it gates and
+    the backend's own diagnosis, so one boot failure names the whole gap.
+    The alternative is what this replaces: a gate whose scan the credential
+    is not scoped for reports "nothing moved" on every tick, which is
+    indistinguishable from a quiet board — the pass it guards never runs
+    again and nothing anywhere says so.
+    """
+
+    def __init__(self, message: str, *, refusals: Sequence[str]) -> None:
+        super().__init__(f"{message} ({'; '.join(refusals)})")
+        self.refusals: tuple[str, ...] = tuple(refusals)
+
+
 class TrackerEnsureConflictError(Exception):
     """Raised when instating an OWNED value would ALTER an existing definition.
 

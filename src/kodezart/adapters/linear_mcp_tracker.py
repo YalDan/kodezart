@@ -29,6 +29,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import assert_never
 
 from pydantic import ValidationError
 
@@ -43,6 +44,7 @@ from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
@@ -99,6 +101,20 @@ _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
 _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
 _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
+
+#: The page a capability probe asks for: the smallest a listing tool takes.
+#: The probe is about reachability, so a second row would be paid for and
+#: read by nobody.
+_SCOPE_PROBE_LIMIT = 1
+
+#: What the vendor's own diagnosis says when a credential lacks the scope a
+#: tool needs.  Matched on the error the transport already carries, because
+#: that string is the only place the distinction appears: a scope refusal
+#: and an outage arrive as the same exception type.  This marker and
+#: nothing broader — a status code says a request was refused and not that
+#: a scope is missing, so matching one would invent a diagnosis out of a
+#: failure nobody made.
+_SCOPE_REFUSAL_MARKER = "auth_insufficient_scope"
 
 _CLAIM_MARKER = re.compile(
     r"<!--\s*kodezart-claim\s+holder=\"(?P<holder>[^\"]+)\"\s+"
@@ -418,6 +434,61 @@ class LinearMcpTracker:
         return tuple(
             review for review in reviews if review.updated_at > query.updated_since
         )
+
+    async def verify_scan_capability(
+        self,
+        *,
+        signals: Sequence[PassSignal],
+    ) -> Mapping[PassSignal, str]:
+        """Which of *signals* this credential cannot scan for, and why.
+
+        One minimal call per DISTINCT scan: the three issue signals are
+        served by one listing tool, so probing all three costs one call.
+        A refusal is read off the error the transport already carries, and
+        anything else it carries is re-raised — a boot that cannot reach
+        the workspace at all is not a boot that learned something about
+        scope.
+        """
+        probed: dict[str, str | None] = {}
+        refused: dict[PassSignal, str] = {}
+        for signal in signals:
+            tool = self._scan_tool(signal)
+            if tool not in probed:
+                probed[tool] = await self._probe_scope(tool)
+            diagnosis = probed[tool]
+            if diagnosis is not None:
+                refused[signal] = diagnosis
+        return refused
+
+    async def _probe_scope(self, tool: str) -> str | None:
+        """Call *tool* once, minimally; its diagnosis when it refuses scope."""
+        try:
+            await self._call(tool, {"limit": _SCOPE_PROBE_LIMIT})
+        except McpTransportError as exc:
+            diagnosis = str(exc)
+            if _SCOPE_REFUSAL_MARKER in diagnosis:
+                return diagnosis
+            raise
+        return None
+
+    def _scan_tool(self, signal: PassSignal) -> str:
+        """The tool whose scan answers *signal*.
+
+        Total over the vocabulary by construction: a new member with no arm
+        here fails type checking rather than reaching a probe that cannot
+        name the tool it is supposed to call.
+        """
+        match signal:
+            case PassSignal.reviews_changed:
+                return _TOOL_LIST_DIFFS
+            case (
+                PassSignal.triage_backlog
+                | PassSignal.approved_changed
+                | PassSignal.issues_changed
+            ):
+                return _TOOL_LIST_ISSUES
+            case _:
+                assert_never(signal)
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""

@@ -60,6 +60,7 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
     ValidatedCriterion,
 )
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
     ContentClass,
@@ -1997,6 +1998,28 @@ class FakeMcpDocument:
 
 
 @dataclass
+class FakeMcpDiff:
+    """One review in the fake workspace, in the vendor's own shape.
+
+    The owner and repository are held beside the payload rather than in
+    it: the listing tool takes them as ARGUMENTS and the entries it
+    answers with carry neither, so a fixture that put them on the wire
+    would let a scan read a field the vendor never sends.
+    """
+
+    full_identifier: str
+    owner: str
+    repo: str
+    updated_at: datetime = FIXTURE_EPOCH
+
+    def entry(self) -> dict[str, object]:
+        return {
+            "fullIdentifier": self.full_identifier,
+            "updatedAt": self.updated_at.isoformat(),
+        }
+
+
+@dataclass
 class FakeMcpIssue:
     """One issue in the fake workspace, in the vendor's own shape."""
 
@@ -2121,6 +2144,7 @@ class FakeLinearMcpServer:
         self,
         *,
         issues: Sequence[FakeMcpIssue] = (),
+        diffs: Sequence[FakeMcpDiff] = (),
         documents: Sequence[FakeMcpDocument] = (),
         users: Sequence[str] = (),
         teams: Sequence[str] = (),
@@ -2132,8 +2156,10 @@ class FakeLinearMcpServer:
         comment_instants: Sequence[datetime] = (),
         transient_failures: Mapping[str, int] | None = None,
         transport_failures: Mapping[str, int] | None = None,
+        tool_errors: Mapping[str, str] | None = None,
     ) -> None:
         self.issues: dict[str, FakeMcpIssue] = {issue.id: issue for issue in issues}
+        self.diffs: list[FakeMcpDiff] = list(diffs)
         self.comments: list[FakeMcpComment] = []
         self.documents: dict[str, FakeMcpDocument] = {
             document.id: document for document in documents
@@ -2155,6 +2181,11 @@ class FakeLinearMcpServer:
         self.comment_instants: list[datetime] = list(comment_instants)
         self._transient_failures: dict[str, int] = dict(transient_failures or {})
         self._transport_failures: dict[str, int] = dict(transport_failures or {})
+        #: Tools that answer with an error RESULT, and the diagnosis each
+        #: answers with.  Standing rather than counted, unlike the two
+        #: failure knobs above: what this expresses is a tool that answers
+        #: the same way every time, a refused scope among them.
+        self._tool_errors: dict[str, str] = dict(tool_errors or {})
         self._sequence: int = 0
 
     async def call_tool(
@@ -2177,6 +2208,17 @@ class FakeLinearMcpServer:
             self._transport_failures[name] = failing - 1
             raise McpTransportError(
                 "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
                 server_name="fake-linear",
                 tool_name=name,
             )
@@ -2223,6 +2265,22 @@ class FakeLinearMcpServer:
             "issues": [issue.entry() for issue in selected[:limit]],
             "hasNextPage": len(selected) > limit,
         }
+
+    def _tool_list_diffs(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        owner = arguments.get("owner")
+        repo = arguments.get("repo")
+        selected = [
+            diff
+            for diff in self.diffs
+            if (owner is None or diff.owner == owner)
+            and (repo is None or diff.repo == repo)
+        ]
+        selected.sort(key=lambda diff: diff.updated_at, reverse=True)
+        limit = int(str(arguments.get("limit", len(selected))))
+        return {"diffs": [diff.entry() for diff in selected[:limit]]}
 
     def _tool_get_issue(
         self,
@@ -2530,6 +2588,7 @@ class FakeTrackerPort:
         known_identifiers: Sequence[str] = (),
         recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         recorded_base_specs: Mapping[str, BaseSpec] | None = None,
+        scan_refusals: Mapping[PassSignal, str] | None = None,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
@@ -2558,11 +2617,19 @@ class FakeTrackerPort:
         }
         self.queue_writes: list[tuple[str, QueueState]] = []
         self.scans: list[IssueQuery] = []
-        #: Reviews this double reports, and the queries it was asked.  A
-        #: separate list from ``issues`` because a review is a separate
-        #: object class: seeding one must not make an issue scan see it.
-        self.reviews: list[TrackerReview] = []
+        #: Reviews this double reports, keyed by the repository they belong
+        #: to, and the queries it was asked.  Separate from ``issues``
+        #: because a review is a separate object class: seeding one must not
+        #: make an issue scan see it.  Keyed rather than pooled because a
+        #: review lives in a repository the way an issue lives on a team, so
+        #: a scan scoped to one must not answer with another's.
+        self.reviews: dict[str, list[TrackerReview]] = {}
         self.review_scans: list[ReviewQuery] = []
+        #: The signals whose scan this credential is refused scope for, and
+        #: the diagnosis each refusal answers with.
+        self.scan_refusals: dict[PassSignal, str] = dict(scan_refusals or {})
+        #: Every capability sweep this double was asked, in order.
+        self.capability_probes: list[tuple[PassSignal, ...]] = []
         self._assets: dict[str, tuple[TrackerAsset, ...]] = {
             key: tuple(value) for key, value in (assets or {}).items()
         }
@@ -2595,9 +2662,15 @@ class FakeTrackerPort:
     async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
         await asyncio.sleep(0)
         self.review_scans.append(query)
+        pools = (
+            list(self.reviews.values())
+            if query.repo_url is None
+            else [self.reviews.get(query.repo_url, [])]
+        )
         matched = [
             review
-            for review in self.reviews
+            for pool in pools
+            for review in pool
             if query.updated_since is None or review.updated_at > query.updated_since
         ]
         # Newest first, which is the port's contract rather than this
@@ -2605,6 +2678,19 @@ class FakeTrackerPort:
         # page must get the same answer here as it does from an adapter.
         matched.sort(key=lambda review: review.updated_at, reverse=True)
         return tuple(matched[: query.page_size])
+
+    async def verify_scan_capability(
+        self,
+        *,
+        signals: Sequence[PassSignal],
+    ) -> Mapping[PassSignal, str]:
+        await asyncio.sleep(0)
+        self.capability_probes.append(tuple(signals))
+        return {
+            signal: diagnosis
+            for signal in signals
+            if (diagnosis := self.scan_refusals.get(signal)) is not None
+        }
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)

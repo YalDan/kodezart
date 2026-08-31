@@ -11,6 +11,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
 )
 from kodezart.types.domain.criteria import ValidatedCriterion
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -526,6 +527,31 @@ class TrackerPort(Protocol):
         Newest first is part of the contract, not an accident of a
         backend: it is what lets a recency question be answered from one
         page instead of walking the whole set.
+        """
+        ...
+
+    async def verify_scan_capability(
+        self,
+        *,
+        signals: Sequence[PassSignal],
+    ) -> Mapping[PassSignal, str]:
+        """Which of *signals* this credential cannot scan for, and why.
+
+        Answered by CALLING each signal's scan, never by reading a roster
+        of what the backend offers: a scan a credential holds no scope for
+        is offered like any other, so a listing check passes and changes
+        nothing.  One minimal call per distinct scan — two signals served
+        by the same one cost one call.
+
+        The port speaks signals; which scan answers a signal is the
+        adapter's own business and never crosses this surface.
+
+        One entry per REFUSED signal, carrying the backend's own diagnosis
+        of the refusal.  A signal the credential can scan has no entry, so
+        an empty mapping means every one of them is answerable.  Every
+        other failure RAISES: a transport that could not answer at all has
+        said nothing about scope, and reporting it as a refusal would take
+        a pass off the air for the length of an outage.
         """
         ...
 

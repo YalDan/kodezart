@@ -7,18 +7,20 @@ test is copied, which is the whole point of a port-level suite.
 """
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.protocols import TrackerPort
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage
-from kodezart.types.domain.tracker import IssueQuery
+from kodezart.types.domain.tracker import IssueQuery, ReviewQuery
 from tests.fakes import (
     FakeLinearMcpServer,
     FakeMcpAsset,
+    FakeMcpDiff,
     FakeMcpDocument,
     FakeMcpIssue,
     FakeTrackerPort,
@@ -68,10 +70,50 @@ DOCUMENT_TITLE = "checkpoint"
 DOCUMENT_CONTENT = "fixture document body"
 PAGE_SIZE = 50
 
+#: The two repositories the fixture workspace mirrors reviews from.  Two,
+#: for the reason there are two teams: a workspace holding one repository
+#: cannot express a container boundary at all.
+FIXTURE_REPO_URL = "https://example.invalid/fixture-owner/fixture-repo"
+OTHER_REPO_URL = "https://example.invalid/fixture-owner/other-repo"
+FIXTURE_REVIEW = "fixture-owner/fixture-repo#7"
+FOREIGN_REVIEW = "fixture-owner/other-repo#9"
 
-def fixture_server() -> FakeLinearMcpServer:
+#: The vendor tool each signal's scan is served by.  Restated here rather
+#: than read from the adapter's own mapping: a fixture deriving it from the
+#: thing under test would agree with it by construction, and a signal
+#: routed to the wrong tool would go unnoticed.
+SCAN_TOOL_BY_SIGNAL: dict[PassSignal, str] = {
+    PassSignal.issues_changed: "list_issues",
+    PassSignal.triage_backlog: "list_issues",
+    PassSignal.approved_changed: "list_issues",
+    PassSignal.reviews_changed: "list_diffs",
+}
+
+#: What the vendor answers a call the credential holds no scope for.
+SCOPE_DIAGNOSIS = "auth_insufficient_scope: the credential cannot read this"
+
+
+def fixture_server(
+    *,
+    scope_refusals: Mapping[str, str] | None = None,
+) -> FakeLinearMcpServer:
     """A fresh fake workspace — one per test, never shared."""
     return FakeLinearMcpServer(
+        tool_errors=scope_refusals,
+        diffs=[
+            FakeMcpDiff(
+                full_identifier=FIXTURE_REVIEW,
+                owner="fixture-owner",
+                repo="fixture-repo",
+                updated_at=FIXTURE_NOW,
+            ),
+            FakeMcpDiff(
+                full_identifier=FOREIGN_REVIEW,
+                owner="fixture-owner",
+                repo="other-repo",
+                updated_at=FIXTURE_NOW - timedelta(days=1),
+            ),
+        ],
         issues=[
             FakeMcpIssue(
                 id=CLAIMED_ISSUE,
@@ -174,7 +216,11 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
         for issue in await source.scan_issues(query=IssueQuery(page_size=PAGE_SIZE))
     ]
     issues = [await source.read_issue(issue_key=key) for key in keys]
-    return FakeTrackerPort(
+    # Probed rather than declared, for the reason the rest of this snapshot
+    # is read rather than restated: the double must refuse exactly what the
+    # workspace behind it refuses.
+    refusals = await source.verify_scan_capability(signals=list(PassSignal))
+    port = FakeTrackerPort(
         issues=issues,
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
@@ -186,6 +232,7 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
             for key in keys
             if (spec := await source.read_base_spec(issue_key=key)) is not None
         },
+        scan_refusals=refusals,
         known_identifiers=[
             *(APPROVER, BYSTANDER),
             *TEAM_IDENTIFIERS.values(),
@@ -194,6 +241,16 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
         ],
         clock=lambda: FIXTURE_NOW,
     )
+    # A credential refused the review scan cannot read one, so the double it
+    # seeds holds none — the same state the workspace behind it presents.
+    if PassSignal.reviews_changed not in refusals:
+        for repo_url in (FIXTURE_REPO_URL, OTHER_REPO_URL):
+            port.reviews[repo_url] = list(
+                await source.scan_reviews(
+                    query=ReviewQuery(repo_url=repo_url, page_size=PAGE_SIZE),
+                ),
+            )
+    return port
 
 
 def fake_port_over_fixture(server: FakeLinearMcpServer) -> TrackerPort:
@@ -228,9 +285,26 @@ TRACKER_IMPLEMENTATIONS: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]]
 
 
 @pytest.fixture
-def server() -> FakeLinearMcpServer:
+def refused_signals(request: pytest.FixtureRequest) -> tuple[PassSignal, ...]:
+    """The signals this workspace's credential holds no scope to scan for.
+
+    Empty unless a case says otherwise, which it does by parametrizing this
+    fixture indirectly.  Stated as a fixture rather than as a second builder
+    so a case needing a refusing workspace still runs against every
+    registered implementation, over the one ``tracker`` fixture.
+    """
+    param: Sequence[PassSignal] = getattr(request, "param", ())
+    return tuple(param)
+
+
+@pytest.fixture
+def server(refused_signals: tuple[PassSignal, ...]) -> FakeLinearMcpServer:
     """A fresh fixture workspace."""
-    return fixture_server()
+    return fixture_server(
+        scope_refusals={
+            SCAN_TOOL_BY_SIGNAL[signal]: SCOPE_DIAGNOSIS for signal in refused_signals
+        },
+    )
 
 
 @pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))

@@ -16,6 +16,7 @@ import structlog
 from kodezart.adapters.linear_mcp_tracker import _CLAIM_MARKER, LinearMcpTracker
 from kodezart.core.errors import McpTransportError, TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     ClaimStatus,
@@ -350,6 +351,89 @@ class TestScanContainment:
 
         assert caught.value.tool == "get_issue"
         assert "invented" in str(caught.value)
+
+
+class TestCapabilityProbe:
+    """How this adapter answers "can this credential scan for that signal?".
+
+    The port promises the ANSWER; the two facts here are this adapter's own
+    and the conformance suite cannot state either, because both are about
+    the vendor's tools.  A signal maps to a scan, several signals map to the
+    same one, and the probe is a call — so probing three issue signals costs
+    one call, not three.
+    """
+
+    ISSUE_SIGNALS: tuple[PassSignal, ...] = (
+        PassSignal.issues_changed,
+        PassSignal.triage_backlog,
+        PassSignal.approved_changed,
+    )
+
+    async def test_signals_served_by_one_scan_cost_one_call(self) -> None:
+        server = FakeLinearMcpServer(issues=[], state_types=STATE_TYPES)
+
+        refusals = await tracker_over(server).verify_scan_capability(
+            signals=list(self.ISSUE_SIGNALS),
+        )
+
+        assert refusals == {}
+        assert len(server.tool_calls("list_issues")) == 1
+
+    async def test_the_probe_asks_for_the_smallest_page_the_tool_takes(self) -> None:
+        """A probe is about reachability; a second row would be read by nobody."""
+        server = FakeLinearMcpServer(issues=[], state_types=STATE_TYPES)
+
+        await tracker_over(server).verify_scan_capability(
+            signals=[PassSignal.issues_changed],
+        )
+
+        assert server.tool_calls("list_issues") == [{"limit": 1}]
+
+    async def test_the_review_signal_probes_a_different_scan(self) -> None:
+        """Reviews are a separate object class, so they are a separate probe."""
+        server = FakeLinearMcpServer(issues=[], state_types=STATE_TYPES)
+
+        await tracker_over(server).verify_scan_capability(signals=list(PassSignal))
+
+        assert len(server.tool_calls("list_issues")) == 1
+        assert len(server.tool_calls("list_diffs")) == 1
+
+    async def test_a_transport_failure_that_says_nothing_about_scope_propagates(
+        self,
+    ) -> None:
+        """An outage is not a refusal: reporting it as one silences a pass."""
+        server = FakeLinearMcpServer(
+            issues=[],
+            state_types=STATE_TYPES,
+            transport_failures={"list_issues": 1},
+        )
+
+        with pytest.raises(McpTransportError):
+            await tracker_over(server).verify_scan_capability(
+                signals=[PassSignal.issues_changed],
+            )
+
+    async def test_a_refusal_the_vendor_did_not_diagnose_as_scope_propagates(
+        self,
+    ) -> None:
+        """A status code is not a diagnosis, so it is not read as one.
+
+        The tool answered with an error and said nothing about a scope.
+        What is known is that the call failed, so boot fails on it:
+        classifying it as a scope refusal would tell an operator to widen a
+        credential that was never the problem, and would do it on the
+        strength of three characters.
+        """
+        server = FakeLinearMcpServer(
+            issues=[],
+            state_types=STATE_TYPES,
+            tool_errors={"list_issues": "the request failed with status 403"},
+        )
+
+        with pytest.raises(McpTransportError, match="403"):
+            await tracker_over(server).verify_scan_capability(
+                signals=[PassSignal.issues_changed],
+            )
 
 
 class TestTransientRetry:

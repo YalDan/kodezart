@@ -447,14 +447,18 @@ class AppConfig(BaseSettings):
         default_factory=lambda: [
             PassSignal.issues_changed,
             PassSignal.triage_backlog,
-            PassSignal.reviews_changed,
         ],
         description=(
-            "Signals the fire-preparation pass is gated on. Three, because "
-            "its prompt gathers three streams and a gate covering fewer would "
-            "skip real work: the standing triage backlog it re-sweeps whole, "
-            "issue activity since the last tick, and review threads — which "
-            "are a separate object class no issue scan reaches. Dropping "
+            "Signals the fire-preparation pass is gated on. Two of the three "
+            "streams its prompt gathers: the standing triage backlog it "
+            "re-sweeps whole, and issue activity since the last tick. "
+            "reviews_changed is the third stream and stays selectable, but it "
+            "is deliberately NOT shipped: the scan behind it is served by a "
+            "tool that answers only to a per-user credential class, which a "
+            "service key cannot hold, so a deployment selecting it refuses to "
+            "boot until its credential can answer. The cost of the omission, "
+            "stated rather than discovered: review activity with no issue "
+            "activity beside it does not wake this pass. Dropping "
             "triage_backlog is the usual edit on a board that parks plan "
             "stubs at triage, since that signal is true while any exist."
         ),

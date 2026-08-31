@@ -12,6 +12,7 @@ from pathlib import Path
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
+from kodezart.core.errors import PassGateCapabilityError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
@@ -40,6 +41,10 @@ from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+
+#: What a dispatch pass is called: on its own where the pass CLASS is
+#: meant, and prefixing the repository where one instance is.
+_DISPATCH_NAME = "dispatch"
 
 
 @dataclass(frozen=True)
@@ -96,6 +101,8 @@ def build_gate(
     config: AppConfig,
     tracker: TrackerPort | None,
     signals: Sequence[PassSignal],
+    team_keys: Sequence[str],
+    repo_urls: Sequence[str],
 ) -> PassGate | None:
     """A gate over *signals*, or none when this deployment cannot ask them.
 
@@ -104,12 +111,20 @@ def build_gate(
     it declares.  The second is reported by the caller, because "the gate
     is absent" and "nothing moved" have opposite costs and must never be
     confused for one another.
+
+    *team_keys* and *repo_urls* are the containers the pass is scoped to —
+    the boards its issue signals ask within and the repositories its review
+    signal asks within.  A gate carrying a signal whose container class is
+    empty refuses at construction; it is the caller that knows which
+    containers its pass owns.
     """
     if not signals or tracker is None:
         return None
     return PassGate(
         tracker=tracker,
         signals=signals,
+        team_keys=team_keys,
+        repo_urls=repo_urls,
         page_size=config.tracker_query_page_size,
     )
 
@@ -117,6 +132,7 @@ def build_gate(
 def build_prompt_passes(
     *,
     config: AppConfig,
+    operation: OperationConfig,
     prompts: PromptSetProvider,
     tracker: TrackerPort | None,
     runner: AgentRunner,
@@ -137,6 +153,11 @@ def build_prompt_passes(
     ``functools.partial`` rather than a closure, because a closure over
     the loop variable would hand every pass the LAST key and one prompt
     would silently never be sent.
+
+    A prompt pass acts on the whole operation, so its gate is scoped to
+    every declared team and every declared repository — the narrowing the
+    per-repository dispatch pass makes is a property of that pass, not of
+    the mechanism.
     """
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
@@ -150,6 +171,12 @@ def build_prompt_passes(
             config.grooming_pass_gate_signals,
         ),
     }
+    # Read only where a gate will actually be built: naming the operation's
+    # teams REFUSES when it declares none, and a deployment whose passes are
+    # all ungated has no scan for that refusal to be about.
+    gated = tracker is not None and any(signals for _, signals in schedule.values())
+    team_keys = operation.team_keys() if gated else ()
+    repo_urls = [repo.url for repo in operation.repos]
     return [
         ScheduledPass(
             name=key.value,
@@ -159,7 +186,13 @@ def build_prompt_passes(
                 key=key,
                 prompts=prompts,
                 runner=runner,
-                gate=build_gate(config=config, tracker=tracker, signals=signals),
+                gate=build_gate(
+                    config=config,
+                    tracker=tracker,
+                    signals=signals,
+                    team_keys=team_keys,
+                    repo_urls=repo_urls,
+                ),
                 workspace_path=str(working_dir),
                 permission_mode=UNATTENDED_PERMISSION_MODE,
                 # No allowlist: the session reaches the tracker through the
@@ -235,6 +268,8 @@ async def build_dispatch_passes(
                 config=config,
                 tracker=tracker,
                 signals=config.dispatch_pass_gate_signals,
+                team_keys=operation.team_keys_for_repo(repo.url),
+                repo_urls=[repo.url],
             ),
             dispatcher=FireDispatcher(
                 tracker=tracker,
@@ -256,12 +291,65 @@ async def build_dispatch_passes(
         )
         passes.append(
             ScheduledPass(
-                name=f"dispatch:{repo.url}",
+                name=f"{_DISPATCH_NAME}:{repo.url}",
                 interval_seconds=config.tracker_scheduler_pass_interval_seconds,
                 run=tick.run,
             ),
         )
     return DispatchPasses(passes=tuple(passes), lifecycle=lifecycle)
+
+
+async def _verify_wired_gates(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker: TrackerPort | None,
+    github_api: DeliveryProbe | None,
+) -> None:
+    """Refuse to boot when the credential cannot answer a signal that is wired.
+
+    Probed by CALLING the scans, because the backend offers a tool it will
+    not serve: the roster lists it whatever the credential holds, so a
+    listing check passes and changes nothing.  What the refusal costs is
+    silent at runtime — a gate whose scan is refused answers "nothing
+    moved" every tick, which is exactly what a quiet board answers, so the
+    pass it guards never runs again and nothing says so.
+
+    Exactly the gates about to be wired, on the same predicates the
+    builders themselves use: a signal configured for a pass this deployment
+    does not schedule is not a capability it needs, and refusing boot over
+    one would hold a deployment hostage to a knob nothing reads.
+
+    Every refused signal is named at once, with the passes it gates and the
+    backend's own diagnosis, because an operator fixing one scope at a time
+    pays a boot cycle per signal.
+    """
+    if tracker is None or operation is None:
+        return
+    wired: dict[str, Sequence[PassSignal]] = {
+        PromptKey.FIRE_PREP_PASS.value: config.fire_prep_pass_gate_signals,
+        PromptKey.GROOMING_PASS.value: config.grooming_pass_gate_signals,
+    }
+    if github_api is not None and any(
+        operation.teams_bound_to(repo.url) for repo in operation.repos
+    ):
+        wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
+    passes_by_signal: dict[PassSignal, list[str]] = {}
+    for name, signals in wired.items():
+        for signal in signals:
+            passes_by_signal.setdefault(signal, []).append(name)
+    if not passes_by_signal:
+        return
+    refusals = await tracker.verify_scan_capability(signals=list(passes_by_signal))
+    if not refusals:
+        return
+    raise PassGateCapabilityError(
+        "the tracker credential cannot answer a configured pass gate signal",
+        refusals=[
+            f"{signal.value} gates {', '.join(passes_by_signal[signal])}: {diagnosis}"
+            for signal, diagnosis in refusals.items()
+        ],
+    )
 
 
 async def build_dispatch_runtime(
@@ -284,7 +372,18 @@ async def build_dispatch_runtime(
 
     The watches those passes start come back with it, because the root
     that starts them is the one that has to drain them on the way down.
+
+    Every gate this deployment is about to wire is verified against the
+    credential BEFORE anything is built, and a refusal is the end of the
+    boot.  A deployment with no tracker port asks nothing: its passes are
+    ungated, which is a state already named in the log below.
     """
+    await _verify_wired_gates(
+        config=config,
+        operation=operation,
+        tracker=tracker,
+        github_api=github_api,
+    )
     # Cadence is scheduler configuration and nothing else. Three
     # states, none silent: no tracker, or no delivery probe to answer
     # "is this issue already delivered?", and the passes do not run —
@@ -334,6 +433,7 @@ async def build_dispatch_runtime(
         scheduled.extend(
             build_prompt_passes(
                 config=config,
+                operation=operation,
                 prompts=prompts,
                 tracker=tracker,
                 runner=runner,

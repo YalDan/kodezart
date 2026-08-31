@@ -194,6 +194,8 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
         gate=PassGate(
             tracker=tracker,
             signals=[PassSignal.approved_changed],
+            team_keys=operation_config().team_keys_for_repo(PRIMARY_REPO),
+            repo_urls=[PRIMARY_REPO],
             page_size=PAGE_SIZE,
         ),
         dispatcher=FireDispatcher(

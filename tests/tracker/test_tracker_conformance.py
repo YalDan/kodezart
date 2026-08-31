@@ -18,6 +18,7 @@ from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import DuplicateWorkRefError
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -28,6 +29,7 @@ from kodezart.types.domain.tracker import (
     IssueRelationKind,
     MappingKind,
     MappingRef,
+    ReviewQuery,
     WorkflowStateKind,
     is_open,
 )
@@ -40,12 +42,18 @@ from tests.tracker.conftest import (
     DOCUMENT_CONTENT,
     DOCUMENT_KEY,
     FIXTURE_NOW,
+    FIXTURE_REPO_URL,
+    FIXTURE_REVIEW,
     FOREIGN_ISSUE,
+    FOREIGN_REVIEW,
+    SCOPE_DIAGNOSIS,
     TEAM_IDENTIFIERS,
 )
 
 LEASE_SECONDS = 600.0
 TEAM = TEAM_IDENTIFIERS["engineering"]
+#: The signal the refusing cases put out of the credential's reach.
+REFUSED = [PassSignal.reviews_changed]
 
 
 class TestScanAndRead:
@@ -932,6 +940,87 @@ class TestDocumentEnsure:
             await tracker.ensure_mappings(refs=[ref])
 
         assert "conformance" in caught.value.entry
+
+
+class TestScanReviews:
+    """Reviews are their own object class, scanned within their own container.
+
+    The gate asks the review question once per repository it is scoped to,
+    so a scan naming one must answer for that one alone — the same
+    containment ``scan_issues`` gives a team, over the object class no
+    issue scan reaches.
+    """
+
+    async def test_a_scan_scoped_to_a_repository_answers_for_it_alone(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        found = await tracker.scan_reviews(
+            query=ReviewQuery(repo_url=FIXTURE_REPO_URL, page_size=10),
+        )
+
+        assert [review.review_key for review in found] == [FIXTURE_REVIEW]
+
+    async def test_reviews_come_back_newest_first(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Contract, not accident: a recency question is answered from one page."""
+        found = await tracker.scan_reviews(query=ReviewQuery(page_size=10))
+
+        assert [review.review_key for review in found] == [
+            FIXTURE_REVIEW,
+            FOREIGN_REVIEW,
+        ]
+
+
+class TestScanCapability:
+    """Whether a credential can answer a signal's scan is PROBED, never read.
+
+    A backend offers the scan whatever the credential holds, so nothing a
+    listing says distinguishes a scan that will answer from one that will
+    refuse.  What the port promises is the answer, not the mechanism: a
+    refusal comes back as the backend's own diagnosis, and everything else
+    comes back empty.
+    """
+
+    async def test_a_credential_that_can_scan_reports_no_refusal_at_all(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        assert await tracker.verify_scan_capability(signals=list(PassSignal)) == {}
+
+    @pytest.mark.parametrize("refused_signals", [REFUSED], indirect=True)
+    async def test_a_refused_scan_comes_back_as_the_backends_own_diagnosis(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        refusals = await tracker.verify_scan_capability(signals=list(PassSignal))
+
+        assert PassSignal.reviews_changed in refusals
+        assert SCOPE_DIAGNOSIS in refusals[PassSignal.reviews_changed]
+
+    @pytest.mark.parametrize("refused_signals", [REFUSED], indirect=True)
+    async def test_a_signal_the_credential_can_answer_is_never_reported(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """One refusal is a refusal of ONE signal, never of the sweep."""
+        refusals = await tracker.verify_scan_capability(signals=list(PassSignal))
+
+        assert PassSignal.issues_changed not in refusals
+
+    @pytest.mark.parametrize("refused_signals", [REFUSED], indirect=True)
+    async def test_a_signal_that_was_not_asked_about_is_not_answered(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The sweep answers about what it was handed and nothing else."""
+        refusals = await tracker.verify_scan_capability(
+            signals=[PassSignal.issues_changed],
+        )
+
+        assert refusals == {}
 
 
 class TestSubstitutability:

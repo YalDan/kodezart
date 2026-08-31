@@ -65,6 +65,23 @@ def policied_registry() -> PromptSetProvider:
     )
 
 
+def pass_gate(tracker: FakeTrackerPort, *signals: PassSignal) -> PassGate:
+    """A gate scoped the way the composition scopes a prompt pass's.
+
+    Every declared board and every declared repository, because a prompt
+    pass acts on the whole operation — the narrowing to one repository
+    belongs to the dispatch pass and to nothing else.
+    """
+    operation = example_config()
+    return PassGate(
+        tracker=tracker,
+        signals=list(signals),
+        team_keys=operation.team_keys(),
+        repo_urls=[repo.url for repo in operation.repos],
+        page_size=PAGE_SIZE,
+    )
+
+
 async def run(
     *,
     prompts: PromptSetProvider,
@@ -209,11 +226,8 @@ async def test_a_quiet_gate_opens_no_session_and_renders_nothing() -> None:
     """The token claim, asserted: a quiet board pays for neither."""
     tracker = FakeTrackerPort()
     runner = FakeAgentRunner(events=[])
-    gate = PassGate(
-        tracker=tracker,
-        signals=[PassSignal.issues_changed, PassSignal.triage_backlog],
-        page_size=PAGE_SIZE,
-    )
+    signals = (PassSignal.issues_changed, PassSignal.triage_backlog)
+    gate = pass_gate(tracker, *signals)
 
     # An unbound registry would raise on render. It does not, which is how
     # this asserts the render never happened rather than merely that no
@@ -221,22 +235,22 @@ async def test_a_quiet_gate_opens_no_session_and_renders_nothing() -> None:
     await run(prompts=load_registry(), runner=runner, gate=gate)
 
     assert runner.calls == []
-    assert len(tracker.scans) == 2
+    # One query per signal per declared board: the questions are asked
+    # WITHIN a container, never once over the whole workspace.
+    assert len(tracker.scans) == len(signals) * len(example_config().team_keys())
 
 
 async def test_one_signal_reporting_work_is_enough_to_run_the_pass() -> None:
     """A review with no issue activity still wakes the pass."""
     tracker = FakeTrackerPort()
-    tracker.reviews.append(make_tracker_review("acme/repo#7", updated_at=LATER))
+    repo_url = example_config().repos[0].url
+    tracker.reviews[repo_url] = [make_tracker_review("acme/repo#7", updated_at=LATER)]
     runner = FakeAgentRunner(events=[])
-    gate = PassGate(
-        tracker=tracker,
-        signals=[
-            PassSignal.issues_changed,
-            PassSignal.triage_backlog,
-            PassSignal.reviews_changed,
-        ],
-        page_size=PAGE_SIZE,
+    gate = pass_gate(
+        tracker,
+        PassSignal.issues_changed,
+        PassSignal.triage_backlog,
+        PassSignal.reviews_changed,
     )
 
     await run(prompts=bound_registry(), runner=runner, gate=gate)
@@ -247,14 +261,16 @@ async def test_one_signal_reporting_work_is_enough_to_run_the_pass() -> None:
 async def test_a_standing_backlog_wakes_the_pass_on_an_otherwise_quiet_board() -> None:
     """Nothing moved, and there is still a whole backlog to sweep."""
     tracker = FakeTrackerPort(
-        issues=[make_tracker_issue("FIX-1", queue_states=[QueueState.TRIAGE])],
+        issues=[
+            make_tracker_issue(
+                "FIX-1",
+                team_key=example_config().team_keys()[0],
+                queue_states=[QueueState.TRIAGE],
+            ),
+        ],
     )
     runner = FakeAgentRunner(events=[])
-    gate = PassGate(
-        tracker=tracker,
-        signals=[PassSignal.triage_backlog],
-        page_size=PAGE_SIZE,
-    )
+    gate = pass_gate(tracker, PassSignal.triage_backlog)
 
     await run(prompts=bound_registry(), runner=runner, gate=gate)
     await run(prompts=bound_registry(), runner=runner, gate=gate)
