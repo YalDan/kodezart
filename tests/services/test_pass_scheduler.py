@@ -1,18 +1,26 @@
 """The cadence driver, over a substituted clock.
 
-No test here sleeps.  ``PassScheduler`` takes its sleep as a collaborator,
-so a driver loop is observed by what interval it asked for rather than by
-waiting for one to elapse — a suite that waits on real cadence is a suite
-that cannot assert the cadence it waited for.
+No test here sleeps on a CADENCE.  ``PassScheduler`` takes its sleep as a
+collaborator, so a driver loop is observed by what interval it asked for
+rather than by waiting for one to elapse — a suite that waits on real
+cadence is a suite that cannot assert the cadence it waited for.
 
-The last test is structural: it reads the module's own syntax tree and
-requires that no numeric literal appears in it.  A hardcoded "every five
-minutes" added to the driver fails that test with nothing to negotiate.
+The per-tick BUDGET is the one thing that cannot be substituted the same
+way: it is enforced by the event loop's own timer, and what the tests are
+here to prove is that its expiry genuinely cancels the coroutine in
+flight.  So the hung pass carries a budget of milliseconds — a real wait,
+kept small, and the only clock any of this actually consults.
+
+The structural test reads the module's own syntax tree and requires that
+no numeric literal appears in it.  A hardcoded "every five minutes" added
+to the driver fails that test with nothing to negotiate.
 """
 
 import ast
 import asyncio
 import re
+from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 
 import structlog
@@ -31,6 +39,15 @@ SCHEDULER_SOURCE = (
 FAST_INTERVAL = 11.5
 SLOW_INTERVAL = 97.0
 TICKS = 3
+
+#: A budget no pass that returns will ever approach, so every test but the
+#: hung ones observes the un-timed-out arms.
+GENEROUS_TIMEOUT = 30.0
+
+#: The one real wait in the module: small enough that two expiries cost a
+#: tenth of a second, large enough that a loaded machine still reaches the
+#: ``await`` before it fires.
+HUNG_TIMEOUT = 0.05
 
 #: Generous: the wait is on a condition, not a duration, so this only ever
 #: bounds a genuine hang.
@@ -61,6 +78,29 @@ class Exploder:
         raise RuntimeError(msg)
 
 
+class Sleeper:
+    """A pass that never returns, and records being cancelled out of it.
+
+    The flag is what makes the timeout's claim checkable: an event saying
+    a tick timed out proves only that the driver gave up on it, while this
+    counter proves the coroutine itself was unwound — the difference
+    between a bounded loop and a bounded loop leaking a running session
+    per tick.
+    """
+
+    def __init__(self) -> None:
+        self.calls: int = 0
+        self.cancelled: int = 0
+
+    async def run(self) -> None:
+        self.calls += 1
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+
+
 class Metronome:
     """A sleep substitute: records every requested interval, yields at once.
 
@@ -82,10 +122,39 @@ class Metronome:
         await asyncio.sleep(0)
 
 
-async def _settle(metronome: Metronome) -> None:
-    """Wait until the driver loops have spent the metronome's budget.
+class PerPassMetronome:
+    """A metronome holding a separate budget for each pass's interval.
 
-    The metronome parks a loop for good once the budget is gone, so that
+    The shared ``Metronome`` parks whichever loop spends the last grant,
+    so a prompt sibling beside a hung pass would exhaust the budget in
+    microseconds while the hung one was still inside its first tick.
+    Keyed by interval, each driver spends only its own, and the settled
+    state is every driver having spent it.
+    """
+
+    def __init__(self, *, limits: Mapping[float, int]) -> None:
+        self.requested: list[float] = []
+        self._limits: dict[float, int] = dict(limits)
+        self._granted: Counter[float] = Counter()
+        self.parked: asyncio.Event = asyncio.Event()
+
+    async def sleep(self, seconds: float) -> None:
+        self.requested.append(seconds)
+        self._granted[seconds] += 1
+        if self._granted[seconds] > self._limits[seconds]:
+            if all(
+                self._granted[interval] > limit
+                for interval, limit in self._limits.items()
+            ):
+                self.parked.set()
+            await asyncio.Event().wait()
+        await asyncio.sleep(0)
+
+
+async def _settle(parked: asyncio.Event) -> None:
+    """Wait until the driver loops have spent their metronome's budget.
+
+    A metronome parks a loop for good once the budget is gone, so that
     park IS the settled state and waiting for it is exact.  It replaces a
     fixed number of event-loop yields, which was a guess about how many
     turns a pass body costs: a failing pass costs more than a succeeding
@@ -96,7 +165,19 @@ async def _settle(metronome: Metronome) -> None:
     after the previous run has completed — the budget is therefore an exact
     count of completed runs, not an upper bound on started ones.
     """
-    await asyncio.wait_for(metronome.parked.wait(), timeout=SETTLE_TIMEOUT)
+    await asyncio.wait_for(parked.wait(), timeout=SETTLE_TIMEOUT)
+
+
+def _assert_carries_duration(fields: Mapping[str, object]) -> None:
+    """The event carries ``duration_seconds``, as a number, and not a negative one.
+
+    Never compared against a wall value: what a tick took on the machine
+    running the suite is not a property of the scheduler.  That the
+    reading is THERE on every terminal event is.
+    """
+    duration = fields["duration_seconds"]
+    assert isinstance(duration, float)
+    assert duration >= 0.0
 
 
 async def test_each_pass_runs_on_its_own_configured_interval() -> None:
@@ -105,13 +186,23 @@ async def test_each_pass_runs_on_its_own_configured_interval() -> None:
     metronome = Metronome(limit=TICKS * 2)
     scheduler = PassScheduler(
         passes=[
-            ScheduledPass(name="fast", interval_seconds=FAST_INTERVAL, run=fast.run),
-            ScheduledPass(name="slow", interval_seconds=SLOW_INTERVAL, run=slow.run),
+            ScheduledPass(
+                name="fast",
+                interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=fast.run,
+            ),
+            ScheduledPass(
+                name="slow",
+                interval_seconds=SLOW_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=slow.run,
+            ),
         ],
         sleep=metronome.sleep,
     )
     await scheduler.start()
-    await _settle(metronome)
+    await _settle(metronome.parked)
     await scheduler.stop()
 
     assert set(metronome.requested) == {FAST_INTERVAL, SLOW_INTERVAL}
@@ -128,13 +219,14 @@ async def test_a_pass_runs_only_after_its_interval_has_elapsed() -> None:
             ScheduledPass(
                 name="dispatch",
                 interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
                 run=recorder.run,
             ),
         ],
         sleep=metronome.sleep,
     )
     await scheduler.start()
-    await _settle(metronome)
+    await _settle(metronome.parked)
 
     assert metronome.requested == [FAST_INTERVAL]
     assert recorder.calls == 0
@@ -158,6 +250,7 @@ async def test_a_failing_pass_keeps_its_loop_and_says_what_broke() -> None:
             ScheduledPass(
                 name="dispatch",
                 interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
                 run=exploder.run,
             ),
         ],
@@ -165,7 +258,7 @@ async def test_a_failing_pass_keeps_its_loop_and_says_what_broke() -> None:
         log=log,
     )
     await scheduler.start()
-    await _settle(metronome)
+    await _settle(metronome.parked)
     await scheduler.stop()
 
     assert exploder.calls == TICKS
@@ -175,6 +268,152 @@ async def test_a_failing_pass_keeps_its_loop_and_says_what_broke() -> None:
     assert failures[0].fields["name"] == "dispatch"
     assert failures[0].fields["error_type"] == "RuntimeError"
     assert failures[0].fields["error"] == "the pass could not reach the tracker"
+
+
+async def test_a_completed_tick_says_so_and_says_how_long_it_took() -> None:
+    """The quiet arm is an event too, and it carries the tick's duration.
+
+    A loop that only speaks when something breaks cannot be told from a
+    loop that has stopped ticking at all, and the reading that says a
+    pass is slowing down has to exist before it stops returning.
+    """
+    recorder = Recorder()
+    metronome = Metronome(limit=TICKS)
+    log = RecordingLogger()
+
+    scheduler = PassScheduler(
+        passes=[
+            ScheduledPass(
+                name="dispatch",
+                interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=recorder.run,
+            ),
+        ],
+        sleep=metronome.sleep,
+        log=log,
+    )
+    await scheduler.start()
+    await _settle(metronome.parked)
+    await scheduler.stop()
+
+    completions = log.named("scheduled_pass_completed")
+    assert len(completions) == recorder.calls == TICKS
+    assert all(entry.level == "info" for entry in completions)
+    assert all(entry.fields["name"] == "dispatch" for entry in completions)
+    for entry in completions:
+        _assert_carries_duration(entry.fields)
+
+
+async def test_a_failure_event_carries_the_duration_of_the_tick_that_failed() -> None:
+    """The reading is on both outcomes, so the two can be read together."""
+    exploder = Exploder()
+    metronome = Metronome(limit=TICKS)
+    log = RecordingLogger()
+
+    scheduler = PassScheduler(
+        passes=[
+            ScheduledPass(
+                name="dispatch",
+                interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=exploder.run,
+            ),
+        ],
+        sleep=metronome.sleep,
+        log=log,
+    )
+    await scheduler.start()
+    await _settle(metronome.parked)
+    await scheduler.stop()
+
+    failures = log.named("scheduled_pass_failed")
+    assert len(failures) == TICKS
+    for entry in failures:
+        _assert_carries_duration(entry.fields)
+    assert log.named("scheduled_pass_completed") == []
+
+
+async def test_a_hung_pass_is_abandoned_at_its_budget_and_keeps_its_cadence() -> None:
+    """The defect, stated as a test: a pass that never returns.
+
+    Everything is asserted at once because it is one behaviour: the tick
+    is given up at the budget the pass carries, the giving-up is NAMED as
+    a timeout rather than as a failure, the loop reaches its next tick,
+    and the pass beside it is untouched by any of it.
+    """
+    hung, sibling = Sleeper(), Recorder()
+    metronome = PerPassMetronome(
+        limits={FAST_INTERVAL: TICKS - 1, SLOW_INTERVAL: TICKS},
+    )
+    log = RecordingLogger()
+
+    scheduler = PassScheduler(
+        passes=[
+            ScheduledPass(
+                name="hung",
+                interval_seconds=FAST_INTERVAL,
+                timeout_seconds=HUNG_TIMEOUT,
+                run=hung.run,
+            ),
+            ScheduledPass(
+                name="sibling",
+                interval_seconds=SLOW_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=sibling.run,
+            ),
+        ],
+        sleep=metronome.sleep,
+        log=log,
+    )
+    await scheduler.start()
+    await _settle(metronome.parked)
+    await scheduler.stop()
+
+    # The next tick happened: the budget bounded the tick, not the loop.
+    assert hung.calls == TICKS - 1
+    timeouts = log.named("scheduled_pass_timed_out")
+    assert len(timeouts) == TICKS - 1
+    assert all(entry.level == "error" for entry in timeouts)
+    assert all(entry.fields["name"] == "hung" for entry in timeouts)
+    assert all(entry.fields["timeout_seconds"] == HUNG_TIMEOUT for entry in timeouts)
+    for entry in timeouts:
+        _assert_carries_duration(entry.fields)
+    # A hang is not a failure: the two have different remedies and are
+    # never reported under one name.
+    assert log.named("scheduled_pass_failed") == []
+    # The sibling ran its own cadence to the end and completed every tick.
+    assert sibling.calls == TICKS
+    completed = log.named("scheduled_pass_completed")
+    assert [entry.fields["name"] for entry in completed] == ["sibling"] * TICKS
+
+
+async def test_the_budget_expiring_cancels_the_coroutine_it_was_bounding() -> None:
+    """A bound that does not reach the work leaks a running pass per tick.
+
+    Read off the pass itself rather than off the event: the scheduler
+    saying it timed out proves only that the driver moved on.
+    """
+    hung = Sleeper()
+    metronome = Metronome(limit=TICKS - 1)
+
+    scheduler = PassScheduler(
+        passes=[
+            ScheduledPass(
+                name="hung",
+                interval_seconds=FAST_INTERVAL,
+                timeout_seconds=HUNG_TIMEOUT,
+                run=hung.run,
+            ),
+        ],
+        sleep=metronome.sleep,
+    )
+    await scheduler.start()
+    await _settle(metronome.parked)
+    await scheduler.stop()
+
+    assert hung.calls == TICKS - 1
+    assert hung.cancelled == hung.calls
 
 
 async def test_a_failure_event_carries_the_traceback_that_produced_it() -> None:
@@ -209,13 +448,14 @@ async def test_a_failure_event_carries_the_traceback_that_produced_it() -> None:
                 ScheduledPass(
                     name="dispatch",
                     interval_seconds=FAST_INTERVAL,
+                    timeout_seconds=GENEROUS_TIMEOUT,
                     run=exploder.run,
                 ),
             ],
             sleep=metronome.sleep,
         )
         await scheduler.start()
-        await _settle(metronome)
+        await _settle(metronome.parked)
         await scheduler.stop()
     finally:
         structlog.reset_defaults()
@@ -244,6 +484,7 @@ async def test_stopping_cancels_every_driver_and_the_scheduler_goes_quiet() -> N
             ScheduledPass(
                 name="dispatch",
                 interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
                 run=recorder.run,
             ),
         ],

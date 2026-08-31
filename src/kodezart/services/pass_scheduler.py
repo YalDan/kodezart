@@ -13,6 +13,15 @@ the state this whole lane exists to make legible — and a one-line summary
 is that same problem one step along: the first live run crash-looped for
 half an hour on a ``ValueError`` whose event named neither the call site
 nor the collaborator that raised it (KOD-145).
+
+A pass that never returns is the third state, and it is named separately.
+Every tick is bounded by the budget its own pass carries, and the bound
+CANCELS: the coroutine in flight is unwound rather than left attached to
+a loop that has moved on.  A hang and a raise have different remedies, so
+``scheduled_pass_timed_out`` is not ``scheduled_pass_failed`` — and every
+outcome, including the quiet one, carries the seconds it took, because a
+tick's duration is the only reading that says a pass is degrading before
+it stops returning at all.
 """
 
 import asyncio
@@ -26,10 +35,17 @@ from kodezart.core.protocols import LogEmitter
 
 @dataclass(frozen=True)
 class ScheduledPass:
-    """One periodic pass: what it is called, how often, and what it runs."""
+    """One periodic pass: its name, its cadence, its budget, and its work.
+
+    ``timeout_seconds`` has no default, for the same reason
+    ``interval_seconds`` has none: a shipped default here would be a
+    number this module picked, and every number a pass runs on is
+    configuration that reached it from outside.
+    """
 
     name: str
     interval_seconds: float
+    timeout_seconds: float
     run: Callable[[], Awaitable[None]]
 
 
@@ -87,20 +103,54 @@ class PassScheduler:
         await self._log.ainfo("pass_scheduler_stopped")
 
     async def _drive(self, entry: ScheduledPass) -> None:
-        """Sleep the pass's own interval, run it, repeat until cancelled."""
+        """Sleep the pass's own interval, run one tick, repeat until cancelled."""
         while True:
             await self._sleep(entry.interval_seconds)
-            try:
+            await self._tick(entry)
+
+    async def _tick(self, entry: ScheduledPass) -> None:
+        """Run the pass once under its own budget and name what it did.
+
+        Three outcomes, three events, and the loop keeps its cadence
+        through all of them.  The budget is enforced by cancelling the
+        coroutine in flight, so a session or a tracker call that stopped
+        returning is genuinely unwound rather than abandoned in place.
+
+        A ``TimeoutError`` the pass raised ITSELF is a failure, not a
+        hang: the two are told apart by asking the budget whether it was
+        the one that fired, so a collaborator's own timeout keeps its
+        traceback instead of being reported as an unresponsive pass.
+        """
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        budget = asyncio.timeout(entry.timeout_seconds)
+        try:
+            async with budget:
                 await entry.run()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                # The traceback rides the event under this pass's own key,
-                # and no ``exc_info`` is passed, so it appears once.
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if isinstance(exc, TimeoutError) and budget.expired():
                 await self._log.aerror(
-                    "scheduled_pass_failed",
+                    "scheduled_pass_timed_out",
                     name=entry.name,
-                    error_type=type(exc).__name__,
-                    error=str(exc),
-                    traceback="".join(format_exception(exc)),
+                    timeout_seconds=entry.timeout_seconds,
+                    duration_seconds=loop.time() - started,
                 )
+                return
+            # The traceback rides the event under this pass's own key,
+            # and no ``exc_info`` is passed, so it appears once.
+            await self._log.aerror(
+                "scheduled_pass_failed",
+                name=entry.name,
+                error_type=type(exc).__name__,
+                error=str(exc),
+                traceback="".join(format_exception(exc)),
+                duration_seconds=loop.time() - started,
+            )
+            return
+        await self._log.ainfo(
+            "scheduled_pass_completed",
+            name=entry.name,
+            duration_seconds=loop.time() - started,
+        )

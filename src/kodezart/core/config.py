@@ -412,6 +412,22 @@ class AppConfig(BaseSettings):
             "bound is what stops a loaded queue sitting idle for a working day."
         ),
     )
+    dispatch_pass_timeout_seconds: float = Field(
+        default=240.0,
+        ge=10.0,
+        le=3600.0,
+        description=(
+            "Seconds one dispatch tick may take before it is abandoned. The "
+            "tick is deterministic and model-free — a paged tracker scan, a "
+            "claim, and the git plumbing that builds a base — so it belongs "
+            "inside its own cadence, and the default leaves room for retries "
+            "while still naming a hang before the next tick is due. On expiry "
+            "the tick is cancelled and reported as timed out; the loop keeps "
+            "its cadence and the next tick runs. The upper bound is the "
+            "dispatch interval's own, so a budget can never outlast the "
+            "slowest cadence that interval admits."
+        ),
+    )
     fire_prep_pass_interval_seconds: float = Field(
         default=3600.0,
         ge=60.0,
@@ -420,6 +436,19 @@ class AppConfig(BaseSettings):
             "Seconds between fire-preparation pass sessions. The interval IS "
             "the latency a newly filed issue waits before anything prepares "
             "it, so it is the operator's answer to how stale the queue may get."
+        ),
+    )
+    fire_prep_pass_timeout_seconds: float = Field(
+        default=1800.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds one fire-preparation tick may take before it is "
+            "abandoned. The tick is a whole unattended session over the "
+            "board, so the budget is generous — half the shipped cadence, "
+            "which bounds a session that stopped making progress and still "
+            "leaves the next tick on time. On expiry the session is "
+            "cancelled and reported as timed out; the loop continues."
         ),
     )
     grooming_pass_interval_seconds: float = Field(
@@ -432,6 +461,19 @@ class AppConfig(BaseSettings):
             "far more than one preparation and buys a report rather than a "
             "queued unit of work — a slower cadence than fire preparation is "
             "the shipped default, never a shared one."
+        ),
+    )
+    grooming_pass_timeout_seconds: float = Field(
+        default=7200.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds one grooming tick may take before it is abandoned. "
+            "Grooming builds the tree it verifies, which is the most "
+            "expensive session this deployment runs unattended, so its "
+            "budget is larger than fire preparation's and still a fraction "
+            "of its own cadence. On expiry the session is cancelled and "
+            "reported as timed out; the loop continues."
         ),
     )
     dispatch_pass_gate_signals: list[PassSignal] = Field(

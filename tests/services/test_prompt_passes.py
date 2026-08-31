@@ -49,11 +49,19 @@ COMPOSITION_SOURCE = (
 FIRE_PREP_INTERVAL = 613.0
 GROOMING_INTERVAL = 907.0
 
+#: Budgets on the same principle, and distinct from the cadences above: a
+#: row wired to its own interval where its timeout belongs would still
+#: pass against shared values, and fails against these.
+FIRE_PREP_TIMEOUT = 401.0
+GROOMING_TIMEOUT = 809.0
+
 
 def _config(tmp_path: Path, **overrides: object) -> AppConfig:
     return AppConfig(
         fire_prep_pass_interval_seconds=FIRE_PREP_INTERVAL,
+        fire_prep_pass_timeout_seconds=FIRE_PREP_TIMEOUT,
         grooming_pass_interval_seconds=GROOMING_INTERVAL,
+        grooming_pass_timeout_seconds=GROOMING_TIMEOUT,
         scheduled_pass_working_dir=str(tmp_path / "pass"),
         **overrides,  # type: ignore[arg-type]
     )
@@ -123,7 +131,7 @@ async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome)
+    await _settle(metronome.parked)
     await scheduler.stop()
 
     assert set(metronome.requested) == {FIRE_PREP_INTERVAL, GROOMING_INTERVAL}
@@ -142,6 +150,18 @@ def test_the_registrations_take_every_cadence_from_configuration(
     assert [(entry.name, entry.interval_seconds) for entry in registered] == [
         (PromptKey.FIRE_PREP_PASS.value, FIRE_PREP_INTERVAL),
         (PromptKey.GROOMING_PASS.value, GROOMING_INTERVAL),
+    ]
+
+
+def test_the_registrations_take_every_budget_from_configuration(
+    tmp_path: Path,
+) -> None:
+    """Each pass carries the timeout its own knob holds, never its cadence."""
+    registered, _ = _registrations(tmp_path)
+
+    assert [(entry.name, entry.timeout_seconds) for entry in registered] == [
+        (PromptKey.FIRE_PREP_PASS.value, FIRE_PREP_TIMEOUT),
+        (PromptKey.GROOMING_PASS.value, GROOMING_TIMEOUT),
     ]
 
 
@@ -173,7 +193,7 @@ async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome)
+    await _settle(metronome.parked)
     await scheduler.stop()
 
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
@@ -202,7 +222,7 @@ async def test_an_operator_can_gate_or_ungate_any_pass(tmp_path: Path) -> None:
     scheduler = PassScheduler(passes=gated, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome)
+    await _settle(metronome.parked)
     await scheduler.stop()
 
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
@@ -220,7 +240,7 @@ async def test_a_declared_signal_with_no_tracker_runs_the_pass_ungated(
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome)
+    await _settle(metronome.parked)
     await scheduler.stop()
 
     assert len(runner.calls) == len(registered), (
@@ -336,7 +356,7 @@ async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
     await scheduler.start()
-    await _settle(metronome)
+    await _settle(metronome.parked)
     await scheduler.stop()
 
     assert len(runner.calls) == len(registered)

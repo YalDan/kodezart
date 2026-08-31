@@ -48,6 +48,20 @@ _DISPATCH_NAME = "dispatch"
 
 
 @dataclass(frozen=True)
+class _PromptPassRow:
+    """One prompt pass's configuration: its cadence, its budget, its gate.
+
+    Named fields rather than a positional tuple: the cadence and the
+    budget are both seconds and both floats, and a pair of those is one
+    transposition away from a pass that ticks on its own timeout.
+    """
+
+    interval_seconds: float
+    timeout_seconds: float
+    signals: Sequence[PassSignal]
+
+
+@dataclass(frozen=True)
 class DispatchPasses:
     """The passes a deployment ticks, and the watches those passes start.
 
@@ -161,26 +175,29 @@ def build_prompt_passes(
     """
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
-    schedule: dict[PromptKey, tuple[float, Sequence[PassSignal]]] = {
-        PromptKey.FIRE_PREP_PASS: (
-            config.fire_prep_pass_interval_seconds,
-            config.fire_prep_pass_gate_signals,
+    schedule: dict[PromptKey, _PromptPassRow] = {
+        PromptKey.FIRE_PREP_PASS: _PromptPassRow(
+            interval_seconds=config.fire_prep_pass_interval_seconds,
+            timeout_seconds=config.fire_prep_pass_timeout_seconds,
+            signals=config.fire_prep_pass_gate_signals,
         ),
-        PromptKey.GROOMING_PASS: (
-            config.grooming_pass_interval_seconds,
-            config.grooming_pass_gate_signals,
+        PromptKey.GROOMING_PASS: _PromptPassRow(
+            interval_seconds=config.grooming_pass_interval_seconds,
+            timeout_seconds=config.grooming_pass_timeout_seconds,
+            signals=config.grooming_pass_gate_signals,
         ),
     }
     # Read only where a gate will actually be built: naming the operation's
     # teams REFUSES when it declares none, and a deployment whose passes are
     # all ungated has no scan for that refusal to be about.
-    gated = tracker is not None and any(signals for _, signals in schedule.values())
+    gated = tracker is not None and any(row.signals for row in schedule.values())
     team_keys = operation.team_keys() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
     return [
         ScheduledPass(
             name=key.value,
-            interval_seconds=interval_seconds,
+            interval_seconds=row.interval_seconds,
+            timeout_seconds=row.timeout_seconds,
             run=partial(
                 run_prompt_pass,
                 key=key,
@@ -189,7 +206,7 @@ def build_prompt_passes(
                 gate=build_gate(
                     config=config,
                     tracker=tracker,
-                    signals=signals,
+                    signals=row.signals,
                     team_keys=team_keys,
                     repo_urls=repo_urls,
                 ),
@@ -204,7 +221,7 @@ def build_prompt_passes(
                 session_type=SessionType.SCHEDULED_PASS,
             ),
         )
-        for key, (interval_seconds, signals) in schedule.items()
+        for key, row in schedule.items()
     ]
 
 
@@ -293,6 +310,7 @@ async def build_dispatch_passes(
             ScheduledPass(
                 name=f"{_DISPATCH_NAME}:{repo.url}",
                 interval_seconds=config.tracker_scheduler_pass_interval_seconds,
+                timeout_seconds=config.dispatch_pass_timeout_seconds,
                 run=tick.run,
             ),
         )

@@ -38,6 +38,10 @@ FAILURE = "the creator produced no structured output"
 LANE = "tracker"
 INTERVAL_SECONDS = 11.5
 
+#: A budget the failing pass never approaches: what this module observes
+#: is the failure event, not the timed-out one.
+TIMEOUT_SECONDS = 30.0
+
 #: Generous: every wait below is on a condition, so this only ever bounds
 #: a genuine hang.  Waiting a fixed number of event-loop yields instead
 #: would be a guess about how many turns a failure path costs — the guess
@@ -197,6 +201,7 @@ async def test_the_schedulers_failure_event_carries_the_traceback() -> None:
                 ScheduledPass(
                     name="dispatch",
                     interval_seconds=INTERVAL_SECONDS,
+                    timeout_seconds=TIMEOUT_SECONDS,
                     run=exploder.run,
                 ),
             ],

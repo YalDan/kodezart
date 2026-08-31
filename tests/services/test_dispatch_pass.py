@@ -485,6 +485,42 @@ async def test_the_root_gives_every_pass_the_configured_cadence() -> None:
     assert [entry.interval_seconds for entry in built.passes] == [unusual, unusual]
 
 
+async def test_the_root_gives_every_pass_the_configured_budget() -> None:
+    """``dispatch_pass_timeout_seconds`` has a real consumer.
+
+    Every dispatch row, not one of them: an unbounded tick anywhere in
+    the schedule is a loop that can stall forever, and the value is
+    unlike the default and unlike the cadence beside it, so a row wired
+    to either would fail here.
+    """
+    unusual = 37.0
+    config = AppConfig(dispatch_pass_timeout_seconds=unusual)
+    assert (
+        config.dispatch_pass_timeout_seconds
+        != AppConfig().dispatch_pass_timeout_seconds
+    )
+    assert config.dispatch_pass_timeout_seconds != (
+        config.tracker_scheduler_pass_interval_seconds
+    )
+
+    tracker = FakeTrackerPort()
+    queue = FakeJobQueue()
+    built = await build_dispatch_passes(
+        config=config,
+        operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
+        tracker=tracker,
+        delivery=FakeDeliveryProbe(),
+        queue=queue,
+        registry=queue,
+        gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+    assert [entry.timeout_seconds for entry in built.passes] == [unusual, unusual]
+
+
 async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> None:
     """AC-20: the built object is wired, not merely shaped like one."""
     tracker = FakeTrackerPort(

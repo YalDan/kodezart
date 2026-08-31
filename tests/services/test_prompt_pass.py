@@ -9,19 +9,34 @@ The four render-and-send behaviours here are the ones the deleted
 per-pass session class carried, with their subject swapped for the single
 run callable.  They are unchanged in what they assert: collapsing two
 render paths into one must not quietly relax what either proved.
+
+The last group reads what the pass REPORTED.  A pass that closed an issue
+and a pass that came back empty-handed both end when their stream runs
+out, so the terminal event has to carry the stream's own shape — its
+counts, its error, its duration — or the log cannot tell them apart.
 """
 
+import asyncio
+from collections.abc import AsyncGenerator, Mapping
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
+import structlog.testing
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.prompt_namespaces import bindings_for
-from kodezart.core.protocols import PromptSetProvider
+from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.prompt_pass import run_prompt_pass
+from kodezart.types.domain.agent import (
+    AgentEvent,
+    AssistantTextEvent,
+    ErrorEvent,
+    ResultEvent,
+    ToolUseEvent,
+)
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.prompts import PromptKey
@@ -47,6 +62,64 @@ LATER = FIXTURE_EPOCH + timedelta(hours=1)
 #: The shipped set that declares a session role covering both pass keys.
 POLICIED_SET = "anthropic_v5"
 ALL_SKILLS = SkillsSelection(mode=SkillsMode.ALL)
+MODEL = "claude-opus-5"
+TRACKER_TOOL = "mcp__linear__save_issue"
+#: Milliseconds, because it is a real wait: what the cancellation test
+#: proves is the scheduler's own bound reaching a session mid-stream, and
+#: that bound is enforced by the event loop's timer and nothing else.
+CANCEL_TIMEOUT = 0.05
+
+
+class HangingRunner:
+    """A runner whose stream yields once and then stops producing.
+
+    Stands in for the session the scheduler's budget exists for: one that
+    opened, said something, and never reached a terminal event.
+    """
+
+    def __init__(self) -> None:
+        self.cancelled: bool = False
+
+    async def stream_in_workspace(
+        self,
+        **_kwargs: object,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        yield AssistantTextEvent(text="working", model=MODEL)
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+
+
+def tool_use(index: int) -> ToolUseEvent:
+    """One tracker call, as the stream carries it."""
+    return ToolUseEvent(
+        name=TRACKER_TOOL,
+        input={"id": f"KOD-{index}"},
+        id=f"toolu_{index}",
+        model=MODEL,
+    )
+
+
+def result_event() -> ResultEvent:
+    return ResultEvent(
+        subtype="success",
+        duration_ms=1200,
+        duration_api_ms=900,
+        is_error=False,
+        num_turns=3,
+        session_id="session-1",
+    )
+
+
+def terminal_event(
+    logs: list[Mapping[str, object]],
+    name: str,
+) -> Mapping[str, object]:
+    """The one emission called *name*; unpacking fails if there is not exactly one."""
+    (entry,) = [record for record in logs if record["event"] == name]
+    return entry
 
 
 def example_config() -> OperationConfig:
@@ -85,7 +158,7 @@ def pass_gate(tracker: FakeTrackerPort, *signals: PassSignal) -> PassGate:
 async def run(
     *,
     prompts: PromptSetProvider,
-    runner: FakeAgentRunner,
+    runner: AgentRunner,
     gate: PassGate | None = None,
     key: PromptKey = PromptKey.GROOMING_PASS,
     skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
@@ -276,3 +349,116 @@ async def test_a_standing_backlog_wakes_the_pass_on_an_otherwise_quiet_board() -
     await run(prompts=bound_registry(), runner=runner, gate=gate)
 
     assert len(runner.calls) == 2, "a backlog does not drain by being swept once"
+
+
+async def test_an_error_arriving_mid_stream_ends_the_pass_as_a_failure() -> None:
+    """The event that used to be consumed and dropped on the way past.
+
+    Mid-stream deliberately: the session keeps producing after it, the
+    stream still ends normally, and a pass that only looked at how the
+    stream ENDED would report the same completion as a clean run — which
+    is how a pass that achieved nothing came to read as one that had.
+    """
+    events: list[AgentEvent] = [
+        AssistantTextEvent(text="reading the board", model=MODEL),
+        ErrorEvent(error="the tracker refused the scan", error_kind="TrackerMCPError"),
+        AssistantTextEvent(text="giving up", model=MODEL),
+    ]
+    runner = FakeAgentRunner(events=events)
+
+    with structlog.testing.capture_logs() as logs:
+        await run(prompts=bound_registry(), runner=runner)
+
+    assert [record["event"] for record in logs] == ["prompt_pass_failed"]
+    failure = terminal_event(logs, "prompt_pass_failed")
+    assert failure["log_level"] == "error"
+    assert failure["name"] == PromptKey.GROOMING_PASS.value
+    assert failure["error"] == "the tracker refused the scan"
+    assert failure["error_kind"] == "TrackerMCPError"
+    assert failure["result_event_observed"] is False
+    assert failure["events"] == {"assistant_text": 2, "error": 1}
+    assert failure["event_count"] == 3
+
+
+async def test_a_pass_that_touched_the_tracker_is_legible_as_one_that_did() -> None:
+    """The counts are what separate work done from a session that idled."""
+    events: list[AgentEvent] = [
+        AssistantTextEvent(text="closing it", model=MODEL),
+        tool_use(1),
+        tool_use(2),
+        result_event(),
+    ]
+    runner = FakeAgentRunner(events=events)
+
+    with structlog.testing.capture_logs() as logs:
+        await run(prompts=bound_registry(), runner=runner)
+
+    finished = terminal_event(logs, "prompt_pass_finished")
+    assert finished["events"] == {"assistant_text": 1, "tool_use": 2, "result": 1}
+    assert finished["event_count"] == 4
+    assert finished["result_event_observed"] is True
+
+
+async def test_a_pass_that_did_nothing_at_all_says_that_much() -> None:
+    """The other half of the same reading, and the reason it is a count."""
+    runner = FakeAgentRunner(events=[result_event()])
+
+    with structlog.testing.capture_logs() as logs:
+        await run(prompts=bound_registry(), runner=runner)
+
+    finished = terminal_event(logs, "prompt_pass_finished")
+    assert finished["events"] == {"result": 1}
+    assert finished["event_count"] == 1
+    assert finished["result_event_observed"] is True
+
+
+async def test_a_stream_that_never_produced_a_terminal_result_says_so() -> None:
+    """ "Finished" claims the stream ended, and never more than that."""
+    runner = FakeAgentRunner(events=[])
+
+    with structlog.testing.capture_logs() as logs:
+        await run(prompts=bound_registry(), runner=runner)
+
+    finished = terminal_event(logs, "prompt_pass_finished")
+    assert finished["result_event_observed"] is False
+    assert finished["events"] == {}
+    assert finished["event_count"] == 0
+
+
+async def test_every_terminal_pass_event_carries_how_long_the_pass_took() -> None:
+    """Both arms, one reading: a pass degrading is visible before it hangs.
+
+    The value is asserted as a non-negative number and never against a
+    wall time — what a pass took on the machine running the suite is not
+    a property of the pass.
+    """
+    clean = FakeAgentRunner(events=[result_event()])
+    broken = FakeAgentRunner(events=[ErrorEvent(error="refused")])
+
+    with structlog.testing.capture_logs() as logs:
+        await run(prompts=bound_registry(), runner=clean)
+        await run(prompts=bound_registry(), runner=broken)
+
+    for name in ("prompt_pass_finished", "prompt_pass_failed"):
+        duration = terminal_event(logs, name)["duration_seconds"]
+        assert isinstance(duration, float)
+        assert duration >= 0.0
+
+
+async def test_a_pass_cancelled_mid_stream_reports_no_terminal_outcome() -> None:
+    """The scheduler's budget, meeting this body: nothing claims it ended.
+
+    The bookkeeping around the stream read has no handler of its own, so
+    ``CancelledError`` unwinds straight through it — a pass abandoned by
+    the driver leaves ``scheduled_pass_timed_out`` and no pass event, not
+    a completion for a session that never completed.
+    """
+    runner = HangingRunner()
+
+    with structlog.testing.capture_logs() as logs:
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(CANCEL_TIMEOUT):
+                await run(prompts=bound_registry(), runner=runner)
+
+    assert runner.cancelled
+    assert logs == []
