@@ -218,6 +218,34 @@ def test_a_single_repository_operation_declares_no_binding(tmp_path: Path) -> No
     assert set(config.teams_bound_to(config.repos[0].url)) == set(config.teams)
 
 
+def test_a_board_is_private_postured_only_where_its_team_says_so() -> None:
+    """Per board, and fail-closed everywhere the posture is not declared.
+
+    ``PRIVATE`` is the value that exempts a payload from the outbound
+    gate, so an issue on no declared team, on a team this operation does
+    not know, or on a board that declared nothing all resolve public.
+    """
+    config = example_config()
+
+    assert config.board_visibility("agent") is RepoVisibility.PRIVATE
+    assert config.board_visibility("primary") is RepoVisibility.PUBLIC
+    assert config.board_visibility("somebody-elses-board") is RepoVisibility.PUBLIC
+    assert config.board_visibility(None) is RepoVisibility.PUBLIC
+
+
+def test_a_board_declaring_no_posture_inherits_the_public_one(
+    tmp_path: Path,
+) -> None:
+    """The third state: absent, and it is not a fourth kind of private."""
+    raw = raw_example()
+    del raw["teams"]["agent"]["visibility"]
+
+    config = load_operation_config(_write_toml(tmp_path, raw))
+
+    assert config.teams["agent"].visibility is None
+    assert config.board_visibility("agent") is RepoVisibility.PUBLIC
+
+
 # ---------------------------------------------------------------------------
 # AC-3b / AC-4a — authority binds to a role
 # ---------------------------------------------------------------------------

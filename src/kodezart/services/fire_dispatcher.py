@@ -295,6 +295,11 @@ class FireDispatcher:
             # Progress, and the only place a crashed run's put-back can
             # come from.
             claimed_state_name=winner.state_name,
+            # The board's posture, resolved where the winning issue's team
+            # is known: the lifecycle writer scrubs its comments for the
+            # surface THIS issue's board mirrors to, and by the time it
+            # runs the team is several hops behind it.
+            claimed_visibility=self._operation.board_visibility(winner.team_key),
             job_id=record.job_id,
             base=spec,
             superseded_base=superseded,

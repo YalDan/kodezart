@@ -29,6 +29,7 @@ from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import WorkflowCompleteEvent
+from kodezart.types.domain.gating import OutboundDestination, RepoVisibility
 from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
@@ -496,6 +497,64 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     ]
     assert tracker.queue_writes == [("K-1", QueueState.DONE)]
     assert [comment.issue_key for comment in tracker.comments] == ["K-1"]
+
+
+async def test_the_pass_threads_the_claimed_boards_posture_to_the_watch() -> None:
+    """KOD-157: the writer gates under the posture of the winner's board.
+
+    Asserted at the watcher boundary the way ``pre_claim_state`` is, and
+    through the write the watch actually makes rather than a call count on
+    a double standing in for it: the dispatcher is the only component that
+    knows the claimed issue's team, and the gated write that needs its
+    posture is three hops downstream.
+    """
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+    queue = FakeJobQueue(
+        events=[
+            WorkflowCompleteEvent(
+                feature_branch="feature",
+                ralph_branch="ralph",
+                total_iterations=1,
+                accepted=True,
+                outcome=WorkflowOutcome.ci_passed,
+                merged=True,
+            ),
+        ],
+    )
+    gate = PassThroughGate()
+    built = await build_dispatch_passes(
+        config=AppConfig(),
+        operation=operation_config(
+            teams={
+                "engineering": TeamEntry(
+                    name="fixture-engineering",
+                    key="ENG",
+                    visibility=RepoVisibility.PRIVATE,
+                ),
+            },
+        ),
+        tracker=tracker,
+        delivery=FakeDeliveryProbe(),
+        queue=queue,
+        registry=queue,
+        gate=gate,
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+    await built.passes[0].run()
+    await settled(lambda: bool(tracker.comments))
+
+    assert [
+        visibility
+        for (_, visibility, _), destination in zip(
+            gate.calls,
+            gate.destinations,
+            strict=True,
+        )
+        if destination is OutboundDestination.TRACKER_COMMENT
+    ] == [RepoVisibility.PRIVATE]
 
 
 class ForgeOnlyDeliveryProbe:

@@ -49,11 +49,18 @@ class TrackerLifecycleWriter:
 
     The state transitions carry no prose — a stage and a queue member, both
     resolved from configuration — so the gate has nothing to judge on them.
-    The comment does carry prose, and the coordination surface mirrors
-    publicly, so it routes through the same gated-write path as every other
-    outbound writer.  It is gated BEFORE the passes that will compose their
-    comment bodies out of private board state, which is the whole reason
-    this enforcement lands ahead of the thing it enforces.
+    The comment does carry prose, so it routes through the same gated-write
+    path as every other outbound writer.  It is gated BEFORE the passes
+    that will compose their comment bodies out of private board state,
+    which is the whole reason this enforcement lands ahead of the thing it
+    enforces.
+
+    Which POSTURE it is gated under is per board, and it rides in from the
+    pass that claimed the issue rather than being a constant here: one
+    operation declares a board that mirrors publicly beside a board that
+    syncs to a private surface, and the write-backs onto an issue belong to
+    the surface its own board mirrors to.  Absent or unresolved is public —
+    over-scrubbing is the arm that costs nothing but a redaction (KOD-157).
     """
 
     def __init__(
@@ -115,6 +122,7 @@ class TrackerLifecycleWriter:
         pre_claim_state: str,
         failure_class: str | None,
         step: RaiseSite | None,
+        visibility: RepoVisibility = RepoVisibility.PUBLIC,
     ) -> None:
         """The run ended with no terminal outcome: undo, then say so.
 
@@ -153,7 +161,7 @@ class TrackerLifecycleWriter:
                 f"{named_failure}, {named_step}. "
                 "The issue is back in the state it held before the claim."
             ),
-            visibility=RepoVisibility.PUBLIC,
+            visibility=visibility,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.TRACKER_COMMENT,
             content_class=ContentClass.DERIVED,
@@ -174,12 +182,14 @@ class TrackerLifecycleWriter:
         issue_key: str,
         job_id: str,
         outcome: WorkflowOutcome,
+        visibility: RepoVisibility = RepoVisibility.PUBLIC,
     ) -> None:
         """Post the run's terminal outcome, read off the job-status surface."""
-        # The repository's own visibility is NOT the question here. This
-        # payload lands on the coordination surface, which mirrors publicly
-        # by the definition of OutboundSurface.TRACKER, so a private target
-        # repository must not exempt the write.
+        # The TARGET REPOSITORY's visibility is not the question here, and
+        # never was: this payload lands on the coordination surface. What
+        # settles it is the posture of the BOARD the issue sits on, which
+        # rides in from the pass that claimed it — a private-sync board and
+        # a mirrored one are both declared by one operation.
         # DERIVED: the body is a job id and a WorkflowOutcome member, both
         # readable off the job-status surface. A process that never held the
         # session recomputes this note exactly.
@@ -187,7 +197,7 @@ class TrackerLifecycleWriter:
             gate=self._gate,
             log=self._log,
             content=f"job {job_id} reached outcome {outcome.value}",
-            visibility=RepoVisibility.PUBLIC,
+            visibility=visibility,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.TRACKER_COMMENT,
             content_class=ContentClass.DERIVED,

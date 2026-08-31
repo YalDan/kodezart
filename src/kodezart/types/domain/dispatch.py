@@ -17,6 +17,7 @@ from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.tracker import IssuePriority
 
 
@@ -116,6 +117,16 @@ class DispatchReport(DispatchModel):
     the lifecycle moves it: a run that crashes has to be put back where it
     was found, and by then the tracker's copy holds the in-progress
     stage.  ``None`` on every outcome that claimed nothing."""
+    claimed_visibility: RepoVisibility = RepoVisibility.PUBLIC
+    """The visibility posture of the board the claimed issue sits on.
+
+    Carried for the reason ``claimed_state_name`` is: the pass is where
+    the winning issue's team is known, and the writer that scrubs the
+    comments written back onto that issue is several hops away.
+
+    ``PUBLIC`` rather than absent on every outcome that claimed nothing,
+    because there is no fourth state to be in: the value is a posture to
+    write under, and the unresolved one is the fail-closed one."""
     job_id: str | None = None
     base: BaseSpec | None = None
     """The base the fire was dispatched on, and everything it was computed

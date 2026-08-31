@@ -59,6 +59,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
+from kodezart.types.domain.gating import RepoVisibility
 
 
 class LifecycleWatcher:
@@ -77,7 +78,14 @@ class LifecycleWatcher:
         self._following: set[asyncio.Task[None]] = set()
         self._log: BoundLogger = get_logger(__name__)
 
-    def follow(self, *, issue_key: str, job_id: str, pre_claim_state: str) -> None:
+    def follow(
+        self,
+        *,
+        issue_key: str,
+        job_id: str,
+        pre_claim_state: str,
+        visibility: RepoVisibility = RepoVisibility.PUBLIC,
+    ) -> None:
         """Watch *job_id* in the background, for the life of the run.
 
         The dispatch pass that calls this returns immediately — a tick may
@@ -90,12 +98,18 @@ class LifecycleWatcher:
         so the only reading of the state the issue held BEFORE the claim
         is the one the dispatch pass already took, in the scan that
         selected it.
+
+        ``visibility`` rides in for the same reason and defaults to the
+        same arm the resolution does: the posture belongs to the board the
+        claimed issue sits on, which the dispatch pass knows and this does
+        not, and public is what keeps the outbound gate engaged.
         """
         task = asyncio.create_task(
             self.watch(
                 issue_key=issue_key,
                 job_id=job_id,
                 pre_claim_state=pre_claim_state,
+                visibility=visibility,
             ),
         )
         self._following.add(task)
@@ -135,6 +149,7 @@ class LifecycleWatcher:
         issue_key: str,
         job_id: str,
         pre_claim_state: str,
+        visibility: RepoVisibility = RepoVisibility.PUBLIC,
     ) -> None:
         """Read the job's stream to its end, writing each stage as it arrives.
 
@@ -161,7 +176,12 @@ class LifecycleWatcher:
                     terminal = True
                 if isinstance(event, ErrorEvent):
                     failure = event
-                await self._apply(issue_key=issue_key, job_id=job_id, event=event)
+                await self._apply(
+                    issue_key=issue_key,
+                    job_id=job_id,
+                    event=event,
+                    visibility=visibility,
+                )
             # A run that never started moved nothing, so there is nothing to
             # put back: the failure arm answers for a run that WAS dequeued —
             # the write that moved it to the in-progress stage — and that
@@ -173,6 +193,7 @@ class LifecycleWatcher:
                     pre_claim_state=pre_claim_state,
                     failure_class=None if failure is None else failure.error_kind,
                     step=None if failure is None else failure.raise_site,
+                    visibility=visibility,
                 )
         await self._heartbeat.release(issue_key=issue_key)
         await self._log.ainfo(
@@ -189,6 +210,7 @@ class LifecycleWatcher:
         issue_key: str,
         job_id: str,
         event: AgentEvent,
+        visibility: RepoVisibility,
     ) -> None:
         if isinstance(event, WorkflowPREvent):
             await self._writer.on_pull_request(
@@ -207,4 +229,5 @@ class LifecycleWatcher:
                 issue_key=issue_key,
                 job_id=job_id,
                 outcome=event.outcome,
+                visibility=visibility,
             )

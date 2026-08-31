@@ -249,6 +249,56 @@ class TestTheCommentRoutesThroughTheGate:
 
         assert [call[1] for call in gate.calls] == [RepoVisibility.PUBLIC]
 
+    async def test_a_private_postured_board_writes_under_its_own_posture(
+        self,
+    ) -> None:
+        """KOD-157: the BOARD's posture is the question, and it is per board.
+
+        One operation declares a board that mirrors publicly beside one
+        that syncs to a private surface, so a single forced constant here
+        scrubbed the private board's write-backs for a public it never
+        reaches.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        gate = PassThroughGate()
+        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+
+        await write.on_terminal_outcome(
+            issue_key="K-1",
+            job_id="job-0001",
+            outcome=WorkflowOutcome.ci_passed,
+            visibility=RepoVisibility.PRIVATE,
+        )
+
+        assert [call[1] for call in gate.calls] == [RepoVisibility.PRIVATE]
+
+    @pytest.mark.parametrize(
+        "posture",
+        [RepoVisibility.PUBLIC, RepoVisibility.UNKNOWN],
+    )
+    async def test_a_posture_that_is_not_private_keeps_the_gate_engaged(
+        self,
+        posture: RepoVisibility,
+    ) -> None:
+        """The negative: only PRIVATE exempts, so everything else scrubs.
+
+        ``PRIVATE`` is the value the gate short-circuits on, so a board
+        whose posture nobody could resolve has to arrive here as something
+        else — over-scrubbing costs a redaction, under-scrubbing publishes.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        gate = PassThroughGate()
+        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+
+        await write.on_terminal_outcome(
+            issue_key="K-1",
+            job_id="job-0001",
+            outcome=WorkflowOutcome.ci_passed,
+            visibility=posture,
+        )
+
+        assert [call[1] for call in gate.calls] != [RepoVisibility.PRIVATE]
+
     async def test_a_blocked_comment_is_never_posted(self) -> None:
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         write = TrackerLifecycleWriter(tracker=tracker, gate=BlockingGate())
@@ -351,6 +401,24 @@ class TestTheFailureArm:
 
         assert gate.destinations == [OutboundDestination.TRACKER_COMMENT]
         assert [call[1] for call in gate.calls] == [RepoVisibility.PUBLIC]
+
+    async def test_the_failure_comment_follows_the_boards_posture(self) -> None:
+        """The put-back arm gates under the same per-board posture."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        gate = PassThroughGate()
+        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+
+        await write.on_run_failed(
+            issue_key="K-1",
+            job_id="job-0001",
+            pre_claim_state="Todo",
+            failure_class="RuntimeError",
+            step=None,
+            visibility=RepoVisibility.PRIVATE,
+        )
+
+        assert [call[1] for call in gate.calls] == [RepoVisibility.PRIVATE]
+        assert tracker.restored_states == [("K-1", "Todo")]
 
     async def test_a_blocked_failure_comment_is_never_posted(self) -> None:
         """The put-back still lands; only the prose is the gate's to stop."""

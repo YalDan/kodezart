@@ -12,6 +12,8 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kodezart.types.domain.gating import RepoVisibility
+
 CHECKPOINT_DOCUMENT_KEY = "checkpoint"
 RUN_LOG_RECORD_KEY = "run_log"
 
@@ -178,6 +180,22 @@ class TeamEntry(OperationModel):
     #: so an unbound team is an issue fired into whichever tick claims it
     #: first, which is tick order deciding a routing question (KOD-157).
     repository: str | None = None
+    #: The visibility posture of THIS board, in the vocabulary every other
+    #: outbound decision is already made in.
+    #:
+    #: Per board rather than per operation, because the operation's own
+    #: rule is per board: one that mirrors publicly and one that syncs to
+    #: a private surface are both declared here, and a single posture over
+    #: both either scrubs a private board's write-backs for a public it
+    #: never reaches or exempts a public board's from the gate.
+    #:
+    #: Absent is the third state and it INHERITS: the coordination surface
+    #: mirrors publicly by the definition of its own surface class, so a
+    #: board that declares no posture of its own is treated as public.
+    #: That is also where every unresolvable case lands — ``PRIVATE`` is
+    #: what exempts a payload from the outbound gate, so a posture nobody
+    #: resolved must over-scrub rather than under-scrub (KOD-157).
+    visibility: RepoVisibility | None = None
 
 
 class CheckStep(OperationModel):
@@ -580,6 +598,22 @@ class OperationConfig(OperationModel):
                 ),
             )
         return bound
+
+    def board_visibility(self, team_key: str | None) -> RepoVisibility:
+        """The visibility posture of the board *team_key* names — fail-closed.
+
+        ``PRIVATE`` only where a declared team says so.  Everything else is
+        ``PUBLIC``, and the cases are not equivalent to each other but they
+        are equivalent HERE: an issue carrying no team, a team this
+        operation does not declare, a team declaring no posture of its own.
+        ``PRIVATE`` is the value that exempts a payload from the outbound
+        gate, so an unresolved posture over-scrubs rather than publishing
+        what a private board holds (KOD-157).
+        """
+        entry = None if team_key is None else self.teams.get(team_key)
+        if entry is not None and entry.visibility is RepoVisibility.PRIVATE:
+            return RepoVisibility.PRIVATE
+        return RepoVisibility.PUBLIC
 
     def checkpoint_document(self) -> DocumentEntry:
         """The read-side document the scan-window marker lives in.
