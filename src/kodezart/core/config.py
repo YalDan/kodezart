@@ -421,6 +421,7 @@ class AppConfig(BaseSettings):
             "boot rather than attaching an unauthenticated server."
         ),
     )
+
     @field_validator("knowledge_session_grants", mode="before")
     @classmethod
     def _grant_entries_name_session_types(cls, value: object) -> object:
@@ -440,7 +441,9 @@ class AppConfig(BaseSettings):
             return value
         legal = {member.value for member in SessionType}
         offending = [
-            str(entry) for entry in value if not isinstance(entry, SessionType)
+            str(entry)
+            for entry in value
+            if not isinstance(entry, SessionType)
             if str(entry) not in legal
         ]
         if offending:
