@@ -55,11 +55,11 @@ def test_pass_templates_resolve_by_key_under_default_configuration(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_check_passes_at_fifteen_keys() -> None:
+def test_claude_opus_completeness_check_passes_at_sixteen_keys() -> None:
     """Loading succeeds only because the default set supplies every key."""
     registry = default_registry()
     table = registry.resolution_table()
-    assert len(table) == 15
+    assert len(table) == 16
     assert set(table) == set(PromptKey)
 
 

@@ -84,6 +84,116 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_TRACKER_MCP_SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
 | `KODEZART_TRACKER_TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
+| `KODEZART_KNOWLEDGE_MCP_TOKEN` | `str \| None` | `None` |  | Credential for the knowledge MCP server. Environment only. |
+| `KODEZART_KNOWLEDGE_SESSION_GRANTS` | `list[SessionType]` | `[]` |  | Session types the knowledge MCP server is attached to, named one by one. No wildcard value. |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_NAME` | `str` | `notion` | min length 1 | Identity the knowledge MCP server carries in a granted session. |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_URL` | `str \| None` | `None` | min length 1 | Endpoint of the knowledge MCP server a granted session dials under the http transport. Unset means no knowledge server endpoint is configured; a granted http session then aborts boot naming the absence. |
+| `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the knowledge credential is presented in. |
+| `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` | `str \| None` | `Bearer` | min length 1 | Scheme prefixing the knowledge credential in its auth header. The literal value `null` means no scheme: the credential rides raw in its header. |
+| `KODEZART_KNOWLEDGE_MCP_TRANSPORT` | `KnowledgeTransport` | `http` | `http` or `stdio` | How a granted session reaches the knowledge MCP server: `http` dials the configured endpoint with headers, `stdio` spawns the configured command. |
+| `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN` | `str \| None` | `None` |  | Gateway credential a client presents to a self-hosted knowledge server, as a bearer in the `Authorization` header. Environment only. |
+| `KODEZART_KNOWLEDGE_MCP_COMMAND` | `str \| None` | `None` | absolute path, no package runner | Path of the self-hosted knowledge server binary a granted session spawns under the stdio transport. |
+| `KODEZART_KNOWLEDGE_MCP_ARGS` | `list[str]` | `[]` |  | Arguments the stdio knowledge server is spawned with. |
+| `KODEZART_KNOWLEDGE_MCP_ENV` | `dict[str, str]` | `{}` |  | Non-secret environment entries for the stdio knowledge server. |
+| `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV` | `str \| None` | `None` | min length 1 | Name of the environment entry the stdio knowledge server reads its credential from; the value comes from `KODEZART_KNOWLEDGE_MCP_TOKEN`. |
+| `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `list[str]` | `["mcp.notion.com"]` |  | Hosts that authenticate interactively (OAuth) and accept no static credential; a granted endpoint on one of them paired with a static credential aborts boot, naming the conflict. |
+
+## The knowledge-server grant
+
+`KODEZART_KNOWLEDGE_SESSION_GRANTS` names, one by one, the kinds of agent
+session that are configured with the knowledge MCP server. The vocabulary is
+the `SessionType` enum, and it is closed:
+
+| Value | The session it names |
+| -- | -- |
+| `ticket_fire` | the ticket-driven workflow — its quality loop and its ticket generator |
+| `api_query` | the direct one-shot query a caller drives over HTTP |
+| `commit_message` | the change persister's utility session |
+| `content_audit` | the outbound gate's judgment session |
+
+Three rules, each enforced at boot rather than documented and hoped for:
+
+- **There is no wildcard.** Granting every session is spelled out by naming
+  every session, so no configuration can widen silently as members are added.
+- **An unknown entry aborts boot**, naming the offending entry and the values
+  that are legal — never a silent no-grant.
+- **A non-empty grant with no credential at all aborts boot**, naming the
+  missing variable: set `KODEZART_KNOWLEDGE_MCP_TOKEN` (or, for a self-hosted
+  http server that holds its own upstream token,
+  `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN`). An empty grant with an unset
+  credential boots clean.
+
+The shipped default is the empty list: the mechanism ships and the grant is
+operator configuration. The intended first grant is `["ticket_fire"]` — the
+ticket-driven fire sessions and nothing else.
+
+The knowledge knobs are role-named, and the vendor appears only in values —
+the server name (`notion`) and the interactive-auth host list. Putting a
+different knowledge store behind the MCP mechanism is a change of values —
+never a schema migration, and never an edit to a consumer.
+
+## The knowledge transport, and the shapes it can express
+
+`KODEZART_KNOWLEDGE_MCP_TRANSPORT` states the route explicitly. Each route
+reads its own fields and only its own; a field the declared route never
+reads aborts boot naming it, because configuration dialled by nothing is how
+the previous defect survived.
+
+Under `http`, the header set a granted session dials with can express:
+
+- the upstream credential alone — `KODEZART_KNOWLEDGE_MCP_TOKEN` presented
+  in `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER`, prefixed by
+  `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` (or raw, when the scheme is `null`);
+- the gateway credential alone — `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN` as
+  `Authorization: Bearer …` against a self-hosted server that holds its own
+  upstream token;
+- both at once — the vendor's token pass-through, where the upstream header
+  must differ from `Authorization` because the gateway credential owns it.
+
+Under `stdio` there is no endpoint and there are no headers: the session
+spawns `KODEZART_KNOWLEDGE_MCP_COMMAND` (an absolute path; package runners
+such as `npx` are refused because they resolve or fetch their payload at
+spawn time, in a working directory a cloned repository controls) with
+`KODEZART_KNOWLEDGE_MCP_ARGS` and `KODEZART_KNOWLEDGE_MCP_ENV`, and the
+credential is delivered as one environment entry named by
+`KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV`.
+
+No endpoint ships. `KODEZART_KNOWLEDGE_MCP_SERVER_URL` is unset by default,
+because the vendor's hosted server authenticates interactively (OAuth) and
+accepts no static credential — an endpoint no configuration of this service
+can ever reach. A granted `http` deployment names its own instead.
+
+Two refusals carry that, both on the resolved grant value `KnowledgeGrant`
+validates as the service starts:
+
+- a granted `http` route with no endpoint at all aborts boot naming
+  `server_url`;
+- a granted endpoint whose host appears in
+  `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` while
+  `KODEZART_KNOWLEDGE_MCP_TOKEN` or `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN`
+  composes a static header aborts boot naming the host and both variables —
+  the combination no credential value rescues.
+
+Both are conditioned on the grant list: a deployment that grants no session
+dials nothing, so it needs no endpoint and nothing about it is dead. The two
+working static-credential routes are a self-hosted HTTP server (with the
+gateway token) and the stdio transport spawning an absolute command path.
+
+## Private knowledge base — the knowledge credential
+
+`KODEZART_KNOWLEDGE_MCP_TOKEN` is a credential, and it is configured **only**
+through the environment (or the `.env` file the environment is loaded from).
+It is never written to the file-based operation config: that model forbids
+extra keys, so a secret placed there aborts boot rather than being read.
+
+Three properties hold for the value, and each is a test rather than a promise:
+
+- **never serialized** — the field is excluded from `model_dump()` and
+  `model_dump_json()`, so a dumped configuration carries no copy of it;
+- **never logged** — no structured event emits it, boot included;
+- **redacted at egress** — if the value ever reaches adapter stderr or an
+  exception message it is replaced with the redaction sentinel by
+  `redact_credentials`, alongside the GitHub credential forms.
 
 ## Queue retention — two independent windows
 

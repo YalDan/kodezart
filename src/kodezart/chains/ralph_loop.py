@@ -32,6 +32,7 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.trajectory import IterationRecord
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
@@ -194,6 +195,7 @@ class RalphLoop:
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             skills=self._skills,
+            session_type=SessionType.TICKET_FIRE,
             visibility=ctx.repo_visibility,
             create_branch=is_first,
             cache_key=ctx.cache_key,
@@ -243,6 +245,7 @@ class RalphLoop:
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS,
                 skills=self._skills,
+                session_type=SessionType.TICKET_FIRE,
                 output_format={
                     "type": "json_schema",
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,

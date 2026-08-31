@@ -69,6 +69,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 
@@ -415,6 +416,7 @@ class RalphWorkflowEngine:
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
                 skills=self._skills,
+                session_type=SessionType.TICKET_FIRE,
                 output_format={
                     "type": "json_schema",
                     "schema": BRANCH_NAME_SCHEMA,
@@ -501,6 +503,7 @@ class RalphWorkflowEngine:
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
                 skills=self._skills,
+                session_type=SessionType.TICKET_FIRE,
                 output_format={
                     "type": "json_schema",
                     "schema": GENERATED_CRITERIA_SCHEMA,
@@ -805,6 +808,7 @@ class RalphWorkflowEngine:
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS,
                 skills=self._skills,
+                session_type=SessionType.TICKET_FIRE,
                 output_format={
                     "type": "json_schema",
                     "schema": ACCEPTANCE_CRITERIA_SCHEMA,
@@ -1043,6 +1047,7 @@ class RalphWorkflowEngine:
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
                 skills=self._skills,
+                session_type=SessionType.TICKET_FIRE,
                 output_format={
                     "type": "json_schema",
                     "schema": PR_DESCRIPTION_SCHEMA,

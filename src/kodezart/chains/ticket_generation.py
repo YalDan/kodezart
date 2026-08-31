@@ -30,6 +30,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketReviewEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import TicketGenerationState, WorkflowContext
 
@@ -214,6 +215,7 @@ class TicketGenerationLoop:
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=TICKET_TOOLS,
                 skills=self._skills,
+                session_type=SessionType.TICKET_FIRE,
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_DRAFT_SCHEMA,
@@ -275,6 +277,7 @@ class TicketGenerationLoop:
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=TICKET_TOOLS,
                 skills=self._skills,
+                session_type=SessionType.TICKET_FIRE,
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_REVIEW_SCHEMA,

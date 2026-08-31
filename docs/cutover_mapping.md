@@ -100,6 +100,10 @@ every reference below is a placeholder in its own right.
 | records.grooming_log.name | records |
 | records.grooming_log.id | records |
 | knowledge.constitution | knowledge |
+| knowledge.run_logs | knowledge |
+| knowledge.memories | knowledge |
+| knowledge.personas | knowledge |
+| knowledge.notes | knowledge |
 | endpoints.host_runner | endpoints |
 | endpoints.cloudflare_docs_mcp | endpoints |
 | endpoints.notion_connector | endpoints |

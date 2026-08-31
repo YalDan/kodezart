@@ -10,7 +10,10 @@ Two agent surfaces are available:
         result = ""
         async for message in query(
             prompt=prompt,
-            options=ClaudeAgentOptions(allowed_tools=["Read", "Glob", "Grep"]),
+            options=ClaudeAgentOptions(
+                allowed_tools=["Read", "Glob", "Grep"],
+                strict_mcp_config=True,
+            ),
         ):
             if hasattr(message, "result"):
                 result = message.result

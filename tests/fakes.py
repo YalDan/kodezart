@@ -6,10 +6,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
+from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
@@ -63,6 +66,7 @@ from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -85,6 +89,45 @@ from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.requests.agent import WorkflowRequest
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
+#: The kind a fake session reports when a test does not care which kind it
+#: is.  Deliberately NOT the kind the shipped grant names, so a test that
+#: means "granted" has to say so.
+FAKE_SESSION_TYPE: SessionType = SessionType.API_QUERY
+#: A knowledge server declared HERE, in the fixtures, never dialled.  Every
+#: assertion about which servers a session is configured with is therefore
+#: answered offline: what is under test is this codebase's own grant wiring,
+#: not what a vendor's server offers.
+FIXTURE_KNOWLEDGE_SERVER: str = "fixture-knowledge"
+_FIXTURE_KNOWLEDGE_CREDENTIAL: str = "ntn_" + ("K" * 44)
+#: A stand-in for the rendered what-lives-where map.  Deliberately not the
+#: shipped fragment: a test asserting the map reached a prompt must fail for
+#: a reason other than "some prose happens to match".
+FIXTURE_KNOWLEDGE_MAP: str = "── FIXTURE MAP ── where the fixture things live"
+
+
+def knowledge_grant_for(
+    *granted: SessionType,
+    knowledge_map: str = FIXTURE_KNOWLEDGE_MAP,
+) -> KnowledgeGrant:
+    """The fixture knowledge server, granted to *granted* and nothing else.
+
+    The map rides with the grant exactly as the model requires: a grant
+    naming no session type carries none, because nothing would render it.
+    """
+    return KnowledgeGrant(
+        granted=granted,
+        server_name=FIXTURE_KNOWLEDGE_SERVER,
+        server_url="https://knowledge.invalid/mcp",
+        auth_header="Authorization",
+        auth_scheme="Bearer",
+        credential=_FIXTURE_KNOWLEDGE_CREDENTIAL,
+        knowledge_map=knowledge_map if granted else "",
+    )
+
+
+#: The shipped shape: no session type is granted, so no session is configured
+#: with a knowledge server at all.
+NO_KNOWLEDGE_GRANT: KnowledgeGrant = knowledge_grant_for()
 FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
 #: The configured team key every fixture issue belongs to, and the one a
 #: fixture operation declares.  A test reaching for an issue OUTSIDE the
@@ -96,6 +139,113 @@ DEFAULT_SETTING_SOURCES: list[SettingSource] = [
     SettingSource.PROJECT,
     SettingSource.LOCAL,
 ]
+
+#: Both adapters implementing the executor protocol, including the one the
+#: default composition root does not wire.  Absence from the composition root
+#: is never absence from a guarantee, so every executor-level assertion runs
+#: over this list rather than over the default.
+EXECUTOR_MODULES: list[str] = [
+    "kodezart.adapters.claude_client_executor",
+    "kodezart.adapters.claude_agent_executor",
+]
+
+
+def executor_for(module: str, grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT):
+    """Build the adapter that lives in *module* with configured setting sources."""
+    if module.endswith("claude_client_executor"):
+        return ClaudeClientExecutor(
+            setting_sources=DEFAULT_SETTING_SOURCES,
+            knowledge_grant=grant,
+        )
+    return ClaudeAgentExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=grant,
+    )
+
+
+@dataclass(frozen=True)
+class RecordedSession:
+    """Everything an executor handed the SDK for one session.
+
+    The prompt is recorded beside the options because they are two
+    consequences of one decision, and an assertion that can only see the
+    options cannot tell whether the other consequence agreed with it.
+    """
+
+    options: object
+    prompt: str
+
+
+async def _no_messages() -> AsyncGenerator[object, None]:
+    """A transport that accepts a session and returns nothing from it."""
+    for message in ():
+        yield message
+
+
+def _recording_client(recorded: list[RecordedSession]) -> Callable[..., object]:
+    """Stand-in for the persistent SDK client that records and yields nothing."""
+
+    class _Client:
+        def __init__(self, *, options: object) -> None:
+            self._options = options
+
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *exc: object) -> bool:
+            return False
+
+        async def query(self, prompt: str) -> None:
+            recorded.append(RecordedSession(options=self._options, prompt=prompt))
+
+        def receive_response(self) -> AsyncGenerator[object, None]:
+            return _no_messages()
+
+    return _Client
+
+
+def _recording_query(recorded: list[RecordedSession]) -> Callable[..., object]:
+    """Stand-in for the one-shot SDK entry point, same recording contract."""
+
+    def query(*, prompt: str, options: object) -> AsyncGenerator[object, None]:
+        recorded.append(RecordedSession(options=options, prompt=prompt))
+        return _no_messages()
+
+    return query
+
+
+async def recorded_session(
+    module: str,
+    *,
+    grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT,
+    session_type: SessionType = FAKE_SESSION_TYPE,
+    prompt: str = "p",
+    cwd: str = "/tmp/fake",
+    skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+) -> RecordedSession:
+    """Run one session through *module*'s adapter against a recording transport."""
+    recorded: list[RecordedSession] = []
+    target = "ClaudeSDKClient" if module.endswith("claude_client_executor") else "query"
+    replacement = (
+        _recording_client(recorded)
+        if target == "ClaudeSDKClient"
+        else _recording_query(recorded)
+    )
+    executor = executor_for(module, grant)
+
+    with patch(f"{module}.{target}", replacement):
+        async for _event in executor.stream(
+            prompt=prompt,
+            cwd=cwd,
+            permission_mode="plan",
+            allowed_tools=[],
+            skills=skills,
+            session_type=session_type,
+        ):
+            pass
+
+    assert len(recorded) == 1
+    return recorded[0]
 
 
 class FakeGitService:
@@ -389,6 +539,7 @@ class FakeAgentExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -401,6 +552,7 @@ class FakeAgentExecutor:
                 "session_id": session_id,
                 "permission_mode": permission_mode,
                 "skills": skills,
+                "session_type": session_type,
             }
         )
         if self._is_branch_name_schema(output_format):
@@ -520,6 +672,7 @@ class FakeRaisingExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -584,6 +737,7 @@ class FakeChangePersister:
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> PersistResult | None:
         self.calls.append(
@@ -678,11 +832,19 @@ class FakeAgentRunner:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
-        self.calls.append({"method": "stream", "prompt": prompt, "skills": skills})
+        self.calls.append(
+            {
+                "method": "stream",
+                "prompt": prompt,
+                "skills": skills,
+                "session_type": session_type,
+            }
+        )
         for event in self._events:
             yield event
 
@@ -698,6 +860,7 @@ class FakeAgentRunner:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         create_branch: bool = True,
         cache_key: str | None = None,
@@ -721,6 +884,7 @@ class FakeAgentRunner:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -764,6 +928,7 @@ class ScriptedFakeExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -776,6 +941,7 @@ class ScriptedFakeExecutor:
                 "session_id": session_id,
                 "permission_mode": permission_mode,
                 "skills": skills,
+                "session_type": session_type,
             }
         )
         if output_format is None:

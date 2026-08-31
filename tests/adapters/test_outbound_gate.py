@@ -198,6 +198,29 @@ async def test_shipped_credential_category_still_blocks() -> None:
     assert decision.categories == (RedactionCategory.CREDENTIALS,)
 
 
+async def test_the_shipped_credential_category_blocks_the_knowledge_token() -> None:
+    """Egress redaction and the gate are two surfaces over one credential class.
+
+    A pattern added to only the redaction helper would leave this surface
+    blind to the credential the knowledge layer introduces.
+    """
+    config = AppConfig()
+    gate = PatternOutboundContentGate(
+        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
+        verdicts=config.deny_pattern_verdicts,
+    )
+    token = "ntn_" + "A" * 44
+    decision = await gate.gate(
+        content=f"knowledge call failed for {token}",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.BLOCKED
+    assert decision.categories == (RedactionCategory.CREDENTIALS,)
+
+
 # ---------------------------------------------------------------------------
 # AC-5 — engine reuse and the scanner-ordering seam
 # ---------------------------------------------------------------------------

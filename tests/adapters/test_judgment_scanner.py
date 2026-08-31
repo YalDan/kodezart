@@ -47,8 +47,9 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
-from tests.fakes import FakeContentScanner
+from tests.fakes import FAKE_SESSION_TYPE, FakeContentScanner
 from tests.prompts.test_prompt_wiring import load_registry
 
 # A SYNTHETIC organisation. A fixture built from the real description would
@@ -104,6 +105,7 @@ class ScriptedAuditExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:

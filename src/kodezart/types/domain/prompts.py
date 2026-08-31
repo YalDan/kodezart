@@ -33,6 +33,11 @@ class PromptKey(StrEnum):
     FIRE_PREP_PASS = "fire_prep_pass"
     GROOMING_PASS = "grooming_pass"
     CONTENT_AUDIT = "content_audit"
+    #: What lives where.  A prelude composed into a session that is granted
+    #: the knowledge server, and into no other — a key rather than set-level
+    #: fragment metadata, so it enters this census and the set-completeness
+    #: rule covers it like every other role.
+    KNOWLEDGE_MAP = "knowledge_map"
 
 
 class PromptSetFragments(BaseModel):

@@ -7,12 +7,14 @@ Covers:
 - ``build_error_event`` preserves non-secret message text verbatim
 """
 
+import re
 from typing import Final
 
 import pytest
 
 from kodezart.core.error_egress import (
     _REDACTION_SENTINEL,
+    _VENDOR_CREDENTIAL_PATTERNS,
     build_error_event,
     redact_credentials,
 )
@@ -28,6 +30,7 @@ _FAKE_PAT_BODY: Final[str] = ("B" * 22) + "_" + ("C" * 59)
 _FAKE_URL: Final[str] = (
     f"https://x-access-token:ghp_{_FAKE_GHP_BODY}@github.com/o/r.git"
 )
+_FAKE_NOTION_BODY: Final[str] = "D" * 44
 
 
 def test_redact_credentials_redacts_embedded_url_token() -> None:
@@ -60,17 +63,57 @@ def test_redact_credentials_redacts_fine_grained_pat() -> None:
     assert _REDACTION_SENTINEL in redacted
 
 
+@pytest.mark.parametrize("prefix", ["ntn_", "secret_"])
+def test_redact_credentials_redacts_notion_tokens(prefix: str) -> None:
+    """Each published Notion prefix is scrubbed; surrounding text survives."""
+    src = f"knowledge call failed: {prefix}{_FAKE_NOTION_BODY} rejected"
+    redacted = redact_credentials(src)
+    assert _FAKE_NOTION_BODY not in redacted
+    assert _REDACTION_SENTINEL in redacted
+    assert "knowledge call failed:" in redacted
+    assert "rejected" in redacted
+
+
 @pytest.mark.parametrize(
     "src",
     [
         "hello world",
         "feature/ghp-thing",
         "ghp_short",
+        "ntn_short",
+        "the secret_key operators supply",
+        "set secret_value before boot",
     ],
 )
 def test_redact_credentials_preserves_non_secret_text(src: str) -> None:
     """Non-secret prose, branch names, and short suffixes are untouched."""
     assert redact_credentials(src) == src
+
+
+def test_a_vendor_added_to_the_pattern_set_needs_no_edit_to_the_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The extensibility claim, demonstrated rather than asserted in prose.
+
+    Covering the next knowledge or forge vendor is one entry in the set:
+    the shape is unknown to ``redact_credentials`` before the entry exists
+    and scrubbed after it, with no change to the function between.
+    """
+    body = "E" * 40
+    src = f"vendor call failed: acme_{body} rejected"
+    assert redact_credentials(src) == src
+
+    monkeypatch.setitem(
+        _VENDOR_CREDENTIAL_PATTERNS,
+        "acme",
+        ((re.compile(r"\bacme_[A-Za-z0-9]{40,}"), _REDACTION_SENTINEL),),
+    )
+    redacted = redact_credentials(src)
+
+    assert body not in redacted
+    assert _REDACTION_SENTINEL in redacted
+    assert "vendor call failed:" in redacted
+    assert "rejected" in redacted
 
 
 def test_redact_credentials_is_idempotent() -> None:

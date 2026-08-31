@@ -23,9 +23,11 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.trajectory import IterationRecord
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeChangePersister,
@@ -203,6 +205,7 @@ async def test_loop_second_iteration_succeeds() -> None:
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -504,6 +507,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -645,6 +649,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -815,6 +820,7 @@ async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> 
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -875,6 +881,7 @@ class _ScriptedLoopExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
