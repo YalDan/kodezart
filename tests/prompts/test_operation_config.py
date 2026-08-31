@@ -24,13 +24,16 @@ from kodezart.core.prompt_namespaces import (
 )
 from kodezart.core.prompt_rendering import binding_names, free_binding_names
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateVerdict,
+    OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     WriterShape,
 )
 from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
+    RUN_LOG_RECORD_KEY,
     LifecycleStage,
     OperationConfig,
     PrincipalRole,
@@ -45,6 +48,13 @@ CUTOVER = REPO_ROOT / "docs" / "cutover_mapping.md"
 SET_DIR = REPO_ROOT / "src" / "kodezart" / "prompts" / "sets" / "claude-opus"
 PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
 
+# Names a shipped template references from inside an ``{{#each}}`` frame
+# WITHOUT the ``this.`` root, so the renderer resolves them off the current
+# item while the static reader cannot tell them from a free binding. They are
+# members of a per-call value, never OperationConfig paths, and every helper
+# that reads templates statically has to discount them the same way.
+ITEM_SCOPED_NAMES = frozenset({"criterion", "reasoning"})
+
 # Frequency words a cadence-agnostic template may not contain: scheduling
 # lives exclusively in scheduler configuration.
 # Resolved org-shaped values a legal in-repo template may not contain:
@@ -52,7 +62,11 @@ PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
 ORG_SHAPED_PATTERNS: dict[RedactionCategory, list[str]] = {
     RedactionCategory.EMAIL_HANDLES: [
         r"[\w.+-]+@[\w-]+\.[\w.]+",
-        r"(?<![\w/])@[\w-]{3,}",
+        # Narrowed under KOD-60 R19, never removed: a handle starts with a
+        # word character (the generic phrase "@-mentions" is not one), and
+        # an @ after a closing angle bracket is the plugin-suffix syntax
+        # (`<bundle>@<marketplace>`), not a mention.
+        r"(?<![\w/>])@[A-Za-z][\w.-]{2,}",
     ],
     RedactionCategory.INFRA_ENDPOINTS: [r"https?://"],
     RedactionCategory.CROSS_REPO_NAMES: [r"\b\d{4}-\d{2}-\d{2}\b"],
@@ -104,8 +118,15 @@ def markdown_rows(heading: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
-    """Field-by-field: the eight specced fields plus the four added ones."""
+def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
+    """Field-by-field census: exact equality, never a subset check.
+
+    Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
+    registry) and by ``private_surface`` under KOD-106 R2 (the operator's
+    prose description of what this operation treats as private).  The
+    census stays total and stays ``==``; a census loosened to a containment
+    check stops being one.
+    """
     fields = OperationConfig.model_fields
     assert set(fields) == {
         "operation_name",
@@ -117,9 +138,11 @@ def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
         "workflow_states",
         "repos",
         "documents",
+        "records",
         "knowledge",
         "endpoints",
         "initiatives",
+        "private_surface",
     }
     config = example_config()
     assert isinstance(config.operation_name, str)
@@ -127,7 +150,8 @@ def test_all_twelve_fields_are_present_with_the_stated_types() -> None:
     assert isinstance(config.queue_states, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
     assert config.initiatives[0].target_date == date(2026, 12, 31)
-    assert config.repos[0].check_commands
+    assert config.repos[0].checks
+    assert config.records[RUN_LOG_RECORD_KEY].append_only is True
 
 
 def test_unknown_field_is_rejected(tmp_path: Path) -> None:
@@ -140,6 +164,89 @@ def test_unknown_field_is_rejected(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# KOD-157 — the issue to repository binding
+# ---------------------------------------------------------------------------
+
+
+def test_every_unbound_team_is_named_at_once(tmp_path: Path) -> None:
+    """Two repositories and no binding: both offenders in one error.
+
+    Never the first one only.  An unbound team's issues are fired into
+    whichever repository's tick claims them first, so the operator has to
+    see every team that is in that state, not one of them.
+    """
+    raw = raw_example()
+    for entry in raw["teams"].values():
+        del entry["repository"]
+
+    with pytest.raises(OperationConfigError) as excinfo:
+        load_operation_config(_write_toml(tmp_path, raw))
+
+    failures = " ".join(excinfo.value.failures)
+    for key in raw["teams"]:
+        assert f"teams['{key}']" in failures
+
+
+def test_a_binding_naming_an_undeclared_repository_is_refused(tmp_path: Path) -> None:
+    """The same refusal, naming the team and the url nothing declares."""
+    unknown = "https://example.invalid/example-org/no-such-repo"
+    raw = raw_example()
+    raw["teams"]["primary"]["repository"] = unknown
+
+    with pytest.raises(OperationConfigError) as excinfo:
+        load_operation_config(_write_toml(tmp_path, raw))
+
+    failures = " ".join(excinfo.value.failures)
+    assert "teams['primary']" in failures
+    assert unknown in failures
+
+
+def test_a_single_repository_operation_declares_no_binding(tmp_path: Path) -> None:
+    """The shipped single-repository shape keeps loading unchanged.
+
+    One repository is a TOTAL binding — every team fires into the only
+    candidate there is — so the config says nothing and every team is
+    still bound.
+    """
+    raw = raw_example()
+    raw["repos"] = [raw["repos"][0]]
+    for entry in raw["teams"].values():
+        del entry["repository"]
+
+    config = load_operation_config(_write_toml(tmp_path, raw))
+
+    assert set(config.teams_bound_to(config.repos[0].url)) == set(config.teams)
+
+
+def test_a_board_is_private_postured_only_where_its_team_says_so() -> None:
+    """Per board, and fail-closed everywhere the posture is not declared.
+
+    ``PRIVATE`` is the value that exempts a payload from the outbound
+    gate, so an issue on no declared team, on a team this operation does
+    not know, or on a board that declared nothing all resolve public.
+    """
+    config = example_config()
+
+    assert config.board_visibility("agent") is RepoVisibility.PRIVATE
+    assert config.board_visibility("primary") is RepoVisibility.PUBLIC
+    assert config.board_visibility("somebody-elses-board") is RepoVisibility.PUBLIC
+    assert config.board_visibility(None) is RepoVisibility.PUBLIC
+
+
+def test_a_board_declaring_no_posture_inherits_the_public_one(
+    tmp_path: Path,
+) -> None:
+    """The third state: absent, and it is not a fourth kind of private."""
+    raw = raw_example()
+    del raw["teams"]["agent"]["visibility"]
+
+    config = load_operation_config(_write_toml(tmp_path, raw))
+
+    assert config.teams["agent"].visibility is None
+    assert config.board_visibility("agent") is RepoVisibility.PUBLIC
+
+
+# ---------------------------------------------------------------------------
 # AC-3b / AC-4a — authority binds to a role
 # ---------------------------------------------------------------------------
 
@@ -147,7 +254,7 @@ def test_unknown_field_is_rejected(tmp_path: Path) -> None:
 def test_authority_is_read_from_the_role_never_a_name() -> None:
     """The approver is found by role, not by matching a literal."""
     config = example_config()
-    assert config.approver().role is PrincipalRole.APPROVER
+    assert PrincipalRole.APPROVER in config.approver().roles
 
 
 def test_no_principal_name_literal_appears_in_code_or_templates() -> None:
@@ -167,10 +274,17 @@ def test_exactly_one_approver_is_enforced_at_config_load(
 ) -> None:
     """Zero approvers and two approvers each raise the typed error."""
     raw = raw_example()
-    principals = [
-        {"tracker_user": f"user-{i}", "role": "approver"} for i in range(approver_count)
+    principals: list[dict[str, str]] = [
+        {
+            "tracker_user": f"user-{i}",
+            "roles": ["approver", "principal", "assignee"],
+            "handle": f"@user-{i}",
+        }
+        for i in range(approver_count)
     ]
-    principals.append({"tracker_user": "user-x", "role": "principal"})
+    principals.append(
+        {"tracker_user": "user-x", "roles": ["principal"], "handle": "@user-x"},
+    )
     raw["principals"] = principals
     path = _write_toml(tmp_path, raw)
     with pytest.raises(OperationConfigError) as excinfo:
@@ -246,7 +360,9 @@ def test_multiple_distinct_structural_failures_land_in_one_error(
 ) -> None:
     """Collect-all, not fail-on-first."""
     raw = raw_example()
-    raw["principals"] = [{"tracker_user": "u", "role": "principal"}]
+    raw["principals"] = [
+        {"tracker_user": "u", "roles": ["principal"], "handle": "@u"},
+    ]
     del raw["queue_states"][QueueState.TRIAGE.value]
     del raw["workflow_states"][LifecycleStage.DONE.value]
     del raw["documents"][CHECKPOINT_DOCUMENT_KEY]
@@ -359,7 +475,6 @@ def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
     """The declared per-call set is not allowed to drift from the templates."""
     registry = load_registry()
     operation_names = set(bindings_for(example_config()))
-    declared_item_scoped = {"criterion", "reasoning"}
     for key in PromptKey:
         names = binding_names(registry.template_for(key).body)
         unaccounted = (
@@ -367,7 +482,7 @@ def test_per_call_namespace_covers_every_non_operation_template_name() -> None:
             - operation_names
             - PER_CALL_VARIABLE_NAMES
             - SET_FRAGMENT_NAMES
-            - declared_item_scoped
+            - ITEM_SCOPED_NAMES
         )
         unaccounted = {n for n in unaccounted if "." not in n}
         assert unaccounted == set(), f"{key.value} references {unaccounted}"
@@ -391,9 +506,9 @@ def test_pass_templates_resolve_through_the_port_and_render(
     assert "{{" not in rendered
 
 
-def test_claude_opus_completeness_passes_at_fourteen_keys() -> None:
+def test_claude_opus_completeness_passes_at_fifteen_keys() -> None:
     """KOD-63's completeness rule obliges the default set to supply both."""
-    assert len(PromptKey) == 14
+    assert len(PromptKey) == 15
     members = {path.stem for path in SET_DIR.glob("*.md")}
     assert members == {key.value for key in PromptKey}
 
@@ -404,7 +519,7 @@ def test_claude_opus_completeness_passes_at_fourteen_keys() -> None:
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)
-def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
+async def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
     """Zero resolved org-shaped values in repository content."""
     config = AppConfig()
     gate = PatternOutboundContentGate(
@@ -415,10 +530,12 @@ def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
         verdicts=config.deny_pattern_verdicts,
     )
     body = (SET_DIR / f"{key.value}.md").read_text(encoding="utf-8")
-    decision = gate.gate(
+    decision = await gate.gate(
         content=body,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN, decision.categories
 
@@ -460,16 +577,23 @@ def test_all_six_named_dimensions_are_covered() -> None:
 
 
 def template_placeholders() -> set[str]:
-    """Every free name the two pass templates reference, fragments excluded.
+    """Every OPERATION-namespace name the shipped templates reference.
 
     Free: a reference an enclosing ``{{#each}}`` frame supplies is a member of
     the iterated item, not a placeholder resolving to an OperationConfig path.
+
+    Every key, not only the two pass keys: KOD-106's content-audit template
+    is the sole reader of ``private_surface``, and a mapping scoped to the
+    pass templates would call a field unreachable that a shipped template
+    demonstrably reaches.  Per-call variables, set fragments and item-scoped
+    member names are removed because none of them resolves to an
+    OperationConfig path.
     """
     registry = load_registry()
     referenced: set[str] = set()
-    for key in PASS_KEYS:
+    for key in PromptKey:
         referenced |= free_binding_names(registry.template_for(key).body)
-    return referenced - SET_FRAGMENT_NAMES
+    return referenced - SET_FRAGMENT_NAMES - PER_CALL_VARIABLE_NAMES - ITEM_SCOPED_NAMES
 
 
 def test_placeholder_mapping_is_total_in_both_directions() -> None:
@@ -556,8 +680,29 @@ def _to_toml(raw: dict[str, object]) -> str:
         elif isinstance(value, list) and value and isinstance(value[0], dict):
             for item in value:
                 lines.append(f"\n[[{key}]]")
-                lines.extend(f"{k} = {_scalar(v)}" for k, v in item.items())
+                lines.extend(
+                    f"{k} = {_scalar(v)}"
+                    for k, v in item.items()
+                    if not _is_table_array(v)
+                )
+                for sub_key, sub_value in item.items():
+                    if not _is_table_array(sub_value):
+                        continue
+                    sub_items: list[dict[str, object]] = sub_value
+                    for sub_item in sub_items:
+                        lines.append(f"\n[[{key}.{sub_key}]]")
+                        lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_item.items())
     return "\n".join(lines) + "\n"
+
+
+def write_toml(tmp_path: Path, raw: dict[str, object]) -> Path:
+    """Public name for the serialiser, for sibling modules to reuse."""
+    return _write_toml(tmp_path, raw)
+
+
+def _is_table_array(value: object) -> bool:
+    """A nested array-of-tables, such as ``repos[].checks``."""
+    return isinstance(value, list) and bool(value) and isinstance(value[0], dict)
 
 
 def _scalar(value: object) -> str:

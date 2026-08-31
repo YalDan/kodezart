@@ -1,6 +1,6 @@
 [project]
 name = "kodezart"
-version = "0.1.5"
+version = "0.2.0"
 description = "kodezart — music-inspired AI assistant"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,6 +19,10 @@ dependencies = [
     # cwd/permission_mode/allowed_tools/resume/output_format/model (types.py),
     # and RateLimitEvent/StreamEvent are in claude_agent_sdk.__all__.
     "claude-agent-sdk~=0.2.128",
+    # The MCP client the tracker transport speaks. Already present
+    # transitively under claude-agent-sdk; declared directly because
+    # adapters/http_mcp_tool_caller.py imports it.
+    "mcp>=1.26.0",
     "langchain>=0.3.0",
     "langgraph>=0.2.0",
     "structlog>=24.4.0",
@@ -89,6 +93,28 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 pythonpath = ["src"]
 testpaths = ["tests"]
+# A warning nothing reads is a break deferred, so every warning fails the
+# suite.  Something genuinely outside this repo's control earns a narrow
+# entry naming the exact message and module, with its reason — never a
+# bare category, which would re-open the hole this closes.
+filterwarnings = ["error"]
+# These two classes are gated out of the default run, so `make check` is
+# green without them.  Recorded here, beside the markers, because this is
+# where the gate reads them — an exclusion nothing states is a silence.
+# Membership is a query, not a list kept here:
+#   uv run pytest -m live --collect-only -q
+#   uv run pytest -m postgres --collect-only -q
+#
+#   live      Drives a real Claude CLI and spends account budget, so it
+#             cannot run unattended in CI.  Run by the operator during a
+#             live window; the board carries the last such run.
+#   postgres  Needs a real PostgreSQL server at KODEZART_TEST_POSTGRES_URL.
+#             Run against a real database whenever one is reachable; last
+#             green 2026-08-25 per the board.
+#
+# Neither class is excluded for being red.  Both are excluded because
+# `make check` cannot supply what they need — which is why the evidence
+# for them lives on the board and not in this file.
 markers = [
     "live: requires live Claude CLI (skip by default, run with: pytest -m live)",
     "postgres: requires a PostgreSQL server at KODEZART_TEST_POSTGRES_URL (skip by default, run with: pytest -m postgres)",

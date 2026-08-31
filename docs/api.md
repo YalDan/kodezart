@@ -22,7 +22,7 @@ Health check endpoint.
   "timestamp": "2026-01-01T00:00:00Z",
   "data": {
     "healthy": true,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "service": "kodezart"
   },
   "error": null
@@ -90,7 +90,69 @@ curl -N http://localhost:8000/api/v1/agent/workflow \
   -d '{"prompt": "Add input validation", "repoUrl": "owner/repo", "baseBranch": "main"}'
 ```
 
+## POST /api/v1/agent/fire
+
+Queue a workflow run and return immediately. Same request body as
+`POST /api/v1/agent/workflow` (`WorkflowRequest`); no stream is opened.
+
+### Response — `202 Accepted` (`FireAcceptedResponse`)
+
+```json
+{
+  "jobId": "job_01H...",
+  "lane": "default",
+  "state": "queued",
+  "queuePosition": 0,
+  "submittedAt": "2026-01-01T00:00:00Z",
+  "statusUrl": "/api/v1/jobs/job_01H...",
+  "streamUrl": "/api/v1/jobs/job_01H.../stream"
+}
+```
+
+`queuePosition` is `null` once the run has left the queue. A lane at
+`KODEZART_QUEUE_MAX_DEPTH_PER_LANE` rejects the submission with `429`.
+
+### Example
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agent/fire \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Add input validation", "repoUrl": "owner/repo"}'
+```
+
+## GET /api/v1/jobs/{jobId}
+
+Registry facts for a queued or running job, plus the checkpointed run state.
+`404` with a `BaseResponse` error body when the job id is unknown or its
+record has been released (`KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS`).
+
+### Example
+
+```bash
+curl http://localhost:8000/api/v1/jobs/job_01H...
+```
+
+## GET /api/v1/jobs/{jobId}/stream
+
+Attach to a job's event stream. Replays the job's bounded event buffer
+(`KODEZART_QUEUE_EVENT_BUFFER_CAPACITY`) and then goes live, in the same SSE
+format as `/agent/query` and `/agent/workflow`. `404` when the job id is
+unknown. A job whose buffer has been released
+(`KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS`) is marked `truncated` on its
+record and replays nothing.
+
+### Example
+
+```bash
+curl -N http://localhost:8000/api/v1/jobs/job_01H.../stream
+```
+
 ## SSE Event Types
+
+Every frame type the stream can carry is in one of the three tables below.
+A test compares them against `types/domain/agent.py` in both directions, so an
+event added to the code with no row fails the suite — and no count is written
+down anywhere to go stale.
 
 All responses from `/query` and `/workflow` are Server-Sent Event streams.
 Each frame follows the format:
@@ -117,10 +179,11 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 
 ```
 
-### Streaming Events (11)
+### Streaming Events
 
 | Event Type            | Key Fields                                                  |
 | --------------------- | ----------------------------------------------------------- |
+| `job_accepted`        | `jobId`, `lane`, `queuePosition`, `statusUrl`, `streamUrl`  |
 | `user_message`        | `content`                                                   |
 | `assistant_text`      | `text`, `model`                                             |
 | `assistant_thinking`  | `thinking`, `model`                                         |
@@ -132,8 +195,9 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `task_notification`   | `subtype`, `taskId`, `status`, `outputFile`, `summary`, `uuid`, `sessionId` |
 | `result`              | `subtype`, `durationMs`, `durationApiMs`, `isError`, `numTurns`, `sessionId`, `stopReason`, `totalCostUsd`, `usage`, `result`, `branch`, `commitSha`, `structuredOutput` |
 | `stream_event`        | `sessionId`, `event`                                        |
+| `rate_limit_warning`  | `status`, `resetsAt`, `utilization`, `rateLimitType`        |
 
-### Workflow Events (6)
+### Workflow Events
 
 | Event Type                | Key Fields                                      |
 | ------------------------- | ----------------------------------------------- |
@@ -142,9 +206,14 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `workflow_ticket`         | `ticket`, `reviewRounds`, `approved`            |
 | `workflow_criteria`       | `criteria`, `reasoning`                         |
 | `workflow_iteration`      | `iteration`, `branch`, `commitSha`, `accepted`, `evaluation` |
+| `workflow_review`         | `passed`, `evaluation`, `fixRound`              |
+| `workflow_consolidation`  | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
+| `workflow_visibility`     | `visibility`, `repoUrl`                         |
+| `workflow_pr`             | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `featureTipSha` |
+| `workflow_ci`             | `passed`, `summary`, `ref`                      |
 | `workflow_complete`       | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `merged`, `finalCommitSha`, `error` |
 
-### Error Events (1)
+### Error Events
 
 | Event Type | Key Fields |
 | ---------- | ---------- |

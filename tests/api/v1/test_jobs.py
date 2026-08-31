@@ -142,42 +142,54 @@ async def _drain(queue: AsyncioJobQueue, job_id: str) -> list[AgentEvent]:
     return [event async for event in queue.attach(job_id=job_id)]
 
 
+#: Generous: every wait here is on a condition, so this only ever bounds
+#: a genuine hang.
+SETTLE_TIMEOUT = 5.0
+
+
 async def _wait_terminal(
-    queue: AsyncioJobQueue, job_id: str, *, ticks: int = 400
+    queue: AsyncioJobQueue, job_id: str, *, timeout: float = SETTLE_TIMEOUT
 ) -> None:
     """Yield to the loop until *job_id* reaches TERMINAL, through the port."""
-    for _ in range(ticks):
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
         record = await queue.get(job_id=job_id)
         if record is not None and record.state is JobState.TERMINAL:
             return
+        if loop.time() >= deadline:
+            msg = f"job {job_id} never reached TERMINAL"
+            raise AssertionError(msg)
         await asyncio.sleep(0)
-    msg = f"job {job_id} never reached TERMINAL"
-    raise AssertionError(msg)
 
 
 async def _wait_truncated(
-    queue: AsyncioJobQueue, job_id: str, *, ticks: int = 400
+    queue: AsyncioJobQueue, job_id: str, *, timeout: float = SETTLE_TIMEOUT
 ) -> None:
     """Yield to the loop until *job_id*'s record is marked truncated."""
-    for _ in range(ticks):
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
         record = await queue.get(job_id=job_id)
         if record is not None and record.truncated:
             return
+        if loop.time() >= deadline:
+            msg = f"job {job_id} was never marked truncated"
+            raise AssertionError(msg)
         await asyncio.sleep(0)
-    msg = f"job {job_id} was never marked truncated"
-    raise AssertionError(msg)
 
 
-async def _until(predicate: object, *, ticks: int = 200) -> None:
+async def _until(predicate: object, *, timeout: float = SETTLE_TIMEOUT) -> None:
     """Yield to the loop until *predicate* holds. Fails loudly on timeout."""
     check = predicate
     assert callable(check)
-    for _ in range(ticks):
-        if check():
-            return
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not check():
+        if loop.time() >= deadline:
+            msg = "condition never became true"
+            raise AssertionError(msg)
         await asyncio.sleep(0)
-    msg = "condition never became true"
-    raise AssertionError(msg)
 
 
 def _make_queue(
@@ -1177,7 +1189,7 @@ def test_neither_service_nor_reader_branches_on_checkpointer_backend() -> None:
 # ---------------------------------------------------------------------------
 
 _ADAPTER_MODULE = "adapters/asyncio_job_queue.py"
-_WIRING_MODULE = "main.py"
+_WIRING_MODULE = "composition/jobs.py"
 
 
 def test_exactly_one_lane_queue_construction_site() -> None:

@@ -29,12 +29,14 @@ graph TD
 
 ## Protocol Map
 
-All 12 protocols are defined in `core/protocols.py`. Each protocol has one or
-more adapter implementations:
+Every port protocol is defined in `core/protocols.py`, and every one of them
+has a row below. No count is written down here to go stale: a test derives
+both sides and fails if a protocol has no row, or a row names a protocol that
+does not exist.
 
 | Protocol          | Adapter Implementation   | Notes                                                |
 | ----------------- | ------------------------ | ---------------------------------------------------- |
-| LogEmitter        | structlog.stdlib.BoundLogger | Satisfied by structlog directly                  |
+| LogEmitter        | structlog `stdlib.BoundLogger` | The five awaited emitters. No adapter class: the configured wrapper already satisfies the port, and a test asserts it |
 | GitService        | SubprocessGitService     | Git CLI via asyncio subprocess                       |
 | RepoCache         | LocalBareRepoCache       | Bare repo clones in a cache directory                |
 | AgentExecutor     | ClaudeClientExecutor     | **Default.** Persistent sessions via ClaudeSDKClient |
@@ -42,11 +44,27 @@ more adapter implementations:
 | WorkspaceProvider | GitWorktreeProvider      | Disposable Git worktrees in `/tmp`                   |
 | ChangePersister   | GitChangePersister       | Detects changes, generates commit message, commits, pushes |
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
+| PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
+| CIMonitor         | GitHubAPIClient          | Polls check runs for a pushed head                   |
+| DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
+| McpToolCaller     | HttpMcpToolCaller        | One MCP tool call over the vendor's HTTP transport   |
+| ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
+| TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
+| ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
 | QualityGate       | RalphLoop                | LangGraph iterative execute/evaluate loop            |
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |
 | WorkflowEngine    | RalphWorkflowEngine      | LangGraph outer pipeline                             |
+| JobQueue          | AsyncioJobQueue          | In-process lanes, bounded depth and concurrency      |
+| JobRegistry       | AsyncioJobQueue          | The same queue read as a record store                |
+| RunStateReader    | LangGraphRunStateReader  | Reads a run's checkpointed state                     |
+| PromptProvider    | InRepoPromptRegistry     | Prompt sets as directories of templates              |
+| SkillInventory    | HostSkillInventory       | What the host provisions; kodezart installs nothing  |
+| RepoVisibilityResolver | GitHubAPIClient     | Resolves PRIVATE / PUBLIC / UNKNOWN once per run     |
+| ContentScanner    | RegexContentScanner      | The deterministic pattern half of the outbound gate  |
+| ContentScanner    | AgentContentScanner      | The judgment half, ordered after the patterns        |
+| OutboundContentGate | PatternOutboundContentGate | CLEAN / REDACTED / BLOCKED over N scanners      |
 
 ## Workflow Pipeline
 

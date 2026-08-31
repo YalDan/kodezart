@@ -145,9 +145,89 @@ class OperationConfigError(Exception):
         self.failures: tuple[str, ...] = tuple(failures)
 
 
+class TrackerBootValidationError(Exception):
+    """Raised at boot when a configured tracker mapping does not resolve.
+
+    Lists EVERY unresolvable entry at once, each described by kind, semantic
+    name and configured identifier.  There is no partial operation: a
+    mapping the workspace cannot resolve would otherwise surface as a
+    mis-targeted write hours later, so the process refuses to start.
+    """
+
+    def __init__(self, message: str, *, unresolved: Sequence[str]) -> None:
+        super().__init__(f"{message} ({'; '.join(unresolved)})")
+        self.unresolved: tuple[str, ...] = tuple(unresolved)
+
+
+class TrackerEnsureConflictError(Exception):
+    """Raised when instating an OWNED value would ALTER an existing definition.
+
+    Ensuring is creates-only.  A rename, a recolour, a re-scope or two
+    declared members claiming one backend value is this error and performs
+    no write: adopting the wrong definition silently would repurpose a
+    value another part of the workspace already means something by.
+    """
+
+    def __init__(self, message: str, *, entry: str) -> None:
+        super().__init__(f"{message} ({entry})")
+        self.entry: str = entry
+
+
+class TrackerProtocolError(Exception):
+    """Raised when a tracker backend's response cannot be read as its shape.
+
+    The adapter refuses to guess.  A field that is absent, of the wrong
+    type, or carries an unmappable value is this error and never a
+    substituted default — a silently defaulted priority or state would
+    reorder the dispatch queue with nothing to falsify.
+    """
+
+    def __init__(self, message: str, *, tool: str, detail: str) -> None:
+        super().__init__(f"{message} (tool: {tool}; {detail})")
+        self.tool: str = tool
+        self.detail: str = detail
+
+
+class McpTransportError(Exception):
+    """Raised when an MCP session cannot be opened or a tool call cannot answer.
+
+    The transport refuses to guess in either direction: a server that
+    reports a tool error, returns no structured content, or is not dialled
+    at all is this error, never an empty result a caller would read as "no
+    such issue".
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        server_name: str,
+        tool_name: str | None = None,
+    ) -> None:
+        described = server_name if tool_name is None else f"{server_name}/{tool_name}"
+        super().__init__(f"{message} ({described})")
+        self.server_name: str = server_name
+        self.tool_name: str | None = tool_name
+
+
 class PromptNamespaceCollisionError(Exception):
     """Raised at boot when the three binding namespaces are not disjoint."""
 
     def __init__(self, message: str, *, colliding: Sequence[str]) -> None:
         super().__init__(f"{message} ({', '.join(colliding)})")
         self.colliding: tuple[str, ...] = tuple(colliding)
+
+
+class ContentScannerBootError(Exception):
+    """Raised at boot when the judgment scanner is enabled with nothing to judge.
+
+    The third state of the enable knob, made loud.  Enabled with no
+    private-surface description would leave a registered scanner whose every
+    scan is ``NOT_CONFIGURED`` — a gate that blocks every authored write, or
+    worse, one an operator disables to get work done.  The process refuses
+    to start instead.
+    """
+
+    def __init__(self, message: str, *, missing: str) -> None:
+        super().__init__(f"{message} ({missing})")
+        self.missing: str = missing

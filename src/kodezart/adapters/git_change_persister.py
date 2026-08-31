@@ -19,6 +19,7 @@ mutated (no reset, no commit-tree, no follow-up push).
 
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import (
     AgentExecutor,
     GitService,
@@ -26,13 +27,17 @@ from kodezart.core.protocols import (
     PromptProvider,
 )
 from kodezart.core.stream_drain import drain
-from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.agent import (
     COMMIT_MESSAGE_SCHEMA,
     CommitMessageOutput,
 )
 from kodezart.types.domain.branch import BackupBranchName
-from kodezart.types.domain.gating import GateVerdict, RepoVisibility, WriterShape
+from kodezart.types.domain.gating import (
+    ContentClass,
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+)
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
@@ -157,10 +162,13 @@ class GitChangePersister:
         full_message = commit_msg.title
         if commit_msg.body:
             full_message = f"{commit_msg.title}\n\n{commit_msg.body}"
+        # AUTHORED: title and body come from _generate_commit_message, which
+        # is a model call over the working tree.
         full_message = await self._gated_message(
             full_message,
             visibility,
-            "commit_message",
+            OutboundDestination.COMMIT_MESSAGE,
+            ContentClass.AUTHORED,
         )
         sha = await self._git.commit(
             cwd=workspace_path,
@@ -215,10 +223,14 @@ class GitChangePersister:
 
         # Capture divergent-HEAD message + tree BEFORE reset (defensive: keeps
         # recovery correct even if a worktree pruned unreachable objects).
+        # AUTHORED: the divergent HEAD's message is replayed verbatim, and
+        # whoever wrote it wrote prose. Reading it back out of git does not
+        # launder it into a derived value.
         head_message_divergent = await self._gated_message(
             await self._git.head_commit_message(workspace_path),
             visibility,
-            "commit_message_divergence_replay",
+            OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY,
+            ContentClass.AUTHORED,
         )
         head_tree = await self._git.tree_of(workspace_path, head_sha)
 
@@ -272,33 +284,19 @@ class GitChangePersister:
         self,
         message: str,
         visibility: RepoVisibility,
-        writer: str,
+        destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> str:
-        """Route a commit message through the outbound gate.
-
-        Every verdict is observable: a rewritten message is never silently
-        posted and a blocked one is never silently dropped.
-        """
-        decision = self._gate.gate(
+        """Route a commit message through the one gated-write path."""
+        return await gated_write(
+            gate=self._gate,
+            log=self._log,
             content=message,
             visibility=visibility,
             shape=WriterShape.PROSE,
+            destination=destination,
+            content_class=content_class,
         )
-        await self._log.ainfo(
-            "outbound_content_gated",
-            writer=writer,
-            verdict=decision.verdict.value,
-            visibility=visibility.value,
-            categories=[c.value for c in decision.categories],
-        )
-        if decision.verdict is GateVerdict.BLOCKED:
-            msg = "Outbound content blocked before commit"
-            raise OutboundContentBlockedError(
-                msg,
-                writer=writer,
-                categories=[c.value for c in decision.categories],
-            )
-        return decision.content
 
     async def _generate_commit_message(
         self,

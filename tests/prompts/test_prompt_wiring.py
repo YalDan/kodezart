@@ -219,11 +219,13 @@ def test_claude_opus_render_is_byte_identical_to_baseline(golden_name: str) -> N
     assert rendered == expected
 
 
-# The two pass keys are net-new content with no 92597c0 baseline to be
-# byte-identical to; every RELOCATED key is covered by the goldens.
+# The two pass keys and the content-audit key are net-new content with no
+# 92597c0 baseline to be byte-identical to; every RELOCATED key is covered
+# by the goldens.
 RELOCATED_KEYS = frozenset(PromptKey) - {
     PromptKey.FIRE_PREP_PASS,
     PromptKey.GROOMING_PASS,
+    PromptKey.CONTENT_AUDIT,
 }
 
 
@@ -391,7 +393,7 @@ def test_free_names_keep_an_item_reference_made_outside_any_loop() -> None:
 
 def test_free_names_handle_a_nested_loop_over_an_item_member() -> None:
     """The inner sequence is reached through the item, so only the outer binds."""
-    body = "{{#each repos}}{{#each this.check_commands}}{{this}}{{/each}}{{/each}}"
+    body = "{{#each repos}}{{#each this.checks}}{{this}}{{/each}}{{/each}}"
     assert free_binding_names(body) == frozenset({"repos"})
 
 
@@ -400,6 +402,23 @@ def test_pyproject_gains_no_templating_dependency() -> None:
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     for banned in ("jinja", "mako", "chevron", "pystache", "handlebars"):
         assert banned not in pyproject.lower()
+
+
+def test_no_shipped_template_ends_in_a_blank_line() -> None:
+    """`_read_member` drops one trailing newline; a second one is content.
+
+    An editor that removes a trailing section leaves the blank line that
+    separated it, and the surviving newline reaches the model as prompt
+    text.  Nothing else in the suite reads the files as bytes.
+    """
+    root = default_sets_root()
+    members = sorted(root.glob("*/*.md"))
+    assert members
+    framing = {str(path.relative_to(root)): path.read_bytes()[-2:] for path in members}
+    assert {
+        name: tail for name, tail in framing.items() if not tail.endswith(b"\n")
+    } == {}
+    assert {name: tail for name, tail in framing.items() if tail == b"\n\n"} == {}
 
 
 # ---------------------------------------------------------------------------

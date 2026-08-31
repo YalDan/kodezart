@@ -9,6 +9,8 @@ import sys
 
 import structlog
 
+from kodezart.core.protocols import LogEmitter
+
 
 def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
     """Configure structlog and stdlib logging. Call once in lifespan."""
@@ -24,11 +26,25 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
         structlog.processors.UnicodeDecoder(),
     ]
 
+    # An exception reaches this chain as an ``exc_info`` triple, and
+    # something has to turn it into frames: without that, the triple is
+    # rendered as its members' reprs — the traceback OBJECT printed, so
+    # not one frame survives, and a two-minute engine dispatch that raised
+    # leaves a single sentence (KOD-146).  Which processor does it is the
+    # renderer's business, so the choice lives beside the renderer:
+    # ``ConsoleRenderer`` formats exceptions itself, in colour and with
+    # source context, and warns if handed a pre-formatted string;
+    # ``JSONRenderer`` has no exception handling of its own.
     renderer: structlog.types.Processor
+    formatter_processors: list[structlog.types.Processor] = [
+        structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+    ]
     if pretty:
         renderer = structlog.dev.ConsoleRenderer(colors=True)
     else:
+        formatter_processors.append(structlog.processors.format_exc_info)
         renderer = structlog.processors.JSONRenderer()
+    formatter_processors.append(renderer)
 
     structlog.configure(
         processors=[
@@ -41,10 +57,7 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
     )
 
     formatter = structlog.stdlib.ProcessorFormatter(
-        processors=[
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            renderer,
-        ],
+        processors=formatter_processors,
         foreign_pre_chain=shared_processors,
     )
 
@@ -59,10 +72,13 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def get_logger(name: str) -> structlog.stdlib.BoundLogger:
+def get_logger(name: str) -> LogEmitter:
     """Return a bound logger for the given module name."""
-    bound: structlog.stdlib.BoundLogger = structlog.get_logger(name)
+    bound: LogEmitter = structlog.get_logger(name)
     return bound
 
 
-BoundLogger = structlog.stdlib.BoundLogger
+#: The name 35 annotation sites already spell.  It now denotes the PORT
+#: rather than the vendor class, so this module is the only one in ``src``
+#: that names structlog at all; a test pins that it stays the only one.
+BoundLogger = LogEmitter

@@ -13,7 +13,7 @@ defined meaning.  Boot asserts it rather than discovering it at render time.
 from collections.abc import Mapping, Sequence
 
 from kodezart.core.errors import PromptNamespaceCollisionError
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import OperationConfig, PrincipalRole
 
 SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 
@@ -43,8 +43,30 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "commit_subjects",
         "changeset_is_empty",
         "changeset_has_commits",
+        "content",
+        "destination",
     }
 )
+
+
+def _bind_absentable(
+    bindings: dict[str, object],
+    name: str,
+    value: object,
+    *,
+    absent: bool,
+) -> None:
+    """The mutually exclusive ``name`` / ``name_absent`` pair.
+
+    ``{{#if}}`` treats ``None`` as absent, so the two renderings are
+    selected by two mutually exclusive bindings rather than by an
+    else-branch the renderer does not have: exactly one of the pair is
+    ever non-``None``.  An UNGUARDED reference over the absent state then
+    fails loudly as an unbound placeholder — the one outcome no state
+    produces is a blank render.
+    """
+    bindings[name] = None if absent else value
+    bindings[f"{name}_absent"] = True if absent else None
 
 
 def operation_bindings(config: OperationConfig) -> dict[str, object]:
@@ -52,32 +74,200 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
 
     Bare names for the two scalars, dotted namespaces for the mappings.
     Nothing here is a per-call value and nothing here is a fragment.
+
+    Every binding that can be absent — the eleven collections, the
+    private-surface prose, a principal's forge handle, an unadopted
+    document id, a gate step's dependency — is three-state: the value, or
+    the paired absent marker, never a hole.
+
+    The verbatim pass templates address the sequence-shaped collections by
+    FLAT dotted paths (KOD-60 R16): a role for a principal
+    (``principals.approver``, ``principals.assignee``) and a position for
+    everything ordered (``principals.1``, ``repos.0.checks.2``,
+    ``agent_identities.0``, ``initiatives.1``).  The namespaces are
+    therefore mappings keyed by role and by decimal position — the renderer
+    resolves them without a loop construct, which is what byte-identity to
+    the routine prose requires: the renderer has no separator construct, so
+    an enumeration with a conjunction cannot be loop-rendered.  A role or
+    position the config does not declare is an unbound placeholder and the
+    render refuses, naming it — the refusal at the point of need.
     """
-    return {
+    bindings: dict[str, object] = {
         "operation_name": config.operation_name,
         "workspace": config.workspace,
-        "queue_states": dict(config.queue_states),
-        "workflow_states": {
-            stage.value: label for stage, label in config.workflow_states.items()
-        },
-        "teams": dict(config.teams),
-        "documents": {key: entry.id for key, entry in config.documents.items()},
-        "knowledge": dict(config.knowledge),
-        "endpoints": dict(config.endpoints),
-        "initiatives": [
-            {"id": item.id, "target_date": item.target_date.isoformat()}
-            for item in config.initiatives
-        ],
-        "principals": [
-            {"tracker_user": p.tracker_user, "role": p.role.value}
-            for p in config.principals
-        ],
-        "agent_identities": list(config.agent_identities),
-        "repos": [
-            {"url": repo.url, "check_commands": repo.check_commands}
-            for repo in config.repos
-        ],
     }
+    _bind_absentable(
+        bindings,
+        "queue_states",
+        dict(config.queue_states),
+        absent=not config.queue_states,
+    )
+    _bind_absentable(
+        bindings,
+        "workflow_states",
+        {stage.value: label for stage, label in config.workflow_states.items()},
+        absent=not config.workflow_states,
+    )
+    _bind_absentable(
+        bindings,
+        "teams",
+        {
+            team_key: {"name": entry.name, "key": entry.key}
+            for team_key, entry in config.teams.items()
+        },
+        absent=not config.teams,
+    )
+    # An id alone renders as an opaque token no reader can resolve, so
+    # every document and record reference carries its system beside it.
+    # A TRACKER document's id is three-state on the model — absent means
+    # "not adopted yet" — and the binding says so rather than rendering a
+    # hole.
+    _bind_absentable(
+        bindings,
+        "documents",
+        {
+            key: {
+                "system": entry.system.value,
+                "id": entry.id,
+                "id_absent": True if entry.id is None else None,
+            }
+            for key, entry in config.documents.items()
+        },
+        absent=not config.documents,
+    )
+    _bind_absentable(
+        bindings,
+        "records",
+        {
+            key: {
+                "system": entry.system.value,
+                "name": entry.name,
+                "id": entry.id,
+                "append_only": entry.append_only,
+            }
+            for key, entry in config.records.items()
+        },
+        absent=not config.records,
+    )
+    _bind_absentable(
+        bindings,
+        "knowledge",
+        dict(config.knowledge),
+        absent=not config.knowledge,
+    )
+    _bind_absentable(
+        bindings,
+        "private_surface",
+        config.private_surface,
+        absent=config.private_surface is None,
+    )
+    _bind_absentable(
+        bindings,
+        "endpoints",
+        dict(config.endpoints),
+        absent=not config.endpoints,
+    )
+    # ``target_date`` is absent on a real initiative more often than not.
+    _bind_absentable(
+        bindings,
+        "initiatives",
+        {
+            str(index): {
+                "id": item.id,
+                "target_date": (
+                    None if item.target_date is None else item.target_date.isoformat()
+                ),
+                "target_date_absent": True if item.target_date is None else None,
+            }
+            for index, item in enumerate(config.initiatives)
+        },
+        absent=not config.initiatives,
+    )
+    # ``handle`` is the identifier a MENTION is recognised by and
+    # ``tracker_user`` the display identity the tracker names the principal
+    # by — what its user listing reports and what an authored act comes
+    # back attributed to, never an authority check (KOD-144). A sweep
+    # given only the second has nothing to match on.  ``forge_handle`` is
+    # the same principal's name on the forge; a principal who never
+    # appears there has none, and the absent case is named.  Beside the
+    # positions, the two roles the routines address singly are keyed by
+    # role: ``approver`` exists whenever principals do (exactly one is
+    # validated at load), ``assignee`` only when a principal carries the
+    # role — an unbound ``principals.assignee`` reference is the typed
+    # refusal for an operation that declares none.
+    principal_views = [
+        {
+            "tracker_user": p.tracker_user,
+            "roles": ", ".join(sorted(role.value for role in p.roles)),
+            "handle": p.handle,
+            "forge_handle": p.forge_handle,
+            "forge_handle_absent": True if p.forge_handle is None else None,
+        }
+        for p in config.principals
+    ]
+    principals_namespace: dict[str, object] = {
+        str(index): view for index, view in enumerate(principal_views)
+    }
+    for index, principal in enumerate(config.principals):
+        if PrincipalRole.APPROVER in principal.roles:
+            principals_namespace["approver"] = principal_views[index]
+        if PrincipalRole.ASSIGNEE in principal.roles:
+            principals_namespace["assignee"] = principal_views[index]
+    _bind_absentable(
+        bindings,
+        "principals",
+        principals_namespace,
+        absent=not config.principals,
+    )
+    _bind_absentable(
+        bindings,
+        "agent_identities",
+        {
+            str(index): identity
+            for index, identity in enumerate(config.agent_identities)
+        },
+        absent=not config.agent_identities,
+    )
+    # A step naming no dependency is a GATE; the absent marker is what a
+    # template says "a gate" with, rather than rendering a hole where the
+    # ancestor's name would be.  ``name`` and ``slug`` are the display
+    # forms the routines write a repository with — the short name and the
+    # owner/name form — derived from the one declared ``url`` so the three
+    # can never drift apart.
+    _bind_absentable(
+        bindings,
+        "repos",
+        {
+            str(index): {
+                "url": repo.url,
+                "name": _repo_display(repo.url)[0],
+                "slug": _repo_display(repo.url)[1],
+                "checks": {
+                    str(step_index): {
+                        "name": step.name,
+                        "command": step.command,
+                        "depends_on": step.depends_on,
+                        "depends_on_absent": (
+                            True if step.depends_on is None else None
+                        ),
+                    }
+                    for step_index, step in enumerate(repo.checks)
+                },
+            }
+            for index, repo in enumerate(config.repos)
+        },
+        absent=not config.repos,
+    )
+    return bindings
+
+
+def _repo_display(url: str) -> tuple[str, str]:
+    """``(name, slug)`` — the short and owner/name forms of a repository URL."""
+    trimmed = url.rstrip("/")
+    if trimmed.endswith(".git"):
+        trimmed = trimmed.removesuffix(".git")
+    segments = [segment for segment in trimmed.split("/") if segment]
+    return segments[-1], "/".join(segments[-2:])
 
 
 def assert_namespaces_disjoint(operation_names: Sequence[str]) -> None:
