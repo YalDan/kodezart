@@ -211,6 +211,17 @@ class AppConfig(BaseSettings):
             "a transient API failure."
         ),
     )
+    ci_check_runs_max_pages: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description=(
+            "Maximum check-runs pages read per CI poll. However many pages a "
+            "poll reads, it costs exactly one CI_POLL_MAX_ATTEMPTS unit; a poll "
+            "that hits this cap leaves the run set short of the reported "
+            "total_count, which is pending, never a verdict and never an error."
+        ),
+    )
     forge_api_timeout_seconds: float = Field(
         default=30.0,
         ge=5.0,

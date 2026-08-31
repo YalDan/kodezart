@@ -12,6 +12,7 @@ from kodezart.domain.errors import RateLimitError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.github import (
+    CheckRun,
     CheckRunsResponse,
     PullRequestResponse,
     PullRequestSummary,
@@ -69,6 +70,7 @@ class GitHubAPIClient:
         ci_no_workflows_grace_polls: int,
         ci_grace_poll_interval_seconds: float,
         ci_ref_not_found_grace_polls: int,
+        ci_check_runs_max_pages: int,
         timeout_seconds: float,
         max_retries: int,
         retry_backoff_factor: float,
@@ -80,6 +82,7 @@ class GitHubAPIClient:
         self._ci_no_workflows_grace_polls: int = ci_no_workflows_grace_polls
         self._ci_grace_poll_interval: float = ci_grace_poll_interval_seconds
         self._ci_ref_not_found_grace_polls: int = ci_ref_not_found_grace_polls
+        self._ci_check_runs_max_pages: int = ci_check_runs_max_pages
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._rng: secrets.SystemRandom = secrets.SystemRandom()
@@ -313,8 +316,18 @@ class GitHubAPIClient:
         return f"No CI checks appeared for this ref after {grace_polls} polls."
 
     def _verdict(self, page: CheckRunsResponse) -> tuple[bool, str] | None:
-        """Terminal pass/fail verdict for a page, or None while pending."""
+        """Terminal pass/fail verdict for the run set, or None while pending.
+
+        A run set shorter than its own ``total_count`` is never terminal,
+        and that single rule covers both ways the listing comes up short: a
+        page the walk could not reach, and a ``total_count`` the API
+        reported but did not enumerate.  Either way the adapter is holding
+        less evidence than the ref has, and a verdict drawn from it would
+        report a pass nobody verified.
+        """
         if page.total_count == 0:
+            return None
+        if len(page.check_runs) != page.total_count:
             return None
         if any(run.status != "completed" for run in page.check_runs):
             return None
@@ -335,25 +348,52 @@ class GitHubAPIClient:
         repo: str,
         ref: str,
     ) -> CheckRunsResponse | None:
-        """Fetch one check-runs page, or ``None`` when the ref 404s.
+        """Fetch every check-runs page for *ref*, or ``None`` when it 404s.
 
-        One poll is one request.  A 404 means the ref is not yet visible
-        to the checks API — a transient condition on a freshly pushed
-        commit.  Every other status error propagates.
+        Walks pages until the collected runs reach the reported
+        ``total_count``, so the verdict is drawn from the whole run set
+        rather than from the first hundred runs.
+
+        One logical poll, however many pages it takes, costs exactly ONE
+        ``ci_poll_max_attempts`` unit: the walk answers a single question —
+        what are this ref's check runs right now — and the caller counts it
+        once.
+
+        The walk is bounded by ``ci_check_runs_max_pages``.  Hitting the cap
+        returns what was collected, which is necessarily shorter than
+        ``total_count`` and therefore PENDING by ``_verdict``'s rule — never
+        a timeout, and never a ``TransientAPIError``.  A bounded cap is an
+        incomplete observation, not an error: the next poll re-reads the ref
+        from page one, and either the run set fits within the bound or the
+        poll budget expires with the ref honestly never verified.
+
+        A page carrying no runs ends the walk under the same rule: the
+        reported count is then larger than what the API enumerated, which is
+        short, which is pending.
+
+        A 404 means the ref is not yet visible to the checks API — a
+        transient condition on a freshly pushed commit.  Every other status
+        error propagates.
         """
-        try:
-            response = await self._request_with_retry(
-                "GET",
-                f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
-                params={"per_page": self._PAGE_SIZE},
-            )
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == self._NOT_FOUND_STATUS:
-                return None
-            raise
-        return CheckRunsResponse.model_validate(
-            response.json(),
-        )
+        collected: list[CheckRun] = []
+        reported_total = 0
+        for page_number in range(1, self._ci_check_runs_max_pages + 1):
+            try:
+                response = await self._request_with_retry(
+                    "GET",
+                    f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
+                    params={"per_page": self._PAGE_SIZE, "page": page_number},
+                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == self._NOT_FOUND_STATUS:
+                    return None
+                raise
+            page = CheckRunsResponse.model_validate(response.json())
+            reported_total = page.total_count
+            collected.extend(page.check_runs)
+            if not page.check_runs or len(collected) >= reported_total:
+                break
+        return CheckRunsResponse(total_count=reported_total, check_runs=collected)
 
     async def _probe_workflows(
         self,
