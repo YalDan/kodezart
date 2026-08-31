@@ -531,8 +531,7 @@ class TestWorkflowStatesResolvePerTeam:
             await validate_tracker_mappings(tracker=tracker, config=self._config())
 
         assert caught.value.unresolved == (
-            f"workflow_state 'in_review' -> 'In Review' on team "
-            f"'{self.SECOND_TEAM}'",
+            f"workflow_state 'in_review' -> 'In Review' on team '{self.SECOND_TEAM}'",
         )
 
     async def test_the_two_vocabularies_are_never_merged(self) -> None:
@@ -549,8 +548,7 @@ class TestWorkflowStatesResolvePerTeam:
             await tracker.resolve_mappings(refs=self._refs())
 
         assert caught.value.unresolved == (
-            f"workflow_state 'in_review' -> 'In Review' on team "
-            f"'{self.SECOND_TEAM}'",
+            f"workflow_state 'in_review' -> 'In Review' on team '{self.SECOND_TEAM}'",
             "workflow_state 'done' -> 'Done' on team 'fixture-team'",
         )
 

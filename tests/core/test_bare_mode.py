@@ -80,9 +80,7 @@ async def test_the_bare_boot_serves_and_names_every_absence(
     assert tracker_absent[0]["tracker_token_present"] is False
 
     passes_absent = [
-        event
-        for event in events
-        if event.get("event") == "scheduled_passes_not_wired"
+        event for event in events if event.get("event") == "scheduled_passes_not_wired"
     ]
     assert len(passes_absent) == 1
     # The forge's absence is named here too, as the flag the wiring gate

@@ -414,9 +414,7 @@ def test_no_shipped_template_ends_in_a_blank_line() -> None:
     root = default_sets_root()
     members = sorted(root.glob("*/*.md"))
     assert members
-    framing = {
-        str(path.relative_to(root)): path.read_bytes()[-2:] for path in members
-    }
+    framing = {str(path.relative_to(root)): path.read_bytes()[-2:] for path in members}
     assert {
         name: tail for name, tail in framing.items() if not tail.endswith(b"\n")
     } == {}
