@@ -5,6 +5,7 @@ from typing import Self
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
     PATTERNLESS_CATEGORIES,
@@ -23,23 +24,13 @@ from kodezart.types.domain.ticket_review import (
 )
 from kodezart.types.domain.tracker import TrackerBackend
 
-# Credential shapes are the one category that ships populated: a credential
-# leaving the process is never acceptable regardless of deployment. Every
-# other category ships empty so an unconfigured deployment behaves exactly as
-# it did before the gate existed.
-_SHIPPED_CREDENTIAL_PATTERNS: list[str] = [
-    r"https?://x-access-token:[^@\s/]+@",
-    r"\bgh[posu]_[A-Za-z0-9]{36,}",
-    r"\bgithub_pat_[A-Za-z0-9_]{20,}",
-    r"\b(?:ntn_|secret_)[A-Za-z0-9]{40,}",
-]
-
 
 class AppConfig(BaseSettings):
     """Application configuration via ``KODEZART_`` env prefix.
 
-    Uses Pydantic Settings with ``.env`` file support.  Extra fields
-    are forbidden to catch typos early.
+    Uses Pydantic Settings with ``.env`` file support.  Extra fields are
+    forbidden to catch typos early, and the value an undeclared key carried
+    never reaches the error that reports it.
     """
 
     model_config = SettingsConfigDict(
@@ -734,13 +725,21 @@ class AppConfig(BaseSettings):
             "the skills knob never silently narrows loaded settings."
         ),
     )
+    # Credentials are the one category that ships populated: a credential
+    # leaving the process is never acceptable regardless of deployment. The
+    # shapes come from the table the wire-egress scrubber reads too, so a
+    # vendor is covered on both surfaces or on neither. Every other category
+    # ships empty, so an unconfigured deployment behaves exactly as it did
+    # before the gate existed.
     deny_patterns: dict[RedactionCategory, list[str]] = Field(
         default_factory=lambda: {
             RedactionCategory.CROSS_REPO_NAMES: [],
             RedactionCategory.TRACKER_URLS: [],
             RedactionCategory.EMAIL_HANDLES: [],
             RedactionCategory.INFRA_ENDPOINTS: [],
-            RedactionCategory.CREDENTIALS: list(_SHIPPED_CREDENTIAL_PATTERNS),
+            RedactionCategory.CREDENTIALS: [
+                shape.pattern for shape in CREDENTIAL_SHAPES
+            ],
         },
         description=(
             "JSON object mapping a redaction category to its regex pattern "

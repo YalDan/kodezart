@@ -1,10 +1,17 @@
-"""Operation configuration — the org-shaped runtime config, tracker-agnostic.
+"""Operation configuration — the org-shaped runtime config.
 
 Nothing deployment-shaped lives here (that is AppConfig) and no secret ever
 does: ``extra="forbid"`` makes a stray token key a load-time failure, and
 ``hide_input_in_errors`` keeps that failure from printing the value it
 rejected.
 Authority binds to a ROLE, never to a name in code or in a template.
+
+This model is NOT tracker-agnostic, and said so for longer than it was
+true.  Several of its fields are one tracker's vocabulary — named for
+concepts the port deliberately does not carry, and read by the adapter
+rather than by the operation.  Which fields those are, and what the model
+becomes once they are separated, is KOD-139; naming the property here
+keeps the claim honest until that lands.
 """
 
 from collections.abc import Sequence
@@ -149,16 +156,15 @@ class Principal(OperationModel):
     #: principal across both needs two identifiers.  ``None`` for a
     #: principal who never appears there.
     #:
-    #: NOT an orphan, though it currently reads as one: ``a43e5df`` reverted
-    #: the fire-prep binding that was its only consumer, on the ground that
-    #: no issue body names a forge identifier, and it has had no production
-    #: reader since.  The deployed routine awaiting verbatim restoration
-    #: (KOD-60) states the requirement in its own words — the operation's
-    #: approver is one principal written one way on the tracker and another
-    #: on the forge — and carries both spellings as literals.  Deriving that
-    #: sentence from configuration is what this field is for, and the
-    #: restoration is its reader.  Deleting it as unreferenced would have to
-    #: be undone by the pass that lands the routine.
+    #: Read in production: the principals namespace binds it beside
+    #: ``forge_handle_absent``, and the restored fire-prep routine (KOD-60)
+    #: renders it — the operation's approver is one principal written one
+    #: way on the tracker and another on the forge, and that sentence is
+    #: derived from configuration rather than carried as a literal.  The
+    #: field spent a stretch unreferenced after ``a43e5df`` reverted its
+    #: first binding, and survived a sweep on the strength of the reader
+    #: that was coming; the reader arrived, so the case for keeping it is
+    #: now simply that things read it.
     forge_handle: str | None = None
 
 
@@ -167,11 +173,21 @@ class TeamEntry(OperationModel):
 
     Two identifiers because the routines use both, in one sentence: the
     display name is what a human reads and what boot resolves against the
-    live workspace; the key is the short identifier the tracker prefixes
-    issues with, and a rendered prompt that names the first cannot derive
-    the second.  Added under KOD-60 R17 — the verbatim routine texts carry
-    the key as its own token, and a mapping of key -> name had no home
-    for it.
+    live workspace; the key is the short identifier the SAME team is
+    written with where a display name is too long, and a rendered prompt
+    that names the first cannot derive the second.  Added under KOD-60 R17
+    — the verbatim routine texts carry the key as its own token, and a
+    mapping of key -> name had no home for it.
+
+    What that short identifier IS belongs to the tracker: one prefixes
+    every issue key with it, another has no such notion at all, so nothing
+    may read an issue key expecting to find it.  Whether a per-vendor
+    vocabulary belongs on this model is KOD-139.
+
+    The key this entry is registered UNDER — the ``teams`` mapping key — is
+    a third identifier and the operation's own: it is what ``IssueQuery``
+    scopes by and what a dispatch candidate is judged against, and it is
+    the one spelling in this triple that no backend assigns.
     """
 
     name: str = Field(min_length=1)

@@ -12,8 +12,6 @@ the pristine fixture is for: a developer's exported variable would otherwise
 make this suite agree with whatever is already configured.
 """
 
-import os
-
 import pytest
 from pydantic import ValidationError
 
@@ -26,14 +24,6 @@ ENV_NAME = "KODEZART_INVESTIGATION_CAP"
 #: the prose protocol the set replaces.
 CAP_FLOOR = 1
 CAP_CEILING = 10
-
-
-@pytest.fixture
-def _pristine_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Remove every KODEZART_ variable so only the test speaks."""
-    for name in list(os.environ):
-        if name.startswith("KODEZART_"):
-            monkeypatch.delenv(name)
 
 
 @pytest.mark.usefixtures("_pristine_environment")

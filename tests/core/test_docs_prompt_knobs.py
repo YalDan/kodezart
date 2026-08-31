@@ -1,6 +1,5 @@
 """Documentation criteria for the prompt-set axis (KOD-63/AC-11)."""
 
-import os
 from pathlib import Path
 
 import pytest
@@ -30,14 +29,6 @@ TOKEN_BEARING_URL = (
     + "A" * 36
     + "@example.invalid/owner/repo.git"
 )
-
-
-@pytest.fixture
-def _pristine_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Remove every KODEZART_ variable so only the file under test speaks."""
-    for name in list(os.environ):
-        if name.startswith("KODEZART_"):
-            monkeypatch.delenv(name)
 
 
 def config_from_env_example() -> AppConfig:

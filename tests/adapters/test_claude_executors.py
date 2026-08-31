@@ -28,10 +28,10 @@ from kodezart.adapters._mcp_mapping import map_knowledge_mcp
 from kodezart.adapters._skills_mapping import map_skills
 from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
-from kodezart.core.error_egress import _REDACTION_SENTINEL
 from kodezart.core.protocols import AgentExecutor
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.credentials import REDACTION_SENTINEL
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -231,7 +231,7 @@ async def test_process_error_redacts_token_in_warning_log() -> None:
     stderr_logged = record["stderr"]
     assert stderr_logged is not None
     assert _FAKE_GHP_BODY not in stderr_logged
-    assert _REDACTION_SENTINEL in stderr_logged
+    assert REDACTION_SENTINEL in stderr_logged
     # Defense-in-depth: the secret body must not survive in ANY captured
     # record's serialized form.
     for rec in captured:
@@ -262,7 +262,7 @@ async def test_process_error_stderr_tail_on_agent_sdk_error_is_redacted() -> Non
             )
     assert excinfo.value.stderr_tail is not None
     assert _FAKE_GHP_BODY not in excinfo.value.stderr_tail
-    assert _REDACTION_SENTINEL in excinfo.value.stderr_tail
+    assert REDACTION_SENTINEL in excinfo.value.stderr_tail
 
 
 # ---------------------------------------------------------------------------

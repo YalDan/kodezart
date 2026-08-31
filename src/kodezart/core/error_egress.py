@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Final
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import ErrorEvent
+from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 
 if TYPE_CHECKING:
     # Type-only import — keeps RaiseSite out of this module's runtime namespace
@@ -15,41 +16,13 @@ if TYPE_CHECKING:
     from kodezart.types.domain.agent import RaiseSite
 
 
-_REDACTION_SENTINEL: Final[str] = "***REDACTED***"
-
-# Credential shapes to scrub, keyed by the vendor whose published token
-# taxonomy each entry encodes.  Adding a vendor is one entry; a sunset never
-# removes one, because historical logs still carry historical tokens.  Each
-# pattern carries its own replacement template, so the URL form can keep the
-# scheme and host either side of the secret it replaces.
-#
-# Body lower bounds anchor on documented lengths so short-suffix prose
-# matches (e.g. "ghp_abc") are not scrubbed.  No upper bound — the literal
-# prefix anchors prevent runaway backtracking.
-#
-#   github: ghp_ classic PAT, gho_ OAuth, ghu_ user-to-server, ghs_
-#     server-to-server, github_pat_ fine-grained PAT; plus the tokenized
-#     remote URL the forge auth adapter constructs.
-#   notion: ntn_ current integration and OAuth tokens, secret_ legacy
-#     internal integration secrets.  ``secret_`` is an ordinary English word
-#     with an underscore, so the body lower bound carries the whole anchoring
-#     load there: 40 alphanumerics is below both published lengths and far
-#     above anything operator prose puts after that prefix.
-_VENDOR_CREDENTIAL_PATTERNS: Final[
-    dict[str, tuple[tuple[re.Pattern[str], str], ...]]
-] = {
-    "github": (
-        (
-            re.compile(r"(https?://x-access-token:)[^@\s/]+(@)"),
-            rf"\1{_REDACTION_SENTINEL}\2",
-        ),
-        (re.compile(r"\bgh[posu]_[A-Za-z0-9]{36,}"), _REDACTION_SENTINEL),
-        (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), _REDACTION_SENTINEL),
-    ),
-    "notion": (
-        (re.compile(r"\b(?:ntn_|secret_)[A-Za-z0-9]{40,}"), _REDACTION_SENTINEL),
-    ),
-}
+#: The shared credential table, compiled once with each shape's replacement
+#: template beside it.  The outbound gate compiles the same patterns to find
+#: spans; this surface substitutes, so it is the one that needs the
+#: templates.
+_COMPILED_CREDENTIAL_SHAPES: Final[tuple[tuple[re.Pattern[str], str], ...]] = tuple(
+    (re.compile(shape.pattern), shape.replacement) for shape in CREDENTIAL_SHAPES
+)
 
 
 def redact_credentials(s: str) -> str:
@@ -59,9 +32,10 @@ def redact_credentials(s: str) -> str:
     Claude-SDK adapter ``claude_sdk_process_error`` log calls.  Patterns
     are tightly scoped to the shapes each vendor publishes — wider matches
     risk scrubbing non-secret operator text, which the ticket explicitly
-    forbids.  A vendor's taxonomy is one entry in
-    ``_VENDOR_CREDENTIAL_PATTERNS``, so covering the next one adds an entry
-    rather than editing this function.
+    forbids.  A vendor's taxonomy is one entry in ``CREDENTIAL_SHAPES``,
+    the same table the outbound gate's shipped credential patterns come
+    from, so covering the next one adds an entry rather than editing this
+    function — and cannot cover one surface while leaving the other blind.
 
     LEAK ORIGIN vs. egress redaction: the upstream LEAK ORIGIN is
     ``adapters/subprocess_git_service.py`` — specifically ``_run``,
@@ -79,9 +53,8 @@ def redact_credentials(s: str) -> str:
     future hardening pass MAY scrub at the source as defense-in-depth
     but is not required for the wire-visible fields to be safe.
     """
-    for patterns in _VENDOR_CREDENTIAL_PATTERNS.values():
-        for pattern, replacement in patterns:
-            s = pattern.sub(replacement, s)
+    for pattern, replacement in _COMPILED_CREDENTIAL_SHAPES:
+        s = pattern.sub(replacement, s)
     return s
 
 
