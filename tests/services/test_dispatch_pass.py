@@ -239,7 +239,7 @@ def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
     """AC-20: every repository the operation acts on gets its own pass."""
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
-    passes = build_dispatch_passes(
+    built = build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
@@ -252,11 +252,13 @@ def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    assert [entry.name for entry in passes] == [
+    assert [entry.name for entry in built.passes] == [
         f"dispatch:{PRIMARY_REPO}",
         f"dispatch:{SECOND_REPO}",
     ]
-    assert all(isinstance(entry.run.__self__, GatedDispatchPass) for entry in passes)
+    assert all(
+        isinstance(entry.run.__self__, GatedDispatchPass) for entry in built.passes
+    )
 
 
 def test_the_root_gives_every_pass_the_configured_cadence() -> None:
@@ -270,7 +272,7 @@ def test_the_root_gives_every_pass_the_configured_cadence() -> None:
 
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
-    passes = build_dispatch_passes(
+    built = build_dispatch_passes(
         config=config,
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
@@ -283,7 +285,7 @@ def test_the_root_gives_every_pass_the_configured_cadence() -> None:
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    assert [entry.interval_seconds for entry in passes] == [unusual, unusual]
+    assert [entry.interval_seconds for entry in built.passes] == [unusual, unusual]
 
 
 async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> None:
@@ -292,7 +294,7 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
         issues=[make_tracker_issue("K-1")],
     )
     queue = FakeJobQueue()
-    passes = build_dispatch_passes(
+    built = build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(repos=(SECOND_REPO,)),
         tracker=tracker,
@@ -305,7 +307,7 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await passes[0].run()
+    await built.passes[0].run()
 
     assert len(queue.submissions) == 1
     lane, request = queue.submissions[0]
@@ -338,7 +340,7 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
             ),
         ],
     )
-    passes = build_dispatch_passes(
+    built = build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(),
         tracker=tracker,
@@ -351,7 +353,7 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await passes[0].run()
+    await built.passes[0].run()
     # The write-back runs in a background watch, so the test waits for the
     # terminal chain it asserts on: the DONE transition, then the comment
     # that ``LifecycleWatcher`` posts after it.
@@ -407,7 +409,7 @@ async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
     queue = FakeJobQueue()
     forge = ForgeOnlyDeliveryProbe()
-    passes = build_dispatch_passes(
+    built = build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(repos=(FILE_ORIGIN,)),
         tracker=tracker,
@@ -420,7 +422,7 @@ async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await passes[0].run()
+    await built.passes[0].run()
 
     assert len(queue.submissions) == 1
     _, request = queue.submissions[0]
@@ -434,7 +436,7 @@ async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
     queue = FakeJobQueue()
     forge = ForgeOnlyDeliveryProbe()
-    passes = build_dispatch_passes(
+    built = build_dispatch_passes(
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO,)),
         tracker=tracker,
@@ -447,7 +449,7 @@ async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await passes[0].run()
+    await built.passes[0].run()
 
     assert forge.calls == ["K-1"]
     assert len(queue.submissions) == 1

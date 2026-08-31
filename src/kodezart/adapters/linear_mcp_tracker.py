@@ -15,12 +15,13 @@ the log back and takes the EARLIEST unexpired marker as the holder.  Every
 concurrent claimant computes the same winner from the same log, so exactly
 one observes ``GRANTED``.
 
-A renewal is another marker by the same holder, appended and never
-substituted for the one before it.  Deleting the marker that won the order
-would hand the claim to whatever marker a losing claimant left behind, so
-the holder's markers accumulate for the life of the run and every one of
-them lapses on its own.  The claim therefore runs until the LAST of them
-does, which is the expiry ``active_claim`` reports.
+A renewal EDITS the holder's earliest marker rather than appending a second
+one, so one claim costs one comment however long the run it guards lasts.
+Everything that would otherwise pile up on the log is removed by the writer
+that put it there: a renewal deletes this holder's own duplicates, and a
+claimant whose read-back says LOST deletes the marker it just appended.
+Neither ever touches a marker another holder wrote, so the order the log
+records stays the order every claimant computes from it.
 """
 
 import asyncio
@@ -500,9 +501,24 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> ClaimResult:
-        """Append a claim marker, then read the log back to learn the winner."""
+        """Append a claim marker, then read the log back to learn the winner.
+
+        A LOSER deletes the marker it just appended.  The append has to
+        happen before the read-back — that append is what the race is
+        decided over — so the decision itself is untouched, and the delete
+        lands strictly after it.
+
+        What the delete removes is a claim nobody holds.  A loser's marker
+        used to sit on the log for its whole lease: it outranked every
+        claimant that arrived after it, it survived the WINNER's release,
+        and nothing renewed it or cleaned it up, so an issue whose work had
+        long finished stayed unclaimable until that lease ran out.  The
+        marker is deleted by the identifier the server assigned this
+        append, so no marker another claimant wrote can be reached from
+        here.
+        """
         expires_at = self._clock() + timedelta(seconds=lease_seconds)
-        await self._append_claim_marker(
+        appended = await self._append_claim_marker(
             issue_key=issue_key,
             holder=holder,
             expires_at=expires_at,
@@ -510,6 +526,7 @@ class LinearMcpTracker:
         winner = await self.active_claim(issue_key=issue_key)
         if winner is not None and winner.holder == holder:
             return winner
+        await self._call(_TOOL_DELETE_COMMENT, {"id": appended})
         return ClaimResult(
             issue_key=issue_key,
             status=ClaimStatus.LOST,
@@ -590,14 +607,20 @@ class LinearMcpTracker:
         issue_key: str,
         holder: str,
         expires_at: datetime,
-    ) -> None:
-        await self._call(
+    ) -> str:
+        """Append one marker, answering with the key the server assigned it.
+
+        The key is what makes a losing claimant able to delete its OWN
+        append and nothing else.
+        """
+        payload = await self._call(
             _TOOL_SAVE_COMMENT,
             {
                 "issueId": issue_key,
                 "body": _claim_marker_body(holder=holder, expires_at=expires_at),
             },
         )
+        return self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT).id
 
     async def _unexpired_claim_markers(
         self,

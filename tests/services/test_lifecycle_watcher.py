@@ -32,6 +32,7 @@ from kodezart.types.domain.branch import WorkRefRole
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.tracker import ClaimStatus
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FakeJobQueue,
@@ -352,6 +353,88 @@ class TestThePremiseAgainstTheShippedQueue:
             ]
         finally:
             await queue.stop()
+
+
+class TestGracefulShutdownHandsTheClaimBack:
+    """An instance that STOPS may not lock its replacement out (KOD-152).
+
+    Driven over the shipped queue, because the shutdown signal is that
+    adapter's own: stopping it ends the stream of every job it still holds,
+    queued or running, and the end of a stream is what a watch reads as its
+    job's end.  A double written to end its stream on request would be
+    asserting the fixture rather than the deployment.
+
+    The drain is the other half.  Stopping the queue only STARTS the
+    releases; the root has to wait them out before it closes the transport
+    they write through, and a watch that never got to run is a claim held
+    by a process that no longer exists.
+    """
+
+    async def test_a_stopped_instance_leaves_its_issue_claimable(self) -> None:
+        queue = AsyncioJobQueue(
+            # Never released: the job is still running when the instance
+            # goes down, which is the shape the incident was measured in.
+            engine=_OneEventEngine(released=asyncio.Event()),
+            max_concurrent_runs_per_lane=1,
+            max_depth_per_lane=4,
+            terminal_retention_seconds=60.0,
+            event_buffer_retention_seconds=60.0,
+            event_buffer_capacity=64,
+        )
+        await queue.start()
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+        watch = LifecycleWatcher(
+            queue=queue,
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+        )
+        record = await queue.submit(
+            lane="lane",
+            request=WorkflowRequest(prompt="do the thing", repo_url=REPO_URL),
+        )
+        watch.follow(
+            issue_key=ISSUE,
+            job_id=record.job_id,
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        await queue.stop()
+        await asyncio.wait_for(watch.drain(), timeout=5.0)
+
+        assert await tracker.active_claim(issue_key=ISSUE) is None
+        # The clock has not moved: the replacement claims at once rather
+        # than waiting out a lease nobody is renewing.
+        again = await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert again.status is ClaimStatus.GRANTED
+
+    async def test_the_drain_waits_for_the_watch_rather_than_cancelling_it(
+        self,
+    ) -> None:
+        """Cancelling is what would skip the write-back the drain exists for."""
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        await asyncio.wait_for(watch.drain(), timeout=5.0)
+
+        assert not watch.following
+        assert tracker.workflow_writes[-1] == (ISSUE, LifecycleStage.DONE)
+        assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
 
 
 class TestTheWatcherIsUnknownJobSafe:

@@ -4,6 +4,8 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+from dataclasses import dataclass
+
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.core.config import AppConfig
 from kodezart.core.logging import BoundLogger
@@ -27,6 +29,34 @@ from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.operation import OperationConfig, QueueState
+
+
+@dataclass(frozen=True)
+class DispatchPasses:
+    """The passes a deployment ticks, and the watches those passes start.
+
+    Handed back together because a deployment has to shut them down in
+    order and in two different ways: the passes stop FIRST, so none of them
+    claims an issue into a queue that is closing, and the watches are
+    DRAINED last — after the queue has ended their streams, because that
+    end is what makes each of them release its claim (KOD-152).
+    """
+
+    passes: tuple[ScheduledPass, ...]
+    lifecycle: LifecycleWatcher
+
+
+@dataclass(frozen=True)
+class DispatchRuntime:
+    """What the composition root starts and, in this order, stops.
+
+    ``lifecycle`` is ``None`` on a deployment that schedules no dispatch
+    pass at all: there are no watches because nothing claims anything, and
+    that is a different state from "no watch is currently running".
+    """
+
+    scheduler: PassScheduler
+    lifecycle: LifecycleWatcher | None
 
 
 def delivery_probe_for(repo_url: str, *, forge: DeliveryProbe) -> DeliveryProbe:
@@ -62,7 +92,7 @@ def build_dispatch_passes(
     git: GitService,
     cache: RepoCache,
     integration_workspace_dir: str,
-) -> list[ScheduledPass]:
+) -> DispatchPasses:
     """One gated dispatch pass per repository the operation acts on.
 
     Every repository in the config, not a chosen one: the dispatcher
@@ -129,10 +159,10 @@ def build_dispatch_passes(
                 run=tick.run,
             ),
         )
-    return passes
+    return DispatchPasses(passes=tuple(passes), lifecycle=lifecycle)
 
 
-async def build_pass_scheduler(
+async def build_dispatch_runtime(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
@@ -144,15 +174,19 @@ async def build_pass_scheduler(
     git: GitService,
     cache: RepoCache,
     log: BoundLogger,
-) -> PassScheduler:
-    """The scheduler, wired to every pass this deployment can actually run."""
+) -> DispatchRuntime:
+    """The scheduler, wired to every pass this deployment can actually run.
+
+    The watches those passes start come back with it, because the root
+    that starts them is the one that has to drain them on the way down.
+    """
     # Cadence is scheduler configuration and nothing else. Three
     # states, none silent: no tracker, or no delivery probe to answer
     # "is this issue already delivered?", and the passes do not run —
     # named, never inferred from an empty schedule.
-    scheduled: list[ScheduledPass] = []
+    built: DispatchPasses | None = None
     if tracker is not None and operation is not None and github_api is not None:
-        scheduled = build_dispatch_passes(
+        built = build_dispatch_passes(
             config=config,
             operation=operation,
             tracker=tracker,
@@ -171,4 +205,7 @@ async def build_pass_scheduler(
             operation_config_present=operation is not None,
             delivery_probe_present=github_api is not None,
         )
-    return PassScheduler(passes=scheduled)
+    return DispatchRuntime(
+        scheduler=PassScheduler(passes=() if built is None else built.passes),
+        lifecycle=None if built is None else built.lifecycle,
+    )

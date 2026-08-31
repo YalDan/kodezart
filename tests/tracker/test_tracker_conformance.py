@@ -348,6 +348,88 @@ class TestAtomicClaim:
         assert held is not None
         assert held.holder == "pass-a"
 
+    async def test_releasing_twice_is_the_same_as_releasing_once(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Idempotent: the caller cannot know which arm already released.
+
+        The dispatcher releases what it could not resolve a base for and
+        the watch releases what its job finished with; a second release is
+        an ordinary state and not an error.
+        """
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+        again = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert again.status is ClaimStatus.GRANTED
+
+    async def test_a_second_release_never_frees_the_next_holders_claim(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Idempotence is not amnesia: a release frees THIS holder's claim."""
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == "pass-b"
+
+    async def test_a_losing_claimant_leaves_nothing_that_outlives_the_winner(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A claim that was refused is not a claim, and holds nothing.
+
+        The measured failure was in the winner's release: the loser's
+        attempt had left something behind that went on excluding every
+        later claimant, for the whole of a lease nobody was renewing
+        (KOD-152).
+        """
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        lost = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert lost.status is ClaimStatus.LOST
+
+        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+        next_pass = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-c",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert next_pass.status is ClaimStatus.GRANTED
+
     async def test_the_lease_bounds_the_claim(self, tracker: TrackerPort) -> None:
         granted = await tracker.claim_issue(
             issue_key=CLAIMED_ISSUE,
@@ -480,6 +562,44 @@ class TestRenewingAClaim:
         )
 
         assert loser.status is ClaimStatus.LOST
+
+    async def test_a_renewal_across_a_competitors_claim_still_holds_the_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The competitor arrives BETWEEN renewals and changes nothing.
+
+        A renewal may not cost the holder its place: whatever a refused
+        claimant did while the run was working, the run that is still
+        working is the one holding the issue.
+        """
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        renewed = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+
+        assert renewed is not None
+        assert held is not None
+        assert held.holder == "pass-a"
+        assert held.expires_at == renewed.expires_at
 
     async def test_release_frees_a_renewed_claim_whole(
         self,

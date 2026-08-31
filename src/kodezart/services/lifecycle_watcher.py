@@ -34,6 +34,17 @@ dispatch pass enqueues, it ends when the stream ends, and it ends by both
 paths.  The renewal starts before the first frame rather than after it,
 because a job sitting in the queue longer than the lease loses its issue
 just as surely as a job running longer than one.
+
+**And the claim is handed back here** (KOD-152), because this is where the
+job's end is known.  The end of the stream is that end by every path the
+process survives — a terminal outcome, a run that reached none, and a
+graceful shutdown, which closes the stream of everything still queued or
+running — so ONE release, after the heartbeat has stopped, answers for all
+three and cannot race a renewal writing the marker back.  A process that
+DIES releases nothing, which is the arm the lease expiry exists for and the
+one arm that may not change; the measured incident is the other one, an
+instance stopped and its replacement locked out of the issue for the rest
+of a lease nobody was working under.
 """
 
 import asyncio
@@ -95,6 +106,29 @@ class LifecycleWatcher:
         """The watches currently in flight."""
         return frozenset(self._following)
 
+    async def drain(self) -> None:
+        """Wait out every watch in flight — the shutdown half of ``follow``.
+
+        Belongs AFTER the queue is stopped and BEFORE anything a watch
+        writes through is closed.  Stopping the queue ends the stream of
+        every job it holds, which is what each watch reads as its job's
+        end, so draining here is what turns a stopped instance into a
+        released claim instead of a lease the next instance waits out.
+
+        The watches are AWAITED, never cancelled.  Cancelling them is
+        precisely what would skip the write-back and the release this
+        exists to let happen; a watch that raises is reported here rather
+        than ending the shutdown, which has other things to close.
+        """
+        outcomes = await asyncio.gather(*self._following, return_exceptions=True)
+        for outcome in outcomes:
+            if isinstance(outcome, BaseException):
+                await self._log.aerror(
+                    "lifecycle_watch_failed",
+                    error=str(outcome),
+                    error_kind=type(outcome).__name__,
+                )
+
     async def watch(
         self,
         *,
@@ -102,7 +136,19 @@ class LifecycleWatcher:
         job_id: str,
         pre_claim_state: str,
     ) -> None:
-        """Read the job's stream to its end, writing each stage as it arrives."""
+        """Read the job's stream to its end, writing each stage as it arrives.
+
+        The claim is released once the stream has ended and the heartbeat
+        with it, so the last word on the marker is the release and not a
+        renewal that landed after it.
+
+        A watch that RAISES releases nothing: the stream stopped without
+        reaching its end, so the run behind it is not known to have
+        finished, and handing the issue to another instance while it may
+        still be working is the one thing the claim exists to prevent.  The
+        lease lapses on its own there, exactly as it does for a process
+        that died.
+        """
         started = False
         terminal = False
         failure: ErrorEvent | None = None
@@ -128,6 +174,7 @@ class LifecycleWatcher:
                     failure_class=None if failure is None else failure.error_kind,
                     step=None if failure is None else failure.raise_site,
                 )
+        await self._heartbeat.release(issue_key=issue_key)
         await self._log.ainfo(
             "lifecycle_watch_finished",
             issue_key=issue_key,
