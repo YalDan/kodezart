@@ -69,7 +69,7 @@ def clause_approved(issue: TrackerIssue) -> bool:
 
 
 def clause_open(issue: TrackerIssue) -> bool:
-    """Clause 3: the workflow state is neither completed nor canceled."""
+    """Clause 3: the workflow state is none of the closed kinds."""
     return is_open(issue.state_kind)
 
 
@@ -89,9 +89,9 @@ def live_blocker(
 ) -> str | None:
     """Clause 4: the first live blocker's key, or ``None`` when unblocked.
 
-    A blocker is live iff it is itself open.  An edge to a completed or
-    canceled issue does not block — a closed blocker is a finished
-    dependency, not a standing one.
+    A blocker is live iff it is itself open.  An edge to a closed issue
+    does not block — a closed blocker is a finished dependency, not a
+    standing one.
     """
     for key in blocker_keys(issue):
         blocker = blockers.get(key)

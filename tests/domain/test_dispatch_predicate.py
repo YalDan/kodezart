@@ -90,25 +90,36 @@ class TestClauseTwoApproved:
         assert not clause_approved(make_tracker_issue("K-1", queue_states=[]))
 
 
-class TestClauseThreeOpen:
-    """Neither completed nor canceled."""
+OPEN_KINDS: list[WorkflowStateKind] = [
+    WorkflowStateKind.TRIAGE,
+    WorkflowStateKind.BACKLOG,
+    WorkflowStateKind.UNSTARTED,
+    WorkflowStateKind.STARTED,
+]
+CLOSED_KINDS: list[WorkflowStateKind] = [
+    WorkflowStateKind.COMPLETED,
+    WorkflowStateKind.CANCELED,
+    WorkflowStateKind.DUPLICATE,
+]
 
-    @pytest.mark.parametrize(
-        "kind",
-        [
-            WorkflowStateKind.TRIAGE,
-            WorkflowStateKind.BACKLOG,
-            WorkflowStateKind.UNSTARTED,
-            WorkflowStateKind.STARTED,
-        ],
-    )
+
+class TestClauseThreeOpen:
+    """None of the closed kinds."""
+
+    def test_every_kind_is_classified_by_one_of_the_two_cases(self) -> None:
+        """The exhaustiveness guard: a new vendor kind lands classified.
+
+        A member added to the enum and left out of both lists below is the
+        defect KOD-156 was — the kind existed on the board and no clause
+        said what it meant.
+        """
+        assert sorted(OPEN_KINDS + CLOSED_KINDS) == sorted(WorkflowStateKind)
+
+    @pytest.mark.parametrize("kind", OPEN_KINDS)
     def test_open_kinds_hold(self, kind: WorkflowStateKind) -> None:
         assert clause_open(make_tracker_issue("K-1", state_kind=kind))
 
-    @pytest.mark.parametrize(
-        "kind",
-        [WorkflowStateKind.COMPLETED, WorkflowStateKind.CANCELED],
-    )
+    @pytest.mark.parametrize("kind", CLOSED_KINDS)
     def test_closed_kinds_fail(self, kind: WorkflowStateKind) -> None:
         assert not clause_open(make_tracker_issue("K-1", state_kind=kind))
 

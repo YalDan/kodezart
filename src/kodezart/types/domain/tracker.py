@@ -63,7 +63,13 @@ class WorkflowStateKind(StrEnum):
 
     ``state_name`` on an issue carries the backend's own state name; this
     is the part consumers may branch on.  An issue is OPEN iff its kind is
-    neither ``COMPLETED`` nor ``CANCELED`` — read through ``is_open``.
+    none of ``COMPLETED``, ``CANCELED`` and ``DUPLICATE`` — read through
+    ``is_open``.
+
+    ``DUPLICATE`` is the kind an issue closed AS a duplicate of another
+    carries.  It is a closed kind: the work is delivered on the issue that
+    absorbed it, so a duplicate is neither claimable nor a dispatch
+    candidate, and an edge to one does not block.
     """
 
     TRIAGE = "triage"
@@ -72,15 +78,20 @@ class WorkflowStateKind(StrEnum):
     STARTED = "started"
     COMPLETED = "completed"
     CANCELED = "canceled"
+    DUPLICATE = "duplicate"
 
 
 _CLOSED_STATE_KINDS: frozenset[WorkflowStateKind] = frozenset(
-    {WorkflowStateKind.COMPLETED, WorkflowStateKind.CANCELED},
+    {
+        WorkflowStateKind.COMPLETED,
+        WorkflowStateKind.CANCELED,
+        WorkflowStateKind.DUPLICATE,
+    },
 )
 
 
 def is_open(kind: WorkflowStateKind) -> bool:
-    """True iff *kind* is neither completed nor canceled."""
+    """True iff *kind* is none of the closed kinds."""
     return kind not in _CLOSED_STATE_KINDS
 
 

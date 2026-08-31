@@ -886,6 +886,31 @@ class TestEmptyEligibleSet:
             "UNAPPROVED": ExclusionClause.NOT_APPROVED,
         }
 
+    async def test_a_groomed_duplicate_is_excluded_as_not_open(self) -> None:
+        """The kind the vendor emits for an issue closed as a duplicate.
+
+        A live board holds one, and before KOD-156 the scan that returned
+        it raised rather than classifying it.  A duplicate is delivered on
+        the issue that absorbed it, so it is never a dispatch candidate.
+        """
+        tracker = UnfilteredTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "DUPLICATE",
+                    state_kind=WorkflowStateKind.DUPLICATE,
+                    state_name="Duplicate",
+                ),
+            ],
+        )
+        fire, queue, _ = dispatcher(tracker)
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.empty_eligible_set
+        assert queue.submissions == []
+        assert [(item.issue_key, item.clause) for item in report.exclusions] == [
+            ("DUPLICATE", ExclusionClause.NOT_OPEN),
+        ]
+
     async def test_the_report_carries_the_raw_query_snapshot(self) -> None:
         issues = [
             make_tracker_issue("BLOCKED", blocked_by=["LIVE"]),

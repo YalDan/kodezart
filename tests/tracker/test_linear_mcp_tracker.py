@@ -24,6 +24,8 @@ from kodezart.types.domain.tracker import (
     IssueRelationKind,
     MappingKind,
     MappingRef,
+    WorkflowStateKind,
+    is_open,
     priority_rank,
 )
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
@@ -113,6 +115,24 @@ class TestShapeRefusal:
         )
         with pytest.raises(TrackerProtocolError):
             await tracker_over(server).read_issue(issue_key="S-1")
+
+    async def test_a_duplicate_kind_state_reads_as_the_domain_member(self) -> None:
+        """The vendor emits it and the board holds one, so the enum carries it.
+
+        A groomed duplicate used to be an unmapped kind, which turned every
+        scan that returned it into a refusal — one issue crash-looping the
+        pass that had to read the whole board (KOD-156).
+        """
+        server = FakeLinearMcpServer(
+            issues=[
+                FakeMcpIssue(id="S-2", status="Duplicate", status_type="duplicate"),
+            ],
+            state_types=STATE_TYPES,
+        )
+        issue = await tracker_over(server).read_issue(issue_key="S-2")
+        assert issue.state_kind is WorkflowStateKind.DUPLICATE
+        assert issue.state_name == "Duplicate"
+        assert not is_open(issue.state_kind)
 
     async def test_every_measured_relation_arm_maps_to_a_domain_kind(self) -> None:
         """The vendor's relations object has four arms and the adapter reads all.
