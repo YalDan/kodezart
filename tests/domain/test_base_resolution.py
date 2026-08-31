@@ -28,6 +28,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.services.agent_service import AgentService
 from kodezart.services.base_resolver import BaseResolver
+from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.branch import BaseInput, WorkRef, WorkRefRole
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
@@ -35,6 +36,7 @@ from tests.fakes import (
     FakeGitService,
     FakePRCreator,
     FakeTrackerPort,
+    PassThroughGate,
     make_tracker_issue,
 )
 
@@ -284,6 +286,68 @@ async def test_a_redundant_edge_reduces_to_the_descendant_alone() -> None:
     assert reduced.base_branch == "feature-b2"
     assert reduced.model_dump_json() == baseline.model_dump_json()
     assert merge_calls(git) == []
+
+
+# ---------------------------------------------------------------------------
+# Where a deliverable ref comes from (KOD-149)
+# ---------------------------------------------------------------------------
+
+
+def lifecycle(tracker: FakeTrackerPort) -> TrackerLifecycleWriter:
+    """The shipped lifecycle writer — the only producer of DELIVERABLE refs."""
+    return TrackerLifecycleWriter(
+        tracker=tracker,
+        gate=PassThroughGate(),
+        clock=lambda: FIXTURE_EPOCH,
+    )
+
+
+def blocked_lane() -> FakeTrackerPort:
+    """LANE blocked by B-1, and nothing recorded against either."""
+    return FakeTrackerPort(
+        issues=[
+            make_tracker_issue(LANE, blocked_by=["B-1"]),
+            make_tracker_issue("B-1"),
+        ],
+    )
+
+
+async def test_a_lane_whose_blocker_delivered_nothing_still_raises() -> None:
+    """The state the whole board was in: no process wrote a deliverable ref.
+
+    ``record_work_ref`` had one caller under ``src`` and it wrote
+    INTEGRATION refs, so this raise was not a fixture's omission — it was
+    every issue with a blocker, on every pass.
+    """
+    with pytest.raises(BaseResolutionError) as excinfo:
+        await resolve(blocked_lane(), FakeGitService())
+    assert excinfo.value.blocker_issue_ids == ("B-1",)
+
+
+async def test_the_blockers_pull_request_is_what_makes_its_lane_resolvable() -> None:
+    """The regression, over one tracker: the same fixture now resolves.
+
+    The ref is written by the lifecycle arm rather than seeded, so a writer
+    that stopped recording it fails here and not only in its own suite.
+    """
+    tracker = blocked_lane()
+    await lifecycle(tracker).on_pull_request(
+        issue_key="B-1",
+        feature_branch="kodezart/b-1-the-blockers-lane",
+        feature_tip_sha="c" * 40,
+    )
+
+    spec = await resolve(tracker, FakeGitService())
+
+    assert spec.base_branch == "kodezart/b-1-the-blockers-lane"
+    assert spec.base_role is WorkRefRole.DELIVERABLE
+    assert spec.inputs == (
+        BaseInput(
+            blocker_issue_id="B-1",
+            branch="kodezart/b-1-the-blockers-lane",
+            sha="c" * 40,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

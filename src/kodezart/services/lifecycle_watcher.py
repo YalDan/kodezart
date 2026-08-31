@@ -144,7 +144,11 @@ class LifecycleWatcher:
         event: AgentEvent,
     ) -> None:
         if isinstance(event, WorkflowPREvent):
-            await self._writer.on_pull_request(issue_key=issue_key)
+            await self._writer.on_pull_request(
+                issue_key=issue_key,
+                feature_branch=event.feature_branch,
+                feature_tip_sha=event.feature_tip_sha,
+            )
             return
         if isinstance(event, WorkflowCompleteEvent):
             # Order matters: the terminal comment reports the outcome of a

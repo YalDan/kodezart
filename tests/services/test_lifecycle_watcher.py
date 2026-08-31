@@ -28,6 +28,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
+from kodezart.types.domain.branch import WorkRefRole
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -48,18 +49,21 @@ HOLDER = "pass-a"
 LEASE_SECONDS = 600.0
 RENEWAL_FRACTION = 0.25
 REPO_URL = "https://forge.invalid/owner/repo"
+FEATURE_BRANCH = "feature"
+FEATURE_TIP_SHA = "a" * 40
 
 PR_EVENT = WorkflowPREvent(
     pr_url="https://forge.invalid/owner/repo/pull/7",
     pr_number=7,
-    feature_branch="feature",
+    feature_branch=FEATURE_BRANCH,
     base_branch="trunk",
+    feature_tip_sha=FEATURE_TIP_SHA,
 )
 
 
 def complete(*, merged: bool, outcome: WorkflowOutcome) -> WorkflowCompleteEvent:
     return WorkflowCompleteEvent(
-        feature_branch="feature",
+        feature_branch=FEATURE_BRANCH,
         ralph_branch="ralph",
         total_iterations=1,
         accepted=True,
@@ -176,6 +180,47 @@ class TestTheTransitionsAJobStreamProduces:
 
         assert tracker.workflow_writes == []
         assert tracker.comments == []
+
+    async def test_a_pull_request_event_records_the_deliverable_ref_it_carries(
+        self,
+    ) -> None:
+        """The write nothing in the process performed before KOD-149.
+
+        The branch and the sha are the event's, not this test's: a watcher
+        that recorded a ref it composed itself would pass on values the run
+        never pushed.
+        """
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        (recorded,) = await tracker.work_refs(issue_key=ISSUE)
+        assert recorded.role is WorkRefRole.DELIVERABLE
+        assert recorded.branch == PR_EVENT.feature_branch
+        assert recorded.pushed_head_sha == PR_EVENT.feature_tip_sha
+
+    async def test_a_run_that_opens_no_pull_request_records_no_deliverable_ref(
+        self,
+    ) -> None:
+        """The paired negative: the ref is the pull request's, not the run's."""
+        watch, tracker, _ = watcher(
+            complete(merged=False, outcome=WorkflowOutcome.loop_not_accepted),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert await tracker.work_refs(issue_key=ISSUE) == ()
 
     async def test_in_progress_is_written_once_however_many_frames_arrive(
         self,

@@ -51,6 +51,7 @@ from tests.services.test_dispatch_pass import (
 
 ISSUE = "K-1"
 FEATURE_BRANCH = "kodezart/k-1"
+FEATURE_TIP_SHA = "a" * 40
 #: A state the operation's ``workflow_states`` mapping never names — the
 #: shape a claimed issue really has, and the one no ``LifecycleStage``
 #: could put back.
@@ -85,6 +86,7 @@ class _MergingEngine:
             pr_number=1,
             feature_branch=FEATURE_BRANCH,
             base_branch=base,
+            feature_tip_sha=FEATURE_TIP_SHA,
         )
         yield WorkflowCompleteEvent(
             feature_branch=FEATURE_BRANCH,

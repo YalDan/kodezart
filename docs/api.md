@@ -209,7 +209,7 @@ data: {"type":"result","subtype":"result","durationMs":4200,"durationApiMs":3800
 | `workflow_review`         | `passed`, `evaluation`, `fixRound`              |
 | `workflow_consolidation`  | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
 | `workflow_visibility`     | `visibility`, `repoUrl`                         |
-| `workflow_pr`             | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
+| `workflow_pr`             | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `featureTipSha` |
 | `workflow_ci`             | `passed`, `summary`, `ref`                      |
 | `workflow_complete`       | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `merged`, `finalCommitSha`, `error` |
 
