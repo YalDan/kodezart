@@ -20,6 +20,14 @@ The interval is the lease times a configured FRACTION of it, so no
 deployment can be configured to renew more slowly than the lease it is
 renewing — the failure this whole module exists to remove.
 
+**The other end of the claim's life is here too** (KOD-152).  Renewal stops
+when the work stops, and the claim it was renewing is handed back in the
+same act, under the holder identity it was renewing with.  A lease left to
+run out is a RECOVERY and not a handover: it costs the issue the rest of
+that lease, and on an instance that was stopped rather than lost that is a
+replacement locked out of work nobody is doing.  The lapse stays where it
+belongs — the arm where no code of ours runs at all.
+
 A renewal write that fails does not end the loop.  The interval is a
 fraction of the lease precisely so several consecutive failures are
 survivable, and a tracker that is durably unreachable ends with the lease
@@ -79,6 +87,27 @@ class ClaimHeartbeat:
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+
+    async def release(self, *, issue_key: str) -> None:
+        """Hand *issue_key*'s claim back: the work it guarded has ended.
+
+        The release lives beside the renewal because both are the same
+        identity's act.  A caller passing its own spelling of the holder
+        would free nothing at all on any disagreement — the port refuses to
+        release a claim the named holder does not hold — and would fail
+        silently, since a release that frees nothing looks exactly like a
+        release that was not needed.
+
+        Idempotent, and never on the crash path: a process that dies
+        renews nothing and releases nothing, and its lease lapsing on its
+        own is the recovery this module rests on.
+        """
+        await self._tracker.release_claim(issue_key=issue_key, holder=self._holder)
+        await self._log.ainfo(
+            "claim_released",
+            issue_key=issue_key,
+            holder=self._holder,
+        )
 
     async def _renew(self, *, issue_key: str) -> None:
         """Sleep the interval, extend the claim, repeat until cancelled."""

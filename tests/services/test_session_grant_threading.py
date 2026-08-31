@@ -168,6 +168,10 @@ async def test_the_grant_reaching_the_options_is_the_one_app_config_resolved(
     """AppConfig is the origin: one configuration change, one decision."""
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("R" * 44))
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE_MCP_SERVER_URL",
+        "https://knowledge.invalid/mcp",
+    )
     config = AppConfig()
 
     grant = config.knowledge_grant(knowledge_map="── fixture map ──")

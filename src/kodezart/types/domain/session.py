@@ -10,6 +10,7 @@ type had to be guessed is a session whose grant was guessed.
 from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Final, Self
+from urllib.parse import urlsplit
 
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 
@@ -96,9 +97,12 @@ class KnowledgeGrant(CamelCaseModel):
         A value the declared route never reads is the defect class this
         model was refiled over — configuration dialled by nothing — so a
         stray member is a refusal naming it, never an ignored field.
+
+        The endpoint is owed where a session would dial it: a grant naming
+        no session type dials nothing, and carries none.
         """
         if self.transport is KnowledgeTransport.HTTP:
-            if self.server_url is None:
+            if self.server_url is None and self.granted:
                 msg = (
                     "an http knowledge transport carries no server_url: "
                     "there is no endpoint for a granted session to dial"
@@ -137,6 +141,36 @@ class KnowledgeGrant(CamelCaseModel):
             )
             raise ValueError(msg)
         return self
+
+    @model_validator(mode="after")
+    def _an_interactive_host_takes_no_static_credential(self) -> Self:
+        """A host that authenticates its clients receives no header from here.
+
+        The exchange is the operator's, in a browser, and the server takes
+        no token from configuration — so a granted endpoint on such a host
+        paired with a statically composed header cannot succeed at any
+        credential value.  It is refused where the grant is built, which
+        for the configured grant is boot, rather than at the first session
+        that would carry it.
+        """
+        if not self.granted or self.transport is not KnowledgeTransport.HTTP:
+            return self
+        if self.server_url is None:
+            return self
+        if self.credential is None and self.gateway_credential is None:
+            return self
+        host = urlsplit(self.server_url).hostname
+        if host is None or host not in self.interactive_auth_hosts:
+            return self
+        msg = (
+            f"KODEZART_KNOWLEDGE_MCP_SERVER_URL names {host}, which "
+            f"authenticates interactively (OAuth) and accepts no static "
+            f"credential, but KODEZART_KNOWLEDGE_MCP_TOKEN / "
+            f"KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN compose one. This "
+            f"combination cannot succeed at any credential value: point the "
+            f"url at a self-hosted server, or use the stdio transport"
+        )
+        raise ValueError(msg)
 
     @model_validator(mode="after")
     def _a_stdio_command_resolves_nowhere_but_itself(self) -> Self:

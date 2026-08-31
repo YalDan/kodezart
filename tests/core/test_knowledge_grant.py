@@ -18,6 +18,8 @@ from kodezart.types.domain.session import SessionType
 _CREDENTIAL: Final[str] = "ntn_" + ("Q" * 44)
 _GRANTS_VAR: Final[str] = "KODEZART_KNOWLEDGE_SESSION_GRANTS"
 _TOKEN_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_TOKEN"
+_URL_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_SERVER_URL"
+_SELF_HOSTED_URL: Final[str] = "https://knowledge.invalid/mcp"
 #: Any non-empty map: the model refuses a grant that names a session type
 #: and carries none, so the builder has to be handed one.
 _MAP: Final[str] = "── fixture map ──"
@@ -43,6 +45,7 @@ def test_the_grant_list_resolves_from_its_env_var(
     """The intended first grant: ticket-driven fire sessions and nothing else."""
     monkeypatch.setenv(_GRANTS_VAR, '["ticket_fire"]')
     monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+    monkeypatch.setenv(_URL_VAR, _SELF_HOSTED_URL)
 
     grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
 

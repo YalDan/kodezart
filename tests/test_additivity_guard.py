@@ -32,7 +32,12 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 
 #: The pre-fire stack tip this lane was cut from — every "unchanged" claim
 #: below is measured against this commit and against no other.
-BASE_SHA: Final[str] = "b4c30d92bab550641496c5c05aa17131fb6446ba"
+# Advanced 2026-08-31: the stack tip moved when the v0.2 close-out
+# landed thirteen lane-6 commits and this lane merged them (Ruling B —
+# a dependent lane stacks on its blocker's branch).  The baseline is
+# the lane's own definition of "upstream", so it moves with the stack
+# and never with trunk; the provenance tests below hold it honest.
+BASE_SHA: Final[str] = "61b4b5ee3a0d8ac6570110e50585ad6c36610419"
 
 #: This lane's own tip — the far end of the interval every claim measures.
 LANE_SHA: Final[str] = "0920a601fa4c38333c8c8eae742d0d0b6da9e8e6"
@@ -391,7 +396,8 @@ def test_the_lane_touches_no_source_surface_outside_its_declared_diff() -> None:
     blocks name — the two executors and their mapping helper, the session
     vocabulary, the configuration that resolves the grant, the composition
     that renders the map, the prompt vocabulary and set, the threading seam,
-    and the egress redaction the credential joined.
+    the egress redaction the credential joined, and the package docstring
+    whose worked example a future author copies a construction from.
     """
     declared = {
         "src/kodezart/adapters/_mcp_mapping.py",
@@ -399,6 +405,7 @@ def test_the_lane_touches_no_source_surface_outside_its_declared_diff() -> None:
         "src/kodezart/adapters/claude_agent_executor.py",
         "src/kodezart/adapters/claude_client_executor.py",
         "src/kodezart/adapters/git_change_persister.py",
+        "src/kodezart/agents/__init__.py",
         "src/kodezart/chains/ralph_loop.py",
         "src/kodezart/chains/ralph_workflow.py",
         "src/kodezart/chains/ticket_generation.py",

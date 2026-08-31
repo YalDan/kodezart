@@ -2,7 +2,7 @@
 
 from typing import Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from kodezart.types.domain.dispatch import PassSignal
@@ -53,6 +53,7 @@ class AppConfig(BaseSettings):
         # loads as absent.  Needed because absence is a first-class state
         # here — a scheme-less auth header is "scheme is None", never "".
         env_parse_none_str="null",
+        hide_input_in_errors=True,
     )
 
     project_name: str = Field(
@@ -277,6 +278,17 @@ class AppConfig(BaseSettings):
         description=(
             "Consecutive check-runs 404s tolerated before the ref is treated as "
             "a transient API failure."
+        ),
+    )
+    ci_check_runs_max_pages: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description=(
+            "Maximum check-runs pages read per CI poll. However many pages a "
+            "poll reads, it costs exactly one CI_POLL_MAX_ATTEMPTS unit; a poll "
+            "that hits this cap leaves the run set short of the reported "
+            "total_count, which is pending, never a verdict and never an error."
         ),
     )
     forge_api_timeout_seconds: float = Field(
@@ -531,14 +543,55 @@ class AppConfig(BaseSettings):
             "boot rather than attaching an unauthenticated server."
         ),
     )
+
+    @field_validator("knowledge_session_grants", mode="before")
+    @classmethod
+    def _grant_entries_name_session_types(cls, value: object) -> object:
+        """Name every offending grant entry, deliberately and safely.
+
+        ``hide_input_in_errors`` keeps raw input out of every validation
+        message because an arbitrary env value can be a credential.  A
+        grant entry is the one input that must come BACK in the error —
+        the boot contract names the offender and the legal values — and
+        it is safe to name, because the legal vocabulary is a closed enum
+        and an offender is by definition not a secret this field accepts.
+        So this field names its own offenders before the enum coercion
+        would hide them, and the global rule stays intact for every
+        other field.
+        """
+        if not isinstance(value, list):
+            return value
+        legal = {member.value for member in SessionType}
+        offending = [
+            str(entry)
+            for entry in value
+            if not isinstance(entry, SessionType)
+            if str(entry) not in legal
+        ]
+        if offending:
+            named = ", ".join(repr(entry) for entry in offending)
+            allowed = ", ".join(sorted(legal))
+            msg = (
+                f"knowledge_session_grants names no session type: {named} "
+                f"— the legal values are: {allowed}"
+            )
+            raise ValueError(msg)
+        return value
+
     knowledge_mcp_server_name: str = Field(
         default="notion",
         min_length=1,
         description="Identity the knowledge MCP server carries in a granted session.",
     )
-    knowledge_mcp_server_url: str = Field(
-        default="https://mcp.notion.com/mcp",
-        description="Endpoint of the knowledge MCP server a granted session dials.",
+    knowledge_mcp_server_url: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Endpoint of the knowledge MCP server a granted session dials "
+            "under the http transport. Unset means no knowledge server "
+            "endpoint is configured; a granted http session then aborts "
+            "boot naming the absence."
+        ),
     )
     knowledge_mcp_auth_header: str = Field(
         default="Authorization",
@@ -608,8 +661,8 @@ class AppConfig(BaseSettings):
         default_factory=lambda: ["mcp.notion.com"],
         description=(
             "Hosts that authenticate interactively (OAuth) and accept no "
-            "static credential. A session mapping that composes a static "
-            "header for one of these refuses, naming the conflict. The "
+            "static credential. A granted endpoint on one of these paired "
+            "with a static credential aborts boot, naming the conflict. The "
             "vendor lives in the value, never in the schema."
         ),
     )

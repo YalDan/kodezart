@@ -17,6 +17,7 @@ import asyncio
 import io
 import json
 import logging
+import os
 import re
 import sys
 import warnings
@@ -57,12 +58,22 @@ def configured_chain(*, pretty: bool = False) -> Iterator[io.StringIO]:
     saved_handlers = list(root.handlers)
     saved_level = root.level
     saved_stdout = sys.stdout
+    saved_columns = os.environ.get("COLUMNS")
+    # The console renderer wraps to the invoker's terminal width, and a
+    # narrow terminal truncates the very frame path the assertions read.
+    # The verdict may not depend on who runs the suite, so the width is
+    # pinned for the chain's lifetime.
+    os.environ["COLUMNS"] = "200"
     sys.stdout = buffer
     try:
         configure_logging(log_level="INFO", pretty=pretty)
         yield buffer
     finally:
         sys.stdout = saved_stdout
+        if saved_columns is None:
+            os.environ.pop("COLUMNS", None)
+        else:
+            os.environ["COLUMNS"] = saved_columns
         root.handlers = saved_handlers
         root.setLevel(saved_level)
         structlog.reset_defaults()

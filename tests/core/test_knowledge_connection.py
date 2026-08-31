@@ -91,8 +91,17 @@ def test_a_stdio_grant_carries_no_url_at_all() -> None:
 
 
 def test_an_http_grant_without_a_url_refuses_naming_it() -> None:
+    """The endpoint is owed to the sessions the grant names."""
     with pytest.raises(ValidationError, match="server_url"):
         _http_grant(server_url=None)
+
+
+def test_an_http_grant_naming_no_session_needs_no_url() -> None:
+    """The shipped shape: nothing is granted, so nothing would be dialled."""
+    grant = _http_grant(granted=(), knowledge_map="", server_url=None)
+
+    assert grant.granted == ()
+    assert grant.server_url is None
 
 
 def test_a_stdio_grant_without_a_command_refuses_naming_it() -> None:
@@ -209,6 +218,10 @@ _TOKEN_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_TOKEN"
 _GATEWAY_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN"
 _COMMAND_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_COMMAND"
 _CREDENTIAL_ENV_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV"
+_URL_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_SERVER_URL"
+_HOSTS_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS"
+_SELF_HOSTED_URL: Final[str] = "https://knowledge.invalid/mcp"
+_INTERACTIVE_HOST: Final[str] = "hosted.invalid"
 
 
 def _stdio_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -239,7 +252,7 @@ def test_the_shipped_default_configuration_is_exactly_as_shipped() -> None:
     config = AppConfig()
 
     assert config.knowledge_mcp_server_name == "notion"
-    assert config.knowledge_mcp_server_url == "https://mcp.notion.com/mcp"
+    assert config.knowledge_mcp_server_url is None
     assert config.knowledge_mcp_auth_header == "Authorization"
     assert config.knowledge_mcp_auth_scheme == "Bearer"
     assert config.knowledge_mcp_transport is KnowledgeTransport.HTTP
@@ -356,6 +369,7 @@ def test_a_gateway_credential_satisfies_the_grant_credential_rule(
     from kodezart.core.config import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(_URL_VAR, _SELF_HOSTED_URL)
     monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
     monkeypatch.delenv(_TOKEN_VAR, raising=False)
 
@@ -531,24 +545,94 @@ def test_a_package_runner_command_is_refused_when_the_grant_resolves(
         AppConfig().knowledge_grant(knowledge_map=_MAP)
 
 
-def test_the_pinned_legacy_combination_still_constructs_at_config_level(
+def test_a_granted_http_route_without_an_endpoint_aborts_boot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The refusal layer for the dead combination is the session mapping.
-
-    Recorded as a control: the protected suites pin this configuration as
-    legal at every boot layer, which is exactly why the fire-ruling of
-    2026-08-17 places the refusal at the mapping instead.
-    """
+    """No endpoint ships, so a granted http deployment must name one."""
     from kodezart.core.config import AppConfig
 
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+    monkeypatch.delenv(_URL_VAR, raising=False)
+
+    with pytest.raises(ValidationError, match="server_url"):
+        AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+
+def test_a_static_credential_aimed_at_an_interactive_host_aborts_boot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dead combination is refused where the grant resolves, at boot.
+
+    The refusal names the host and every variable in the conflict, because
+    no credential value rescues it: the endpoint has to move, or the route
+    has to change.
+    """
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(_HOSTS_VAR, f'["{_INTERACTIVE_HOST}"]')
+    monkeypatch.setenv(_URL_VAR, f"https://{_INTERACTIVE_HOST}/mcp")
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+
+    with pytest.raises(ValidationError) as excinfo:
+        AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+    reported = str(excinfo.value)
+    assert _INTERACTIVE_HOST in reported
+    assert _URL_VAR in reported
+    assert _TOKEN_VAR in reported
+    assert _GATEWAY_VAR in reported
+
+
+def test_a_gateway_credential_aimed_at_an_interactive_host_also_aborts_boot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Any statically composed header is dead against such a host."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(_HOSTS_VAR, f'["{_INTERACTIVE_HOST}"]')
+    monkeypatch.setenv(_URL_VAR, f"https://{_INTERACTIVE_HOST}/mcp")
+    monkeypatch.setenv(_GATEWAY_VAR, _GATEWAY_CREDENTIAL)
+    monkeypatch.delenv(_TOKEN_VAR, raising=False)
+
+    with pytest.raises(ValidationError, match="interactively"):
+        AppConfig().knowledge_grant(knowledge_map=_MAP)
+
+
+def test_an_interactive_host_granted_to_nobody_is_a_legal_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal is grant-conditioned: nothing dials, nothing is dead."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", "[]")
+    monkeypatch.setenv(_HOSTS_VAR, f'["{_INTERACTIVE_HOST}"]')
+    monkeypatch.setenv(_URL_VAR, f"https://{_INTERACTIVE_HOST}/mcp")
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+
+    grant = AppConfig().knowledge_grant(knowledge_map="")
+
+    assert grant.granted == ()
+
+
+def test_the_same_credential_against_a_self_hosted_url_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control: the refusal is the host, never the credential."""
+    from kodezart.core.config import AppConfig
+
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv(_HOSTS_VAR, f'["{_INTERACTIVE_HOST}"]')
+    monkeypatch.setenv(_URL_VAR, _SELF_HOSTED_URL)
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
 
     grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
 
-    assert grant.server_url == "https://mcp.notion.com/mcp"
-    assert grant.interactive_auth_hosts == ("mcp.notion.com",)
+    assert grant.server_url == _SELF_HOSTED_URL
+    assert grant.credential is not None
+    assert grant.credential.get_secret_value() == _CREDENTIAL
 
 
 # ---------------------------------------------------------------------------

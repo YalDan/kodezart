@@ -11,7 +11,7 @@ import ast
 from pathlib import Path
 
 from kodezart.composition.passes import (
-    build_pass_scheduler,
+    build_dispatch_runtime,
     build_prompt_passes,
 )
 from kodezart.core.config import AppConfig
@@ -199,7 +199,7 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
     operation = example_config()
     prompts = load_registry(bindings=dict(bindings_for(operation)))
     queue = FakeJobQueue()
-    scheduler = await build_pass_scheduler(
+    runtime = await build_dispatch_runtime(
         config=_config(tmp_path),
         operation=operation,
         tracker=None,
@@ -215,10 +215,11 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
         log=get_logger(__name__),
     )
 
-    assert {entry.name for entry in scheduler.passes} == {
+    assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
     }
+    assert runtime.lifecycle is None
 
 
 async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:

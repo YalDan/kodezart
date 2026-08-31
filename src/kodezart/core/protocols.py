@@ -50,6 +50,31 @@ from kodezart.types.requests.agent import WorkflowRequest
 
 
 @runtime_checkable
+class LogEmitter(Protocol):
+    """Structured logging port — structlog's stdlib BoundLogger satisfies it.
+
+    The five methods are the five this codebase actually awaits, and a test
+    derives that set from the syntax tree rather than from a reading, so the
+    port cannot drift from its callers in either direction: a method called
+    but not declared fails, and a method declared but never called fails too.
+
+    Values are ``object`` rather than ``Any`` because the renderer accepts
+    whatever it is handed and the strict-mode ban on explicit ``Any`` holds
+    here as everywhere else.
+    """
+
+    async def ainfo(self, event: str, **kwargs: object) -> None: ...
+
+    async def adebug(self, event: str, **kwargs: object) -> None: ...
+
+    async def awarning(self, event: str, **kwargs: object) -> None: ...
+
+    async def aerror(self, event: str, **kwargs: object) -> None: ...
+
+    async def aexception(self, event: str, **kwargs: object) -> None: ...
+
+
+@runtime_checkable
 class GitService(Protocol):
     """Git operations port — SubprocessGitService satisfies this."""
 

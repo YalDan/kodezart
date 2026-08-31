@@ -680,13 +680,20 @@ class WorkflowReviewEvent(AgentEvent):
 
 
 class WorkflowPREvent(AgentEvent):
-    """Emitted after a pull request is opened."""
+    """Emitted after a pull request is opened.
+
+    ``feature_tip_sha`` is the pushed tip the pull request is opened over.
+    It rides here because this event is what the lifecycle write-back reads
+    to record the issue's DELIVERABLE work ref, and a ref without the sha
+    it was pushed at cannot serve as a dependent lane's base (KOD-149).
+    """
 
     type: Literal["workflow_pr"] = "workflow_pr"
     pr_url: str
     pr_number: int
     feature_branch: str
     base_branch: str
+    feature_tip_sha: str = Field(min_length=40, max_length=40)
 
 
 class WorkflowCIEvent(AgentEvent):

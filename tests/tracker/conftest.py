@@ -50,6 +50,7 @@ STATE_TYPES: dict[str, str] = {
     "In Review": "started",
     "Done": "completed",
     "Canceled": "canceled",
+    "Duplicate": "duplicate",
 }
 
 CLAIMED_ISSUE = "FIX-1"

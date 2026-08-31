@@ -28,9 +28,11 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
+from kodezart.types.domain.branch import WorkRefRole
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.tracker import ClaimStatus
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FakeJobQueue,
@@ -48,18 +50,21 @@ HOLDER = "pass-a"
 LEASE_SECONDS = 600.0
 RENEWAL_FRACTION = 0.25
 REPO_URL = "https://forge.invalid/owner/repo"
+FEATURE_BRANCH = "feature"
+FEATURE_TIP_SHA = "a" * 40
 
 PR_EVENT = WorkflowPREvent(
     pr_url="https://forge.invalid/owner/repo/pull/7",
     pr_number=7,
-    feature_branch="feature",
+    feature_branch=FEATURE_BRANCH,
     base_branch="trunk",
+    feature_tip_sha=FEATURE_TIP_SHA,
 )
 
 
 def complete(*, merged: bool, outcome: WorkflowOutcome) -> WorkflowCompleteEvent:
     return WorkflowCompleteEvent(
-        feature_branch="feature",
+        feature_branch=FEATURE_BRANCH,
         ralph_branch="ralph",
         total_iterations=1,
         accepted=True,
@@ -176,6 +181,47 @@ class TestTheTransitionsAJobStreamProduces:
 
         assert tracker.workflow_writes == []
         assert tracker.comments == []
+
+    async def test_a_pull_request_event_records_the_deliverable_ref_it_carries(
+        self,
+    ) -> None:
+        """The write nothing in the process performed before KOD-149.
+
+        The branch and the sha are the event's, not this test's: a watcher
+        that recorded a ref it composed itself would pass on values the run
+        never pushed.
+        """
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        (recorded,) = await tracker.work_refs(issue_key=ISSUE)
+        assert recorded.role is WorkRefRole.DELIVERABLE
+        assert recorded.branch == PR_EVENT.feature_branch
+        assert recorded.pushed_head_sha == PR_EVENT.feature_tip_sha
+
+    async def test_a_run_that_opens_no_pull_request_records_no_deliverable_ref(
+        self,
+    ) -> None:
+        """The paired negative: the ref is the pull request's, not the run's."""
+        watch, tracker, _ = watcher(
+            complete(merged=False, outcome=WorkflowOutcome.loop_not_accepted),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert await tracker.work_refs(issue_key=ISSUE) == ()
 
     async def test_in_progress_is_written_once_however_many_frames_arrive(
         self,
@@ -307,6 +353,88 @@ class TestThePremiseAgainstTheShippedQueue:
             ]
         finally:
             await queue.stop()
+
+
+class TestGracefulShutdownHandsTheClaimBack:
+    """An instance that STOPS may not lock its replacement out (KOD-152).
+
+    Driven over the shipped queue, because the shutdown signal is that
+    adapter's own: stopping it ends the stream of every job it still holds,
+    queued or running, and the end of a stream is what a watch reads as its
+    job's end.  A double written to end its stream on request would be
+    asserting the fixture rather than the deployment.
+
+    The drain is the other half.  Stopping the queue only STARTS the
+    releases; the root has to wait them out before it closes the transport
+    they write through, and a watch that never got to run is a claim held
+    by a process that no longer exists.
+    """
+
+    async def test_a_stopped_instance_leaves_its_issue_claimable(self) -> None:
+        queue = AsyncioJobQueue(
+            # Never released: the job is still running when the instance
+            # goes down, which is the shape the incident was measured in.
+            engine=_OneEventEngine(released=asyncio.Event()),
+            max_concurrent_runs_per_lane=1,
+            max_depth_per_lane=4,
+            terminal_retention_seconds=60.0,
+            event_buffer_retention_seconds=60.0,
+            event_buffer_capacity=64,
+        )
+        await queue.start()
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+        watch = LifecycleWatcher(
+            queue=queue,
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+        )
+        record = await queue.submit(
+            lane="lane",
+            request=WorkflowRequest(prompt="do the thing", repo_url=REPO_URL),
+        )
+        watch.follow(
+            issue_key=ISSUE,
+            job_id=record.job_id,
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        await queue.stop()
+        await asyncio.wait_for(watch.drain(), timeout=5.0)
+
+        assert await tracker.active_claim(issue_key=ISSUE) is None
+        # The clock has not moved: the replacement claims at once rather
+        # than waiting out a lease nobody is renewing.
+        again = await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert again.status is ClaimStatus.GRANTED
+
+    async def test_the_drain_waits_for_the_watch_rather_than_cancelling_it(
+        self,
+    ) -> None:
+        """Cancelling is what would skip the write-back the drain exists for."""
+        watch, tracker, _ = watcher(
+            PR_EVENT,
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        await asyncio.wait_for(watch.drain(), timeout=5.0)
+
+        assert not watch.following
+        assert tracker.workflow_writes[-1] == (ISSUE, LifecycleStage.DONE)
+        assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
 
 
 class TestTheWatcherIsUnknownJobSafe:

@@ -151,52 +151,54 @@ async def _drain(queue: AsyncioJobQueue, job_id: str) -> list[AgentEvent]:
     return [event async for event in queue.attach(job_id=job_id)]
 
 
-# Waits are bounded by wall clock, not by a yield count: a fixed count of
-# zero-second yields underestimates how many scheduler turns a slow runner
-# needs, which made these waits flake on CI while passing locally.
-_WAIT_TIMEOUT = 30.0
-_WAIT_YIELD = 0.001
+#: Generous: every wait here is on a condition, so this only ever bounds
+#: a genuine hang.
+SETTLE_TIMEOUT = 5.0
 
 
 async def _wait_terminal(
-    queue: AsyncioJobQueue, job_id: str, *, timeout: float = _WAIT_TIMEOUT
+    queue: AsyncioJobQueue, job_id: str, *, timeout: float = SETTLE_TIMEOUT
 ) -> None:
     """Yield to the loop until *job_id* reaches TERMINAL, through the port."""
-    deadline = asyncio.get_running_loop().time() + timeout
-    while asyncio.get_running_loop().time() < deadline:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
         record = await queue.get(job_id=job_id)
         if record is not None and record.state is JobState.TERMINAL:
             return
-        await asyncio.sleep(_WAIT_YIELD)
-    msg = f"job {job_id} never reached TERMINAL"
-    raise AssertionError(msg)
+        if loop.time() >= deadline:
+            msg = f"job {job_id} never reached TERMINAL"
+            raise AssertionError(msg)
+        await asyncio.sleep(0)
 
 
 async def _wait_truncated(
-    queue: AsyncioJobQueue, job_id: str, *, timeout: float = _WAIT_TIMEOUT
+    queue: AsyncioJobQueue, job_id: str, *, timeout: float = SETTLE_TIMEOUT
 ) -> None:
     """Yield to the loop until *job_id*'s record is marked truncated."""
-    deadline = asyncio.get_running_loop().time() + timeout
-    while asyncio.get_running_loop().time() < deadline:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
         record = await queue.get(job_id=job_id)
         if record is not None and record.truncated:
             return
-        await asyncio.sleep(_WAIT_YIELD)
-    msg = f"job {job_id} was never marked truncated"
-    raise AssertionError(msg)
+        if loop.time() >= deadline:
+            msg = f"job {job_id} was never marked truncated"
+            raise AssertionError(msg)
+        await asyncio.sleep(0)
 
 
-async def _until(predicate: object, *, timeout: float = _WAIT_TIMEOUT) -> None:
+async def _until(predicate: object, *, timeout: float = SETTLE_TIMEOUT) -> None:
     """Yield to the loop until *predicate* holds. Fails loudly on timeout."""
     check = predicate
     assert callable(check)
-    deadline = asyncio.get_running_loop().time() + timeout
-    while asyncio.get_running_loop().time() < deadline:
-        if check():
-            return
-        await asyncio.sleep(_WAIT_YIELD)
-    msg = "condition never became true"
-    raise AssertionError(msg)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not check():
+        if loop.time() >= deadline:
+            msg = "condition never became true"
+            raise AssertionError(msg)
+        await asyncio.sleep(0)
 
 
 def _make_queue(

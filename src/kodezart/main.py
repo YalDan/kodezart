@@ -14,7 +14,7 @@ from kodezart.composition.forge import build_forge_client
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.jobs import build_job_queue, build_job_service
 from kodezart.composition.knowledge import boot_knowledge_grant
-from kodezart.composition.passes import build_pass_scheduler
+from kodezart.composition.passes import build_dispatch_runtime
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.tracker import (
@@ -54,8 +54,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # id until boot adopts one, so a registry bound to the declared copy
     # would carry a placeholder into every rendered pass prompt. With no
     # tracker there is nothing to reconcile against, the declared copy is
-    # the whole truth, and the passes that read an unadopted id are not
-    # scheduled at all.
+    # the whole truth, and no pass is scheduled — the wiring gate checks
+    # presence (tracker, operation, delivery probe), not adoption
+    # (KOD-160).
     dialled = await boot_tracker(config=config, operation=declared, log=log)
     operation = declared if dialled is None else dialled.operation
     tracker: TrackerPort | None = None if dialled is None else dialled.tracker
@@ -127,7 +128,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             checkpointer=checkpointer,
         )
 
-        scheduler = await build_pass_scheduler(
+        dispatch = await build_dispatch_runtime(
             config=config,
             operation=operation,
             tracker=tracker,
@@ -142,8 +143,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             skills=skills,
             log=log,
         )
-        app.state.pass_scheduler = scheduler
-        await scheduler.start()
+        app.state.pass_scheduler = dispatch.scheduler
+        await dispatch.scheduler.start()
 
         await log.ainfo(
             "application_starting",
@@ -151,8 +152,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             debug=config.debug,
         )
         yield
-        await scheduler.stop()
+        # The order is the shutdown: no further pass may claim, the queue
+        # then ends the stream of every job it still holds, and the watches
+        # reading those streams are drained on that end — which is where
+        # each of them hands its claim back. Draining before the tracker's
+        # transport closes is what makes the release land at all, and an
+        # instance that skipped it locked its own replacement out of the
+        # issue for the rest of the lease (KOD-152).
+        await dispatch.scheduler.stop()
         await job_queue.stop()
+        if dispatch.lifecycle is not None:
+            await dispatch.lifecycle.drain()
         if mcp_caller is not None:
             await mcp_caller.close()
         if github_api is not None:

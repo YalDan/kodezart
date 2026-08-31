@@ -119,8 +119,7 @@ class HttpMcpToolCaller:
             ) from exc
         if result.isError:
             raise McpTransportError(
-                "the MCP server reported a tool error: "
-                f"{self._error_detail(result)}",
+                f"the MCP server reported a tool error: {self._error_detail(result)}",
                 server_name=self._server_name,
                 tool_name=name,
             )
@@ -167,8 +166,7 @@ class HttpMcpToolCaller:
         blocks = result.content
         if not blocks:
             raise McpTransportError(
-                "the MCP server returned no structured content and no "
-                "content blocks",
+                "the MCP server returned no structured content and no content blocks",
                 server_name=self._server_name,
                 tool_name=name,
             )

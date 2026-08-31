@@ -5,13 +5,14 @@ than defines.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
-from kodezart.core.logging import BoundLogger
+from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
     DeliveryProbe,
@@ -39,6 +40,34 @@ from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+
+
+@dataclass(frozen=True)
+class DispatchPasses:
+    """The passes a deployment ticks, and the watches those passes start.
+
+    Handed back together because a deployment has to shut them down in
+    order and in two different ways: the passes stop FIRST, so none of them
+    claims an issue into a queue that is closing, and the watches are
+    DRAINED last — after the queue has ended their streams, because that
+    end is what makes each of them release its claim (KOD-152).
+    """
+
+    passes: tuple[ScheduledPass, ...]
+    lifecycle: LifecycleWatcher
+
+
+@dataclass(frozen=True)
+class DispatchRuntime:
+    """What the composition root starts and, in this order, stops.
+
+    ``lifecycle`` is ``None`` on a deployment that schedules no dispatch
+    pass at all: there are no watches because nothing claims anything, and
+    that is a different state from "no watch is currently running".
+    """
+
+    scheduler: PassScheduler
+    lifecycle: LifecycleWatcher | None
 
 
 def delivery_probe_for(repo_url: str, *, forge: DeliveryProbe) -> DeliveryProbe:
@@ -146,7 +175,7 @@ def build_prompt_passes(
     ]
 
 
-def build_dispatch_passes(
+async def build_dispatch_passes(
     *,
     config: AppConfig,
     operation: OperationConfig,
@@ -158,18 +187,22 @@ def build_dispatch_passes(
     git: GitService,
     cache: RepoCache,
     integration_workspace_dir: str,
-) -> list[ScheduledPass]:
-    """One gated dispatch pass per repository the operation acts on.
+) -> DispatchPasses:
+    """One gated dispatch pass per repository a declared team fires into.
 
-    Every repository in the config, not a chosen one: the dispatcher
-    claims per repository, and picking one would leave the rest of the
-    operation's declared surface unserved with nothing saying so.
+    Every such repository, not a chosen one: the dispatcher claims per
+    repository, and picking one would leave the rest of the operation's
+    declared surface unserved with nothing saying so.  A repository no
+    team is bound to is the other arm and it is NAMED rather than
+    silent — it gets no pass, because a tick that scans nothing is noise
+    every interval forever (KOD-157).
 
     *delivery* is the FORGE probe, and it reaches only the repositories
     whose origin has a forge; the rest get the probe that can answer for
     theirs.  See :func:`delivery_probe_for` — the selection is per
     repository because the origins are.
     """
+    log: BoundLogger = get_logger(__name__)
     assembler = FireContextAssembler(
         tracker=tracker,
         gate=gate,
@@ -193,6 +226,9 @@ def build_dispatch_passes(
     resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
     passes: list[ScheduledPass] = []
     for repo in operation.repos:
+        if not operation.teams_bound_to(repo.url):
+            await log.ainfo("dispatch_pass_unbound_repository", repo_url=repo.url)
+            continue
         tick = GatedDispatchPass(
             lifecycle=lifecycle,
             gate=build_gate(
@@ -225,10 +261,10 @@ def build_dispatch_passes(
                 run=tick.run,
             ),
         )
-    return passes
+    return DispatchPasses(passes=tuple(passes), lifecycle=lifecycle)
 
 
-async def build_pass_scheduler(
+async def build_dispatch_runtime(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
@@ -243,15 +279,19 @@ async def build_pass_scheduler(
     runner: AgentRunner,
     skills: SkillsSelection,
     log: BoundLogger,
-) -> PassScheduler:
-    """The scheduler, wired to every pass this deployment can actually run."""
+) -> DispatchRuntime:
+    """The scheduler, wired to every pass this deployment can actually run.
+
+    The watches those passes start come back with it, because the root
+    that starts them is the one that has to drain them on the way down.
+    """
     # Cadence is scheduler configuration and nothing else. Three
     # states, none silent: no tracker, or no delivery probe to answer
     # "is this issue already delivered?", and the passes do not run —
     # named, never inferred from an empty schedule.
-    scheduled: list[ScheduledPass] = []
+    built: DispatchPasses | None = None
     if tracker is not None and operation is not None and github_api is not None:
-        scheduled = build_dispatch_passes(
+        built = await build_dispatch_passes(
             config=config,
             operation=operation,
             tracker=tracker,
@@ -273,6 +313,7 @@ async def build_pass_scheduler(
     # The prompt passes need no tracker port to RUN: the session reaches
     # the tracker itself. They need one only to be GATED. What they cannot
     # do without is the operation config their prompts render from.
+    scheduled: list[ScheduledPass] = [] if built is None else list(built.passes)
     if operation is not None:
         if tracker is None and (
             config.fire_prep_pass_gate_signals or config.grooming_pass_gate_signals
@@ -301,4 +342,7 @@ async def build_pass_scheduler(
         )
     else:
         await log.ainfo("prompt_passes_not_wired", operation_config_present=False)
-    return PassScheduler(passes=scheduled)
+    return DispatchRuntime(
+        scheduler=PassScheduler(passes=tuple(scheduled)),
+        lifecycle=None if built is None else built.lifecycle,
+    )

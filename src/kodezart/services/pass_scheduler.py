@@ -20,7 +20,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from traceback import format_exception
 
-from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.logging import get_logger
+from kodezart.core.protocols import LogEmitter
 
 
 @dataclass(frozen=True)
@@ -40,11 +41,12 @@ class PassScheduler:
         *,
         passes: Sequence[ScheduledPass],
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        log: LogEmitter | None = None,
     ) -> None:
         self._passes: tuple[ScheduledPass, ...] = tuple(passes)
         self._sleep: Callable[[float], Awaitable[None]] = sleep
         self._tasks: list[asyncio.Task[None]] = []
-        self._log: BoundLogger = get_logger(__name__)
+        self._log: LogEmitter = get_logger(__name__) if log is None else log
 
     @property
     def passes(self) -> tuple[ScheduledPass, ...]:

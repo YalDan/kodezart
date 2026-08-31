@@ -25,7 +25,7 @@ from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import AgentEvent, ErrorEvent, WorkflowCompleteEvent
 from kodezart.types.domain.outcome import WorkflowOutcome
-from kodezart.types.domain.tracker import ClaimResult
+from kodezart.types.domain.tracker import ClaimResult, ClaimStatus
 from tests.fakes import (
     FIXTURE_EPOCH,
     FakeJobQueue,
@@ -169,6 +169,27 @@ async def settle() -> None:
     """Grant the event loop enough turns for a live heartbeat to renew."""
     for _ in range(TURNS_AFTER_THE_STOP):
         await asyncio.sleep(0)
+
+
+async def watched(*, events: tuple[AgentEvent, ...]) -> FakeTrackerPort:
+    """Run one claimed issue's watch to its end over a scripted job."""
+    clock = MovingClock(start=FIXTURE_EPOCH)
+    tracker, _ = await claimed(clock)
+    watch = LifecycleWatcher(
+        queue=FakeJobQueue(events=events),
+        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        heartbeat=heartbeat(tracker, clock=clock),
+    )
+
+    await asyncio.wait_for(
+        watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        ),
+        timeout=SETTLE_TIMEOUT,
+    )
+    return tracker
 
 
 class TestAJobOutlivingItsLease:
@@ -345,34 +366,15 @@ class TestARenewalWriteThatFails:
 class TestTheWatcherDrivesTheHeartbeat:
     """The seam: the watch's lifetime is the job's, so the claim's is too."""
 
-    async def watched(self, *, events: tuple[AgentEvent, ...]) -> FakeTrackerPort:
-        clock = MovingClock(start=FIXTURE_EPOCH)
-        tracker, _ = await claimed(clock)
-        watch = LifecycleWatcher(
-            queue=FakeJobQueue(events=events),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
-            heartbeat=heartbeat(tracker, clock=clock),
-        )
-
-        await asyncio.wait_for(
-            watch.watch(
-                issue_key=ISSUE,
-                job_id="job-0001",
-                pre_claim_state=PRE_CLAIM_STATE,
-            ),
-            timeout=SETTLE_TIMEOUT,
-        )
-        return tracker
-
     async def test_a_run_reaching_a_terminal_outcome_stops_renewing(self) -> None:
-        tracker = await self.watched(events=(TERMINAL_EVENT,))
+        tracker = await watched(events=(TERMINAL_EVENT,))
         at_exit = len(tracker.renewals)
         await settle()
 
         assert len(tracker.renewals) == at_exit
 
     async def test_a_run_reaching_no_terminal_outcome_stops_renewing(self) -> None:
-        tracker = await self.watched(
+        tracker = await watched(
             events=(ErrorEvent(error="boom", error_kind="RuntimeError"),),
         )
         at_exit = len(tracker.renewals)
@@ -401,3 +403,107 @@ class TestTheWatcherDrivesTheHeartbeat:
         await settle()
 
         assert len(tracker.renewals) == at_exit
+
+
+class TestTheClaimIsHandedBackWhenTheJobEnds:
+    """The claim's other end (KOD-152): the work stops, the claim goes back.
+
+    Every release here is observed on the tracker as the NEXT claimant's
+    result, because that is the thing the operator was measured losing: an
+    instance stopped, and its replacement was refused the issue for the
+    rest of a lease nobody was renewing.  The clock never advances in these
+    cases — "claimable again" means at once, not once the lease runs out.
+    """
+
+    async def test_a_terminal_outcome_hands_the_claim_back(self) -> None:
+        tracker = await watched(events=(TERMINAL_EVENT,))
+
+        assert await tracker.active_claim(issue_key=ISSUE) is None
+
+    async def test_the_next_instance_may_claim_the_issue_immediately(self) -> None:
+        tracker = await watched(events=(TERMINAL_EVENT,))
+
+        again = await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert again.status is ClaimStatus.GRANTED
+
+    async def test_a_run_that_reached_no_terminal_outcome_hands_it_back_too(
+        self,
+    ) -> None:
+        """The failed run's issue is put back AND freed, not one of the two."""
+        tracker = await watched(
+            events=(ErrorEvent(error="boom", error_kind="RuntimeError"),),
+        )
+
+        assert tracker.restored_states == [(ISSUE, PRE_CLAIM_STATE)]
+        again = await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert again.status is ClaimStatus.GRANTED
+
+    async def test_a_holder_that_was_killed_hands_nothing_back(self) -> None:
+        """The crash arm, unchanged: the lease is the only thing that frees it.
+
+        A process that dies runs no cleanup at all, and what stands in for
+        that here is a watch that never reaches its release — the
+        observable is the same one, a claim nobody handed back.  It has to
+        outlive the instance: another instance claiming an issue whose run
+        may still be working is what the claim exists to prevent.
+        """
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker, granted = await claimed(clock)
+        watch = LifecycleWatcher(
+            queue=RaisingJobQueue(),
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=heartbeat(tracker, clock=clock),
+        )
+
+        with pytest.raises(KeyError):
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id="never-submitted",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        held = await tracker.active_claim(issue_key=ISSUE)
+        assert held is not None, "a killed holder's claim must not be released"
+        assert held.holder == HOLDER
+        clock.advance(seconds=LEASE_SECONDS)
+        assert clock.now >= granted.expires_at
+        assert await tracker.active_claim(issue_key=ISSUE) is None
+
+    async def test_a_watch_never_hands_back_a_claim_another_holder_holds(
+        self,
+    ) -> None:
+        """The release is this holder's act on this holder's claim."""
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)], clock=clock)
+        await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        watch = LifecycleWatcher(
+            queue=FakeJobQueue(events=(TERMINAL_EVENT,)),
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=heartbeat(tracker, clock=clock),
+        )
+
+        await asyncio.wait_for(
+            watch.watch(
+                issue_key=ISSUE,
+                job_id="job-0001",
+                pre_claim_state=PRE_CLAIM_STATE,
+            ),
+            timeout=SETTLE_TIMEOUT,
+        )
+
+        held = await tracker.active_claim(issue_key=ISSUE)
+        assert held is not None
+        assert held.holder == "pass-b"

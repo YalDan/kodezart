@@ -66,9 +66,12 @@ class GatedDispatchPass:
         ):
             return
         # The pre-claim state travels with the watch, because the watch is
-        # what puts it back when the run reaches no terminal outcome.
+        # what puts it back when the run reaches no terminal outcome — and
+        # the board's visibility posture travels the same way, because the
+        # watch is what writes the comments it governs.
         self._lifecycle.follow(
             issue_key=report.claimed_issue_key,
             job_id=report.job_id,
             pre_claim_state=report.claimed_state_name,
+            visibility=report.claimed_visibility,
         )

@@ -1248,6 +1248,7 @@ class RalphWorkflowEngine:
                 pr_number=pr_number,
                 feature_branch=head,
                 base_branch=ctx.base_branch,
+                feature_tip_sha=outcome.feature_tip_sha if integrated else best_sha,
             )
         )
         await self._log.ainfo(
@@ -1594,6 +1595,11 @@ class RalphWorkflowEngine:
 
         ticket = current_ticket(state)
 
+        feature_tip_sha = state["feature_tip_sha"]
+        if feature_tip_sha is None:
+            msg = "open_pr requires feature_tip_sha to be set."
+            raise RuntimeError(msg)
+
         if self._artifact_persister is not None:
             await self._artifact_persister.clean(
                 repo_path=ctx.repo_path,
@@ -1675,6 +1681,7 @@ class RalphWorkflowEngine:
                 pr_number=pr_number,
                 feature_branch=state["feature_branch"],
                 base_branch=ctx.base_branch,
+                feature_tip_sha=feature_tip_sha,
             )
         )
 

@@ -25,6 +25,7 @@ def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
             ci_no_workflows_grace_polls=config.ci_no_workflows_grace_polls,
             ci_grace_poll_interval_seconds=config.ci_grace_poll_interval_seconds,
             ci_ref_not_found_grace_polls=config.ci_ref_not_found_grace_polls,
+            ci_check_runs_max_pages=config.ci_check_runs_max_pages,
             timeout_seconds=config.forge_api_timeout_seconds,
             max_retries=config.forge_api_max_retries,
             retry_backoff_factor=config.forge_api_retry_backoff_factor,

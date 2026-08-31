@@ -6,21 +6,32 @@ runs an agent with ``cwd`` set to it.  Without ``strict_mcp_config``, a
 alongside the configured servers — attacker-authored tool injection into a
 session that already holds credentials.
 
-The invariant that closes it: **wherever a session is configured with
-``mcp_servers``, the same option source also sets ``strict_mcp_config=True``.**
-This module asserts it structurally over every construction in the package,
-so a future site added without the flag fails the gate, and behaviourally
-against a workspace that actually carries a server-definition file.
+The invariant that closes it: **every ``ClaudeAgentOptions`` construction
+in the package sets ``strict_mcp_config=True``**, whether or not that same
+construction configures ``mcp_servers``.  The guard answers the working
+directory and not the server map, so a construction naming neither keyword
+is the SDK default — the cloned repository loaded unguarded — and is a
+failure here rather than a site the scan never classified.  This module
+asserts it structurally over every construction in the package, so a future
+site added without the flag fails the gate, and behaviourally against a
+workspace that actually carries a server-definition file.
 
-Why the scan resolves ``**`` unpacking rather than reading literal keywords:
-both construction sites reach ``mcp_servers`` through a mapping a helper
-builds, so a keyword-only scan would range over zero sites and pass
-vacuously.  An option source the scan cannot resolve is a FAILURE, never a
-skip — an invariant that quietly stops covering a site is worse than none.
+The scan reads the keyword sets a construction can hand the SDK: the
+explicit keywords merged with every ``**`` unpack, resolved through the
+mapping a helper builds, because both construction sites reach their MCP
+options that way and a keyword-only scan would range over zero sites and
+pass vacuously.  A builder returning more than one mapping contributes one
+merged set per return rather than one union of them all, so a guard set on
+the branch that describes a server cannot answer for the branch beside it.
+The callable is matched through the names a module's imports bind it to, so
+an aliased import is not an exit from the walk.  An option source the scan
+cannot resolve is a FAILURE, never a skip — an invariant that quietly stops
+covering a site is worse than none.
 """
 
 import ast
 from collections.abc import Iterator, Mapping
+from itertools import product
 from pathlib import Path
 from typing import Final
 
@@ -49,6 +60,34 @@ def _called_name(func: ast.expr) -> str | None:
     if isinstance(func, ast.Attribute):
         return func.attr
     return None
+
+
+def _option_bindings(tree: ast.AST) -> set[str]:
+    """Every name a module's imports bind the options callable to.
+
+    The callable's own name is always one of them, ``import ... as`` binds
+    a further one, and access through a module object is matched by
+    attribute name, so no import form leaves a construction unscanned.
+    """
+    bound = {OPTIONS_CALLABLE}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        bound.update(
+            alias.asname
+            for alias in node.names
+            if alias.name == OPTIONS_CALLABLE and alias.asname is not None
+        )
+    return bound
+
+
+def _is_options_call(func: ast.expr, bindings: set[str]) -> bool:
+    """Whether a call target names the options callable under *bindings*."""
+    if isinstance(func, ast.Name):
+        return func.id in bindings
+    if isinstance(func, ast.Attribute):
+        return func.attr == OPTIONS_CALLABLE
+    return False
 
 
 def _mapping_items(node: ast.expr) -> dict[str, ast.expr] | None:
@@ -143,32 +182,34 @@ def _dereference(node: ast.expr, bound: Mapping[str, ast.expr]) -> ast.expr:
     return node
 
 
-def _contributions(
+def _option_sources(
     call: ast.Call,
     functions: Mapping[str, list[ast.FunctionDef]],
     bound: Mapping[str, ast.expr],
-) -> Iterator[dict[str, ast.expr] | None]:
-    """Every option source feeding one construction.
+) -> Iterator[list[dict[str, ast.expr] | None]]:
+    """Every option source feeding one construction, with its alternatives.
 
     The explicit keywords are one source; each ``**`` unpack is another,
-    resolved through the local it names and the function that builds it.
-    Yielding ``None`` marks a source this scan cannot read.
+    resolved through the local it names and the function that builds it.  A
+    source carries one alternative per mapping it can evaluate to, so a
+    builder with two returns offers the call either of them.  A ``None``
+    alternative marks a source this scan cannot read, and a source offering
+    no alternative at all is one it could not read either.
     """
-    explicit = {kw.arg: kw.value for kw in call.keywords if kw.arg is not None}
-    yield explicit
+    yield [{kw.arg: kw.value for kw in call.keywords if kw.arg is not None}]
     for keyword in call.keywords:
         if keyword.arg is not None:
             continue
         source = _dereference(keyword.value, bound)
         if isinstance(source, ast.Call):
             builders = functions.get(_called_name(source.func) or "", [])
-            if not builders:
-                yield None
-                continue
-            for builder in builders:
-                yield from _returned_mappings(builder)
+            yield [
+                mapping
+                for builder in builders
+                for mapping in _returned_mappings(builder)
+            ] or [None]
             continue
-        yield _mapping_items(source)
+        yield [_mapping_items(source)]
 
 
 def _is_true(node: ast.expr) -> bool:
@@ -176,10 +217,37 @@ def _is_true(node: ast.expr) -> bool:
     return isinstance(node, ast.Constant) and node.value is True
 
 
+def _merged_views(
+    call: ast.Call,
+    functions: Mapping[str, list[ast.FunctionDef]],
+    bound: Mapping[str, ast.expr],
+) -> list[dict[str, ast.expr]] | None:
+    """Every keyword set one construction can hand the SDK, or ``None``.
+
+    The SDK receives one set per call, so the invariant is asked of a merge
+    of the sources rather than of each source alone — which is what lets a
+    construction naming neither keyword be classified at all.  Where a
+    source offers several alternatives the merge is taken once per choice,
+    so a guard a builder sets on one return is never read as covering the
+    return beside it.  One unreadable alternative makes the whole
+    construction unreadable.
+    """
+    readable: list[list[dict[str, ast.expr]]] = []
+    for source in _option_sources(call, functions, bound):
+        alternatives = [item for item in source if item is not None]
+        if len(alternatives) != len(source):
+            return None
+        readable.append(alternatives)
+    return [
+        {key: value for item in choice for key, value in item.items()}
+        for choice in product(*readable)
+    ]
+
+
 def _constructions(
     sources: Mapping[str, str],
-) -> Iterator[tuple[str, int, dict[str, ast.expr] | None]]:
-    """Every option source of every construction, with where it was written.
+) -> Iterator[tuple[str, int, list[dict[str, ast.expr]] | None]]:
+    """Every construction's option keywords, with where it was written.
 
     Docstrings and comments cannot register: the walk visits call nodes, so
     prose naming ``ClaudeAgentOptions`` is invisible to it.
@@ -187,6 +255,7 @@ def _constructions(
     trees = {origin: ast.parse(text) for origin, text in sources.items()}
     functions = _functions(trees)
     for origin, tree in trees.items():
+        bindings = _option_bindings(tree)
         parents: dict[ast.AST, ast.AST] = {
             child: parent
             for parent in ast.walk(tree)
@@ -195,28 +264,34 @@ def _constructions(
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            if _called_name(node.func) != OPTIONS_CALLABLE:
+            if not _is_options_call(node.func, bindings):
                 continue
             bound = _enclosing_bindings(node, parents, tree)
-            for contribution in _contributions(node, functions, bound):
-                yield origin, node.lineno, contribution
+            yield origin, node.lineno, _merged_views(node, functions, bound)
 
 
-def pairing_failures(sources: Mapping[str, str]) -> list[str]:
-    """Every violation of the pairing across *sources*."""
+def _view_failure(view: Mapping[str, ast.expr]) -> str | None:
+    """Why one keyword set violates the guard, or ``None`` if it does not."""
+    strict = view.get(STRICT_KEYWORD)
+    if strict is None:
+        return f"no {STRICT_KEYWORD}"
+    if not _is_true(strict):
+        return f"{STRICT_KEYWORD} is not True"
+    return None
+
+
+def strictness_failures(sources: Mapping[str, str]) -> list[str]:
+    """Every construction across *sources* that does not carry the guard."""
     failures: list[str] = []
-    for origin, line, contribution in _constructions(sources):
+    for origin, line, views in _constructions(sources):
         where = f"{origin}:{line}"
-        if contribution is None:
+        if views is None:
             failures.append(f"{where}: unresolvable option source")
             continue
-        if SERVERS_KEYWORD not in contribution:
-            continue
-        strict = contribution.get(STRICT_KEYWORD)
-        if strict is None:
-            failures.append(f"{where}: {SERVERS_KEYWORD} without {STRICT_KEYWORD}")
-        elif not _is_true(strict):
-            failures.append(f"{where}: {STRICT_KEYWORD} is not True")
+        reasons = dict.fromkeys(
+            reason for view in views if (reason := _view_failure(view)) is not None
+        )
+        failures.extend(f"{where}: {reason}" for reason in reasons)
     return failures
 
 
@@ -224,8 +299,8 @@ def server_sites(sources: Mapping[str, str]) -> set[str]:
     """The origins whose constructions can carry ``mcp_servers`` at all."""
     return {
         origin
-        for origin, _line, contribution in _constructions(sources)
-        if contribution and SERVERS_KEYWORD in contribution
+        for origin, _line, views in _constructions(sources)
+        if views is not None and any(SERVERS_KEYWORD in view for view in views)
     }
 
 
@@ -242,9 +317,9 @@ def package_sources() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def test_no_construction_in_the_package_configures_servers_without_the_flag() -> None:
+def test_every_construction_in_the_package_carries_the_guard() -> None:
     """The invariant, over every ``ClaudeAgentOptions`` construction in src/."""
-    assert pairing_failures(package_sources()) == []
+    assert strictness_failures(package_sources()) == []
 
 
 def test_the_scan_actually_ranges_over_both_executor_sites() -> None:
@@ -272,9 +347,57 @@ def test_a_direct_site_missing_the_flag_is_detected() -> None:
         ),
     }
 
-    failures = pairing_failures(violation)
+    failures = strictness_failures(violation)
 
-    assert failures == ["fixture.py:4: mcp_servers without strict_mcp_config"]
+    assert failures == ["fixture.py:4: no strict_mcp_config"]
+
+
+def test_a_construction_naming_neither_keyword_is_a_failure() -> None:
+    """KOD-136: the shape the audit was blind to.
+
+    A construction that describes no server is precisely the session the
+    SDK default would let a committed ``.mcp.json`` furnish, so silence
+    about the guard is the defect rather than the absence of one.
+    """
+    unguarded = {
+        "fixture.py": (
+            "from claude_agent_sdk import ClaudeAgentOptions\n"
+            "\n"
+            "def build():\n"
+            '    return ClaudeAgentOptions(cwd="/tmp", allowed_tools=["Read"])\n'
+        ),
+    }
+
+    assert strictness_failures(unguarded) == ["fixture.py:4: no strict_mcp_config"]
+
+
+def test_a_construction_made_through_an_import_alias_is_seen_by_the_walk() -> None:
+    """The callable is matched through its bindings, not through one literal.
+
+    An aliased import and a call on a module object are the two ways a site
+    can be written without the callable's own name standing as the callee,
+    and neither is an exit from the scan.
+    """
+    escapes = {
+        "alias.py": (
+            "from claude_agent_sdk import ClaudeAgentOptions as _Options\n"
+            "\n"
+            "def build():\n"
+            '    return _Options(cwd="/tmp", mcp_servers={"x": {}})\n'
+        ),
+        "attribute.py": (
+            "import claude_agent_sdk as sdk\n"
+            "\n"
+            "def build():\n"
+            '    return sdk.ClaudeAgentOptions(cwd="/tmp")\n'
+        ),
+    }
+
+    assert strictness_failures(escapes) == [
+        "alias.py:4: no strict_mcp_config",
+        "attribute.py:4: no strict_mcp_config",
+    ]
+    assert server_sites(escapes) == {"alias.py"}
 
 
 def test_a_helper_built_site_missing_the_flag_is_detected() -> None:
@@ -289,9 +412,31 @@ def test_a_helper_built_site_missing_the_flag_is_detected() -> None:
         ),
     }
 
-    failures = pairing_failures(violation)
+    failures = strictness_failures(violation)
 
-    assert failures == ["fixture.py:5: mcp_servers without strict_mcp_config"]
+    assert failures == ["fixture.py:5: no strict_mcp_config"]
+
+
+def test_a_builder_whose_returns_disagree_about_the_flag_is_a_failure() -> None:
+    """Each return is its own option set, and the guarded one cannot cover it.
+
+    Folding a builder's returns into one union would let the branch that
+    sets the guard answer for the branch that does not — a site the SDK
+    runs unguarded whenever the second branch is the one taken.
+    """
+    violation = {
+        "fixture.py": (
+            "def _servers(named):\n"
+            "    if named:\n"
+            '        return {"mcp_servers": {"x": {}}, "strict_mcp_config": True}\n'
+            '    return {"mcp_servers": {}}\n'
+            "\n"
+            "def build(named):\n"
+            '    return ClaudeAgentOptions(cwd="/tmp", **_servers(named))\n'
+        ),
+    }
+
+    assert strictness_failures(violation) == ["fixture.py:7: no strict_mcp_config"]
 
 
 def test_a_site_whose_mapping_passes_through_a_local_is_still_read() -> None:
@@ -311,8 +456,8 @@ def test_a_site_whose_mapping_passes_through_a_local_is_still_read() -> None:
         ),
     }
 
-    assert pairing_failures(violation) == [
-        "fixture.py:6: mcp_servers without strict_mcp_config",
+    assert strictness_failures(violation) == [
+        "fixture.py:6: no strict_mcp_config",
     ]
 
 
@@ -328,7 +473,7 @@ def test_the_flag_set_to_something_other_than_true_is_detected() -> None:
         ),
     }
 
-    assert pairing_failures(violation) == [
+    assert strictness_failures(violation) == [
         "fixture.py:2: strict_mcp_config is not True"
     ]
 
@@ -341,10 +486,10 @@ def test_an_option_source_the_scan_cannot_read_is_a_failure_not_a_skip() -> None
         ),
     }
 
-    assert pairing_failures(opaque) == ["fixture.py:2: unresolvable option source"]
+    assert strictness_failures(opaque) == ["fixture.py:2: unresolvable option source"]
 
 
-def test_prose_naming_the_pairing_never_registers_as_a_site() -> None:
+def test_prose_naming_the_guard_never_registers_as_a_site() -> None:
     """The walk visits calls, so a docstring cannot be mistaken for one."""
     docstring_only = {
         "fixture.py": (
@@ -356,7 +501,7 @@ def test_prose_naming_the_pairing_never_registers_as_a_site() -> None:
         ),
     }
 
-    assert pairing_failures(docstring_only) == []
+    assert strictness_failures(docstring_only) == []
     assert server_sites(docstring_only) == set()
 
 
@@ -456,11 +601,12 @@ async def test_the_granted_session_option_assertion_includes_the_flag() -> None:
 # KOD-128 — the guard is the SESSION's, not the grant's
 # ---------------------------------------------------------------------------
 #
-# The invariant above pairs the guard with a configured server, which is
-# narrower than the threat: the danger is the working directory, and the
-# shipped grant names no session type, so under it no session configured a
-# server and none carried the guard.  The block below is the ungranted
-# case — the shipped one.
+# The structural invariant above ranges over every construction, one that
+# configures a server and one that configures none alike, because the
+# danger is the working directory rather than whatever this process
+# happened to describe.  The block below is that same claim behaviourally:
+# the shipped grant names no session type, so every shipped session is an
+# ungranted one, and each of them still carries the guard.
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)
