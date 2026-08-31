@@ -1,7 +1,9 @@
 """Operation configuration — the org-shaped runtime config, tracker-agnostic.
 
 Nothing deployment-shaped lives here (that is AppConfig) and no secret ever
-does: ``extra="forbid"`` makes a stray token key a load-time failure.
+does: ``extra="forbid"`` makes a stray token key a load-time failure, and
+``hide_input_in_errors`` keeps that failure from printing the value it
+rejected.
 Authority binds to a ROLE, never to a name in code or in a template.
 """
 
@@ -114,7 +116,11 @@ class LifecycleStage(StrEnum):
 class OperationModel(BaseModel):
     """Base for operation-config models: closed, frozen."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        hide_input_in_errors=True,
+    )
 
 
 class Principal(OperationModel):
@@ -574,8 +580,7 @@ class OperationConfig(OperationModel):
         return tuple(
             key
             for key, entry in self.teams.items()
-            if entry.repository == repo_url
-            or (entry.repository is None and implicit)
+            if entry.repository == repo_url or (entry.repository is None and implicit)
         )
 
     def team_keys_for_repo(self, repo_url: str) -> tuple[str, ...]:
@@ -627,9 +632,7 @@ class OperationConfig(OperationModel):
         entry = self.documents.get(CHECKPOINT_DOCUMENT_KEY)
         if entry is None:
             raise OperationMemberAbsentError(
-                missing=(
-                    f"documents entry under the {CHECKPOINT_DOCUMENT_KEY!r} key"
-                ),
+                missing=(f"documents entry under the {CHECKPOINT_DOCUMENT_KEY!r} key"),
                 stops=(
                     "the scan-window marker cannot be read, so a scheduled "
                     "pass cannot establish its window and refuses to run"

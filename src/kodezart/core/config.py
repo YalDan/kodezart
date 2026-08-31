@@ -37,6 +37,7 @@ class AppConfig(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="forbid",
+        hide_input_in_errors=True,
     )
 
     project_name: str = Field(
