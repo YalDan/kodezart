@@ -87,7 +87,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_KNOWLEDGE_MCP_TOKEN` | `str \| None` | `None` |  | Credential for the knowledge MCP server. Environment only. |
 | `KODEZART_KNOWLEDGE_SESSION_GRANTS` | `list[SessionType]` | `[]` |  | Session types the knowledge MCP server is attached to, named one by one. No wildcard value. |
 | `KODEZART_KNOWLEDGE_MCP_SERVER_NAME` | `str` | `notion` | min length 1 | Identity the knowledge MCP server carries in a granted session. |
-| `KODEZART_KNOWLEDGE_MCP_SERVER_URL` | `str` | `https://mcp.notion.com/mcp` |  | Endpoint of the knowledge MCP server a granted session dials. |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_URL` | `str \| None` | `None` | min length 1 | Endpoint of the knowledge MCP server a granted session dials under the http transport. Unset means no knowledge server endpoint is configured; a granted http session then aborts boot naming the absence. |
 | `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the knowledge credential is presented in. |
 | `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` | `str \| None` | `Bearer` | min length 1 | Scheme prefixing the knowledge credential in its auth header. The literal value `null` means no scheme: the credential rides raw in its header. |
 | `KODEZART_KNOWLEDGE_MCP_TRANSPORT` | `KnowledgeTransport` | `http` | `http` or `stdio` | How a granted session reaches the knowledge MCP server: `http` dials the configured endpoint with headers, `stdio` spawns the configured command. |
@@ -96,7 +96,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_KNOWLEDGE_MCP_ARGS` | `list[str]` | `[]` |  | Arguments the stdio knowledge server is spawned with. |
 | `KODEZART_KNOWLEDGE_MCP_ENV` | `dict[str, str]` | `{}` |  | Non-secret environment entries for the stdio knowledge server. |
 | `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV` | `str \| None` | `None` | min length 1 | Name of the environment entry the stdio knowledge server reads its credential from; the value comes from `KODEZART_KNOWLEDGE_MCP_TOKEN`. |
-| `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `list[str]` | `["mcp.notion.com"]` |  | Hosts that authenticate interactively (OAuth) and accept no static credential; a session mapping that composes a static header for one refuses, naming the conflict. |
+| `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `list[str]` | `["mcp.notion.com"]` |  | Hosts that authenticate interactively (OAuth) and accept no static credential; a granted endpoint on one of them paired with a static credential aborts boot, naming the conflict. |
 
 ## The knowledge-server grant
 
@@ -127,10 +127,10 @@ The shipped default is the empty list: the mechanism ships and the grant is
 operator configuration. The intended first grant is `["ticket_fire"]` — the
 ticket-driven fire sessions and nothing else.
 
-The knowledge knobs are role-named, and the vendor appears only in their
-default values (`notion`, `https://mcp.notion.com/mcp`). Putting a different
-knowledge store behind the MCP mechanism is a change of values — never a
-schema migration, and never an edit to a consumer.
+The knowledge knobs are role-named, and the vendor appears only in values —
+the server name (`notion`) and the interactive-auth host list. Putting a
+different knowledge store behind the MCP mechanism is a change of values —
+never a schema migration, and never an edit to a consumer.
 
 ## The knowledge transport, and the shapes it can express
 
@@ -158,13 +158,26 @@ spawn time, in a working directory a cloned repository controls) with
 credential is delivered as one environment entry named by
 `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV`.
 
-The shipped default endpoint names the vendor's hosted server, which
-authenticates interactively (OAuth) and accepts no static credential. That
-combination cannot succeed at any credential value, so a session mapping
-that composes a static header for a host in
-`KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` refuses, naming the host and
-the variables in conflict. A working static-credential deployment points the
-url at a self-hosted server, or uses the stdio transport.
+No endpoint ships. `KODEZART_KNOWLEDGE_MCP_SERVER_URL` is unset by default,
+because the vendor's hosted server authenticates interactively (OAuth) and
+accepts no static credential — an endpoint no configuration of this service
+can ever reach. A granted `http` deployment names its own instead.
+
+Two refusals carry that, both on the resolved grant value `KnowledgeGrant`
+validates as the service starts:
+
+- a granted `http` route with no endpoint at all aborts boot naming
+  `server_url`;
+- a granted endpoint whose host appears in
+  `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` while
+  `KODEZART_KNOWLEDGE_MCP_TOKEN` or `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN`
+  composes a static header aborts boot naming the host and both variables —
+  the combination no credential value rescues.
+
+Both are conditioned on the grant list: a deployment that grants no session
+dials nothing, so it needs no endpoint and nothing about it is dead. The two
+working static-credential routes are a self-hosted HTTP server (with the
+gateway token) and the stdio transport spawning an absolute command path.
 
 ## Private knowledge base — the knowledge credential
 

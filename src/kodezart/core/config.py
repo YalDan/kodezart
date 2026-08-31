@@ -461,9 +461,15 @@ class AppConfig(BaseSettings):
         min_length=1,
         description="Identity the knowledge MCP server carries in a granted session.",
     )
-    knowledge_mcp_server_url: str = Field(
-        default="https://mcp.notion.com/mcp",
-        description="Endpoint of the knowledge MCP server a granted session dials.",
+    knowledge_mcp_server_url: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Endpoint of the knowledge MCP server a granted session dials "
+            "under the http transport. Unset means no knowledge server "
+            "endpoint is configured; a granted http session then aborts "
+            "boot naming the absence."
+        ),
     )
     knowledge_mcp_auth_header: str = Field(
         default="Authorization",
@@ -534,8 +540,8 @@ class AppConfig(BaseSettings):
         default_factory=lambda: ["mcp.notion.com"],
         description=(
             "Hosts that authenticate interactively (OAuth) and accept no "
-            "static credential. A session mapping that composes a static "
-            "header for one of these refuses, naming the conflict. The "
+            "static credential. A granted endpoint on one of these paired "
+            "with a static credential aborts boot, naming the conflict. The "
             "vendor lives in the value, never in the schema."
         ),
     )

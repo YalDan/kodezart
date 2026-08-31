@@ -32,6 +32,8 @@ SET_DIR: Final[Path] = (
 )
 EXAMPLE: Final[Path] = REPO_ROOT / "docs" / "operation.example.toml"
 FRAGMENT: Final[Path] = SET_DIR / f"{PromptKey.KNOWLEDGE_MAP.value}.md"
+#: A granted http boot has to name its endpoint: none ships.
+SELF_HOSTED_URL: Final[str] = "https://knowledge.invalid/mcp"
 
 #: The four content classes the parent locks, as the references that carry
 #: their destinations.  Read off the shipped fragment is not an option: the
@@ -175,6 +177,7 @@ async def test_a_granted_boot_renders_the_map_into_the_resolved_grant(
     """The map is resolved once, at boot, and rides the grant from there."""
     monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("M" * 44))
+    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_SERVER_URL", SELF_HOSTED_URL)
     config = example_config()
 
     grant = await boot_knowledge_grant(

@@ -19,7 +19,6 @@ never be answered differently for one session.
 """
 
 from typing import Final, TypedDict
-from urllib.parse import urlsplit
 
 from claude_agent_sdk.types import (
     McpHttpServerConfig,
@@ -123,17 +122,6 @@ def _http_definition(
         msg = (
             f"knowledge grant carries no server_url for its http transport: "
             f"{grant.server_name} has no endpoint to dial"
-        )
-        raise ValueError(msg)
-    host = urlsplit(grant.server_url).hostname
-    if host is not None and host in grant.interactive_auth_hosts:
-        msg = (
-            f"KODEZART_KNOWLEDGE_MCP_SERVER_URL names {host}, which "
-            f"authenticates interactively (OAuth) and accepts no static "
-            f"credential, but KODEZART_KNOWLEDGE_MCP_TOKEN / "
-            f"KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN compose one. This "
-            f"combination cannot succeed at any credential value: point the "
-            f"url at a self-hosted server, or use the stdio transport"
         )
         raise ValueError(msg)
     return {

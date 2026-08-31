@@ -3,9 +3,9 @@
 The mapping is the one reader of the grant's connection fields, and the one
 layer every granted session passes before the SDK receives its options.
 That makes it the enforcement point for the shapes the grant can express:
-the stdio definition, the gateway bearer, the two-header pass-through, the
-raw scheme-less header — and the refusal of a static credential aimed at a
-host that only authenticates interactively.
+the stdio definition, the gateway bearer, the two-header pass-through and
+the raw scheme-less header.  A shape no credential value can rescue is
+refused earlier, where the grant is built, and is asserted there.
 """
 
 from typing import Final
@@ -26,7 +26,6 @@ _MAP: Final[str] = "── transport fixture map ──"
 _SERVER: Final[str] = "fixture-knowledge"
 _COMMAND: Final[str] = "/opt/knowledge/bin/knowledge-mcp-server"
 _SELF_HOSTED_URL: Final[str] = "https://knowledge.invalid/mcp"
-_INTERACTIVE_HOST: Final[str] = "hosted.invalid"
 
 
 def _http_grant(**overrides: object) -> KnowledgeGrant:
@@ -225,77 +224,8 @@ async def test_the_two_header_shape_round_trips_into_both_executors(
 
 
 # ---------------------------------------------------------------------------
-# KOD-129-AC-1 — a static credential aimed at an interactive-auth host
+# KOD-129-AC-2 through the real configuration origin
 # ---------------------------------------------------------------------------
-
-
-def test_a_static_credential_aimed_at_an_interactive_host_refuses() -> None:
-    """The dead combination cannot reach a session, per the recorded ruling.
-
-    The refusal names the host and the environment variables in conflict —
-    this is the layer the fire-ruling of 2026-08-17 places it at, because
-    every earlier layer is pinned legal by the lane's protected suites.
-    """
-    grant = _http_grant(
-        server_url=f"https://{_INTERACTIVE_HOST}/mcp",
-        interactive_auth_hosts=(_INTERACTIVE_HOST,),
-    )
-
-    with pytest.raises(ValueError) as excinfo:
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
-
-    reported = str(excinfo.value)
-    assert _INTERACTIVE_HOST in reported
-    assert "KODEZART_KNOWLEDGE_MCP_SERVER_URL" in reported
-    assert "KODEZART_KNOWLEDGE_MCP_TOKEN" in reported
-
-
-def test_a_gateway_credential_aimed_at_an_interactive_host_also_refuses() -> None:
-    """Any statically composed header is dead against an interactive host."""
-    grant = _http_grant(
-        credential=None,
-        gateway_credential=_GATEWAY_CREDENTIAL,
-        server_url=f"https://{_INTERACTIVE_HOST}/mcp",
-        interactive_auth_hosts=(_INTERACTIVE_HOST,),
-    )
-
-    with pytest.raises(ValueError, match="interactively"):
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
-
-
-def test_the_same_credential_against_a_self_hosted_url_maps_cleanly() -> None:
-    """The control: the refusal is the host, never the credential."""
-    grant = _http_grant(interactive_auth_hosts=(_INTERACTIVE_HOST,))
-
-    mapped = map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
-
-    assert set(mapped["mcp_servers"]) == {_SERVER}
-
-
-# ---------------------------------------------------------------------------
-# KOD-129-AC-1 + AC-2 through the real configuration origin
-# ---------------------------------------------------------------------------
-
-
-def test_the_shipped_default_endpoint_with_a_static_credential_never_maps(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """AC-1 wired through AppConfig: the dead combination refuses before
-    any session receives it, naming the shipped host and the variables."""
-    from kodezart.core.config import AppConfig
-
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", _CREDENTIAL)
-
-    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
-
-    with pytest.raises(ValueError) as excinfo:
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
-
-    reported = str(excinfo.value)
-    assert "mcp.notion.com" in reported
-    assert "KODEZART_KNOWLEDGE_MCP_SERVER_URL" in reported
-    assert "KODEZART_KNOWLEDGE_MCP_TOKEN" in reported
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)
