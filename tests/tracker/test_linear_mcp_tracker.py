@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from datetime import timedelta
 
 import pytest
+import structlog
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.errors import McpTransportError, TrackerProtocolError
@@ -134,6 +135,27 @@ class TestShapeRefusal:
         assert issue.state_name == "Duplicate"
         assert not is_open(issue.state_kind)
 
+    async def test_the_fixture_vocabulary_is_covered_by_the_domain_enum(self) -> None:
+        """Every kind the fixture workspace can serve has a domain member.
+
+        The vendor's vocabulary is the input this adapter has no say over,
+        and the fixture's is the measured stand-in for it: a kind the
+        workspace offers and the enum does not name is exactly the shape
+        KOD-156 was — found on a live board rather than here.
+        """
+        unmapped = sorted(
+            {
+                raw
+                for raw in STATE_TYPES.values()
+                if raw not in {kind.value for kind in WorkflowStateKind}
+            },
+        )
+
+        assert unmapped == [], (
+            f"the fixture vocabulary carries {unmapped}, which WorkflowStateKind "
+            "does not name; every issue in such a state is unreadable"
+        )
+
     async def test_every_measured_relation_arm_maps_to_a_domain_kind(self) -> None:
         """The vendor's relations object has four arms and the adapter reads all.
 
@@ -234,6 +256,72 @@ class TestShapeRefusal:
                 team_key="not-configured",
                 priority=IssuePriority.LOW,
             )
+
+
+class TestScanContainment:
+    """One unreadable issue costs that issue, never the board it sits on.
+
+    The measured shape (KOD-156): a single groomed duplicate on the board
+    turned every fire-prep and dispatch scan into a ``TrackerProtocolError``
+    and crash-looped the pass.  The kind is mapped now, but the NEXT kind
+    the vendor invents must cost the same one issue — the containment is
+    the durable half of that fix, and the enum is the perishable half.
+    """
+
+    def board_with_one_unmappable_issue(self) -> FakeLinearMcpServer:
+        """Four approved issues on one team; the second names an unknown kind."""
+        return FakeLinearMcpServer(
+            issues=[
+                FakeMcpIssue(id="B-1", labels=["queue:approved"]),
+                FakeMcpIssue(
+                    id="B-2",
+                    status="Invented",
+                    status_type="invented",
+                    labels=["queue:approved"],
+                ),
+                FakeMcpIssue(id="B-3", labels=["queue:approved"]),
+                FakeMcpIssue(id="B-4", labels=["queue:approved"]),
+            ],
+            state_types=STATE_TYPES,
+        )
+
+    async def test_the_scan_excludes_that_issue_and_returns_the_rest(self) -> None:
+        server = self.board_with_one_unmappable_issue()
+
+        found = await tracker_over(server).scan_issues(
+            query=IssueQuery(queue_state=QueueState.APPROVED, page_size=10),
+        )
+
+        assert [issue.issue_key for issue in found] == ["B-1", "B-3", "B-4"]
+
+    async def test_the_exclusion_names_the_issue_the_tool_and_the_raw_value(
+        self,
+    ) -> None:
+        """An issue dropped without a name is a board hole nobody can find."""
+        server = self.board_with_one_unmappable_issue()
+
+        with structlog.testing.capture_logs() as logs:
+            await tracker_over(server).scan_issues(
+                query=IssueQuery(queue_state=QueueState.APPROVED, page_size=10),
+            )
+
+        excluded = [
+            entry for entry in logs if entry["event"] == "tracker_scan_issue_excluded"
+        ]
+        assert len(excluded) == 1
+        assert excluded[0]["issue_key"] == "B-2"
+        assert excluded[0]["tool"] == "list_issues"
+        assert excluded[0]["status_type"] == "invented"
+
+    async def test_the_single_issue_read_of_that_issue_still_raises(self) -> None:
+        """The fail-loud arm is unchanged where the issue IS the answer."""
+        server = self.board_with_one_unmappable_issue()
+
+        with pytest.raises(TrackerProtocolError) as caught:
+            await tracker_over(server).read_issue(issue_key="B-2")
+
+        assert caught.value.tool == "get_issue"
+        assert "invented" in str(caught.value)
 
 
 class TestTransientRetry:

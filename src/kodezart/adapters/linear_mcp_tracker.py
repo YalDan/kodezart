@@ -109,6 +109,13 @@ _RAW_BY_PRIORITY: Mapping[IssuePriority, int] = {
     priority: raw for raw, priority in _PRIORITY_BY_RAW.items()
 }
 
+#: The workflow-state kinds the domain carries, keyed by the value the
+#: vendor spells them with.  Derived from the enum, so the vocabulary this
+#: adapter recognises cannot drift from the one consumers branch on.
+_STATE_KIND_BY_VALUE: Mapping[str, WorkflowStateKind] = {
+    kind.value: kind for kind in WorkflowStateKind
+}
+
 #: What each arm of the vendor's relations object means in the domain,
 #: keyed by the vendor's own spelling.  Four arms, four kinds: the vendor
 #: reports a parent as ``parentId`` on the issue itself, which the adapter
@@ -334,7 +341,20 @@ class LinearMcpTracker:
         }
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
-        """Issues matching *query*, in backend order."""
+        """Issues matching *query*, in backend order.
+
+        An issue carrying a workflow-state kind the domain does not name is
+        EXCLUDED from the answer rather than unwinding the scan, and it is
+        named as it goes: its key, the tool that returned it and the raw
+        value the vendor sent, once per issue.  A scan reads a whole board,
+        so one such issue took every pass that read it down with it, for as
+        long as it sat there — one groomed duplicate crash-looped the
+        dispatch pass (KOD-156).
+
+        The containment stops at this seam.  :meth:`read_issue` still
+        raises on the same value, because there the issue the caller asked
+        about IS the answer and excluding it would return nothing at all.
+        """
         arguments: dict[str, object] = {"limit": query.page_size}
         if query.queue_state is not None:
             arguments["label"] = self._label_for(query.queue_state)
@@ -344,7 +364,18 @@ class LinearMcpTracker:
             arguments["updatedAt"] = query.updated_since.isoformat()
         payload = await self._call(_TOOL_LIST_ISSUES, arguments)
         listing = self._validate(LinearIssueListWire, payload, _TOOL_LIST_ISSUES)
-        return tuple(self._to_issue(wire) for wire in listing.issues)
+        found: list[TrackerIssue] = []
+        for wire in listing.issues:
+            if wire.status_type not in _STATE_KIND_BY_VALUE:
+                await self._log.aerror(
+                    "tracker_scan_issue_excluded",
+                    issue_key=wire.id,
+                    tool=_TOOL_LIST_ISSUES,
+                    status_type=wire.status_type,
+                )
+                continue
+            found.append(self._to_issue(wire))
+        return tuple(found)
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
@@ -1226,14 +1257,13 @@ class LinearMcpTracker:
                 tool=_TOOL_GET_ISSUE,
                 detail=f"issue={wire.id} raw={wire.priority.value}",
             )
-        try:
-            state_kind = WorkflowStateKind(wire.status_type)
-        except ValueError as exc:
+        state_kind = _STATE_KIND_BY_VALUE.get(wire.status_type)
+        if state_kind is None:
             raise TrackerProtocolError(
                 "tracker workflow state kind has no domain mapping",
                 tool=_TOOL_GET_ISSUE,
                 detail=f"issue={wire.id} status_type={wire.status_type!r}",
-            ) from exc
+            )
         relations: list[IssueRelation] = []
         if wire.relations is not None:
             for arm, edges in wire.relations.arms():
