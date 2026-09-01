@@ -214,10 +214,10 @@ def _label_arguments(identifier: str, container: str | None) -> dict[str, object
     *container* is the team's UUID, which is the only thing ``teamId``
     accepts: its declared input schema says "Team UUID (omit for workspace
     label)", and the live server answers a name with ``teamId must be a
-    UUID`` and a 400.  ``None`` creates the label at workspace scope,
-    which is what a queue vocabulary spanning several configured teams
-    requires — a per-team label would leave the same state unaddressable
-    on another team's issues.
+    UUID`` and a 400.  ``None`` creates the label at workspace scope, which
+    is what an operation declaring no team at all gets; a declared team's
+    ref names that team and the label is made inside it, one per board
+    (KOD-167).
     """
     arguments: dict[str, object] = {"name": identifier}
     if container is not None:
@@ -276,11 +276,17 @@ class _LabelListings:
 
         A workspace-level label serves a ref on any team — it is
         addressable on every board — and a team's own label serves only a
-        ref declaring that team.
+        ref declaring that team.  Another declared team's label serves
+        neither: it is that board's definition of the member, and a ref for
+        this board is answered by making this board its own.
         """
         return name in self.workspace or (
             scope is not None and name in self.by_team.get(scope, set())
         )
+
+    def workspace_holds(self, name: str) -> bool:
+        """Whether the UNSCOPED listing carried *name*."""
+        return name in self.workspace
 
     def teams_holding(self, name: str) -> tuple[str, ...]:
         """The declared teams whose own listing carried *name*."""
@@ -1006,18 +1012,29 @@ class LinearMcpTracker:
         R8's definition of "an existing definition" is ``(name, container)``,
         which is exactly what a create writes, and the container is the
         LISTING that answered with the label rather than any field on the
-        entry.  A label a declared team holds and this ref does not declare
-        would have to be re-scoped to serve it, so it raises and nothing is
-        written — not for that ref and not for any ref after it, since the
-        loop aborts.  A workspace-level label is adopted by a ref of any
-        scope: it is already addressable on every board.
+        entry.  So a ref resolves WITHIN the container it declares: its own
+        team's label is adopted, and a team whose listing lacks the member
+        is given its own, team-scoped.  Another declared team's copy is
+        that board's definition and settles nothing here — an operation
+        whose boards each carry their own queue vocabulary is the ordinary
+        two-team shape, not a conflict (KOD-167).
+
+        A workspace-level label is adopted by a ref of any scope: it is
+        already addressable on every board.  What is refused is the pair —
+        a workspace-level definition BESIDE team-level ones, where which
+        one a write resolves to is undecidable — and a ref belonging to the
+        workspace while the value is defined inside containers, which is
+        the same undecidability approached from the other side.  Both name
+        every container found and write nothing, for that ref and for every
+        ref after it, since the loop aborts.
 
         What no listing carried is CREATED, even when the workspace holds
         the name somewhere no declared team owns.  That container is
         unobservable — no read this adapter is licensed to make reports it
-        — and the vendor's own by-name refusal is what stops the write,
-        loudly.  Tolerating that refusal here would be the same guess in
-        the other direction (KOD-143 addendum 2 of 2026-08-25).
+        — and a name already defined in the container being written to is
+        refused by the vendor itself, loudly.  Tolerating that refusal here
+        would be a guess about a container nothing observed (KOD-143
+        addendum 2 of 2026-08-25).
 
         Documents are instated by TITLE and carry a server-assigned id, so
         their arm of R8's definition is ``(title, id)`` and the outcome
@@ -1051,6 +1068,14 @@ class LinearMcpTracker:
             declared = (
                 None if ref.scope is None else await self._team_container(ref.scope)
             )
+            held = definitions.teams_holding(identifier)
+            if definitions.workspace_holds(identifier) and held:
+                raise TrackerEnsureConflictError(
+                    "the workspace defines this value at workspace level AND "
+                    f"inside a container; declared {ref.scope!r}, found the "
+                    f"workspace and {', '.join(repr(team) for team in held)}",
+                    entry=ref.describe(),
+                )
             if definitions.serves(identifier, ref.scope):
                 outcomes.append(
                     MappingOutcome(
@@ -1060,11 +1085,10 @@ class LinearMcpTracker:
                     ),
                 )
                 continue
-            held = definitions.teams_holding(identifier)
-            if held:
+            if ref.scope is None and held:
                 raise TrackerEnsureConflictError(
-                    "the workspace defines this value in another container; "
-                    f"declared {ref.scope!r}, "
+                    "this ref belongs to the workspace and the value is "
+                    f"defined inside a container; declared {ref.scope!r}, "
                     f"found {', '.join(repr(team) for team in held)}",
                     entry=ref.describe(),
                 )

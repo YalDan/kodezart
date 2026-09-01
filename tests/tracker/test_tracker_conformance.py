@@ -739,8 +739,9 @@ class TestMappingEnsure:
     the double honest; it does not reach a method the suite never calls.
     """
 
-    #: A container no fixture value is defined in, so a refusal here is
-    #: about the DECLARED container disagreeing rather than about a name.
+    #: A second container of the same workspace.  A queue member defined in
+    #: one container says nothing about another, so this is what a ref
+    #: declaring a board the value is not on yet looks like.
     OTHER_CONTAINER = "fixture-other-team"
 
     def _ref(self, identifier: str, scope: str | None) -> MappingRef:
@@ -775,20 +776,51 @@ class TestMappingEnsure:
 
         assert [outcome.action for outcome in outcomes] == [EnsureAction.ADOPTED]
 
-    async def test_a_value_the_workspace_holds_elsewhere_refuses_and_writes_nothing(
+    async def test_a_second_container_missing_the_value_gets_its_own(
         self,
         tracker: TrackerPort,
     ) -> None:
-        """R7(c): an ensure that would ALTER a definition is a typed error."""
+        """KOD-167: a member resolves WITHIN each container, never across them.
+
+        The measured shape that could not boot: two declared boards, each
+        carrying its own copy of the queue vocabulary, neither of them the
+        other's to move.  A ref for the board that lacks the member is
+        answered by making that board its own — reading the first board's
+        copy as a conflict is what refused the boot.
+        """
+        identifier = "queue:conformance-per-board"
+        await tracker.ensure_mappings(refs=[self._ref(identifier, TEAM)])
+
+        outcomes = await tracker.ensure_mappings(
+            refs=[self._ref(identifier, self.OTHER_CONTAINER)],
+        )
+
+        assert [outcome.action for outcome in outcomes] == [EnsureAction.CREATED]
+        # And the first board's definition still stands, untouched: the
+        # second board's copy was added beside it, never in place of it.
+        again = await tracker.ensure_mappings(refs=[self._ref(identifier, TEAM)])
+        assert [outcome.action for outcome in again] == [EnsureAction.ADOPTED]
+
+    async def test_a_workspace_ref_beside_a_container_definition_refuses(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The surviving refusal: a shape in which adoption is ill-defined.
+
+        A ref belonging to the WORKSPACE while the value is defined inside
+        a container has no defensible answer — adopting the container's
+        copy would claim it serves every board, and creating a second one
+        beside it would leave two definitions of one member with nothing to
+        say which a write resolves to.
+        """
         identifier = "queue:conformance-contested"
         await tracker.ensure_mappings(refs=[self._ref(identifier, TEAM)])
 
         with pytest.raises(TrackerEnsureConflictError) as caught:
-            await tracker.ensure_mappings(
-                refs=[self._ref(identifier, self.OTHER_CONTAINER)],
-            )
+            await tracker.ensure_mappings(refs=[self._ref(identifier, None)])
 
         assert identifier in caught.value.entry
+        assert TEAM in str(caught.value)
         # The refusal wrote nothing: the value is still the one that was
         # created, adopted unchanged under the container it was made in.
         again = await tracker.ensure_mappings(refs=[self._ref(identifier, TEAM)])
@@ -805,7 +837,7 @@ class TestMappingEnsure:
 
         with pytest.raises(TrackerEnsureConflictError):
             await tracker.ensure_mappings(
-                refs=[self._ref(contested, self.OTHER_CONTAINER), follower],
+                refs=[self._ref(contested, None), follower],
             )
 
         assert await tracker.resolve_mappings(refs=[follower]) == (follower,)

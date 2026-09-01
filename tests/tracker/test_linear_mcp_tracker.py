@@ -761,8 +761,8 @@ class TestLabelScopedReading:
         refuses by name — so the assertion is that nothing was written.
         """
         server = self._server(
-            labels=[self.LABEL],
-            label_containers={self.LABEL: f"{self.TEAM}-id"},
+            labels=[],
+            team_labels={f"{self.TEAM}-id": [self.LABEL]},
         )
         tracker = tracker_over(server)
         assert server.tool_calls("list_issue_labels") == []
@@ -792,7 +792,8 @@ class TestLabelScopedReading:
         assert server.tool_calls("create_issue_label") == [
             {"name": self.LABEL, "teamId": f"{self.TEAM}-id"},
         ]
-        assert server.label_containers[self.LABEL] == f"{self.TEAM}-id"
+        assert server.team_labels[f"{self.TEAM}-id"] == [self.LABEL]
+        assert self.LABEL not in server.labels
         # Exactly once: the second boot reads the label its first one made.
         (again,) = await tracker.ensure_mappings(
             refs=[self._ref(self.LABEL, self.TEAM)],

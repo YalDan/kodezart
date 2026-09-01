@@ -1,6 +1,6 @@
 """Boot validation: one bad mapping aborts startup naming exactly that entry."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import ClassVar
 
@@ -12,7 +12,11 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.core.errors import PromptRenderError, TrackerBootValidationError
+from kodezart.core.errors import (
+    PromptRenderError,
+    TrackerBootValidationError,
+    TrackerEnsureConflictError,
+)
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import TrackerPort
 from kodezart.services.tracker_boot import (
@@ -543,6 +547,148 @@ class TestReconciledConfig:
         adopted = reconciliation.config.documents[CHECKPOINT_DOCUMENT_KEY].id
         assert adopted is not None
         assert adopted in rendered
+
+
+class TestQueueVocabularyPerDeclaredTeam:
+    """The queue vocabulary is instated inside EACH declared team (KOD-167).
+
+    ``list_issue_labels`` answers per container and a label is defined
+    inside one, so an operation dispatching from two boards needs the
+    member on both.  Reconciling one vocabulary for the whole operation is
+    what refused a live two-team boot: every member was already defined
+    team-scoped on both declared boards, and the ensure read those two
+    healthy definitions as a container disagreement — ``declared None,
+    found`` both team names — with nothing the operator could do about it,
+    since the second board's labels belong to another delivery loop.
+    """
+
+    SECOND_TEAM = "fixture-second-team"
+    TWO_TEAMS: ClassVar[dict[str, str]] = {
+        "engineering": "fixture-team",
+        "platform": SECOND_TEAM,
+    }
+
+    def _config(self, teams: Mapping[str, str]) -> OperationConfig:
+        return operation_config().model_copy(
+            update={
+                "teams": {
+                    key: TeamEntry(name=name, key=key[:3].upper())
+                    for key, name in teams.items()
+                },
+            },
+        )
+
+    def _queue_refs(self, config: OperationConfig) -> list[MappingRef]:
+        return [
+            ref for ref in owned_mappings(config) if ref.kind is MappingKind.QUEUE_STATE
+        ]
+
+    def _server(self, held: Mapping[str, Sequence[str]]) -> FakeLinearMcpServer:
+        """Two boards, each carrying the vocabulary *held* names for it.
+
+        No workspace-level label anywhere, which is the live shape: the
+        unscoped listing answers with nothing at all and every member is
+        found only by asking its own board.
+        """
+        return FakeLinearMcpServer(
+            documents=[FakeMcpDocument(id="doc-1", title="checkpoint", content="")],
+            users=[APPROVER, BYSTANDER],
+            teams=list(self.TWO_TEAMS.values()),
+            labels=[],
+            team_labels={f"{team}-id": list(names) for team, names in held.items()},
+            statuses={team: list(STATE_TYPES) for team in self.TWO_TEAMS.values()},
+            state_types=STATE_TYPES,
+            actor=APPROVER,
+        )
+
+    def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
+        return LinearMcpTracker(
+            caller=server,
+            queue_state_labels=QUEUE_STATE_LABELS,
+            workflow_state_names=WORKFLOW_STATE_NAMES,
+            team_identifiers=dict(self.TWO_TEAMS),
+            max_retries=0,
+            retry_backoff_factor=1.0,
+        )
+
+    def test_each_declared_team_gets_the_whole_vocabulary(self) -> None:
+        refs = self._queue_refs(self._config(self.TWO_TEAMS))
+
+        by_scope: dict[str | None, set[str | None]] = {}
+        for ref in refs:
+            by_scope.setdefault(ref.scope, set()).add(ref.identifier)
+        assert by_scope == {
+            team: set(QUEUE_STATE_LABELS.values()) for team in self.TWO_TEAMS.values()
+        }
+
+    def test_one_declared_team_yields_the_refs_it_always_did(self) -> None:
+        """A single-board operation is unchanged, ref for ref and in order."""
+        refs = self._queue_refs(self._config(TEAM_IDENTIFIERS))
+
+        assert refs == [
+            MappingRef(
+                kind=MappingKind.QUEUE_STATE,
+                name=name,
+                identifier=identifier,
+                scope=TEAM_IDENTIFIERS["engineering"],
+            )
+            for name, identifier in sorted(QUEUE_STATE_LABELS.items())
+        ]
+
+    def test_declaring_no_team_scopes_the_vocabulary_to_the_workspace(self) -> None:
+        """No container to name is the one shape a workspace label is right for."""
+        refs = self._queue_refs(self._config({}))
+
+        assert refs
+        assert {ref.scope for ref in refs} == {None}
+
+    async def test_one_member_on_two_boards_reconciles_rather_than_colliding(
+        self,
+    ) -> None:
+        """The failed boot, through the shipped reconciliation, succeeding.
+
+        Two refs of one kind naming one label are a self-contradiction only
+        within one container; across two they are the two definitions the
+        operation needs, so the guard reads the container as part of what a
+        ref claims.
+        """
+        vocabulary = list(QUEUE_STATE_LABELS.values())
+        server = self._server(dict.fromkeys(self.TWO_TEAMS.values(), vocabulary))
+
+        reconciliation = await reconcile_tracker_mappings(
+            tracker=self._tracker(server),
+            config=self._config(self.TWO_TEAMS),
+        )
+
+        assert server.tool_calls("create_issue_label") == []
+        assert {
+            (outcome.ref.scope, outcome.identifier)
+            for outcome in reconciliation.outcomes
+            if outcome.ref.kind is MappingKind.QUEUE_STATE
+        } == {(team, label) for team in self.TWO_TEAMS.values() for label in vocabulary}
+
+    async def test_two_members_claiming_one_label_on_one_board_still_abort(
+        self,
+    ) -> None:
+        """The guard survives the container: one board, one label, two names."""
+        config = self._config(self.TWO_TEAMS).model_copy(
+            update={
+                "queue_states": {
+                    **QUEUE_STATE_LABELS,
+                    "decision": QUEUE_STATE_LABELS["done"],
+                },
+            },
+        )
+        server = self._server({team: [] for team in self.TWO_TEAMS.values()})
+
+        with pytest.raises(TrackerEnsureConflictError) as caught:
+            await reconcile_tracker_mappings(
+                tracker=self._tracker(server),
+                config=config,
+            )
+
+        assert QUEUE_STATE_LABELS["done"] in caught.value.entry
+        assert server.tool_calls("create_issue_label") == []
 
 
 class TestWorkflowStatesResolvePerTeam:

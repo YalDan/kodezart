@@ -54,10 +54,9 @@ RUN_LOG_TITLE = "Run log"
 ONE_TEAM: dict[str, str] = {"engineering": "fixture-team"}
 
 #: Two boards of the fixture workspace, both declared.  An operation
-#: declaring several teams scopes its queue vocabulary at WORKSPACE level
-#: (one label has to be addressable on every board it dispatches from),
-#: which is the only shape in which a container disagreement is a fact the
-#: adapter can observe (KOD-143 addendum 2).
+#: declaring several teams needs its queue vocabulary on EACH of them —
+#: a queue member lives inside a team on this backend — so the
+#: reconciliation resolves the vocabulary once per board (KOD-167).
 TWO_TEAMS: dict[str, str] = {**ONE_TEAM, "platform": FOREIGN_TEAM}
 
 
@@ -174,7 +173,7 @@ def server() -> ManagedFakeLinearMcpServer:
     managed.users = source.users
     managed.teams = source.teams
     managed.labels = source.labels
-    managed.label_containers = source.label_containers
+    managed.team_labels = source.team_labels
     managed.statuses = source.statuses
     managed.state_types = source.state_types
     managed.actor = source.actor
@@ -315,7 +314,10 @@ async def test_an_absent_queue_label_is_created_at_boot_not_a_failure(
     async with lifespan(app):
         pass
 
-    assert "queue:terminal" in wired.labels
+    # Made inside the declared team, which is where a queue member lives on
+    # this backend — never at workspace level beside it.
+    assert wired.team_labels["fixture-team-id"] == ["queue:terminal"]
+    assert "queue:terminal" not in wired.labels
     # `teamId` takes the team's UUID and nothing else — the live server
     # answers a name with "teamId must be a UUID" and a 400 (KOD-143). The
     # adapter resolves the declared team NAME through the teams listing.
@@ -425,87 +427,101 @@ async def test_a_declared_document_id_the_workspace_lacks_aborts_boot(
     assert wired.closes == 1
 
 
-async def test_a_label_the_workspace_holds_elsewhere_aborts_boot_and_writes_nothing(
+async def test_two_boards_each_holding_the_whole_vocabulary_boot_and_adopt_both(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """KOD-167: the measured boot failure, as a boot that succeeds.
+
+    Two declared teams, each carrying its OWN team-scoped copy of every
+    queue member and no workspace-level copy anywhere — the shape a live
+    two-team operation is in, where the second board's labels belong to
+    another delivery loop and cannot be moved.  Reconciliation used to read
+    one vocabulary for the whole operation, find the member defined in two
+    containers it had not declared, and abort with
+    ``declared None, found 'Duckburg', 'kodezart'``.
+
+    Resolving per board adopts both copies and writes nothing.
+    """
+    wired.labels.clear()
+    wired.team_labels = {
+        f"{team}-id": list(QUEUE_STATE_LABELS.values())
+        for team in ("fixture-team", FOREIGN_TEAM)
+    }
+    _configure(monkeypatch, tmp_path, _operation_toml(teams=TWO_TEAMS))
+
+    async with lifespan(create_app()):
+        pass
+
+    assert wired.tool_calls("create_issue_label") == []
+    reconciled = [
+        event
+        for event in _events(capsys.readouterr().out)
+        if event.get("event") == "tracker_mappings_reconciled"
+    ]
+    adopted = reconciled[0]["adopted"]
+    assert isinstance(adopted, list)
+    # Once per declared board: the adoption records what each board holds,
+    # so one entry per member would mean a board went unread.
+    assert adopted.count("queue_state 'done' -> 'queue:done'") == len(TWO_TEAMS)
+
+
+async def test_a_board_missing_one_member_is_given_its_own_and_the_other_stands(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     wired: ManagedFakeLinearMcpServer,
 ) -> None:
-    """AC-4 / R7(c): an ensure that would ALTER a definition never writes.
+    """The instate half of KOD-167, scoped to the board that lacks it.
 
-    The workspace already holds the declared label, but in another team's
-    container.  Adopting it would repurpose a value that team means
-    something by, and creating it would be the cross-container write R3
-    forbids — so boot aborts naming the entry instead.
-
-    Grounded on two DECLARED boards, because that is where the fact is
-    observable: an operation declaring several teams scopes its queue
-    vocabulary at workspace level, so a label held inside a declared
-    team's container is a container this adapter reads and a disagreement
-    it can name.  The undeclared-team shape is a different case with its
-    own row below (KOD-143 addendum 2).
+    The other board's copy is neither moved nor adopted on this board's
+    behalf: it is that loop's definition of the member, and this board gets
+    one of its own inside its own container.
     """
-    contested = "queue:terminal"
-    wired.labels.append(contested)
-    wired.label_containers[contested] = f"{FOREIGN_TEAM}-id"
-    _configure(
-        monkeypatch,
-        tmp_path,
-        _operation_toml(
-            teams=TWO_TEAMS,
-            queue_states={**QUEUE_STATE_LABELS, "done": contested},
-        ),
-    )
+    wired.labels.clear()
+    present = [label for label in QUEUE_STATE_LABELS.values() if label != "queue:done"]
+    wired.team_labels = {
+        "fixture-team-id": present,
+        f"{FOREIGN_TEAM}-id": list(QUEUE_STATE_LABELS.values()),
+    }
+    _configure(monkeypatch, tmp_path, _operation_toml(teams=TWO_TEAMS))
+
+    async with lifespan(create_app()):
+        pass
+
+    assert wired.tool_calls("create_issue_label") == [
+        {"name": "queue:done", "teamId": "fixture-team-id"},
+    ]
+    assert "queue:done" in wired.team_labels["fixture-team-id"]
+    assert wired.team_labels[f"{FOREIGN_TEAM}-id"] == list(QUEUE_STATE_LABELS.values())
+
+
+async def test_a_label_defined_at_both_levels_aborts_boot_naming_both(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """The surviving refusal: a definition at each level is undecidable.
+
+    A workspace-level label serves every board and a team's own label
+    serves that board, so a member defined at BOTH levels has two
+    definitions and nothing says which one a write on that board resolves
+    to.  Boot names every container it found and writes nothing rather than
+    picking one (KOD-167).
+    """
+    contested = QUEUE_STATE_LABELS["done"]
+    wired.team_labels = {"fixture-team-id": [contested]}
+    _configure(monkeypatch, tmp_path, _operation_toml())
 
     with pytest.raises(TrackerEnsureConflictError) as caught:
         async with lifespan(create_app()):
             pass
 
     assert contested in caught.value.entry
-    assert FOREIGN_TEAM in str(caught.value)
+    assert "workspace" in str(caught.value)
+    assert "fixture-team" in str(caught.value)
     assert wired.tool_calls("create_issue_label") == []
-    assert wired.closes == 1
-
-
-async def test_a_label_in_an_undeclared_container_is_refused_by_the_vendor_itself(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    wired: ManagedFakeLinearMcpServer,
-) -> None:
-    """The refusal relocates from pre-flight to the vendor's own mouth.
-
-    A label held in a container no declared team owns is invisible to
-    every read this adapter is licensed to make: the workspace-level
-    listing does not carry it, and neither does any declared team's.  So
-    the pre-flight refusal cannot fire — it would be firing on a fact
-    nothing observed — and boot attempts the create, which the vendor
-    refuses BY NAME.
-
-    Asserted rather than left silent, because the tolerance that would
-    swallow it is precisely what the label addendum forbids: idempotence
-    is to come from reading both listings, never from forgiving an
-    already-exists (KOD-143 addendum 2).
-    """
-    contested = "queue:terminal"
-    wired.labels.append(contested)
-    wired.label_containers[contested] = "some-other-team-id"
-    _configure(
-        monkeypatch,
-        tmp_path,
-        _operation_toml(queue_states={**QUEUE_STATE_LABELS, "done": contested}),
-    )
-
-    with pytest.raises(LookupError) as caught:
-        async with lifespan(create_app()):
-            pass
-
-    assert contested in str(caught.value)
-    assert wired.tool_calls("create_issue_label") == [
-        {"name": contested, "teamId": "fixture-team-id"},
-    ]
-    # The write the vendor refused left the workspace as it was: one
-    # label, still in the container it was already held in.
-    assert wired.labels.count(contested) == 1
-    assert wired.label_containers[contested] == "some-other-team-id"
     assert wired.closes == 1
 
 

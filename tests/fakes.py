@@ -2151,7 +2151,7 @@ class FakeLinearMcpServer:
         users: Sequence[str] = (),
         teams: Sequence[str] = (),
         labels: Sequence[str] = (),
-        label_containers: Mapping[str, str] | None = None,
+        team_labels: Mapping[str, Sequence[str]] | None = None,
         statuses: Mapping[str, Sequence[str]] | None = None,
         state_types: Mapping[str, str] | None = None,
         actor: str = "fixture-actor",
@@ -2168,8 +2168,15 @@ class FakeLinearMcpServer:
         }
         self.users: list[str] = list(users)
         self.teams: list[str] = list(teams)
+        #: The WORKSPACE-level labels, which is the only set the unscoped
+        #: listing answers with.  A team's labels are held apart, keyed by
+        #: the container id the vendor addresses that team by, because a
+        #: name is unique per CONTAINER and not per workspace: two boards
+        #: routinely carry their own copy of one queue member (KOD-167).
         self.labels: list[str] = list(labels)
-        self.label_containers: dict[str, str] = dict(label_containers or {})
+        self.team_labels: dict[str, list[str]] = {
+            container: list(names) for container, names in (team_labels or {}).items()
+        }
         #: The workflow-state vocabulary each team offers, keyed by team.
         #: Per team rather than per workspace because that is what the
         #: backend holds: the listing tool takes a team and answers for it
@@ -2471,12 +2478,14 @@ class FakeLinearMcpServer:
         the question that way.
         """
         team = arguments.get("team")
-        container = None if team is None else self._team_id(str(team))
+        held = (
+            self.labels
+            if team is None
+            else self.team_labels.get(self._team_id(str(team)), [])
+        )
         return {
             "labels": [
-                {"id": f"{name}-id", "name": name, "color": "#000000"}
-                for name in self.labels
-                if self.label_containers.get(name) == container
+                {"id": f"{name}-id", "name": name, "color": "#000000"} for name in held
             ],
             "hasNextPage": False,
         }
@@ -2494,21 +2503,26 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        """Create one label, refusing a name the workspace already carries.
+        """Create one label, refusing a name its CONTAINER already carries.
 
-        By NAME, not by (name, container): that is what the live server
-        did to the boot that re-created its own team-scoped label, and the
-        adapter is not permitted to tolerate it — so the fake has to be
-        able to produce it.
+        Tightened to the live vendor's shape per KOD-167: the measured
+        refusal was a boot re-creating its own team-scoped label in the
+        same team, which a per-container rule refuses exactly as a
+        per-workspace one would — and the live workspace that motivated
+        KOD-167 carries two boards' own copies of every queue member at
+        once, which only the per-container rule permits.  Refusing by name
+        alone would leave this fake certifying a single-container world the
+        backend does not have.
         """
         name = str(arguments["name"])
-        if name in self.labels:
-            msg = f"fake workspace already carries the label {name!r}"
-            raise LookupError(msg)
-        self.labels.append(name)
         team = arguments.get("teamId")
-        if team is not None:
-            self.label_containers[name] = str(team)
+        held = (
+            self.labels if team is None else self.team_labels.setdefault(str(team), [])
+        )
+        if name in held:
+            msg = f"fake workspace already carries the label {name!r} here"
+            raise LookupError(msg)
+        held.append(name)
         return {"name": name}
 
     def _tool_list_issue_statuses(
@@ -2642,10 +2656,15 @@ class FakeTrackerPort:
         #: one of them would leave the other untestable.
         self.document_titles: dict[str, str] = dict(document_titles or {})
         self.known_identifiers: set[str] = set(known_identifiers)
-        #: The container each INSTATED value was created in.  Seeded empty,
-        #: because a value the fixture merely knows about reports no
-        #: container — the same state a listing that omits the field is in.
-        self.mapping_containers: dict[str, str | None] = {}
+        #: Every container each INSTATED value is defined in, ``None`` being
+        #: the workspace itself.  A SET per value, because one name is
+        #: defined once per container and a two-board operation carries its
+        #: queue vocabulary on both (KOD-167).  A value the fixture merely
+        #: knows about is workspace-level, which is what a listing carrying
+        #: no container field reports.
+        self.mapping_containers: dict[str, set[str | None]] = {
+            identifier: {None} for identifier in self.known_identifiers
+        }
         self._clock: Callable[[], datetime] = clock
         self._sequence: int = 0
 
@@ -2924,7 +2943,8 @@ class FakeTrackerPort:
         created every ref, so a consumer could pass over behaviour the port
         does not have.  R8's rule is the domain's, not a vendor's, so it
         lives here identically — kinds outside ``INSTATABLE_MAPPING_KINDS``
-        and reported-container disagreements both raise and write nothing.
+        raise, a value resolves WITHIN the container its ref declares, and
+        the two undecidable shapes raise and write nothing (KOD-167).
         """
         await asyncio.sleep(0)
         outcomes: list[MappingOutcome] = []
@@ -2944,14 +2964,18 @@ class FakeTrackerPort:
                     "carries none",
                     entry=ref.describe(),
                 )
-            if identifier in self.known_identifiers:
-                container = self.mapping_containers.get(identifier)
-                if container is not None and container != ref.scope:
-                    raise TrackerEnsureConflictError(
-                        "the workspace defines this value in another container; "
-                        f"declared {ref.scope!r}, found {container!r}",
-                        entry=ref.describe(),
-                    )
+            containers: set[str | None] = self.mapping_containers.get(identifier, set())
+            held = sorted(
+                repr(container) for container in containers if container is not None
+            )
+            if None in containers and held:
+                raise TrackerEnsureConflictError(
+                    "the workspace defines this value at workspace level AND "
+                    f"inside a container; declared {ref.scope!r}, found the "
+                    f"workspace and {', '.join(held)}",
+                    entry=ref.describe(),
+                )
+            if None in containers or ref.scope in containers:
                 outcomes.append(
                     MappingOutcome(
                         ref=ref,
@@ -2960,8 +2984,15 @@ class FakeTrackerPort:
                     ),
                 )
                 continue
+            if ref.scope is None and held:
+                raise TrackerEnsureConflictError(
+                    "this ref belongs to the workspace and the value is "
+                    f"defined inside a container; declared {ref.scope!r}, "
+                    f"found {', '.join(held)}",
+                    entry=ref.describe(),
+                )
             self.known_identifiers.add(identifier)
-            self.mapping_containers[identifier] = ref.scope
+            self.mapping_containers.setdefault(identifier, set()).add(ref.scope)
             outcomes.append(
                 MappingOutcome(
                     ref=ref,

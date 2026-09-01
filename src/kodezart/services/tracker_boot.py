@@ -103,23 +103,31 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
 
 def _queue_state_refs(
     config: OperationConfig,
-    scope: str | None,
+    containers: tuple[str | None, ...],
 ) -> tuple[MappingRef, ...]:
-    """The queue vocabulary: it exists only because this operation says so."""
+    """The queue vocabulary, once per container it has to exist in.
+
+    One ref per (container, member), because a queue label resolves WITHIN
+    a container and an operation dispatching from several teams needs the
+    member to exist on each of them.  A single declared team therefore
+    yields exactly the refs it always did; a second one adds its own copies
+    rather than moving the first team's (KOD-167).
+    """
     return tuple(
         MappingRef(
             kind=MappingKind.QUEUE_STATE,
             name=name,
             identifier=identifier,
-            scope=scope,
+            scope=container,
         )
+        for container in containers
         for name, identifier in sorted(config.queue_states.items())
     )
 
 
 def _document_refs(
     config: OperationConfig,
-    _scope: str | None,
+    _containers: tuple[str | None, ...],
 ) -> tuple[MappingRef, ...]:
     """The documents this operation instates, keyed by their declared name.
 
@@ -146,7 +154,7 @@ def _document_refs(
 #: instated, rather than this module holding a second opinion about it.
 OWNED_REF_BUILDERS: dict[
     str,
-    Callable[[OperationConfig, str | None], tuple[MappingRef, ...]],
+    Callable[[OperationConfig, tuple[str | None, ...]], tuple[MappingRef, ...]],
 ] = {
     "documents": _document_refs,
     "queue_states": _queue_state_refs,
@@ -167,13 +175,16 @@ def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
     declaring a value the operation claims to own, and a boot that quietly
     owns nothing.
 
-    Each ref carries the container its value is created in — the
-    operation's own team when it declares exactly one, and workspace scope
-    when it declares several, because one queue state addressed on several
-    teams' issues cannot be a label private to one of them.
+    Each ref carries the container its value is created in, and a builder
+    is handed EVERY declared team rather than one chosen container: a queue
+    label lives inside a team on the measured backend, so an operation
+    dispatching from several teams needs its vocabulary on each of them and
+    a builder emits one ref per team.  Workspace scope is what an operation
+    declaring NO team gets, which is the only shape with no container to
+    name (KOD-167).
     """
-    identifiers = sorted({entry.name for entry in config.teams.values()})
-    scope = identifiers[0] if len(identifiers) == 1 else None
+    names = sorted({entry.name for entry in config.teams.values()})
+    containers: tuple[str | None, ...] = tuple(names) if names else (None,)
     owned = sorted(
         field
         for field, ownership in FIELD_OWNERSHIP.items()
@@ -187,7 +198,7 @@ def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
         )
     refs: list[MappingRef] = []
     for field in owned:
-        refs.extend(OWNED_REF_BUILDERS[field](config, scope))
+        refs.extend(OWNED_REF_BUILDERS[field](config, containers))
     return tuple(refs)
 
 
@@ -257,15 +268,22 @@ async def reconcile_tracker_mappings(
     placeholder no session can open.
     """
     refs = owned_mappings(config)
-    claimed: list[tuple[MappingKind, str]] = [
-        (ref.kind, ref.identifier) for ref in refs if ref.identifier is not None
+    # Keyed by CONTAINER as well as kind and identifier, because a container
+    # is half of what identifies a backend value: two declared entries
+    # claiming one label on one team still contradict each other, while one
+    # member instated on each of two teams is two definitions and the whole
+    # point of declaring both boards (KOD-167).
+    claimed: list[tuple[MappingKind, str | None, str]] = [
+        (ref.kind, ref.scope, ref.identifier)
+        for ref in refs
+        if ref.identifier is not None
     ]
     collisions = sorted(
         {
             ref.describe()
             for ref in refs
             if ref.identifier is not None
-            and claimed.count((ref.kind, ref.identifier)) > 1
+            and claimed.count((ref.kind, ref.scope, ref.identifier)) > 1
         },
     )
     if collisions:
