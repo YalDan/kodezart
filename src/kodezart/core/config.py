@@ -163,6 +163,19 @@ class AppConfig(BaseSettings):
         ge=0.1,
         description="Retry backoff initial interval in seconds.",
     )
+    retry_rate_limit_floor_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=3600.0,
+        description=(
+            "Seconds a node attempt that died on a provider rate-limit "
+            "rejection waits before the graph's own back-off begins, when "
+            "the rejection states no retry-after of its own. Measured "
+            "2026-09-01: under one standing limit the retry policy spawned "
+            "around sixteen empty sessions in thirty seconds. The attempt "
+            "budget is unchanged — only the spacing is."
+        ),
+    )
     content_scan_retry_max_attempts: int = Field(
         default=2,
         ge=1,
@@ -581,6 +594,21 @@ class AppConfig(BaseSettings):
             "Identity this deployment holds atomic claims under. Names the "
             "PROCESS, not the tracker account: two deployments sharing one "
             "workspace must carry different values or they cannot race."
+        ),
+    )
+    dispatch_rate_limit_cooldown_seconds: float = Field(
+        default=1800.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds the dispatch lane fires nothing after a run dies on a "
+            "provider rate-limit rejection. The limit belongs to the "
+            "account, not to the issue, so the next-ranked candidate would "
+            "meet it unchanged: measured 2026-09-01, a run that died at "
+            "17:57 on a rejection was re-fired whole four minutes later. "
+            "Lifted by the clock alone — nothing on the board clears a rate "
+            "limit — and the lower bound keeps a cooldown longer than the "
+            "tick that would otherwise re-fire."
         ),
     )
     tracker_asset_max_count: int = Field(

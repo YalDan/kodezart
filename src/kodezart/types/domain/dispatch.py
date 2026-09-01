@@ -98,6 +98,18 @@ class ExclusionClause(StrEnum):
     carries the class the run died of, or how it ended when no error frame
     named one."""
 
+    LANE_BACKOFF = "lane_backoff"
+    """The lane is holding back after a failure the whole account shares.
+
+    The one clause that is not about the issue it annotates: a provider
+    rate limit killed the last fire, and the next-ranked candidate would
+    meet it unchanged, so every remaining issue on the board carries this
+    line until the cooldown lapses (KOD-174).  Evaluated after the clause
+    above so the issue that died still reports what it died of, and lifted
+    by the CLOCK rather than by a change on the board — nothing an issue
+    does clears a rate limit.  The detail carries the failure class that
+    set it."""
+
     OUT_OF_SCOPE = "out_of_scope"
     """The issue's team declares a scope and the issue's project and
     initiatives are not in it (KOD-169).  The detail carries the issue's

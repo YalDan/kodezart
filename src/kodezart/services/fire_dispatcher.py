@@ -17,8 +17,9 @@ Throughput comes from successive passes, not from batch sends.
 import secrets
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     DeliveryProbe,
@@ -91,6 +92,24 @@ class _RememberedExclusion:
     detail: str
 
 
+@dataclass(frozen=True)
+class _LaneBackoff:
+    """The whole lane held back, and what put it there.
+
+    An unresolvable base and a dead run are facts about ONE issue; a
+    provider rate limit is a fact about the account every fire on the lane
+    would spend.  Measured 2026-09-01: the run that died at 17:57 on a
+    rejection was followed by the next tick firing again into the same
+    limit, and the creator's retry policy spawning sixteen empty sessions
+    under it (KOD-174).  Remembering the issue is not enough — the next
+    issue meets the same limit — so the lane itself stops until the
+    cooldown lapses.
+    """
+
+    until: datetime
+    failure_class: str
+
+
 def _now() -> datetime:
     return datetime.now(tz=UTC)
 
@@ -111,6 +130,7 @@ class FireDispatcher:
         holder: str,
         claim_lease_seconds: float,
         query_page_size: int,
+        rate_limit_cooldown_seconds: float,
         assembler: FireContextAssembler,
         resolver: BaseResolver,
         cache: RepoCache,
@@ -130,6 +150,7 @@ class FireDispatcher:
         self._holder: str = holder
         self._claim_lease_seconds: float = claim_lease_seconds
         self._query_page_size: int = query_page_size
+        self._rate_limit_cooldown_seconds: float = rate_limit_cooldown_seconds
         self._resolver: BaseResolver = resolver
         self._cache: RepoCache = cache
         self._trunk: str = trunk
@@ -141,6 +162,9 @@ class FireDispatcher:
         #: Remembered failures — an unresolvable base, a run that died, a
         #: winner the graph blocks — each held until its issue changes.
         self._remembered: dict[str, _RememberedExclusion] = {}
+        #: The lane's own cooldown, set by a failure class the next fire
+        #: would meet unchanged.  ``None`` until one is measured.
+        self._backoff: _LaneBackoff | None = None
         #: One ``initiative_identifiers`` read per distinct project for
         #: this dispatcher's lifetime — membership does not move under a
         #: running pass (KOD-169).
@@ -452,6 +476,18 @@ class FireDispatcher:
             outcome=outcome.value,
             failure_class=failure_class,
         )
+        if failure_class != RateLimitedSoftFailureError.__name__:
+            return
+        self._backoff = _LaneBackoff(
+            until=self._clock() + timedelta(seconds=self._rate_limit_cooldown_seconds),
+            failure_class=failure_class,
+        )
+        await self._log.awarning(
+            "dispatch_lane_backoff",
+            failure_class=failure_class,
+            until=self._backoff.until.isoformat(),
+            cooldown_seconds=self._rate_limit_cooldown_seconds,
+        )
 
     async def _scan(self, team_keys: Sequence[str]) -> tuple[TrackerIssue, ...]:
         """Every approved issue on the declared teams, in declaration order.
@@ -517,6 +553,23 @@ class FireDispatcher:
                     detail=remembered.detail,
                 )
             del self._remembered[issue.issue_key]
+        backoff = self._backoff
+        if backoff is not None:
+            # The one clause that is not about the issue it annotates: the
+            # limit that killed the last fire is the ACCOUNT's, so the
+            # next-ranked candidate meets it unchanged and firing it is
+            # the same failure with a different key on it.  Evaluated
+            # after the issue's own memory so the issue that died still
+            # reports what it died of, and lifted by the clock rather than
+            # by a change on the board — nothing an issue does clears a
+            # rate limit.
+            if self._clock() < backoff.until:
+                return IssueExclusion(
+                    issue_key=issue.issue_key,
+                    clause=ExclusionClause.LANE_BACKOFF,
+                    detail=backoff.failure_class,
+                )
+            self._backoff = None
         scope_exclusion = await self._exclude_by_scope(issue)
         if scope_exclusion is not None:
             return scope_exclusion

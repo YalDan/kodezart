@@ -78,6 +78,7 @@ RENEWAL_FRACTION = 0.25
 #: 750 seconds, which is past the lease it was granted with.
 RENEWALS_PAST_THE_LEASE = 5
 PAGE_SIZE = 50
+RATE_LIMIT_COOLDOWN_SECONDS = 1800.0
 ASSET_MAX_COUNT = 20
 ASSET_MAX_BYTES = 262144
 ASSET_FETCH_TIMEOUT_SECONDS = 30.0
@@ -191,6 +192,7 @@ def dispatcher(
     draw: object = None,
     git: FakeGitService | None = None,
     operation: OperationConfig | None = None,
+    clock: object = None,
 ) -> tuple[FireDispatcher, FakeJobQueue, FakeDeliveryProbe]:
     """A dispatcher plus the doubles a test asserts against."""
     the_queue = queue or FakeJobQueue()
@@ -207,6 +209,7 @@ def dispatcher(
         "holder": holder,
         "claim_lease_seconds": LEASE_SECONDS,
         "query_page_size": PAGE_SIZE,
+        "rate_limit_cooldown_seconds": RATE_LIMIT_COOLDOWN_SECONDS,
         "assembler": FireContextAssembler(
             tracker=tracker,
             gate=PassThroughGate(),
@@ -221,6 +224,8 @@ def dispatcher(
     }
     if draw is not None:
         kwargs["draw"] = draw
+    if clock is not None:
+        kwargs["clock"] = clock
     return FireDispatcher(**kwargs), the_queue, the_delivery  # type: ignore[arg-type]
 
 
@@ -1887,6 +1892,8 @@ class TestTheFailedRunExclusion:
     async def _fire_then_fail(
         tracker: FakeTrackerPort,
         failure_class: str,
+        *,
+        clock: MovingClock | None = None,
     ) -> tuple[FireDispatcher, FakeJobQueue, DispatchReport]:
         """One dispatched fire that died, as the watch reports it.
 
@@ -1894,7 +1901,7 @@ class TestTheFailedRunExclusion:
         the job goes terminal, and only then does the outcome reach the
         dispatcher.
         """
-        fire, queue, _ = dispatcher(tracker)
+        fire, queue, _ = dispatcher(tracker, clock=clock)
         first = await fire.run_pass()
         await release_run(tracker, queue, first)
         await fire.record_run_outcome("K-1", RunOutcome.FAILED, failure_class)
@@ -1917,13 +1924,25 @@ class TestTheFailedRunExclusion:
         assert len(queue.submissions) == 1, "the whole run is not fired again"
 
     async def test_a_changed_issue_re_admits_the_rate_limited_run(self) -> None:
-        """The exclusion is held until the issue moves, never forever."""
+        """The exclusion is held until the issue moves, never forever.
+
+        The lane's own cooldown is stepped past first: it holds every
+        issue after a rate limit, so leaving it standing would prove only
+        that SOMETHING still excludes K-1 and say nothing about the
+        per-issue memory this test is about.
+        """
+        clock = MovingClock(start=FIXTURE_EPOCH)
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
-        fire, queue, _ = await self._fire_then_fail(tracker, self.RATE_LIMIT_CLASS)
+        fire, queue, _ = await self._fire_then_fail(
+            tracker,
+            self.RATE_LIMIT_CLASS,
+            clock=clock,
+        )
         tracker.issues["K-1"] = make_tracker_issue(
             "K-1",
             updated_at=FIXTURE_EPOCH + timedelta(hours=1),
         )
+        clock.advance(seconds=RATE_LIMIT_COOLDOWN_SECONDS)
 
         third = await fire.run_pass()
 
@@ -2006,3 +2025,102 @@ class TestTheFailedRunExclusion:
         assert report.outcome is DispatchOutcome.fire_enqueued
         assert report.exclusions == ()
         assert len(queue.submissions) == 1
+
+
+class TestTheLaneBacksOffAfterARateLimit:
+    """The half of the measured loop remembering one issue cannot reach.
+
+    2026-09-01: the run that died at 17:57 on a provider rate-limit
+    rejection was re-fired four minutes later, and under the same limit
+    the creator's retry policy spawned around sixteen empty sessions in
+    thirty seconds.  A rate limit is a fact about the ACCOUNT, so
+    excluding the issue that met it only moves the next tick onto the
+    next-ranked candidate and into the same rejection.  The lane itself
+    stops until an operator-configured cooldown lapses (KOD-174).
+    """
+
+    RATE_LIMIT_CLASS = RateLimitedSoftFailureError.__name__
+    CRASH_CLASS = RuntimeError.__name__
+
+    @staticmethod
+    def _board() -> FakeTrackerPort:
+        """A top-ranked issue to fire and kill, and a candidate behind it."""
+        return FakeTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", priority=IssuePriority.URGENT),
+                make_tracker_issue("K-3"),
+            ],
+        )
+
+    async def _fire_then_fail(
+        self,
+        tracker: FakeTrackerPort,
+        failure_class: str,
+        *,
+        clock: MovingClock,
+    ) -> tuple[FireDispatcher, FakeJobQueue]:
+        fire, queue, _ = dispatcher(tracker, clock=clock)
+        first = await fire.run_pass()
+        assert first.claimed_issue_key == "K-1"
+        await release_run(tracker, queue, first)
+        await fire.record_run_outcome("K-1", RunOutcome.FAILED, failure_class)
+        return fire, queue
+
+    async def test_a_rate_limited_run_stops_the_next_ranked_issue_too(self) -> None:
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = self._board()
+        fire, queue = await self._fire_then_fail(
+            tracker,
+            self.RATE_LIMIT_CLASS,
+            clock=clock,
+        )
+
+        second = await fire.run_pass()
+
+        assert second.outcome is DispatchOutcome.empty_eligible_set
+        assert [
+            (item.issue_key, item.clause, item.detail) for item in second.exclusions
+        ] == [
+            ("K-1", ExclusionClause.RUN_FAILED, self.RATE_LIMIT_CLASS),
+            ("K-3", ExclusionClause.LANE_BACKOFF, self.RATE_LIMIT_CLASS),
+        ]
+        assert len(queue.submissions) == 1
+
+    async def test_dispatch_resumes_once_the_cooldown_lapses(self) -> None:
+        """Lifted by the clock alone — nothing on the board clears a limit."""
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = self._board()
+        fire, queue = await self._fire_then_fail(
+            tracker,
+            self.RATE_LIMIT_CLASS,
+            clock=clock,
+        )
+        await fire.run_pass()
+        clock.advance(seconds=RATE_LIMIT_COOLDOWN_SECONDS)
+
+        third = await fire.run_pass()
+
+        assert third.outcome is DispatchOutcome.fire_enqueued
+        assert third.claimed_issue_key == "K-3"
+        assert len(queue.submissions) == 2
+
+    async def test_a_crashed_run_leaves_the_lane_running(self) -> None:
+        """The paired negative: only the shared failure holds the lane.
+
+        A crash is one run's, and the next-ranked candidate has nothing to
+        do with it — a cooldown here would idle a whole board over a
+        traceback.
+        """
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = self._board()
+        fire, queue = await self._fire_then_fail(
+            tracker,
+            self.CRASH_CLASS,
+            clock=clock,
+        )
+
+        second = await fire.run_pass()
+
+        assert second.outcome is DispatchOutcome.fire_enqueued
+        assert second.claimed_issue_key == "K-3"
+        assert len(queue.submissions) == 2

@@ -14,7 +14,7 @@ from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import TicketReviewModeError, soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptSetProvider, WorkspaceProvider
-from kodezart.core.retry import should_retry
+from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.thread_id import ticket_thread_id
@@ -131,6 +131,7 @@ class TicketGenerationLoop:
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int,
         retry_initial_interval: float,
+        delay_floor_for: DelayFloor | None = None,
     ) -> None:
         self._service = service
         self._workspace = workspace
@@ -148,6 +149,7 @@ class TicketGenerationLoop:
             initial_interval=retry_initial_interval,
             retry_on=should_retry,
         )
+        self._floor: RetryFloor = RetryFloor(delay_floor_for)
         self._log: BoundLogger = get_logger(__name__)
         self._checkpointer = checkpointer
         self._compiled = self._build_graph().compile(
@@ -472,14 +474,22 @@ class TicketGenerationLoop:
             TicketGenerationState,
             TicketGenerationState,
         ] = StateGraph(TicketGenerationState)
-        graph.add_node("create", self._create_node, retry_policy=self._retry)
+        graph.add_node(
+            "create",
+            self._floor(self._create_node),
+            retry_policy=self._retry,
+        )
         graph.add_node("finalize", self._finalize_node)
         graph.add_edge(START, "create")
         if self._review_mode is TicketReviewMode.CREATE_ONLY:
             graph.add_edge("create", "finalize")
             graph.add_edge("finalize", END)
             return graph
-        graph.add_node("review", self._review_node, retry_policy=self._retry)
+        graph.add_node(
+            "review",
+            self._floor(self._review_node),
+            retry_policy=self._retry,
+        )
         graph.add_edge("create", "review")
         graph.add_conditional_edges(
             "review",
