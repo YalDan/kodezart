@@ -227,10 +227,17 @@ class LinearCommentWire(LinearWireModel):
     There is no ``user`` field and no ``issueId`` field — measured.  The
     author arrives as an object, and which issue a comment belongs to is
     known by the caller that asked for it, never read back off the entry.
+
+    That object can be ``null``, measured 2026-09-01 (KOD-172): a removed
+    user or an integration leaves the key in place carrying nothing, and
+    the log a dispatch tick was reading held one at index 8.  The key
+    itself stays REQUIRED — a payload that dropped it would be saying
+    nothing about authorship rather than saying there is none — and an
+    author that is present but malformed still refuses.
     """
 
     id: str
-    author: LinearCommentAuthorWire
+    author: LinearCommentAuthorWire | None
     body: str
     created_at: datetime
 

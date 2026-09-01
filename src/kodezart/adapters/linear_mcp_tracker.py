@@ -1633,11 +1633,17 @@ class LinearMcpTracker:
         one place it is known for certain.  The author is the name the
         vendor attributes the comment to, which is the only authorship
         this surface attests at all.
+
+        A comment the vendor attributes to nobody keeps that state whole:
+        the port's ``author_key`` is ``None`` and no name is put in its
+        place.  There is nothing to substitute that would be true, and a
+        substitution would say a removed user's words were somebody
+        else's (KOD-172).
         """
         return TrackerComment(
             comment_key=wire.id,
             issue_key=issue_key,
-            author_key=wire.author.name,
+            author_key=None if wire.author is None else wire.author.name,
             body=wire.body,
             created_at=wire.created_at,
         )

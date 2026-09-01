@@ -21,6 +21,7 @@ from kodezart.core.errors import (
     TrackerProtocolError,
 )
 from kodezart.core.protocols import McpToolResult
+from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
@@ -1164,6 +1165,92 @@ class TestTheRecordedRepositoryMarker:
         tracker = linear_over_fake_mcp(fixture_server())
 
         assert await tracker.recorded_repository(issue_key=CLAIMED_ISSUE) is None
+
+
+class TestACommentTheVendorAttributesToNobody:
+    """A comment with a null author is read like any other (KOD-172).
+
+    Measured 2026-09-01: ``list_comments`` failed the whole listing on
+    ``comments.8.author`` — a removed user or an integration — and the
+    dispatch tick reading it died.  Every marker on this log is an
+    HTML comment in a body, so authorship was never part of any of these
+    reads; the wire model's strictness was the only thing that made it
+    matter.
+    """
+
+    ROUTE = "https://example.invalid/a/rerouted"
+
+    def _unattributed(self, body: str) -> FakeMcpComment:
+        return FakeMcpComment(
+            id="ghost-1",
+            issue_id=CLAIMED_ISSUE,
+            author=None,
+            body=body,
+            created_at=FIXTURE_NOW,
+        )
+
+    async def _log_with_every_marker(self) -> LinearMcpTracker:
+        """A comment log carrying all four markers and one author-less entry.
+
+        The author-less entry carries the recorded route, so the marker a
+        dispatch tick reads is the one the vendor attributes to nobody.
+        """
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=60.0,
+        )
+        await tracker.record_work_ref(
+            ref=WorkRef(
+                issue_id=CLAIMED_ISSUE,
+                role=WorkRefRole.DELIVERABLE,
+                branch="kodezart/fixture-deliverable",
+                pushed_head_sha="0" * 40,
+                recorded_at=FIXTURE_NOW,
+            ),
+        )
+        await tracker.record_base_spec(
+            issue_key=CLAIMED_ISSUE,
+            spec=BaseSpec(inputs=(), base_branch="main"),
+        )
+        server.comments.append(
+            self._unattributed(f'<!-- kodezart-repo url="{self.ROUTE}" -->'),
+        )
+        return tracker
+
+    async def test_every_marker_reader_parses_the_log(self) -> None:
+        tracker = await self._log_with_every_marker()
+
+        claim = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        refs = await tracker.work_refs(issue_key=CLAIMED_ISSUE)
+        spec = await tracker.read_base_spec(issue_key=CLAIMED_ISSUE)
+        route = await tracker.recorded_repository(issue_key=CLAIMED_ISSUE)
+
+        assert claim is not None
+        assert claim.holder == "pass-a"
+        assert [ref.branch for ref in refs] == ["kodezart/fixture-deliverable"]
+        assert spec is not None
+        assert spec.base_branch == "main"
+        assert route == self.ROUTE
+
+    async def test_the_attribution_reader_surfaces_no_author_as_its_own_state(
+        self,
+    ) -> None:
+        """Never a substituted name: the two states stay distinguishable."""
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="an attributed one")
+        server.comments.append(self._unattributed("nobody wrote this"))
+
+        attributed, unattributed = await tracker.list_comments(
+            issue_key=CLAIMED_ISSUE,
+        )
+
+        assert attributed.author_key == APPROVER
+        assert unattributed.author_key is None
+        assert unattributed.body == "nobody wrote this"
 
 
 class TestInitiativeIdentifiers:

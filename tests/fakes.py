@@ -2116,18 +2116,26 @@ class FakeMcpComment:
     ``issue_id`` is workspace state — which issue the log entry belongs to
     — and is deliberately NOT on the wire: the vendor's comment entry
     names no issue, so a reader learns that from the call it made.
+
+    ``author`` is ``None`` for the arm measured on 2026-09-01 (KOD-172): a
+    removed user or an integration leaves the key in place carrying
+    ``null``, and the tick that read such a log died on it.
     """
 
     id: str
     issue_id: str
-    author: str
+    author: str | None
     body: str
     created_at: datetime
 
     def wire(self) -> dict[str, object]:
         return {
             "id": self.id,
-            "author": {"id": f"{self.author}-id", "name": self.author},
+            "author": (
+                None
+                if self.author is None
+                else {"id": f"{self.author}-id", "name": self.author}
+            ),
             "body": self.body,
             "createdAt": self.created_at.isoformat(),
             "parentId": None,
