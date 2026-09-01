@@ -35,6 +35,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
@@ -366,6 +367,41 @@ def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
     )
 
 
+class MalformedAuthorCaller(CaptureCaller):
+    """The captures, with the comment listing's author present but malformed.
+
+    The paired negative of the null-author arm at the port (KOD-185): the
+    key is there and carries an object, and the object lacks the name the
+    wire model requires.
+    """
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if name != "list_comments":
+            return await super().call_tool(name=name, arguments=arguments)
+        self.calls.append((name, dict(arguments)))
+        return {
+            "comments": [
+                {
+                    "id": "1ac11111-0000-4000-8000-000000000003",
+                    "body": "a fixture comment",
+                    "createdAt": "2031-02-11T08:15:01.200Z",
+                    "updatedAt": "2031-02-11T08:15:01.190Z",
+                    "parentId": None,
+                    "resolvedAt": None,
+                    "quotedText": None,
+                    "author": {"id": APPROVER_ID},
+                    "onBehalfOf": None,
+                },
+            ],
+            "hasNextPage": False,
+        }
+
+
 class TestListingEnvelopes:
     """Every list tool keys its array after ITSELF. There is no shared key."""
 
@@ -665,6 +701,21 @@ class TestTheAdapterOverTheCaptures:
         # exactly that rather than putting a name there (KOD-172).
         assert unattributed.author_key is None
         assert unattributed.issue_key == "FIX-12"
+
+    async def test_a_malformed_author_refuses_with_the_protocol_error(self) -> None:
+        """KOD-185 at the port: admitting ``null`` admitted nothing else.
+
+        The wire model's refusal is the adapter's ``TrackerProtocolError``
+        naming the tool, and it is the whole listing that is refused — no
+        comment is read past an author the vendor half-sent.
+        """
+        with pytest.raises(TrackerProtocolError) as caught:
+            await tracker_over(MalformedAuthorCaller()).list_comments(
+                issue_key="FIX-12",
+            )
+
+        assert caught.value.tool == "list_comments"
+        assert "author" in caught.value.detail
 
     async def test_the_document_read_answers_with_its_text(self) -> None:
         content = await tracker_over(CaptureCaller()).read_document(
