@@ -12,7 +12,13 @@ object, one per declared repository, carrying the configured cadence.
 """
 
 import asyncio
+import inspect
+import io
+import re
+import tokenize
 from collections.abc import Callable
+from types import ModuleType
+from typing import Final
 
 import pytest
 import structlog.testing
@@ -21,6 +27,7 @@ from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.passes import build_dispatch_passes, delivery_probe_for
 from kodezart.core.config import AppConfig
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.services import dispatch_pass as dispatch_pass_module
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -970,3 +977,59 @@ def test_each_repository_gets_the_probe_its_own_origin_can_answer() -> None:
         delivery_probe_for(FILE_ORIGIN, forge=forge),
         NoForgeDeliveryProbe,
     )
+
+
+#: Every cardinal that could name a member roster's size in prose.  ``one``
+#: is absent on purpose: a comment saying a pass leaves ONE run running is
+#: a statement about the outcome, not a count of the outcomes.
+ROSTER_CARDINALS: Final[frozenset[str]] = frozenset(
+    {
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+    },
+)
+
+
+def _comment_words(module: ModuleType) -> frozenset[str]:
+    """Every word appearing in *module*'s ``#`` comments, lowercased."""
+    source = io.StringIO(inspect.getsource(module))
+    return frozenset(
+        word
+        for token in tokenize.generate_tokens(source.readline)
+        if token.type is tokenize.COMMENT
+        for word in re.findall(r"[a-z]+", token.string.lower())
+    )
+
+
+def test_the_dispatch_pass_comments_count_no_outcome_members() -> None:
+    """The comment states the deciding property, never the roster (KOD-279).
+
+    Measured: the watch-start comment said ``fire_enqueued`` was "the only
+    outcome of the four", and the enum had carried five members since
+    ``winner_blocked`` was added (KOD-173).  A count of another
+    declaration's members is a fact this module does not own — it goes
+    stale silently, and only a sweep sees it, because no behaviour changes
+    when it does.
+    """
+    assert _comment_words(dispatch_pass_module) & ROSTER_CARDINALS == frozenset()
+
+
+def test_the_outcome_enum_counts_its_own_members_nowhere() -> None:
+    """The same defect at its source, where the roster is declared.
+
+    The docstring over the members is where a count is most tempting and
+    least visible: it reads as a definition, and it is the one place the
+    roster is already stated exhaustively by the code beneath it.
+    """
+    docstring = DispatchOutcome.__doc__
+    assert docstring is not None
+    words = frozenset(re.findall(r"[a-z]+", docstring.lower()))
+
+    assert words & ROSTER_CARDINALS == frozenset()

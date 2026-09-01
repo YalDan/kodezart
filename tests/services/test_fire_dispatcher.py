@@ -279,23 +279,6 @@ class UnfilteredTrackerPort(FakeTrackerPort):
         )
 
 
-class RelationlessScanTrackerPort(FakeTrackerPort):
-    """A port whose SCAN entries carry no relations — the measured backend.
-
-    A listing answers with each issue's own fields and no edges, which is
-    what made the live-blocker clause vacuous over a scan: ``blocker_keys``
-    reads an empty tuple, the clause passes, and an issue the graph blocks
-    is selected and claimed (KOD-173).  Reading the issue is what supplies
-    the edges, and the gap between the two answers is what this double
-    exists to expose — a fake that carried relations everywhere could not
-    reach the defect at all.
-    """
-
-    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
-        found = await super().scan_issues(query=query)
-        return tuple(issue.model_copy(update={"relations": ()}) for issue in found)
-
-
 class TestTheContainerBoundary:
     """A pass claims from the operation's own board and from nowhere else."""
 
@@ -434,37 +417,34 @@ class TestClauseDrivenExclusion:
         assert report.exclusions[0].clause is ExclusionClause.NOT_OPEN
         assert report.exclusions[0].detail == "Done"
 
-    async def test_clause_four_excludes_an_issue_with_a_live_blocker(self) -> None:
+    async def test_the_predicate_reads_no_blocker_over_a_scan_entry(self) -> None:
+        """The live-blocker clause is not one of the predicate's (KOD-278).
+
+        A scan entry carries no edges, so asking the clause here could only
+        ever pass — and the arm that asked it was green solely because a
+        double seeded relations a listing never carries.  The blocked issue
+        below is NOT this pass's winner, so nothing reads it or its
+        blocker: an eligibility pass that still asked would have to read
+        K-2, and reds here.
+        """
         tracker = FakeTrackerPort(
             issues=[
-                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue("K-1", priority=IssuePriority.URGENT),
+                make_tracker_issue("K-3", blocked_by=["K-2"]),
                 make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
             ],
         )
-        fire, _, _ = dispatcher(tracker)
-        report = await fire.run_pass()
-        assert report.exclusions[0].clause is ExclusionClause.LIVE_BLOCKER
-        assert report.exclusions[0].detail == "K-2"
+        fire, queue, _ = dispatcher(tracker)
 
-    async def test_clause_four_admits_an_issue_whose_blocker_is_closed(self) -> None:
-        # The blocker carries the ref that delivered it, because a closed
-        # blocker in a real workspace does: the base resolution the dispatch
-        # now performs needs the premise it is based on to exist.
-        tracker = FakeTrackerPort(
-            issues=[
-                make_tracker_issue("K-1", blocked_by=["K-2"]),
-                make_tracker_issue(
-                    "K-2",
-                    queue_states=[QueueState.DONE],
-                    state_kind=WorkflowStateKind.COMPLETED,
-                ),
-            ],
-            recorded_work_refs={"K-2": [deliverable_ref("K-2", BLOCKER_BRANCH)]},
-        )
-        fire, _, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
         report = await fire.run_pass()
+
         assert report.outcome is DispatchOutcome.fire_enqueued
         assert report.claimed_issue_key == "K-1"
+        assert report.eligible == ("K-1", "K-3"), (
+            "the blocked issue passes every eligibility clause"
+        )
+        assert "K-2" not in tracker.issue_reads
+        assert len(queue.submissions) == 1
 
     async def test_clause_five_excludes_an_issue_another_pass_holds(self) -> None:
         tracker = FakeTrackerPort(
@@ -900,7 +880,11 @@ class TestEmptyEligibleSet:
         tracker = UnfilteredTrackerPort(issues=issues)
         fire, queue, _ = dispatcher(tracker)
         report = await fire.run_pass()
-        assert report.outcome is DispatchOutcome.empty_eligible_set
+        # ``BLOCKED`` is the only issue no eligibility clause rejects, so it
+        # wins and its blocker is decided at the pre-claim read (KOD-278) —
+        # the one clause that is never the predicate's, and still a report
+        # line naming the blocker.
+        assert report.outcome is DispatchOutcome.winner_blocked
         assert queue.submissions == []
         by_key = {item.issue_key: item.clause for item in report.exclusions}
         assert by_key == {
@@ -1724,7 +1708,7 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
     """
 
     async def test_a_blocked_winner_is_excluded_before_any_claim(self) -> None:
-        tracker = RelationlessScanTrackerPort(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
@@ -1747,12 +1731,14 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
     async def test_the_scan_alone_cannot_see_the_blocker(self) -> None:
         """The premise the case above rests on, asserted rather than assumed.
 
+        The double answers a listing the way the backend does — each
+        issue's own fields, no edges — and answers a read with the edges.
         Without this, a double that silently started carrying relations in
-        its listings would make the test above pass through the eligibility
-        clause instead of through the pre-claim read, and the defect would
-        be untested with everything green.
+        its listings would make the test above pass through an eligibility
+        clause that production never reaches, and the defect would be
+        untested with everything green (KOD-278).
         """
-        tracker = RelationlessScanTrackerPort(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
@@ -1776,7 +1762,7 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
         and does not remove.  A read of anything but the winner, or a
         second pre-claim read, reds here.
         """
-        tracker = RelationlessScanTrackerPort(
+        tracker = FakeTrackerPort(
             issues=[make_tracker_issue("K-1")],
         )
         fire, queue, _ = dispatcher(tracker)
@@ -1801,7 +1787,7 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
         the exclusion ranks the next candidate; the pass still claims one
         winner per snapshot and never falls through inside one.
         """
-        tracker = RelationlessScanTrackerPort(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(
                     "K-1", priority=IssuePriority.URGENT, blocked_by=["K-2"]
@@ -1836,7 +1822,7 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
         set.  ``winner_blocked`` is therefore the proof that the issue was
         re-admitted and its edges read again.
         """
-        tracker = RelationlessScanTrackerPort(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue(
                     "K-1", priority=IssuePriority.URGENT, blocked_by=["K-2"]
@@ -1866,7 +1852,7 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
         that clause's own rule is unchanged: a blocker that is closed is a
         premise already delivered.
         """
-        tracker = RelationlessScanTrackerPort(
+        tracker = FakeTrackerPort(
             issues=[
                 make_tracker_issue("K-1", blocked_by=["K-2"]),
                 make_tracker_issue(

@@ -551,13 +551,6 @@ class FireDispatcher:
                 clause=ExclusionClause.NOT_OPEN,
                 detail=issue.state_name,
             )
-        blocking = await self._live_blocker_of(issue)
-        if blocking is not None:
-            return IssueExclusion(
-                issue_key=issue.issue_key,
-                clause=ExclusionClause.LIVE_BLOCKER,
-                detail=blocking,
-            )
         claim = await self._tracker.active_claim(issue_key=issue.issue_key)
         run_is_live = await self._run_is_live(issue.issue_key)
         if not clause_unclaimed(claim=claim, run_is_live=run_is_live):
@@ -619,12 +612,19 @@ class FireDispatcher:
         )
 
     async def _live_blocker_of(self, issue: TrackerIssue) -> str | None:
-        """Clause 4 over *issue*'s own edges: the first live blocker's key.
+        """The live-blocker clause over *issue*'s edges: the first one's key.
 
         Each blocker is read, because whether an edge blocks is a fact
         about the issue at its far end — a closed blocker is a delivered
-        premise, not a standing one.  The same reading serves the scan-time
-        clause and the pre-claim one (KOD-173).
+        premise, not a standing one.
+
+        Asked at ONE site, the pre-claim reading of the winner (KOD-173).
+        The clause used to be asked a second time over every scan entry as
+        well, which could only ever pass: the backend answers a listing
+        with each issue's own fields and no edges at all, so
+        ``blocker_keys`` read an empty tuple there and the arm decided
+        nothing in production.  Two sites for one clause is one site whose
+        answer is a lie, so the vacuous one is gone.
         """
         blockers = {
             key: await self._tracker.read_issue(issue_key=key)
