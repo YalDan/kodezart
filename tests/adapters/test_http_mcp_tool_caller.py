@@ -96,9 +96,9 @@ async def answer_with(caller: HttpMcpToolCaller, status: HTTPStatus) -> None:
     client raises its status error inside the task group that drives the
     session, and this hook is the only place the status is still legible.
     """
-    client = caller._http_client()
-    for hook in client.event_hooks["response"]:
-        await hook(httpx.Response(status_code=status))
+    async with caller._http_client() as client:
+        for hook in client.event_hooks["response"]:
+            await hook(httpx.Response(status_code=status))
 
 
 class TestARefusedCredential:
