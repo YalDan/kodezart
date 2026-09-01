@@ -283,11 +283,20 @@ class DocumentEntry(OperationModel):
     does not hold it.  A document in the KNOWLEDGE system must declare its
     id at load, because nothing in this process can create one there and an
     unadopted id would render as a placeholder no session can open.
+
+    ``container`` is the declared team the CREATE arm files the document
+    under, addressed by its key in ``teams``.  The live backend refuses a
+    container-less document outright (KOD-166), and which container is not
+    the code's to pick — an operation may declare several teams and none of
+    them is "first".  Read only when creation is needed: an adopted
+    document already lives where it lives, so a declared id never consults
+    this field.
     """
 
     system: DocumentSystem
     name: str = Field(min_length=1)
     id: str | None = None
+    container: str | None = None
 
     @model_validator(mode="after")
     def _knowledge_documents_declare_an_id(self) -> Self:
@@ -487,6 +496,15 @@ class OperationConfig(OperationModel):
                 f"documents is missing the stable checkpoint key "
                 f"{CHECKPOINT_DOCUMENT_KEY!r}",
             )
+
+        # A container names the declared team the create arm files the
+        # document under, so a key outside ``teams`` routes creation
+        # nowhere and is refused at load rather than at the vendor.
+        failures.extend(
+            f"documents[{key!r}].container {entry.container!r} names no declared team"
+            for key, entry in self.documents.items()
+            if entry.container is not None and entry.container not in self.teams
+        )
 
         if self.records and RUN_LOG_RECORD_KEY not in self.records:
             failures.append(

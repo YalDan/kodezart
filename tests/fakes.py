@@ -2404,7 +2404,23 @@ class FakeLinearMcpServer:
         for: a call naming an existing id would be an update, and an
         ensure that updated a document would be the rename the refusal
         exists to prevent.
+
+        A create naming no container is refused with the live server's own
+        words: the vendor files every document in a container, and a fake
+        accepting the bare call is how the broken create arm stayed
+        certified until a live boot reached it (KOD-166).
         """
+        if not any(
+            container in arguments
+            for container in ("project", "issue", "initiative", "cycle", "team")
+        ):
+            raise McpTransportError(
+                "the MCP server reported a tool error: Error: One of "
+                "project, issue, initiative, cycle, or team must be "
+                "specified",
+                server_name="fake-linear",
+                tool_name="save_document",
+            )
         title = str(arguments["title"])
         self._sequence += 1
         document = FakeMcpDocument(
@@ -3018,9 +3034,10 @@ class FakeTrackerPort:
     def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
         """The document arm of the ensure contract, held identically here.
 
-        Same three refusals as the adapter, for the same reasons: an id the
+        Same four refusals as the adapter, for the same reasons: an id the
         workspace does not hold, an id whose document carries another
-        title, and a title two documents share.
+        title, a title two documents share, and a create with no declared
+        container (the backend files every document in one; KOD-166).
         """
         if ref.identifier is not None:
             title = self.document_titles.get(ref.identifier)
@@ -3055,6 +3072,14 @@ class FakeTrackerPort:
                 ref=ref,
                 action=EnsureAction.ADOPTED,
                 identifier=held[0],
+            )
+        if ref.scope is None:
+            raise TrackerEnsureConflictError(
+                "creating this document needs a container: the backend files "
+                "every document in one and refuses a create naming none "
+                "(KOD-166); declare the entry's container (a declared team) "
+                "or pre-create the document and declare its id",
+                entry=ref.describe(),
             )
         self._sequence += 1
         identifier = f"fake-document-{self._sequence:04d}"

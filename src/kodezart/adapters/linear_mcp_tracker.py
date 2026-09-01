@@ -1135,12 +1135,15 @@ class LinearMcpTracker:
     ) -> MappingOutcome:
         """Adopt the declared document, or create one carrying its title.
 
-        Three refusals, and each names a different workspace fact: a
-        declared id the workspace does not hold (creating a second document
-        would leave the config pointing at neither), a declared id whose
-        document carries another title (serving this ref would rename
-        somebody's document), and a title two documents share (adopting
-        either one is a coin toss the operator did not ask for).
+        Four refusals, and each names a different fact: a declared id the
+        workspace does not hold (creating a second document would leave the
+        config pointing at neither), a declared id whose document carries
+        another title (serving this ref would rename somebody's document),
+        a title two documents share (adopting either one is a coin toss the
+        operator did not ask for), and a create with no declared container
+        (the backend files every document in one and refuses a bare create
+        — refused HERE, before the call, rather than after the transport
+        retries a deterministic vendor refusal; KOD-166).
         """
         if ref.identifier is not None:
             title = definitions.get(ref.identifier)
@@ -1174,7 +1177,18 @@ class LinearMcpTracker:
                 action=EnsureAction.ADOPTED,
                 identifier=held[0],
             )
-        payload = await self._call(_TOOL_SAVE_DOCUMENT, {"title": ref.name})
+        if ref.scope is None:
+            raise TrackerEnsureConflictError(
+                "creating this document needs a container: the backend files "
+                "every document in one and refuses a create naming none "
+                "(KOD-166); declare the entry's container (a declared team) "
+                "or pre-create the document and declare its id",
+                entry=ref.describe(),
+            )
+        payload = await self._call(
+            _TOOL_SAVE_DOCUMENT,
+            {"title": ref.name, "team": ref.scope},
+        )
         created = self._validate(
             LinearDocumentSummaryWire,
             payload,

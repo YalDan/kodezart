@@ -67,6 +67,7 @@ def _operation_toml(
     teams: dict[str, str] | None = None,
     document_title: str = DOCUMENT_TITLE,
     document_id: str | None = DOCUMENT_KEY,
+    document_container: str | None = "engineering",
     record_id: str = RUN_LOG_KEY,
     knowledge: dict[str, str] | None = None,
 ) -> str:
@@ -74,7 +75,9 @@ def _operation_toml(
 
     ``document_id`` at ``None`` is the fresh-workspace shape: the operation
     names the checkpoint document and boot adopts whatever id the workspace
-    assigns it.
+    assigns it.  ``document_container`` is the declared team creation files
+    it under (KOD-166); ``None`` is the undeclared shape the refusal case
+    boots with.
 
     ``record_id`` is the tracker-side run log's, which the operation
     declares rather than adopts: a record destination is EXTERNAL, so boot
@@ -99,6 +102,9 @@ def _operation_toml(
         for key, name in (ONE_TEAM if teams is None else teams).items()
     )
     declared_id = "" if document_id is None else f'\nid = "{document_id}"'
+    declared_container = (
+        "" if document_container is None else f'\ncontainer = "{document_container}"'
+    )
     return f"""
 operation_name = "fixture"
 workspace = "fixture-workspace"
@@ -135,7 +141,7 @@ command = "make check"
 
 [documents.checkpoint]
 system = "tracker"
-name = "{document_title}"{declared_id}
+name = "{document_title}"{declared_id}{declared_container}
 
 [records.run_log]
 system = "tracker"
@@ -383,7 +389,9 @@ async def test_a_declared_document_the_workspace_lacks_is_created_at_boot(
     async with lifespan(app):
         adopted = app.state.operation_config.documents["checkpoint"].id
 
-    assert wired.tool_calls("save_document") == [{"title": title}]
+    assert wired.tool_calls("save_document") == [
+        {"title": title, "team": "fixture-team"}
+    ]
     assert wired.documents[adopted].title == title
     reconciled = [
         event
@@ -393,6 +401,37 @@ async def test_a_declared_document_the_workspace_lacks_is_created_at_boot(
     assert (
         f"document '{title}' -> (assigned by the workspace)" in reconciled[0]["created"]
     )
+
+
+async def test_an_id_less_document_with_no_container_refuses_boot_naming_it(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """Creation with nowhere to file the document aborts BEFORE the vendor.
+
+    The live backend refuses a container-less create outright (KOD-166),
+    so boot refuses on the declaration gap itself — naming what to declare
+    — rather than letting the transport retry a deterministic refusal.
+    Nothing is written.
+    """
+    title = "Fire run checkpoint"
+    _configure(
+        monkeypatch,
+        tmp_path,
+        _operation_toml(
+            document_title=title,
+            document_id=None,
+            document_container=None,
+        ),
+    )
+
+    with pytest.raises(TrackerEnsureConflictError) as caught:
+        async with lifespan(create_app()):
+            pass
+
+    assert "container" in str(caught.value)
+    assert wired.tool_calls("save_document") == []
 
 
 async def test_a_document_the_workspace_already_carries_is_adopted_not_duplicated(

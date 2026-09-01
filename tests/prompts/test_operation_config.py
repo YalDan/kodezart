@@ -202,6 +202,22 @@ def test_a_binding_naming_an_undeclared_repository_is_refused(tmp_path: Path) ->
     assert unknown in failures
 
 
+def test_a_document_container_naming_an_undeclared_team_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The container routes creation into a declared team, so a key outside
+    ``teams`` is refused at load rather than at the vendor (KOD-166)."""
+    raw = raw_example()
+    raw["documents"]["checkpoint"]["container"] = "no-such-team"
+
+    with pytest.raises(OperationConfigError) as excinfo:
+        load_operation_config(_write_toml(tmp_path, raw))
+
+    failures = " ".join(excinfo.value.failures)
+    assert "documents['checkpoint'].container" in failures
+    assert "no-such-team" in failures
+
+
 def test_a_single_repository_operation_declares_no_binding(tmp_path: Path) -> None:
     """The shipped single-repository shape keeps loading unchanged.
 

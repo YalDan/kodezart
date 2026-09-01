@@ -220,10 +220,20 @@ def written(tmp_path: Path, mutate: Mutation | None = None) -> Path:
 
 
 def rename_teams(raw: dict[str, object]) -> None:
-    """Re-key every team, so no mapping key the templates once used survives."""
+    """Re-key every team, so no mapping key the templates once used survives.
+
+    Document containers reference teams BY KEY (KOD-166), so re-keying the
+    roster moves those references with it — the declared graph stays
+    consistent, which is itself the property a rename exercises.
+    """
     teams = raw["teams"]
     assert isinstance(teams, dict)
     raw["teams"] = {f"board_{name}": entry for name, entry in teams.items()}
+    documents = raw.get("documents")
+    if isinstance(documents, dict):
+        for entry in documents.values():
+            if isinstance(entry, dict) and "container" in entry:
+                entry["container"] = f"board_{entry['container']}"
 
 
 def three_of_each(raw: dict[str, object]) -> None:

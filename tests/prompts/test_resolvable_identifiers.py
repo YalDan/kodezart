@@ -221,9 +221,11 @@ def test_documents_stays_read_side_with_no_write_flag() -> None:
     ``name`` is a display title on both registries — what an ensure keys on
     read-side, what a routine addresses its log by write-side (KOD-60 R17)
     — and it is not a write flag. ``append_only`` remains the write
-    registry's alone, which is the property this holds.
+    registry's alone, which is the property this holds. ``container`` is
+    creation PLACEMENT, not write capability: it says where boot files the
+    document it instates (KOD-166), and grants nothing about writing to it.
     """
-    assert set(DocumentEntry.model_fields) == {"system", "name", "id"}
+    assert set(DocumentEntry.model_fields) == {"system", "name", "id", "container"}
     assert set(RecordDestination.model_fields) == {
         "system",
         "name",

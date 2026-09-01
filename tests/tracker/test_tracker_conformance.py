@@ -877,12 +877,38 @@ class TestDocumentEnsure:
     TITLE = "conformance checkpoint"
     OTHER_TITLE = "conformance elsewhere"
 
-    def _ref(self, title: str, identifier: str | None = None) -> MappingRef:
+    def _ref(
+        self,
+        title: str,
+        identifier: str | None = None,
+        scope: str | None = TEAM,
+    ) -> MappingRef:
+        """A document ref declaring the fixture team as its container.
+
+        The container rides every ref by default because creation needs
+        one (KOD-166) and adoption ignores it; the refusal case passes
+        ``scope=None`` explicitly.
+        """
         return MappingRef(
             kind=MappingKind.DOCUMENT,
             name=title,
             identifier=identifier,
+            scope=scope,
         )
+
+    async def test_a_create_with_no_declared_container_is_refused(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The backend files every document in a container, so a create
+        naming none is refused up front, naming what to declare (KOD-166).
+        """
+        with pytest.raises(TrackerEnsureConflictError) as caught:
+            await tracker.ensure_mappings(
+                refs=[self._ref(self.TITLE, scope=None)],
+            )
+
+        assert "container" in str(caught.value)
 
     async def _adopted_id(self, tracker: TrackerPort, title: str) -> str:
         (outcome,) = await tracker.ensure_mappings(refs=[self._ref(title)])

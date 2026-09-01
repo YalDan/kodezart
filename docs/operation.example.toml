@@ -201,10 +201,17 @@ depends_on = "build"
 # `id` line below when copying this file: the value is a placeholder, and boot
 # will name it as an entry it cannot resolve rather than quietly creating a
 # second document beside it.
+#
+# `container` names the declared team (a key under [teams.*]) creation files
+# the document under — the backend files every document in a container and
+# refuses a bare create (KOD-166). Read only when boot has to CREATE: an
+# adopted document already lives where it lives. An id-less entry with no
+# container refuses boot naming exactly this line.
 [documents.checkpoint]
 system = "tracker"
 name = "Example Run Log"
 id = "example-checkpoint-document-id"
+container = "primary"
 
 # Every `system = "knowledge"` entry below requires the deployment to grant
 # the knowledge server to the scheduled passes (KODEZART_KNOWLEDGE_SESSION_GRANTS

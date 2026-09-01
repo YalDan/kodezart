@@ -133,16 +133,22 @@ def _document_refs(
 
     Only the ones in the TRACKER system: a document in the knowledge store
     is not this port's to create, declares its id at load, and therefore
-    has nothing for an ensure to do.  No container scope is carried — a
-    document belongs to the workspace, not to a team, and passing the
-    operation's team here would ask the backend to file it somewhere the
-    config never said.
+    has nothing for an ensure to do.  The scope is the entry's DECLARED
+    container, resolved to that team's name — the live backend files every
+    document in a container and refuses a create that names none
+    (KOD-166), and which container is the operator's declaration, never a
+    value this builder derives.  ``None`` here means "not declared", and
+    the ensure path refuses creation on it rather than letting the vendor
+    do so after a retry cycle.
     """
     return tuple(
         MappingRef(
             kind=MappingKind.DOCUMENT,
             name=entry.name,
             identifier=entry.id,
+            scope=(
+                None if entry.container is None else config.teams[entry.container].name
+            ),
         )
         for _, entry in sorted(config.documents.items())
         if entry.system is DocumentSystem.TRACKER

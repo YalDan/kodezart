@@ -358,7 +358,11 @@ async def sent_arguments() -> Mapping[str, set[str]]:
                 identifier="queue:brand-new",
                 scope="fixture-team",
             ),
-            MappingRef(kind=MappingKind.DOCUMENT, name="a document nobody holds"),
+            MappingRef(
+                kind=MappingKind.DOCUMENT,
+                name="a document nobody holds",
+                scope="fixture-team",
+            ),
         ],
     )
     keys: dict[str, set[str]] = {}
