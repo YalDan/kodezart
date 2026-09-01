@@ -868,7 +868,13 @@ class GitAuth(Protocol):
 
 @runtime_checkable
 class QualityGate(Protocol):
-    """Iterates agent work until acceptance criteria pass or max iterations."""
+    """Iterates agent work until acceptance criteria pass or max iterations.
+
+    ``work_base_ref`` and ``base_spec`` answer two different questions:
+    the first is where the loop's first iteration cuts its branch, the
+    second is what the work is diffed against.  A round built on top of
+    an earlier round's consolidated work has them name different refs.
+    """
 
     def run(
         self,
@@ -879,6 +885,7 @@ class QualityGate(Protocol):
         feature_branch: str,
         ralph_branch: str,
         base_spec: BaseSpec,
+        work_base_ref: str,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],

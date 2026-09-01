@@ -368,6 +368,7 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
             feature_branch="kodezart/oracle-12345678",
             ralph_branch="kodezart/oracle-12345678-ralph-abcdef01",
             base_spec=trunk_base("main"),
+            work_base_ref="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             acceptance_criteria=as_validated(

@@ -23,7 +23,10 @@ from kodezart.core.config import AppConfig
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
+    AssistantTextEvent,
+    ResultEvent,
     WorkflowCompleteEvent,
+    WorkflowConsolidationEvent,
     WorkflowTicketEvent,
     WorkflowTicketReviewEvent,
 )
@@ -34,6 +37,7 @@ from kodezart.types.domain.consolidation import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistSource
+from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -55,6 +59,7 @@ from tests.fakes import (
     FakeChangePersister,
     FakeGitService,
     FakeQualityGate,
+    FakeRemediator,
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
@@ -1547,3 +1552,231 @@ async def test_the_flipped_defaults_attach_the_sets_lenses_to_the_creator(
     assert DRAFT_CRITIC_LENS in {
         definition.name for definition in prompts.definitions()
     }
+
+
+# ---------------------------------------------------------------------------
+# KOD-165 — a remediation round is built ON the work it was opened to fix
+# ---------------------------------------------------------------------------
+
+DELIVERABLE_FILE = "deliverable.txt"
+
+
+class _RoundStackingExecutor:
+    """Scripted executor whose implementation calls APPEND, never overwrite.
+
+    Each round writes one line and keeps whatever the tree already had.
+    The file on the branch afterwards is therefore a direct reading of
+    what the round's loop was built on: a round cut from the run's
+    original base carries only its own line, a round cut from the
+    consolidated feature branch carries both.
+
+    Everything with a schema is delegated to ``ScriptedFakeExecutor`` —
+    branch name, ticket, criteria, sweep, commit message and the graded
+    evaluations — so only the one behaviour under test differs.
+    """
+
+    def __init__(self, eval_results: list[dict[str, object]]) -> None:
+        self._inner = ScriptedFakeExecutor(eval_results=eval_results)
+        self.rounds: int = 0
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            async for event in self._inner.stream(
+                prompt=prompt,
+                cwd=cwd,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                skills=skills,
+                session_type=session_type,
+                agents=agents,
+                session_policy=session_policy,
+                session_id=session_id,
+                output_format=output_format,
+            ):
+                yield event
+            return
+
+        target = Path(cwd) / DELIVERABLE_FILE
+        existing = target.read_text(encoding="utf-8") if target.exists() else ""
+        target.write_text(f"{existing}round-{self.rounds}\n", encoding="utf-8")
+        self.rounds += 1
+        yield AssistantTextEvent(text="stacked change", model="scripted")
+        yield ResultEvent(
+            subtype="result",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="scripted",
+        )
+
+
+def _graded(*, passed: bool) -> dict[str, object]:
+    """One evaluation over the three criteria the scripted generator mints."""
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": f"AC-{n}",
+                "criterion": f"criterion {n}",
+                "passed": passed,
+                "reasoning": "scripted",
+            }
+            for n in (1, 2, 3)
+        ],
+    }
+
+
+def _remediation_engine(
+    repo: Path,
+    tmp_path: Path,
+    *,
+    executor: _RoundStackingExecutor,
+    remediator: FakeRemediator,
+) -> RalphWorkflowEngine:
+    """The real engine over real git, with only the model scripted."""
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    service = AgentService(
+        executor=executor,
+        workspace=workspace,
+        persister=GitChangePersister(
+            gate=PassThroughGate(),
+            prompts=make_prompt_provider(),
+            git=git,
+            committer_name="test",
+            committer_email="t@t.dev",
+            remote="origin",
+        ),
+    )
+    return RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        quality_gate=RalphLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=make_prompt_provider(),
+            service=service,
+            max_iterations=1,
+            plateau_window=2,
+            git=git,
+            cache=cache,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            fan_in_max_attempts=2,
+        ),
+        ticket_generator=TicketGenerationLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=make_prompt_provider(),
+            service=service,
+            workspace=workspace,
+            max_reviews=1,
+            review_mode=TicketReviewMode.REVIEWED,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+        ),
+        merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=git,
+        cache=cache,
+        remediator=remediator,
+        remediation_max_rounds=1,
+        artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+    )
+
+
+async def test_a_review_entry_round_is_built_on_the_consolidated_work(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """The round's loop starts where the first round's work was landed.
+
+    The first round is accepted and fast-forwarded onto the feature
+    branch; the post-merge review then rejects it, which is the entry
+    that opens a remediation round.  That round must run ON the branch
+    carrying the work it was opened to fix — anywhere else and it fixes
+    a tree that does not contain the defect, and the REAL merger reads
+    its result as ``DIVERGENT`` because neither ref is an ancestor of
+    the other.  Nothing but real git can decide that, so this runs the
+    real merger over a real repository.
+    """
+    repo, bare = git_env
+    await _git(["git", "config", "user.email", "t@t.dev"], cwd=repo)
+    await _git(["git", "config", "user.name", "test"], cwd=repo)
+    executor = _RoundStackingExecutor(
+        eval_results=[
+            _graded(passed=True),  # round 0: the loop is accepted
+            _graded(passed=False),  # round 0: the post-merge review rejects
+            _graded(passed=True),  # round 1: the fix loop is accepted
+            _graded(passed=True),  # round 1: the review accepts
+        ],
+    )
+    remediator = FakeRemediator()
+
+    events = [
+        e
+        async for e in _remediation_engine(
+            repo,
+            tmp_path,
+            executor=executor,
+            remediator=remediator,
+        ).run(
+            prompt="fix",
+            repo_path=str(repo),
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    feature = complete.feature_branch
+    assert complete.merged is True
+
+    # The round the review opened, and the ref it was told it stands on.
+    assert [call.entry for call in remediator.calls] == [
+        RemediationEntry.review_failure
+    ]
+    assert remediator.calls[0].work_base_ref == feature
+
+    # Two rounds, two consolidations, neither divergent — by construction,
+    # because the second round's branch descends from the first's result.
+    consolidations = [e for e in events if isinstance(e, WorkflowConsolidationEvent)]
+    assert [e.status for e in consolidations] == [
+        ConsolidationStatus.FAST_FORWARDED,
+        ConsolidationStatus.FAST_FORWARDED,
+    ]
+
+    # And the first round's line is still there, under the second's.
+    landed = await _git_output(
+        ["git", "show", f"{feature}:{DELIVERABLE_FILE}"],
+        cwd=bare,
+    )
+    assert landed.splitlines() == ["round-0", "round-1"]
+    assert executor.rounds == 2

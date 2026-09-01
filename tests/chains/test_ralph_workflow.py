@@ -29,6 +29,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -2898,6 +2899,7 @@ class _SequentialQualityGate:
         feature_branch: str,
         ralph_branch: str,
         base_spec: BaseSpec,
+        work_base_ref: str,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[str],
@@ -2912,6 +2914,7 @@ class _SequentialQualityGate:
                 "feature_branch": feature_branch,
                 "ralph_branch": ralph_branch,
                 "base_branch": base_spec.base_branch,
+                "work_base_ref": work_base_ref,
                 "permission_mode": permission_mode,
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
@@ -4173,7 +4176,10 @@ async def test_a_loop_that_never_accepts_opens_a_round_with_loop_evidence() -> N
     request = remediator.calls[0]
     assert request.entry is RemediationEntry.loop_not_accepted
     assert "ended without acceptance" in request.failure_evidence
-    assert request.work_base_ref.endswith("-best")
+    # Nothing was consolidated, so the run still stands on its own base.
+    # The best-iteration ref is published by the stall-exit node this arm
+    # bypasses, so naming it here would name a ref that does not exist.
+    assert request.work_base_ref == "main"
     remediation = next(e for e in events if isinstance(e, WorkflowRemediationEvent))
     assert remediation.entry is RemediationEntry.loop_not_accepted
 
@@ -4733,3 +4739,252 @@ def test_house_rules_delivered_as_system_prompt_append() -> None:
     assert sentence.strip(), "non-vacuity: the fragment has a body to look for"
     leaked = [name for name in sorted(ALL_CASES) if sentence in render_case(name)]
     assert leaked == []
+
+
+# ---------------------------------------------------------------------------
+# KOD-165: the ref a round's loop is built on
+# ---------------------------------------------------------------------------
+
+
+def _failing_criteria_results() -> list[dict[str, object]]:
+    return [
+        {
+            "criterionId": "AC-1",
+            "criterion": "Tests pass",
+            "passed": False,
+            "reasoning": "Tests fail.",
+        },
+        {
+            "criterionId": "AC-2",
+            "criterion": "No lint errors",
+            "passed": False,
+            "reasoning": "Tests fail.",
+        },
+    ]
+
+
+def _passing_criteria_results() -> list[dict[str, object]]:
+    return [
+        {
+            "criterionId": "AC-1",
+            "criterion": "Tests pass",
+            "passed": True,
+            "reasoning": "Tests pass now.",
+        },
+        {
+            "criterionId": "AC-2",
+            "criterion": "No lint errors",
+            "passed": True,
+            "reasoning": "Tests pass now.",
+        },
+    ]
+
+
+async def _review_failure_round(
+    *,
+    remediator: FakeRemediator,
+    gate: FakeQualityGate,
+    artifact_persister: FakeArtifactPersister | None = None,
+) -> list[AgentEvent]:
+    """A run whose first post-merge review rejects, opening one round."""
+    engine = _make_engine(
+        quality_gate=gate,
+        executor=_SequentialReviewExecutor(
+            review_results=[
+                {"criteriaResults": _failing_criteria_results()},
+                {"criteriaResults": _passing_criteria_results()},
+            ],
+        ),
+        remediator=remediator,
+        remediation_max_rounds=1,
+        artifact_persister=artifact_persister,
+    )
+    return [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+
+async def test_a_review_entry_round_runs_its_loop_on_the_consolidated_branch() -> None:
+    """The round's loop is handed the feature branch, not the run's base.
+
+    The first round consolidated onto the feature branch, so that branch
+    IS the tree the review rejected.  A round cut from anywhere else
+    fixes a tree that does not contain what it was opened to fix.
+    """
+    remediator = FakeRemediator()
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+
+    await _review_failure_round(remediator=remediator, gate=gate)
+
+    assert len(gate.calls) == 2
+    first, second = gate.calls
+    assert first["work_base_ref"] == "main"
+    assert second["work_base_ref"] == second["feature_branch"]
+
+
+async def test_the_round_is_told_the_ref_its_loop_will_actually_be_cut_from() -> None:
+    """One value, two readers: the request cannot state a different base.
+
+    The remediation prompt names the ref the round is based on and the
+    drafting session reads the repository at it, so a request naming a
+    ref the loop does not use is a document that contradicts the run.
+    """
+    remediator = FakeRemediator()
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+
+    await _review_failure_round(remediator=remediator, gate=gate)
+
+    assert len(remediator.calls) == 1
+    request = remediator.calls[0]
+    assert request.entry is RemediationEntry.review_failure
+    assert request.work_base_ref == gate.calls[1]["work_base_ref"]
+
+
+async def test_the_rounds_artifact_write_cuts_the_branch_from_the_same_ref() -> None:
+    """The artifact write CREATES the round's branch, so it shares the rule.
+
+    A branch cut here from the run's base is the base the loop inherits
+    when it asks for a branch that already exists, which would undo the
+    threading without touching the loop at all.
+    """
+    persister = FakeArtifactPersister()
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+
+    await _review_failure_round(
+        remediator=FakeRemediator(),
+        gate=gate,
+        artifact_persister=persister,
+    )
+
+    round_branch = gate.calls[1]["ralph_branch"]
+    bases = [
+        base
+        for (_, _, branch, base) in persister.persist_calls
+        if branch == round_branch
+    ]
+    assert bases == [gate.calls[1]["feature_branch"]]
+
+
+class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
+    """Only an integrating consolidation moves the ref a round stands on.
+
+    Keyed on what happened to the branch, never on which entry opened the
+    round: a round entered from a loop that was never accepted still
+    stands on whatever an EARLIER round consolidated, and an entry-keyed
+    rule would send it back to the run's base and diverge there.
+    """
+
+    def _config(self) -> RunnableConfig:
+        return {
+            "configurable": {
+                "prompt": "fix it",
+                "repo_path": "/tmp/fake",
+                "repo_url": None,
+                "cache_key": "test-cache",
+                "base_spec": trunk_base("main"),
+                "permission_mode": "bypassPermissions",
+                "allowed_tools": ["Bash"],
+            }
+        }
+
+    def _state(self, *, accepted: bool) -> WorkflowState:
+        state: WorkflowState = {
+            "feature_branch": "kodezart/test-12345678",
+            "ralph_branch": "kodezart/test-12345678-ralph-abcdef01",
+            "work_base_ref": "main",
+            "accept_verdict": (
+                AcceptVerdict.accepted if accepted else AcceptVerdict.rejected
+            ),
+            "trajectory": None,
+        }
+        return state
+
+    def _engine(self, merger: FakeBranchMerger) -> RalphWorkflowEngine:
+        return _make_engine(
+            merger=merger,
+            git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        )
+
+    async def _consolidate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        accepted: bool,
+        merger: FakeBranchMerger,
+    ) -> dict[str, object]:
+        monkeypatch.setattr(
+            ralph_workflow_module,
+            "get_stream_writer",
+            lambda: lambda _event: None,
+        )
+        return await self._engine(merger)._merge_to_feature_node(
+            self._state(accepted=accepted),
+            self._config(),
+        )
+
+    async def test_an_integrating_consolidation_moves_it_to_the_feature_branch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        result = await self._consolidate(
+            monkeypatch,
+            accepted=True,
+            merger=FakeBranchMerger(),
+        )
+
+        assert result["work_base_ref"] == "kodezart/test-12345678"
+
+    async def test_a_loop_that_never_cleared_the_gate_leaves_it_alone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        result = await self._consolidate(
+            monkeypatch,
+            accepted=False,
+            merger=FakeBranchMerger(),
+        )
+
+        assert "work_base_ref" not in result
+
+    async def test_a_divergent_consolidation_leaves_it_alone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        result = await self._consolidate(
+            monkeypatch,
+            accepted=True,
+            merger=FakeBranchMerger(
+                consolidation_outcomes=[
+                    ConsolidationOutcome(
+                        status=ConsolidationStatus.DIVERGENT,
+                        feature_tip_sha="c" * 40,
+                    ),
+                ],
+            ),
+        )
+
+        assert "work_base_ref" not in result

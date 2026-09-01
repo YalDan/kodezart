@@ -106,10 +106,19 @@ class RemediationRequest(CamelCaseModel):
 
 
 class RalphLoopContext(ExecutionContext):
-    """Context for the quality-gating ralph loop."""
+    """Context for the quality-gating ralph loop.
+
+    ``work_base_ref`` is where the loop's FIRST iteration cuts its
+    branch; ``base_spec`` is what the run's scope is measured against.
+    The two name the same ref until a round consolidates work onto the
+    feature branch — after that a remediation round is BUILT ON that
+    work while its scope is still read against the lane's recorded base,
+    which is why they are separate values and not one.
+    """
 
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
+    work_base_ref: str = Field(min_length=1)
     acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
     repo_visibility: RepoVisibility
 
@@ -172,10 +181,20 @@ class WorkflowState(TypedDict):
     from whichever trajectory happens to be last, because a round that
     commits nothing would otherwise make a run that plainly did work look
     as though it had done none.
+
+    ``work_base_ref`` is the ref the next loop cuts its ralph branch
+    from.  It starts as the run's base and becomes the feature branch
+    the moment a consolidation puts work there — written by the node
+    that makes it true and by no other — so a remediation round is built
+    ON TOP of the work it was opened to fix, and its own consolidation
+    fast-forwards by construction rather than diverging.  It is NOT a
+    second scope base: what the run is diffed against stays
+    ``base_spec`` on the execution context.
     """
 
     feature_branch: str
     ralph_branch: str
+    work_base_ref: str
     ticket: TicketDraftOutput | None
     acceptance_criteria: list[GeneratedCriterion]
     criteria_artifact: CriteriaArtifact | None

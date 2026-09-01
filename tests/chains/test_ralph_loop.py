@@ -102,6 +102,7 @@ class _RunKwargs(TypedDict):
     feature_branch: str
     ralph_branch: str
     base_spec: BaseSpec
+    work_base_ref: str
     permission_mode: str
     allowed_tools: list[str]
     acceptance_criteria: list[ValidatedCriterion]
@@ -113,14 +114,19 @@ def _run_kwargs(
     *,
     acceptance_criteria: list[ValidatedCriterion] | None = None,
     base_spec: BaseSpec | None = None,
+    work_base_ref: str | None = None,
 ) -> _RunKwargs:
+    spec = base_spec if base_spec is not None else trunk_base("main")
     return _RunKwargs(
         prompt="fix it",
         repo_path="/tmp/fake",
         repo_url=None,
         feature_branch="kodezart/test-12345678",
         ralph_branch="kodezart/test-12345678-ralph-abcdef01",
-        base_spec=base_spec if base_spec is not None else trunk_base("main"),
+        base_spec=spec,
+        # A first round cuts its branch from the base it is scoped
+        # against; only a remediation round is handed a different ref.
+        work_base_ref=work_base_ref if work_base_ref is not None else spec.base_branch,
         permission_mode="bypassPermissions",
         allowed_tools=["Bash"],
         acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),

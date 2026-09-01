@@ -388,6 +388,7 @@ async def evaluator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunne
         feature_branch="kodezart/test-12345678",
         ralph_branch="kodezart/test-12345678-ralph-abcdef01",
         base_spec=trunk_base("main"),
+        work_base_ref="main",
         permission_mode="bypassPermissions",
         allowed_tools=["Bash"],
         acceptance_criteria=criteria,

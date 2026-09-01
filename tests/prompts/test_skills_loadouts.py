@@ -299,6 +299,7 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
                 feature_branch="kodezart/f",
                 ralph_branch="kodezart/f-ralph",
                 base_spec=trunk_base("main"),
+                work_base_ref="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 acceptance_criteria=make_criteria("Tests pass"),

@@ -273,6 +273,7 @@ class RalphWorkflowEngine:
         initial_state: WorkflowState = {
             "feature_branch": "",
             "ralph_branch": "",
+            "work_base_ref": base_spec.base_branch,
             "ticket": None,
             "acceptance_criteria": [],
             "criteria_artifact": None,
@@ -840,6 +841,7 @@ class RalphWorkflowEngine:
         feature_branch: str,
         ralph_branch: str,
         base_spec: BaseSpec,
+        work_base_ref: str,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -856,6 +858,7 @@ class RalphWorkflowEngine:
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
             base_spec=base_spec,
+            work_base_ref=work_base_ref,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
@@ -877,7 +880,12 @@ class RalphWorkflowEngine:
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Delegate to the quality gate for iterative execution."""
+        """Delegate to the quality gate for iterative execution.
+
+        The round's ticket and the ref its branch is cut from arrive the
+        same way — off the state a remediation round wrote — so a round
+        implementing a fix is built on the tree that fix is about.
+        """
         ctx = ExecutionContext.from_configurable(config)
 
         ticket = current_ticket(state)
@@ -893,6 +901,7 @@ class RalphWorkflowEngine:
             feature_branch=state["feature_branch"],
             ralph_branch=state["ralph_branch"],
             base_spec=ctx.base_spec,
+            work_base_ref=state["work_base_ref"],
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=validated_criteria(state),
@@ -949,7 +958,7 @@ class RalphWorkflowEngine:
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             branch=state["ralph_branch"],
-            base_branch=ctx.base_branch,
+            base_branch=state["work_base_ref"],
             artifacts={
                 "ticket.json": await self._gated(
                     content=ticket.model_dump_json(indent=2, by_alias=True),
@@ -980,6 +989,11 @@ class RalphWorkflowEngine:
         the write that reaches the branch after that happens.  A branch
         carrying the original ticket while the loop implements the
         remediation one would be a document that contradicts the work.
+
+        This node CREATES the round's ralph branch when it runs, before
+        the loop's first iteration ever asks for it, so it cuts from the
+        run's work base for the same reason the loop does — a branch cut
+        here from anywhere else is the base the loop would inherit.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -1015,7 +1029,7 @@ class RalphWorkflowEngine:
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             branch=state["ralph_branch"],
-            base_branch=ctx.base_branch,
+            base_branch=state["work_base_ref"],
             artifacts=artifacts,
             cache_key=ctx.cache_key,
         )
@@ -1043,6 +1057,11 @@ class RalphWorkflowEngine:
         outcome.  Never catches exceptions around the merger — the merger
         is a total function over the four statuses.  ``SOURCE_MISSING`` is
         a programming error (the loop must have pushed) and raises.
+
+        This is the ONLY writer of ``work_base_ref``, and it writes it on
+        exactly the two statuses that put work on the feature branch.
+        Every other arm omits the key, leaving the ref a later round
+        stands on where the last integration left it.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -1121,6 +1140,7 @@ class RalphWorkflowEngine:
             "feature_tip_sha": outcome.feature_tip_sha,
             "review_base_sha": base_tip,
             "review_head_sha": outcome.feature_tip_sha,
+            "work_base_ref": state["feature_branch"],
         }
 
     def _route_after_merge(self, state: WorkflowState) -> str:
@@ -1459,6 +1479,11 @@ class RalphWorkflowEngine:
         and the validation gate that already exist, which is what keeps
         the gate un-bypassable: there is no second criteria path to
         remember to route through.
+
+        ``work_base_ref`` is READ, never derived: the request states the
+        ref the round's loop will actually be cut from, because it is the
+        same value the loop node reads, and the drafting session reads
+        the repository at that ref.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -1469,7 +1494,7 @@ class RalphWorkflowEngine:
             raise RuntimeError(msg)
 
         entry = self._remediation_entry(state)
-        work_base_ref = self._remediation_base_ref(state, entry)
+        work_base_ref = state["work_base_ref"]
         request = RemediationRequest(
             entry=entry,
             round_index=state["remediation_rounds_used"],
@@ -1535,22 +1560,6 @@ class RalphWorkflowEngine:
         if state["merged"] and state["review_passed"] is False:
             return RemediationEntry.review_failure
         return RemediationEntry.loop_not_accepted
-
-    def _remediation_base_ref(
-        self,
-        state: WorkflowState,
-        entry: RemediationEntry,
-    ) -> str:
-        """The ref the round's loop is built on top of.
-
-        The CI and review entries have their work consolidated onto the
-        feature branch already.  The loop entry does not — its feature
-        branch was never fast-forwarded — so the round builds on the ref
-        carrying the run's best iteration instead.
-        """
-        if entry is RemediationEntry.loop_not_accepted:
-            return best_iteration_ref(state["feature_branch"])
-        return state["feature_branch"]
 
     def _failure_evidence(
         self,
