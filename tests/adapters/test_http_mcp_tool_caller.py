@@ -20,13 +20,19 @@ first optional and the vendor's live server sends only the second
 Every refusal names its ground; no silent arm.
 """
 
+import asyncio
+import time
 from collections.abc import Mapping
+from datetime import timedelta
 from http import HTTPStatus
 from typing import Final
 
 import httpx
 import pytest
-from mcp.types import CallToolResult, TextContent
+from mcp import types
+from mcp.server.lowlevel import Server
+from mcp.shared.memory import create_connected_server_and_client_session
+from mcp.types import CallToolResult, ContentBlock, TextContent
 
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.core.errors import McpCredentialRefusedError, McpTransportError
@@ -34,30 +40,90 @@ from kodezart.core.errors import McpCredentialRefusedError, McpTransportError
 _FIXTURE_TOKEN: Final[str] = "fixture-tracker-token"
 _ERROR_DETAIL_LIMIT: Final[int] = 500
 
+#: The read timeout the cases below give one tool call.  Short, because
+#: what is being observed is that the bound EXISTS: the production default
+#: is a minute and a suite cannot wait for one.
+_CALL_TIMEOUT_SECONDS: Final[float] = 0.2
 
-def caller_fixture() -> HttpMcpToolCaller:
+#: How long a call is allowed to take before the case reports a hang
+#: instead of waiting one out.  Without it, deleting the read timeout
+#: leaves the suite hung rather than red — which is the state this whole
+#: bound exists to prevent, and a test cannot demonstrate it by joining it.
+_HANG_CEILING_SECONDS: Final[float] = 5.0
+
+#: The fixture server's two tools: one that answers, one that never does.
+_ANSWERING_TOOL: Final[str] = "answers"
+_HANGING_TOOL: Final[str] = "never_answers"
+_ANSWER: Final[str] = '{"id": "K-1"}'
+
+
+def caller_fixture(
+    *,
+    call_timeout_seconds: float = _CALL_TIMEOUT_SECONDS,
+) -> HttpMcpToolCaller:
     return HttpMcpToolCaller(
         url="https://mcp.invalid/mcp",
         server_name="fixture-server",
         token=_FIXTURE_TOKEN,
         timeout_seconds=5.0,
+        call_timeout_seconds=call_timeout_seconds,
         auth_header_name="Authorization",
         auth_scheme="Bearer",
         error_detail_limit=_ERROR_DETAIL_LIMIT,
     )
 
 
+def fixture_server() -> Server[object]:
+    """An MCP server that answers one tool and never answers the other.
+
+    A real server behind a real ``ClientSession``, because the bound under
+    test is the SESSION's: a stub standing in for it would have to
+    implement the timeout itself, and the case would then be asserting the
+    stub.  The hanging tool is the measured state in miniature — a session
+    that stops answering without ending.
+    """
+    server: Server[object] = Server("fixture-server")
+
+    @server.list_tools()
+    async def _tools() -> list[types.Tool]:
+        return [
+            types.Tool(
+                name=name,
+                description=name,
+                inputSchema={"type": "object"},
+            )
+            for name in (_ANSWERING_TOOL, _HANGING_TOOL)
+        ]
+
+    @server.call_tool()
+    async def _call(name: str, arguments: Mapping[str, object]) -> list[ContentBlock]:
+        if name == _HANGING_TOOL:
+            await asyncio.Event().wait()
+        return [TextContent(type="text", text=_ANSWER)]
+
+    return server
+
+
 class _StubSession:
-    """The slice of ``ClientSession`` the transport touches."""
+    """The slice of ``ClientSession`` the transport touches.
+
+    ``read_timeout_seconds`` is accepted and RECORDED rather than
+    honoured: what a stub can say about the bound is that the transport
+    passes one, and the cases that prove the bound actually ends a call
+    run against a real session (KOD-269).
+    """
 
     def __init__(self, result: CallToolResult | None = None) -> None:
         self._result = result
+        self.read_timeouts: list[timedelta | None] = []
 
     async def call_tool(
         self,
         name: str,
         arguments: Mapping[str, object],
+        read_timeout_seconds: timedelta | None = None,
     ) -> CallToolResult:
+        self.read_timeouts.append(read_timeout_seconds)
         if self._result is None:
             raise ConnectionResetError("wire dropped mid-call")
         return self._result
@@ -309,3 +375,95 @@ class TestTextContentResults:
             match="neither an object nor an array",
         ):
             await caller.call_tool(name="get_issue", arguments={})
+
+
+class TestACallTheServerNeverAnswers:
+    """The hang a torn-down session produces, bounded (KOD-269).
+
+    Measured 2026-09-01 (KOD-171): the server began refusing the
+    credential, the reader driving the session was cancelled, and the
+    close that would have ended the awaited response was never sent — so
+    the worker's call in flight waited forever.  The retry classification
+    the same defect produced only reaches the NEXT call; this is what
+    ends the one already out.
+
+    Proved load-bearing by reverting it: with the ``read_timeout_seconds``
+    argument removed from ``call_tool``, the two cases below reach
+    ``_HANG_CEILING_SECONDS`` and fail on ``TimeoutError`` — red rather
+    than hung, which is what the ceiling is for.
+    """
+
+    async def test_an_unanswered_call_fails_as_the_transport_error_in_time(
+        self,
+    ) -> None:
+        caller = caller_fixture()
+
+        async with create_connected_server_and_client_session(
+            fixture_server(),
+        ) as session:
+            caller._session = session
+            started = time.perf_counter()
+            with pytest.raises(McpTransportError) as excinfo:
+                await asyncio.wait_for(
+                    caller.call_tool(name=_HANGING_TOOL, arguments={}),
+                    timeout=_HANG_CEILING_SECONDS,
+                )
+            elapsed = time.perf_counter() - started
+
+        assert excinfo.value.tool_name == _HANGING_TOOL
+        assert excinfo.value.server_name == "fixture-server"
+        assert elapsed < _HANG_CEILING_SECONDS
+
+    async def test_a_refused_credential_still_classifies_within_the_bound(
+        self,
+    ) -> None:
+        """The production shape: the 401 is seen, then the call in flight ends.
+
+        The refusal is observed on a response and the session stops
+        answering — which is one event, not two — so the call that was
+        already out has to end on the timeout AND leave as the credential
+        class, or the retry loop above sees a blip and spends its budget.
+        """
+        caller = caller_fixture()
+        await answer_with(caller, HTTPStatus.UNAUTHORIZED)
+
+        async with create_connected_server_and_client_session(
+            fixture_server(),
+        ) as session:
+            caller._session = session
+            with pytest.raises(McpCredentialRefusedError) as excinfo:
+                await asyncio.wait_for(
+                    caller.call_tool(name=_HANGING_TOOL, arguments={}),
+                    timeout=_HANG_CEILING_SECONDS,
+                )
+
+        assert not isinstance(excinfo.value, McpTransportError)
+        assert excinfo.value.tool_name == _HANGING_TOOL
+
+    async def test_the_configured_bound_travels_with_every_call(self) -> None:
+        """The number is the operator's and reaches the session verbatim.
+
+        The cases above prove a bound ends a call; this one proves the
+        bound is the CONFIGURED one and not a literal chosen here.
+        """
+        caller = caller_fixture()
+        session = _StubSession(
+            CallToolResult(content=[], structuredContent={"id": "K-1"}),
+        )
+        caller._session = session
+
+        await caller.call_tool(name="get_issue", arguments={})
+
+        assert session.read_timeouts == [timedelta(seconds=_CALL_TIMEOUT_SECONDS)]
+
+    async def test_a_server_that_answers_is_untouched_by_the_bound(self) -> None:
+        """The paired positive: a bound is not a shorter leash on a live call."""
+        caller = caller_fixture()
+
+        async with create_connected_server_and_client_session(
+            fixture_server(),
+        ) as session:
+            caller._session = session
+            result = await caller.call_tool(name=_ANSWERING_TOOL, arguments={})
+
+        assert result == {"id": "K-1"}

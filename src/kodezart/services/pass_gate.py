@@ -54,7 +54,11 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import assert_never
 
-from kodezart.core.errors import McpTransportError, PassGateScopeError
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    McpTransportError,
+    PassGateScopeError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.git_url import is_forge_less_origin
@@ -121,12 +125,23 @@ class PassGate:
             for container in self._containers(signal):
                 try:
                     changed.extend(await self._observe(signal, container))
-                except McpTransportError as exc:
+                # One arm over both refusals the port surfaces, because the
+                # gate's answer to either is the same: this container was
+                # not read, it keeps its own mark, and the rest are still
+                # asked.  A credential the server refuses is not a blip
+                # the way a transport failure is — but the alternative
+                # here was no arm at all, and the class escaped a gate
+                # whose whole contract is that an unanswerable ask never
+                # reads as a quiet board (KOD-277).  The class rides in
+                # the event, so the operator sees which of the two the
+                # container met.
+                except (McpTransportError, McpCredentialRefusedError) as exc:
                     unanswerable.append(f"{signal.value}@{container}")
                     await self._log.awarning(
                         "pass_gate_signal_unanswerable",
                         signal=signal.value,
                         container=container,
+                        error_type=type(exc).__name__,
                         error=str(exc),
                     )
         # The value's mark is the newest stamp ACROSS the delta-bearing

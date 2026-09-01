@@ -380,22 +380,32 @@ class _FailingDispatcher:
     board exactly as the gate found it.
     """
 
-    def __init__(self, *, block: asyncio.Event | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        block: asyncio.Event | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.calls: int = 0
         self._block: asyncio.Event | None = block
+        self._error: Exception = (
+            TimeoutError("the delivery probe could not be reached")
+            if error is None
+            else error
+        )
 
     async def run_pass(self) -> DispatchReport:
         self.calls += 1
         if self._block is not None:
             await self._block.wait()
-        msg = "the delivery probe could not be reached"
-        raise TimeoutError(msg)
+        raise self._error
 
 
 def failing_tick(
     tracker: FakeTrackerPort,
     *,
     block: asyncio.Event | None = None,
+    error: Exception | None = None,
 ) -> tuple[GatedDispatchPass, PassGate, _FailingDispatcher]:
     """The shipped tick and gate, over a pass that cannot finish."""
     queue = FakeJobQueue()
@@ -406,7 +416,7 @@ def failing_tick(
         repo_urls=[PRIMARY_REPO],
         page_size=PAGE_SIZE,
     )
-    dispatcher = _FailingDispatcher(block=block)
+    dispatcher = _FailingDispatcher(block=block, error=error)
     return (
         GatedDispatchPass(
             lifecycle=LifecycleWatcher(
@@ -463,6 +473,29 @@ class TestAFailedPassGivesTheWakeUpBack:
 
         assert dispatcher.calls == 2, "the second tick reached the pass again"
         assert [scan.updated_since for scan in tracker.scans] == [None, None]
+
+    async def test_a_refused_credential_gives_the_wake_up_back_too(self) -> None:
+        """The class the gate names rather than leaking (KOD-277).
+
+        A credential refusal beneath the gate is a pass that read nothing,
+        so the window it was woken for is owed back exactly as a transport
+        timeout's is — and the refusal itself still leaves the tick, where
+        the scheduler names it.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        pass_, guard, _ = failing_tick(
+            tracker,
+            error=McpCredentialRefusedError(
+                "the server refused the credential",
+                server_name="linear",
+                tool_name="get_issue",
+            ),
+        )
+
+        with pytest.raises(McpCredentialRefusedError):
+            await pass_.run()
+
+        assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
 
     async def test_a_tick_that_completed_still_advances_its_mark(self) -> None:
         """The paired positive: only a failure gives the window back."""

@@ -26,6 +26,7 @@ from pathlib import Path
 
 import structlog
 
+from kodezart.core.errors import McpCredentialRefusedError
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.run_records import RunOutcome
 from tests.fakes import RecordingLogger
@@ -81,6 +82,65 @@ class Exploder:
         self.calls += 1
         msg = "the pass could not reach the tracker"
         raise RuntimeError(msg)
+
+
+class CredentialRefuser:
+    """A pass whose tracker refuses the credential on every tick.
+
+    The class the gate now names rather than leaking (KOD-277) still
+    reaches the scheduler from everything BENEATH the gate — the
+    dispatcher's own reads — and a refused credential answers every tick
+    the same way, so the loop must keep reporting it by name rather than
+    ending on it.
+    """
+
+    def __init__(self) -> None:
+        self.calls: int = 0
+
+    async def run(self) -> None:
+        await asyncio.sleep(0)
+        self.calls += 1
+        raise McpCredentialRefusedError(
+            "the server refused the credential",
+            server_name="linear",
+            tool_name="get_issue",
+        )
+
+
+async def test_a_refused_credential_is_reported_by_name_every_tick() -> None:
+    """The failure event names the class and the server that refused it.
+
+    A credential outage is the one failure an operator can actually fix,
+    and it is indistinguishable from any other pass failure unless the
+    event says which class ended the tick.
+    """
+    refuser = CredentialRefuser()
+    metronome = Metronome(limit=TICKS)
+    log = RecordingLogger()
+
+    scheduler = PassScheduler(
+        passes=[
+            ScheduledPass(
+                name="dispatch",
+                interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=refuser.run,
+            ),
+        ],
+        sleep=metronome.sleep,
+        log=log,
+    )
+    await scheduler.start()
+    await _settle(metronome.parked)
+    await scheduler.stop()
+
+    assert refuser.calls == TICKS
+    failures = log.named("scheduled_pass_failed")
+    assert len(failures) == TICKS, "a refusal does not end the loop"
+    assert failures[0].fields["error_type"] == McpCredentialRefusedError.__name__
+    assert failures[0].fields["error"] == (
+        "the server refused the credential (linear/get_issue)"
+    )
 
 
 class Sleeper:

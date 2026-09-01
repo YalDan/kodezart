@@ -190,6 +190,7 @@ def _knowledge_caller(
         server_name=config.knowledge_mcp_server_name,
         token=token.get_secret_value(),
         timeout_seconds=config.knowledge_mcp_timeout_seconds,
+        call_timeout_seconds=config.knowledge_mcp_call_timeout_seconds,
         auth_header_name=config.knowledge_mcp_auth_header,
         auth_scheme=config.knowledge_mcp_auth_scheme,
         error_detail_limit=config.knowledge_mcp_error_detail_limit,

@@ -22,7 +22,11 @@ from pathlib import Path
 import pytest
 import structlog.testing
 
-from kodezart.core.errors import McpTransportError, PassGateScopeError
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    McpTransportError,
+    PassGateScopeError,
+)
 from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import OperationMemberAbsentError, QueueState
@@ -494,6 +498,20 @@ async def test_a_gate_with_no_repository_refuses_its_review_signal() -> None:
     assert tracker.review_scans == []
 
 
+#: The two refusals a tracker port surfaces, and what each one is called
+#: where the gate names it.
+TRANSPORT_REFUSAL = McpTransportError(
+    "the MCP tool call failed in transport",
+    server_name="fixture",
+    tool_name="scan",
+)
+CREDENTIAL_REFUSAL = McpCredentialRefusedError(
+    "the server refused the credential",
+    server_name="fixture",
+    tool_name="scan",
+)
+
+
 class RefusingTracker(FakeTrackerPort):
     """A double that cannot ANSWER for named containers.
 
@@ -509,9 +527,15 @@ class RefusingTracker(FakeTrackerPort):
         *,
         issues: Sequence[TrackerIssue] = (),
         refused: Sequence[str] = (),
+        error: Exception | None = None,
     ) -> None:
         super().__init__(issues=issues)
         self.refused: set[str] = set(refused)
+        #: What the refusal is: a transport that could not answer, or a
+        #: credential the server refused outright.  Both reach the gate
+        #: through the same port call and neither may read as a quiet
+        #: board (KOD-277).
+        self.error: Exception = TRANSPORT_REFUSAL if error is None else error
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
         self._refuse(query.team_key)
@@ -523,11 +547,7 @@ class RefusingTracker(FakeTrackerPort):
 
     def _refuse(self, container: str | None) -> None:
         if container in self.refused:
-            raise McpTransportError(
-                "the MCP tool call failed in transport",
-                server_name="fixture",
-                tool_name="scan",
-            )
+            raise self.error
 
 
 async def test_an_ask_that_could_not_be_answered_never_reads_as_nothing_moved() -> None:
@@ -697,3 +717,70 @@ class TestRearmingAMarkTheConsumerNeverRead:
         subject.rearm()
 
         assert subject.mark(PassSignal.approved_changed, container=TEAM) is None
+
+
+class TestACredentialRefusalIsNamedRatherThanUnhandled:
+    """The class the gate had no arm for (KOD-277).
+
+    Measured at ``2b6953f``: ``McpCredentialRefusedError`` was introduced
+    outside the retried classes, and ``delta`` caught only the transport
+    class — so a server refusing the credential raised straight out of the
+    gate.  The gate's contract is that an ask it could not answer is named
+    and skipped, never read as a quiet board, and that contract is about
+    the ASK, not about which of the two refusals ended it.
+    """
+
+    async def test_the_refusal_is_named_with_its_class_and_never_escapes(self) -> None:
+        tracker = RefusingTracker(refused=[TEAM], error=CREDENTIAL_REFUSAL)
+        subject = signal_gate(tracker, PassSignal.issues_changed)
+
+        with structlog.testing.capture_logs() as logs:
+            delta = await subject.delta()
+
+        assert not delta.has_delta()
+        assert [
+            (entry["signal"], entry["container"], entry["error_type"])
+            for entry in logs
+            if entry["event"] == "pass_gate_signal_unanswerable"
+        ] == [
+            (
+                PassSignal.issues_changed.value,
+                TEAM,
+                McpCredentialRefusedError.__name__,
+            ),
+        ]
+        assert subject.mark(PassSignal.issues_changed, container=TEAM) is None
+
+    async def test_a_transport_failure_is_named_the_same_way(self) -> None:
+        """The paired positive: the arm the refusal joined is unchanged."""
+        tracker = RefusingTracker(refused=[TEAM], error=TRANSPORT_REFUSAL)
+        subject = signal_gate(tracker, PassSignal.issues_changed)
+
+        with structlog.testing.capture_logs() as logs:
+            delta = await subject.delta()
+
+        assert not delta.has_delta()
+        assert [
+            entry["error_type"]
+            for entry in logs
+            if entry["event"] == "pass_gate_signal_unanswerable"
+        ] == [McpTransportError.__name__]
+
+    async def test_a_refused_container_leaves_its_siblings_answering(self) -> None:
+        """One board's refused credential is not the whole signal's."""
+        tracker = RefusingTracker(
+            issues=[make_tracker_issue("K-MINE", team_key=TEAM, created_at=LATEST)],
+            refused=[OTHER_TEAM],
+            error=CREDENTIAL_REFUSAL,
+        )
+        subject = signal_gate(
+            tracker,
+            PassSignal.issues_changed,
+            team_keys=(TEAM, OTHER_TEAM),
+        )
+
+        delta = await subject.delta()
+
+        assert set(delta.changed) == {"K-MINE"}
+        assert subject.mark(PassSignal.issues_changed, container=TEAM) == LATEST
+        assert subject.mark(PassSignal.issues_changed, container=OTHER_TEAM) is None

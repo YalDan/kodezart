@@ -43,6 +43,7 @@ class HttpMcpToolCaller:
         server_name: str,
         token: str,
         timeout_seconds: float,
+        call_timeout_seconds: float,
         auth_header_name: str,
         auth_scheme: str,
         error_detail_limit: int,
@@ -51,6 +52,7 @@ class HttpMcpToolCaller:
         self._server_name: str = server_name
         self._token: str = token
         self._timeout_seconds: float = timeout_seconds
+        self._call_timeout_seconds: float = call_timeout_seconds
         self._auth_header_name: str = auth_header_name
         self._auth_scheme: str = auth_scheme
         self._error_detail_limit: int = error_detail_limit
@@ -146,7 +148,17 @@ class HttpMcpToolCaller:
         name: str,
         arguments: Mapping[str, object],
     ) -> McpToolResult:
-        """Invoke the named tool and return its structured result."""
+        """Invoke the named tool and return its structured result.
+
+        The call carries a READ TIMEOUT, because a session can stop
+        answering without ending: measured 2026-09-01 (KOD-171), the
+        server began refusing the credential, the reader driving this
+        session was torn down, and the close that would have ended the
+        awaited response was never sent — so the call in flight waited
+        forever and the pass holding it never returned.  A bound turns
+        that state into this module's own typed failure, which every
+        caller above already knows how to report (KOD-269).
+        """
         session = self._session
         if session is None:
             raise McpTransportError(
@@ -155,7 +167,11 @@ class HttpMcpToolCaller:
                 tool_name=name,
             )
         try:
-            result = await session.call_tool(name, dict(arguments))
+            result = await session.call_tool(
+                name,
+                dict(arguments),
+                read_timeout_seconds=timedelta(seconds=self._call_timeout_seconds),
+            )
         except Exception as exc:
             if self._credential_refused:
                 raise McpCredentialRefusedError(

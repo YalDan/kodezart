@@ -410,7 +410,25 @@ class AppConfig(BaseSettings):
         default=30.0,
         ge=5.0,
         le=120.0,
-        description="Timeout for one tracker MCP tool call.",
+        description=(
+            "Timeout the tracker MCP transport gives one HTTP exchange with the server."
+        ),
+    )
+    tracker_mcp_call_timeout_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=120.0,
+        description=(
+            "Seconds one tracker MCP tool call may wait for its answer "
+            "before it is abandoned as the typed transport failure. A "
+            "session torn down mid-call — the shape a refused credential "
+            "arrives in, measured 2026-09-01 (KOD-171) — never sends the "
+            "close its reader is waiting for, so without this bound the "
+            "call in flight waits forever and the pass holding it never "
+            "returns. Bounded above by what the transport gives one HTTP "
+            "exchange, so a call can never outlast the connection carrying "
+            "it."
+        ),
     )
     tracker_mcp_error_detail_limit: int = Field(
         default=500,
@@ -774,8 +792,20 @@ class AppConfig(BaseSettings):
         ge=5.0,
         le=120.0,
         description=(
-            "Timeout for one knowledge MCP tool call on the programmatic "
-            "record path (http transport)."
+            "Timeout the knowledge MCP transport gives one HTTP exchange "
+            "with the server on the programmatic record path."
+        ),
+    )
+    knowledge_mcp_call_timeout_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=120.0,
+        description=(
+            "Seconds one knowledge MCP tool call may wait for its answer "
+            "before it is abandoned as the typed transport failure. The "
+            "same bound the tracker transport carries, on the same "
+            "transport class: a record write on a torn-down session hangs "
+            "the pass holding it exactly as a tracker scan does."
         ),
     )
     knowledge_mcp_error_detail_limit: int = Field(
