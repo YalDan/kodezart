@@ -91,6 +91,7 @@ class _MergingEngine:
             feature_branch=FEATURE_BRANCH,
             base_branch=base,
             feature_tip_sha=FEATURE_TIP_SHA,
+            delivered=True,
         )
         yield WorkflowCompleteEvent(
             feature_branch=FEATURE_BRANCH,

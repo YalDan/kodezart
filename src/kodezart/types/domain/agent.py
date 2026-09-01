@@ -686,6 +686,15 @@ class WorkflowPREvent(AgentEvent):
     It rides here because this event is what the lifecycle write-back reads
     to record the issue's DELIVERABLE work ref, and a ref without the sha
     it was pushed at cannot serve as a dependent lane's base (KOD-149).
+
+    ``delivered`` is REQUIRED and the producer states it, because two nodes
+    open pull requests and they mean opposite things.  The accepted path's
+    pull request is what the run delivered; the stall exit's carries the
+    best iteration of a run its own acceptance gate rejected, opened so a
+    human can read what was reached.  A work ref is at-most-one and nothing
+    can delete it, so a rejected branch recorded as THE deliverable is the
+    base every dependent lane resolves to from then on — which is why this
+    is stated at the producer rather than guessed at downstream.
     """
 
     type: Literal["workflow_pr"] = "workflow_pr"
@@ -694,6 +703,7 @@ class WorkflowPREvent(AgentEvent):
     feature_branch: str
     base_branch: str
     feature_tip_sha: str = Field(min_length=40, max_length=40)
+    delivered: bool
 
 
 class WorkflowCIEvent(AgentEvent):

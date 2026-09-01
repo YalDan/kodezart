@@ -14,7 +14,7 @@ from kodezart.composition.forge import build_forge_client
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.jobs import build_job_queue, build_job_service
 from kodezart.composition.knowledge import boot_knowledge_grant
-from kodezart.composition.passes import build_dispatch_runtime
+from kodezart.composition.passes import build_dispatch_runtime, verify_pass_preflight
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.tracker import (
@@ -66,6 +66,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.operation_config = operation
 
     prompts = await boot_prompts(config=config, operation=operation, log=log)
+    # Every refusal the scheduled passes can raise is decided HERE, before
+    # anything stateful is constructed. Each one is configuration plus one
+    # tracker round trip, and each used to fire from inside the dispatch
+    # wiring — below a started job queue, which no refusal stopped. What is
+    # already open at this point is the tracker's transport, so a refusal
+    # closes it on the way out rather than leaving a live session behind.
+    try:
+        await verify_pass_preflight(
+            config=config,
+            operation=operation,
+            tracker=tracker,
+            github_api=github_api,
+            prompts=prompts,
+        )
+    except BaseException:
+        if mcp_caller is not None:
+            await mcp_caller.close()
+        if github_api is not None:
+            await github_api.close()
+        raise
+
     skills = await boot_skills(config=config, prompts=prompts, log=log)
     app.state.skills = skills
 

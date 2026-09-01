@@ -37,7 +37,10 @@ read — and N containers are N independent timelines for the same reason,
 so a per-signal stamp shared across them would let one busy board advance
 the mark past another board's unseen work.  Each mark is advanced only by
 a tick that observed something on THAT signal in THAT container, so a
-missed tick re-reads its own window rather than skipping it.
+missed tick re-reads its own window rather than skipping it.  And a mark
+this gate advanced for a pass that then RAISED is put back — ``rearm`` —
+because asking is not reading: the window was opened for work that never
+happened, and leaving the mark past it spends a wake-up on nothing.
 
 Asking is itself three-state, never two.  A signal resolves to
 saw-something, saw-nothing, or COULD-NOT-ASK: a transport that refused to
@@ -87,6 +90,12 @@ class PassGate:
             for signal in self._signals
             for container in self._containers(signal)
         }
+        #: What each mark the LAST :meth:`delta` advanced held before it did.
+        #: Empty until a delta advances something, and emptied again by
+        #: :meth:`rearm`, so "nothing to put back" and "already put back"
+        #: are the same state and re-arming twice cannot rewind a window
+        #: twice.
+        self._advanced: dict[tuple[PassSignal, str], datetime | None] = {}
         self._log: BoundLogger = get_logger(__name__)
 
     @property
@@ -107,6 +116,7 @@ class PassGate:
         """
         changed: list[str] = []
         unanswerable: list[str] = []
+        self._advanced.clear()
         for signal in self._signals:
             for container in self._containers(signal):
                 try:
@@ -142,6 +152,25 @@ class PassGate:
             mark=None if newest is None else newest.isoformat(),
         )
         return delta
+
+    def rearm(self) -> None:
+        """Put every mark the last :meth:`delta` advanced back where it was.
+
+        Asking advances a mark, which is what stops the next tick reporting
+        the same window again.  But the pass BENEATH the gate is what reads
+        that window, and a pass that raised read nothing: leaving the mark
+        forward there consumes a wake-up nobody acted on, and at the shipped
+        dispatch signal that means an approved issue sits undispatched until
+        something else happens to touch it.  The consumer calls this on the
+        way out of a failure, so the next tick asks the same question again.
+
+        Idempotent by construction: the snapshot is emptied as it is
+        applied, so a second call and a call after a delta that advanced
+        nothing are both no-ops rather than a second rewind.
+        """
+        for key, previous in self._advanced.items():
+            self._marks[key] = previous
+        self._advanced.clear()
 
     def _containers(self, signal: PassSignal) -> tuple[str, ...]:
         """The containers *signal* is asked once per, refusing when it has none.
@@ -237,6 +266,7 @@ class PassGate:
         )
         if not issues:
             return ()
+        self._advanced[signal, team_key] = self._marks[signal, team_key]
         self._marks[signal, team_key] = max(issue.updated_at for issue in issues)
         return tuple(issue.issue_key for issue in issues)
 
@@ -255,5 +285,6 @@ class PassGate:
         )
         if not reviews:
             return ()
+        self._advanced[signal, repo_url] = self._marks[signal, repo_url]
         self._marks[signal, repo_url] = max(review.updated_at for review in reviews)
         return tuple(review.review_key for review in reviews)

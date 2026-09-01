@@ -76,7 +76,7 @@ whereas an undemonstrated one is an unknown.
 | five reply-routing rules | fire_prep_pass "Five routing rules." | A reply obligation is routed by the five rules, so the same finding is not answered twice on two surfaces. | not yet demonstrated |
 | run digest | fire_prep_pass "write this run's row" | Every pass appends exactly one run-log row and never rewrites an earlier one. | not yet demonstrated |
 | exit-silently condition | fire_prep_pass "exit silently" | A pass that finds nothing to do exits without posting, cloning or notifying — the checkpoint write alone. | not yet demonstrated |
-| build for real | grooming_pass "Clone both repos and run the real chains" | Every registered repository is verified by running its own commands, recording per-check exit codes against the HEAD sha, never a snapshot or a reasoned-about result. | not yet demonstrated |
+| build for real | grooming_pass "Clone every declared repository and run its real chain" | Every registered repository is verified by running its own commands, recording per-check exit codes against the HEAD sha, never a snapshot or a reasoned-about result. | not yet demonstrated |
 | gate-vs-cascade | grooming_pass "gate vs cascade" | A failure report names one root and its cascades, never a list of independent-looking reds. | not yet demonstrated |
 | sandbox-vs-project | grooming_pass "sandbox vs project" | A failure caused by the environment is reported as environment-limited with the exact error as evidence, never as project-red — and never the reverse without evidence. | not yet demonstrated |
 | stack-head grounding | grooming_pass "build the **stack head**" | Work stacked on unlanded work is grounded on the stack head, not on a trunk that is only a scaffold. | `tests/domain/test_base_resolution.py::test_a_chain_of_three_blockers_resolves_to_the_tip` |
@@ -92,7 +92,7 @@ whereas an undemonstrated one is an unknown.
 | cadence ownership | — | Pass scheduling reads exclusively from configuration; the driver holds no interval of its own. | `tests/services/test_pass_scheduler.py::test_the_driver_module_holds_no_numeric_literal` |
 | identity discipline | — | Rendering fails loudly on any unconditional placeholder without a config value, naming every missing name at once. | `tests/prompts/test_operation_config.py::test_an_unconditional_placeholder_without_a_config_value_fails_loudly` |
 | outbound legality | — | No shipped template carries a resolved org-shaped value. | `tests/prompts/test_operation_config.py::test_ported_templates_pass_the_deny_pattern_engine` |
-| routine-text coverage | fire_prep_pass + grooming_pass, whole texts | Parity is claimed against the routine text itself. Since the byte-identity replacement the templates carry the routines' verbatim prose with config placeholders for every operation-specific token; rendering them against the real operation config must reproduce the live texts byte-for-byte. The comparison needs the private reference texts, so it runs as recorded evidence at a named sha on the owning issue, not in CI. | not yet demonstrated |
+| routine-text coverage | fire_prep_pass + grooming_pass, whole texts | Parity is claimed against the routine text itself. Since the byte-identity replacement the templates carry the routines' verbatim prose with config placeholders for every operation-specific token; rendering them against the real operation config must reproduce the live texts byte-for-byte — verbatim everywhere except the passages where a routine named a fixed team or repository slot, which are amended to enumerate the declared roster one member per line (`cutover_mapping.md`). The comparison needs the private reference texts, so it runs as recorded evidence at a named sha on the owning issue, not in CI. | not yet demonstrated |
 
 ## Why the undemonstrated rows are undemonstrated
 
@@ -130,9 +130,12 @@ caller or goes is a decision this document records, never one it takes.
 
 **The measurement only the tracker can hold.** Routine-text coverage is a
 row of its own because every other row is a clause-to-clause claim. The
-templates now carry the routine texts verbatim — the substitution ledger
-records every token substituted and every class left in place — and the
-byte-identity comparison against the live texts is recorded evidence on the
+templates now carry the routine texts verbatim except the roster-amended
+passages — the substitution ledger records every token substituted and every
+class left in place, and `cutover_mapping.md` records the one amendment: a
+passage naming a fixed team or repository slot enumerates the declared
+roster instead. The byte-identity comparison against the live texts is
+run against those amended bytes, and it is recorded evidence on the
 owning issue at a named sha, because the reference texts carry private
 identifiers no public repository may hold. The row stays open here because
 this document's evidence grammar admits only in-repo tests, and no in-repo

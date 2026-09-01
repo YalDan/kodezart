@@ -28,6 +28,10 @@ FEATURE_TIP_SHA = "a" * 40
 #: A DELIVERABLE ref the issue already carries, naming another branch.
 HELD_BRANCH = "kodezart/k-1-already-delivered"
 HELD_TIP_SHA = "b" * 40
+#: The stall exit's branch: a best iteration the run's own acceptance gate
+#: rejected, published so a human can read it and never a deliverable.
+STALL_BRANCH = f"{FEATURE_BRANCH}-best"
+STALL_TIP_SHA = "c" * 40
 
 
 def writer() -> tuple[TrackerLifecycleWriter, FakeTrackerPort]:
@@ -93,6 +97,7 @@ class TestLifecycleWrites:
             issue_key="K-1",
             feature_branch=FEATURE_BRANCH,
             feature_tip_sha=FEATURE_TIP_SHA,
+            delivered=True,
         )
         assert tracker.workflow_writes == [("K-1", LifecycleStage.IN_REVIEW)]
 
@@ -110,6 +115,7 @@ class TestLifecycleWrites:
             issue_key="K-1",
             feature_branch=FEATURE_BRANCH,
             feature_tip_sha=FEATURE_TIP_SHA,
+            delivered=True,
         )
         assert tracker.queue_writes == []
         assert QueueState.APPROVED in tracker.issues["K-1"].queue_states
@@ -146,6 +152,7 @@ class TestTheDeliverableRef:
             issue_key="K-1",
             feature_branch=FEATURE_BRANCH,
             feature_tip_sha=FEATURE_TIP_SHA,
+            delivered=True,
         )
 
         (recorded,) = await tracker.work_refs(issue_key="K-1")
@@ -162,11 +169,13 @@ class TestTheDeliverableRef:
             issue_key="K-1",
             feature_branch=FEATURE_BRANCH,
             feature_tip_sha=FEATURE_TIP_SHA,
+            delivered=True,
         )
         await write.on_pull_request(
             issue_key="K-1",
             feature_branch=FEATURE_BRANCH,
             feature_tip_sha=FEATURE_TIP_SHA,
+            delivered=True,
         )
 
         assert len(await tracker.work_refs(issue_key="K-1")) == 1
@@ -179,6 +188,7 @@ class TestTheDeliverableRef:
             issue_key="K-1",
             feature_branch=FEATURE_BRANCH,
             feature_tip_sha=FEATURE_TIP_SHA,
+            delivered=True,
         )
 
         (held,) = await tracker.work_refs(issue_key="K-1")
@@ -201,6 +211,7 @@ class TestTheDeliverableRef:
                 issue_key="K-1",
                 feature_branch=FEATURE_BRANCH,
                 feature_tip_sha=FEATURE_TIP_SHA,
+                delivered=True,
             )
             await write.on_verified_merge(issue_key="K-1")
 
@@ -215,6 +226,49 @@ class TestTheDeliverableRef:
             ("K-1", LifecycleStage.DONE),
         ]
         assert tracker.queue_writes == [("K-1", QueueState.DONE)]
+
+    async def test_an_undelivered_pull_request_records_no_ref_and_still_reviews(
+        self,
+    ) -> None:
+        """The stall exit's half of the arm, at the writer.
+
+        Two nodes open pull requests and only one of them delivers. The
+        state write answers the pull request — a human has one to read
+        either way — and the ref answers the delivery, which a rejected
+        best iteration is not.
+        """
+        write, tracker = writer()
+
+        await write.on_pull_request(
+            issue_key="K-1",
+            feature_branch=STALL_BRANCH,
+            feature_tip_sha=STALL_TIP_SHA,
+            delivered=False,
+        )
+
+        assert await tracker.work_refs(issue_key="K-1") == ()
+        assert tracker.workflow_writes == [("K-1", LifecycleStage.IN_REVIEW)]
+
+    async def test_the_delivery_slot_survives_an_earlier_stall(self) -> None:
+        """The port's at-most-one rule is never spent on a rejected branch."""
+        write, tracker = writer()
+
+        await write.on_pull_request(
+            issue_key="K-1",
+            feature_branch=STALL_BRANCH,
+            feature_tip_sha=STALL_TIP_SHA,
+            delivered=False,
+        )
+        await write.on_pull_request(
+            issue_key="K-1",
+            feature_branch=FEATURE_BRANCH,
+            feature_tip_sha=FEATURE_TIP_SHA,
+            delivered=True,
+        )
+
+        (recorded,) = await tracker.work_refs(issue_key="K-1")
+        assert recorded.branch == FEATURE_BRANCH
+        assert recorded.pushed_head_sha == FEATURE_TIP_SHA
 
 
 class TestTheCommentRoutesThroughTheGate:

@@ -16,6 +16,7 @@ import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
+import structlog.testing
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
@@ -59,6 +60,23 @@ PR_EVENT = WorkflowPREvent(
     feature_branch=FEATURE_BRANCH,
     base_branch="trunk",
     feature_tip_sha=FEATURE_TIP_SHA,
+    delivered=True,
+)
+
+#: The stall exit's pull request: a run whose loop never accepted publishes
+#: its best iteration and opens a do-not-merge pull request over it.  Its
+#: branch and tip differ from the delivered ones, because the question the
+#: stall cases turn on is which of the two a dependent lane resolves to.
+STALL_BRANCH = f"{FEATURE_BRANCH}-best"
+STALL_TIP_SHA = "b" * 40
+
+STALL_PR_EVENT = WorkflowPREvent(
+    pr_url="https://forge.invalid/owner/repo/pull/6",
+    pr_number=6,
+    feature_branch=STALL_BRANCH,
+    base_branch="trunk",
+    feature_tip_sha=STALL_TIP_SHA,
+    delivered=False,
 )
 
 
@@ -85,6 +103,23 @@ def claim_heartbeat(tracker: FakeTrackerPort) -> ClaimHeartbeat:
         holder=HOLDER,
         lease_seconds=LEASE_SECONDS,
         renewal_fraction=RENEWAL_FRACTION,
+    )
+
+
+def watcher_over(
+    tracker: FakeTrackerPort,
+    *events: AgentEvent,
+) -> LifecycleWatcher:
+    """The shipped watcher over an EXISTING tracker and a scripted run.
+
+    Separate from :func:`watcher` because the stall arc is two runs on one
+    issue, and a fixture that made a fresh tracker per run could not carry
+    what the first run left for the second to collide with.
+    """
+    return LifecycleWatcher(
+        queue=FakeJobQueue(events=events),
+        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        heartbeat=claim_heartbeat(tracker),
     )
 
 
@@ -239,6 +274,77 @@ class TestTheTransitionsAJobStreamProduces:
         )
 
         assert tracker.workflow_writes == [(ISSUE, LifecycleStage.IN_PROGRESS)]
+
+
+class TestTheStallExitDoesNotTakeTheDeliverySlot:
+    """A rejected best iteration may not become the issue's deliverable.
+
+    The stall exit opens a pull request over a branch the run's own
+    acceptance gate refused, so a human can read what was reached.  While
+    the event carried no discriminator that pull request was
+    indistinguishable from a delivery: the watcher recorded its branch as
+    the issue's DELIVERABLE ref, the port's at-most-one rule then refused
+    every later one, and the designed recovery — a human closes the stall
+    pull request, the pass re-fires, the run succeeds — could never replace
+    it.  Every dependent lane's base resolved to the rejected branch, for
+    good.
+    """
+
+    async def test_a_stall_pull_request_records_no_deliverable_ref(self) -> None:
+        """It still reaches review: an open pull request wants a reader."""
+        watch, tracker, _ = watcher(
+            STALL_PR_EVENT,
+            complete(merged=False, outcome=WorkflowOutcome.loop_not_accepted),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        assert await tracker.work_refs(issue_key=ISSUE) == ()
+        assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+        ]
+
+    async def test_a_later_run_delivers_over_a_stall_without_a_conflict(self) -> None:
+        """The recovery arc end to end: two runs, one issue, one deliverable.
+
+        The second run's ref is THE deliverable — not a second one refused
+        by the port and logged — and the branch a dependent lane resolves
+        to is the one that was delivered, never the one that stalled.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+
+        with structlog.testing.capture_logs() as logs:
+            await watcher_over(
+                tracker,
+                STALL_PR_EVENT,
+                complete(merged=False, outcome=WorkflowOutcome.loop_not_accepted),
+            ).watch(
+                issue_key=ISSUE,
+                job_id="job-0001",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+            await watcher_over(
+                tracker,
+                PR_EVENT,
+                complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+            ).watch(
+                issue_key=ISSUE,
+                job_id="job-0002",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        (recorded,) = await tracker.work_refs(issue_key=ISSUE)
+        assert recorded.role is WorkRefRole.DELIVERABLE
+        assert recorded.branch == PR_EVENT.feature_branch
+        assert recorded.pushed_head_sha == PR_EVENT.feature_tip_sha
+        assert [
+            entry for entry in logs if entry["event"] == "deliverable_ref_conflict"
+        ] == []
 
 
 class TestFollowingInTheBackground:

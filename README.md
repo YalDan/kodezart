@@ -577,7 +577,7 @@ So: file one small, self-contained issue on a team the config names, and then,
 
 The dispatch pass is periodic, so every wait below is bounded by one pass
 interval, which is deployment configuration —
-`KODEZART_TRACKER_SCHEDULER_PASS_INTERVAL_SECONDS`, whose shipped default and
+`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS`, whose shipped default and
 bounds are in [docs/configuration.md](docs/configuration.md). Read the value
 your deployment runs with, and treat "one interval" as the unit throughout.
 

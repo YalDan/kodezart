@@ -12,12 +12,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import structlog.testing
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.passes import (
     DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
+    verify_pass_preflight,
 )
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
@@ -44,6 +46,7 @@ from tests.fakes import (
     make_tracker_issue,
 )
 from tests.prompts.test_claude_opus_goldens import V5_SET
+from tests.prompts.test_minimal_floor import minimal_fixture
 from tests.prompts.test_operation_config import raw_example, write_toml
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
 from tests.services.test_pass_scheduler import Metronome, _settle
@@ -90,20 +93,21 @@ def _config(tmp_path: Path, **overrides: object) -> AppConfig:
     return AppConfig(**settings)  # type: ignore[arg-type]
 
 
-def _registrations(
+async def _registrations(
     tmp_path: Path,
     *,
     tracker: FakeTrackerPort | None = None,
+    operation: OperationConfig | None = None,
     **overrides: object,
 ) -> tuple[list[ScheduledPass], FakeAgentRunner]:
     """The passes exactly as the composition registers them."""
-    operation = example_config()
-    prompts = load_registry(bindings=dict(bindings_for(operation)))
+    declared = example_config() if operation is None else operation
+    prompts = load_registry(bindings=dict(bindings_for(declared)))
     runner = FakeAgentRunner(events=[])
     return (
-        build_prompt_passes(
+        await build_prompt_passes(
             config=_config(tmp_path, **overrides),
-            operation=operation,
+            operation=declared,
             prompts=prompts,
             tracker=tracker,
             runner=runner,
@@ -126,11 +130,29 @@ async def _runtime(
     prompt_set: str = DEFAULT_SET,
     **overrides: object,
 ) -> DispatchRuntime:
-    """Boot the scheduled-pass runtime exactly as the composition root does."""
+    """Boot the scheduled-pass runtime exactly as the composition root does.
+
+    Preflight FIRST and then the wiring, in that order and as two calls,
+    because that is what the root does: every refusal the passes can raise
+    is settled before anything stateful is built, and the builder below
+    re-checks none of it.
+    """
     declared = example_config() if operation is None else operation
+    config = _config(tmp_path, **overrides)
+    prompts = load_registry(
+        default_set=prompt_set,
+        bindings=dict(bindings_for(declared)),
+    )
     queue = FakeJobQueue()
+    await verify_pass_preflight(
+        config=config,
+        operation=declared,
+        tracker=tracker,
+        github_api=None,
+        prompts=prompts,
+    )
     return await build_dispatch_runtime(
-        config=_config(tmp_path, **overrides),
+        config=config,
         operation=declared,
         tracker=tracker,
         github_api=None,
@@ -139,10 +161,7 @@ async def _runtime(
         gate=None,
         git=None,  # type: ignore[arg-type]
         cache=None,  # type: ignore[arg-type]
-        prompts=load_registry(
-            default_set=prompt_set,
-            bindings=dict(bindings_for(declared)),
-        ),
+        prompts=prompts,
         runner=runner,
         skills=SUPPRESS_ALL_SKILLS,
         log=get_logger(__name__),
@@ -153,7 +172,7 @@ async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
     tmp_path: Path,
 ) -> None:
     """One tick each: two sessions, two prompts, two configured intervals."""
-    registered, runner = _registrations(tmp_path)
+    registered, runner = await _registrations(tmp_path)
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
     metronome = Metronome(limit=len(registered))
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
@@ -169,11 +188,11 @@ async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
     }
 
 
-def test_the_registrations_take_every_cadence_from_configuration(
+async def test_the_registrations_take_every_cadence_from_configuration(
     tmp_path: Path,
 ) -> None:
     """Each pass carries the interval its own knob holds, never a shared one."""
-    registered, _ = _registrations(tmp_path)
+    registered, _ = await _registrations(tmp_path)
 
     assert [(entry.name, entry.interval_seconds) for entry in registered] == [
         (PromptKey.FIRE_PREP_PASS.value, FIRE_PREP_INTERVAL),
@@ -181,11 +200,11 @@ def test_the_registrations_take_every_cadence_from_configuration(
     ]
 
 
-def test_the_registrations_take_every_budget_from_configuration(
+async def test_the_registrations_take_every_budget_from_configuration(
     tmp_path: Path,
 ) -> None:
     """Each pass carries the timeout its own knob holds, never its cadence."""
-    registered, _ = _registrations(tmp_path)
+    registered, _ = await _registrations(tmp_path)
 
     assert [(entry.name, entry.timeout_seconds) for entry in registered] == [
         (PromptKey.FIRE_PREP_PASS.value, FIRE_PREP_TIMEOUT),
@@ -216,7 +235,7 @@ async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
     matters is that a quiet board skips one pass and still runs the other.
     """
     tracker = FakeTrackerPort()
-    registered, runner = _registrations(tmp_path, tracker=tracker)
+    registered, runner = await _registrations(tmp_path, tracker=tracker)
     metronome = Metronome(limit=len(registered))
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
@@ -240,7 +259,7 @@ async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
 async def test_an_operator_can_gate_or_ungate_any_pass(tmp_path: Path) -> None:
     """The knob is real in both directions, over the same quiet board."""
     quiet = FakeTrackerPort()
-    gated, gated_runner = _registrations(
+    gated, gated_runner = await _registrations(
         tmp_path,
         tracker=quiet,
         grooming_pass_gate_signals=[PassSignal.issues_changed],
@@ -263,7 +282,7 @@ async def test_a_declared_signal_with_no_tracker_runs_the_pass_ungated(
     tmp_path: Path,
 ) -> None:
     """Absent gate and quiet gate are different states, never conflated."""
-    registered, runner = _registrations(tmp_path, tracker=None)
+    registered, runner = await _registrations(tmp_path, tracker=None)
     metronome = Metronome(limit=len(registered))
     scheduler = PassScheduler(passes=registered, sleep=metronome.sleep)
 
@@ -363,7 +382,9 @@ async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
     assert len(runner.calls) == 1
 
 
-def test_a_pass_whose_prompt_has_a_hole_refuses_at_wiring(tmp_path: Path) -> None:
+async def test_a_pass_whose_prompt_has_a_hole_refuses_at_preflight(
+    tmp_path: Path,
+) -> None:
     """KOD-150: the hole is a boot refusal naming the pass and the placeholders.
 
     The operation configuration is boot-static, so the hole a tick would
@@ -377,13 +398,12 @@ def test_a_pass_whose_prompt_has_a_hole_refuses_at_wiring(tmp_path: Path) -> Non
     operation = load_operation_config(write_toml(tmp_path, raw))
 
     with pytest.raises(PromptRenderError) as caught:
-        build_prompt_passes(
+        await verify_pass_preflight(
             config=_config(tmp_path),
             operation=operation,
-            prompts=load_registry(bindings=dict(bindings_for(operation))),
             tracker=None,
-            runner=FakeAgentRunner(events=[]),
-            skills=SUPPRESS_ALL_SKILLS,
+            github_api=None,
+            prompts=load_registry(bindings=dict(bindings_for(operation))),
         )
 
     assert PromptKey.FIRE_PREP_PASS.value in str(caught.value)
@@ -391,11 +411,77 @@ def test_a_pass_whose_prompt_has_a_hole_refuses_at_wiring(tmp_path: Path) -> Non
     assert "endpoints.host_runner" in str(caught.value)
 
 
-def test_the_shipped_example_wires_without_a_render_refusal(tmp_path: Path) -> None:
+async def test_the_shipped_example_wires_without_a_render_refusal(
+    tmp_path: Path,
+) -> None:
     """Non-vacuity: the refusal above is the config's, not the check's."""
-    assert len(_registrations(tmp_path)[0]) == len(
+    assert len((await _registrations(tmp_path))[0]) == len(
         (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
     )
+
+
+# ---------------------------------------------------------------------------
+# KOD-112 R5: the minimal floor boots, and says what it cannot schedule
+# ---------------------------------------------------------------------------
+
+
+async def test_the_minimal_floor_boots_and_names_the_roster_it_lacks(
+    tmp_path: Path,
+) -> None:
+    """The floor is bootable again, and its silence is a log line.
+
+    Every shipped pass template enumerates the declared teams and the
+    declared repositories, so a config that declares neither cannot be a
+    pass's prompt. That does not make the config wrong — an empty board
+    boots, and loading one is a decision this model calls legitimate — it
+    makes the passes unwireable, which is a fact the operator reads rather
+    than deduces from a schedule that quietly came back empty.
+    """
+    with structlog.testing.capture_logs() as logs:
+        runtime = await _runtime(
+            tmp_path,
+            tracker=None,
+            runner=FakeAgentRunner(events=[]),
+            operation=minimal_fixture(),
+        )
+
+    assert [entry.name for entry in runtime.scheduler.passes] == []
+    (unwired,) = [
+        entry for entry in logs if entry["event"] == "prompt_passes_not_wired"
+    ]
+    assert unwired["operation_config_present"] is True
+    assert unwired["absent"] == ["teams", "repos"]
+
+
+async def test_the_floor_boots_where_the_same_hole_over_a_roster_refuses(
+    tmp_path: Path,
+) -> None:
+    """The boot render still guards every pass that WIRES, and only those.
+
+    Both configs here have the same hole — no ``endpoints`` — and they go
+    opposite ways. The floor boots because it wires nothing, so there is no
+    prompt for the hole to be in. The rostered one refuses because it wires
+    two, which is KOD-150 unweakened.
+    """
+    holed = raw_example()
+    del holed["endpoints"]
+    rostered = load_operation_config(write_toml(tmp_path, holed))
+
+    floor = await _runtime(
+        tmp_path,
+        tracker=None,
+        runner=FakeAgentRunner(events=[]),
+        operation=minimal_fixture(),
+    )
+
+    assert [entry.name for entry in floor.scheduler.passes] == []
+    with pytest.raises(PromptRenderError):
+        await _runtime(
+            tmp_path,
+            tracker=None,
+            runner=FakeAgentRunner(events=[]),
+            operation=rostered,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -410,15 +496,25 @@ UNGRANTED: dict[str, object] = {
     "knowledge_mcp_token": None,
 }
 
-#: Every entry of the shipped example that lives in the knowledge system,
-#: spelled as the refusal spells it.  Literal rather than derived from the
-#: config: a list derived from the same predicate the production check
-#: reads would agree with it however either one drifted.
+#: Every surface of the shipped example that lives in the knowledge system,
+#: spelled as the refusal spells it.  THREE registries, because a pass reads
+#: three: a read-side document, a write-side record, and the map that says
+#: what lives where — which the prelude only carries for a GRANTED session
+#: type, so a declared map under an ungranted pass is an instruction to
+#: consult a map the session never received.  Literal rather than derived
+#: from the config: a list derived from the same predicate the production
+#: check reads would agree with it however either one drifted.
 KNOWLEDGE_ENTRIES = (
     "documents.house_rules",
     "documents.constitution",
     "records.run_log",
     "records.grooming_log",
+    "knowledge.house_rules",
+    "knowledge.constitution",
+    "knowledge.run_logs",
+    "knowledge.memories",
+    "knowledge.personas",
+    "knowledge.notes",
 )
 
 #: The one entry of the same registries that lives tracker-side.
@@ -426,12 +522,19 @@ TRACKER_ENTRY = "documents.checkpoint"
 
 
 def _tracker_side(raw: dict[str, object]) -> None:
-    """Move every declared destination into the tracker's own system."""
+    """Move every declared destination into the tracker's own system.
+
+    The ``knowledge`` map goes rather than moves: it has no system field to
+    change, because being the map of what lives in the knowledge store is
+    the whole of what it is.  An operation that keeps everything tracker-
+    side declares none.
+    """
     for field in ("documents", "records"):
         registry = raw[field]
         assert isinstance(registry, dict)
         for entry in registry.values():
             entry["system"] = DocumentSystem.TRACKER.value
+    raw["knowledge"] = {}
 
 
 def _without_stores(raw: dict[str, object]) -> None:
@@ -452,12 +555,13 @@ async def test_a_knowledge_destination_no_pass_can_reach_aborts_boot(
 ) -> None:
     """Two halves, legal apart, an instruction to nowhere together.
 
-    The operation names destinations in the knowledge system and the
-    deployment grants that store to no session type, so every tick would
-    tell a pass to write where its session holds no capability — and the
-    only place that can fail is inside the session, where it looks like a
-    pass that ran and recorded nothing.  Every affected entry is named at
-    once, and the tracker-side one is not among them.
+    The operation names surfaces in the knowledge system and the deployment
+    grants that store to no session type, so every tick would tell a pass to
+    read and write where its session holds no capability — and the only
+    place that can fail is inside the session, where it looks like a pass
+    that ran and recorded nothing.  Every affected entry is named at once,
+    the ``knowledge`` map's keys among them, and the tracker-side one is not
+    among them.
     """
     with pytest.raises(PassKnowledgeCapabilityError) as caught:
         await _runtime(
@@ -481,8 +585,13 @@ async def test_the_same_config_boots_with_its_destinations_tracker_side(
     """The registries stay populated; only the system they name changes.
 
     Non-vacuity for the refusal above, and the first-class M1 shape: an
-    operation that keeps its checkpoint and its run log on the tracker
-    needs no knowledge grant to wire a pass.
+    operation that keeps its checkpoint and its run log on the tracker, and
+    declares no map beside it, needs no knowledge grant to wire a pass.
+
+    Rendered from the v5 set, because absence is a three-state render there
+    and the frozen ``claude-opus`` prose names its constitution page in
+    running text: that set carries the routines byte for byte, so a
+    map-less operation is a shape it cannot express, not one it refuses.
     """
     operation = load_operation_config(_mutated(tmp_path, _tracker_side))
 
@@ -491,11 +600,39 @@ async def test_the_same_config_boots_with_its_destinations_tracker_side(
         tracker=None,
         runner=FakeAgentRunner(events=[]),
         operation=operation,
+        prompt_set=V5_SET,
         **UNGRANTED,
     )
 
     assert operation.documents
     assert operation.records
+    assert operation.knowledge == {}
+    assert {entry.name for entry in runtime.scheduler.passes} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
+
+
+async def test_the_declared_map_boots_once_the_scheduled_pass_is_granted(
+    tmp_path: Path,
+) -> None:
+    """The third arm: nothing about the map is wrong on its own.
+
+    The same example, unmutated, under a deployment that grants the store
+    to the scheduled passes — which is what makes the map the session is
+    preluded with a real one. Both passes wire and the refusal above is
+    demonstrably about the GRANT rather than about declaring a map.
+    """
+    operation = example_config()
+
+    runtime = await _runtime(
+        tmp_path,
+        tracker=None,
+        runner=FakeAgentRunner(events=[]),
+        operation=operation,
+    )
+
+    assert operation.knowledge
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,
@@ -562,7 +699,7 @@ async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("FIX-1", team_key=example_config().team_keys()[0])],
     )
-    registered, runner = _registrations(
+    registered, runner = await _registrations(
         tmp_path,
         tracker=tracker,
         fire_prep_pass_gate_signals=[PassSignal.approved_changed],

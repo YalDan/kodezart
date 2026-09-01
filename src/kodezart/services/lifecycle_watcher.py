@@ -18,7 +18,10 @@ in ``tests/services/test_lifecycle_watcher.py``.
 The stream is the only input.  Nothing here reads a pull request's state or
 a forge API: an open pull request is observed as ``WorkflowPREvent`` and a
 verified merge as ``WorkflowCompleteEvent.merged``, both produced by the
-workflow that did the work.
+workflow that did the work.  Whether that pull request DELIVERED the issue
+is likewise read off the event rather than inferred: the workflow opens one
+on the accepted path and one on the stall exit, and only the first is a
+deliverable.
 
 **The failure arm.**  A stream that ends without a ``WorkflowCompleteEvent``
 is a run that reached no terminal outcome, and the last thing the tracker
@@ -217,6 +220,7 @@ class LifecycleWatcher:
                 issue_key=issue_key,
                 feature_branch=event.feature_branch,
                 feature_tip_sha=event.feature_tip_sha,
+                delivered=event.delivered,
             )
             return
         if isinstance(event, WorkflowCompleteEvent):

@@ -442,12 +442,15 @@ class LinearMcpTracker:
     ) -> Mapping[PassSignal, str]:
         """Which of *signals* this credential cannot scan for, and why.
 
-        One minimal call per DISTINCT scan: the three issue signals are
-        served by one listing tool, so probing all three costs one call.
-        A refusal is read off the error the transport already carries, and
+        One minimal probe per DISTINCT scan: the three issue signals are
+        served by one listing tool, so probing all three probes once.  A
+        refusal is read off the error the transport already carries, and
         anything else it carries is re-raised — a boot that cannot reach
         the workspace at all is not a boot that learned something about
         scope.
+
+        One PROBE is not one call when the answer is a refusal, and that
+        cost is taken deliberately.  See :meth:`_probe_scope`.
         """
         probed: dict[str, str | None] = {}
         refused: dict[PassSignal, str] = {}
@@ -461,7 +464,18 @@ class LinearMcpTracker:
         return refused
 
     async def _probe_scope(self, tool: str) -> str | None:
-        """Call *tool* once, minimally; its diagnosis when it refuses scope."""
+        """Call *tool* minimally; its diagnosis when it refuses scope.
+
+        The call goes through the ordinary retry seam, so a REFUSAL pays
+        the whole configured budget — the backoff sleeps and a
+        ``tracker_mcp_retry`` warning per attempt — before the marker is
+        even looked at.  That trade is taken rather than overlooked: the
+        backend answers a scope refusal and an outage with one exception
+        type, so probing without retries would buy a cheaper refusal by
+        making boot fail on a blip.  A bounded one-off delay on a boot that
+        is about to abort is the cheaper half, and the retry warnings under
+        a refused probe are this working rather than a transport problem.
+        """
         try:
             await self._call(tool, {"limit": _SCOPE_PROBE_LIMIT})
         except McpTransportError as exc:

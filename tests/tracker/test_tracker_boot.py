@@ -45,7 +45,7 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingRef,
 )
-from tests.fakes import FakeLinearMcpServer, FakeTrackerPort
+from tests.fakes import FakeLinearMcpServer, FakeMcpDocument, FakeTrackerPort
 from tests.prompt_census import configured_investigation_cap
 from tests.tracker.conftest import (
     APPROVER,
@@ -125,11 +125,17 @@ class TestConfiguredMappings:
     def test_every_category_is_covered(self) -> None:
         """Across both passes, because the two carry different categories.
 
-        A document is INSTATED and never resolved: the ensure reports the
-        identifier the workspace holds, so a resolution pass over the same
-        value would re-ask the tool that just answered. Asserting over the
-        union keeps the check derived from ``MappingKind`` — a new member
-        reddens this until some pass carries it.
+        A ``documents`` entry is INSTATED and never resolved: the ensure
+        reports the identifier the workspace holds, so a resolution pass
+        over the same value would re-ask the tool that just answered.
+        Asserting over the union keeps the check derived from
+        ``MappingKind`` — a new member reddens this until some pass carries
+        it.
+
+        This fixture's only record lives in the KNOWLEDGE system, which no
+        pass here can resolve, so the resolution pass carries no DOCUMENT
+        ref at all.  A tracker-side record would, and that is
+        ``TestRecordDestinationsResolveAtBoot`` below.
         """
         config = operation_config()
         refs = (*configured_mappings(config), *owned_mappings(config))
@@ -148,6 +154,98 @@ class TestConfiguredMappings:
         assert configured_mappings(operation_config()) == configured_mappings(
             operation_config(),
         )
+
+
+#: A tracker-side run log the fixture workspace can be given.  A record's
+#: id is DECLARED and never adopted, so a boot over one either resolves it
+#: or refuses naming it.
+RUN_LOG_ID = "run-log-1"
+RUN_LOG_TITLE = "Run log"
+
+
+def _tracker_side_run_log(record_id: str) -> OperationConfig:
+    """The fixture config with its run log moved onto the tracker."""
+    return operation_config().model_copy(
+        update={
+            "records": {
+                "run_log": RecordDestination(
+                    system=DocumentSystem.TRACKER,
+                    name=RUN_LOG_TITLE,
+                    id=record_id,
+                    append_only=True,
+                ),
+            },
+        },
+    )
+
+
+def _server_holding_the_run_log() -> FakeLinearMcpServer:
+    """The fixture workspace, plus the document the run log is written to."""
+    server = fixture_server()
+    server.documents[RUN_LOG_ID] = FakeMcpDocument(
+        id=RUN_LOG_ID,
+        title=RUN_LOG_TITLE,
+        content="one row per pass",
+    )
+    return server
+
+
+class TestRecordDestinationsResolveAtBoot:
+    """A record's id is another system's, so boot resolves it (KOD-164).
+
+    ``records`` is EXTERNAL and the writer it was once said to lack now
+    exists: every scheduled pass is told to append its row to the declared
+    run log.  A typo in that id used to pass boot and fail inside an
+    unattended session, which is exactly the class EXTERNAL's own contract
+    — "resolved at boot, and a failure aborts naming the entry" — exists to
+    close.  The KNOWLEDGE arm stays out of it: nothing in this process
+    holds a client for that store, so its guard is the grant-coverage check
+    at the composition root and not a resolution nobody can perform.
+    """
+
+    async def test_a_tracker_side_run_log_the_workspace_holds_resolves(
+        self,
+    ) -> None:
+        tracker = linear_over_fake_mcp(_server_holding_the_run_log())
+
+        await validate_tracker_mappings(
+            tracker=tracker,
+            config=_tracker_side_run_log(RUN_LOG_ID),
+        )
+
+    async def test_a_tracker_side_run_log_the_workspace_lacks_aborts_naming_it(
+        self,
+    ) -> None:
+        tracker = linear_over_fake_mcp(_server_holding_the_run_log())
+
+        with pytest.raises(TrackerBootValidationError) as caught:
+            await validate_tracker_mappings(
+                tracker=tracker,
+                config=_tracker_side_run_log("ghost-record"),
+            )
+
+        assert caught.value.unresolved == (
+            f"document {RUN_LOG_TITLE!r} -> 'ghost-record'",
+        )
+
+    async def test_a_knowledge_side_run_log_is_untouched_by_this_path(
+        self,
+    ) -> None:
+        """Its id names no tracker document and boot never asks about it.
+
+        The fixture's own record is knowledge-side and carries an id the
+        workspace does not hold, so a resolution pass that reached it would
+        redden here.
+        """
+        config = operation_config()
+        tracker = linear_over_fake_mcp(fixture_server())
+
+        await validate_tracker_mappings(tracker=tracker, config=config)
+
+        assert config.records["run_log"].system is DocumentSystem.KNOWLEDGE
+        assert config.records["run_log"].id not in {
+            ref.identifier for ref in configured_mappings(config)
+        }
 
 
 class TestBootValidation:

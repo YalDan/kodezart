@@ -19,7 +19,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_LOG_LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
 | `KODEZART_LOG_PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
 | `KODEZART_API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
-| `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   |             | GitHub PAT for cloning private repositories              |
+| `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   | min length 1 | GitHub PAT for cloning private repositories and reaching the forge. Unset means no forge credential: the clone path attaches no auth and no dispatch pass is scheduled. An empty assignment is refused at startup rather than resolving to "unset" on one code path and "empty credential" on the next |
 | `KODEZART_CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
 | `KODEZART_INTEGRATION_WORKSPACE_DIR` | `str`     | `/tmp/kodezart-integration` |          | Local directory the base resolver builds integration refs in |
 | `KODEZART_GIT_BASE_URL`           | `str`        | `https://github.com`     |             | Base URL for resolving `owner/repo` shorthand            |
@@ -62,7 +62,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_DENY_PATTERN_VERDICTS` | `dict[RedactionCategory, GateVerdict]` | `(required)` |  | JSON object mapping a redaction category to the verdict a hit in that category yields. A payload takes the max severity. |
 | `KODEZART_DISPATCH_HOLDER` | `str` | `kodezart` | min length 1 | Identity this deployment holds atomic claims under. Names the PROCESS, not the tracker account: two deployments sharing one workspace must carry different values or they cannot race. |
 | `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
-| `KODEZART_TRACKER_SCHEDULER_PASS_INTERVAL_SECONDS` | `float` | `300.0` | >= 10.0, <= 3600.0 | Seconds between approved-fire dispatch passes. Dispatch is single-winner-per-pass, so throughput IS the interval: the upper bound is what stops a loaded queue sitting idle for a working day. |
+| `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `float` | `300.0` | >= 10.0, <= 3600.0 | Seconds between approved-fire dispatch passes. Dispatch is single-winner-per-pass, so throughput IS the interval: the upper bound is what stops a loaded queue sitting idle for a working day. |
 | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `float` | `240.0` | >= 10.0, <= 3600.0 | Seconds one dispatch tick may take before it is abandoned. The tick is deterministic and model-free — a paged tracker scan, a claim, and the git plumbing that builds a base — so it belongs inside its own cadence, and the default leaves room for retries while still naming a hang before the next tick is due. On expiry the tick is cancelled and reported as timed out; the loop keeps its cadence and the next tick runs. The upper bound is the dispatch interval's own, so a budget can never outlast the slowest cadence that interval admits. |
 | `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS` | `float` | `3600.0` | >= 60.0, <= 86400.0 | Seconds between fire-preparation pass sessions. The interval IS the latency a newly filed issue waits before anything prepares it, so it is the operator's answer to how stale the queue may get. |
 | `KODEZART_FIRE_PREP_PASS_TIMEOUT_SECONDS` | `float` | `1800.0` | >= 60.0, <= 86400.0 | Seconds one fire-preparation tick may take before it is abandoned. The tick is a whole unattended session over the board, so the budget is generous — half the shipped cadence, which bounds a session that stopped making progress and still leaves the next tick on time. On expiry the session is cancelled and reported as timed out; the loop continues. |
@@ -244,8 +244,10 @@ KODEZART_DEBUG=false
 KODEZART_LOG_LEVEL=INFO
 KODEZART_LOG_PRETTY=false
 KODEZART_API_V1_PREFIX=/api/v1
-# GitHub personal access token for repository cloning (optional)
-KODEZART_GITHUB_TOKEN=
+# GitHub personal access token for repository cloning (optional). The field is
+# str | None and an empty assignment is NOT an unset one — it is refused at
+# startup. Leave the line commented out to keep it unset.
+#KODEZART_GITHUB_TOKEN=ghp_replace_me
 # Local directory for cached repository clones
 KODEZART_CLONE_CACHE_DIR=/tmp/kodezart-clones
 KODEZART_INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration

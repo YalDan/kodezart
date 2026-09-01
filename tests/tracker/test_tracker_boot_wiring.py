@@ -20,13 +20,14 @@ from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.composition.prompts import boot_prompts
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
+    PassKnowledgeCapabilityError,
     TrackerBootValidationError,
     TrackerEnsureConflictError,
 )
 from kodezart.core.protocols import ManagedMcpToolCaller
 from kodezart.main import create_app, lifespan
 from kodezart.services.pass_scheduler import PassScheduler
-from tests.fakes import ManagedFakeLinearMcpServer
+from tests.fakes import FakeMcpDocument, ManagedFakeLinearMcpServer
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
@@ -42,6 +43,12 @@ TOKEN = "fixture-tracker-token"
 #: A cadence no default would produce, and long enough that no pass fires
 #: inside a test: what is asserted is the wiring of the knob, not a tick.
 UNUSUAL_INTERVAL = 607.0
+
+#: The tracker-side run-log destination the fixture workspace holds.  A
+#: record is EXTERNAL — its id is declared, never adopted — so the workspace
+#: has to carry a document under it for a boot over this config to resolve.
+RUN_LOG_KEY = "run-log-1"
+RUN_LOG_TITLE = "Run log"
 
 #: The single board every case here runs on unless it needs two.
 ONE_TEAM: dict[str, str] = {"engineering": "fixture-team"}
@@ -61,6 +68,8 @@ def _operation_toml(
     teams: dict[str, str] | None = None,
     document_title: str = DOCUMENT_TITLE,
     document_id: str | None = DOCUMENT_KEY,
+    record_id: str = RUN_LOG_KEY,
+    knowledge: dict[str, str] | None = None,
 ) -> str:
     """An operation config naming the fixture workspace's own entities.
 
@@ -68,11 +77,22 @@ def _operation_toml(
     names the checkpoint document and boot adopts whatever id the workspace
     assigns it.
 
+    ``record_id`` is the tracker-side run log's, which the operation
+    declares rather than adopts: a record destination is EXTERNAL, so boot
+    RESOLVES the id it names and refuses on one the workspace does not hold.
+
     ``teams`` maps the operation's own key for a board to the name the
     workspace holds it under, which is how many boards this operation
     dispatches from — and therefore whether its queue vocabulary is
     scoped to one team or to the workspace.
+
+    ``knowledge`` is the what-lives-where map. Declaring one under a
+    deployment that grants no session the knowledge store is a preflight
+    refusal, which is how the case below reaches one.
     """
+    knowledge_map = "\n".join(
+        f'{key} = "{title}"' for key, title in (knowledge or {}).items()
+    )
     labels = dict(QUEUE_STATE_LABELS if queue_states is None else queue_states)
     rendered = "\n".join(f'{name} = "{label}"' for name, label in labels.items())
     boards = "\n".join(
@@ -120,11 +140,12 @@ name = "{document_title}"{declared_id}
 
 [records.run_log]
 system = "tracker"
-name = "Run log"
-id = "record-1"
+name = "{RUN_LOG_TITLE}"
+id = "{record_id}"
 append_only = true
 
 [knowledge]
+{knowledge_map}
 
 [endpoints]
 """
@@ -132,11 +153,24 @@ append_only = true
 
 @pytest.fixture
 def server() -> ManagedFakeLinearMcpServer:
-    """A managed fake MCP server carrying the shared fixture workspace."""
+    """A managed fake MCP server carrying the shared fixture workspace.
+
+    Plus the run-log document, which lives here rather than in the shared
+    fixture because only the composition-root cases declare a record
+    destination: the conformance suite is about the port, and a document
+    added there would be one every adapter had to answer for.
+    """
     source = fixture_server()
     managed = ManagedFakeLinearMcpServer()
     managed.issues = source.issues
-    managed.documents = source.documents
+    managed.documents = {
+        **source.documents,
+        RUN_LOG_KEY: FakeMcpDocument(
+            id=RUN_LOG_KEY,
+            title=RUN_LOG_TITLE,
+            content="one row per pass",
+        ),
+    }
     managed.users = source.users
     managed.teams = source.teams
     managed.labels = source.labels
@@ -528,12 +562,12 @@ async def test_boot_starts_a_scheduler_carrying_one_dispatch_pass_per_repo(
     """
     monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
     monkeypatch.setenv(
-        "KODEZART_TRACKER_SCHEDULER_PASS_INTERVAL_SECONDS",
+        "KODEZART_DISPATCH_PASS_INTERVAL_SECONDS",
         str(UNUSUAL_INTERVAL),
     )
     _configure(monkeypatch, tmp_path, _operation_toml())
     app = create_app()
-    assert app.state.config.tracker_scheduler_pass_interval_seconds == UNUSUAL_INTERVAL
+    assert app.state.config.dispatch_pass_interval_seconds == UNUSUAL_INTERVAL
 
     async with lifespan(app):
         scheduler: PassScheduler = app.state.pass_scheduler
@@ -565,3 +599,38 @@ async def test_without_a_delivery_probe_no_pass_is_scheduled_and_boot_says_so(
     assert len(unwired) == 1
     assert unwired[0]["tracker_present"] is True
     assert unwired[0]["delivery_probe_present"] is False
+
+
+async def test_a_preflight_refusal_strands_no_queue_and_no_open_transport(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """KOD-164: a refusal costs the boot it refuses and nothing else.
+
+    The scheduled passes' boot checks used to fire from inside the dispatch
+    wiring, which the root reaches only after it has started the job queue
+    and opened the tracker's MCP transport — so a refusal aborted the
+    lifespan with a running worker pool and a live vendor session, neither
+    of which the shutdown path was ever going to reach. Hoisted ahead of
+    both, the refusal leaves no queue on the app at all and hands the
+    transport back on the way out.
+
+    The refusal itself is the ordinary one: an operation declaring a
+    knowledge map under a deployment that grants that store to no session.
+    """
+    _configure(
+        monkeypatch,
+        tmp_path,
+        _operation_toml(knowledge={"constitution": "Operating Constitution"}),
+    )
+    app = create_app()
+
+    with pytest.raises(PassKnowledgeCapabilityError) as caught:
+        async with lifespan(app):
+            pass
+
+    assert "knowledge.constitution" in str(caught.value)
+    assert wired.closes == 1
+    assert not hasattr(app.state, "job_queue")
+    assert not hasattr(app.state, "pass_scheduler")

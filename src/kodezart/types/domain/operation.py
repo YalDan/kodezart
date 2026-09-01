@@ -381,6 +381,12 @@ class OperationConfig(OperationModel):
     Structural validation applies to what IS present: a populated registry
     missing the member code addresses by name is a typo and fails loudly,
     while an empty one is a decision and loads.
+
+    Loading is always legitimate; what the deployment can SCHEDULE over the
+    result is a separate question.  The scheduled passes enumerate ``teams``
+    and ``repos``, so a config declaring neither wires none of them — named
+    in the boot log, never a refusal at load and never a pass rendering a
+    hole one silent interval at a time.
     """
 
     operation_name: str
@@ -655,12 +661,16 @@ class OperationConfig(OperationModel):
 #: KNOWLEDGE system is not this operation's to create and produces no ref;
 #: it declares its id at load instead, so nothing about it is silent.
 #:
-#: ``records`` stays EXTERNAL and the ground is its own rather than
-#: inherited.  It is the WRITE-side registry, no pass writes to it in this
-#: arrangement (both templates say so), and R7(b) names a read-side
-#: document.  Giving it a name and an ensure would instate a destination
-#: nothing writes to.  The day a writer exists, the shape :class:`DocumentEntry`
-#: now has is the shape it takes.
+#: ``records`` stays EXTERNAL, and the writer the earlier ground denied now
+#: exists: the pass-mechanisms fragment rides every scheduled pass and tells
+#: each one to append its row to the declared run log.  EXTERNAL is what
+#: that writer needs, not what it refutes — a destination whose id another
+#: system assigned is resolved at boot, and one tracker-side is resolved
+#: exactly like a document, so a typo aborts naming the entry instead of
+#: failing inside an unattended session.  A KNOWLEDGE-side id is the arm no
+#: boot can check headlessly: this process holds no client for that store,
+#: so its guard is session REACHABILITY — a declared knowledge surface with
+#: the scheduled-pass grant absent refuses at the composition root.
 #:
 #: Totality over ``OperationConfig.model_fields`` is asserted by a test
 #: derived from ``model_fields``, never from a hand-written list.

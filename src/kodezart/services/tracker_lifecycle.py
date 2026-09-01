@@ -12,13 +12,15 @@ performs.  The terminal transition is the verified-merge write, which
 moves the workflow state to the stage the configuration binds ``DONE``
 to, and the queue state to its terminal member.
 
-**The pull-request arm also records the delivery.**  A ``DELIVERABLE``
-work ref is what a dependent lane's base resolves through, and until
-KOD-149 nothing in the process wrote one: every issue with a blocker
-failed base resolution, because the ref the resolver walks the chain
-looking for was never recorded by anything.  The open pull request is the
-moment the branch and its pushed tip both exist, so this is where it is
-written.
+**The pull-request arm also records the delivery — when there is one.**  A
+``DELIVERABLE`` work ref is what a dependent lane's base resolves through,
+and until KOD-149 nothing in the process wrote one: every issue with a
+blocker failed base resolution, because the ref the resolver walks the
+chain looking for was never recorded by anything.  The open pull request
+is the moment the branch and its pushed tip both exist, so this is where
+it is written — for the pull request that DELIVERS.  The stall exit opens
+one too, over a branch its own acceptance gate rejected, and the event
+says which it is.
 """
 
 from collections.abc import Callable
@@ -89,17 +91,43 @@ class TrackerLifecycleWriter:
         issue_key: str,
         feature_branch: str,
         feature_tip_sha: str,
+        delivered: bool,
     ) -> None:
-        """A pull request is open: move to review, and record what delivers it."""
+        """A pull request is open: move to review, and record what delivers it.
+
+        The state write is unconditional and stays that way.  Both nodes
+        that open a pull request leave a human with one to read, which is
+        what the review stage means — the stall exit's do-not-merge branch
+        needs a reader more than an accepted one does, and an issue left in
+        the in-progress stage with nothing running is the lie the failure
+        arm exists to prevent.
+
+        The DELIVERABLE ref is the half that is NOT unconditional.  A ref is
+        at-most-one and nothing in this process can delete one, so recording
+        a branch the run's acceptance gate rejected would make it the base
+        every dependent lane resolves to — and the designed recovery, a
+        human closing the stall pull request so the pass re-fires, could
+        never replace it.  A run that did not deliver records nothing here;
+        the pull request still reaches the issue, in the terminal comment
+        the outcome arm posts.
+        """
         await self._tracker.set_workflow_state(
             issue_key=issue_key,
             stage=LifecycleStage.IN_REVIEW,
         )
-        await self._record_deliverable(
-            issue_key=issue_key,
-            feature_branch=feature_branch,
-            feature_tip_sha=feature_tip_sha,
-        )
+        if delivered:
+            await self._record_deliverable(
+                issue_key=issue_key,
+                feature_branch=feature_branch,
+                feature_tip_sha=feature_tip_sha,
+            )
+        else:
+            await self._log.ainfo(
+                "lifecycle_undelivered_pull_request",
+                issue_key=issue_key,
+                branch=feature_branch,
+                pushed_head_sha=feature_tip_sha,
+            )
         await self._log.ainfo("lifecycle_in_review", issue_key=issue_key)
 
     async def on_verified_merge(self, *, issue_key: str) -> None:
@@ -135,8 +163,9 @@ class TrackerLifecycleWriter:
 
         Order matches the success path: the state lands before the comment
         reports it, so no reader sees the note beside a stale state.  The
-        claim is NOT released — its lease ageing out is what lets the next
-        pass re-fire, and that recovery is correct as it stands.
+        claim is released by the watcher after every stream end the process
+        survives, this arm included, so the next pass is free to re-fire as
+        soon as it ticks rather than waiting a lease out (KOD-152).
         """
         await self._tracker.restore_workflow_state(
             issue_key=issue_key,

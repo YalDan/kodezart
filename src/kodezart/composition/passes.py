@@ -165,7 +165,49 @@ def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
         raise PromptRenderError(msg, missing=error.missing) from error
 
 
-def build_prompt_passes(
+def prompt_pass_schedule(config: AppConfig) -> dict[PromptKey, _PromptPassRow]:
+    """One row per scheduled prompt pass: its cadence, its budget, its gate.
+
+    The table, on its own, because two things read it: the wiring below,
+    and the preflight that boot-renders and capability-checks exactly what
+    the wiring will build.  A second copy of the key set is a second
+    opinion about which passes this deployment schedules.
+    """
+    return {
+        PromptKey.FIRE_PREP_PASS: _PromptPassRow(
+            interval_seconds=config.fire_prep_pass_interval_seconds,
+            timeout_seconds=config.fire_prep_pass_timeout_seconds,
+            signals=config.fire_prep_pass_gate_signals,
+        ),
+        PromptKey.GROOMING_PASS: _PromptPassRow(
+            interval_seconds=config.grooming_pass_interval_seconds,
+            timeout_seconds=config.grooming_pass_timeout_seconds,
+            signals=config.grooming_pass_gate_signals,
+        ),
+    }
+
+
+def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
+    """The roster collections a scheduled template enumerates and *operation* lacks.
+
+    Every shipped pass template iterates the declared teams AND the declared
+    repositories unconditionally, and an empty collection binds as absent,
+    so a pass wired over either would be sent on a prompt with a hole in it.
+    Named as a predicate rather than checked twice: the wiring refuses to
+    schedule such a pass, and the preflight renders exactly the passes the
+    wiring will build.
+    """
+    return tuple(
+        name
+        for name, declared in (
+            ("teams", operation.teams),
+            ("repos", operation.repos),
+        )
+        if not declared
+    )
+
+
+async def build_prompt_passes(
     *,
     config: AppConfig,
     operation: OperationConfig,
@@ -183,14 +225,14 @@ def build_prompt_passes(
     second render path to keep in parity with the first, which is the
     defect this shape exists to remove.
 
-    Every scheduled template is RENDERED once here and the result thrown
-    away, so a pass whose prompt has a hole in it is a boot refusal naming
-    the pass and every unbound placeholder.  The operation configuration is
-    boot-static: a template that renders at boot renders identically at
-    every tick, so the hole a tick would find is exactly the hole this
-    finds, and finding it at boot costs one startup instead of one silent
-    interval after another (KOD-150).  Same act, same failure and same
-    error type as the knowledge map's boot render.
+    Wired only over a config that carries a ROSTER.  Every shipped template
+    enumerates the declared teams and the declared repositories, so a pass
+    scheduled over an operation declaring neither would render a hole every
+    interval, on a board nobody is watching.  Loading such a config stays
+    legitimate — an empty board boots — and what it costs is named here
+    rather than paid silently: the collections that are empty are logged,
+    and no pass is registered.  The boot render that guards the passes this
+    DOES wire is :func:`verify_pass_preflight`'s (KOD-150).
 
     The ``PromptKey`` is still what the tick is bound to, not the rendered
     string: the render stays inside the tick, where the gate has already
@@ -204,28 +246,24 @@ def build_prompt_passes(
     per-repository dispatch pass makes is a property of that pass, not of
     the mechanism.
     """
+    log: BoundLogger = get_logger(__name__)
+    absent = absent_roster(operation)
+    if absent:
+        await log.ainfo(
+            "prompt_passes_not_wired",
+            operation_config_present=True,
+            absent=list(absent),
+        )
+        return []
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
-    schedule: dict[PromptKey, _PromptPassRow] = {
-        PromptKey.FIRE_PREP_PASS: _PromptPassRow(
-            interval_seconds=config.fire_prep_pass_interval_seconds,
-            timeout_seconds=config.fire_prep_pass_timeout_seconds,
-            signals=config.fire_prep_pass_gate_signals,
-        ),
-        PromptKey.GROOMING_PASS: _PromptPassRow(
-            interval_seconds=config.grooming_pass_interval_seconds,
-            timeout_seconds=config.grooming_pass_timeout_seconds,
-            signals=config.grooming_pass_gate_signals,
-        ),
-    }
+    schedule = prompt_pass_schedule(config)
     # Read only where a gate will actually be built: naming the operation's
     # teams REFUSES when it declares none, and a deployment whose passes are
     # all ungated has no scan for that refusal to be about.
     gated = tracker is not None and any(row.signals for row in schedule.values())
     team_keys = operation.team_keys() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
-    for key in schedule:
-        _assert_renders(key=key, prompts=prompts)
     return [
         ScheduledPass(
             name=key.value,
@@ -342,7 +380,7 @@ async def build_dispatch_passes(
         passes.append(
             ScheduledPass(
                 name=f"{_DISPATCH_NAME}:{repo.url}",
-                interval_seconds=config.tracker_scheduler_pass_interval_seconds,
+                interval_seconds=config.dispatch_pass_interval_seconds,
                 timeout_seconds=config.dispatch_pass_timeout_seconds,
                 run=tick.run,
             ),
@@ -377,10 +415,13 @@ async def _verify_wired_gates(
     """
     if tracker is None or operation is None:
         return
-    wired: dict[str, Sequence[PassSignal]] = {
-        PromptKey.FIRE_PREP_PASS.value: config.fire_prep_pass_gate_signals,
-        PromptKey.GROOMING_PASS.value: config.grooming_pass_gate_signals,
-    }
+    wired: dict[str, Sequence[PassSignal]] = (
+        {}
+        if absent_roster(operation)
+        else {
+            key.value: row.signals for key, row in prompt_pass_schedule(config).items()
+        }
+    )
     if github_api is not None and any(
         operation.teams_bound_to(repo.url) for repo in operation.repos
     ):
@@ -408,23 +449,29 @@ def _verify_knowledge_destinations(
     config: AppConfig,
     operation: OperationConfig | None,
 ) -> None:
-    """Refuse to boot when a wired pass is sent to a store it cannot open.
+    """Refuse to boot when a scheduled pass is sent to a store it cannot open.
 
     The mismatch lives across two files and neither half is wrong alone:
-    the operation names a destination in the knowledge system, and the
+    the operation names a surface in the knowledge system, and the
     deployment grants the knowledge server to no session type.  Composed,
-    they render an instruction into every scheduled pass to write
-    somewhere its session holds no capability for — and the only place
-    that can fail is inside the session, where it looks like a pass that
-    ran and recorded nothing.
+    they leave a scheduled pass addressing a store its session holds no
+    capability for — and the only place that can fail is inside the
+    session, where it looks like a pass that ran and recorded nothing.
+
+    THREE surfaces, because the operation declares three and a pass reads
+    all of them: a ``documents`` entry and a ``records`` entry in the
+    knowledge system, and the ``knowledge`` map itself — the what-lives-
+    where prelude, which is rendered only for a GRANTED session type, so a
+    declared map under an ungranted pass is an operation whose passes are
+    told to consult a map their session was never given.
 
     Checked HERE, on the same predicate the prompt-pass wiring below uses:
-    a deployment that schedules no prompt pass renders no such
-    instruction, and refusing boot over a destination nothing reads would
-    hold it hostage to configuration nobody acts on.
+    a deployment that schedules no prompt pass reaches none of these, and
+    refusing boot over a surface nothing reads would hold it hostage to
+    configuration nobody acts on.
 
     Every affected entry is named at once, because an operator moving one
-    destination at a time pays a boot cycle per entry.  A destination in
+    surface at a time pays a boot cycle per entry.  A document or record in
     the TRACKER system is untouched — a pass reaches the tracker through
     the server the host attaches, whatever the knowledge grant says.
     """
@@ -442,15 +489,58 @@ def _verify_knowledge_destinations(
         for key, entry in operation.records.items()
         if entry.system is DocumentSystem.KNOWLEDGE
     )
+    destinations.extend(
+        f"knowledge.{key} ({title})" for key, title in operation.knowledge.items()
+    )
     if not destinations:
         return
     raise PassKnowledgeCapabilityError(
-        f"the operation declares {DocumentSystem.KNOWLEDGE.value} destinations "
-        f"but {SessionType.SCHEDULED_PASS.value} is not named in "
-        f"knowledge_session_grants, so the passes rendering them hold no "
-        f"capability to reach one",
+        f"the operation declares {DocumentSystem.KNOWLEDGE.value} surfaces and "
+        f"{SessionType.SCHEDULED_PASS.value} is not named in "
+        f"knowledge_session_grants, so no scheduled pass holds the capability "
+        f"to reach one",
         destinations=destinations,
     )
+
+
+async def verify_pass_preflight(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker: TrackerPort | None,
+    github_api: DeliveryProbe | None,
+    prompts: PromptSetProvider,
+) -> None:
+    """Every boot refusal the scheduled passes can raise, before anything runs.
+
+    All three refusals are decided by CONFIGURATION plus one tracker round
+    trip, and none of them needs a queue, an executor or a workflow engine.
+    They used to fire from inside :func:`build_dispatch_runtime`, which the
+    composition root reaches only after it has started the job queue and
+    opened the tracker's MCP transport — so a refusal aborted the lifespan
+    with both of those live and neither of them closed.  Hoisting them into
+    one call the root makes BEFORE it builds anything is what makes a
+    refusal cost nothing but the boot it refuses.
+
+    The order is the cost order: the two configuration answers are already
+    in hand, the gate probe is a round trip, and the renders are local.
+
+    The render half applies to exactly the passes that will WIRE.  An
+    operation with no roster schedules none of them (see
+    :func:`build_prompt_passes`), and rendering a template it will never
+    send would refuse a boot over a hole nothing reaches.
+    """
+    _verify_knowledge_destinations(config=config, operation=operation)
+    await _verify_wired_gates(
+        config=config,
+        operation=operation,
+        tracker=tracker,
+        github_api=github_api,
+    )
+    if operation is None or absent_roster(operation):
+        return
+    for key in prompt_pass_schedule(config):
+        _assert_renders(key=key, prompts=prompts)
 
 
 async def build_dispatch_runtime(
@@ -474,21 +564,12 @@ async def build_dispatch_runtime(
     The watches those passes start come back with it, because the root
     that starts them is the one that has to drain them on the way down.
 
-    Every gate this deployment is about to wire is verified against the
-    credential BEFORE anything is built, and a refusal is the end of the
-    boot.  A deployment with no tracker port asks nothing: its passes are
-    ungated, which is a state already named in the log below.  The
-    knowledge destinations the passes would be instructed to write to are
-    checked on the same terms, and first, because that answer is already
-    in hand and the gate probe is a round trip.
+    Nothing is VERIFIED here.  Every refusal the scheduled passes can raise
+    at boot belongs to :func:`verify_pass_preflight`, which the root runs
+    before it builds the queue this constructs against — checking again
+    here would be a second answer to a question already settled, on a path
+    where refusing costs a started queue and an open transport.
     """
-    _verify_knowledge_destinations(config=config, operation=operation)
-    await _verify_wired_gates(
-        config=config,
-        operation=operation,
-        tracker=tracker,
-        github_api=github_api,
-    )
     # Cadence is scheduler configuration and nothing else. Three
     # states, none silent: no tracker, or no delivery probe to answer
     # "is this issue already delivered?", and the passes do not run —
@@ -536,7 +617,7 @@ async def build_dispatch_runtime(
                 ],
             )
         scheduled.extend(
-            build_prompt_passes(
+            await build_prompt_passes(
                 config=config,
                 operation=operation,
                 prompts=prompts,
@@ -546,7 +627,15 @@ async def build_dispatch_runtime(
             ),
         )
     else:
-        await log.ainfo("prompt_passes_not_wired", operation_config_present=False)
+        # The other arm of the same event: no operation config at all, so
+        # every roster is absent rather than empty. One name for one fact,
+        # so an operator reading the log for "why no prompt pass?" finds
+        # both answers under it.
+        await log.ainfo(
+            "prompt_passes_not_wired",
+            operation_config_present=False,
+            absent=[],
+        )
     return DispatchRuntime(
         scheduler=PassScheduler(passes=tuple(scheduled)),
         lifecycle=None if built is None else built.lifecycle,

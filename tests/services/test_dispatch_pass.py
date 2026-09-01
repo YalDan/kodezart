@@ -324,6 +324,130 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
     assert lifecycle.following == frozenset()
 
 
+class _FailingDispatcher:
+    """A dispatcher whose pass raises before it writes anything.
+
+    The clean-miss window the re-arm exists for: the delivery probe
+    raising inside the exclusion sweep, ahead of the first claim. Every
+    other failure arm leaves a tracker write behind that moves an
+    ``updated_at`` and re-opens the delta on its own; this one leaves the
+    board exactly as the gate found it.
+    """
+
+    def __init__(self, *, block: asyncio.Event | None = None) -> None:
+        self.calls: int = 0
+        self._block: asyncio.Event | None = block
+
+    async def run_pass(self) -> DispatchReport:
+        self.calls += 1
+        if self._block is not None:
+            await self._block.wait()
+        msg = "the delivery probe could not be reached"
+        raise TimeoutError(msg)
+
+
+def failing_tick(
+    tracker: FakeTrackerPort,
+    *,
+    block: asyncio.Event | None = None,
+) -> tuple[GatedDispatchPass, PassGate, _FailingDispatcher]:
+    """The shipped tick and gate, over a pass that cannot finish."""
+    queue = FakeJobQueue()
+    guard = PassGate(
+        tracker=tracker,
+        signals=[PassSignal.approved_changed],
+        team_keys=operation_config().team_keys_for_repo(PRIMARY_REPO),
+        repo_urls=[PRIMARY_REPO],
+        page_size=PAGE_SIZE,
+    )
+    dispatcher = _FailingDispatcher(block=block)
+    return (
+        GatedDispatchPass(
+            lifecycle=LifecycleWatcher(
+                queue=queue,
+                writer=TrackerLifecycleWriter(
+                    tracker=tracker,
+                    gate=PassThroughGate(),
+                ),
+                heartbeat=ClaimHeartbeat(
+                    tracker=tracker,
+                    holder=HOLDER,
+                    lease_seconds=LEASE_SECONDS,
+                    renewal_fraction=RENEWAL_FRACTION,
+                ),
+            ),
+            gate=guard,
+            dispatcher=dispatcher,
+        ),
+        guard,
+        dispatcher,
+    )
+
+
+class TestAFailedPassGivesTheWakeUpBack:
+    """A window the gate opened and the pass never read is re-read (KOD-164).
+
+    At the shipped ``dispatch_pass_gate_signals`` default the gate carries
+    one signal, so a burned mark is the whole wake-up: every later tick
+    reports what a quiet board reports, and the approved issue waits for
+    something else to touch it.
+    """
+
+    async def test_a_pass_that_raises_leaves_every_mark_at_its_pre_tick_value(
+        self,
+    ) -> None:
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        pass_, guard, _ = failing_tick(tracker)
+
+        with pytest.raises(TimeoutError):
+            await pass_.run()
+
+        assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+
+    async def test_the_next_tick_reports_the_same_delta(self) -> None:
+        """Re-armed means re-asked: the second query opens the same window."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        pass_, _, dispatcher = failing_tick(tracker)
+
+        for _ in range(2):
+            with pytest.raises(TimeoutError):
+                await pass_.run()
+
+        assert dispatcher.calls == 2, "the second tick reached the pass again"
+        assert [scan.updated_since for scan in tracker.scans] == [None, None]
+
+    async def test_a_tick_that_completed_still_advances_its_mark(self) -> None:
+        """The paired positive: only a failure gives the window back."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        pass_, queue = tick(tracker)
+
+        await pass_.run()
+
+        assert len(queue.submissions) == 1
+        assert tracker.scans[-1].updated_since is None
+        await pass_.run()
+        assert tracker.scans[-1].updated_since is not None
+
+    async def test_a_tick_cancelled_on_its_budget_keeps_its_window_too(
+        self,
+    ) -> None:
+        """A timed-out pass may not eat the wake-up either.
+
+        Driven as a real cancellation — the scheduler abandons a tick that
+        outran its timeout — rather than as a raised ``CancelledError``,
+        because what has to survive is the unwind and not an exception
+        type.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        pass_, guard, dispatcher = failing_tick(tracker, block=asyncio.Event())
+
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(pass_.run(), timeout=SETTLE_DELAY_SECONDS)
+
+        assert dispatcher.calls == 1, "the pass was entered and then abandoned"
+        assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+
+
 async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:
     """The mark carries between ticks, so a settled board stops waking."""
     tracker = FakeTrackerPort(
@@ -459,12 +583,12 @@ async def test_a_repository_no_team_is_bound_to_gets_a_named_skip() -> None:
 
 
 async def test_the_root_gives_every_pass_the_configured_cadence() -> None:
-    """AC-20: ``tracker_scheduler_pass_interval_seconds`` has a real consumer."""
+    """AC-20: ``dispatch_pass_interval_seconds`` has a real consumer."""
     unusual = 41.0
-    config = AppConfig(tracker_scheduler_pass_interval_seconds=unusual)
+    config = AppConfig(dispatch_pass_interval_seconds=unusual)
     assert (
-        config.tracker_scheduler_pass_interval_seconds
-        != AppConfig().tracker_scheduler_pass_interval_seconds
+        config.dispatch_pass_interval_seconds
+        != AppConfig().dispatch_pass_interval_seconds
     )
 
     tracker = FakeTrackerPort()
@@ -500,7 +624,7 @@ async def test_the_root_gives_every_pass_the_configured_budget() -> None:
         != AppConfig().dispatch_pass_timeout_seconds
     )
     assert config.dispatch_pass_timeout_seconds != (
-        config.tracker_scheduler_pass_interval_seconds
+        config.dispatch_pass_interval_seconds
     )
 
     tracker = FakeTrackerPort()

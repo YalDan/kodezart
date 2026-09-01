@@ -20,6 +20,7 @@ from fastapi.routing import APIRoute
 from kodezart.core.config import AppConfig
 from kodezart.main import create_app
 from kodezart.types.domain.agent import AgentEvent
+from tests.docs.test_api_event_reference import SECTION as API_EVENT_HEADING
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGURATION_DOC = REPO_ROOT / "docs" / "configuration.md"
@@ -350,6 +351,7 @@ def test_no_documented_protocol_is_absent_from_the_port_module() -> None:
 #: not attach to, so a fourth instance fails rather than being rediscovered.
 _DERIVED_SET_NOUNS: tuple[str, ...] = (
     "event types?",
+    "events?",
     "protocol-based ports?",
     "protocols?",
     "ports?",
@@ -361,17 +363,21 @@ _DERIVED_SET_NOUNS: tuple[str, ...] = (
     "criteria",
 )
 
-#: A digit, then up to two adjectives, then one of those nouns. The window
-#: is what makes "12 protocol-based ports" and "18 SSE event types" both
-#: reachable without the pattern degenerating into "any number near any
-#: word".  A hyphen separates as a space does, because the attributive form
-#: — "a 15-field reference" — is the one this lane shipped and then had to
-#: delete, and a pattern that could not see it would be a guard written
-#: after the defect it cannot match.
+_NOUNS = "|".join(_DERIVED_SET_NOUNS)
+
+#: TWO shapes, because the claim reads both ways round and the first
+#: pattern could see only one of them.  Digit first — a digit, up to two
+#: adjectives, then one of those nouns: the window is what makes "12
+#: protocol-based ports" and "18 SSE event types" both reachable without
+#: degenerating into "any number near any word", and a hyphen separates as
+#: a space does because the attributive form — "a 15-field reference" — is
+#: the one this lane shipped and then had to delete.  Noun first, count
+#: parenthesised after it — "Event Types (18 total)", "Workflow events (6)"
+#: — which is the form three stale instances sat in, inside a file this
+#: guard already scanned, while it passed.
 _COUNTED_CLAIM = re.compile(
-    r"\b\d[\d,]*[\s-]+(?:[A-Za-z][A-Za-z-]*[\s-]+){0,2}(?:"
-    + "|".join(_DERIVED_SET_NOUNS)
-    + r")\b",
+    r"\b\d[\d,]*[\s-]+(?:[A-Za-z][A-Za-z-]*[\s-]+){0,2}(?:" + _NOUNS + r")\b"
+    r"|\b(?:" + _NOUNS + r")\s*\(\s*\d[\d,]*(?:[\s-]+[A-Za-z][A-Za-z-]*){0,2}\s*\)",
     re.IGNORECASE,
 )
 
@@ -386,24 +392,42 @@ _PROSE_FILES: tuple[Path, ...] = (
 )
 
 
+def _counted_claims_in(path: Path) -> list[str]:
+    """Every counted claim in *path*, minus the ones another guard recomputes.
+
+    ``docs/api.md``'s ``### X Events (N)`` headings carry a count and are
+    the one instance of this shape that is NOT a second statement: the
+    event-reference guard derives each of those counts from the rows under
+    it, so a stale one reddens there rather than surviving.  The exemption
+    is expressed by importing that guard's own heading pattern, so it can
+    never outlive the check it defers to.
+    """
+    claims: list[str] = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if path == API_DOC and API_EVENT_HEADING.match(line) is not None:
+            continue
+        claims.extend(
+            f"{path.relative_to(REPO_ROOT).as_posix()}:{number}: {match.group(0)!r}"
+            for match in _COUNTED_CLAIM.finditer(line)
+        )
+    return claims
+
+
 def test_no_prose_file_asserts_a_count_of_something_the_code_owns() -> None:
     """A count in prose is an assertion nothing recomputes."""
-    claims = [
-        f"{path.relative_to(REPO_ROOT).as_posix()}:{number}: {match.group(0)!r}"
-        for path in _PROSE_FILES
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        for match in _COUNTED_CLAIM.finditer(line)
-    ]
+    claims = [claim for path in _PROSE_FILES for claim in _counted_claims_in(path)]
 
     assert claims == []
 
 
 def test_the_counted_claim_pattern_matches_the_instances_it_was_written_for() -> None:
-    """The three sentences that were live at `f7ce6cc`, plus the one before them.
+    """The sentences that were live at `f7ce6cc` and `b19afde`.
 
     A guard that cannot match the defect it names demonstrates nothing, so
     the shapes are stated rather than assumed — including the two-adjective
-    form, which is why the window exists.
+    form, which is why the window exists, and the parenthesised form, which
+    is how three stale counts sat in ``docs/architecture.md`` inside this
+    guard's own scan set while it passed.
     """
     for claim in (
         "SSE streaming of 18 event types for real-time progress visibility",
@@ -411,8 +435,31 @@ def test_the_counted_claim_pattern_matches_the_instances_it_was_written_for() ->
         "the full SSE event schema (18 event types)",
         "a 15-field reference",
         "All 12 protocols are listed below",
+        "### Event Types (18 total)",
+        "**Streaming events (11)**:",
+        "**Workflow events (6)**:",
     ):
         assert _COUNTED_CLAIM.search(claim) is not None, claim
+
+
+def test_the_only_exempt_counted_claims_are_the_ones_another_guard_derives() -> None:
+    """Non-vacuity for the exemption, in both directions.
+
+    The exempted lines really do carry the shape — so the exemption is
+    doing work rather than describing lines the pattern never saw — and
+    ``docs/api.md`` is clean once they are set aside, so the exemption is
+    not hiding a second, undeserved instance beside them.
+    """
+    exempted = [
+        line
+        for line in API_DOC.read_text(encoding="utf-8").splitlines()
+        if API_EVENT_HEADING.match(line) is not None
+    ]
+
+    assert exempted, "the guard those headings defer to has nothing to derive"
+    for line in exempted:
+        assert _COUNTED_CLAIM.search(line) is not None, line
+    assert _counted_claims_in(API_DOC) == []
 
 
 def test_the_counted_claim_pattern_leaves_ordinary_prose_alone() -> None:

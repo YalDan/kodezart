@@ -224,7 +224,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
 | `workflow_review`              | `passed`, `evaluation`, `fixRoundsUsed`         |
 | `workflow_remediation`         | `entry`, `roundIndex`, `ticket`, `baseRef`      |
-| `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
+| `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
 | `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
 
@@ -241,6 +241,13 @@ budget ran out, and a draft nobody reviewed are three different facts.
 `ignored_by_target`). `ignored_by_target` is not a variant of success: the
 target repository's ignore rules match the artifact directory, so no run
 lands artifacts there until they change.
+
+`workflow_pr.delivered` says which of the two pull-request paths opened it.
+`true` is the accepted path's delivery, and it is what the tracker
+write-back records as the issue's deliverable work ref. `false` is the
+stall exit's do-not-merge best-iteration branch, opened over a run its own
+acceptance gate rejected: it is reported and commented on, and no work ref
+is recorded for it.
 
 ### Job Events (1)
 

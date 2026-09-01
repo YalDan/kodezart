@@ -69,7 +69,14 @@ class AppConfig(BaseSettings):
     )
     github_token: str | None = Field(
         default=None,
-        description="GitHub PAT for cloning private repositories.",
+        min_length=1,
+        description=(
+            "GitHub PAT for cloning private repositories and reaching the "
+            "forge. Unset means no forge credential: the clone path attaches "
+            "no auth and no dispatch pass is scheduled. An empty assignment "
+            "is refused here rather than resolving to one of those states on "
+            "one code path and the other on the next."
+        ),
     )
     clone_cache_dir: str = Field(
         default="/tmp/kodezart-clones",
@@ -402,7 +409,7 @@ class AppConfig(BaseSettings):
         le=250,
         description="Issues requested per tracker scan page.",
     )
-    tracker_scheduler_pass_interval_seconds: float = Field(
+    dispatch_pass_interval_seconds: float = Field(
         default=300.0,
         ge=10.0,
         le=3600.0,
@@ -576,8 +583,9 @@ class AppConfig(BaseSettings):
             "Session types the knowledge MCP server is attached to, "
             "named one by one. There is no wildcard value. Ships empty: "
             "the mechanism ships and the grant is operator configuration. "
-            "A non-empty list with KODEZART_KNOWLEDGE_MCP_TOKEN unset aborts "
-            "boot rather than attaching an unauthenticated server."
+            "A non-empty list with neither KODEZART_KNOWLEDGE_MCP_TOKEN nor "
+            "KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN set aborts boot rather "
+            "than attaching an unauthenticated server."
         ),
     )
 

@@ -595,3 +595,105 @@ async def test_the_outcome_event_tells_an_unanswered_ask_from_a_quiet_board() ->
     assert [
         entry["unanswerable"] for entry in quiet if entry["event"] in _OUTCOMES
     ] == [[]]
+
+
+class TestRearmingAMarkTheConsumerNeverRead:
+    """Asking is not reading, so a pass that raised gets its window back.
+
+    ``delta`` advances a mark to stop the next tick re-reporting the same
+    window.  The pass BENEATH the gate is what reads that window, and one
+    that raised read nothing: leaving the mark forward spends a wake-up on
+    work that never happened, and at the shipped single-signal dispatch
+    default an approved issue then sits undispatched until something else
+    happens to touch it (KOD-164).
+    """
+
+    async def test_rearming_puts_every_advanced_mark_back(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("FIX-1", created_at=LATER)],
+        )
+        subject = gate(tracker)
+
+        await subject.delta()
+        assert subject.mark(PassSignal.approved_changed, container=TEAM) == LATER
+        subject.rearm()
+
+        assert subject.mark(PassSignal.approved_changed, container=TEAM) is None
+
+    async def test_the_next_tick_reports_the_same_delta_after_a_rearm(self) -> None:
+        """The window is genuinely re-read, not merely un-stamped."""
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("FIX-1", created_at=LATER)],
+        )
+        subject = gate(tracker)
+
+        first = await subject.delta()
+        subject.rearm()
+        second = await subject.delta()
+
+        assert first.changed == second.changed
+        assert [scan.updated_since for scan in tracker.scans] == [None, None]
+
+    async def test_every_signal_and_container_the_tick_advanced_is_restored(
+        self,
+    ) -> None:
+        """Marks are per signal AND container, and so is the snapshot."""
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue("FIX-1", team_key=TEAM, created_at=LATER),
+                make_tracker_issue("DES-1", team_key=OTHER_TEAM, created_at=LATEST),
+            ],
+        )
+        tracker.reviews[REPO] = [make_tracker_review("acme/repo#7", updated_at=LATER)]
+        subject = signal_gate(
+            tracker,
+            PassSignal.issues_changed,
+            PassSignal.reviews_changed,
+            team_keys=(TEAM, OTHER_TEAM),
+        )
+
+        await subject.delta()
+        subject.rearm()
+
+        assert subject.mark(PassSignal.issues_changed, container=TEAM) is None
+        assert subject.mark(PassSignal.issues_changed, container=OTHER_TEAM) is None
+        assert subject.mark(PassSignal.reviews_changed, container=REPO) is None
+
+    async def test_a_second_rearm_rewinds_nothing_further(self) -> None:
+        """Idempotent: the snapshot is emptied as it is applied."""
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("FIX-1", created_at=LATER)],
+        )
+        subject = gate(tracker)
+
+        await subject.delta()
+        subject.rearm()
+        await subject.delta()
+        subject.rearm()
+        subject.rearm()
+
+        assert subject.mark(PassSignal.approved_changed, container=TEAM) is None
+
+    async def test_rearming_after_a_tick_that_advanced_nothing_is_a_no_op(
+        self,
+    ) -> None:
+        """A quiet tick left no mark forward, so there is nothing to put back."""
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("FIX-1", created_at=LATER)],
+        )
+        subject = gate(tracker)
+        await subject.delta()
+        tracker.issues.clear()
+
+        await subject.delta()
+        subject.rearm()
+
+        assert subject.mark(PassSignal.approved_changed, container=TEAM) == LATER
+
+    def test_rearming_before_any_tick_is_a_no_op(self) -> None:
+        """Nothing has been asked, so nothing has been advanced."""
+        subject = gate(FakeTrackerPort())
+
+        subject.rearm()
+
+        assert subject.mark(PassSignal.approved_changed, container=TEAM) is None

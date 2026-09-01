@@ -335,6 +335,7 @@ async def test_the_blockers_pull_request_is_what_makes_its_lane_resolvable() -> 
         issue_key="B-1",
         feature_branch="kodezart/b-1-the-blockers-lane",
         feature_tip_sha="c" * 40,
+        delivered=True,
     )
 
     spec = await resolve(tracker, FakeGitService())

@@ -47,6 +47,7 @@ does not exist.
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
 | CIMonitor         | GitHubAPIClient          | Polls check runs for a pushed head                   |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
+| DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
 | McpToolCaller     | HttpMcpToolCaller        | One MCP tool call over the vendor's HTTP transport   |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
@@ -74,41 +75,93 @@ does not exist.
 The outer workflow runs as a LangGraph StateGraph defined in
 `chains/ralph_workflow.py`:
 
+Two nodes — `persist_ticket` and `persist_artifacts` — are added only when an
+ArtifactPersister is wired; the rest are always present.
+
 ```mermaid
 stateDiagram-v2
-    [*] --> generate_branch
+    [*] --> resolve_visibility
+    resolve_visibility --> generate_branch
     generate_branch --> generate_ticket
-    generate_ticket --> generate_criteria
+    generate_ticket --> persist_ticket : artifact persister wired
+    generate_ticket --> generate_criteria : no artifact persister
+    persist_ticket --> generate_criteria
     generate_criteria --> validate_criteria
     validate_criteria --> generate_criteria : regeneration demanded, bound not spent
     validate_criteria --> complete : bound spent, criteria still infeasible
-    validate_criteria --> run_ralph_loop : criteria dispatchable
-    run_ralph_loop --> finalize
-    finalize --> [*]
+    validate_criteria --> persist_artifacts : criteria dispatchable, persister wired
+    validate_criteria --> run_ralph_loop : criteria dispatchable, no persister
+    persist_artifacts --> run_ralph_loop
+    run_ralph_loop --> merge_to_feature
+    merge_to_feature --> review_against_ticket : merged
+    merge_to_feature --> remediate : a remediable failure, rounds left
+    merge_to_feature --> land_best_iteration : the loop never accepted
+    merge_to_feature --> complete : nothing to land
+    land_best_iteration --> complete
+    review_against_ticket --> open_pr : review passed
+    review_against_ticket --> monitor_ci : a pull request is already open
+    review_against_ticket --> remediate : review failed, rounds left
+    review_against_ticket --> comment_failure : review failed, rounds spent
+    review_against_ticket --> complete : no forge configured
+    remediate --> generate_criteria
+    open_pr --> monitor_ci
+    open_pr --> complete : CI monitoring disabled
+    monitor_ci --> complete : CI passed
+    monitor_ci --> remediate : CI failed, rounds left
+    monitor_ci --> comment_failure : CI failed, rounds spent
+    comment_failure --> complete
+    complete --> [*]
 ```
 
-1. **generate_branch** - Asks the agent to generate a descriptive branch name
+1. **resolve_visibility** - Resolves the target repository's PRIVATE / PUBLIC /
+   UNKNOWN posture once, which is what the outbound gate is engaged under for
+   the rest of the run
+2. **generate_branch** - Asks the agent to generate a descriptive branch name
    slug, then creates a feature branch (`kodezart/{slug}-{hex}`) and a ralph
    working branch (`{feature}-ralph-{hex}`)
-2. **generate_ticket** - Delegates to the TicketGenerator to draft and review an
+3. **generate_ticket** - Delegates to the TicketGenerator to draft an
    implementation ticket from the raw user prompt
-3. **generate_criteria** - Asks the agent to analyze the codebase and derive
+4. **persist_ticket** - Writes the ticket under `.kodezart/` in the worktree
+   (only when an ArtifactPersister is wired)
+5. **generate_criteria** - Asks the agent to analyze the codebase and derive
    testable acceptance criteria from the ticket
-4. **validate_criteria** - Dispatches the drafted criteria to an adversarial
+6. **validate_criteria** - Dispatches the drafted criteria to an adversarial
    refuter, which returns a three-state verdict per criterion plus any jointly
    unsatisfiable subsets. `infeasible` criteria and the members of a
    contradiction are routed back to **generate_criteria** for amendment, up to
    `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS`; a set that still demands
    regeneration once the bound is spent halts the run before the loop
-5. **run_ralph_loop** - Delegates to the QualityGate for iterative
+7. **persist_artifacts** - Writes the validated criteria beside the ticket
+   (only when an ArtifactPersister is wired)
+8. **run_ralph_loop** - Delegates to the QualityGate for iterative
    execute/evaluate until criteria pass or max iterations
-6. **finalize** - Fast-forward merges the ralph branch into the feature branch,
-   pushes, and cleans up the ralph branch
+9. **merge_to_feature** - Consolidates the ralph branch into the feature branch
+   and pushes; the consolidation status is what routes the rest of the run
+10. **land_best_iteration** - The stall exit: a run whose loop never accepted
+    still publishes its best iteration and opens a do-not-merge pull request
+    over it, so a human reads what was reached. Its `workflow_pr` event carries
+    `delivered: false`, and no work ref is recorded for it
+11. **review_against_ticket** - Reviews the merged work against the ticket's own
+    criteria, after the merge rather than inside the loop
+12. **remediate** - One remediation round: the failure evidence in, one targeted
+    ticket out, bounded by `KODEZART_REMEDIATION_MAX_ROUNDS`
+13. **open_pr** - Opens the delivery pull request. Its `workflow_pr` event
+    carries `delivered: true`, and the tracker write-back records that branch
+    and its pushed tip as the issue's deliverable work ref
+14. **monitor_ci** - Polls check runs for the pushed head
+15. **comment_failure** - Posts the failure the run ends on where a reader will
+    find it
+16. **complete** - The single terminal node: every path ends here, carrying the
+    run's outcome
 
 ## Ticket Generation Loop
 
 The ticket generation loop runs as a LangGraph StateGraph in
-`chains/ticket_generation.py`:
+`chains/ticket_generation.py`. Its shape depends on the configured
+`KODEZART_TICKET_REVIEW_MODE`: under the shipped default `create_only`
+the loop is a single create pass with a mandatory in-session draft
+critic and no separate review round; the drafter/reviewer cycle below
+is the `reviewed` mode, kept fully selectable:
 
 ```mermaid
 stateDiagram-v2
@@ -191,19 +244,15 @@ graph LR
     SSE --> HTTP["HTTP text/event-stream"]
 ```
 
-### Event Types (18 total)
+### Event Types
 
-**Streaming events (11)**:
-`user_message`, `assistant_text`, `assistant_thinking`, `tool_use`,
-`tool_result`, `system`, `task_started`, `task_progress`,
-`task_notification`, `result`, `stream_event`
-
-**Workflow events (6)**:
-`workflow_ticket_draft`, `workflow_ticket_review`, `workflow_ticket`,
-`workflow_criteria`, `workflow_iteration`, `workflow_complete`
-
-**Error events (1)**:
-`error`
+The event set is tabulated in [`api.md`](api.md#sse-event-types), grouped as
+streaming, workflow, job and error events. That table is derived from the
+event models by `tests/docs/test_api_event_reference.py` — every shipped
+discriminator has a row, every field a row names exists, and each heading's
+declared size equals its own rows. It is therefore the only place the set is
+written down; restating any part of it here would be a second copy with no
+test behind it.
 
 ## Checkpointing
 
@@ -233,7 +282,8 @@ via `receive_response()`. Supports session resume via `session_id`.
 
 Uses one-shot `query()` from the Claude Agent SDK. Each call is an independent
 conversation with no session persistence. **Not wired in the default
-composition root** (`main.py:32` uses `ClaudeClientExecutor`).
+composition root** — `main.py`'s `lifespan()` constructs
+`ClaudeClientExecutor`.
 
 ### Working-directory MCP injection guard
 

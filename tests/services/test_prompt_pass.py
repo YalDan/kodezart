@@ -462,3 +462,117 @@ async def test_a_pass_cancelled_mid_stream_reports_no_terminal_outcome() -> None
 
     assert runner.cancelled
     assert logs == []
+
+
+class RaisingRunner:
+    """A runner whose stream raises before the session says anything.
+
+    The failure a pass beneath a gate can meet after the gate has already
+    advanced its marks: the session could not be started at all, so the
+    window the gate opened was never worked.
+    """
+
+    def __init__(self) -> None:
+        self.calls: int = 0
+
+    async def stream_in_workspace(
+        self,
+        **_kwargs: object,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.calls += 1
+        msg = "the session could not be started"
+        raise RuntimeError(msg)
+        yield  # pragma: no cover - unreachable, and what makes this a generator
+
+
+class TestAFailedPassGivesTheWakeUpBack:
+    """A window the gate opened and the session never worked is re-read.
+
+    Asking advances the mark so the next tick does not re-report the same
+    window; the SESSION is what reads it, and a pass that raised opened
+    none. Leaving the mark forward spends the wake-up on nothing (KOD-164).
+    """
+
+    async def test_a_session_that_raises_leaves_the_mark_where_it_was(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "FIX-1",
+                    team_key=example_config().team_keys()[0],
+                    created_at=LATER,
+                ),
+            ],
+        )
+        gate = pass_gate(tracker, PassSignal.issues_changed)
+        runner = RaisingRunner()
+
+        with pytest.raises(RuntimeError):
+            await run(prompts=bound_registry(), runner=runner, gate=gate)
+
+        assert (
+            gate.mark(
+                PassSignal.issues_changed,
+                container=example_config().team_keys()[0],
+            )
+            is None
+        )
+
+    async def test_the_next_tick_asks_the_same_question_again(self) -> None:
+        """Re-armed means re-asked, not merely un-stamped."""
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "FIX-1",
+                    team_key=example_config().team_keys()[0],
+                    created_at=LATER,
+                ),
+            ],
+        )
+        gate = pass_gate(tracker, PassSignal.issues_changed)
+        runner = RaisingRunner()
+
+        for _ in range(2):
+            with pytest.raises(RuntimeError):
+                await run(prompts=bound_registry(), runner=runner, gate=gate)
+
+        assert runner.calls == 2, "the second tick reached the session again"
+        assert [scan.updated_since for scan in tracker.scans] == [None] * len(
+            tracker.scans
+        )
+
+    async def test_a_session_that_ran_still_advances_its_mark(self) -> None:
+        """The paired positive: only a failure gives the window back."""
+        team_key = example_config().team_keys()[0]
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("FIX-1", team_key=team_key, created_at=LATER)],
+        )
+        gate = pass_gate(tracker, PassSignal.issues_changed)
+
+        await run(
+            prompts=bound_registry(),
+            runner=FakeAgentRunner(events=[]),
+            gate=gate,
+        )
+
+        assert gate.mark(PassSignal.issues_changed, container=team_key) == LATER
+
+    async def test_a_pass_cancelled_on_its_budget_keeps_its_window_too(self) -> None:
+        """A timed-out pass may not eat the wake-up either.
+
+        Driven as the scheduler's own bound reaching a live session, so
+        what survives the unwind is the re-arm and not an exception type
+        this test chose.
+        """
+        team_key = example_config().team_keys()[0]
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("FIX-1", team_key=team_key, created_at=LATER)],
+        )
+        gate = pass_gate(tracker, PassSignal.issues_changed)
+        runner = HangingRunner()
+
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(CANCEL_TIMEOUT):
+                await run(prompts=bound_registry(), runner=runner, gate=gate)
+
+        assert runner.cancelled
+        assert gate.mark(PassSignal.issues_changed, container=team_key) is None

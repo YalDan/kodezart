@@ -11,9 +11,10 @@ from kodezart.core.config import AppConfig
 def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
     """The forge API client, or ``None`` when no credential is configured.
 
-    One client serves three protocols downstream — pull-request creation,
-    CI monitoring and repository visibility — so it is built once here and
-    handed to each of them rather than dialled three times.
+    One client serves four protocols downstream — pull-request creation,
+    CI monitoring, repository visibility, and the forge-origin arm of
+    delivery probing — so it is built once here and handed to each of
+    them rather than dialled four times.
     """
     return (
         GitHubAPIClient(

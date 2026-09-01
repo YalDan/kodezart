@@ -44,6 +44,15 @@ class GatedDispatchPass:
         so meeting it means the report and the enqueue disagree — and
         returning on it would leave a running fire with no watch and no
         way to be put back, which is the state the watch exists for.
+
+        Anything that raises beneath the gate RE-ARMS it before unwinding.
+        The gate advanced its marks to ask the question; the pass that was
+        supposed to read the window it opened did not, so leaving the marks
+        forward would spend that wake-up on nothing and — at the shipped
+        single-signal default — leave an approved issue undispatched until
+        something else happened to touch it.  ``BaseException`` rather than
+        ``Exception``: a tick the scheduler cancels on its timeout must not
+        eat the wake-up either.
         """
         changed: tuple[str, ...] = ()
         if self._gate is not None:
@@ -52,6 +61,15 @@ class GatedDispatchPass:
                 await self._log.ainfo("dispatch_pass_skipped_no_delta")
                 return
             changed = delta.changed
+        try:
+            await self._dispatch(changed=changed)
+        except BaseException:
+            if self._gate is not None:
+                self._gate.rearm()
+            raise
+
+    async def _dispatch(self, *, changed: tuple[str, ...]) -> None:
+        """The work the gate opened a window for: one pass, and its watch."""
         report = await self._dispatcher.run_pass()
         await self._log.ainfo(
             "dispatch_pass_completed",
@@ -60,9 +78,11 @@ class GatedDispatchPass:
             claimed_issue_key=report.claimed_issue_key,
             job_id=report.job_id,
         )
-        # Enqueueing is the moment the issue acquires a run to report on.
-        # The other two outcomes claimed nothing, so there is nothing to
-        # follow — never an empty watch started "just in case".
+        # Enqueueing is the moment the issue acquires a run to report on,
+        # and it is the only outcome of the four that leaves one running.
+        # Of the rest, two never claimed and the third claimed and released
+        # before returning — so none of them has a run to follow, and no
+        # empty watch is ever started "just in case".
         if report.outcome is not DispatchOutcome.fire_enqueued:
             return
         if (

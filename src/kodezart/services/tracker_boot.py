@@ -39,11 +39,20 @@ from kodezart.types.domain.tracker import (
 def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
     """Every mapping entry boot validation must resolve, in a stable order.
 
-    Documents are absent from this pass and that is deliberate: the ensure
-    is what establishes them and it reports the identifier the workspace
-    holds, so a resolution pass over the same values would re-ask the tool
-    that just answered.  What this pass exists to catch is the class no
-    boot can instate — a principal, a team, a lifecycle state.
+    ``documents`` are absent from this pass and that is deliberate: the
+    ensure is what establishes them and it reports the identifier the
+    workspace holds, so a resolution pass over the same values would re-ask
+    the tool that just answered.  What this pass exists to catch is the
+    class no boot can instate — a principal, a team, a lifecycle state.
+
+    ``records`` are EXTERNAL and so belong here, tracker-side ones at
+    least: a record destination declares an id it did not assign itself,
+    which is exactly the class this pass resolves, and a typo in one used
+    to survive boot and fail inside an unattended pass session instead.  A
+    tracker-side record IS a document to this backend, so it resolves as
+    one.  A record in the KNOWLEDGE system is left alone: no client in this
+    process can open that store, so nothing here could ask — their boot
+    guard is the grant-coverage check at the composition root.
     """
     refs: list[MappingRef] = [
         MappingRef(
@@ -79,6 +88,15 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
             config.workflow_states.items(),
             key=lambda item: item[0].value,
         )
+    )
+    refs.extend(
+        MappingRef(
+            kind=MappingKind.DOCUMENT,
+            name=entry.name,
+            identifier=entry.id,
+        )
+        for _, entry in sorted(config.records.items())
+        if entry.system is DocumentSystem.TRACKER
     )
     return tuple(refs)
 

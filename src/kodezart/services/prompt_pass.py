@@ -80,34 +80,45 @@ async def run_prompt_pass(
     and is thereby distinguishable from one that made a dozen calls.
 
     Cancellation — the scheduler abandoning a tick that outran its budget
-    — is not an outcome this reports.  There is no handler around the
-    read, so ``CancelledError`` unwinds through it and no terminal event
-    is emitted for a pass that never terminated.
+    — is not an outcome this reports.  No terminal event is emitted for a
+    pass that never terminated: ``CancelledError`` unwinds through the
+    read, pausing only to re-arm the gate.
+
+    Re-arming is what a raise of any kind costs the gate.  Asking advanced
+    its marks so the next tick would not re-report the same window; the
+    session that was supposed to work that window never ran, so the marks
+    go back and the next tick asks again.  A cancelled tick is the same
+    case — a timed-out pass may not eat a wake-up either.
     """
     loop = asyncio.get_running_loop()
     started = loop.time()
     if gate is not None and not (await gate.delta()).has_delta():
         await _log.ainfo("prompt_pass_skipped_no_delta", name=key.value)
         return
-    prompt = prompts.template_for(key).render({})
     counts: Counter[str] = Counter()
     failure: ErrorEvent | None = None
     result_observed = False
-    async for event in runner.stream_in_workspace(
-        prompt=prompt,
-        workspace_path=workspace_path,
-        permission_mode=permission_mode,
-        allowed_tools=allowed_tools,
-        skills=prompts.session_skills(key, skills),
-        session_type=session_type,
-        session_policy=prompts.session_policy(key),
-    ):
-        counts[event.type] += 1
-        if isinstance(event, ErrorEvent):
-            if failure is None:
-                failure = event
-        elif isinstance(event, ResultEvent):
-            result_observed = True
+    try:
+        prompt = prompts.template_for(key).render({})
+        async for event in runner.stream_in_workspace(
+            prompt=prompt,
+            workspace_path=workspace_path,
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
+            skills=prompts.session_skills(key, skills),
+            session_type=session_type,
+            session_policy=prompts.session_policy(key),
+        ):
+            counts[event.type] += 1
+            if isinstance(event, ErrorEvent):
+                if failure is None:
+                    failure = event
+            elif isinstance(event, ResultEvent):
+                result_observed = True
+    except BaseException:
+        if gate is not None:
+            gate.rearm()
+        raise
     observed: dict[str, object] = {
         "name": key.value,
         "duration_seconds": loop.time() - started,

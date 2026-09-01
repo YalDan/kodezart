@@ -1254,6 +1254,9 @@ class RalphWorkflowEngine:
                 feature_branch=head,
                 base_branch=ctx.base_branch,
                 feature_tip_sha=outcome.feature_tip_sha if integrated else best_sha,
+                # The acceptance gate rejected this branch: the pull request
+                # asks a human to read a stall, it does not deliver the issue.
+                delivered=False,
             )
         )
         await self._log.ainfo(
@@ -1683,6 +1686,8 @@ class RalphWorkflowEngine:
                 feature_branch=state["feature_branch"],
                 base_branch=ctx.base_branch,
                 feature_tip_sha=feature_tip_sha,
+                # The accepted path: this branch is what the run delivered.
+                delivered=True,
             )
         )
 

@@ -96,3 +96,49 @@ def test_neither_flipped_default_counts_as_an_operator_decision() -> None:
     assert "prompt_set" not in config.model_fields_set
     assert "ticket_review_mode" not in config.model_fields_set
     assert config.explicit_max_reviews() is None
+
+
+# ---------------------------------------------------------------------------
+# KOD-164 — an empty forge credential means one thing, and it is refused
+# ---------------------------------------------------------------------------
+
+FORGE_TOKEN_ENV = "KODEZART_GITHUB_TOKEN"
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+def test_an_empty_forge_token_is_refused_naming_the_field() -> None:
+    """``""`` was a representable value the two consumers read oppositely.
+
+    The clone path builds auth on truthiness, so an empty token gave it NO
+    auth; the forge client builds on identity, so the same value gave it a
+    client sending an empty credential — and whether that client exists is
+    also what decides if a dispatch pass is scheduled at all. One value,
+    two states: refused here so absence is a single state again.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        AppConfig(github_token="")
+
+    assert "github_token" in str(excinfo.value)
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+def test_an_empty_forge_token_assignment_in_the_environment_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shape an operator reaches: a bare ``KODEZART_GITHUB_TOKEN=`` line.
+
+    This is the hazard ``.env.example`` warns about, and the warning is
+    only true because the value is refused rather than quietly resolved.
+    """
+    monkeypatch.setenv(FORGE_TOKEN_ENV, "")
+
+    with pytest.raises(ValidationError) as excinfo:
+        AppConfig()
+
+    assert "github_token" in str(excinfo.value)
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+def test_an_unset_forge_token_is_the_absent_state_and_still_loads() -> None:
+    """Non-vacuity: absence stays legal, and it is one state rather than two."""
+    assert AppConfig().github_token is None
