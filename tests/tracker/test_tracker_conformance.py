@@ -33,6 +33,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
     is_open,
 )
+from tests.fakes import FakeLinearMcpServer, FakeMcpComment
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
     APPROVER,
@@ -264,6 +265,62 @@ class TestComments:
     ) -> None:
         await tracker.post_comment(issue_key=APPROVED_ISSUE, body="one")
         assert await tracker.list_comments(issue_key=ASSET_ISSUE) == ()
+
+
+class TestAnUnattributedComment:
+    """A comment the backend attributes to nobody, at the PORT (KOD-280).
+
+    Measured 2026-09-01 17:52Z: a listing carried a comment whose author
+    the vendor reported as null — a removed user or an integration — and
+    the dispatch tick that read it died.  The wire model and the adapter
+    were taught the state; this pins it where every adapter has to answer
+    for it, because "no author reported" is a fact about the backend and
+    not about one vendor's JSON.
+
+    Over ``TRACKER_ADAPTERS`` rather than the doubles: the workspace is
+    seeded through the fake MCP server, which is the adapters' input.
+    """
+
+    async def test_an_unattributed_comment_stays_unattributed(
+        self,
+        server: FakeLinearMcpServer,
+        adapter: TrackerPort,
+    ) -> None:
+        server.comments.append(
+            FakeMcpComment(
+                id="comment-unattributed",
+                issue_id=APPROVED_ISSUE,
+                author=None,
+                body="left behind by an account nobody can name",
+                created_at=FIXTURE_NOW,
+            ),
+        )
+
+        listed = await adapter.list_comments(issue_key=APPROVED_ISSUE)
+
+        assert [(item.comment_key, item.author_key) for item in listed] == [
+            ("comment-unattributed", None),
+        ]
+
+    async def test_an_attributed_comment_still_names_its_author(
+        self,
+        server: FakeLinearMcpServer,
+        adapter: TrackerPort,
+    ) -> None:
+        """The paired positive: the state is one comment's, not the log's."""
+        server.comments.append(
+            FakeMcpComment(
+                id="comment-attributed",
+                issue_id=APPROVED_ISSUE,
+                author=APPROVER,
+                body="left by somebody the workspace still knows",
+                created_at=FIXTURE_NOW,
+            ),
+        )
+
+        listed = await adapter.list_comments(issue_key=APPROVED_ISSUE)
+
+        assert [item.author_key for item in listed] == [APPROVER]
 
 
 class TestAtomicClaim:
