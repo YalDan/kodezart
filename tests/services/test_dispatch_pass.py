@@ -30,9 +30,19 @@ from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
-from kodezart.types.domain.agent import WorkflowCompleteEvent
-from kodezart.types.domain.dispatch import DispatchOutcome, DispatchReport, PassSignal
+from kodezart.types.domain.agent import (
+    AssistantTextEvent,
+    ErrorEvent,
+    WorkflowCompleteEvent,
+)
+from kodezart.types.domain.dispatch import (
+    DispatchOutcome,
+    DispatchReport,
+    ExclusionClause,
+    PassSignal,
+)
 from kodezart.types.domain.gating import OutboundDestination, RepoVisibility
+from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
@@ -48,9 +58,11 @@ from kodezart.types.domain.operation import (
     TeamEntry,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_records import RunOutcome
 from kodezart.types.domain.tracker import IssuePriority
 from tests.fakes import (
     FakeDeliveryProbe,
+    FakeFireReport,
     FakeGitService,
     FakeJobQueue,
     FakeRepoCache,
@@ -192,6 +204,7 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
                 lease_seconds=LEASE_SECONDS,
                 renewal_fraction=RENEWAL_FRACTION,
             ),
+            report=FakeFireReport(),
         ),
         gate=PassGate(
             tracker=tracker,
@@ -306,6 +319,7 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
             lease_seconds=LEASE_SECONDS,
             renewal_fraction=RENEWAL_FRACTION,
         ),
+        report=FakeFireReport(),
     )
     pass_ = GatedDispatchPass(
         gate=None,
@@ -379,6 +393,7 @@ def failing_tick(
                     lease_seconds=LEASE_SECONDS,
                     renewal_fraction=RENEWAL_FRACTION,
                 ),
+                report=FakeFireReport(),
             ),
             gate=guard,
             dispatcher=dispatcher,
@@ -739,6 +754,68 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
     ]
     assert tracker.queue_writes == [("K-1", QueueState.DONE)]
     assert [comment.issue_key for comment in tracker.comments] == ["K-1"]
+
+
+async def test_a_run_that_died_is_reported_into_the_pass_that_fired_it() -> None:
+    """The watch-to-dispatcher fan-out is reached from the composition root.
+
+    Nothing here calls ``record_run_outcome``.  The only input is a
+    dispatch pass built by ``build_dispatch_passes`` over a queue whose job
+    dies on a rate-limit rejection, and the observable is the NEXT tick:
+    the issue excluded under the failed-run clause carrying the class the
+    run died of, and no second fire (KOD-174).  A root that built the
+    watcher without its report, or the dispatchers after it, fires the
+    issue again here.
+
+    The pass is UNGATED — the shipped empty-signals configuration — so the
+    second tick is the pass deciding, not the gate finding a quiet board
+    and skipping it.  The job is terminal and the claim released by then,
+    exactly as after a real run, so the live-run clause has nothing to
+    say and the exclusion can only be the remembered one.
+    """
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+    queue = FakeJobQueue(
+        events=[
+            AssistantTextEvent(text="working", model="fixture-model"),
+            ErrorEvent(
+                error="rate limited",
+                error_kind="RateLimitedSoftFailureError",
+                raise_site="acceptance_criteria",
+            ),
+        ],
+    )
+    built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
+        config=AppConfig(dispatch_pass_gate_signals=[]),
+        operation=operation_config(),
+        tracker=tracker,
+        delivery=FakeDeliveryProbe(),
+        queue=queue,
+        registry=queue,
+        gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+    await built.passes[0].run()
+    with structlog.testing.capture_logs() as logs:
+        await built.lifecycle.drain()
+        queue.mark("job-0001", JobState.TERMINAL)
+        await built.passes[0].run()
+
+    assert queue.attached == ["job-0001"]
+    assert len(queue.submissions) == 1, "the whole run is not fired again"
+    assert [
+        (entry["issue_key"], entry["outcome"], entry["failure_class"])
+        for entry in logs
+        if entry["event"] == "dispatch_run_failed_remembered"
+    ] == [("K-1", RunOutcome.FAILED.value, "RateLimitedSoftFailureError")]
+    assert [
+        entry["exclusions"]
+        for entry in logs
+        if entry["event"] == "dispatch_empty_eligible_set"
+    ] == [[{"issueKey": "K-1", "clause": ExclusionClause.RUN_FAILED.value}]]
 
 
 async def test_the_pass_threads_the_claimed_boards_posture_to_the_watch() -> None:

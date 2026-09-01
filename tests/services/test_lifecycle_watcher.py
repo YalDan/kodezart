@@ -38,6 +38,7 @@ from kodezart.types.domain.run_records import RunOutcome, RunRecord
 from kodezart.types.domain.tracker import ClaimStatus
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
+    FakeFireReport,
     FakeJobQueue,
     FakeTrackerPort,
     PassThroughGate,
@@ -123,6 +124,7 @@ def watcher_over(
         queue=FakeJobQueue(events=events),
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=claim_heartbeat(tracker),
+        report=FakeFireReport(),
     )
 
 
@@ -138,6 +140,7 @@ def watcher(
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
         ),
         tracker,
         queue,
@@ -443,6 +446,7 @@ class TestThePremiseAgainstTheShippedQueue:
                     gate=PassThroughGate(),
                 ),
                 heartbeat=claim_heartbeat(tracker),
+                report=FakeFireReport(),
             )
             record = await queue.submit(
                 lane="lane",
@@ -504,6 +508,7 @@ class TestGracefulShutdownHandsTheClaimBack:
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
         )
         record = await queue.submit(
             lane="lane",
@@ -569,6 +574,7 @@ class TestTheWatcherIsUnknownJobSafe:
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
         )
 
         with pytest.raises(KeyError):
@@ -750,6 +756,7 @@ def watcher_recording(
             queue=FakeJobQueue(events=events),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
         ),
         recorder,
     )
@@ -809,7 +816,7 @@ class TestTheFireRecord:
 
 def watcher_reporting(
     *events: AgentEvent,
-) -> tuple[LifecycleWatcher, list[tuple[str, RunOutcome, str | None]]]:
+) -> tuple[LifecycleWatcher, FakeFireReport]:
     """The shipped watcher over a scripted run, with its report captured.
 
     The report is what the dispatch pass hears: the seam exists so a pass
@@ -817,15 +824,7 @@ def watcher_reporting(
     would leave the pass firing the same issue every tick (KOD-174).
     """
     tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
-    reported: list[tuple[str, RunOutcome, str | None]] = []
-
-    async def report(
-        issue_key: str,
-        outcome: RunOutcome,
-        failure_class: str | None,
-    ) -> None:
-        reported.append((issue_key, outcome, failure_class))
-
+    report = FakeFireReport()
     return (
         LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
@@ -834,7 +833,7 @@ def watcher_reporting(
             heartbeat=claim_heartbeat(tracker),
             report=report,
         ),
-        reported,
+        report,
     )
 
 
@@ -848,7 +847,7 @@ class TestTheFireOutcomeIsReportedBack:
     """
 
     async def test_a_failed_run_reports_the_class_it_died_of(self) -> None:
-        watch, reported = watcher_reporting(
+        watch, report = watcher_reporting(
             AssistantTextEvent(text="working", model=MODEL),
             ErrorEvent(
                 error="rate limited",
@@ -863,13 +862,13 @@ class TestTheFireOutcomeIsReportedBack:
             pre_claim_state=PRE_CLAIM_STATE,
         )
 
-        assert reported == [
+        assert report.reported == [
             (ISSUE, RunOutcome.FAILED, "RateLimitedSoftFailureError"),
         ]
 
     async def test_a_completed_run_reports_that_it_completed(self) -> None:
         """The paired positive: the seam carries every end, not only failures."""
-        watch, reported = watcher_reporting(
+        watch, report = watcher_reporting(
             AssistantTextEvent(text="working", model=MODEL),
             complete(merged=True, outcome=WorkflowOutcome.ci_passed),
         )
@@ -880,11 +879,11 @@ class TestTheFireOutcomeIsReportedBack:
             pre_claim_state=PRE_CLAIM_STATE,
         )
 
-        assert reported == [(ISSUE, RunOutcome.COMPLETED, None)]
+        assert report.reported == [(ISSUE, RunOutcome.COMPLETED, None)]
 
     async def test_a_failure_naming_no_class_reports_how_the_run_ended(self) -> None:
         """The third state: the stream ended with no error frame at all."""
-        watch, reported = watcher_reporting(
+        watch, report = watcher_reporting(
             AssistantTextEvent(text="working", model=MODEL),
         )
 
@@ -894,4 +893,4 @@ class TestTheFireOutcomeIsReportedBack:
             pre_claim_state=PRE_CLAIM_STATE,
         )
 
-        assert reported == [(ISSUE, RunOutcome.FAILED, None)]
+        assert report.reported == [(ISSUE, RunOutcome.FAILED, None)]

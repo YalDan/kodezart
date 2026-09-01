@@ -232,11 +232,7 @@ class FireDispatcher:
         # over, and taking it before the claim is what makes a blocked
         # winner cost no claim/release pair.
         winner = await self._tracker.read_issue(issue_key=selection.winner_key)
-        blockers = {
-            key: await self._tracker.read_issue(issue_key=key)
-            for key in blocker_keys(winner)
-        }
-        blocking = live_blocker(winner, blockers=blockers)
+        blocking = await self._live_blocker_of(winner)
         if blocking is not None:
             await self._log.ainfo(
                 "dispatch_winner_blocked",
@@ -536,11 +532,7 @@ class FireDispatcher:
                 clause=ExclusionClause.NOT_OPEN,
                 detail=issue.state_name,
             )
-        blockers = {
-            key: await self._tracker.read_issue(issue_key=key)
-            for key in blocker_keys(issue)
-        }
-        blocking = live_blocker(issue, blockers=blockers)
+        blocking = await self._live_blocker_of(issue)
         if blocking is not None:
             return IssueExclusion(
                 issue_key=issue.issue_key,
@@ -606,6 +598,20 @@ class FireDispatcher:
                 else "the issue belongs to no project"
             ),
         )
+
+    async def _live_blocker_of(self, issue: TrackerIssue) -> str | None:
+        """Clause 4 over *issue*'s own edges: the first live blocker's key.
+
+        Each blocker is read, because whether an edge blocks is a fact
+        about the issue at its far end — a closed blocker is a delivered
+        premise, not a standing one.  The same reading serves the scan-time
+        clause and the pre-claim one (KOD-173).
+        """
+        blockers = {
+            key: await self._tracker.read_issue(issue_key=key)
+            for key in blocker_keys(issue)
+        }
+        return live_blocker(issue, blockers=blockers)
 
     async def _initiatives_for(self, project_id: str) -> frozenset[str]:
         cached = self._initiatives_by_project.get(project_id)

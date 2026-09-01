@@ -1741,7 +1741,7 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
             for item in report.exclusions
             if item.clause is ExclusionClause.LIVE_BLOCKER
         ] == [("K-1", ExclusionClause.LIVE_BLOCKER, "K-2")]
-        assert tracker.claims == {}, "no claim is spent on a blocked winner"
+        assert tracker.claim_writes == [], "no claim is spent on a blocked winner"
         assert queue.submissions == []
 
     async def test_the_scan_alone_cannot_see_the_blocker(self) -> None:
@@ -1786,6 +1786,7 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
         assert report.outcome is DispatchOutcome.fire_enqueued
         assert report.claimed_issue_key == "K-1"
         assert report.claimed_state_name == "Todo"
+        assert tracker.claim_writes == ["K-1"]
         assert len(queue.submissions) == 1
         assert tracker.issue_reads == ["K-1", "K-1"]
 

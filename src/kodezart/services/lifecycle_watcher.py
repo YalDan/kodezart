@@ -101,7 +101,7 @@ class LifecycleWatcher:
         writer: TrackerLifecycleWriter,
         heartbeat: ClaimHeartbeat,
         recorder: RunRecorder,
-        report: FireReport | None = None,
+        report: FireReport,
     ) -> None:
         self._queue: JobQueue = queue
         self._writer: TrackerLifecycleWriter = writer
@@ -109,10 +109,8 @@ class LifecycleWatcher:
         self._recorder: RunRecorder = recorder
         #: Where a finished fire's outcome goes — the dispatchers firing
         #: onto this lane, so a run that died is remembered instead of
-        #: being re-selected whole at the next tick (KOD-174).  ``None``
-        #: for a watch started outside a dispatch pass, which has no
-        #: dispatcher to tell.
-        self._report: FireReport | None = report
+        #: being re-selected whole at the next tick (KOD-174).
+        self._report: FireReport = report
         self._following: set[asyncio.Task[None]] = set()
         self._log: BoundLogger = get_logger(__name__)
 
@@ -248,12 +246,11 @@ class LifecycleWatcher:
         # The dispatcher hears first: it is in this process, it costs
         # nothing, and what it does with the news is decide whether the
         # next tick may select this issue again (KOD-174).
-        if self._report is not None:
-            await self._report(
-                issue_key,
-                outcome,
-                None if failure is None else failure.error_kind,
-            )
+        await self._report(
+            issue_key,
+            outcome,
+            None if failure is None else failure.error_kind,
+        )
         await self._record_fire(
             issue_key=issue_key,
             outcome=outcome,

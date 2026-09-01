@@ -29,6 +29,7 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.tracker import ClaimResult, ClaimStatus
 from tests.fakes import (
     FIXTURE_EPOCH,
+    FakeFireReport,
     FakeJobQueue,
     FakeTrackerPort,
     PassThroughGate,
@@ -181,6 +182,7 @@ async def watched(*, events: tuple[AgentEvent, ...]) -> FakeTrackerPort:
         queue=FakeJobQueue(events=events),
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=heartbeat(tracker, clock=clock),
+        report=FakeFireReport(),
     )
 
     await asyncio.wait_for(
@@ -394,6 +396,7 @@ class TestTheWatcherDrivesTheHeartbeat:
             queue=RaisingJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),
+            report=FakeFireReport(),
         )
 
         with pytest.raises(KeyError):
@@ -466,6 +469,7 @@ class TestTheClaimIsHandedBackWhenTheJobEnds:
             queue=RaisingJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),
+            report=FakeFireReport(),
         )
 
         with pytest.raises(KeyError):
@@ -498,6 +502,7 @@ class TestTheClaimIsHandedBackWhenTheJobEnds:
             queue=FakeJobQueue(events=(TERMINAL_EVENT,)),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),
+            report=FakeFireReport(),
         )
 
         await asyncio.wait_for(
