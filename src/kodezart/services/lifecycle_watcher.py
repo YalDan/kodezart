@@ -51,6 +51,7 @@ of a lease nobody was working under.
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
@@ -68,6 +69,27 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.run_records import RunOutcome, RunRecord
 
+#: How a finished fire's outcome reaches the pass that started it: the
+#: issue, how the run ended, and the class it died of when an error frame
+#: named one.  Shaped after ``ScheduledPass.report`` — the seam a pass's
+#: own outcome already travels — because a fire's end is the same kind of
+#: fact, and a second shape for it would be a second vocabulary to keep in
+#: parity with the first.
+type FireReport = Callable[[str, RunOutcome, str | None], Awaitable[None]]
+
+
+def _fire_outcome(*, started: bool, terminal: bool) -> RunOutcome:
+    """How the run ended, from the two facts its stream carries.
+
+    Whether it was ever dequeued, and whether it reached a terminal
+    outcome — nothing else is known here, and nothing else is needed:
+    the three ends those two facts partition are exactly the three a fire
+    can have.
+    """
+    if terminal:
+        return RunOutcome.COMPLETED
+    return RunOutcome.FAILED if started else RunOutcome.NEVER_STARTED
+
 
 class LifecycleWatcher:
     """Drives one issue's lifecycle write-back off its job's event stream."""
@@ -79,11 +101,18 @@ class LifecycleWatcher:
         writer: TrackerLifecycleWriter,
         heartbeat: ClaimHeartbeat,
         recorder: RunRecorder,
+        report: FireReport | None = None,
     ) -> None:
         self._queue: JobQueue = queue
         self._writer: TrackerLifecycleWriter = writer
         self._heartbeat: ClaimHeartbeat = heartbeat
         self._recorder: RunRecorder = recorder
+        #: Where a finished fire's outcome goes — the dispatchers firing
+        #: onto this lane, so a run that died is remembered instead of
+        #: being re-selected whole at the next tick (KOD-174).  ``None``
+        #: for a watch started outside a dispatch pass, which has no
+        #: dispatcher to tell.
+        self._report: FireReport | None = report
         self._following: set[asyncio.Task[None]] = set()
         self._log: BoundLogger = get_logger(__name__)
 
@@ -215,10 +244,19 @@ class LifecycleWatcher:
             run_started=started,
             terminal_outcome=terminal,
         )
+        outcome = _fire_outcome(started=started, terminal=terminal)
+        # The dispatcher hears first: it is in this process, it costs
+        # nothing, and what it does with the news is decide whether the
+        # next tick may select this issue again (KOD-174).
+        if self._report is not None:
+            await self._report(
+                issue_key,
+                outcome,
+                None if failure is None else failure.error_kind,
+            )
         await self._record_fire(
             issue_key=issue_key,
-            started=started,
-            terminal=terminal,
+            outcome=outcome,
             duration_seconds=loop.time() - watch_started,
             started_at=watch_started_at,
         )
@@ -227,8 +265,7 @@ class LifecycleWatcher:
         self,
         *,
         issue_key: str,
-        started: bool,
-        terminal: bool,
+        outcome: RunOutcome,
         duration_seconds: float,
         started_at: datetime,
     ) -> None:
@@ -240,12 +277,6 @@ class LifecycleWatcher:
         release already happened, and re-raising here would report a
         finished run as a broken one (KOD-170).
         """
-        if terminal:
-            outcome = RunOutcome.COMPLETED
-        elif started:
-            outcome = RunOutcome.FAILED
-        else:
-            outcome = RunOutcome.NEVER_STARTED
         try:
             await self._recorder.record(
                 RunRecord(

@@ -15,6 +15,7 @@ import pytest
 import structlog
 from pydantic import ValidationError
 
+from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.domain.dispatch import DOMAIN_PRIORITY_ORDER
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
@@ -42,6 +43,7 @@ from kodezart.types.domain.operation import (
     RepoEntry,
     TeamEntry,
 )
+from kodezart.types.domain.run_records import RunOutcome
 from kodezart.types.domain.tracker import (
     ClaimStatus,
     IssuePriority,
@@ -1001,6 +1003,26 @@ def _forbidden_draw(candidates: Sequence[str]) -> str:
     raise AssertionError("the draw ran without an exact timestamp tie")
 
 
+async def release_run(
+    tracker: FakeTrackerPort,
+    queue: FakeJobQueue,
+    report: DispatchReport,
+) -> None:
+    """Put the issue back in the eligible set, as a finished run does.
+
+    Clause 4 excludes an issue this pass still holds or whose run is
+    live, so without this a "second pass" would observe an empty
+    eligible set and every assertion below it would pass vacuously.
+    """
+    assert report.claimed_issue_key is not None
+    assert report.job_id is not None
+    await tracker.release_claim(
+        issue_key=report.claimed_issue_key,
+        holder=HOLDER,
+    )
+    queue.mark(report.job_id, JobState.TERMINAL)
+
+
 class TestTheBaseIsReadOffTheGraph:
     """KOD-67, wired: the dispatched base is resolved, never assumed.
 
@@ -1179,26 +1201,6 @@ class TestTheDispatchedBaseIsRecordedAndCompared:
 
         assert report.superseded_base is None
 
-    @staticmethod
-    async def _release(
-        tracker: FakeTrackerPort,
-        queue: FakeJobQueue,
-        report: DispatchReport,
-    ) -> None:
-        """Put the issue back in the eligible set, as a finished run does.
-
-        Clause 4 excludes an issue this pass still holds or whose run is
-        live, so without this a "second pass" would observe an empty
-        eligible set and every assertion below it would pass vacuously.
-        """
-        assert report.claimed_issue_key is not None
-        assert report.job_id is not None
-        await tracker.release_claim(
-            issue_key=report.claimed_issue_key,
-            holder=HOLDER,
-        )
-        queue.mark(report.job_id, JobState.TERMINAL)
-
     async def test_a_re_dispatch_on_an_unchanged_graph_supersedes_nothing(
         self,
     ) -> None:
@@ -1207,7 +1209,7 @@ class TestTheDispatchedBaseIsRecordedAndCompared:
         )
         fire, queue, _ = dispatcher(tracker)
         first = await fire.run_pass()
-        await self._release(tracker, queue, first)
+        await release_run(tracker, queue, first)
 
         again = await fire.run_pass()
 
@@ -1229,7 +1231,7 @@ class TestTheDispatchedBaseIsRecordedAndCompared:
         fire, queue, _ = dispatcher(tracker, git=git_with(BLOCKER_BRANCH))
         first = await fire.run_pass()
         assert first.base is not None and first.base.inputs == ()
-        await self._release(tracker, queue, first)
+        await release_run(tracker, queue, first)
 
         tracker.issues["K-1"] = make_tracker_issue("K-1", blocked_by=["K-2"])
         tracker.issues["K-2"] = make_tracker_issue(
@@ -1809,4 +1811,142 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
         report = await fire.run_pass()
 
         assert report.outcome is DispatchOutcome.fire_enqueued
+        assert len(queue.submissions) == 1
+
+
+class TestTheFailedRunExclusion:
+    """The measured fire loop, reproduced and asserted dead (KOD-174).
+
+    2026-09-01: a fire was dispatched at 17:48, died at 17:57 on a
+    provider rate-limit rejection, and was put back correctly — and the
+    next tick at 18:01 re-selected the same issue and fired the whole run
+    again.  The pass had no memory of the run it started, so a standing
+    failure was a fresh run every interval.
+    """
+
+    RATE_LIMIT_CLASS = RateLimitedSoftFailureError.__name__
+    CRASH_CLASS = RuntimeError.__name__
+
+    @staticmethod
+    async def _fire_then_fail(
+        tracker: FakeTrackerPort,
+        failure_class: str,
+    ) -> tuple[FireDispatcher, FakeJobQueue, DispatchReport]:
+        """One dispatched fire that died, as the watch reports it.
+
+        The order is the live one: the run ends, the claim is released and
+        the job goes terminal, and only then does the outcome reach the
+        dispatcher.
+        """
+        fire, queue, _ = dispatcher(tracker)
+        first = await fire.run_pass()
+        await release_run(tracker, queue, first)
+        await fire.record_run_outcome("K-1", RunOutcome.FAILED, failure_class)
+        return fire, queue, first
+
+    async def test_a_rate_limited_run_is_not_fired_again_at_the_next_tick(
+        self,
+    ) -> None:
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        fire, queue, first = await self._fire_then_fail(tracker, self.RATE_LIMIT_CLASS)
+
+        second = await fire.run_pass()
+
+        assert first.outcome is DispatchOutcome.fire_enqueued
+        assert second.outcome is DispatchOutcome.empty_eligible_set
+        assert second.claimed_issue_key is None
+        assert [
+            (item.issue_key, item.clause, item.detail) for item in second.exclusions
+        ] == [("K-1", ExclusionClause.RUN_FAILED, self.RATE_LIMIT_CLASS)]
+        assert len(queue.submissions) == 1, "the whole run is not fired again"
+
+    async def test_a_changed_issue_re_admits_the_rate_limited_run(self) -> None:
+        """The exclusion is held until the issue moves, never forever."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        fire, queue, _ = await self._fire_then_fail(tracker, self.RATE_LIMIT_CLASS)
+        tracker.issues["K-1"] = make_tracker_issue(
+            "K-1",
+            updated_at=FIXTURE_EPOCH + timedelta(hours=1),
+        )
+
+        third = await fire.run_pass()
+
+        assert third.outcome is DispatchOutcome.fire_enqueued
+        assert len(queue.submissions) == 2
+
+    async def test_a_crashed_run_is_re_selected_after_its_exclusion_lifts(
+        self,
+    ) -> None:
+        """The paired negative: the crashed-run rule keeps its promise.
+
+        A crash is evidence about the run, never a verdict on its issue —
+        the issue comes back, and what changed is only that it comes back
+        when the issue does rather than at the next tick regardless.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        fire, queue, _ = await self._fire_then_fail(tracker, self.CRASH_CLASS)
+
+        second = await fire.run_pass()
+        tracker.issues["K-1"] = make_tracker_issue(
+            "K-1",
+            updated_at=FIXTURE_EPOCH + timedelta(hours=1),
+        )
+        third = await fire.run_pass()
+
+        assert [
+            (item.issue_key, item.clause, item.detail) for item in second.exclusions
+        ] == [("K-1", ExclusionClause.RUN_FAILED, self.CRASH_CLASS)]
+        assert third.outcome is DispatchOutcome.fire_enqueued
+        assert len(queue.submissions) == 2
+
+    async def test_a_run_that_named_no_failure_class_is_still_remembered(self) -> None:
+        """The third state: a stream that ended with no error frame at all."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        fire, queue, _ = dispatcher(tracker)
+        first = await fire.run_pass()
+        await release_run(tracker, queue, first)
+        await fire.record_run_outcome("K-1", RunOutcome.NEVER_STARTED, None)
+
+        second = await fire.run_pass()
+
+        assert [
+            (item.issue_key, item.clause, item.detail) for item in second.exclusions
+        ] == [("K-1", ExclusionClause.RUN_FAILED, RunOutcome.NEVER_STARTED.value)]
+
+    async def test_a_completed_run_is_remembered_nowhere(self) -> None:
+        """The paired positive: a finished fire leaves the issue as it found it.
+
+        Its own lifecycle says what became of it — an exclusion here would
+        be a second, competing statement about a delivered issue.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        fire, queue, _ = dispatcher(tracker)
+        first = await fire.run_pass()
+        await release_run(tracker, queue, first)
+        await fire.record_run_outcome("K-1", RunOutcome.COMPLETED, None)
+
+        second = await fire.run_pass()
+
+        assert second.outcome is DispatchOutcome.fire_enqueued
+        assert second.exclusions == ()
+        assert len(queue.submissions) == 2
+
+    async def test_a_dispatcher_that_never_fired_the_issue_remembers_nothing(
+        self,
+    ) -> None:
+        """Every dispatcher on the lane hears every fire; one of them owns it.
+
+        The outcome is fanned out because the watch cannot route it, so a
+        dispatcher that never enqueued this issue must leave it alone —
+        remembering another repository's run would exclude an issue this
+        pass may legitimately claim.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        fire, queue, _ = dispatcher(tracker)
+
+        await fire.record_run_outcome("K-1", RunOutcome.FAILED, self.CRASH_CLASS)
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert report.exclusions == ()
         assert len(queue.submissions) == 1

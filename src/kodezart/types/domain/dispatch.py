@@ -81,6 +81,16 @@ class ExclusionClause(StrEnum):
     tick feeding its own gate delta (KOD-169).  The detail carries the
     recorded resolution failure."""
 
+    RUN_FAILED = "run_failed"
+    """A fire this pass started ended without reaching a terminal outcome.
+    Excluded until the issue CHANGES — its ``updated_at`` moving past the
+    reading taken after the failure — by the same remembered-exclusion
+    mechanism the clause above uses, so a standing failure is one report
+    line per pass instead of the whole run fired again at the next tick,
+    into the condition that killed the last one (KOD-174).  The detail
+    carries the class the run died of, or how it ended when no error frame
+    named one."""
+
     OUT_OF_SCOPE = "out_of_scope"
     """The issue's team declares a scope and the issue's project and
     initiatives are not in it (KOD-169).  The detail carries the issue's

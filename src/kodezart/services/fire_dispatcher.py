@@ -55,6 +55,7 @@ from kodezart.types.domain.dispatch import (
 )
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import OperationConfig, QueueState
+from kodezart.types.domain.run_records import RunOutcome
 from kodezart.types.domain.tracker import ClaimStatus, IssueQuery, TrackerIssue
 from kodezart.types.requests.agent import WorkflowRequest
 
@@ -65,20 +66,26 @@ def _uniform_draw(candidates: Sequence[str]) -> str:
 
 
 @dataclass(frozen=True)
-class _UnresolvedBase:
-    """One remembered base-resolution failure, and when it was current.
+class _RememberedExclusion:
+    """One remembered failure on an issue, and when it was current.
 
-    ``updated_at`` is the issue's timestamp read AFTER the failing pass
-    released its claim — deliberately not the scan-time value, because the
-    claim and release are comment writes that move the timestamp
-    themselves: remembered at scan time, this pass's own noise would
-    re-admit the issue on the very next tick, which IS the measured churn
-    (KOD-169: 15 claim write-delete cycles, each feeding the next tick's
-    gate delta).
+    ``updated_at`` is the issue's timestamp read AFTER the failure was
+    complete — deliberately not the scan-time value, because the writes
+    that accompany a failure move the timestamp themselves: the claim and
+    its release for a base that would not resolve (KOD-169: 15 claim
+    write-delete cycles, each feeding the next tick's gate delta), and the
+    put-back and terminal comment for a run that died (KOD-174).
+    Remembered at scan time, this pass's own noise would re-admit the
+    issue on the very next tick, which IS both measured loops.
+
+    ``clause`` and ``detail`` are what the exclusion reports: one
+    mechanism, and the report still says which failure is being
+    remembered.
     """
 
     updated_at: datetime
-    reason: str
+    clause: ExclusionClause
+    detail: str
 
 
 def _now() -> datetime:
@@ -128,8 +135,9 @@ class FireDispatcher:
         self._clock: Callable[[], datetime] = clock
         self._log: BoundLogger = get_logger(__name__)
         self._jobs_by_issue: dict[str, str] = {}
-        #: Remembered base-resolution failures, until each issue changes.
-        self._unresolvable: dict[str, _UnresolvedBase] = {}
+        #: Remembered failures — an unresolvable base, a run that died —
+        #: each held until its issue changes.
+        self._remembered: dict[str, _RememberedExclusion] = {}
         #: One ``initiative_identifiers`` read per distinct project for
         #: this dispatcher's lifetime — membership does not move under a
         #: running pass (KOD-169).
@@ -301,9 +309,10 @@ class FireDispatcher:
             # pass's own claim-cycle writes sit inside it and only a real
             # change re-admits the issue (KOD-169).
             refreshed = await self._tracker.read_issue(issue_key=winner.issue_key)
-            self._unresolvable[winner.issue_key] = _UnresolvedBase(
+            self._remembered[winner.issue_key] = _RememberedExclusion(
                 updated_at=refreshed.updated_at,
-                reason=str(exc),
+                clause=ExclusionClause.BASE_UNRESOLVED,
+                detail=str(exc),
             )
             await self._log.awarning(
                 "dispatch_base_unresolved",
@@ -384,6 +393,53 @@ class FireDispatcher:
             superseded_base=superseded,
         )
 
+    async def record_run_outcome(
+        self,
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        """Remember a fire that did not complete, until its issue changes.
+
+        The measured loop: a run was dispatched at 17:48, died at 17:57 on
+        a provider rate-limit rejection, was put back correctly — and the
+        next tick re-selected the same issue and fired the whole run again
+        (KOD-174).  A pass had no memory of the run it started, so a
+        standing failure was a fresh run every interval.  A failed run
+        joins the same remembered-exclusion mechanism a failed base
+        resolution does, under its own clause and carrying what the run
+        died of.
+
+        The timestamp is read AFTER the failure, for the reason the base
+        arm reads its own after the release: the lifecycle's put-back and
+        its terminal comment are writes that move the issue themselves,
+        and a pre-failure reading would re-admit the issue at the next
+        tick out of this run's own noise.
+
+        A completed run is remembered nowhere — it is the issue's own
+        lifecycle that says what became of it.  An issue this dispatcher
+        never fired is likewise not its run to remember: every dispatcher
+        on the lane hears every finished fire, and the one holding the job
+        is the one that started it.
+        """
+        if outcome is RunOutcome.COMPLETED or issue_key not in self._jobs_by_issue:
+            return
+        refreshed = await self._tracker.read_issue(issue_key=issue_key)
+        self._remembered[issue_key] = _RememberedExclusion(
+            updated_at=refreshed.updated_at,
+            clause=ExclusionClause.RUN_FAILED,
+            # The class the run died of, or — when the stream ended with no
+            # error frame at all — how it ended, which is then the whole of
+            # what is known about it.
+            detail=outcome.value if failure_class is None else failure_class,
+        )
+        await self._log.awarning(
+            "dispatch_run_failed_remembered",
+            issue_key=issue_key,
+            outcome=outcome.value,
+            failure_class=failure_class,
+        )
+
     async def _scan(self, team_keys: Sequence[str]) -> tuple[TrackerIssue, ...]:
         """Every approved issue on the declared teams, in declaration order.
 
@@ -432,19 +488,20 @@ class FireDispatcher:
                 clause=ExclusionClause.OUTSIDE_TEAM,
                 detail="" if issue.team_key is None else issue.team_key,
             )
-        unresolved = self._unresolvable.get(issue.issue_key)
-        if unresolved is not None:
+        remembered = self._remembered.get(issue.issue_key)
+        if remembered is not None:
             # Re-admitted only once the issue has CHANGED past the reading
-            # taken after the failing pass released — retrying an
-            # unchanged issue re-runs the same failing resolution and
-            # re-writes the claim churn it produced (KOD-169).
-            if issue.updated_at <= unresolved.updated_at:
+            # taken after the failure — retrying an unchanged issue re-runs
+            # the same failing resolution and re-writes the claim churn it
+            # produced (KOD-169), or fires the whole run again into the
+            # rejection that killed the last one (KOD-174).
+            if issue.updated_at <= remembered.updated_at:
                 return IssueExclusion(
                     issue_key=issue.issue_key,
-                    clause=ExclusionClause.BASE_UNRESOLVED,
-                    detail=unresolved.reason,
+                    clause=remembered.clause,
+                    detail=remembered.detail,
                 )
-            del self._unresolvable[issue.issue_key]
+            del self._remembered[issue.issue_key]
         scope_exclusion = await self._exclude_by_scope(issue)
         if scope_exclusion is not None:
             return scope_exclusion
