@@ -213,6 +213,43 @@ class FireDispatcher:
         exclusions: tuple[IssueExclusion, ...],
     ) -> DispatchReport:
         eligible_keys = tuple(issue.issue_key for issue in eligible)
+        # The winner is READ before it is claimed, because a scan entry is
+        # not the issue: the measured backend answers a listing with the
+        # issue's own fields and no edges at all, so ``blocker_keys`` was
+        # empty for every scanned issue and the live-blocker clause passed
+        # vacuously over all of them — three winners in one afternoon were
+        # claimed, failed base resolution and were released, with the edge
+        # that made them unfireable never read (KOD-173).  ONE read, on the
+        # winner alone, is what gives that clause real edges to decide
+        # over, and taking it before the claim is what makes a blocked
+        # winner cost no claim/release pair.
+        winner = await self._tracker.read_issue(issue_key=selection.winner_key)
+        blockers = {
+            key: await self._tracker.read_issue(issue_key=key)
+            for key in blocker_keys(winner)
+        }
+        blocking = live_blocker(winner, blockers=blockers)
+        if blocking is not None:
+            await self._log.ainfo(
+                "dispatch_winner_blocked",
+                outcome=DispatchOutcome.winner_blocked.value,
+                issue_key=winner.issue_key,
+                blocker_issue_key=blocking,
+            )
+            return DispatchReport(
+                outcome=DispatchOutcome.winner_blocked,
+                snapshot=rows,
+                exclusions=(
+                    *exclusions,
+                    IssueExclusion(
+                        issue_key=winner.issue_key,
+                        clause=ExclusionClause.LIVE_BLOCKER,
+                        detail=blocking,
+                    ),
+                ),
+                eligible=eligible_keys,
+                tied_candidates=selection.tied,
+            )
         claim = await self._tracker.claim_issue(
             issue_key=selection.winner_key,
             holder=self._holder,
@@ -234,9 +271,6 @@ class FireDispatcher:
                 claimed_issue_key=None,
             )
 
-        winner = next(
-            issue for issue in eligible if issue.issue_key == selection.winner_key
-        )
         # The base is READ off the graph, never assumed — and BEFORE the
         # context is assembled, so the expensive assembly never runs for a
         # candidate that cannot resolve (KOD-169). A lane whose premise is
@@ -335,8 +369,8 @@ class FireDispatcher:
             eligible=eligible_keys,
             tied_candidates=selection.tied,
             claimed_issue_key=winner.issue_key,
-            # The pre-claim state, read off the snapshot this pass claimed
-            # from: the last reading taken before the lifecycle writes In
+            # The pre-claim state, off the reading this pass took before it
+            # claimed: the last one before the lifecycle writes In
             # Progress, and the only place a crashed run's put-back can
             # come from.
             claimed_state_name=winner.state_name,

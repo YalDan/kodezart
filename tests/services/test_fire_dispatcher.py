@@ -277,6 +277,23 @@ class UnfilteredTrackerPort(FakeTrackerPort):
         )
 
 
+class RelationlessScanTrackerPort(FakeTrackerPort):
+    """A port whose SCAN entries carry no relations — the measured backend.
+
+    A listing answers with each issue's own fields and no edges, which is
+    what made the live-blocker clause vacuous over a scan: ``blocker_keys``
+    reads an empty tuple, the clause passes, and an issue the graph blocks
+    is selected and claimed (KOD-173).  Reading the issue is what supplies
+    the edges, and the gap between the two answers is what this double
+    exists to expose — a fake that carried relations everywhere could not
+    reach the defect at all.
+    """
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        found = await super().scan_issues(query=query)
+        return tuple(issue.model_copy(update={"relations": ()}) for issue in found)
+
+
 class TestTheContainerBoundary:
     """A pass claims from the operation's own board and from nowhere else."""
 
@@ -1691,3 +1708,105 @@ class TestTheChurnExclusion:
         assert third.outcome is DispatchOutcome.base_unresolved, (
             "the changed issue is retried rather than remembered forever"
         )
+
+
+class TestTheWinnerIsReadBeforeItIsClaimed:
+    """The vacuous live-blocker clause, reproduced and decided (KOD-173).
+
+    Measured 2026-09-01: three winners (17:48, 17:57, 18:06) were claimed,
+    failed base resolution and were released.  The scan entries carried no
+    relations, so ``blocker_keys`` was empty on every one of them and the
+    live-blocker clause could only pass — the graph edge that made each
+    winner unfireable was read for the first time inside base resolution,
+    after the claim had already been spent.
+    """
+
+    async def test_a_blocked_winner_is_excluded_before_any_claim(self) -> None:
+        tracker = RelationlessScanTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
+            ],
+        )
+        fire, queue, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.winner_blocked
+        assert report.claimed_issue_key is None
+        assert [
+            (item.issue_key, item.clause, item.detail)
+            for item in report.exclusions
+            if item.clause is ExclusionClause.LIVE_BLOCKER
+        ] == [("K-1", ExclusionClause.LIVE_BLOCKER, "K-2")]
+        assert tracker.claims == {}, "no claim is spent on a blocked winner"
+        assert queue.submissions == []
+
+    async def test_the_scan_alone_cannot_see_the_blocker(self) -> None:
+        """The premise the case above rests on, asserted rather than assumed.
+
+        Without this, a double that silently started carrying relations in
+        its listings would make the test above pass through the eligibility
+        clause instead of through the pre-claim read, and the defect would
+        be untested with everything green.
+        """
+        tracker = RelationlessScanTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
+            ],
+        )
+
+        scanned = await tracker.scan_issues(
+            query=IssueQuery(queue_state=QueueState.APPROVED, page_size=PAGE_SIZE),
+        )
+
+        assert [issue.relations for issue in scanned] == [()]
+        assert (await tracker.read_issue(issue_key="K-1")).relations != ()
+
+    async def test_an_unblocked_winner_is_claimed_at_the_cost_of_one_read(
+        self,
+    ) -> None:
+        """The paired positive: the claim path is unchanged, and the bill is one.
+
+        Two reads reach the port and both name the winner: the pre-claim
+        clause's, and the base resolver's own — which this fix did not add
+        and does not remove.  A read of anything but the winner, or a
+        second pre-claim read, reds here.
+        """
+        tracker = RelationlessScanTrackerPort(
+            issues=[make_tracker_issue("K-1")],
+        )
+        fire, queue, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert report.claimed_issue_key == "K-1"
+        assert report.claimed_state_name == "Todo"
+        assert len(queue.submissions) == 1
+        assert tracker.issue_reads == ["K-1", "K-1"]
+
+    async def test_a_closed_blocker_does_not_block_the_winner(self) -> None:
+        """A finished dependency is an edge, not an obstacle.
+
+        The pre-claim read supplies edges to a clause that reads them, and
+        that clause's own rule is unchanged: a blocker that is closed is a
+        premise already delivered.
+        """
+        tracker = RelationlessScanTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue(
+                    "K-2",
+                    queue_states=[QueueState.DONE],
+                    state_kind=WorkflowStateKind.COMPLETED,
+                ),
+            ],
+        )
+        fire, queue, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert len(queue.submissions) == 1

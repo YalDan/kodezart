@@ -42,6 +42,17 @@ class DispatchOutcome(StrEnum):
     obstacle is a missing premise on the graph, and the next pass re-selects
     it once the premise is recorded."""
 
+    winner_blocked = "winner_blocked"
+    """The winner was read fresh before the claim and carries a live
+    blocker, so nothing was claimed and nothing was enqueued.  Distinct
+    from ``empty_eligible_set`` because the set this pass computed was NOT
+    empty, and distinct from ``base_unresolved`` because no claim was
+    spent: the exclusion is decided before the first write (KOD-173).  The
+    pass does not fall through to the next-ranked issue — one issue read
+    per pass buys one decided winner — so the next pass recomputes, and
+    the blocker's key rides in the exclusions under the live-blocker
+    clause."""
+
 
 class ExclusionClause(StrEnum):
     """The eligibility clauses, as the reasons an issue was excluded.

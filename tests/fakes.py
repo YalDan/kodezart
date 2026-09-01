@@ -2689,6 +2689,11 @@ class FakeTrackerPort:
         }
         self.queue_writes: list[tuple[str, QueueState]] = []
         self.scans: list[IssueQuery] = []
+        #: Every issue this double was asked to READ, in order.  A scan is
+        #: one call whatever it returns and a read is one call per issue,
+        #: so what a consumer spends on reads is only visible as a list of
+        #: them (KOD-173).
+        self.issue_reads: list[str] = []
         #: Reviews this double reports, keyed by the repository they belong
         #: to, and the queries it was asked.  Separate from ``issues``
         #: because a review is a separate object class: seeding one must not
@@ -2771,6 +2776,7 @@ class FakeTrackerPort:
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)
+        self.issue_reads.append(issue_key)
         return self.issues[issue_key]
 
     async def create_issue(
