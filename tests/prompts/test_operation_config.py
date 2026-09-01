@@ -169,23 +169,26 @@ def test_unknown_field_is_rejected(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_every_unbound_team_is_named_at_once(tmp_path: Path) -> None:
-    """Two repositories and no binding: both offenders in one error.
+def test_unbound_teams_beside_several_repositories_load_and_are_scanned(
+    tmp_path: Path,
+) -> None:
+    """Two repositories and no binding is a LEGAL operation (KOD-169).
 
-    Never the first one only.  An unbound team's issues are fired into
-    whichever repository's tick claims them first, so the operator has to
-    see every team that is in that state, not one of them.
+    An unbound team's issues route per issue by the repository the
+    fire-prep pass records on each staged one, and dispatch refuses by
+    name when none is recorded — so every repository's pass scans the
+    unbound boards, and the recorded-route clause keeps their claims
+    disjoint.  The refusal this replaces treated tick order as the only
+    possible router, which the recorded route exists to not be.
     """
     raw = raw_example()
     for entry in raw["teams"].values():
         del entry["repository"]
 
-    with pytest.raises(OperationConfigError) as excinfo:
-        load_operation_config(_write_toml(tmp_path, raw))
+    config = load_operation_config(_write_toml(tmp_path, raw))
 
-    failures = " ".join(excinfo.value.failures)
-    for key in raw["teams"]:
-        assert f"teams['{key}']" in failures
+    for repo in config.repos:
+        assert config.teams_scanned_by(repo.url) == tuple(raw["teams"])
 
 
 def test_a_binding_naming_an_undeclared_repository_is_refused(tmp_path: Path) -> None:

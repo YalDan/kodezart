@@ -686,7 +686,9 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
         assert "{{" not in prompt
         assert "No record destination\nis declared for this pass's kind" in (prompt)
         assert "No store is configured beside the tracker" in prompt
-        assert "No checkpoint is configured" in prompt
+        # No separate checkpoint surface exists (founder ruling 2026-09-01):
+        # the window rides the record log, so its absence arm is the window's.
+        assert "so no window\ncarries between passes" in prompt
 
 
 async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:

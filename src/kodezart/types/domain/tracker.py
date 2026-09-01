@@ -194,6 +194,12 @@ class TrackerIssue(TrackerModel):
     state_kind: WorkflowStateKind
     queue_states: frozenset[QueueState]
     team_key: str | None
+    #: The project the issue belongs to, in both spellings the backend
+    #: reports them — display name and id — or ``None`` for an issue in no
+    #: project.  Carried off the scan so a team's declared scope is judged
+    #: without a per-issue read (KOD-169).
+    project: str | None = None
+    project_id: str | None = None
     relations: tuple[IssueRelation, ...] = ()
     parent_key: str | None = None
     assignee_key: str | None = None

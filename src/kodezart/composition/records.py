@@ -63,16 +63,21 @@ def run_report(
     recorder: RunRecorder,
     kind: RunKind,
     name: str,
-) -> Callable[[RunOutcome, float], Awaitable[None]]:
+) -> Callable[[RunOutcome, float, datetime], Awaitable[None]]:
     """The report callback binding one pass to its kind's declared log."""
 
-    async def report(outcome: RunOutcome, duration_seconds: float) -> None:
+    async def report(
+        outcome: RunOutcome,
+        duration_seconds: float,
+        started_at: datetime,
+    ) -> None:
         await recorder.record(
             RunRecord(
                 kind=kind,
                 name=name,
                 outcome=outcome,
                 duration_seconds=duration_seconds,
+                started_at=started_at,
                 recorded_at=datetime.now(UTC),
             ),
         )
@@ -111,7 +116,10 @@ async def build_run_recorder(
                 ),
             )
         else:
-            sinks[DocumentSystem.TRACKER] = LinearRecordSink(caller=tracker_caller)
+            sinks[DocumentSystem.TRACKER] = LinearRecordSink(
+                caller=tracker_caller,
+                server_name=config.tracker_mcp_server_name,
+            )
     if DocumentSystem.KNOWLEDGE in declared:
         knowledge_destinations = [
             f"records.{key} ({entry.name})"

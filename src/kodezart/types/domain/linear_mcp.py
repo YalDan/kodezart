@@ -134,6 +134,12 @@ class LinearIssueWire(LinearWireModel):
     #: on every issue in every payload the adapter reads, and a default here
     #: would answer "which board is this from" with a guess.
     team: str
+    #: The project the issue belongs to, by display name and by id — both
+    #: on every measured listing entry for an issue in a project, both
+    #: absent for an issue in none (KOD-169).  Free off the scan: scope
+    #: membership is answered from these, never by a per-issue read.
+    project: str | None = None
+    project_id: str | None = None
     labels: list[str] = Field(default_factory=list)
     #: ``None`` means the payload did not REPORT relations — which is what
     #: every ``list_issues`` entry does, and what a ``get_issue`` read that
@@ -166,6 +172,28 @@ class LinearIssueListWire(LinearWireModel):
     """The ``list_issues`` envelope."""
 
     issues: list[LinearIssueWire]
+
+
+class LinearInitiativeRefWire(LinearWireModel):
+    """One initiative a project belongs to, as ``get_project`` reports it."""
+
+    id: str
+    name: str
+
+
+class LinearProjectWire(LinearWireModel):
+    """The ``get_project`` payload, in the fields the adapter reads.
+
+    ``initiatives`` is required, measured populated on the live server
+    (2026-09-01, KOD-169); the no-initiative arm is unprobed, so a payload
+    omitting the key fails validation loudly here rather than being read
+    as a project in no initiative — those are different facts and only a
+    fresh capture may conflate them.
+    """
+
+    id: str
+    name: str
+    initiatives: list[LinearInitiativeRefWire]
 
 
 class LinearDiffWire(LinearWireModel):

@@ -329,7 +329,9 @@ def test_a_deployment_with_no_store_renders_the_absence_instruction(
     assert "}}" not in output
     assert "No record destination\nis declared for this pass's kind" in output
     assert "No store is configured beside the tracker" in output
-    assert "No checkpoint is configured" in output
+    # No separate checkpoint surface exists (founder ruling 2026-09-01):
+    # the window rides the record log, so its absence arm is the window's.
+    assert "so no window\ncarries between passes" in output
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)
@@ -346,3 +348,38 @@ def test_the_configured_deployment_renders_the_present_arm_instead(
         PromptKey.GROOMING_PASS: "Example Grooming Log",
     }[key]
     assert expected in output
+
+
+def scoped_and_unbound(raw: dict[str, object]) -> None:
+    """A scoped team plus an unbound board, beside several repositories.
+
+    The founder's live shape (KOD-169): scope narrows one board by name,
+    and the unbound board's issues route by the repository fire-prep
+    records on each staged one.
+    """
+    teams = raw["teams"]
+    assert isinstance(teams, dict)
+    first = next(iter(teams.values()))
+    assert isinstance(first, dict)
+    first["scope"] = ["a delivery project"]
+    teams["duck"] = {"name": "Duck Board", "key": "DUC", "visibility": "private"}
+
+
+@pytest.mark.parametrize("key", PASS_KEYS)
+def test_scope_and_recorded_routing_render_into_the_roster(
+    key: PromptKey,
+    tmp_path: Path,
+) -> None:
+    """KOD-169 D2/D3: the roster says what narrows and how routes record.
+
+    The marker-writing instruction is fire-prep's alone — staging is its
+    act — while both passes read the same scope and routing facts.
+    """
+    output = rendered(written(tmp_path, scoped_and_unbound), V5_SET, key)
+
+    assert "in scope: only issues in a delivery project" in output
+    assert "the repository recorded on each staged issue" in output
+    if key is PromptKey.FIRE_PREP_PASS:
+        assert '<!-- kodezart-repo url="..." -->' in output
+    else:
+        assert "kodezart-repo" not in output

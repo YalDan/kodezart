@@ -68,21 +68,14 @@ deterministic proxy for the policy; claims of the form "the tool exits 0" requir
 and are not a substitute for it.\
 """
 
-# The three mechanisms every scheduled pass owes: the window it covers, the
-# record it leaves, and the store it reads from and writes to. One source,
-# composed into every pass member, because each pass owes the same three and
-# a copy per member is a copy that can drift. Each clause is three-state: a
-# deployment that configures no checkpoint, no record destination or no
-# knowledge store renders the instruction its absence implies, never a hole.
+# The store mechanism every scheduled pass owes. Window and Record ride in
+# each member beside its own kind's declared destination instead (KOD-170,
+# amended per the founder's one-surface ruling): the record row a pass
+# writes carries its start time, so the same row IS the next window's
+# boundary and no separate checkpoint surface exists to drift from it.
+# Three-state: a deployment that configures no knowledge store renders the
+# instruction its absence implies, never a hole.
 pass_mechanisms = """\
-Window. {{#if documents}}Establish what this pass covers before you read the board. The
-{{documents.checkpoint.system}} checkpoint{{#if documents.checkpoint.id}} ({{documents.checkpoint.id}}){{/if}} carries the marker the last
-completed pass left, and the timestamp on its most recent entry is where this window
-starts. A checkpoint with no entry means no pass has completed yet — cover the whole
-board once as a bootstrap census, and say so in your report.{{/if}}{{#if documents_absent}}No checkpoint is configured, so no
-window carries between passes: cover the whole board as a bootstrap census, and say so in
-your report.{{/if}}
-
 Store. {{#if knowledge}}This operation keeps a private store beside the tracker, and what
 lives at which destination is stated in the map this session is preluded with. Read from
 it before re-deciding something an earlier pass settled, and write what a later pass will

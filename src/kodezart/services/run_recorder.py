@@ -16,6 +16,13 @@ declared configuration:
 - a destination whose system has no registered sink is a wiring defect
   and raises — the config promised a write this process cannot perform,
   and absorbing that would be the silent skip this service exists to end.
+
+The obligation is that ONE record exists per run, not that the runner
+writes one: a session's rich row through the rendered mechanism IS the
+record when present (two rows per run made every log read as two runs —
+KOD-170, amended), so the recorder VERIFIES the destination for a row
+created within the run's window and backfills the structural minimum only
+on absence.
 """
 
 from collections.abc import Mapping
@@ -40,7 +47,12 @@ class RunRecorder:
         self._log: BoundLogger = get_logger(__name__)
 
     async def record(self, record: RunRecord) -> None:
-        """Write *record* to its kind's declared destination, or name why not."""
+        """See that *record*'s run is recorded once, or name why not.
+
+        The session's own row, when the destination shows one created
+        within the run's window, discharges the obligation; the
+        structural minimum is written only into a genuine absence.
+        """
         destination = self._records.get(record.kind.value)
         if destination is None:
             await self._log.ainfo(
@@ -59,6 +71,19 @@ class RunRecorder:
                 f"config declares"
             )
             raise LookupError(msg)
+        if await sink.has_record_since(
+            destination=destination,
+            since=record.started_at,
+        ):
+            await self._log.ainfo(
+                "run_record_verified",
+                kind=record.kind.value,
+                name=record.name,
+                outcome=record.outcome.value,
+                destination=destination.id,
+                system=destination.system.value,
+            )
+            return
         await sink.write_record(destination=destination, record=record)
         await self._log.ainfo(
             "run_record_written",

@@ -2156,6 +2156,7 @@ class FakeLinearMcpServer:
         state_types: Mapping[str, str] | None = None,
         actor: str = "fixture-actor",
         comment_instants: Sequence[datetime] = (),
+        projects: Mapping[str, Mapping[str, object]] | None = None,
         transient_failures: Mapping[str, int] | None = None,
         transport_failures: Mapping[str, int] | None = None,
         tool_errors: Mapping[str, str] | None = None,
@@ -2185,6 +2186,10 @@ class FakeLinearMcpServer:
             team: list(names) for team, names in (statuses or {}).items()
         }
         self.state_types: dict[str, str] = dict(state_types or {})
+        #: ``get_project`` answers, keyed by the query the caller asks
+        #: with (a project id).  Raw payloads, because the shape is the
+        #: vendor's own (KOD-169).
+        self.projects: dict[str, Mapping[str, object]] = dict(projects or {})
         self.actor: str = actor
         self.calls: list[tuple[str, Mapping[str, object]]] = []
         self.comment_instants: list[datetime] = list(comment_instants)
@@ -2354,6 +2359,17 @@ class FakeLinearMcpServer:
         )
         self.comments.append(comment)
         return comment.wire()
+
+    def _tool_get_project(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        query = str(arguments["query"])
+        project = self.projects.get(query)
+        if project is None:
+            msg = f"fake workspace has no project {query!r}"
+            raise LookupError(msg)
+        return project
 
     def _tool_list_comments(
         self,
@@ -2633,6 +2649,8 @@ class FakeTrackerPort:
         known_identifiers: Sequence[str] = (),
         recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         recorded_base_specs: Mapping[str, BaseSpec] | None = None,
+        recorded_repositories: Mapping[str, str] | None = None,
+        initiative_identifiers: Mapping[str, frozenset[str]] | None = None,
         scan_refusals: Mapping[PassSignal, str] | None = None,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
@@ -2643,6 +2661,15 @@ class FakeTrackerPort:
             key: list(value) for key, value in (recorded_work_refs or {}).items()
         }
         self.recorded_base_specs: dict[str, BaseSpec] = dict(recorded_base_specs or {})
+        #: The kodezart-repo marker per issue, as the port reads it back:
+        #: the recorded target repository for a staged fire (KOD-169).
+        self.recorded_repositories: dict[str, str] = dict(recorded_repositories or {})
+        #: Initiative names-and-ids per project id, for the scope clause.
+        #: A project the fixture does not seed belongs to no initiative,
+        #: which is a real tracker answer.
+        self.initiative_identifiers_by_project: dict[str, frozenset[str]] = dict(
+            initiative_identifiers or {},
+        )
         self.claims: dict[str, ClaimResult] = {}
         #: Every renewal ATTEMPT, granted or refused, as (issue, holder).
         #: A heartbeat that has stopped is observed as a count that stopped
@@ -2951,6 +2978,14 @@ class FakeTrackerPort:
         await asyncio.sleep(0)
         return self.recorded_base_specs.get(issue_key)
 
+    async def recorded_repository(self, *, issue_key: str) -> str | None:
+        await asyncio.sleep(0)
+        return self.recorded_repositories.get(issue_key)
+
+    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
+        await asyncio.sleep(0)
+        return self.initiative_identifiers_by_project.get(project_id, frozenset())
+
     async def resolve_mappings(
         self,
         *,
@@ -3125,6 +3160,9 @@ def make_tracker_issue(
     parent_key: str | None = None,
     team_key: str | None = FIXTURE_TEAM_KEY,
     created_at: datetime = FIXTURE_EPOCH,
+    updated_at: datetime | None = None,
+    project: str | None = None,
+    project_id: str | None = None,
     body: str = "fixture body",
 ) -> TrackerIssue:
     """A domain issue for port-consumer fixtures."""
@@ -3138,12 +3176,14 @@ def make_tracker_issue(
         state_kind=state_kind,
         queue_states=frozenset(queue_states),
         team_key=team_key,
+        project=project,
+        project_id=project_id,
         relations=tuple(
             IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=key)
             for key in blocked_by
         ),
         created_at=created_at,
-        updated_at=created_at,
+        updated_at=created_at if updated_at is None else updated_at,
         url=f"https://tracker.invalid/issue/{issue_key}",
     )
 

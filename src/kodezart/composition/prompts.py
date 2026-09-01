@@ -37,6 +37,7 @@ async def boot_prompts(
         investigation_cap=config.investigation_cap,
         ticket_review_mode=config.ticket_review_mode,
         fallback_model=config.fallback_model,
+        session_models=config.session_models,
     )
     await log.ainfo(
         "prompt_resolution_table",
@@ -49,5 +50,19 @@ async def boot_prompts(
             prompt_set=config.prompt_set,
             declared_engines=list(declared_engines),
             model=config.model,
+        )
+    undeclared_overrides = {
+        key: model
+        for key, model in sorted(config.session_models.items())
+        if model not in declared_engines
+    }
+    if undeclared_overrides:
+        # Informational by KOD-161's own constraint: the set DECLARES the
+        # engines it was authored for and never refuses one.
+        await log.ainfo(
+            "prompt_set_engine_mismatch",
+            prompt_set=config.prompt_set,
+            declared_engines=list(declared_engines),
+            session_models=undeclared_overrides,
         )
     return prompts

@@ -26,7 +26,7 @@ from kodezart.domain.errors import (
     MergeConflictError,
 )
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
-from kodezart.types.domain.tracker import IssueRelationKind
+from kodezart.types.domain.tracker import IssueRelationKind, is_open
 
 
 class BaseResolver:
@@ -56,8 +56,15 @@ class BaseResolver:
         """The ``BaseSpec`` for *issue_key*, constructing its base if needed."""
         blocker_keys = await self._blocker_keys(issue_key)
         inputs = [
-            await self._input_for(issue_key=issue_key, blocker_key=blocker_key)
+            item
             for blocker_key in blocker_keys
+            if (
+                item := await self._input_for(
+                    issue_key=issue_key,
+                    blocker_key=blocker_key,
+                )
+            )
+            is not None
         ]
         for item in inputs:
             await self._require_present_on_remote(
@@ -89,16 +96,40 @@ class BaseResolver:
             if relation.kind is IssueRelationKind.BLOCKED_BY
         )
 
-    async def _input_for(self, *, issue_key: str, blocker_key: str) -> BaseInput:
-        """The blocker's deliverable ref, or the nearest ancestor's.
+    async def _input_for(
+        self,
+        *,
+        issue_key: str,
+        blocker_key: str,
+    ) -> BaseInput | None:
+        """The blocker's deliverable ref, the nearest ancestor's, or ``None``.
 
         A blocker is frequently not the issue whose branch delivers it —
         work riding another issue's pull request records no ref of its own.
         A resolution assuming otherwise would refuse to dispatch a lane
         whose premise is in fact present.
+
+        ``None`` is the ASSUMED-LANDED arm (KOD-169): a blocker that is
+        TERMINAL and carries no deliverable ref anywhere on its ancestor
+        chain finished outside kodezart's own delivery loop — the
+        founder's boards merge pull requests by hand — so its work is on
+        the trunk and it contributes no input.  The assumption is logged
+        by name, never silent.  A LIVE ref-less blocker keeps the refusal:
+        eligibility excludes live blockers before resolution, so reaching
+        one here means the graph moved under the pass, and dispatching
+        over it would build on a premise that does not exist yet.
         """
         ref = await self._nearest_deliverable_ref(blocker_key)
         if ref is None:
+            blocker = await self._tracker.read_issue(issue_key=blocker_key)
+            if not is_open(blocker.state_kind):
+                await self._log.ainfo(
+                    "base_input_assumed_landed",
+                    issue_key=issue_key,
+                    blocker_key=blocker_key,
+                    state_name=blocker.state_name,
+                )
+                return None
             raise BaseResolutionError(
                 "no deliverable ref on the blocker or any of its ancestors",
                 issue_id=issue_key,

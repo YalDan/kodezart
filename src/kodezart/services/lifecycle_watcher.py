@@ -175,6 +175,7 @@ class LifecycleWatcher:
         """
         loop = asyncio.get_running_loop()
         watch_started = loop.time()
+        watch_started_at = datetime.now(UTC)
         started = False
         terminal = False
         failure: ErrorEvent | None = None
@@ -219,6 +220,7 @@ class LifecycleWatcher:
             started=started,
             terminal=terminal,
             duration_seconds=loop.time() - watch_started,
+            started_at=watch_started_at,
         )
 
     async def _record_fire(
@@ -228,6 +230,7 @@ class LifecycleWatcher:
         started: bool,
         terminal: bool,
         duration_seconds: float,
+        started_at: datetime,
     ) -> None:
         """The fire's structural run record — the RUNNER's obligation.
 
@@ -250,6 +253,7 @@ class LifecycleWatcher:
                     name=issue_key,
                     outcome=outcome,
                     duration_seconds=duration_seconds,
+                    started_at=started_at,
                     recorded_at=datetime.now(UTC),
                 ),
             )

@@ -642,3 +642,13 @@ class TestTheAdapterOverTheCaptures:
             ],
         )
         assert unresolved == ()
+
+
+def test_a_listing_entry_carries_its_project_in_both_spellings() -> None:
+    """KOD-169 D1: project membership is free off the scan — both fields
+    are on the measured listing entry, and an issue in no project simply
+    omits them."""
+    wire = LinearIssueWire.model_validate(LIST_ISSUES_ENTRY)
+
+    assert wire.project == "a delivery project"
+    assert wire.project_id == "1a311111-0000-4000-8000-000000000001"

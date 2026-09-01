@@ -1,13 +1,15 @@
-"""The structural run record — what the RUNNER writes after every run.
+"""The structural run record — what the RUNNER backfills when a run left none.
 
 One value, three producers: the two scheduled passes and the fire.  The
-record is the runner's obligation rather than the session's courtesy — a
-judgment session that decides "nothing to write" is exactly the state the
-next window cannot tell apart from a pass that never ran (KOD-170) — so
-the fields here are the ones the runner KNOWS without asking the session:
-which kind ran, under what name, how it ended, and how long it took.  The
-session's richer prose remains its own additive contribution through the
-rendered mechanism, to the same declared destination.
+runner's obligation is that ONE record exists per run: the session's rich
+row through the rendered mechanism IS the record when the session wrote
+one, and the runner verifies before writing rather than writing beside it
+— two rows per run made every log read as two runs (KOD-170, amended).  A
+judgment session that decides "nothing to write" remains exactly the
+state the next window cannot tell apart from a pass that never ran, so
+the ABSENCE of a row after a run is what the runner repairs, with the
+fields it KNOWS without asking the session: which kind ran, under what
+name, when it began, how it ended, and how long it took.
 """
 
 from datetime import datetime
@@ -33,7 +35,12 @@ class RunOutcome(StrEnum):
 
 
 class RunRecord(BaseModel):
-    """One run, as its runner measured it."""
+    """One run, as its runner measured it.
+
+    ``started_at`` is the verification window's left edge: a destination
+    row created at or after it belongs to THIS run, so the runner treats
+    the record as already written and backfills nothing.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -41,6 +48,7 @@ class RunRecord(BaseModel):
     name: str
     outcome: RunOutcome
     duration_seconds: float
+    started_at: datetime
     recorded_at: datetime
 
     def line(self) -> str:

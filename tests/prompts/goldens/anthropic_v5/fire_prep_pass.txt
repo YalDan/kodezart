@@ -29,11 +29,11 @@ proceed under.
 Ground every claim you write in something you read. A claim you did not verify does
 not go on the board.
 
-Window. Establish what this pass covers before you read the board. The
-tracker checkpoint (example-checkpoint-document-id) carries the marker the last
-completed pass left, and the timestamp on its most recent entry is where this window
-starts. A checkpoint with no entry means no pass has completed yet — cover the whole
-board once as a bootstrap census, and say so in your report.
+Window. Establish what this pass covers before you read the board: the most
+recent row in Example Run Log carries the start time of the last completed pass of this
+kind, and that timestamp is where this window starts. No row yet means no pass has
+completed — cover the whole board once as a bootstrap census, and say so in your
+report.
 
 Store. This operation keeps a private store beside the tracker, and what
 lives at which destination is stated in the map this session is preluded with. Read from
@@ -43,8 +43,9 @@ public surface.
 
 Record. When the work is done, write this pass's own row in
 Example Run Log, the knowledge destination example-run-log-destination-id: this pass's start
-time, what you examined, what you changed, and what you could not do and why. The runner
-records that this pass ran; your row is the prose beside it, written after the work rather
+time, what you examined, what you changed, and what you could not do and why. Your row IS
+the run's record and the next pass's window boundary: the runner verifies one exists and
+backfills a bare structural line only when you skipped it, written after the work rather
 than before it — and a pass that changed nothing writes one too, because a gap in the
 record cannot be told apart from a pass that never ran.
 

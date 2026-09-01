@@ -16,6 +16,7 @@ Throughput comes from successive passes, not from batch sends.
 
 import secrets
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
@@ -32,8 +33,10 @@ from kodezart.domain.dispatch import (
     Selection,
     blocker_keys,
     clause_approved,
+    clause_in_scope,
     clause_in_team,
     clause_open,
+    clause_recorded_repository,
     clause_unclaimed,
     clause_undelivered,
     live_blocker,
@@ -59,6 +62,23 @@ from kodezart.types.requests.agent import WorkflowRequest
 def _uniform_draw(candidates: Sequence[str]) -> str:
     """Uniform draw over an exact-timestamp tie."""
     return secrets.SystemRandom().choice(candidates)
+
+
+@dataclass(frozen=True)
+class _UnresolvedBase:
+    """One remembered base-resolution failure, and when it was current.
+
+    ``updated_at`` is the issue's timestamp read AFTER the failing pass
+    released its claim — deliberately not the scan-time value, because the
+    claim and release are comment writes that move the timestamp
+    themselves: remembered at scan time, this pass's own noise would
+    re-admit the issue on the very next tick, which IS the measured churn
+    (KOD-169: 15 claim write-delete cycles, each feeding the next tick's
+    gate delta).
+    """
+
+    updated_at: datetime
+    reason: str
 
 
 def _now() -> datetime:
@@ -108,17 +128,30 @@ class FireDispatcher:
         self._clock: Callable[[], datetime] = clock
         self._log: BoundLogger = get_logger(__name__)
         self._jobs_by_issue: dict[str, str] = {}
+        #: Remembered base-resolution failures, until each issue changes.
+        self._unresolvable: dict[str, _UnresolvedBase] = {}
+        #: One ``initiative_identifiers`` read per distinct project for
+        #: this dispatcher's lifetime — membership does not move under a
+        #: running pass (KOD-169).
+        self._initiatives_by_project: dict[str, frozenset[str]] = {}
+        #: The teams whose issues route to this repository by BINDING; an
+        #: issue on any other scanned team routes by its recorded
+        #: repository.
+        self._bound_team_keys: frozenset[str] = frozenset(
+            operation.teams_bound_to(repo_url),
+        )
 
     async def run_pass(self) -> DispatchReport:
         """Execute one pass and return its machine-readable report.
 
-        The teams BOUND TO this pass's repository are read ONCE, at the
-        top, and bound both the scan and the eligibility of everything it
-        returns.  The declared teams that fire elsewhere are not this
-        pass's candidates: a pass that scanned them would claim an issue
-        into whichever repository's tick reached it first (KOD-157).  A
-        repository no team is bound to refuses here, before any query is
-        issued.
+        The teams this pass SCANS are read ONCE, at the top: the teams
+        bound to its repository, plus every unbound team — whose issues
+        route by the repository recorded on each one, so the
+        recorded-repository clause keeps concurrent passes' claims
+        disjoint (KOD-169) rather than tick order deciding a routing
+        question (KOD-157).  The teams bound elsewhere are not this pass's
+        candidates.  A repository no team's issues can reach refuses here,
+        before any query is issued.
         """
         team_keys = self._operation.team_keys_for_repo(self._repo_url)
         snapshot = await self._scan(team_keys)
@@ -204,15 +237,13 @@ class FireDispatcher:
         winner = next(
             issue for issue in eligible if issue.issue_key == selection.winner_key
         )
-        context = await self._assembler.assemble(
-            issue_key=winner.issue_key,
-            body=winner.body,
-        )
-        # The base is READ off the graph, never assumed. A lane whose
-        # premise is another issue's delivered branch is dispatched onto
-        # that branch; only a lane with no blockers gets the repository's
-        # configured trunk, and the resolver raises rather than falling
-        # back to trunk for a premise it could not locate.
+        # The base is READ off the graph, never assumed — and BEFORE the
+        # context is assembled, so the expensive assembly never runs for a
+        # candidate that cannot resolve (KOD-169). A lane whose premise is
+        # another issue's delivered branch is dispatched onto that branch;
+        # only a lane with no blockers gets the repository's configured
+        # trunk, and the resolver raises rather than falling back to trunk
+        # for a premise it could not locate.
         try:
             spec = await self._resolver.resolve(
                 issue_key=winner.issue_key,
@@ -232,6 +263,14 @@ class FireDispatcher:
                 issue_key=winner.issue_key,
                 holder=self._holder,
             )
+            # The exclusion timestamp is read AFTER the release, so this
+            # pass's own claim-cycle writes sit inside it and only a real
+            # change re-admits the issue (KOD-169).
+            refreshed = await self._tracker.read_issue(issue_key=winner.issue_key)
+            self._unresolvable[winner.issue_key] = _UnresolvedBase(
+                updated_at=refreshed.updated_at,
+                reason=str(exc),
+            )
             await self._log.awarning(
                 "dispatch_base_unresolved",
                 outcome=DispatchOutcome.base_unresolved.value,
@@ -246,6 +285,10 @@ class FireDispatcher:
                 tied_candidates=selection.tied,
                 claimed_issue_key=winner.issue_key,
             )
+        context = await self._assembler.assemble(
+            issue_key=winner.issue_key,
+            body=winner.body,
+        )
         # The base the graph implies NOW, against the one a previous
         # dispatch recorded. Detection is arithmetic and the comparison is
         # only possible because the spec crosses the port: with nothing
@@ -355,6 +398,42 @@ class FireDispatcher:
                 clause=ExclusionClause.OUTSIDE_TEAM,
                 detail="" if issue.team_key is None else issue.team_key,
             )
+        unresolved = self._unresolvable.get(issue.issue_key)
+        if unresolved is not None:
+            # Re-admitted only once the issue has CHANGED past the reading
+            # taken after the failing pass released — retrying an
+            # unchanged issue re-runs the same failing resolution and
+            # re-writes the claim churn it produced (KOD-169).
+            if issue.updated_at <= unresolved.updated_at:
+                return IssueExclusion(
+                    issue_key=issue.issue_key,
+                    clause=ExclusionClause.BASE_UNRESOLVED,
+                    detail=unresolved.reason,
+                )
+            del self._unresolvable[issue.issue_key]
+        scope_exclusion = await self._exclude_by_scope(issue)
+        if scope_exclusion is not None:
+            return scope_exclusion
+        team_bound = issue.team_key in self._bound_team_keys
+        if not team_bound:
+            recorded = await self._tracker.recorded_repository(
+                issue_key=issue.issue_key,
+            )
+            if not clause_recorded_repository(
+                team_bound=team_bound,
+                recorded=recorded,
+                repo_url=self._repo_url,
+            ):
+                if recorded is None:
+                    return IssueExclusion(
+                        issue_key=issue.issue_key,
+                        clause=ExclusionClause.NO_RECORDED_REPOSITORY,
+                    )
+                return IssueExclusion(
+                    issue_key=issue.issue_key,
+                    clause=ExclusionClause.RECORDED_ELSEWHERE,
+                    detail=recorded,
+                )
         if not clause_approved(issue):
             return IssueExclusion(
                 issue_key=issue.issue_key,
@@ -395,6 +474,56 @@ class FireDispatcher:
                 clause=ExclusionClause.OPEN_DELIVERY,
             )
         return None
+
+    async def _exclude_by_scope(
+        self,
+        issue: TrackerIssue,
+    ) -> IssueExclusion | None:
+        """The scope exclusion for *issue*, or ``None`` when it is in scope.
+
+        An empty scope — the default — is the entire board and asks the
+        tracker nothing.  A declared scope is tried against the project's
+        own spellings first, free off the scan; the initiative read is
+        paid only when they do not settle it.
+        """
+        entry = (
+            None
+            if issue.team_key is None
+            else self._operation.teams.get(issue.team_key)
+        )
+        scope: tuple[str, ...] = () if entry is None else entry.scope
+        if not scope:
+            return None
+        identifiers = frozenset(
+            identifier
+            for identifier in (issue.project, issue.project_id)
+            if identifier is not None
+        )
+        if (
+            not clause_in_scope(scope=scope, identifiers=identifiers)
+            and issue.project_id is not None
+        ):
+            identifiers = identifiers | await self._initiatives_for(issue.project_id)
+        if clause_in_scope(scope=scope, identifiers=identifiers):
+            return None
+        return IssueExclusion(
+            issue_key=issue.issue_key,
+            clause=ExclusionClause.OUT_OF_SCOPE,
+            detail=(
+                issue.project
+                if issue.project is not None
+                else "the issue belongs to no project"
+            ),
+        )
+
+    async def _initiatives_for(self, project_id: str) -> frozenset[str]:
+        cached = self._initiatives_by_project.get(project_id)
+        if cached is None:
+            cached = await self._tracker.initiative_identifiers(
+                project_id=project_id,
+            )
+            self._initiatives_by_project[project_id] = cached
+        return cached
 
     async def _run_is_live(self, issue_key: str) -> bool:
         job_id = self._jobs_by_issue.get(issue_key)

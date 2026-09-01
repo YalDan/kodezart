@@ -142,3 +142,48 @@ def test_an_empty_forge_token_assignment_in_the_environment_is_refused(
 def test_an_unset_forge_token_is_the_absent_state_and_still_loads() -> None:
     """Non-vacuity: absence stays legal, and it is one state rather than two."""
     assert AppConfig().github_token is None
+
+
+# ---------------------------------------------------------------------------
+# KOD-161 — the per-key engine table
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+def test_session_models_ships_empty_and_loads() -> None:
+    """The default pins nothing: every key resolves exactly as before."""
+    assert AppConfig().session_models == {}
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+def test_a_key_outside_the_prompt_vocabulary_is_refused_naming_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The closed-vocabulary refusal: a typo becomes a one-line fix, never
+    a table entry nothing ever reads."""
+    monkeypatch.setenv(
+        "KODEZART_SESSION_MODELS",
+        '{"implemenation": "engine-a"}',
+    )
+
+    with pytest.raises(ValidationError) as excinfo:
+        AppConfig()
+
+    message = str(excinfo.value)
+    assert "implemenation" in message
+    assert "implementation" in message
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+def test_a_table_of_prompt_keys_loads_verbatim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "KODEZART_SESSION_MODELS",
+        '{"implementation": "engine-a", "fix": "engine-b"}',
+    )
+
+    assert AppConfig().session_models == {
+        "implementation": "engine-a",
+        "fix": "engine-b",
+    }

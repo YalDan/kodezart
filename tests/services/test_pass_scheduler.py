@@ -21,6 +21,7 @@ import asyncio
 import re
 from collections import Counter
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 
 import structlog
@@ -542,10 +543,15 @@ class ReportLog:
     """A ``report`` callback that remembers every outcome it was handed."""
 
     def __init__(self) -> None:
-        self.reports: list[tuple[RunOutcome, float]] = []
+        self.reports: list[tuple[RunOutcome, float, datetime]] = []
 
-    async def report(self, outcome: RunOutcome, duration_seconds: float) -> None:
-        self.reports.append((outcome, duration_seconds))
+    async def report(
+        self,
+        outcome: RunOutcome,
+        duration_seconds: float,
+        started_at: datetime,
+    ) -> None:
+        self.reports.append((outcome, duration_seconds, started_at))
 
 
 class ExplodingReport:
@@ -554,7 +560,12 @@ class ExplodingReport:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def report(self, outcome: RunOutcome, duration_seconds: float) -> None:
+    async def report(
+        self,
+        outcome: RunOutcome,
+        duration_seconds: float,
+        started_at: datetime,
+    ) -> None:
         self.calls += 1
         msg = "the record destination refused the row"
         raise RuntimeError(msg)
@@ -585,8 +596,11 @@ async def test_a_completed_tick_reports_its_outcome_and_duration() -> None:
         ),
     )
 
-    assert [outcome for outcome, _ in reports.reports] == [RunOutcome.COMPLETED]
+    assert [outcome for outcome, _, _ in reports.reports] == [RunOutcome.COMPLETED]
     assert reports.reports[0][1] >= 0.0
+    # The verification window's left edge is a wall-clock fact the tick
+    # stamped itself, aware so it compares against any vendor timestamp.
+    assert reports.reports[0][2].tzinfo is not None
 
 
 async def test_a_failing_tick_reports_failed() -> None:
@@ -602,7 +616,7 @@ async def test_a_failing_tick_reports_failed() -> None:
         ),
     )
 
-    assert [outcome for outcome, _ in reports.reports] == [RunOutcome.FAILED]
+    assert [outcome for outcome, _, _ in reports.reports] == [RunOutcome.FAILED]
 
 
 async def test_a_timed_out_tick_reports_timed_out() -> None:
@@ -618,7 +632,7 @@ async def test_a_timed_out_tick_reports_timed_out() -> None:
         ),
     )
 
-    assert [outcome for outcome, _ in reports.reports] == [RunOutcome.TIMED_OUT]
+    assert [outcome for outcome, _, _ in reports.reports] == [RunOutcome.TIMED_OUT]
 
 
 async def test_a_failing_report_is_its_own_loud_event_and_keeps_the_cadence() -> None:

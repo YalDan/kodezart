@@ -1056,3 +1056,69 @@ class TestUserIdentityResolution:
         )
 
         assert await linear_over_fake_mcp(server).resolve_mappings(refs=[ref]) == (ref,)
+
+
+class TestTheRecordedRepositoryMarker:
+    """The kodezart-repo marker — judgment writes it, this read routes by it.
+
+    Parsed regardless of author (KOD-169): the fire-prep pass writes it
+    through the rendered mechanism and a principal can write one by hand,
+    so authorship is deliberately not part of the read.
+    """
+
+    async def test_the_latest_marker_wins_whoever_wrote_it(self) -> None:
+        server = fixture_server()
+        server.comments.extend(
+            [
+                FakeMcpComment(
+                    id="route-1",
+                    issue_id=CLAIMED_ISSUE,
+                    author="Kodezart",
+                    body='<!-- kodezart-repo url="https://example.invalid/a/one" -->',
+                    created_at=FIXTURE_NOW,
+                ),
+                FakeMcpComment(
+                    id="route-2",
+                    issue_id=CLAIMED_ISSUE,
+                    author=APPROVER,
+                    body=(
+                        "rerouted by hand:\n"
+                        '<!-- kodezart-repo url="https://example.invalid/a/two" -->'
+                    ),
+                    created_at=FIXTURE_NOW,
+                ),
+            ],
+        )
+        tracker = linear_over_fake_mcp(server)
+
+        recorded = await tracker.recorded_repository(issue_key=CLAIMED_ISSUE)
+
+        assert recorded == "https://example.invalid/a/two"
+
+    async def test_no_marker_reads_as_none(self) -> None:
+        tracker = linear_over_fake_mcp(fixture_server())
+
+        assert await tracker.recorded_repository(issue_key=CLAIMED_ISSUE) is None
+
+
+class TestInitiativeIdentifiers:
+    async def test_every_spelling_of_every_initiative_is_answered(self) -> None:
+        """One ``get_project`` read; both spellings, because a scope may be
+        declared in whichever one the operator reads on the tracker."""
+        server = fixture_server()
+        server.projects["proj-1"] = {
+            "id": "proj-1",
+            "name": "a delivery project",
+            "initiatives": [
+                {"id": "init-9", "name": "the big initiative"},
+                {"id": "init-10", "name": "the other initiative"},
+            ],
+        }
+        tracker = linear_over_fake_mcp(server)
+
+        identifiers = await tracker.initiative_identifiers(project_id="proj-1")
+
+        assert identifiers == frozenset(
+            {"init-9", "the big initiative", "init-10", "the other initiative"},
+        )
+        assert server.tool_calls("get_project") == [{"query": "proj-1"}]

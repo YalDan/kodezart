@@ -5,8 +5,8 @@ The reason is operational, not aesthetic: a wrong judgment produces no
 error, no log line to falsify and no recovery path, while a wrong
 computation produces a reproducible bug fixable once.
 
-Each of the six clauses is a separate total function of data the port
-already returned, so a clause can be tested without standing up a pass.
+Each clause is a separate total function of data the port already
+returned, so a clause can be tested without standing up a pass.
 Ranking is likewise a pure key function; only the tie-break draw is
 injected, because a uniform draw is the one thing that cannot be a pure
 function of the data.
@@ -43,6 +43,45 @@ def clause_in_team(issue: TrackerIssue, *, team_keys: Collection[str]) -> bool:
     it, and on a backend that prefixes nothing there is no spelling to read.
     """
     return issue.team_key is not None and issue.team_key in team_keys
+
+
+def clause_in_scope(
+    *,
+    scope: Collection[str],
+    identifiers: Collection[str],
+) -> bool:
+    """Clause 1b: the issue falls inside its team's declared scope.
+
+    An empty scope is the ENTIRE board — the founder's default ruling of
+    2026-09-01 — so it excludes nothing.  A non-empty scope admits an
+    issue whose placement identifiers intersect it; *identifiers* holds
+    every spelling the issue's placement answers to (its project's name
+    and id, and the names and ids of the initiatives the caller resolved
+    that project into), so a scope may be declared in whichever spelling
+    the operator reads on the tracker (KOD-169).
+    """
+    if not scope:
+        return True
+    declared = set(scope)
+    return any(identifier in declared for identifier in identifiers)
+
+
+def clause_recorded_repository(
+    *,
+    team_bound: bool,
+    recorded: str | None,
+    repo_url: str,
+) -> bool:
+    """Clause 1c: the issue's route names THIS pass's repository.
+
+    A bound team's issues route by the binding, exactly as before.  An
+    unbound team's issues route by the repository a judgment pass RECORDED
+    on the issue (KOD-169): equality with this pass's repository is the
+    whole predicate.  A missing record is an exclusion the report names —
+    never a claim by whichever tick arrives first, which is the KOD-157
+    defect this clause closes.
+    """
+    return team_bound or recorded == repo_url
 
 
 def clause_approved(issue: TrackerIssue) -> bool:

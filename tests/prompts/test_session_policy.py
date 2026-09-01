@@ -327,3 +327,35 @@ def test_the_excluded_translation_is_exhaustive_over_the_enum() -> None:
 
     skills_and_engines = policy_values() - {e.value for e in SessionEffort}
     assert [value for value in skills_and_engines if f'"{value}"' in source] == []
+
+
+# ---------------------------------------------------------------------------
+# KOD-161 — the deployment's per-key engine table reaches the policy
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("set_name", [V5_SET, DEFAULT_SET])
+def test_a_pinned_keys_policy_carries_its_engine_and_no_other_keys_does(
+    set_name: str,
+) -> None:
+    """Registry-level injection, so both sets serve the table identically —
+    the legacy set needs no roles for a deployment to pin its keys."""
+    registry = load_registry(
+        default_set=set_name,
+        session_models={"implementation": "engine-a", "fix": "engine-b"},
+    )
+
+    assert registry.session_policy(PromptKey.IMPLEMENTATION).model == "engine-a"
+    assert registry.session_policy(PromptKey.FIX).model == "engine-b"
+    for key in PromptKey:
+        if key not in (PromptKey.IMPLEMENTATION, PromptKey.FIX):
+            assert registry.session_policy(key).model is None
+
+
+def test_an_empty_table_is_byte_identical_to_before_it_existed() -> None:
+    """The shipped default: no key pinned, every policy's model is None
+    and map_model falls through to the construction model as always."""
+    registry = load_registry(default_set=V5_SET)
+
+    for key in PromptKey:
+        assert registry.session_policy(key).model is None

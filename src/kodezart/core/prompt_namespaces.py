@@ -126,10 +126,16 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         {stage.value: label for stage, label in config.workflow_states.items()},
         absent=not config.workflow_states,
     )
-    # The roster a pass enumerates. ``repository`` is three-state per
-    # entry: an operation declaring one repository binds every team to it
-    # implicitly and declares nothing, so the absent marker is what a
-    # template says "the only declared repository" with.
+    # The roster a pass enumerates. ``repository`` splits three ways per
+    # entry, exactly one marker non-``None``: bound to a declared url;
+    # unbound with ONE repository declared, where the binding is implicit
+    # and total ("the only declared repository"); unbound with several,
+    # where the route is RECORDED per staged issue by the fire-prep pass
+    # and read by dispatch (KOD-169).  ``scope`` is the house pair: the
+    # declared narrowing joined for prose, or the absent marker for the
+    # whole-board default — which renders nothing new, so an unscoped
+    # config's roster is byte-identical to before the field existed.
+    several_repos = len(config.repos) > 1
     _bind_absentable(
         bindings,
         "teams",
@@ -138,11 +144,32 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                 "name": entry.name,
                 "key": entry.key,
                 "repository": entry.repository,
-                "repository_absent": True if entry.repository is None else None,
+                "repository_absent": (
+                    True if entry.repository is None and not several_repos else None
+                ),
+                "repository_recorded": (
+                    True if entry.repository is None and several_repos else None
+                ),
+                "scope": ", ".join(entry.scope) if entry.scope else None,
+                "scope_absent": None if entry.scope else True,
             }
             for entry in config.teams.values()
         ],
         absent=not config.teams,
+    )
+    # Present exactly when some pass must RECORD routes: an unbound team
+    # beside a real repository choice.  The fire-prep template renders its
+    # marker-writing instruction under this pair, so a single-repository
+    # operation's prompt carries no instruction about a case it cannot
+    # reach.
+    _bind_absentable(
+        bindings,
+        "recorded_routing",
+        True,
+        absent=not (
+            several_repos
+            and any(entry.repository is None for entry in config.teams.values())
+        ),
     )
     # An id alone renders as an opaque token no reader can resolve, so
     # every document and record reference carries its system beside it.

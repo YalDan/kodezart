@@ -374,7 +374,7 @@ async def build_dispatch_passes(
     resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
     passes: list[ScheduledPass] = []
     for repo in operation.repos:
-        if not operation.teams_bound_to(repo.url):
+        if not operation.teams_scanned_by(repo.url):
             await log.ainfo("dispatch_pass_unbound_repository", repo_url=repo.url)
             continue
         tick = GatedDispatchPass(
@@ -450,7 +450,7 @@ async def _verify_wired_gates(
         }
     )
     if github_api is not None and any(
-        operation.teams_bound_to(repo.url) for repo in operation.repos
+        operation.teams_scanned_by(repo.url) for repo in operation.repos
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
     passes_by_signal: dict[PassSignal, list[str]] = {}

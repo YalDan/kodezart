@@ -27,16 +27,19 @@ it stops returning at all.
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from traceback import format_exception
 
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import LogEmitter
 from kodezart.types.domain.run_records import RunOutcome
 
-#: How a pass's outcome leaves the scheduler: the outcome and the seconds
-#: the tick took.  Bound by composition to the run recorder; the scheduler
-#: itself knows no record vocabulary beyond this.
-type RunReport = Callable[[RunOutcome, float], Awaitable[None]]
+#: How a pass's outcome leaves the scheduler: the outcome, the seconds the
+#: tick took, and the wall clock when it began — the verification window's
+#: left edge, stamped where the tick starts because nobody downstream can
+#: recover it from a monotonic duration.  Bound by composition to the run
+#: recorder; the scheduler itself knows no record vocabulary beyond this.
+type RunReport = Callable[[RunOutcome, float, datetime], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,7 @@ class PassScheduler:
         """
         loop = asyncio.get_running_loop()
         started = loop.time()
+        started_at = datetime.now(UTC)
         budget = asyncio.timeout(entry.timeout_seconds)
         try:
             async with budget:
@@ -150,7 +154,7 @@ class PassScheduler:
                     timeout_seconds=entry.timeout_seconds,
                     duration_seconds=duration,
                 )
-                await self._report(entry, RunOutcome.TIMED_OUT, duration)
+                await self._report(entry, RunOutcome.TIMED_OUT, duration, started_at)
                 return
             # The traceback rides the event under this pass's own key,
             # and no ``exc_info`` is passed, so it appears once.
@@ -163,7 +167,7 @@ class PassScheduler:
                 traceback="".join(format_exception(exc)),
                 duration_seconds=duration,
             )
-            await self._report(entry, RunOutcome.FAILED, duration)
+            await self._report(entry, RunOutcome.FAILED, duration, started_at)
             return
         duration = loop.time() - started
         await self._log.ainfo(
@@ -171,13 +175,14 @@ class PassScheduler:
             name=entry.name,
             duration_seconds=duration,
         )
-        await self._report(entry, RunOutcome.COMPLETED, duration)
+        await self._report(entry, RunOutcome.COMPLETED, duration, started_at)
 
     async def _report(
         self,
         entry: ScheduledPass,
         outcome: RunOutcome,
         duration_seconds: float,
+        started_at: datetime,
     ) -> None:
         """Report the tick's outcome where the pass says to, loudly on failure.
 
@@ -191,7 +196,7 @@ class PassScheduler:
         if entry.report is None:
             return
         try:
-            await entry.report(outcome, duration_seconds)
+            await entry.report(outcome, duration_seconds, started_at)
         except Exception as exc:
             await self._log.aerror(
                 "run_record_write_failed",

@@ -113,6 +113,7 @@ def raw_priority_ordering(line: str) -> bool:
 def operation_config(
     *,
     teams: dict[str, TeamEntry] | None = None,
+    repos: list[RepoEntry] | None = None,
 ) -> OperationConfig:
     return OperationConfig(
         operation_name="fixture",
@@ -147,13 +148,17 @@ def operation_config(
             LifecycleStage.IN_REVIEW: "In Review",
             LifecycleStage.DONE: "Done",
         },
-        repos=[
-            RepoEntry(
-                url=REPO_URL,
-                trunk=TRUNK,
-                checks=[CheckStep(name="check", command="make check")],
-            )
-        ],
+        repos=(
+            [
+                RepoEntry(
+                    url=REPO_URL,
+                    trunk=TRUNK,
+                    checks=[CheckStep(name="check", command="make check")],
+                )
+            ]
+            if repos is None
+            else repos
+        ),
         documents={
             "checkpoint": DocumentEntry(
                 system=DocumentSystem.TRACKER,
@@ -356,7 +361,7 @@ class TestTheContainerBoundary:
         fire, queue, _ = dispatcher(tracker, operation=operation_config(teams={}))
         with pytest.raises(OperationMemberAbsentError) as caught:
             await fire.run_pass()
-        assert caught.value.missing == f"teams entry bound to {REPO_URL}"
+        assert caught.value.missing == f"teams entry scanned by {REPO_URL}"
         assert "no issue can be selected" in caught.value.stops
         assert tracker.scans == []
         assert queue.submissions == []
@@ -1032,13 +1037,41 @@ class TestTheBaseIsReadOffTheGraph:
         assert report.base.base_role is WorkRefRole.DELIVERABLE
         assert [item.blocker_issue_id for item in report.base.inputs] == ["K-2"]
 
+    async def test_a_terminal_refless_blocker_is_assumed_landed_on_trunk(
+        self,
+    ) -> None:
+        """The founder's board reality (KOD-169): pull requests merge
+        outside kodezart's loop, so a Done blocker recording no deliverable
+        ref anywhere on its chain finished on the trunk — the lane resolves
+        there, with the assumption logged by name, instead of refusing to
+        dispatch over work that already landed."""
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue(
+                    "K-2",
+                    queue_states=[QueueState.DONE],
+                    state_kind=WorkflowStateKind.COMPLETED,
+                ),
+            ],
+        )
+        fire, queue, _ = dispatcher(tracker)
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert report.base is not None
+        assert report.base.base_branch == TRUNK
+        assert report.base.inputs == ()
+        assert len(queue.submissions) == 1
+
     async def test_an_unresolvable_base_reports_it_and_enqueues_nothing(self) -> None:
         """A missing premise is loud, released, and never trunk.
 
-        The blocker records no ref at all, so there is no base to build on.
-        Substituting trunk here would build the lane WITHOUT its premise and
-        call it delivered, which is the failure the resolver's typed error
-        exists to make impossible.
+        The blocker's deliverable ref was never pushed, so there is no
+        base to build on.  Substituting trunk here would build the lane
+        WITHOUT its premise and call it delivered, which is the failure
+        the resolver's typed error exists to make impossible.
         """
         tracker = FakeTrackerPort(
             issues=[
@@ -1049,6 +1082,17 @@ class TestTheBaseIsReadOffTheGraph:
                     state_kind=WorkflowStateKind.COMPLETED,
                 ),
             ],
+            recorded_work_refs={
+                "K-2": [
+                    WorkRef(
+                        issue_id="K-2",
+                        role=WorkRefRole.DELIVERABLE,
+                        branch=BLOCKER_BRANCH,
+                        pushed_head_sha=None,
+                        recorded_at=FIXTURE_EPOCH,
+                    ),
+                ],
+            },
         )
         fire, queue, _ = dispatcher(tracker)
 
@@ -1357,3 +1401,293 @@ class TestTheClaimSurvivesTheProcessThatMadeIt:
 
         assert held.outcome is DispatchOutcome.empty_eligible_set
         assert freed.outcome is DispatchOutcome.fire_enqueued
+
+
+OTHER_REPO_URL = "https://example.invalid/owner/other"
+
+
+def two_repo_operation(
+    *,
+    duck_scope: tuple[str, ...] = (),
+) -> OperationConfig:
+    """Two declared repositories, one bound team and one unbound board.
+
+    The founder's live shape (KOD-169): the coordination team fires into
+    its own repository, and a second board binds nowhere — each of its
+    staged issues routes by the repository judgment recorded on it.
+    """
+    return operation_config(
+        teams={
+            "engineering": TeamEntry(
+                name="fixture-team",
+                key="ENG",
+                repository=REPO_URL,
+            ),
+            "duck": TeamEntry(name="duck-team", key="DUC", scope=duck_scope),
+        },
+        repos=[
+            RepoEntry(
+                url=REPO_URL,
+                trunk=TRUNK,
+                checks=[CheckStep(name="check", command="make check")],
+            ),
+            RepoEntry(
+                url=OTHER_REPO_URL,
+                trunk=TRUNK,
+                checks=[CheckStep(name="check", command="make check")],
+            ),
+        ],
+    )
+
+
+class TestTheRecordedRoute:
+    """Judgment records the repository, determinism reads it (KOD-169).
+
+    Every case runs the pass for ``REPO_URL`` over an approved issue on
+    the UNBOUND board; what varies is the route recorded on the issue.
+    """
+
+    async def test_no_recorded_repository_is_a_named_refusal_never_a_claim(
+        self,
+    ) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("DUC-1", team_key="duck")],
+        )
+        fire, queue, _ = dispatcher(tracker, operation=two_repo_operation())
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.empty_eligible_set
+        assert [(item.issue_key, item.clause) for item in report.exclusions] == [
+            ("DUC-1", ExclusionClause.NO_RECORDED_REPOSITORY),
+        ]
+        assert queue.submissions == []
+        assert await tracker.active_claim(issue_key="DUC-1") is None
+
+    async def test_an_issue_recorded_for_this_repository_is_claimed_here(
+        self,
+    ) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("DUC-1", team_key="duck")],
+            recorded_repositories={"DUC-1": REPO_URL},
+        )
+        fire, queue, _ = dispatcher(tracker, operation=two_repo_operation())
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert report.claimed_issue_key == "DUC-1"
+        assert len(queue.submissions) == 1
+
+    async def test_an_issue_recorded_elsewhere_is_the_other_passes_to_claim(
+        self,
+    ) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("DUC-1", team_key="duck")],
+            recorded_repositories={"DUC-1": OTHER_REPO_URL},
+        )
+        fire, queue, _ = dispatcher(tracker, operation=two_repo_operation())
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.empty_eligible_set
+        exclusion = report.exclusions[0]
+        assert exclusion.clause is ExclusionClause.RECORDED_ELSEWHERE
+        assert exclusion.detail == OTHER_REPO_URL
+        assert queue.submissions == []
+
+    async def test_a_route_outside_the_declared_roster_is_visible_by_its_url(
+        self,
+    ) -> None:
+        """A marker naming an undeclared repository routes nowhere; the
+        url in the detail is what makes that legible against the config."""
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("DUC-1", team_key="duck")],
+            recorded_repositories={"DUC-1": "https://example.invalid/x/undeclared"},
+        )
+        fire, queue, _ = dispatcher(tracker, operation=two_repo_operation())
+
+        report = await fire.run_pass()
+
+        exclusion = report.exclusions[0]
+        assert exclusion.clause is ExclusionClause.RECORDED_ELSEWHERE
+        assert exclusion.detail == "https://example.invalid/x/undeclared"
+        assert queue.submissions == []
+
+    async def test_the_unbound_board_is_scanned_by_this_pass(self) -> None:
+        """Scan roster = bound teams plus every unbound one — the unbound
+        board's issues must be READ here for the route clause to partition
+        them at all."""
+        tracker = FakeTrackerPort(issues=[])
+        fire, _, _ = dispatcher(tracker, operation=two_repo_operation())
+
+        await fire.run_pass()
+
+        assert [query.team_key for query in tracker.scans] == [
+            "engineering",
+            "duck",
+        ]
+
+
+class TestTheDeclaredScope:
+    """Whole board by default; a declared scope narrows by name (KOD-169)."""
+
+    async def test_an_issue_in_a_named_project_is_in_scope(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "DUC-1",
+                    team_key="duck",
+                    project="a delivery project",
+                    project_id="proj-1",
+                ),
+            ],
+            recorded_repositories={"DUC-1": REPO_URL},
+        )
+        fire, queue, _ = dispatcher(
+            tracker,
+            operation=two_repo_operation(duck_scope=("a delivery project",)),
+        )
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert len(queue.submissions) == 1
+
+    async def test_an_issue_in_another_project_is_out_of_scope_by_name(
+        self,
+    ) -> None:
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "DUC-1",
+                    team_key="duck",
+                    project="somebody else's project",
+                    project_id="proj-2",
+                ),
+            ],
+            recorded_repositories={"DUC-1": REPO_URL},
+        )
+        fire, queue, _ = dispatcher(
+            tracker,
+            operation=two_repo_operation(duck_scope=("a delivery project",)),
+        )
+
+        report = await fire.run_pass()
+
+        exclusion = report.exclusions[0]
+        assert exclusion.clause is ExclusionClause.OUT_OF_SCOPE
+        assert exclusion.detail == "somebody else's project"
+        assert queue.submissions == []
+
+    async def test_a_projectless_issue_is_out_of_any_declared_scope(self) -> None:
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("DUC-1", team_key="duck")],
+            recorded_repositories={"DUC-1": REPO_URL},
+        )
+        fire, queue, _ = dispatcher(
+            tracker,
+            operation=two_repo_operation(duck_scope=("a delivery project",)),
+        )
+
+        report = await fire.run_pass()
+
+        exclusion = report.exclusions[0]
+        assert exclusion.clause is ExclusionClause.OUT_OF_SCOPE
+        assert exclusion.detail == "the issue belongs to no project"
+        assert queue.submissions == []
+
+    async def test_a_scope_naming_an_initiative_admits_its_projects_issues(
+        self,
+    ) -> None:
+        """A scope entry may be an initiative in either spelling; the
+        project's memberships are read once and cached per pass."""
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "DUC-1",
+                    team_key="duck",
+                    project="a delivery project",
+                    project_id="proj-1",
+                ),
+            ],
+            recorded_repositories={"DUC-1": REPO_URL},
+            initiative_identifiers={
+                "proj-1": frozenset({"init-9", "the big initiative"}),
+            },
+        )
+        fire, queue, _ = dispatcher(
+            tracker,
+            operation=two_repo_operation(duck_scope=("the big initiative",)),
+        )
+
+        report = await fire.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert len(queue.submissions) == 1
+
+
+class TestTheChurnExclusion:
+    """The measured claim churn, reproduced and asserted dead (KOD-169).
+
+    The live defect: an unresolvable winner was claimed, failed, and
+    released every tick — 15 write-delete cycles, each one's comment
+    writes feeding the next tick's gate delta.  The remembered failure
+    must hold across this pass's OWN post-release timestamp, and lift the
+    moment the issue genuinely changes.
+    """
+
+    def _tracker(self) -> FakeTrackerPort:
+        return FakeTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue(
+                    "K-2",
+                    queue_states=[QueueState.DONE],
+                    state_kind=WorkflowStateKind.COMPLETED,
+                ),
+            ],
+            recorded_work_refs={
+                "K-2": [
+                    WorkRef(
+                        issue_id="K-2",
+                        role=WorkRefRole.DELIVERABLE,
+                        branch=BLOCKER_BRANCH,
+                        pushed_head_sha=None,
+                        recorded_at=FIXTURE_EPOCH,
+                    ),
+                ],
+            },
+        )
+
+    async def test_an_unresolved_issue_is_excluded_until_it_changes(self) -> None:
+        tracker = self._tracker()
+        fire, queue, _ = dispatcher(tracker)
+
+        first = await fire.run_pass()
+        second = await fire.run_pass()
+
+        assert first.outcome is DispatchOutcome.base_unresolved
+        assert second.outcome is DispatchOutcome.empty_eligible_set
+        assert second.claimed_issue_key is None, "no re-claim, so no churn"
+        exclusion = second.exclusions[0]
+        assert exclusion.clause is ExclusionClause.BASE_UNRESOLVED
+        assert "never been pushed" in exclusion.detail
+        assert queue.submissions == []
+
+    async def test_a_genuine_change_re_admits_the_issue(self) -> None:
+        tracker = self._tracker()
+        fire, _, _ = dispatcher(tracker)
+
+        first = await fire.run_pass()
+        tracker.issues["K-1"] = make_tracker_issue(
+            "K-1",
+            blocked_by=["K-2"],
+            updated_at=FIXTURE_EPOCH + timedelta(hours=1),
+        )
+        third = await fire.run_pass()
+
+        assert first.outcome is DispatchOutcome.base_unresolved
+        assert third.outcome is DispatchOutcome.base_unresolved, (
+            "the changed issue is retried rather than remembered forever"
+        )

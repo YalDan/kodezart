@@ -74,11 +74,13 @@ class InRepoPromptRegistry:
         templates: Mapping[PromptKey, PromptTemplate],
         default_metadata: PromptSetMetadata,
         fallback_model: str | None = None,
+        session_models: Mapping[str, str] | None = None,
         definitions: Sequence[AgentDefinition] = (),
     ) -> None:
         self._templates: Mapping[PromptKey, PromptTemplate] = templates
         self._default_metadata: PromptSetMetadata = default_metadata
         self._fallback_model: str | None = fallback_model
+        self._session_models: dict[str, str] = dict(session_models or {})
         self._definitions: tuple[AgentDefinition, ...] = tuple(definitions)
 
     @classmethod
@@ -93,6 +95,7 @@ class InRepoPromptRegistry:
         investigation_cap: int,
         ticket_review_mode: TicketReviewMode,
         fallback_model: str | None = None,
+        session_models: Mapping[str, str] | None = None,
     ) -> Self:
         """Resolve every function key or raise ``PromptResolutionError``."""
         available = _discover_sets(sets_root)
@@ -179,6 +182,7 @@ class InRepoPromptRegistry:
             templates=templates,
             default_metadata=default_metadata,
             fallback_model=fallback_model,
+            session_models=session_models,
             definitions=_load_definitions(available[default_set], default_metadata),
         )
 
@@ -218,14 +222,19 @@ class InRepoPromptRegistry:
         """What *key*'s dispatch declares about its session.
 
         One object per dispatch rather than four parallel parameters: the
-        house rules the set appends, the effort its role runs at, and the
-        configured refusal fallback all arrive together, and a set that
-        declares no roles produces exactly the policy every dispatch
-        expressed before this existed.
+        house rules the set appends, the effort its role runs at, the
+        configured refusal fallback, and the engine the deployment pins
+        THIS key to (KOD-161) all arrive together, and a set that declares
+        no roles and a deployment that pins no key produce exactly the
+        policy every dispatch expressed before this existed.  The engine
+        table is deployment configuration injected here — the registry
+        level — so it serves both sets identically; the set's own
+        ``engines`` stays a declaration, never a resolver.
         """
         return SessionPolicy(
             system_prompt_append=self._default_metadata.fragments.house_rules,
             effort=self._default_metadata.effort_of(key.value),
+            model=self._session_models.get(key.value),
             fallback_model=self._fallback_model,
         )
 

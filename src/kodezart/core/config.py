@@ -12,6 +12,7 @@ from kodezart.types.domain.gating import (
     GateVerdict,
     RedactionCategory,
 )
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import (
     KnowledgeGrant,
     KnowledgeTransport,
@@ -216,6 +217,43 @@ class AppConfig(BaseSettings):
             "second engine it may reach sends none."
         ),
     )
+    session_models: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "JSON object mapping a prompt function key to the engine its "
+            "sessions run on, overriding the global model for those keys "
+            "only (KOD-161). Engine choice is deployment-shaped, so the "
+            "table lives here rather than in a prompt set, which only "
+            "DECLARES intended engines. Empty — the default — changes "
+            "nothing: every key resolves as before. No engine name is "
+            "defaulted anywhere."
+        ),
+    )
+
+    @field_validator("session_models", mode="before")
+    @classmethod
+    def _session_model_keys_name_prompt_keys(cls, value: object) -> object:
+        """Name every offending key, deliberately and safely.
+
+        The same carve-out ``knowledge_session_grants`` documents: the
+        legal vocabulary is the closed ``PromptKey`` enum, so an offender
+        is by definition not a secret, and naming it is what turns a typo
+        into a one-line fix instead of a key nothing ever reads.
+        """
+        if not isinstance(value, dict):
+            return value
+        legal = {member.value for member in PromptKey}
+        offending = [str(key) for key in value if str(key) not in legal]
+        if offending:
+            named = ", ".join(repr(entry) for entry in offending)
+            allowed = ", ".join(sorted(legal))
+            msg = (
+                f"session_models names no prompt function key: {named} "
+                f"(allowed: {allowed})"
+            )
+            raise ValueError(msg)
+        return value
+
     remediation_max_rounds: int = Field(
         default=1,
         ge=1,
@@ -325,10 +363,11 @@ class AppConfig(BaseSettings):
     tracker_mcp_server_name: str = Field(
         default="linear",
         description=(
-            "Identity of the vendor MCP server the tracker adapter dials. One "
-            "consumer: the transport factory building the programmatic client "
+            "Identity of the vendor MCP server the tracker adapter dials. Two "
+            "consumers: the transport factory building the programmatic client "
             "on the deterministic path, which stamps this name on every "
-            "transport log line and error."
+            "transport log line and error, and the tracker-side record sink "
+            "(KOD-170), whose verification refusals carry the same name."
         ),
     )
     tracker_mcp_server_url: str = Field(

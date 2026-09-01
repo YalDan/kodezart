@@ -1,6 +1,7 @@
 """Protocol definitions — composition without inheritance."""
 
 from collections.abc import AsyncIterator, Mapping, Sequence
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
@@ -469,14 +470,33 @@ type McpToolResult = Mapping[str, object] | Sequence[object]
 
 @runtime_checkable
 class RunRecordSink(Protocol):
-    """Writes one structural run record into one declared destination.
+    """Verifies and writes structural run records in one declared destination.
 
     One implementation per backing system (`RecordDestination.system`),
     because WHERE a row lands is vendor knowledge — a data-source page on
     one backend, a document append on another — while WHAT is written is
     the domain's one line.  The recorder service routes by the declared
     system and never learns either vendor's shape (KOD-170).
+
+    Verification is part of the same vendor knowledge: whether a row
+    landed since a run began is answered from the backend's OWN
+    timestamps, so a session's rich row counts regardless of its prose
+    shape and the runner backfills only a genuine absence.
     """
+
+    async def has_record_since(
+        self,
+        *,
+        destination: RecordDestination,
+        since: datetime,
+    ) -> bool:
+        """Whether *destination* holds a row created at or after *since*.
+
+        Answered from the backend's own timestamps, or raised naming what
+        refused — a guessed ``False`` would double every record and a
+        guessed ``True`` would silently skip one.
+        """
+        ...
 
     async def write_record(
         self,
@@ -745,6 +765,26 @@ class TrackerPort(Protocol):
         ``None`` means no dispatch ever recorded one — a first dispatch,
         not a stale base.  The two are different states and no caller may
         conflate them.
+        """
+        ...
+
+    async def recorded_repository(self, *, issue_key: str) -> str | None:
+        """The target repository most recently recorded on *issue_key*.
+
+        Judgment records it when staging a fire on a team bound to no
+        repository; the deterministic dispatch reads it and refuses by
+        name when it is missing (KOD-169).  ``None`` means no route was
+        ever recorded — an exclusion the report names, never a claim by
+        whichever pass's tick arrives first.
+        """
+        ...
+
+    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
+        """Every name and id of every initiative *project_id* belongs to.
+
+        Read for a team's declared scope: a scope entry may name an
+        initiative in either spelling, and issue placement only carries
+        the project (KOD-169).
         """
         ...
 

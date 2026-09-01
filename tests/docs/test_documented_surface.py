@@ -278,17 +278,19 @@ def _attribute_reads_of(field_name: str) -> list[str]:
     return sites
 
 
-def test_the_tracker_server_name_has_exactly_the_consumer_its_description_claims() -> (
+def test_the_tracker_server_name_has_exactly_the_consumers_its_description_claims() -> (
     None
 ):
-    """The field's description says one consumer — the transport factory.
+    """The field's description says two consumers — factory and record sink.
 
-    The claim it replaced — a second consumer in session attachment — is
-    contradicted by exactly this derivation: no module under ``src/``
-    reads the field but the factory's.  A second reader appearing makes
-    this red until the description tells the truth again.
+    An earlier claim — a consumer in session attachment — was contradicted
+    by exactly this derivation and corrected; the tracker-side record sink
+    then became a real second reader (KOD-170), and the description names
+    it.  A reader appearing or vanishing makes this red until the
+    description tells the truth again.
     """
     assert _attribute_reads_of("tracker_mcp_server_name") == [
+        "src/kodezart/composition/records.py",
         "src/kodezart/composition/tracker.py",
     ]
 

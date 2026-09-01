@@ -59,6 +59,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearLabelListWire,
     LinearLabelWire,
     LinearNamedWire,
+    LinearProjectWire,
     LinearTeamListWire,
     LinearTeamWire,
     LinearUserListWire,
@@ -97,6 +98,7 @@ _TOOL_DELETE_COMMENT = "delete_comment"
 _TOOL_GET_DOCUMENT = "get_document"
 _TOOL_LIST_DOCUMENTS = "list_documents"
 _TOOL_SAVE_DOCUMENT = "save_document"
+_TOOL_GET_PROJECT = "get_project"
 _TOOL_LIST_USERS = "list_users"
 _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
@@ -176,6 +178,15 @@ _WORK_REF_ROLE_BY_VALUE: Mapping[str, WorkRefRole] = {
 _BASE_SPEC_MARKER = re.compile(
     r"<!--\s*kodezart-basespec\s+(?P<payload>\{.*?\})\s*-->",
     re.DOTALL,
+)
+
+#: The recorded target repository for a staged fire — judgment records it,
+#: the deterministic dispatch reads it (KOD-169).  The same HTML-comment
+#: idiom as the claim, work-ref and base-spec markers, and deliberately
+#: parseable whoever authored it: the fire-prep pass writes it through the
+#: rendered mechanism, and a principal can write one by hand.
+_REPO_MARKER = re.compile(
+    r"<!--\s*kodezart-repo\s+url=\"(?P<url>[^\"]+)\"\s*-->",
 )
 
 
@@ -940,6 +951,36 @@ class LinearMcpTracker:
                 ) from exc
         return latest
 
+    async def recorded_repository(self, *, issue_key: str) -> str | None:
+        """The latest recorded target repository, or ``None`` when none is.
+
+        Latest wins on the same append-only comment log the claim, the
+        work refs and the base spec already ride: a re-staged fire is
+        re-routed by its newest record (KOD-169).  Read regardless of
+        author — the marker is judgment's to write and anyone's to
+        correct, so authorship is deliberately not checked here.
+        """
+        latest: str | None = None
+        for wire in await self._comment_wires(issue_key):
+            match = _REPO_MARKER.search(wire.body)
+            if match is not None:
+                latest = match.group("url")
+        return latest
+
+    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
+        """Every name and id of every initiative the project belongs to.
+
+        One ``get_project`` read per ask; the dispatch caller caches per
+        distinct project for its own lifetime (KOD-169), because
+        initiative membership does not move under a running pass and a
+        read per issue would pay the same answer repeatedly.
+        """
+        payload = await self._call(_TOOL_GET_PROJECT, {"query": project_id})
+        wire = self._validate(LinearProjectWire, payload, _TOOL_GET_PROJECT)
+        return frozenset(
+            identifier for ref in wire.initiatives for identifier in (ref.id, ref.name)
+        )
+
     async def resolve_mappings(
         self,
         *,
@@ -1515,6 +1556,8 @@ class LinearMcpTracker:
                 if label in self._queue_state_by_label
             ),
             team_key=self._team_key_by_identifier.get(wire.team),
+            project=wire.project,
+            project_id=wire.project_id,
             relations=tuple(relations),
             parent_key=wire.parent_id,
             assignee_key=wire.assignee,

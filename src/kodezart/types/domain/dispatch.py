@@ -44,7 +44,7 @@ class DispatchOutcome(StrEnum):
 
 
 class ExclusionClause(StrEnum):
-    """The six eligibility clauses, as the reasons an issue was excluded.
+    """The eligibility clauses, as the reasons an issue was excluded.
 
     Members are ordered as the predicate evaluates them, and an issue is
     annotated with the FIRST clause that excluded it, so the annotation is
@@ -61,6 +61,31 @@ class ExclusionClause(StrEnum):
     so it passes on any board using the same queue vocabulary (KOD-144).
     Since that clause carries no attestation of WHO put the state there,
     this one is the whole of the containment."""
+
+    BASE_UNRESOLVED = "base_unresolved"
+    """A previous pass claimed the issue and could not resolve its base.
+    Excluded until the issue CHANGES — its ``updated_at`` moving past the
+    reading taken after that pass released — so a standing graph obstacle
+    is one report line per pass instead of a claim/release cycle every
+    tick feeding its own gate delta (KOD-169).  The detail carries the
+    recorded resolution failure."""
+
+    OUT_OF_SCOPE = "out_of_scope"
+    """The issue's team declares a scope and the issue's project and
+    initiatives are not in it (KOD-169).  The detail carries the issue's
+    project, or names that it belongs to none."""
+
+    NO_RECORDED_REPOSITORY = "no_recorded_repository"
+    """The issue's team binds no repository and no route was ever recorded
+    on the issue: judgment has not routed it yet, so no deterministic pass
+    may claim it (KOD-169) — the typed refusal, visible in every report,
+    never a claim by tick order."""
+
+    RECORDED_ELSEWHERE = "recorded_elsewhere"
+    """The recorded repository names a repository other than this pass's.
+    The detail carries the recorded url: one naming another DECLARED
+    repository is that repository's pass's to claim, and one outside the
+    declared roster is visible against the config as routed nowhere."""
 
     NOT_APPROVED = "not_approved"
     NOT_OPEN = "not_open"

@@ -217,14 +217,23 @@ class TeamEntry(OperationModel):
     key: str = Field(min_length=1)
     #: The url of the ``repos`` entry this team's issues are fired into.
     #:
-    #: Optional, and the two states are two different operations.  One
-    #: declared repository is a TOTAL binding with nothing to declare —
-    #: every team fires into the only candidate there is.  A second
-    #: repository makes the binding a real choice, and every team must
-    #: then carry it: each repository's tick scans the teams bound to it,
-    #: so an unbound team is an issue fired into whichever tick claims it
-    #: first, which is tick order deciding a routing question (KOD-157).
+    #: Optional, and the states are different operations.  One declared
+    #: repository is a TOTAL binding with nothing to declare — every team
+    #: fires into the only candidate there is.  With several repositories
+    #: a bound team routes by its binding, and an UNBOUND team routes per
+    #: issue: the fire-prep pass records each staged issue's target
+    #: repository on the issue itself, and dispatch reads that record and
+    #: refuses by name when it is missing (KOD-169) — never a claim by
+    #: whichever tick arrives first, which is the KOD-157 defect the
+    #: recorded route closes.
     repository: str | None = None
+    #: The declared narrowing of this team's board, when the operator
+    #: passes one.  Empty — the default — is the ENTIRE board in scope
+    #: (ruled 2026-09-01: "everything in the team is in scope unless
+    #: otherwise specified").  Non-empty entries name tracker projects or
+    #: initiatives, by display name or id; membership is answered from the
+    #: tracker at scan time, never enumerated here (KOD-169).
+    scope: tuple[str, ...] = ()
     #: The visibility posture of THIS board, in the vocabulary every other
     #: outbound decision is already made in.
     #:
@@ -474,10 +483,12 @@ class OperationConfig(OperationModel):
             if names.count(entry.name) > 1
         )
 
-        # The repository binding, checked in both directions. A binding
-        # naming a repository the config does not declare routes issues
-        # nowhere; a team carrying none where there is a choice to make
-        # routes them by tick order.
+        # The repository binding: one naming a repository the config does
+        # not declare routes issues nowhere and is refused.  A team
+        # carrying NO binding is legal in both shapes — with one declared
+        # repository the binding is implicit and total, and with several
+        # the team's issues route per issue by the repository the
+        # fire-prep pass records on each staged one (KOD-169).
         declared_repos = {repo.url for repo in self.repos}
         failures.extend(
             f"teams[{key!r}].repository {entry.repository!r} names no declared "
@@ -485,14 +496,6 @@ class OperationConfig(OperationModel):
             for key, entry in self.teams.items()
             if entry.repository is not None and entry.repository not in declared_repos
         )
-        if len(self.repos) > 1:
-            failures.extend(
-                f"teams[{key!r}] must declare a repository: the operation declares "
-                f"{len(self.repos)} of them, so nothing derives which one this "
-                f"team's issues fire into"
-                for key, entry in self.teams.items()
-                if entry.repository is None
-            )
 
         if self.queue_states:
             for member in QueueState:
@@ -653,26 +656,48 @@ class OperationConfig(OperationModel):
             if entry.repository == repo_url or (entry.repository is None and implicit)
         )
 
+    def teams_scanned_by(self, repo_url: str) -> tuple[str, ...]:
+        """Every team key whose issues *repo_url*'s dispatch pass may claim.
+
+        The bound teams, plus — when the operation declares several
+        repositories — every UNBOUND team: an unbound board's issues are
+        partitioned between the repository passes by the repository
+        recorded on each staged issue, so every such pass scans the board
+        and the recorded-repository clause keeps the claims disjoint
+        (KOD-169).  With one repository there is no unbound team to add:
+        the single binding is implicit and total, and
+        :meth:`teams_bound_to` already answers with every team.
+        """
+        if len(self.repos) <= 1:
+            return self.teams_bound_to(repo_url)
+        bound = set(self.teams_bound_to(repo_url))
+        return tuple(
+            key
+            for key, entry in self.teams.items()
+            if key in bound or entry.repository is None
+        )
+
     def team_keys_for_repo(self, repo_url: str) -> tuple[str, ...]:
         """The container boundary a dispatch scan over *repo_url* is narrowed to.
 
-        :meth:`teams_bound_to` under the refusal :meth:`team_keys` carries,
-        narrowed to one repository.  A pass whose repository has no team
-        bound to it has no container to be bounded by, and composition
-        builds no such pass; one built any other way refuses here rather
-        than scanning.
+        :meth:`teams_scanned_by` under the refusal :meth:`team_keys`
+        carries, narrowed to one repository.  A pass whose repository no
+        team's issues can reach — neither by binding nor by a recorded
+        route — has no container to be bounded by, and composition builds
+        no such pass; one built any other way refuses here rather than
+        scanning.
         """
-        bound = self.teams_bound_to(repo_url)
-        if not bound:
+        scanned = self.teams_scanned_by(repo_url)
+        if not scanned:
             raise OperationMemberAbsentError(
-                missing=f"teams entry bound to {repo_url}",
+                missing=f"teams entry scanned by {repo_url}",
                 stops=(
                     "a dispatch scan has no container to be bounded by, so "
                     "nothing distinguishes this operation's board from any "
                     "other in the workspace and no issue can be selected"
                 ),
             )
-        return bound
+        return scanned
 
     def board_visibility(self, team_key: str | None) -> RepoVisibility:
         """The visibility posture of the board *team_key* names — fail-closed.

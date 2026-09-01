@@ -15,6 +15,7 @@ loudly (KOD-170).
 """
 
 from collections.abc import Mapping
+from datetime import datetime
 
 from kodezart.core.errors import McpTransportError
 from kodezart.core.logging import BoundLogger, get_logger
@@ -24,6 +25,7 @@ from kodezart.types.domain.run_records import RunRecord
 
 _TOOL_RETRIEVE_DATA_SOURCE = "API-retrieve-a-data-source"
 _TOOL_POST_PAGE = "API-post-page"
+_TOOL_QUERY_DATA_SOURCE = "API-query-data-source"
 
 
 class NotionRecordSink:
@@ -37,6 +39,45 @@ class NotionRecordSink:
         #: service, and re-reading it per row would double every write.
         self._title_properties: dict[str, str] = {}
         self._log: BoundLogger = get_logger(__name__)
+
+    async def has_record_since(
+        self,
+        *,
+        destination: RecordDestination,
+        since: datetime,
+    ) -> bool:
+        """Whether the data source holds a page created at or after *since*.
+
+        One filtered query on the vendor's OWN ``created_time`` — a
+        session's row counts whatever its prose looks like, and page one
+        of size one is all the answer needs (measured live on the
+        Grooming Log, 2026-09-01).
+        """
+        payload = await self._caller.call_tool(
+            name=_TOOL_QUERY_DATA_SOURCE,
+            arguments={
+                "data_source_id": destination.id,
+                "filter": {
+                    "timestamp": "created_time",
+                    "created_time": {"on_or_after": since.isoformat()},
+                },
+                "page_size": 1,
+            },
+        )
+        if not isinstance(payload, Mapping):
+            raise McpTransportError(
+                "the data-source query answered with no object to read results from",
+                server_name=self._server_name,
+                tool_name=_TOOL_QUERY_DATA_SOURCE,
+            )
+        results = payload.get("results")
+        if not isinstance(results, list):
+            raise McpTransportError(
+                "the data-source query's answer carries no results list",
+                server_name=self._server_name,
+                tool_name=_TOOL_QUERY_DATA_SOURCE,
+            )
+        return len(results) > 0
 
     async def write_record(
         self,

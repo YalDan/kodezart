@@ -257,6 +257,7 @@ def load_registry(
     investigation_cap: int | None = None,
     ticket_review_mode: TicketReviewMode = TicketReviewMode.REVIEWED,
     fallback_model: str | None = None,
+    session_models: dict[str, str] | None = None,
 ) -> InRepoPromptRegistry:
     """Load a registry addressing the set BY NAME (never via environment).
 
@@ -277,6 +278,7 @@ def load_registry(
         ),
         ticket_review_mode=ticket_review_mode,
         fallback_model=fallback_model,
+        session_models=session_models,
     )
 
 
@@ -804,7 +806,14 @@ def test_utility_keys_declare_an_empty_skills_loadout() -> None:
 
 
 def test_prompt_resolution_never_reads_the_model_knob() -> None:
-    """D-7: KODEZART_MODEL is not an input to prompt resolution."""
+    """D-7: KODEZART_MODEL is not an input to prompt resolution.
+
+    The per-key session-model table (KOD-161) rides the registry too — but
+    on the POLICY object a dispatch carries, never as an input to which
+    template answers for a key.  The one bare ``model`` identifier below
+    is exactly that seam: the policy field the table fills; the global
+    knob still reaches nothing here, and ``load`` still takes no model.
+    """
     registry_source = (
         REPO_ROOT / "src" / "kodezart" / "adapters" / "in_repo_prompt_registry.py"
     ).read_text(encoding="utf-8")
@@ -813,7 +822,7 @@ def test_prompt_resolution_never_reads_the_model_knob() -> None:
         for name in re.findall(r"\bmodel\w*", registry_source)
         if name != "model_validate"
     ]
-    assert identifiers == []
+    assert identifiers == ["model"], identifiers
     signature = inspect.signature(InRepoPromptRegistry.load)
     assert "model" not in signature.parameters
 
