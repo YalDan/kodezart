@@ -357,6 +357,44 @@ live workspace belongs to the tracker adapter, not to config load.
   maps to which kodezart component, plus the behavior-parity dimension and
   placeholder mapping tables.
 
+### Pointing the operation at real, multi-repo work
+
+Set up 2026-09-01 for the first live multi-repository operation (the
+founder's own boards and codebases), and shaped by that setup's rulings:
+
+- **Several `[[repos]]`, teams bound or unbound.** A team with a
+  `repository` fires into it. A team WITHOUT one, beside several declared
+  repositories, is legal and routes **per issue**: the fire-prep pass
+  records each staged issue's target repository on the issue itself as a
+  `<!-- kodezart-repo url="…" -->` marker comment (a principal can also
+  write one by hand), and the deterministic dispatch reads that record —
+  an approved issue without one is refused by name
+  (`no_recorded_repository`), never claimed by whichever tick arrives
+  first. Every repository's dispatch pass scans the unbound boards; the
+  recorded route keeps their claims disjoint. Declare the repository's
+  **canonical** URL — the marker comparison is exact.
+- **Whole board in scope by default.** A declared team means its ENTIRE
+  board is in scope. `scope = ["<project or initiative, name or id>"]`
+  narrows it only when the operator says so; out-of-scope issues are
+  excluded by name and the narrowing renders into the pass prompts.
+- **No check chains copied from CI.** `checks` is consumed by prompt
+  rendering only — nothing deterministic executes it — and EMPTY means
+  the repository's own CI defines its gate, which sessions read and run
+  in-repo. Declare a chain only to pin a gate-vs-cascade classification
+  into the rendered prompts; copying a repo's CI here is a second surface
+  for facts the repository owns.
+- **One record row per run, and it is also the window.** Each run kind
+  (`fire_prep`, `grooming`, `fire`) declares one `[records.<kind>]`
+  destination. The session's own row IS the record — the runner verifies
+  one exists and backfills a bare structural line only when the session
+  skipped it — and the newest row's start time is the next pass's
+  sweep-window boundary. There is no separate checkpoint document.
+- **Per-key engines.** `KODEZART_SESSION_MODELS` (env, JSON) pins named
+  prompt keys' sessions to an engine — e.g. every fire-path and utility
+  key to the workhorse while the two judgment passes ride the account
+  default. Empty pins nothing; an unknown key is refused at boot naming
+  the vocabulary.
+
 ### Setting up the self-running service
 
 Executable start to finish — no step assumes knowledge that is not on this

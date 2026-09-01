@@ -280,11 +280,20 @@ class RepoEntry(OperationModel):
     that may not share a default branch.  It has no default, because the
     only plausible default is the literal the base resolver is required to
     prove it never reads.
+
+    ``checks`` is consumed by prompt rendering alone — no deterministic
+    path executes these commands — and EMPTY is a named absence, not a
+    hole (founder ruling 2026-09-01): the repository's own CI defines its
+    gate, and copying that structure here would be a second surface for
+    facts the repository owns, drifting the day its CI changes.  Declare
+    a chain only when the operator wants the rendered prompts to carry a
+    pinned gate-vs-cascade classification; leave it empty and the
+    sessions discover and run the repository's own chain in-repo.
     """
 
     url: str
     trunk: str = Field(min_length=1)
-    checks: tuple[CheckStep, ...]
+    checks: tuple[CheckStep, ...] = ()
 
 
 class DocumentEntry(OperationModel):
@@ -538,11 +547,6 @@ class OperationConfig(OperationModel):
             if key not in valid_record_keys
         )
 
-        failures.extend(
-            f"repos[{index}].checks must not be empty"
-            for index, repo in enumerate(self.repos)
-            if not repo.checks
-        )
         for index, repo in enumerate(self.repos):
             failures.extend(
                 f"repos[{index}].checks: {failure}"

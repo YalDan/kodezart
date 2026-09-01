@@ -304,17 +304,26 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                 "name": _repo_display(repo.url)[0],
                 "slug": _repo_display(repo.url)[1],
                 "trunk": repo.trunk,
-                "checks": [
-                    {
-                        "name": step.name,
-                        "command": step.command,
-                        "depends_on": step.depends_on,
-                        "depends_on_absent": (
-                            True if step.depends_on is None else None
-                        ),
-                    }
-                    for step in repo.checks
-                ],
+                # Empty is a named absence (founder ruling 2026-09-01):
+                # the repository's own CI defines its gate, and the
+                # absent marker is what a template says "discover and run
+                # the repo's own chain" with.
+                "checks": (
+                    [
+                        {
+                            "name": step.name,
+                            "command": step.command,
+                            "depends_on": step.depends_on,
+                            "depends_on_absent": (
+                                True if step.depends_on is None else None
+                            ),
+                        }
+                        for step in repo.checks
+                    ]
+                    if repo.checks
+                    else None
+                ),
+                "checks_absent": None if repo.checks else True,
             }
             for repo in config.repos
         ],

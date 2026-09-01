@@ -738,3 +738,28 @@ def _scalar(value: object) -> str:
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
         return text
     return f'"{text}"'
+
+
+def test_a_repo_declaring_no_chain_loads_and_binds_the_named_absence(
+    tmp_path: Path,
+) -> None:
+    """Empty checks = the repository's own CI is the gate (founder ruling
+    2026-09-01).  Legal at load — copying CI structure into config is a
+    second surface for facts the repository owns — and the binding carries
+    the absent marker a template renders the discover-in-repo instruction
+    from, never a bare header over nothing."""
+    raw = raw_example()
+    repos = raw["repos"]
+    assert isinstance(repos, list)
+    first = repos[0]
+    assert isinstance(first, dict)
+    del first["checks"]
+
+    config = load_operation_config(_write_toml(tmp_path, raw))
+
+    assert config.repos[0].checks == ()
+    bound = operation_bindings(config)["repos"]
+    assert isinstance(bound, list)
+    assert bound[0]["checks"] is None
+    assert bound[0]["checks_absent"] is True
+    assert bound[1]["checks_absent"] is None
