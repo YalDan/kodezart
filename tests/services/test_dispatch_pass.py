@@ -28,6 +28,7 @@ from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
+from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import WorkflowCompleteEvent
 from kodezart.types.domain.dispatch import DispatchOutcome, DispatchReport, PassSignal
@@ -164,7 +165,7 @@ def operation_config(
             ),
         },
         records={
-            "run_log": RecordDestination(
+            "fire_prep": RecordDestination(
                 system=DocumentSystem.KNOWLEDGE,
                 name="Run log",
                 id="record-1",
@@ -182,6 +183,7 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
     queue = FakeJobQueue()
     pass_ = GatedDispatchPass(
         lifecycle=LifecycleWatcher(
+            recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=ClaimHeartbeat(
@@ -295,6 +297,7 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
     lifecycle = LifecycleWatcher(
+        recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=ClaimHeartbeat(
@@ -364,6 +367,7 @@ def failing_tick(
     return (
         GatedDispatchPass(
             lifecycle=LifecycleWatcher(
+                recorder=RunRecorder(records={}, sinks={}),
                 queue=queue,
                 writer=TrackerLifecycleWriter(
                     tracker=tracker,
@@ -468,6 +472,7 @@ async def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
@@ -516,6 +521,7 @@ async def test_an_issue_only_fires_into_the_repository_its_team_is_bound_to() ->
     )
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
@@ -553,6 +559,7 @@ async def test_a_repository_no_team_is_bound_to_gets_a_named_skip() -> None:
     queue = FakeJobQueue()
     with structlog.testing.capture_logs() as logs:
         built = await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
             config=AppConfig(),
             operation=operation_config(
                 repos=(PRIMARY_REPO, SECOND_REPO),
@@ -594,6 +601,7 @@ async def test_the_root_gives_every_pass_the_configured_cadence() -> None:
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=config,
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
@@ -630,6 +638,7 @@ async def test_the_root_gives_every_pass_the_configured_budget() -> None:
     tracker = FakeTrackerPort()
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=config,
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
@@ -652,6 +661,7 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
     )
     queue = FakeJobQueue()
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=AppConfig(),
         operation=operation_config(repos=(SECOND_REPO,)),
         tracker=tracker,
@@ -698,6 +708,7 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
         ],
     )
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=AppConfig(),
         operation=operation_config(),
         tracker=tracker,
@@ -754,6 +765,7 @@ async def test_the_pass_threads_the_claimed_boards_posture_to_the_watch() -> Non
     )
     gate = PassThroughGate()
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=AppConfig(),
         operation=operation_config(
             teams={
@@ -825,6 +837,7 @@ async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
     queue = FakeJobQueue()
     forge = ForgeOnlyDeliveryProbe()
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=AppConfig(),
         operation=operation_config(repos=(FILE_ORIGIN,)),
         tracker=tracker,
@@ -852,6 +865,7 @@ async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
     queue = FakeJobQueue()
     forge = ForgeOnlyDeliveryProbe()
     built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO,)),
         tracker=tracker,

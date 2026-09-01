@@ -31,6 +31,12 @@ from traceback import format_exception
 
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import LogEmitter
+from kodezart.types.domain.run_records import RunOutcome
+
+#: How a pass's outcome leaves the scheduler: the outcome and the seconds
+#: the tick took.  Bound by composition to the run recorder; the scheduler
+#: itself knows no record vocabulary beyond this.
+type RunReport = Callable[[RunOutcome, float], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,12 @@ class ScheduledPass:
     interval_seconds: float
     timeout_seconds: float
     run: Callable[[], Awaitable[None]]
+    #: Where this pass's outcome is reported after every tick, or ``None``
+    #: for a pass that records nowhere BY DESIGN — the dispatch scans,
+    #: whose outcome is the fire they start.  The two judgment passes are
+    #: wired with a report by composition; a recording failure is its own
+    #: loud event and never breaks the cadence (KOD-170).
+    report: RunReport | None = None
 
 
 class PassScheduler:
@@ -131,26 +143,61 @@ class PassScheduler:
             raise
         except Exception as exc:
             if isinstance(exc, TimeoutError) and budget.expired():
+                duration = loop.time() - started
                 await self._log.aerror(
                     "scheduled_pass_timed_out",
                     name=entry.name,
                     timeout_seconds=entry.timeout_seconds,
-                    duration_seconds=loop.time() - started,
+                    duration_seconds=duration,
                 )
+                await self._report(entry, RunOutcome.TIMED_OUT, duration)
                 return
             # The traceback rides the event under this pass's own key,
             # and no ``exc_info`` is passed, so it appears once.
+            duration = loop.time() - started
             await self._log.aerror(
                 "scheduled_pass_failed",
                 name=entry.name,
                 error_type=type(exc).__name__,
                 error=str(exc),
                 traceback="".join(format_exception(exc)),
-                duration_seconds=loop.time() - started,
+                duration_seconds=duration,
             )
+            await self._report(entry, RunOutcome.FAILED, duration)
             return
+        duration = loop.time() - started
         await self._log.ainfo(
             "scheduled_pass_completed",
             name=entry.name,
-            duration_seconds=loop.time() - started,
+            duration_seconds=duration,
         )
+        await self._report(entry, RunOutcome.COMPLETED, duration)
+
+    async def _report(
+        self,
+        entry: ScheduledPass,
+        outcome: RunOutcome,
+        duration_seconds: float,
+    ) -> None:
+        """Report the tick's outcome where the pass says to, loudly on failure.
+
+        Recording rides AFTER the outcome event, and its own failure is a
+        separate error rather than a reclassification of the tick: the
+        pass did what it did, and "the record could not be written" is a
+        fact about the record path, reported under its own name so a
+        broken destination cannot silently starve the next window
+        (KOD-170).
+        """
+        if entry.report is None:
+            return
+        try:
+            await entry.report(outcome, duration_seconds)
+        except Exception as exc:
+            await self._log.aerror(
+                "run_record_write_failed",
+                name=entry.name,
+                outcome=outcome.value,
+                error_type=type(exc).__name__,
+                error=str(exc),
+                traceback="".join(format_exception(exc)),
+            )

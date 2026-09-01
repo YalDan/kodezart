@@ -51,10 +51,12 @@ of a lease nobody was working under.
 """
 
 import asyncio
+from datetime import UTC, datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
+from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -63,6 +65,8 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.operation import RunKind
+from kodezart.types.domain.run_records import RunOutcome, RunRecord
 
 
 class LifecycleWatcher:
@@ -74,10 +78,12 @@ class LifecycleWatcher:
         queue: JobQueue,
         writer: TrackerLifecycleWriter,
         heartbeat: ClaimHeartbeat,
+        recorder: RunRecorder,
     ) -> None:
         self._queue: JobQueue = queue
         self._writer: TrackerLifecycleWriter = writer
         self._heartbeat: ClaimHeartbeat = heartbeat
+        self._recorder: RunRecorder = recorder
         self._following: set[asyncio.Task[None]] = set()
         self._log: BoundLogger = get_logger(__name__)
 
@@ -167,6 +173,8 @@ class LifecycleWatcher:
         lease lapses on its own there, exactly as it does for a process
         that died.
         """
+        loop = asyncio.get_running_loop()
+        watch_started = loop.time()
         started = False
         terminal = False
         failure: ErrorEvent | None = None
@@ -206,6 +214,53 @@ class LifecycleWatcher:
             run_started=started,
             terminal_outcome=terminal,
         )
+        await self._record_fire(
+            issue_key=issue_key,
+            started=started,
+            terminal=terminal,
+            duration_seconds=loop.time() - watch_started,
+        )
+
+    async def _record_fire(
+        self,
+        *,
+        issue_key: str,
+        started: bool,
+        terminal: bool,
+        duration_seconds: float,
+    ) -> None:
+        """The fire's structural run record — the RUNNER's obligation.
+
+        Written after the release, because the record describes a run that
+        is over.  A recording failure is its own loud event rather than a
+        failure of the watch: the lifecycle write-back and the claim
+        release already happened, and re-raising here would report a
+        finished run as a broken one (KOD-170).
+        """
+        if terminal:
+            outcome = RunOutcome.COMPLETED
+        elif started:
+            outcome = RunOutcome.FAILED
+        else:
+            outcome = RunOutcome.NEVER_STARTED
+        try:
+            await self._recorder.record(
+                RunRecord(
+                    kind=RunKind.FIRE,
+                    name=issue_key,
+                    outcome=outcome,
+                    duration_seconds=duration_seconds,
+                    recorded_at=datetime.now(UTC),
+                ),
+            )
+        except Exception as exc:
+            await self._log.aerror(
+                "run_record_write_failed",
+                name=issue_key,
+                outcome=outcome.value,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
 
     async def _apply(
         self,

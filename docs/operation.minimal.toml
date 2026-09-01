@@ -18,7 +18,7 @@
 # principal, exactly one must carry the approver role; the moment you
 # declare any queue state, the five members code addresses by name are
 # required; a populated documents registry must carry the checkpoint key,
-# and a populated records registry the run_log key.
+# and every records key must be one of the run kinds (fire_prep, grooming, fire).
 
 # Human-readable name of the operation these settings describe.
 operation_name = "example-operation"

@@ -28,3 +28,12 @@ Ground every claim you write in something you read. A claim you did not verify d
 not go on the board.
 
 {{pass_mechanisms}}
+
+Record. {{#if records.fire_prep}}When the work is done, write this pass's own row in
+{{records.fire_prep.name}}, the {{records.fire_prep.system}} destination {{records.fire_prep.id}}: this pass's start
+time, what you examined, what you changed, and what you could not do and why. The runner
+records that this pass ran; your row is the prose beside it, written after the work rather
+than before it — and a pass that changed nothing writes one too, because a gap in the
+record cannot be told apart from a pass that never ran.{{/if}}{{#if records.fire_prep_absent}}No record destination
+is declared for this pass's kind. Nothing outside the tracker records this pass, and
+nothing is written outside it.{{/if}}

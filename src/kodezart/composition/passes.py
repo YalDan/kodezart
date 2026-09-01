@@ -10,6 +10,7 @@ from functools import partial
 from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
+from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.errors import (
@@ -39,9 +40,14 @@ from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import run_prompt_pass
+from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.dispatch import PassSignal
-from kodezart.types.domain.operation import DocumentSystem, OperationConfig
+from kodezart.types.domain.operation import (
+    DocumentSystem,
+    OperationConfig,
+    RunKind,
+)
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -207,6 +213,23 @@ def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
     )
 
 
+def _record_kind_for(key: PromptKey) -> RunKind:
+    """The record kind a scheduled prompt pass reports as — total, or loud.
+
+    A third scheduled pass added without a kind would otherwise KeyError
+    inside a comprehension; a wiring gap is a named refusal here like
+    everywhere else in this lane (KOD-170).
+    """
+    kind = RECORD_KIND_BY_PASS.get(key)
+    if kind is None:
+        msg = (
+            f"scheduled prompt pass {key.value!r} has no record kind; add "
+            f"it to RECORD_KIND_BY_PASS so its runs report somewhere"
+        )
+        raise LookupError(msg)
+    return kind
+
+
 async def build_prompt_passes(
     *,
     config: AppConfig,
@@ -215,6 +238,7 @@ async def build_prompt_passes(
     tracker: TrackerPort | None,
     runner: AgentRunner,
     skills: SkillsSelection,
+    recorder: RunRecorder,
 ) -> list[ScheduledPass]:
     """The scheduled prompt passes — one table row each, and nothing in between.
 
@@ -291,6 +315,7 @@ async def build_prompt_passes(
                 skills=skills,
                 session_type=SessionType.SCHEDULED_PASS,
             ),
+            report=run_report(recorder, _record_kind_for(key), key.value),
         )
         for key, row in schedule.items()
     ]
@@ -308,6 +333,7 @@ async def build_dispatch_passes(
     git: GitService,
     cache: RepoCache,
     integration_workspace_dir: str,
+    recorder: RunRecorder,
 ) -> DispatchPasses:
     """One gated dispatch pass per repository a declared team fires into.
 
@@ -343,6 +369,7 @@ async def build_dispatch_passes(
             lease_seconds=config.tracker_claim_lease_seconds,
             renewal_fraction=config.tracker_claim_renewal_fraction,
         ),
+        recorder=recorder,
     )
     resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
     passes: list[ScheduledPass] = []
@@ -557,6 +584,7 @@ async def build_dispatch_runtime(
     prompts: PromptSetProvider,
     runner: AgentRunner,
     skills: SkillsSelection,
+    recorder: RunRecorder,
     log: BoundLogger,
 ) -> DispatchRuntime:
     """The scheduler, wired to every pass this deployment can actually run.
@@ -587,6 +615,7 @@ async def build_dispatch_runtime(
             git=git,
             cache=cache,
             integration_workspace_dir=config.integration_workspace_dir,
+            recorder=recorder,
         )
     else:
         await log.ainfo(
@@ -624,6 +653,7 @@ async def build_dispatch_runtime(
                 tracker=tracker,
                 runner=runner,
                 skills=skills,
+                recorder=recorder,
             ),
         )
     else:

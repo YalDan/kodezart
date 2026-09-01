@@ -35,18 +35,18 @@ completed pass left, and the timestamp on its most recent entry is where this wi
 starts. A checkpoint with no entry means no pass has completed yet — cover the whole
 board once as a bootstrap census, and say so in your report.
 
-Record. When the work is done, record this pass as one row in
-Example Run Log, the knowledge destination example-run-log-destination-id: this pass's start time, what you
-examined, what you changed, and what you could not do and why. That row is where the next
-pass's window starts, so it is written after the work rather than before it — and a pass
-that changed nothing writes one too, because a gap in the record cannot be told apart from
-a pass that never ran.
-
 Store. This operation keeps a private store beside the tracker, and what
 lives at which destination is stated in the map this session is preluded with. Read from
 it before re-deciding something an earlier pass settled, and write what a later pass will
 need to the destination that holds that kind of content. Nothing read there reaches a
 public surface.
+
+Record. When the work is done, write this pass's own row in
+Example Run Log, the knowledge destination example-run-log-destination-id: this pass's start
+time, what you examined, what you changed, and what you could not do and why. The runner
+records that this pass ran; your row is the prose beside it, written after the work rather
+than before it — and a pass that changed nothing writes one too, because a gap in the
+record cannot be told apart from a pass that never ran.
 
 Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly
 as the task warrants before you act.

@@ -13,7 +13,11 @@ defined meaning.  Boot asserts it rather than discovering it at render time.
 from collections.abc import Mapping, Sequence
 
 from kodezart.core.errors import PromptNamespaceCollisionError
-from kodezart.types.domain.operation import OperationConfig, PrincipalRole
+from kodezart.types.domain.operation import (
+    OperationConfig,
+    PrincipalRole,
+    RunKind,
+)
 
 SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 
@@ -158,20 +162,27 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         },
         absent=not config.documents,
     )
-    _bind_absentable(
-        bindings,
-        "records",
-        {
-            key: {
+    # The record registry is a TOTAL per-kind namespace: its legal keys are
+    # exactly the run kinds (refused otherwise at load, KOD-170), so every
+    # kind binds the house pair — the declared destination, or the named
+    # absence a pass renders its record-nothing arm from.  No whole-registry
+    # marker exists: an empty [records] table IS three named absences, and
+    # the RunRecorder routes off the same declaration this binds.
+    records_namespace: dict[str, object] = {}
+    for kind in RunKind:
+        entry = config.records.get(kind.value)
+        records_namespace[kind.value] = (
+            None
+            if entry is None
+            else {
                 "system": entry.system.value,
                 "name": entry.name,
                 "id": entry.id,
                 "append_only": entry.append_only,
             }
-            for key, entry in config.records.items()
-        },
-        absent=not config.records,
-    )
+        )
+        records_namespace[f"{kind.value}_absent"] = True if entry is None else None
+    bindings["records"] = records_namespace
     _bind_absentable(
         bindings,
         "knowledge",

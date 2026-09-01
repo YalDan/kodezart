@@ -1,23 +1,21 @@
-"""``McpToolCaller`` over a remote MCP server reached by streamable HTTP.
+"""``McpToolCaller`` over a spawned local MCP server speaking stdio.
 
-The transport under the tracker adapter on the deterministic path: a tool
-name plus arguments go out, a structured result comes back, and no model
-is anywhere in the loop.
+The programmatic sibling of the stdio route granted sessions already ride:
+the same server definition — command, args, environment, credential — is
+dialled by THIS process for the deterministic paths that need no model in
+the loop, the run-record write first among them (KOD-170).
 
-One session for the process, opened at boot and closed at shutdown.  A
-session per call would re-run the MCP initialise handshake for every
-scan, and the dispatch pass makes several calls per issue.
-
-Nothing here is tracker-shaped.  It speaks MCP and knows no tool names,
-so a second MCP-backed adapter reuses it unchanged.
+One session for the process, opened at boot and closed at shutdown, for
+the same reason the HTTP caller holds one: a session per call re-runs the
+MCP initialise handshake every time.  Decoding is shared with every other
+transport in :mod:`kodezart.adapters.mcp_result_decoding`.
 """
 
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
-from datetime import timedelta
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from kodezart.adapters.mcp_result_decoding import error_detail, structured_result
 from kodezart.core.errors import McpTransportError
@@ -25,33 +23,29 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolResult
 
 
-class HttpMcpToolCaller:
-    """A single initialised MCP session, addressed by tool name."""
+class StdioMcpToolCaller:
+    """A single initialised MCP session over a spawned stdio server."""
 
     def __init__(
         self,
         *,
-        url: str,
+        command: str,
+        args: tuple[str, ...],
+        env: Mapping[str, str],
         server_name: str,
-        token: str,
-        timeout_seconds: float,
-        auth_header_name: str,
-        auth_scheme: str,
         error_detail_limit: int,
     ) -> None:
-        self._url: str = url
+        self._command: str = command
+        self._args: tuple[str, ...] = args
+        self._env: dict[str, str] = dict(env)
         self._server_name: str = server_name
-        self._token: str = token
-        self._timeout_seconds: float = timeout_seconds
-        self._auth_header_name: str = auth_header_name
-        self._auth_scheme: str = auth_scheme
         self._error_detail_limit: int = error_detail_limit
         self._stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
         self._log: BoundLogger = get_logger(__name__)
 
     async def open(self) -> None:
-        """Dial the server and complete the MCP initialise handshake."""
+        """Spawn the server and complete the MCP initialise handshake."""
         if self._session is not None:
             raise McpTransportError(
                 "the MCP session is already open",
@@ -59,13 +53,13 @@ class HttpMcpToolCaller:
             )
         stack = AsyncExitStack()
         try:
-            read, write, _ = await stack.enter_async_context(
-                streamablehttp_client(
-                    url=self._url,
-                    headers={
-                        self._auth_header_name: f"{self._auth_scheme} {self._token}",
-                    },
-                    timeout=timedelta(seconds=self._timeout_seconds),
+            read, write = await stack.enter_async_context(
+                stdio_client(
+                    StdioServerParameters(
+                        command=self._command,
+                        args=list(self._args),
+                        env=self._env,
+                    ),
                 ),
             )
             session = await stack.enter_async_context(ClientSession(read, write))
@@ -81,7 +75,7 @@ class HttpMcpToolCaller:
         await self._log.ainfo(
             "mcp_session_opened",
             server_name=self._server_name,
-            url=self._url,
+            command=self._command,
         )
 
     async def close(self) -> None:

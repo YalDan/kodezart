@@ -23,14 +23,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kodezart.types.domain.gating import RepoVisibility
 
-#: The two stable keys the structure validators below and the pass templates
-#: address by name; neither carries an accessor that refuses on absence, because
-#: an absent entry is answered by the three-state render — a bootstrap census
-#: and a record-nothing-outside-the-tracker instruction — and a declared one no
-#: session can reach is refused at boot, where both halves of that mismatch are
-#: visible at once.
+#: The one stable document key the structure validators below and the pass
+#: templates address by name; it carries no accessor that refuses on absence,
+#: because an absent entry is answered by the three-state render — a bootstrap
+#: census and a record-nothing-outside-the-tracker instruction — and a declared
+#: one no session can reach is refused at boot, where both halves of that
+#: mismatch are visible at once.  Record keys are not free names beside it:
+#: they are the run-kind vocabulary below, one destination per kind (KOD-170).
 CHECKPOINT_DOCUMENT_KEY = "checkpoint"
-RUN_LOG_RECORD_KEY = "run_log"
 
 
 class OperationMemberAbsentError(Exception):
@@ -61,6 +61,23 @@ class DocumentSystem(StrEnum):
 
     TRACKER = "tracker"
     KNOWLEDGE = "knowledge"
+
+
+class RunKind(StrEnum):
+    """Every kind of run the operation records — the record registry's keys.
+
+    Three members because the operation runs three kinds of thing worth a
+    record row: the two scheduled judgment passes and the fire a dispatch
+    starts.  ``records`` is keyed by these values, one declared destination
+    per kind, so which log a run reports to is configuration rather than a
+    name a session invents — and a key outside this vocabulary is a typo
+    refused at load, not a destination nothing will ever write to
+    (KOD-170).
+    """
+
+    FIRE_PREP = "fire_prep"
+    GROOMING = "grooming"
+    FIRE = "fire"
 
 
 class ConfigOwnership(StrEnum):
@@ -506,10 +523,17 @@ class OperationConfig(OperationModel):
             if entry.container is not None and entry.container not in self.teams
         )
 
-        if self.records and RUN_LOG_RECORD_KEY not in self.records:
-            failures.append(
-                f"records is missing the stable run-log key {RUN_LOG_RECORD_KEY!r}",
-            )
+        # Record keys ARE the run-kind vocabulary: each declares the one
+        # destination its kind reports to, so a free name here would be a
+        # log nothing ever writes (KOD-170).  Absence of a kind is legal —
+        # a named absence the recorder reports — but an unknown key is not.
+        valid_record_keys = {kind.value for kind in RunKind}
+        failures.extend(
+            f"records[{key!r}] is not a run kind; declare one of "
+            f"{sorted(valid_record_keys)}"
+            for key in self.records
+            if key not in valid_record_keys
+        )
 
         failures.extend(
             f"repos[{index}].checks must not be empty"

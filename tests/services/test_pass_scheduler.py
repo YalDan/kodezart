@@ -26,6 +26,7 @@ from pathlib import Path
 import structlog
 
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
+from kodezart.types.domain.run_records import RunOutcome
 from tests.fakes import RecordingLogger
 
 SCHEDULER_SOURCE = (
@@ -43,6 +44,9 @@ TICKS = 3
 #: A budget no pass that returns will ever approach, so every test but the
 #: hung ones observes the un-timed-out arms.
 GENEROUS_TIMEOUT = 30.0
+
+#: A budget the Sleeper always exceeds: the timeout arm, without waiting.
+TIGHT_TIMEOUT = 0.01
 
 #: The one real wait in the module: small enough that two expiries cost a
 #: tenth of a second, large enough that a loaded machine still reaches the
@@ -532,3 +536,126 @@ def test_the_driver_module_imports_nothing_that_could_reach_a_model() -> None:
         for name in imported
         if re.search(r"executor|prompt|agent|claude|skills", name)
     ]
+
+
+class ReportLog:
+    """A ``report`` callback that remembers every outcome it was handed."""
+
+    def __init__(self) -> None:
+        self.reports: list[tuple[RunOutcome, float]] = []
+
+    async def report(self, outcome: RunOutcome, duration_seconds: float) -> None:
+        self.reports.append((outcome, duration_seconds))
+
+
+class ExplodingReport:
+    """A ``report`` that always fails — the record path, not the pass."""
+
+    def __init__(self) -> None:
+        self.calls: int = 0
+
+    async def report(self, outcome: RunOutcome, duration_seconds: float) -> None:
+        self.calls += 1
+        msg = "the record destination refused the row"
+        raise RuntimeError(msg)
+
+
+async def _one_tick(entry: ScheduledPass) -> RecordingLogger:
+    """Drive exactly one tick of *entry* through a scheduler."""
+    metronome = Metronome(limit=1)
+    log = RecordingLogger()
+    scheduler = PassScheduler(passes=[entry], sleep=metronome.sleep, log=log)
+    await scheduler.start()
+    await _settle(metronome.parked)
+    await scheduler.stop()
+    return log
+
+
+async def test_a_completed_tick_reports_its_outcome_and_duration() -> None:
+    """The runner's record obligation fires on the quiet path too (KOD-170)."""
+    recorder, reports = Recorder(), ReportLog()
+
+    await _one_tick(
+        ScheduledPass(
+            name="fire_prep_pass",
+            interval_seconds=FAST_INTERVAL,
+            timeout_seconds=GENEROUS_TIMEOUT,
+            run=recorder.run,
+            report=reports.report,
+        ),
+    )
+
+    assert [outcome for outcome, _ in reports.reports] == [RunOutcome.COMPLETED]
+    assert reports.reports[0][1] >= 0.0
+
+
+async def test_a_failing_tick_reports_failed() -> None:
+    exploder, reports = Exploder(), ReportLog()
+
+    await _one_tick(
+        ScheduledPass(
+            name="fire_prep_pass",
+            interval_seconds=FAST_INTERVAL,
+            timeout_seconds=GENEROUS_TIMEOUT,
+            run=exploder.run,
+            report=reports.report,
+        ),
+    )
+
+    assert [outcome for outcome, _ in reports.reports] == [RunOutcome.FAILED]
+
+
+async def test_a_timed_out_tick_reports_timed_out() -> None:
+    sleeper, reports = Sleeper(), ReportLog()
+
+    await _one_tick(
+        ScheduledPass(
+            name="fire_prep_pass",
+            interval_seconds=FAST_INTERVAL,
+            timeout_seconds=TIGHT_TIMEOUT,
+            run=sleeper.run,
+            report=reports.report,
+        ),
+    )
+
+    assert [outcome for outcome, _ in reports.reports] == [RunOutcome.TIMED_OUT]
+
+
+async def test_a_failing_report_is_its_own_loud_event_and_keeps_the_cadence() -> None:
+    """The pass did what it did; a broken record path is reported under its
+    own name and never reclassifies the tick or ends the loop (KOD-170)."""
+    recorder, exploding = Recorder(), ExplodingReport()
+
+    log = await _one_tick(
+        ScheduledPass(
+            name="fire_prep_pass",
+            interval_seconds=FAST_INTERVAL,
+            timeout_seconds=GENEROUS_TIMEOUT,
+            run=recorder.run,
+            report=exploding.report,
+        ),
+    )
+
+    assert recorder.calls == 1
+    assert exploding.calls == 1
+    events = [entry.event for entry in log.events]
+    assert "scheduled_pass_completed" in events
+    assert "run_record_write_failed" in events
+
+
+async def test_a_pass_without_a_report_records_nowhere_by_design() -> None:
+    """The dispatch shape: outcome events only, no record obligation."""
+    recorder = Recorder()
+
+    log = await _one_tick(
+        ScheduledPass(
+            name="dispatch:fixture",
+            interval_seconds=FAST_INTERVAL,
+            timeout_seconds=GENEROUS_TIMEOUT,
+            run=recorder.run,
+        ),
+    )
+
+    events = [entry.event for entry in log.events]
+    assert "scheduled_pass_completed" in events
+    assert "run_record_write_failed" not in events

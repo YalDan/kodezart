@@ -22,10 +22,15 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.job import JobRecord
-from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    QueueState,
+    RecordDestination,
+)
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.run_records import RunRecord
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -460,6 +465,27 @@ class DeliveryProbe(Protocol):
 #: which tool is an adapter's knowledge; this seam holds only the fact
 #: that both shapes are legal.
 type McpToolResult = Mapping[str, object] | Sequence[object]
+
+
+@runtime_checkable
+class RunRecordSink(Protocol):
+    """Writes one structural run record into one declared destination.
+
+    One implementation per backing system (`RecordDestination.system`),
+    because WHERE a row lands is vendor knowledge — a data-source page on
+    one backend, a document append on another — while WHAT is written is
+    the domain's one line.  The recorder service routes by the declared
+    system and never learns either vendor's shape (KOD-170).
+    """
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        """Land *record* in *destination*, or raise naming what refused."""
+        ...
 
 
 @runtime_checkable

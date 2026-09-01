@@ -17,6 +17,7 @@ from kodezart.composition.knowledge import boot_knowledge_grant
 from kodezart.composition.passes import build_dispatch_runtime, verify_pass_preflight
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
+from kodezart.composition.records import build_run_recorder
 from kodezart.composition.tracker import (
     boot_tracker,
 )
@@ -80,6 +81,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             github_api=github_api,
             prompts=prompts,
         )
+    except BaseException:
+        if mcp_caller is not None:
+            await mcp_caller.close()
+        if github_api is not None:
+            await github_api.close()
+        raise
+
+    # The run recorder rides the same refusal window as the preflight: a
+    # knowledge-side record with no server to dial refuses HERE, with the
+    # tracker transport still the only thing to close (KOD-170).
+    try:
+        built_recorder = await build_run_recorder(
+            config=config,
+            operation=operation,
+            tracker_caller=mcp_caller,
+            log=log,
+        )
+        if built_recorder.knowledge_caller is not None:
+            await built_recorder.knowledge_caller.open()
     except BaseException:
         if mcp_caller is not None:
             await mcp_caller.close()
@@ -161,6 +181,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             prompts=prompts,
             runner=agent_service,
             skills=skills,
+            recorder=built_recorder.recorder,
             log=log,
         )
         app.state.pass_scheduler = dispatch.scheduler
@@ -183,6 +204,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await job_queue.stop()
         if dispatch.lifecycle is not None:
             await dispatch.lifecycle.drain()
+        # The drain's own fire records write through this session, so it
+        # closes after the drain and before the tracker transport.
+        if built_recorder.knowledge_caller is not None:
+            await built_recorder.knowledge_caller.close()
         if mcp_caller is not None:
             await mcp_caller.close()
         if github_api is not None:

@@ -25,6 +25,7 @@ import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.prompt_rendering import binding_names
 from kodezart.types.domain.prompts import PromptKey
@@ -290,6 +291,27 @@ def test_a_third_team_and_repository_render_by_name(
     assert "trunk-three" in output
 
 
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_every_pass_addresses_its_own_kind_and_no_other(
+    case: tuple[str, PromptKey],
+) -> None:
+    """Each pass's record references name exactly ITS run kind.
+
+    The pin that keeps the prompt half and the runner half on one
+    declaration: the kind map here is the composition's own, the same one
+    the scheduler reports through, so a template addressing another
+    pass's log fails against the map rather than in production (KOD-170).
+    """
+    body = pass_bodies()[case]
+    kind = RECORD_KIND_BY_PASS[case[1]].value
+    referenced = {
+        name.split(".")[1].removesuffix("_absent")
+        for name in binding_names(body)
+        if name.startswith("records.")
+    }
+    assert referenced == {kind}, referenced
+
+
 @pytest.mark.parametrize("key", PASS_KEYS)
 def test_a_deployment_with_no_store_renders_the_absence_instruction(
     key: PromptKey,
@@ -305,7 +327,7 @@ def test_a_deployment_with_no_store_renders_the_absence_instruction(
 
     assert "{{" not in output
     assert "}}" not in output
-    assert "No record destination is configured" in output
+    assert "No record destination\nis declared for this pass's kind" in output
     assert "No store is configured beside the tracker" in output
     assert "No checkpoint is configured" in output
 
@@ -318,5 +340,9 @@ def test_the_configured_deployment_renders_the_present_arm_instead(
     """The pair is mutually exclusive, so neither arm can be vacuous."""
     output = rendered(written(tmp_path), V5_SET, key)
 
-    assert "No record destination is configured" not in output
-    assert "Example Run Log" in output
+    assert "No record destination" not in output
+    expected = {
+        PromptKey.FIRE_PREP_PASS: "Example Run Log",
+        PromptKey.GROOMING_PASS: "Example Grooming Log",
+    }[key]
+    assert expected in output

@@ -27,6 +27,7 @@ from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.composition.passes import build_dispatch_passes
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError
+from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
@@ -144,6 +145,7 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
     await queue.start()
     try:
         built = await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
             config=config,
             operation=operation_config(),
             tracker=tracker,
@@ -212,6 +214,7 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
     await queue.start()
     try:
         built = await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
             config=config,
             operation=operation_config(),
             tracker=tracker,
@@ -283,6 +286,7 @@ async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
     await queue.start()
     try:
         built = await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
             config=config,
             operation=operation_config(),
             tracker=tracker,

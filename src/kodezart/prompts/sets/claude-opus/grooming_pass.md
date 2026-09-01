@@ -112,8 +112,8 @@ If that returns nothing, load by explicit name:
 
 Prove access before relying on it: notion-fetch with id "self" returns the workspace identity. If that call fails, say so explicitly in the run output and in the initiative status update — a missing log row is never silently acceptable.
 
-At step 3, alongside the initiative status updates, create one row in the {{records.grooming_log.name}}
-(data source {{records.grooming_log.id}}) for this pass:
+At step 3, alongside the initiative status updates, create one row in the {{records.grooming.name}}
+(data source {{records.grooming.id}}) for this pass:
 
   Run                this pass's start time, as the title
   Date               the same timestamp, as a date

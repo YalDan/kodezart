@@ -12,7 +12,6 @@ import pytest
 
 from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
-    RUN_LOG_RECORD_KEY,
     DocumentEntry,
     DocumentSystem,
     OperationConfig,
@@ -20,6 +19,7 @@ from kodezart.types.domain.operation import (
     Principal,
     PrincipalRole,
     RecordDestination,
+    RunKind,
 )
 
 COLLECTION_FIELDS = (
@@ -128,8 +128,14 @@ def test_a_populated_queue_mapping_still_requires_the_core() -> None:
         )
 
 
-def test_a_populated_records_registry_still_requires_the_run_log_key() -> None:
-    with pytest.raises(ValueError, match=RUN_LOG_RECORD_KEY):
+def test_a_records_key_outside_the_kind_vocabulary_is_refused() -> None:
+    """Record keys are the run kinds; absence is legal, a free name is not.
+
+    The old rule required a stable run_log key; the kind vocabulary
+    replaced it (KOD-170) — every declared key must BE a kind, and no
+    kind is required.
+    """
+    with pytest.raises(ValueError, match="is not a run kind"):
         OperationConfig(
             operation_name="fixture",
             workspace="fixture-workspace",
@@ -197,7 +203,7 @@ def test_the_accessors_return_the_member_when_it_is_declared() -> None:
             ),
         },
         records={
-            RUN_LOG_RECORD_KEY: RecordDestination(
+            RunKind.FIRE_PREP.value: RecordDestination(
                 system=DocumentSystem.KNOWLEDGE,
                 name="Run log",
                 id="destination-1",

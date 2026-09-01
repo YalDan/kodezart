@@ -23,3 +23,12 @@ justify it. Never set {{queue_states.approved}}. Leave an issue you cannot decid
 place, with the question recorded on it under {{queue_states.decision}}.
 
 {{pass_mechanisms}}
+
+Record. {{#if records.grooming}}When the work is done, write this pass's own row in
+{{records.grooming.name}}, the {{records.grooming.system}} destination {{records.grooming.id}}: this pass's start
+time, what you examined, what you changed, and what you could not do and why. The runner
+records that this pass ran; your row is the prose beside it, written after the work rather
+than before it — and a pass that changed nothing writes one too, because a gap in the
+record cannot be told apart from a pass that never ran.{{/if}}{{#if records.grooming_absent}}No record destination
+is declared for this pass's kind. Nothing outside the tracker records this pass, and
+nothing is written outside it.{{/if}}

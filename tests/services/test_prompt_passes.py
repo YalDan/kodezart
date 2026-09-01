@@ -30,6 +30,7 @@ from kodezart.core.errors import (
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
+from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
@@ -106,6 +107,7 @@ async def _registrations(
     runner = FakeAgentRunner(events=[])
     return (
         await build_prompt_passes(
+            recorder=RunRecorder(records={}, sinks={}),
             config=_config(tmp_path, **overrides),
             operation=declared,
             prompts=prompts,
@@ -152,6 +154,7 @@ async def _runtime(
         prompts=prompts,
     )
     return await build_dispatch_runtime(
+        recorder=RunRecorder(records={}, sinks={}),
         config=config,
         operation=declared,
         tracker=tracker,
@@ -507,8 +510,8 @@ UNGRANTED: dict[str, object] = {
 KNOWLEDGE_ENTRIES = (
     "documents.house_rules",
     "documents.constitution",
-    "records.run_log",
-    "records.grooming_log",
+    "records.fire_prep",
+    "records.grooming",
     "knowledge.house_rules",
     "knowledge.constitution",
     "knowledge.run_logs",
@@ -681,9 +684,7 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
     for call in runner.calls:
         prompt = str(call["prompt"])
         assert "{{" not in prompt
-        assert "No record destination is configured. Nothing outside the tracker" in (
-            prompt
-        )
+        assert "No record destination\nis declared for this pass's kind" in (prompt)
         assert "No store is configured beside the tracker" in prompt
         assert "No checkpoint is configured" in prompt
 

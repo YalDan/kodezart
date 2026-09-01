@@ -21,6 +21,7 @@ import structlog.testing
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
+from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -31,8 +32,9 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.branch import WorkRefRole
 from kodezart.types.domain.job import JobState
-from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.operation import LifecycleStage, QueueState, RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_records import RunOutcome, RunRecord
 from kodezart.types.domain.tracker import ClaimStatus
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
@@ -117,6 +119,7 @@ def watcher_over(
     what the first run left for the second to collide with.
     """
     return LifecycleWatcher(
+        recorder=RunRecorder(records={}, sinks={}),
         queue=FakeJobQueue(events=events),
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=claim_heartbeat(tracker),
@@ -131,6 +134,7 @@ def watcher(
     queue = FakeJobQueue(events=events)
     return (
         LifecycleWatcher(
+            recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
@@ -432,6 +436,7 @@ class TestThePremiseAgainstTheShippedQueue:
         try:
             tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
             watch = LifecycleWatcher(
+                recorder=RunRecorder(records={}, sinks={}),
                 queue=queue,
                 writer=TrackerLifecycleWriter(
                     tracker=tracker,
@@ -495,6 +500,7 @@ class TestGracefulShutdownHandsTheClaimBack:
             lease_seconds=LEASE_SECONDS,
         )
         watch = LifecycleWatcher(
+            recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
@@ -559,6 +565,7 @@ class TestTheWatcherIsUnknownJobSafe:
             event_buffer_capacity=1,
         )
         watch = LifecycleWatcher(
+            recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
@@ -718,3 +725,83 @@ class TestTheFailureArm:
 
         assert tracker.restored_states == []
         assert tracker.comments == []
+
+
+class CapturingRecorder(RunRecorder):
+    """A recorder that keeps every record instead of routing it."""
+
+    def __init__(self) -> None:
+        super().__init__(records={}, sinks={})
+        self.records: list[RunRecord] = []
+
+    async def record(self, record: RunRecord) -> None:
+        self.records.append(record)
+
+
+def watcher_recording(
+    *events: AgentEvent,
+) -> tuple[LifecycleWatcher, CapturingRecorder]:
+    """The shipped watcher with a capturing recorder over a scripted run."""
+    tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+    recorder = CapturingRecorder()
+    return (
+        LifecycleWatcher(
+            recorder=recorder,
+            queue=FakeJobQueue(events=events),
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+        ),
+        recorder,
+    )
+
+
+class TestTheFireRecord:
+    """The fire's structural run record — the RUNNER's obligation (KOD-170).
+
+    Written after the stream ends and the claim is released, whatever the
+    run did: a session that dies mid-fire still leaves a row saying so.
+    """
+
+    async def test_a_terminal_run_records_completed(self) -> None:
+        watch, recorder = watcher_recording(
+            AssistantTextEvent(text="working", model=MODEL),
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        (record,) = recorder.records
+        assert record.kind is RunKind.FIRE
+        assert record.name == ISSUE
+        assert record.outcome is RunOutcome.COMPLETED
+        assert record.duration_seconds >= 0.0
+
+    async def test_a_run_reaching_no_terminal_outcome_records_failed(self) -> None:
+        watch, recorder = watcher_recording(
+            AssistantTextEvent(text="working", model=MODEL),
+        )
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        (record,) = recorder.records
+        assert record.outcome is RunOutcome.FAILED
+
+    async def test_a_run_that_never_started_records_never_started(self) -> None:
+        watch, recorder = watcher_recording()
+
+        await watch.watch(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+
+        (record,) = recorder.records
+        assert record.outcome is RunOutcome.NEVER_STARTED

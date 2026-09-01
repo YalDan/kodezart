@@ -13,7 +13,12 @@ The golden corpus KOD-63 shipped is EXTENDED, never forked: the thirteen keys
 it covers keep their cases verbatim and the five it left uncovered gain
 theirs, all in the same directory.
 
-The freeze bars a SILENT edit, not a recorded one.  The 2026-08-31 founder
+The freeze bars a SILENT edit, not a recorded one. The 2026-09-01
+KOD-170 kind-key ruling amended both pass templates — the record keys
+moved to the run-kind vocabulary (records.run_log -> records.fire_prep,
+records.grooming_log -> records.grooming) — and the manifest moved with
+it in one commit; the rendered goldens did not move, because the renamed
+keys resolve to the same example-config values.  The 2026-08-31 founder
 roster ruling amended both pass templates to enumerate every declared team
 and repository rather than name fixed slots, and the manifest and goldens
 moved with it in one commit: what is pinned here is the amended bytes.

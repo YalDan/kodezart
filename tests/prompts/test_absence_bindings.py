@@ -16,6 +16,7 @@ from kodezart.types.domain.operation import (
     DocumentEntry,
     DocumentSystem,
     OperationConfig,
+    RunKind,
 )
 from tests.prompts.test_operation_config import example_config
 
@@ -27,7 +28,6 @@ COLLECTION_FIELDS = (
     "workflow_states",
     "repos",
     "documents",
-    "records",
     "knowledge",
     "endpoints",
     "initiatives",
@@ -53,6 +53,52 @@ def test_a_present_field_binds_the_value_and_no_marker(field: str) -> None:
     bindings = operation_bindings(example_config())
     assert bindings[field] is not None
     assert bindings[f"{field}_absent"] is None
+
+
+def test_the_record_namespace_is_total_per_kind() -> None:
+    """``records`` binds every run kind as the house pair, always.
+
+    A closed vocabulary binds TOTALLY — the declared destination or the
+    named absence per kind, never a missing nested key a guarded template
+    would render as a silent hole (KOD-170).  There is no whole-registry
+    marker: an empty [records] table is three named absences.
+    """
+    minimal = operation_bindings(minimal_config())["records"]
+    assert isinstance(minimal, dict)
+    for kind in RunKind:
+        assert minimal[kind.value] is None
+        assert minimal[f"{kind.value}_absent"] is True
+
+    example = operation_bindings(example_config())["records"]
+    assert isinstance(example, dict)
+    for kind in (RunKind.FIRE_PREP, RunKind.GROOMING):
+        entry = example[kind.value]
+        assert isinstance(entry, dict) and entry["name"]
+        assert example[f"{kind.value}_absent"] is None
+    assert example[RunKind.FIRE.value] is None
+    assert example[f"{RunKind.FIRE.value}_absent"] is True
+
+    assert "records_absent" not in operation_bindings(example_config())
+    assert "records_absent" not in operation_bindings(minimal_config())
+
+
+def test_an_unguarded_record_reference_over_the_absence_refuses_loudly() -> None:
+    """The pair's loud half, one level down: no state produces a blank."""
+    bindings = operation_bindings(example_config())
+    with pytest.raises(PromptRenderError) as caught:
+        render_template("{{records.fire.name}}", bindings)
+    assert "records.fire.name" in str(caught.value)
+
+
+def test_a_guarded_record_template_names_the_absence_per_kind() -> None:
+    """The guarded arm renders the named absence, never a hole."""
+    bindings = operation_bindings(example_config())
+    rendered = render_template(
+        "{{#if records.fire}}row{{/if}}"
+        "{{#if records.fire_absent}}no fire record is declared{{/if}}",
+        bindings,
+    )
+    assert rendered == "no fire record is declared"
 
 
 def test_every_pair_is_mutually_exclusive_in_both_states() -> None:

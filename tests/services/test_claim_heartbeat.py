@@ -22,6 +22,7 @@ import structlog
 from kodezart.domain.errors import TransientAPIError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
+from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import AgentEvent, ErrorEvent, WorkflowCompleteEvent
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -176,6 +177,7 @@ async def watched(*, events: tuple[AgentEvent, ...]) -> FakeTrackerPort:
     clock = MovingClock(start=FIXTURE_EPOCH)
     tracker, _ = await claimed(clock)
     watch = LifecycleWatcher(
+        recorder=RunRecorder(records={}, sinks={}),
         queue=FakeJobQueue(events=events),
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=heartbeat(tracker, clock=clock),
@@ -388,6 +390,7 @@ class TestTheWatcherDrivesTheHeartbeat:
         clock = MovingClock(start=FIXTURE_EPOCH)
         tracker, _ = await claimed(clock)
         watch = LifecycleWatcher(
+            recorder=RunRecorder(records={}, sinks={}),
             queue=RaisingJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),
@@ -459,6 +462,7 @@ class TestTheClaimIsHandedBackWhenTheJobEnds:
         clock = MovingClock(start=FIXTURE_EPOCH)
         tracker, granted = await claimed(clock)
         watch = LifecycleWatcher(
+            recorder=RunRecorder(records={}, sinks={}),
             queue=RaisingJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),
@@ -490,6 +494,7 @@ class TestTheClaimIsHandedBackWhenTheJobEnds:
             lease_seconds=LEASE_SECONDS,
         )
         watch = LifecycleWatcher(
+            recorder=RunRecorder(records={}, sinks={}),
             queue=FakeJobQueue(events=(TERMINAL_EVENT,)),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),

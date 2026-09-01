@@ -143,7 +143,7 @@ command = "make check"
 system = "tracker"
 name = "{document_title}"{declared_id}{declared_container}
 
-[records.run_log]
+[records.fire_prep]
 system = "tracker"
 name = "{RUN_LOG_TITLE}"
 id = "{record_id}"

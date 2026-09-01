@@ -702,6 +702,25 @@ class AppConfig(BaseSettings):
             "KODEZART_KNOWLEDGE_MCP_TOKEN; this names only where it lands."
         ),
     )
+    knowledge_mcp_timeout_seconds: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=120.0,
+        description=(
+            "Timeout for one knowledge MCP tool call on the programmatic "
+            "record path (http transport)."
+        ),
+    )
+    knowledge_mcp_error_detail_limit: int = Field(
+        default=500,
+        ge=80,
+        le=8000,
+        description=(
+            "Characters of the server's OWN error text carried into a "
+            "knowledge MCP transport failure on the programmatic record "
+            "path."
+        ),
+    )
     knowledge_mcp_interactive_auth_hosts: list[str] = Field(
         default_factory=lambda: ["mcp.notion.com"],
         description=(

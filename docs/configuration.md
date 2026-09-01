@@ -109,6 +109,8 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_KNOWLEDGE_MCP_COMMAND` | `str \| None` | `None` | absolute path, no package runner | Path of the self-hosted knowledge server binary a granted session spawns under the stdio transport. |
 | `KODEZART_KNOWLEDGE_MCP_ARGS` | `list[str]` | `[]` |  | Arguments the stdio knowledge server is spawned with. |
 | `KODEZART_KNOWLEDGE_MCP_ENV` | `dict[str, str]` | `{}` |  | Non-secret environment entries for the stdio knowledge server. |
+| `KODEZART_KNOWLEDGE_MCP_TIMEOUT_SECONDS` | `float` | `30.0` | 5.0–120.0 | Timeout for one knowledge MCP tool call on the programmatic record path (http transport). |
+| `KODEZART_KNOWLEDGE_MCP_ERROR_DETAIL_LIMIT` | `int` | `500` | 80–8000 | Characters of the server's own error text carried into a knowledge MCP transport failure on the programmatic record path. |
 | `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV` | `str \| None` | `None` | min length 1 | Name of the environment entry the stdio knowledge server reads its credential from; the value comes from `KODEZART_KNOWLEDGE_MCP_TOKEN`. |
 | `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `list[str]` | `["mcp.notion.com"]` |  | Hosts that authenticate interactively (OAuth) and accept no static credential; a granted endpoint on one of them paired with a static credential aborts boot, naming the conflict. |
 

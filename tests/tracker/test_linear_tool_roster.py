@@ -112,13 +112,40 @@ def test_the_server_offers_no_issue_history_tool() -> None:
     assert "list_issue_history" not in LIVE_TOOL_ROSTER
 
 
-def test_every_tool_this_process_names_exists_on_the_server() -> None:
+#: Modules whose ``_TOOL_*`` constants address the KNOWLEDGE vendor's MCP
+#: server, not the tracker's. Named per module rather than inferred, so a
+#: tracker tool cannot hide in one: the paired test below pins their
+#: naming shape, and their live roster is measured by the verification
+#: boot (KOD-170) the way this file's Linear roster was.
+KNOWLEDGE_TOOL_MODULES = frozenset({"notion_record_sink.py"})
+
+
+def test_every_tracker_tool_this_process_names_exists_on_the_server() -> None:
     named = named_tools()
     assert named, "no _TOOL_* constant was found under src/"
     absent = {
-        tool: module for tool, module in named.items() if tool not in LIVE_TOOL_ROSTER
+        tool: module
+        for tool, module in named.items()
+        if module not in KNOWLEDGE_TOOL_MODULES and tool not in LIVE_TOOL_ROSTER
     }
     assert absent == {}
+
+
+def test_knowledge_modules_name_only_knowledge_shaped_tools() -> None:
+    """The exemption cannot shelter a tracker tool.
+
+    The knowledge vendor's MCP tools are OpenAPI-derived and all carry the
+    ``API-`` prefix; a bare tracker-vocabulary name in an exempted module
+    would pass the roster test above by exemption alone, so its shape is
+    pinned here.
+    """
+    named = named_tools()
+    offenders = {
+        tool: module
+        for tool, module in named.items()
+        if module in KNOWLEDGE_TOOL_MODULES and not tool.startswith("API-")
+    }
+    assert offenders == {}
 
 
 def test_no_tool_is_called_by_a_bare_literal() -> None:

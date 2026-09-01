@@ -110,7 +110,7 @@ def operation_config() -> OperationConfig:
             ),
         },
         records={
-            "run_log": RecordDestination(
+            "fire_prep": RecordDestination(
                 system=DocumentSystem.KNOWLEDGE,
                 name="Run log",
                 id="record-1",
@@ -172,7 +172,7 @@ def _tracker_side_run_log(record_id: str) -> OperationConfig:
     return operation_config().model_copy(
         update={
             "records": {
-                "run_log": RecordDestination(
+                "fire_prep": RecordDestination(
                     system=DocumentSystem.TRACKER,
                     name=RUN_LOG_TITLE,
                     id=record_id,
@@ -246,8 +246,8 @@ class TestRecordDestinationsResolveAtBoot:
 
         await validate_tracker_mappings(tracker=tracker, config=config)
 
-        assert config.records["run_log"].system is DocumentSystem.KNOWLEDGE
-        assert config.records["run_log"].id not in {
+        assert config.records["fire_prep"].system is DocumentSystem.KNOWLEDGE
+        assert config.records["fire_prep"].id not in {
             ref.identifier for ref in configured_mappings(config)
         }
 

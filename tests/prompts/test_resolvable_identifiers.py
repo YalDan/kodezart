@@ -21,11 +21,11 @@ from kodezart.core.errors import OperationConfigError
 from kodezart.core.prompt_namespaces import bindings_for, operation_bindings
 from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
-    RUN_LOG_RECORD_KEY,
     DocumentEntry,
     DocumentSystem,
     OperationConfig,
     RecordDestination,
+    RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.test_operation_config import write_toml
@@ -129,8 +129,8 @@ def test_both_pass_templates_actually_emit_an_addressed_reference() -> None:
     """
     config = example_config()
     checkpoint = config.documents[CHECKPOINT_DOCUMENT_KEY]
-    run_log = config.records[RUN_LOG_RECORD_KEY]
-    grooming_log = config.records["grooming_log"]
+    run_log = config.records[RunKind.FIRE_PREP.value]
+    grooming_log = config.records[RunKind.GROOMING.value]
     rendered = rendered_passes()
     fire = rendered[PromptKey.FIRE_PREP_PASS]
     grooming = rendered[PromptKey.GROOMING_PASS]
@@ -172,24 +172,30 @@ def test_the_document_binding_carries_system_and_id_not_a_bare_string() -> None:
 def test_the_run_log_destination_is_a_config_field() -> None:
     """A write-side registry exists, separate from the read-side one."""
     assert "records" in OperationConfig.model_fields
-    destination = example_config().records[RUN_LOG_RECORD_KEY]
+    destination = example_config().records[RunKind.FIRE_PREP.value]
     assert isinstance(destination, RecordDestination)
     assert destination.system in DocumentSystem
     assert destination.id
     assert destination.append_only is True
 
 
-def test_a_config_without_the_run_log_key_is_rejected_at_load(
+def test_a_records_key_outside_the_kind_vocabulary_is_rejected_at_load(
     tmp_path: Path,
 ) -> None:
-    """The stable key is required exactly as the checkpoint key is."""
+    """Record keys ARE the run kinds; a free name is a log nothing writes.
+
+    Absence of a kind is legal (a named absence the recorder reports);
+    an unknown key is a typo refused at load, naming the vocabulary
+    (KOD-170).
+    """
     raw = raw_example()
     records = raw["records"]
     assert isinstance(records, dict)
-    records["some_other_record"] = records.pop(RUN_LOG_RECORD_KEY)
+    records["some_other_record"] = records.pop(RunKind.FIRE_PREP.value)
     with pytest.raises(OperationConfigError) as excinfo:
         load_operation_config(write_toml(tmp_path, raw))
-    assert RUN_LOG_RECORD_KEY in str(excinfo.value)
+    assert "is not a run kind" in str(excinfo.value)
+    assert "some_other_record" in str(excinfo.value)
 
 
 def test_the_run_log_destination_is_rendered_rather_than_hardcoded() -> None:

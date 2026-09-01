@@ -83,14 +83,6 @@ board once as a bootstrap census, and say so in your report.{{/if}}{{#if documen
 window carries between passes: cover the whole board as a bootstrap census, and say so in
 your report.{{/if}}
 
-Record. {{#if records}}When the work is done, record this pass as one row in
-{{records.run_log.name}}, the {{records.run_log.system}} destination {{records.run_log.id}}: this pass's start time, what you
-examined, what you changed, and what you could not do and why. That row is where the next
-pass's window starts, so it is written after the work rather than before it — and a pass
-that changed nothing writes one too, because a gap in the record cannot be told apart from
-a pass that never ran.{{/if}}{{#if records_absent}}No record destination is configured. Nothing outside the tracker
-records this pass, and nothing is written outside it.{{/if}}
-
 Store. {{#if knowledge}}This operation keeps a private store beside the tracker, and what
 lives at which destination is stated in the map this session is preluded with. Read from
 it before re-deciding something an earlier pass settled, and write what a later pass will

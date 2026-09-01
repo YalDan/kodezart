@@ -231,12 +231,14 @@ system = "knowledge"
 name = "Example — Operating Constitution"
 id = "example-constitution-document-id"
 
-# WRITE-side destination registry — where a pass records a row, as opposed to
-# where it reads. Deliberately separate from `documents`: that registry is
-# read-side, and a write flag on it would make it silently write-capable while
-# still not saying what is written. The "run_log" key is required. `name` is
-# the destination's display title — what a routine addresses its log by.
-[records.run_log]
+# Record keys are the RUN-KIND vocabulary — fire_prep, grooming, fire —
+# one declared destination per kind (KOD-170). The runner writes each
+# run's structural row there, and the rendered pass prompt names the same
+# declaration for the session's own prose row. A kind left undeclared is
+# a legal NAMED absence: the recorder logs it and writes nowhere. `fire`
+# is deliberately undeclared in this example — the fire's record trail is
+# then tracker-side only. Any other key is refused at load.
+[records.fire_prep]
 system = "knowledge"
 name = "Example Run Log"
 id = "example-run-log-destination-id"
@@ -244,7 +246,7 @@ append_only = true
 
 # The grooming pass writes to a log of its own — a second entry in the same
 # registry, no type or consumer change.
-[records.grooming_log]
+[records.grooming]
 system = "knowledge"
 name = "Example Grooming Log"
 id = "example-grooming-log-destination-id"

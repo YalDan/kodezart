@@ -162,7 +162,7 @@ def operation_config(
             ),
         },
         records={
-            "run_log": RecordDestination(
+            "fire_prep": RecordDestination(
                 system=DocumentSystem.KNOWLEDGE,
                 name="Run log",
                 id="record-1",

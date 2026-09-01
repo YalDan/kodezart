@@ -33,11 +33,11 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
-    RUN_LOG_RECORD_KEY,
     LifecycleStage,
     OperationConfig,
     PrincipalRole,
     QueueState,
+    RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompt_census import PROMPT_FUNCTION_COUNT
@@ -152,7 +152,7 @@ def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
     assert set(config.workflow_states) == set(LifecycleStage)
     assert config.initiatives[0].target_date == date(2026, 12, 31)
     assert config.repos[0].checks
-    assert config.records[RUN_LOG_RECORD_KEY].append_only is True
+    assert config.records[RunKind.FIRE_PREP.value].append_only is True
 
 
 def test_unknown_field_is_rejected(tmp_path: Path) -> None:
