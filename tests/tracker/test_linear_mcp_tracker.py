@@ -14,7 +14,11 @@ import pytest
 import structlog
 
 from kodezart.adapters.linear_mcp_tracker import _CLAIM_MARKER, LinearMcpTracker
-from kodezart.core.errors import McpTransportError, TrackerProtocolError
+from kodezart.core.errors import (
+    McpTransportError,
+    TrackerEnsureConflictError,
+    TrackerProtocolError,
+)
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -701,20 +705,51 @@ class TestDeterministicPath:
         assert server.tool_calls("list_issues")[0]["limit"] == 7
 
 
+async def _label_entries(
+    server: FakeLinearMcpServer,
+    team: str,
+) -> list[Mapping[str, object]]:
+    """One team's label listing, asked the way the adapter asks for it."""
+    payload = await server.call_tool(
+        name="list_issue_labels",
+        arguments={"team": team},
+    )
+    assert isinstance(payload, Mapping)
+    entries = payload["labels"]
+    assert isinstance(entries, list)
+    return entries
+
+
+async def _label_names(server: FakeLinearMcpServer, team: str) -> list[str]:
+    """The names one team's listing answers with."""
+    return [str(entry["name"]) for entry in await _label_entries(server, team)]
+
+
+async def _label_ids(server: FakeLinearMcpServer, team: str) -> set[str]:
+    """The distinct label ids one team's listing answers with."""
+    return {str(entry["id"]) for entry in await _label_entries(server, team)}
+
+
 class TestLabelScopedReading:
-    """Labels are read as a UNION of listings, one of them per declared team.
+    """Labels are read from both listings and classified by id.
 
     ``list_issue_labels`` answers with the workspace-level labels when it
-    is sent no team and with a team's own labels when it is sent one, so
-    neither answer is "the labels this workspace holds".  Reading only the
-    unscoped one is what made a boot invisible to itself: it had created
-    ``queue:done`` team-scoped, per its ref's scope, and the next boot
-    could not see it, re-created it, and was refused by name (KOD-143, the
-    label addendum of 2026-08-25).
+    is sent no team, so it is not "the labels this workspace holds":
+    reading only that one made a boot invisible to itself, having created
+    ``queue:done`` team-scoped per its ref's scope (KOD-143, the label
+    addendum of 2026-08-25).
 
-    Every row here turns on WHICH listing carried an entry.  None of them
-    can be satisfied by reading a container off the entry itself, which is
-    the reading the addendum forbids and which no live payload supports.
+    Sent a team it answers with that team's own labels AND the
+    workspace-level ones, so neither is the team's definitions either.
+    Which listing carried an entry is therefore not enough on its own —
+    a name in a team's answer may be one workspace label reaching that
+    board — and the ID is what separates the two.  Reading the team's
+    answer whole made every workspace label look contested and refused a
+    healthy board on its approval label (KOD-167).
+
+    Still no row here reads a container off the entry's own ``teamId``,
+    which is the reading the addendum forbids and which no live payload
+    supports: the id says WHICH label, never where it lives.
     """
 
     TEAM = TEAM_IDENTIFIERS["engineering"]
@@ -807,10 +842,16 @@ class TestLabelScopedReading:
         """The unscoped listing's own entries still answer, for every ref.
 
         A workspace-level label is addressable on every board, so a ref
-        declaring a team adopts it rather than making a second one.
+        declaring a team adopts it rather than making a second one — and
+        the board's own listing ECHOES it, which is the shape that made
+        the adapter read it as the board's and refuse.  The echo is
+        asserted here rather than assumed: without it this case cannot
+        tell a correct classification from the one that broke boot.
         """
         server = self._server(labels=[self.LABEL])
         tracker = tracker_over(server)
+
+        assert await _label_names(server, self.TEAM) == [self.LABEL]
 
         assert await tracker.resolve_mappings(refs=[self._ref(self.LABEL, None)]) == ()
         (outcome,) = await tracker.ensure_mappings(
@@ -818,6 +859,32 @@ class TestLabelScopedReading:
         )
 
         assert outcome.action is EnsureAction.ADOPTED
+        assert server.tool_calls("create_issue_label") == []
+
+    async def test_a_team_copy_beside_a_workspace_label_refuses_naming_both(
+        self,
+    ) -> None:
+        """Same name, two ids: two definitions, and no way to pick one.
+
+        The counterpart of the case above and the reason it is decided by
+        id.  Both listings carry the name, but the board's entry is its
+        OWN label rather than the workspace's reaching it — so which one a
+        write on that board resolves to is undecidable and the ensure
+        names every container it found.
+        """
+        server = self._server(
+            labels=[self.LABEL],
+            team_labels={f"{self.TEAM}-id": [self.LABEL]},
+        )
+        tracker = tracker_over(server)
+
+        assert len(await _label_ids(server, self.TEAM)) == 2
+
+        with pytest.raises(TrackerEnsureConflictError) as caught:
+            await tracker.ensure_mappings(refs=[self._ref(self.LABEL, self.TEAM)])
+
+        assert "workspace" in str(caught.value)
+        assert self.TEAM in str(caught.value)
         assert server.tool_calls("create_issue_label") == []
 
 

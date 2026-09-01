@@ -2470,25 +2470,38 @@ class FakeLinearMcpServer:
         Unscoped, this answers with the workspace-level labels ALONE — a
         team's labels are invisible to it, which is the fact boot five
         measured and the label addendum ruled on (KOD-143).  Sent a
-        ``team``, it answers with that team's labels.
+        ``team``, it answers with that team's own labels AND the
+        workspace-level ones, which is what the live listing does: measured
+        2026-09-01, one workspace label came back from both boards' calls
+        and from the unscoped one, so the answers are not a partition and a
+        fake omitting the echo certifies a classification the backend
+        refutes (KOD-167).
 
         Neither answer carries a container field, because the live listing
-        carries none: WHICH listing answered is the only thing either one
-        says about scope, and a reader that wants the container has to ask
-        the question that way.
+        carries none.  The ID is what distinguishes a workspace label
+        reaching a board from that board's own copy of the name, so every
+        entry carries one and it is distinct per container.
         """
         team = arguments.get("team")
-        held = (
-            self.labels
-            if team is None
-            else self.team_labels.get(self._team_id(str(team)), [])
-        )
-        return {
-            "labels": [
-                {"id": f"{name}-id", "name": name, "color": "#000000"} for name in held
-            ],
-            "hasNextPage": False,
-        }
+        entries = [self._label_entry(name, None) for name in self.labels]
+        if team is not None:
+            container = self._team_id(str(team))
+            entries.extend(
+                self._label_entry(name, container)
+                for name in self.team_labels.get(container, [])
+            )
+        return {"labels": entries, "hasNextPage": False}
+
+    def _label_entry(self, name: str, container: str | None) -> Mapping[str, object]:
+        """One label entry, its id distinct per CONTAINER rather than per name.
+
+        Two boards' own copies of one member are two labels with two ids,
+        and a workspace label echoed into a board's answer keeps the id it
+        has at workspace level — which is the whole of what tells a reader
+        those two shapes apart.
+        """
+        identity = name if container is None else f"{container}-{name}"
+        return {"id": f"{identity}-id", "name": name, "color": "#000000"}
 
     def _team_id(self, team: str) -> str:
         """The id the fake addresses *team* by; ``team`` takes a name or an id."""

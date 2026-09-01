@@ -57,6 +57,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearIssueListWire,
     LinearIssueWire,
     LinearLabelListWire,
+    LinearLabelWire,
     LinearNamedWire,
     LinearTeamListWire,
     LinearTeamWire,
@@ -250,18 +251,28 @@ def _utc_now() -> datetime:
 
 @dataclass
 class _LabelListings:
-    """Every label listing this adapter read, kept apart by which one answered.
+    """Every label listing this adapter read, classified by what defines it.
 
     ``list_issue_labels`` answers a DIFFERENT set depending on whether
-    ``team`` was sent, so "does the workspace hold this label?" has no
-    single answer — it has one per listing, and which listing carried an
-    entry is what that entry's container IS.
+    ``team`` was sent, and the two answers are not a partition.  Measured
+    2026-09-01: the unscoped call answers with the workspace-level labels
+    ALONE, while a team's call answers with that team's own labels AND the
+    workspace-level ones.  So a name in a team's answer proves nothing by
+    itself — it is either one workspace label reaching that board or a
+    team-scoped copy sitting beside it — and only the ID tells those
+    apart: one member came back from both boards under a single id, while
+    another came back under two distinct ones (KOD-167).
 
-    The entries' own ``teamId`` is never consulted for this.  The
-    workspace-level listing carries no such field at all, so reading it
-    would file every team-scoped label under workspace scope: exactly the
-    misreading that made a freshly created label invisible to the boot
-    that created it (KOD-143, the label addendum of 2026-08-25).
+    ``by_team`` therefore holds each team's OWN labels: that team's
+    listing MINUS the workspace listing, subtracted by id.  Taking the
+    team's answer whole read every workspace label as team-held and
+    refused a healthy two-board workspace on its own approval label.
+
+    The entries' ``teamId`` is never consulted for any of this.  No
+    measured listing carries the field at all, so reading it would file
+    every team-scoped label under workspace scope: the misreading that
+    made a freshly created label invisible to the boot that created it
+    (KOD-143, the label addendum of 2026-08-25).
     """
 
     workspace: set[str]
@@ -289,7 +300,12 @@ class _LabelListings:
         return name in self.workspace
 
     def teams_holding(self, name: str) -> tuple[str, ...]:
-        """The declared teams whose own listing carried *name*."""
+        """The declared teams defining *name* THEMSELVES, workspace aside.
+
+        A team whose listing carries *name* only because the workspace
+        defines it is not one of these: it holds no definition of its own,
+        and counting it would read every workspace label as contested.
+        """
         return tuple(
             sorted(team for team, names in self.by_team.items() if name in names)
         )
@@ -1179,13 +1195,20 @@ class LinearMcpTracker:
     async def _label_definitions(self) -> _LabelListings:
         """Every queue-state label the workspace resolves, by listing.
 
-        The workspace-level listing UNION one team-scoped listing per
+        The workspace-level listing plus one team-scoped listing per
         DECLARED team, because the unscoped call answers with the
         workspace-level labels ALONE.  A boot that read only that one
         re-created the team-scoped label its own previous boot had made,
-        and the vendor refused it by name (KOD-143, the label addendum of
+        and the vendor refused it (KOD-143, the label addendum of
         2026-08-25).  Idempotence comes from reading both listings, never
         from forgiving that refusal.
+
+        Not a union, though: a team's listing carries the workspace-level
+        labels too, so each team's OWN labels are its listing minus the
+        workspace one, subtracted BY ID.  By name would subtract nothing —
+        the shared name is exactly what makes the two shapes look alike —
+        and taking the listing whole makes every workspace label look
+        team-held, which refused a healthy workspace (KOD-167).
 
         One call per declared team, for the same reason the workflow-state
         vocabulary is read that way: the tool answers for one team, so
@@ -1194,19 +1217,25 @@ class LinearMcpTracker:
         takes "name or ID", and only ``create_issue_label.teamId`` insists
         on the UUID.
         """
-        workspace = {entry.name for entry in await self._label_entries({})}
+        held = await self._label_entries({})
+        workspace_ids = {entry.id for entry in held}
         by_team = {
             identifier: {
-                entry.name for entry in await self._label_entries({"team": identifier})
+                entry.name
+                for entry in await self._label_entries({"team": identifier})
+                if entry.id not in workspace_ids
             }
             for identifier in sorted(set(self._team_identifiers.values()))
         }
-        return _LabelListings(workspace=workspace, by_team=by_team)
+        return _LabelListings(
+            workspace={entry.name for entry in held},
+            by_team=by_team,
+        )
 
     async def _label_entries(
         self,
         arguments: Mapping[str, object],
-    ) -> Sequence[LinearNamedWire]:
+    ) -> Sequence[LinearLabelWire]:
         """One label listing, scoped by *arguments* or not scoped at all."""
         tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
         payload = await self._call(tool, arguments)

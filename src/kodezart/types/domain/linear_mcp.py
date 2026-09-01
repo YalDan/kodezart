@@ -231,6 +231,23 @@ class LinearNamedWire(LinearWireModel):
     team_id: str | None = None
 
 
+class LinearLabelWire(LinearNamedWire):
+    """One label, carrying the id that says WHICH label it is.
+
+    Declared because it is READ.  A name alone cannot tell two labels
+    apart, and on this backend two labels routinely share one: the
+    per-team listing answers with that team's OWN labels and the
+    workspace-level ones together, so a name in a team's answer is either
+    one workspace label echoed into it or a genuine team-scoped copy.  The
+    id is the only thing that separates those — measured 2026-09-01 on a
+    two-board workspace, where one member came back from both boards under
+    ONE id and from the unscoped listing too, while another came back
+    under TWO distinct ids and from no unscoped listing at all (KOD-167).
+    """
+
+    id: str
+
+
 class LinearLabelListWire(LinearWireModel):
     """The ``list_issue_labels`` envelope — the array is keyed ``labels``.
 
@@ -239,7 +256,7 @@ class LinearLabelListWire(LinearWireModel):
     invented common one.
     """
 
-    labels: list[LinearNamedWire]
+    labels: list[LinearLabelWire]
 
 
 class LinearTeamWire(LinearNamedWire):

@@ -497,6 +497,37 @@ async def test_a_board_missing_one_member_is_given_its_own_and_the_other_stands(
     assert wired.team_labels[f"{FOREIGN_TEAM}-id"] == list(QUEUE_STATE_LABELS.values())
 
 
+async def test_the_live_mixed_board_shape_boots_and_adopts_everything(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """The workspace as measured 2026-09-01, whole: mixed levels, two boards.
+
+    Most of the vocabulary is ONE workspace-level label that both boards'
+    listings echo, and one member (``done``) exists as a separate copy per
+    board.  Both facts are live and they coexist, so a classification that
+    can only express one of them refuses a healthy workspace: reading each
+    board's listing whole made the echoed members look board-owned and
+    aborted on the approval label.
+
+    Nothing here is written — every declared member already resolves on
+    every declared board, by one route or the other.
+    """
+    wired.labels = [
+        label for label in QUEUE_STATE_LABELS.values() if label != "queue:done"
+    ]
+    wired.team_labels = {
+        f"{team}-id": ["queue:done"] for team in ("fixture-team", FOREIGN_TEAM)
+    }
+    _configure(monkeypatch, tmp_path, _operation_toml(teams=TWO_TEAMS))
+
+    async with lifespan(create_app()):
+        pass
+
+    assert wired.tool_calls("create_issue_label") == []
+
+
 async def test_a_label_defined_at_both_levels_aborts_boot_naming_both(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -509,6 +540,11 @@ async def test_a_label_defined_at_both_levels_aborts_boot_naming_both(
     definitions and nothing says which one a write on that board resolves
     to.  Boot names every container it found and writes nothing rather than
     picking one (KOD-167).
+
+    The board's copy is its OWN — a second label under a second id, not
+    the workspace's echoed into its listing.  That distinction is the
+    whole difference between this case and the healthy one above, and it
+    is decided by id: by name the two are indistinguishable.
     """
     contested = QUEUE_STATE_LABELS["done"]
     wired.team_labels = {"fixture-team-id": [contested]}
