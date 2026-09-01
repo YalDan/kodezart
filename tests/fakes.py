@@ -78,6 +78,7 @@ from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunOutcome
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -2689,6 +2690,15 @@ class FakeTrackerPort:
         }
         self.queue_writes: list[tuple[str, QueueState]] = []
         self.scans: list[IssueQuery] = []
+        #: Every issue this double was asked to READ, in order.  A scan is
+        #: one call whatever it returns and a read is one call per issue,
+        #: so what a consumer spends on reads is only visible as a list of
+        #: them (KOD-173).
+        self.issue_reads: list[str] = []
+        #: Every claim this double GRANTED, in order — kept past the release
+        #: that deletes the claim itself, so a claim/release pair spent and
+        #: undone is still visible as the write it was (KOD-173).
+        self.claim_writes: list[str] = []
         #: Reviews this double reports, keyed by the repository they belong
         #: to, and the queries it was asked.  Separate from ``issues``
         #: because a review is a separate object class: seeding one must not
@@ -2771,6 +2781,7 @@ class FakeTrackerPort:
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)
+        self.issue_reads.append(issue_key)
         return self.issues[issue_key]
 
     async def create_issue(
@@ -2907,6 +2918,7 @@ class FakeTrackerPort:
             expires_at=expires_at,
         )
         self.claims[issue_key] = granted
+        self.claim_writes.append(issue_key)
         return granted
 
     async def renew_claim(
@@ -3249,3 +3261,18 @@ class FakeJobQueue:
         self.records[job_id] = self.records[job_id].model_copy(
             update={"state": state},
         )
+
+
+class FakeFireReport:
+    """``FireReport`` as a record: every finished fire the watch reported."""
+
+    def __init__(self) -> None:
+        self.reported: list[tuple[str, RunOutcome, str | None]] = []
+
+    async def __call__(
+        self,
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        self.reported.append((issue_key, outcome, failure_class))

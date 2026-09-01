@@ -36,7 +36,7 @@ from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher
-from kodezart.services.lifecycle_watcher import LifecycleWatcher
+from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import run_prompt_pass
@@ -46,9 +46,11 @@ from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
+    RepoEntry,
     RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunOutcome
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
@@ -321,6 +323,27 @@ async def build_prompt_passes(
     ]
 
 
+def fire_report(dispatchers: Sequence[FireDispatcher]) -> FireReport:
+    """Every dispatcher on the lane hears every finished fire.
+
+    The watcher is one object over N repositories and knows nothing about
+    which of them started a given run.  Each dispatcher does — it holds
+    the job it enqueued — so the fan-out is total here and the filtering
+    is the dispatcher's own (KOD-174).  A watcher told to route would need
+    a second copy of the routing the passes already compute.
+    """
+
+    async def report(
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        for dispatcher in dispatchers:
+            await dispatcher.record_run_outcome(issue_key, outcome, failure_class)
+
+    return report
+
+
 async def build_dispatch_passes(
     *,
     config: AppConfig,
@@ -357,9 +380,39 @@ async def build_dispatch_passes(
         max_bytes=config.tracker_asset_max_bytes,
         fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,
     )
+    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
+    dispatchers: list[tuple[RepoEntry, FireDispatcher]] = []
+    for repo in operation.repos:
+        if not operation.teams_scanned_by(repo.url):
+            await log.ainfo("dispatch_pass_unbound_repository", repo_url=repo.url)
+            continue
+        dispatchers.append(
+            (
+                repo,
+                FireDispatcher(
+                    tracker=tracker,
+                    queue=queue,
+                    registry=registry,
+                    delivery=delivery_probe_for(repo.url, forge=delivery),
+                    operation=operation,
+                    repo_url=repo.url,
+                    lane=config.dispatch_lane,
+                    holder=config.dispatch_holder,
+                    claim_lease_seconds=config.tracker_claim_lease_seconds,
+                    query_page_size=config.tracker_query_page_size,
+                    assembler=assembler,
+                    resolver=resolver,
+                    cache=cache,
+                    trunk=repo.trunk,
+                    integration_workspace_dir=integration_workspace_dir,
+                ),
+            ),
+        )
     # One writer and one watcher for every repository: the lifecycle it
     # writes belongs to the ISSUE, and an issue is not a per-repository
     # thing. A watcher per pass would be N watchers over one tracker.
+    # Built after the dispatchers because a finished fire is reported back
+    # into them (KOD-174).
     lifecycle = LifecycleWatcher(
         queue=queue,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
@@ -370,49 +423,30 @@ async def build_dispatch_passes(
             renewal_fraction=config.tracker_claim_renewal_fraction,
         ),
         recorder=recorder,
+        report=fire_report([dispatcher for _, dispatcher in dispatchers]),
     )
-    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
-    passes: list[ScheduledPass] = []
-    for repo in operation.repos:
-        if not operation.teams_scanned_by(repo.url):
-            await log.ainfo("dispatch_pass_unbound_repository", repo_url=repo.url)
-            continue
-        tick = GatedDispatchPass(
-            lifecycle=lifecycle,
-            gate=build_gate(
-                config=config,
-                tracker=tracker,
-                signals=config.dispatch_pass_gate_signals,
-                team_keys=operation.team_keys_for_repo(repo.url),
-                repo_urls=[repo.url],
-            ),
-            dispatcher=FireDispatcher(
-                tracker=tracker,
-                queue=queue,
-                registry=registry,
-                delivery=delivery_probe_for(repo.url, forge=delivery),
-                operation=operation,
-                repo_url=repo.url,
-                lane=config.dispatch_lane,
-                holder=config.dispatch_holder,
-                claim_lease_seconds=config.tracker_claim_lease_seconds,
-                query_page_size=config.tracker_query_page_size,
-                assembler=assembler,
-                resolver=resolver,
-                cache=cache,
-                trunk=repo.trunk,
-                integration_workspace_dir=integration_workspace_dir,
-            ),
-        )
-        passes.append(
+    return DispatchPasses(
+        passes=tuple(
             ScheduledPass(
                 name=f"{_DISPATCH_NAME}:{repo.url}",
                 interval_seconds=config.dispatch_pass_interval_seconds,
                 timeout_seconds=config.dispatch_pass_timeout_seconds,
-                run=tick.run,
-            ),
-        )
-    return DispatchPasses(passes=tuple(passes), lifecycle=lifecycle)
+                run=GatedDispatchPass(
+                    lifecycle=lifecycle,
+                    gate=build_gate(
+                        config=config,
+                        tracker=tracker,
+                        signals=config.dispatch_pass_gate_signals,
+                        team_keys=operation.team_keys_for_repo(repo.url),
+                        repo_urls=[repo.url],
+                    ),
+                    dispatcher=dispatcher,
+                ).run,
+            )
+            for repo, dispatcher in dispatchers
+        ),
+        lifecycle=lifecycle,
+    )
 
 
 async def _verify_wired_gates(

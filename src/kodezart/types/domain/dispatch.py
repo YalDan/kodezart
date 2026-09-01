@@ -42,6 +42,17 @@ class DispatchOutcome(StrEnum):
     obstacle is a missing premise on the graph, and the next pass re-selects
     it once the premise is recorded."""
 
+    winner_blocked = "winner_blocked"
+    """The winner was read fresh before the claim and carries a live
+    blocker, so nothing was claimed and nothing was enqueued.  Distinct
+    from ``empty_eligible_set`` because the set this pass computed was NOT
+    empty, and distinct from ``base_unresolved`` because no claim was
+    spent: the exclusion is decided before the first write (KOD-173).  The
+    pass does not fall through to the next-ranked issue — one issue read
+    per pass buys one decided winner — so the next pass recomputes, and
+    the blocker's key rides in the exclusions under the live-blocker
+    clause."""
+
 
 class ExclusionClause(StrEnum):
     """The eligibility clauses, as the reasons an issue was excluded.
@@ -69,6 +80,16 @@ class ExclusionClause(StrEnum):
     is one report line per pass instead of a claim/release cycle every
     tick feeding its own gate delta (KOD-169).  The detail carries the
     recorded resolution failure."""
+
+    RUN_FAILED = "run_failed"
+    """A fire this pass started ended without reaching a terminal outcome.
+    Excluded until the issue CHANGES — its ``updated_at`` moving past the
+    reading taken after the failure — by the same remembered-exclusion
+    mechanism the clause above uses, so a standing failure is one report
+    line per pass instead of the whole run fired again at the next tick,
+    into the condition that killed the last one (KOD-174).  The detail
+    carries the class the run died of, or how it ended when no error frame
+    named one."""
 
     OUT_OF_SCOPE = "out_of_scope"
     """The issue's team declares a scope and the issue's project and
