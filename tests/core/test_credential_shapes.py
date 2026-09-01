@@ -106,3 +106,45 @@ def test_the_one_tracker_backend_has_a_credential_shape() -> None:
     covered = {shape.vendor for shape in CREDENTIAL_SHAPES}
 
     assert {backend.value for backend in TrackerBackend} <= covered
+
+
+#: Every credential-bearing field, mapped to a value in its live shape.
+_CREDENTIAL_FIELD_FIXTURES: Final[dict[str, str]] = {
+    "github_token": _FORGE_TOKEN,
+    "tracker_token": _TRACKER_TOKEN,
+    "knowledge_mcp_token": _KNOWLEDGE_TOKEN,
+}
+
+#: The gateway credential is operator-minted against a self-hosted server,
+#: so it has no vendor taxonomy a pattern could recognise; its egress guard
+#: is the field itself — a secret, excluded from serialization — and the
+#: exemption is asserted rather than assumed.
+_SHAPELESS_TOKEN_FIELDS: Final[frozenset[str]] = frozenset(
+    {"knowledge_mcp_gateway_token"},
+)
+
+
+def test_every_token_field_maps_into_the_table_or_names_its_exemption() -> None:
+    """The class, closed: a credential field the table does not know fails here.
+
+    The enumeration is derived from the configuration model — every field
+    whose name ends ``_token`` — so a new credential knob cannot ship
+    without either a shape the scrubber recognises or a recorded shapeless
+    exemption, and neither can this test go vacuous when one is renamed.
+    """
+    token_fields = {name for name in AppConfig.model_fields if name.endswith("_token")}
+
+    assert token_fields == set(_CREDENTIAL_FIELD_FIXTURES) | _SHAPELESS_TOKEN_FIELDS
+    for field, value in _CREDENTIAL_FIELD_FIXTURES.items():
+        scrubbed = redact_credentials(f"the {field} value {value} leaked")
+        assert value not in scrubbed, field
+        assert REDACTION_SENTINEL in scrubbed, field
+
+
+def test_every_shapeless_token_field_is_a_secret_that_never_serializes() -> None:
+    """The exemption's ground, asserted: shapeless means guarded another way."""
+    for field in _SHAPELESS_TOKEN_FIELDS:
+        info = AppConfig.model_fields[field]
+
+        assert info.exclude is True, field
+        assert "SecretStr" in str(info.annotation), field
