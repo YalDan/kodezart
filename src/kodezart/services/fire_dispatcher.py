@@ -76,7 +76,10 @@ class _RememberedExclusion:
     write-delete cycles, each feeding the next tick's gate delta), and the
     put-back and terminal comment for a run that died (KOD-174).
     Remembered at scan time, this pass's own noise would re-admit the
-    issue on the very next tick, which IS both measured loops.
+    issue on the very next tick, which IS both measured loops.  The third
+    entrant — a winner the pre-claim read found blocked (KOD-173) — is
+    recorded off that same reading, which is already after everything
+    this pass did to the issue, because that arm writes nothing at all.
 
     ``clause`` and ``detail`` are what the exclusion reports: one
     mechanism, and the report still says which failure is being
@@ -135,8 +138,8 @@ class FireDispatcher:
         self._clock: Callable[[], datetime] = clock
         self._log: BoundLogger = get_logger(__name__)
         self._jobs_by_issue: dict[str, str] = {}
-        #: Remembered failures — an unresolvable base, a run that died —
-        #: each held until its issue changes.
+        #: Remembered failures — an unresolvable base, a run that died, a
+        #: winner the graph blocks — each held until its issue changes.
         self._remembered: dict[str, _RememberedExclusion] = {}
         #: One ``initiative_identifiers`` read per distinct project for
         #: this dispatcher's lifetime — membership does not move under a
@@ -234,6 +237,20 @@ class FireDispatcher:
         winner = await self._tracker.read_issue(issue_key=selection.winner_key)
         blocking = await self._live_blocker_of(winner)
         if blocking is not None:
+            # Remembered, exactly as an unresolvable base and a dead run
+            # are, and for the same reason: the pass claims one winner per
+            # snapshot and does not fall through, so a blocked top-ranked
+            # issue re-decided every tick would leave every lower-ranked
+            # candidate unfired for as long as the blocker stands.  The
+            # reading is the pre-claim one, which is also the post-read
+            # one — this arm writes nothing, so nothing has moved the
+            # issue since — and the blocker's key is what the exclusion
+            # keeps reporting while the memory holds.
+            self._remembered[winner.issue_key] = _RememberedExclusion(
+                updated_at=winner.updated_at,
+                clause=ExclusionClause.LIVE_BLOCKER,
+                detail=blocking,
+            )
             await self._log.ainfo(
                 "dispatch_winner_blocked",
                 outcome=DispatchOutcome.winner_blocked.value,
@@ -489,8 +506,10 @@ class FireDispatcher:
             # Re-admitted only once the issue has CHANGED past the reading
             # taken after the failure — retrying an unchanged issue re-runs
             # the same failing resolution and re-writes the claim churn it
-            # produced (KOD-169), or fires the whole run again into the
-            # rejection that killed the last one (KOD-174).
+            # produced (KOD-169), fires the whole run again into the
+            # rejection that killed the last one (KOD-174), or re-reads an
+            # edge that cannot have moved while it holds the lane's whole
+            # throughput (KOD-173).
             if issue.updated_at <= remembered.updated_at:
                 return IssueExclusion(
                     issue_key=issue.issue_key,

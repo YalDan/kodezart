@@ -49,9 +49,9 @@ class DispatchOutcome(StrEnum):
     empty, and distinct from ``base_unresolved`` because no claim was
     spent: the exclusion is decided before the first write (KOD-173).  The
     pass does not fall through to the next-ranked issue — one issue read
-    per pass buys one decided winner — so the next pass recomputes, and
-    the blocker's key rides in the exclusions under the live-blocker
-    clause."""
+    per pass buys one decided winner — so the next pass recomputes over a
+    set the blocked winner has been remembered out of, and the blocker's
+    key rides in the exclusions under the live-blocker clause."""
 
 
 class ExclusionClause(StrEnum):
@@ -111,6 +111,13 @@ class ExclusionClause(StrEnum):
     NOT_APPROVED = "not_approved"
     NOT_OPEN = "not_open"
     LIVE_BLOCKER = "live_blocker"
+    """An issue the graph blocks, by an edge to an issue still open.  The
+    detail carries the blocker's key.  A winner the PRE-CLAIM read found
+    blocked is additionally remembered under this clause, by the same
+    mechanism the two above use, so the lane's next tick ranks the next
+    unblocked candidate instead of spending every tick re-deciding a
+    blocker that has not moved (KOD-173)."""
+
     CLAIMED_OR_IN_FLIGHT = "claimed_or_in_flight"
     OPEN_DELIVERY = "open_delivery"
 

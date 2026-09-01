@@ -1790,6 +1790,75 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
         assert len(queue.submissions) == 1
         assert tracker.issue_reads == ["K-1", "K-1"]
 
+    async def test_a_blocked_winner_does_not_starve_the_lane_behind_it(self) -> None:
+        """The regression the pre-claim read introduced, reproduced and dead.
+
+        Measured on the fix's own lineage: with a top-ranked issue the
+        graph blocks, every tick re-selected it, reported
+        ``winner_blocked`` and fired nothing — an unblocked candidate one
+        rank below it waited for a blocker it had nothing to do with.  The
+        blocked winner is remembered under its clause, so the tick after
+        the exclusion ranks the next candidate; the pass still claims one
+        winner per snapshot and never falls through inside one.
+        """
+        tracker = RelationlessScanTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "K-1", priority=IssuePriority.URGENT, blocked_by=["K-2"]
+                ),
+                make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
+                make_tracker_issue("K-3"),
+            ],
+        )
+        fire, queue, _ = dispatcher(tracker)
+
+        first = await fire.run_pass()
+        assert first.outcome is DispatchOutcome.winner_blocked
+        assert queue.submissions == [], "no fall-through inside one snapshot"
+
+        second = await fire.run_pass()
+
+        assert second.outcome is DispatchOutcome.fire_enqueued
+        assert second.claimed_issue_key == "K-3"
+        assert [
+            (item.issue_key, item.clause, item.detail)
+            for item in second.exclusions
+            if item.issue_key == "K-1"
+        ] == [("K-1", ExclusionClause.LIVE_BLOCKER, "K-2")]
+
+    async def test_a_changed_blocked_winner_is_re_admitted_and_re_decided(
+        self,
+    ) -> None:
+        """The memory is held until the issue moves, never forever.
+
+        K-3 is in flight by then, so K-1 is the only candidate left: a
+        pass that still held the memory would report an empty eligible
+        set.  ``winner_blocked`` is therefore the proof that the issue was
+        re-admitted and its edges read again.
+        """
+        tracker = RelationlessScanTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "K-1", priority=IssuePriority.URGENT, blocked_by=["K-2"]
+                ),
+                make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
+                make_tracker_issue("K-3"),
+            ],
+        )
+        fire, _, _ = dispatcher(tracker)
+        await fire.run_pass()
+        await fire.run_pass()
+        tracker.issues["K-1"] = make_tracker_issue(
+            "K-1",
+            priority=IssuePriority.URGENT,
+            blocked_by=["K-2"],
+            updated_at=FIXTURE_EPOCH + timedelta(hours=1),
+        )
+
+        third = await fire.run_pass()
+
+        assert third.outcome is DispatchOutcome.winner_blocked
+
     async def test_a_closed_blocker_does_not_block_the_winner(self) -> None:
         """A finished dependency is an edge, not an obstacle.
 
