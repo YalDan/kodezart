@@ -17,7 +17,11 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
-from kodezart.core.errors import McpTransportError, TrackerEnsureConflictError
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    McpTransportError,
+    TrackerEnsureConflictError,
+)
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import (
     AgentExecutor,
@@ -2160,6 +2164,7 @@ class FakeLinearMcpServer:
         transient_failures: Mapping[str, int] | None = None,
         transport_failures: Mapping[str, int] | None = None,
         tool_errors: Mapping[str, str] | None = None,
+        credential_refused_after: Mapping[str, int] | None = None,
     ) -> None:
         self.issues: dict[str, FakeMcpIssue] = {issue.id: issue for issue in issues}
         self.diffs: list[FakeMcpDiff] = list(diffs)
@@ -2200,6 +2205,14 @@ class FakeLinearMcpServer:
         #: failure knobs above: what this expresses is a tool that answers
         #: the same way every time, a refused scope among them.
         self._tool_errors: dict[str, str] = dict(tool_errors or {})
+        #: Tools whose credential is refused once they have answered that
+        #: many calls, and refused on EVERY call after.  The measured shape
+        #: (KOD-171): the token worked for fifty-one minutes and then
+        #: answered 401 for the rest of the boot, so a knob that heals is
+        #: not one this failure has.
+        self._credential_refused_after: dict[str, int] = dict(
+            credential_refused_after or {},
+        )
         self._sequence: int = 0
 
     async def call_tool(
@@ -2213,6 +2226,13 @@ class FakeLinearMcpServer:
         # nothing about exactly-once semantics.
         await asyncio.sleep(0)
         self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
         remaining = self._transient_failures.get(name, 0)
         if remaining > 0:
             self._transient_failures[name] = remaining - 1

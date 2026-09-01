@@ -15,6 +15,7 @@ import structlog
 
 from kodezart.adapters.linear_mcp_tracker import _CLAIM_MARKER, LinearMcpTracker
 from kodezart.core.errors import (
+    McpCredentialRefusedError,
     McpTransportError,
     TrackerEnsureConflictError,
     TrackerProtocolError,
@@ -497,6 +498,70 @@ class TestTransportRetry:
         with pytest.raises(McpTransportError):
             await tracker.read_issue(issue_key="T-5")
         assert len(server.tool_calls("get_issue")) == 2
+
+
+class TestARefusedCredentialIsNeverRetried:
+    """The one failure a retry budget cannot buy anything against (KOD-171).
+
+    Measured 2026-09-01: fifty-one minutes into a boot the server began
+    answering 401, and every renewal, scan and tick then spent its whole
+    budget of sleeps re-asking a question whose answer does not change.
+    """
+
+    async def test_the_refusal_stops_the_loop_on_the_attempt_that_met_it(
+        self,
+    ) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-6")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 1},
+        )
+        tracker = tracker_over(server, max_retries=3)
+
+        served = await tracker.read_issue(issue_key="T-6")
+        with pytest.raises(McpCredentialRefusedError):
+            await tracker.read_issue(issue_key="T-6")
+
+        assert served.issue_key == "T-6"
+        # One call served, one refused: no back-off attempt was spent, where
+        # a retried refusal would have made four more.
+        assert len(server.tool_calls("get_issue")) == 2
+
+    async def test_the_refusal_names_the_credential_once(self) -> None:
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-7")],
+            state_types=STATE_TYPES,
+            credential_refused_after={"get_issue": 0},
+        )
+        tracker = tracker_over(server, max_retries=3)
+
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(McpCredentialRefusedError),
+        ):
+            await tracker.read_issue(issue_key="T-7")
+
+        named = [
+            entry for entry in logs if entry["event"] == "tracker_credential_refused"
+        ]
+        assert len(named) == 1
+        assert named[0]["server_name"] == "fake-linear"
+        assert named[0]["tool"] == "get_issue"
+        assert not [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
+
+    async def test_a_transport_failure_is_still_retried_beside_it(self) -> None:
+        """The paired positive: the retried class did not narrow."""
+        server = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-8")],
+            state_types=STATE_TYPES,
+            transport_failures={"get_issue": 2},
+        )
+        tracker = tracker_over(server, max_retries=2)
+
+        issue = await tracker.read_issue(issue_key="T-8")
+
+        assert issue.issue_key == "T-8"
+        assert len(server.tool_calls("get_issue")) == 3
 
     async def test_each_retry_waits_the_configured_backoff(
         self,

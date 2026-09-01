@@ -338,6 +338,48 @@ class McpTransportError(Exception):
         self.tool_name: str | None = tool_name
 
 
+class McpCredentialRefusedError(Exception):
+    """Raised when an MCP server refuses the CREDENTIAL rather than the call.
+
+    Deliberately not an ``McpTransportError`` and deliberately outside every
+    class the tracker adapter retries.  A transport failure is a blip that a
+    second attempt may clear; a refused credential answers every attempt the
+    same way, so retrying one spends a whole budget of sleeps to learn what
+    the first answer already said.
+
+    Measured 2026-09-01 (KOD-171): fifty-one minutes into a live boot the
+    tracker began answering HTTP 401, and claim renewals, gate scans and
+    dispatch ticks each burned their full retry budget on it.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        server_name: str,
+        tool_name: str | None = None,
+    ) -> None:
+        described = server_name if tool_name is None else f"{server_name}/{tool_name}"
+        super().__init__(f"{message} ({described})")
+        self.server_name: str = server_name
+        self.tool_name: str | None = tool_name
+
+
+class TrackerCredentialExpiryError(Exception):
+    """Raised at boot when the tracker credential declares its own expiry.
+
+    Names the FIELD the credential declares it in, because that is the one
+    thing an operator can act on: the vendor accepts a long-lived key in the
+    same header, and nothing in this process refreshes anything.  A boot that
+    accepted an expiring credential would run until the expiry and then turn
+    every tracker call into a refusal, on a board nobody is watching.
+    """
+
+    def __init__(self, message: str, *, field: str) -> None:
+        super().__init__(f"{message} (field: {field})")
+        self.field: str = field
+
+
 class PromptNamespaceCollisionError(Exception):
     """Raised at boot when the three binding namespaces are not disjoint."""
 

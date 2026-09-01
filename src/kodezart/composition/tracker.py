@@ -7,8 +7,12 @@ than defines.
 from dataclasses import dataclass
 
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear_mcp_tracker import (
+    LinearMcpTracker,
+    credential_expiry_field,
+)
 from kodezart.core.config import AppConfig
+from kodezart.core.errors import TrackerCredentialExpiryError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
@@ -36,6 +40,27 @@ def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCall
         auth_scheme=config.tracker_mcp_auth_scheme,
         error_detail_limit=config.tracker_mcp_error_detail_limit,
     )
+
+
+def refuse_expiring_credential(*, backend: TrackerBackend, token: str) -> None:
+    """Refuse a credential that will expire under the boot it is starting.
+
+    The SHAPE knowledge is the adapter's — which credentials its backend
+    takes and which of them declare a lifetime — and the refusal is boot's,
+    because this is the last moment at which a deployment can be told
+    anything.  Nothing in this process refreshes a credential: a boot that
+    accepted an expiring one would serve until the expiry and then answer
+    every tracker call with a refusal, hours later, unattended (KOD-171).
+    """
+    match backend:
+        case TrackerBackend.LINEAR:
+            field = credential_expiry_field(token)
+    if field is not None:
+        raise TrackerCredentialExpiryError(
+            "the tracker credential declares its own expiry and nothing here "
+            "refreshes it; configure a long-lived key instead",
+            field=field,
+        )
 
 
 def build_tracker(
@@ -91,6 +116,10 @@ async def boot_tracker(
     the process serves anything; either one absent logs exactly which is
     absent and leaves the tracker unwired; an unreconcilable mapping aborts
     boot with a typed error naming it.
+
+    The credential is judged BEFORE the dial: one that declares its own
+    expiry is refused here, so a deployment learns it at the second the
+    process starts rather than at the minute the token dies.
     """
     if operation is None or config.tracker_token is None:
         await log.ainfo(
@@ -99,10 +128,9 @@ async def boot_tracker(
             tracker_token_present=config.tracker_token is not None,
         )
         return None
-    caller = make_mcp_tool_caller(
-        config=config,
-        token=config.tracker_token.get_secret_value(),
-    )
+    token = config.tracker_token.get_secret_value()
+    refuse_expiring_credential(backend=config.tracker, token=token)
+    caller = make_mcp_tool_caller(config=config, token=token)
     await caller.open()
     try:
         tracker = build_tracker(config=config, operation=operation, caller=caller)

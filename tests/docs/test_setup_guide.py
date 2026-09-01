@@ -49,6 +49,7 @@ CITED_ERRORS: frozenset[str] = frozenset(
         "OperationConfigError",
         "TrackerBootValidationError",
         "TrackerEnsureConflictError",
+        "TrackerCredentialExpiryError",
     },
 )
 
@@ -151,6 +152,21 @@ def test_every_failure_class_the_guide_names_exists() -> None:
     for name in CITED_ERRORS:
         assert hasattr(errors, name), name
         assert name in guide, name
+
+
+def test_the_guide_states_the_long_lived_credential_requirement() -> None:
+    """KOD-186: the requirement boot enforces is the one the guide states.
+
+    An operator who pastes an OAuth access token gets a service that works
+    for the length of that token and then refuses every tracker call — the
+    2026-09-01 failure.  Boot refuses that credential, so the guide has to
+    say so before step 1 sends anybody to mint one.
+    """
+    guide = _guide()
+
+    assert "long-lived" in guide
+    assert "TrackerCredentialExpiryError" in guide
+    assert hasattr(errors, "TrackerCredentialExpiryError")
 
 
 def _shipped_variables() -> set[str]:
