@@ -189,6 +189,7 @@ def _result(structured: dict[str, object]) -> ResultEvent:
 async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
     executor = MutatingEchoExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -279,6 +280,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
     """KOD-53/AC-20 — re-injection renders the harness's own text, by id."""
     executor = MutatingEchoExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -341,6 +343,7 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
     """The evaluator prompt names every id, every iteration."""
     executor = MutatingEchoExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),

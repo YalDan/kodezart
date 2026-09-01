@@ -229,6 +229,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
     selection = SkillsSelection(mode=SkillsMode.EXPLICIT, allowlist=("code-review",))
     executor = FakeAgentExecutor(events=[])
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),

@@ -148,6 +148,7 @@ def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
     """One engine arm, wired exactly as the composition root wires it."""
     return RalphWorkflowEngine(
         service=AgentService(
+            git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
             persister=FakeChangePersister(),
@@ -287,6 +288,7 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
             # guarantee the resolved set cannot deliver.
             config=AppConfig(ticket_review_mode=TicketReviewMode.REVIEWED),
             agent_service=AgentService(
+                git_base_url="https://github.com",
                 executor=FakeAgentExecutor(events=[]),
                 workspace=FakeWorkspaceProvider(),
                 persister=FakeChangePersister(),

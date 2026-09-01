@@ -53,6 +53,7 @@ def _service() -> tuple[AgentService, FakeAgentExecutor]:
     )
     return (
         AgentService(
+            git_base_url="https://github.com",
             executor=executor,
             workspace=FakeWorkspaceProvider(),
             persister=None,

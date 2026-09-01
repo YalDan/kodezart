@@ -51,6 +51,7 @@ def _make_loop(
     max_reviews: int = 2,
 ) -> TicketGenerationLoop:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=None,
@@ -675,6 +676,7 @@ def _make_loop_with_workspace(
     max_reviews: int = 2,
 ) -> TicketGenerationLoop:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=None,
@@ -858,6 +860,7 @@ def _v5_loop(
 ) -> TicketGenerationLoop:
     """A loop over the lens-declaring set, compiled in *review_mode*."""
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=None,
@@ -1106,6 +1109,7 @@ async def test_the_reviewed_create_dispatch_carries_no_critique_fragment() -> No
 def test_create_only_refuses_a_set_that_declares_no_critic() -> None:
     """The mandate is code-enforced: a set with no critic cannot run this mode."""
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=None,

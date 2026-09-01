@@ -195,6 +195,7 @@ def _engine(
     pr_creator: FakePRCreator | None = None,
 ) -> RalphWorkflowEngine:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),

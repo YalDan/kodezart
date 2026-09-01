@@ -77,6 +77,7 @@ def _make_loop(
     prompts: RecordingPromptProvider | None = None,
 ) -> RalphLoop:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace or FakeWorkspaceProvider(),
         persister=persister,
@@ -315,6 +316,7 @@ async def test_loop_second_iteration_succeeds() -> None:
         ),
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=persister,
@@ -762,6 +764,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
 
     executor = TwoIterTracker()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),

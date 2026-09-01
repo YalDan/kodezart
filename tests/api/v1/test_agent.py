@@ -74,6 +74,7 @@ async def test_stream_query_workspace_failure() -> None:
     app = create_app()
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(fail_acquire="Not a git repository: /bad/path"),
     )
@@ -208,6 +209,7 @@ async def _workflow_client(
     workspace = FakeWorkspaceProvider()
     persister = FakeChangePersister()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -256,6 +258,7 @@ async def create_only_workflow_client() -> AsyncGenerator[AsyncClient, None]:
     """The pipeline running the REAL ticket loop, compiled without a review arm."""
     loop = TicketGenerationLoop(
         service=AgentService(
+            git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
             persister=None,
@@ -344,6 +347,7 @@ async def test_stream_query_handler_catches_executor_error() -> None:
     app = create_app()
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeRaisingExecutor(RuntimeError("transient failure")),
         workspace=FakeWorkspaceProvider(),
     )
@@ -368,6 +372,7 @@ async def test_error_event_carries_exception_class_on_runtime_path() -> None:
     app = create_app()
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeRaisingExecutor(RuntimeError("x")),
         workspace=FakeWorkspaceProvider(),
     )
@@ -410,6 +415,7 @@ async def test_error_event_carries_no_structured_output_payload() -> None:
     )
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeRaisingExecutor(soft_failure),
         workspace=FakeWorkspaceProvider(),
     )
@@ -481,6 +487,7 @@ async def _workflow_client_with(
 ) -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),

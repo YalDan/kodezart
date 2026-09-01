@@ -26,6 +26,7 @@ async def test_stream_workflow_persists_changes() -> None:
         ),
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(
             events=[
                 AssistantTextEvent(text="done", model="m"),
@@ -75,6 +76,7 @@ async def test_stream_passes_output_format() -> None:
         ]
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
     )
@@ -99,6 +101,7 @@ async def test_stream_passes_output_format() -> None:
 
 async def test_stream_propagates_executor_error() -> None:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeRaisingExecutor(RuntimeError("network error")),
         workspace=FakeWorkspaceProvider(),
     )

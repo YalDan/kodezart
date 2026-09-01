@@ -205,6 +205,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -352,6 +353,7 @@ async def test_workflow_e2e_exhausts_iterations(
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -553,6 +555,7 @@ async def test_workflow_e2e_divergent_base_branch(
     executor = _MarkerCapturingExecutor(inner)
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -849,6 +852,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote=remote_name)
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -1127,6 +1131,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=AgentService(
+            git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
             persister=FakeChangePersister(),
@@ -1258,6 +1263,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
     fault_git = FaultInjectingGitService()
     merger = GitBranchMerger(git=fault_git, workspace=workspace, remote="origin")
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=workspace,
         persister=FakeChangePersister(),
@@ -1419,6 +1425,7 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
     }
     executor = ScriptedFakeExecutor(eval_results=[passing_sweep, passing_sweep])
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -1525,6 +1532,7 @@ async def test_the_flipped_defaults_attach_the_sets_lenses_to_the_creator(
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,
         service=AgentService(
+            git_base_url="https://github.com",
             executor=executor,
             workspace=workspace,
             persister=None,
@@ -1656,6 +1664,7 @@ def _remediation_engine(
         committer_email="t@t.dev",
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=GitChangePersister(

@@ -31,8 +31,8 @@ class AgentService:
         self,
         executor: AgentExecutor,
         workspace: WorkspaceProvider,
+        git_base_url: str,
         persister: ChangePersister | None = None,
-        git_base_url: str = "https://github.com",
     ) -> None:
         self._executor: AgentExecutor = executor
         self._workspace: WorkspaceProvider = workspace

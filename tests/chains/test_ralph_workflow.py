@@ -141,6 +141,7 @@ def _make_engine(
             last_commit_sha="a" * 40,
         )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor or FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -661,6 +662,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
 
     executor = FailingCriteriaExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -902,6 +904,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
     (containing 'Test ticket') and NOT the raw user prompt ('fix it')."""
     executor = FakeAgentExecutor(events=[])
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -1283,6 +1286,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         review_results=[failing_review, passing_review],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -1594,6 +1598,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -1750,6 +1755,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         review_results=[passing_review, failing_review],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -2836,6 +2842,7 @@ def _make_engine_with_executor(
 ) -> RalphWorkflowEngine:
     """Build an engine wired to a pre-configured executor (e.g. _Sequential)."""
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -2967,6 +2974,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         ],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -3046,6 +3054,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         ],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -3141,6 +3150,7 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=AgentService(
+            git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
             persister=FakeChangePersister(),
@@ -3473,6 +3483,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
 
     executor = NullBranchNameExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -3800,6 +3811,7 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
         review_results=[failing_review, passing_review],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -4072,6 +4084,7 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=AgentService(
+            git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
             persister=FakeChangePersister(),

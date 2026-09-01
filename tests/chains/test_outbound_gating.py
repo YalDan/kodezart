@@ -52,6 +52,7 @@ def make_engine(
 ) -> RalphWorkflowEngine:
     """Build a workflow engine wired to fakes, with a real gate."""
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor or FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),

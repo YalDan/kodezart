@@ -154,6 +154,7 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
     }
     executor = ScriptedFakeExecutor(eval_results=[passing, passing])
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,

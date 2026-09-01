@@ -338,6 +338,7 @@ def _engine(
     ref_publisher: FakeRefPublisher | None = None,
 ) -> RalphWorkflowEngine:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -668,6 +669,7 @@ def _engine_over_a_real_loop(
 ) -> RalphWorkflowEngine:
     """The workflow with the REAL ralph loop, so grading actually happens."""
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),

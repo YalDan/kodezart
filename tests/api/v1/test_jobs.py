@@ -236,6 +236,7 @@ def _request(prompt: str) -> WorkflowRequest:
 
 def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngine:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -340,6 +341,7 @@ def _mid_run_engine(
     holds it open.
     """
     service = AgentService(
+        git_base_url="https://github.com",
         executor=ScriptedFakeExecutor(
             eval_results=[
                 {
@@ -438,6 +440,7 @@ async def _build_app(
     app = create_app()
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -1557,6 +1560,7 @@ async def test_truncation_flag_reaches_the_status_payload() -> None:
     app = create_app()
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),

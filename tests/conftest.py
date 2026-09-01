@@ -111,6 +111,7 @@ async def agent_client() -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(
             events=[
                 AssistantTextEvent(text="analysis complete", model="test-model"),
