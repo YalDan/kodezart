@@ -1,10 +1,13 @@
 """Integration tests for SubprocessGitService with real git repos."""
 
+import ast
 import asyncio
+import inspect
 from pathlib import Path
 
 import pytest
 
+from kodezart.adapters import subprocess_git_service
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 
 
@@ -537,3 +540,100 @@ async def test_run_output_failure_with_both_streams_empty_reports_exit_code(
             cwd=str(git_repo),
         )
     assert str(exc_info.value) == "git grep --quiet failed: exit code 1"
+
+
+# ---------------------------------------------------------------------------
+# _run_with_exit_codes failure messages, and the uniformity guard over them
+# ---------------------------------------------------------------------------
+
+
+async def test_run_with_exit_codes_both_streams_empty_reports_exit_code(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """An unexpected exit with both streams empty still names the exit code."""
+    with pytest.raises(RuntimeError) as exc_info:
+        await git_service._run_with_exit_codes(
+            ["git", "grep", "--quiet", "zzz-no-such-pattern-zzz"],
+            cwd=str(git_repo),
+            allowed=frozenset({0}),
+        )
+    message = str(exc_info.value)
+    assert message == "git grep --quiet exited 1 (allowed [0]): exit code 1"
+    assert not message.endswith(": ")
+
+
+async def test_run_with_exit_codes_non_empty_stderr_message_is_unchanged(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """The stderr-carrying message keeps the exact text it has always had."""
+    cmd = ["git", "merge-base", "--is-ancestor", "no-such-ref", "HEAD"]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=str(git_repo),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, raw_stderr = await proc.communicate()
+    stderr_text = raw_stderr.decode().strip()
+    assert stderr_text
+    assert proc.returncode == 128
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await git_service._run_with_exit_codes(
+            cmd,
+            cwd=str(git_repo),
+            allowed=frozenset({0, 1}),
+        )
+    assert str(exc_info.value) == (
+        f"git merge-base --is-ancestor exited 128 (allowed [0, 1]): {stderr_text}"
+    )
+
+
+_STREAM_NAMES = frozenset({"stdout", "stderr"})
+_DETAIL_HELPER = "_failure_detail"
+
+
+def _bare_stream_message_sites(source: str) -> list[str]:
+    """Every ``function:line`` where a message f-string interpolates a raw stream.
+
+    ``_failure_detail`` is the one place allowed to read the streams directly;
+    every other runner must route its failure text through it.
+    """
+    sites: list[str] = []
+    for func in ast.walk(ast.parse(source)):
+        if not isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if func.name == _DETAIL_HELPER:
+            continue
+        for piece in ast.walk(func):
+            if not isinstance(piece, ast.JoinedStr):
+                continue
+            for value in piece.values:
+                if not isinstance(value, ast.FormattedValue):
+                    continue
+                names = {
+                    node.id
+                    for node in ast.walk(value.value)
+                    if isinstance(node, ast.Name)
+                }
+                if names & _STREAM_NAMES:
+                    sites.append(f"{func.name}:{value.lineno}")
+    return sites
+
+
+def test_no_runner_interpolates_a_bare_stream_into_a_failure_message() -> None:
+    """Every runner's failure text comes from the shared helper, not a raw stream."""
+    source = inspect.getsource(subprocess_git_service)
+    assert _bare_stream_message_sites(source) == []
+
+
+def test_bare_stream_guard_catches_a_deliberate_violation() -> None:
+    """The guard fails on a runner that interpolates a stream itself."""
+    violation = (
+        "class SubprocessGitService:\n"
+        "    async def _run_with_exit_codes(self, cmd, cwd, allowed):\n"
+        "        stdout, stderr = await proc.communicate()\n"
+        "        msg = f'{cmd} failed: {stderr.decode().strip()}'\n"
+        "        raise RuntimeError(msg)\n"
+    )
+    assert _bare_stream_message_sites(violation) == ["_run_with_exit_codes:4"]

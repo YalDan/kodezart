@@ -473,11 +473,14 @@ class SubprocessGitService:
             env=process_env,
         )
         stdout, stderr = await proc.communicate()
-        returncode = proc.returncode if proc.returncode is not None else -1
+        returncode = (
+            proc.returncode if proc.returncode is not None else _UNKNOWN_EXIT_CODE
+        )
         if returncode not in allowed:
+            detail = self._failure_detail(stdout, stderr, proc.returncode)
             msg = (
                 f"{' '.join(cmd[:3])} exited {returncode} "
-                f"(allowed {sorted(allowed)}): {stderr.decode().strip()}"
+                f"(allowed {sorted(allowed)}): {detail}"
             )
             raise RuntimeError(msg)
         return returncode, stdout.decode().strip()
