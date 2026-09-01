@@ -1,4 +1,4 @@
-"""The HTTP MCP transport speaks exactly one error type and two result sources.
+"""The HTTP MCP transport speaks two error types and two result sources.
 
 Every way a tool call can fail — session never opened, the server
 reporting a tool error, a result carrying no readable structured object,
@@ -6,6 +6,11 @@ or the network-layer call itself raising — surfaces as
 ``McpTransportError``.  That single type is what makes the adapter's
 retry loop reachable in production (KOD-130 AC-2): a failure class the
 transport did not claim would bypass the knobs entirely.
+
+The one exception is the failure a retry cannot clear.  A server that
+refused the CREDENTIAL answers every attempt the same way, so it leaves
+here as ``McpCredentialRefusedError`` and the retry loop never sees it
+(KOD-171).
 
 The structured result comes from either source, in order:
 ``structuredContent`` when present, else a single text-content block
@@ -16,13 +21,15 @@ Every refusal names its ground; no silent arm.
 """
 
 from collections.abc import Mapping
+from http import HTTPStatus
 from typing import Final
 
+import httpx
 import pytest
 from mcp.types import CallToolResult, TextContent
 
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import McpCredentialRefusedError, McpTransportError
 
 _FIXTURE_TOKEN: Final[str] = "fixture-tracker-token"
 _ERROR_DETAIL_LIMIT: Final[int] = 500
@@ -79,6 +86,65 @@ async def test_a_network_failure_mid_call_surfaces_as_the_transport_error() -> N
 
     assert isinstance(excinfo.value.__cause__, ConnectionResetError)
     assert excinfo.value.tool_name == "get_issue"
+
+
+async def answer_with(caller: HttpMcpToolCaller, status: HTTPStatus) -> None:
+    """Let the server answer one request with *status*.
+
+    Driven through the caller's OWN client factory rather than around it,
+    so what is exercised is the wiring the live session runs on: the MCP
+    client raises its status error inside the task group that drives the
+    session, and this hook is the only place the status is still legible.
+    """
+    async with caller._http_client() as client:
+        for hook in client.event_hooks["response"]:
+            await hook(httpx.Response(status_code=status))
+
+
+class TestARefusedCredential:
+    """HTTP 401 is its own class, outside everything a caller retries.
+
+    Measured 2026-09-01 (KOD-171): the tracker began answering 401 mid-run
+    and every renewal, scan and tick burned its full retry budget, because
+    the transport had exactly one failure class and the retry loop caught
+    it.
+    """
+
+    async def test_a_refused_credential_is_not_the_retried_transport_class(
+        self,
+    ) -> None:
+        caller = caller_fixture()
+        caller._session = _StubSession()
+        await answer_with(caller, HTTPStatus.UNAUTHORIZED)
+
+        with pytest.raises(McpCredentialRefusedError) as excinfo:
+            await caller.call_tool(name="get_issue", arguments={})
+
+        assert not isinstance(excinfo.value, McpTransportError)
+        assert excinfo.value.server_name == "fixture-server"
+        assert excinfo.value.tool_name == "get_issue"
+
+    async def test_any_other_refused_status_stays_the_transport_class(self) -> None:
+        """The paired negative: a status that is not 401 changes nothing.
+
+        A forbidden request, a bad gateway or a rate limit are all failures
+        a second attempt may clear, and classifying one as a dead
+        credential would stop a run that had nothing wrong with its token.
+        """
+        caller = caller_fixture()
+        caller._session = _StubSession()
+        await answer_with(caller, HTTPStatus.FORBIDDEN)
+
+        with pytest.raises(McpTransportError):
+            await caller.call_tool(name="get_issue", arguments={})
+
+    async def test_an_unrefused_session_is_the_transport_class(self) -> None:
+        """No refusal observed at all: the ordinary failure is unchanged."""
+        caller = caller_fixture()
+        caller._session = _StubSession()
+
+        with pytest.raises(McpTransportError):
+            await caller.call_tool(name="get_issue", arguments={})
 
 
 class TestReportedToolErrors:

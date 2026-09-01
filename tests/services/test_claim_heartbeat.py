@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import pytest
 import structlog
 
+from kodezart.core.errors import McpCredentialRefusedError
 from kodezart.domain.errors import TransientAPIError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
@@ -39,6 +40,9 @@ from tests.fakes import (
 ISSUE = "K-1"
 HOLDER = "pass-a"
 PRE_CLAIM_STATE = "Todo"
+
+#: The MCP server a refused credential is reported against.
+REFUSING_SERVER = "fixture-tracker"
 
 #: Short enough that the run below outlives it several times over.
 LEASE_SECONDS = 60.0
@@ -117,6 +121,25 @@ class RaisingRenewalTracker(FakeTrackerPort):
             issue_key=issue_key,
             holder=holder,
             lease_seconds=lease_seconds,
+        )
+
+
+class RefusedCredentialTracker(FakeTrackerPort):
+    """A tracker whose renewal writes meet a credential the server refuses."""
+
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        self.renewals.append((issue_key, holder))
+        await asyncio.sleep(0)
+        raise McpCredentialRefusedError(
+            "the MCP server refused the configured credential",
+            server_name=REFUSING_SERVER,
+            tool_name="save_comment",
         )
 
 
@@ -365,6 +388,96 @@ class TestARenewalWriteThatFails:
             await run_until(tracker, renewals=RENEWALS_PAST_THE_LEASE)
 
         assert await tracker.active_claim(issue_key=ISSUE) is None
+
+
+class TestARenewalThatMeetsARefusedCredential:
+    """A dead credential is its own event, never a write that failed (KOD-171).
+
+    The distinction is what an operator does next.  A failed write is
+    survivable by construction — the interval is a fraction of the lease —
+    and the right response is to wait.  A refused credential clears on
+    nothing this process does, and every renewal after it would report the
+    same thing on the same cadence for the rest of the run.
+    """
+
+    async def test_the_refusal_is_its_own_event_and_not_a_renewal_failure(
+        self,
+    ) -> None:
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = RefusedCredentialTracker(
+            issues=[make_tracker_issue(ISSUE)],
+            clock=clock,
+        )
+        await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        with structlog.testing.capture_logs() as logs:
+            async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
+                await run_until(tracker, renewals=1)
+                await settle()
+
+        refused = [
+            entry
+            for entry in logs
+            if entry["event"] == "claim_renewal_credential_refused"
+        ]
+        assert len(refused) == 1
+        assert refused[0]["issue_key"] == ISSUE
+        assert refused[0]["holder"] == HOLDER
+        assert refused[0]["server_name"] == REFUSING_SERVER
+        assert not [entry for entry in logs if entry["event"] == "claim_renewal_failed"]
+
+    async def test_the_loop_stops_on_it_rather_than_repeating_it_every_interval(
+        self,
+    ) -> None:
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = RefusedCredentialTracker(
+            issues=[make_tracker_issue(ISSUE)],
+            clock=clock,
+        )
+        await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
+            await run_until(tracker, renewals=1)
+            await settle()
+
+        assert tracker.renewals == [(ISSUE, HOLDER)]
+
+    async def test_a_transient_write_failure_still_reports_the_generic_event(
+        self,
+    ) -> None:
+        """The paired positive: the ordinary failure arm did not move."""
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = RaisingRenewalTracker(
+            issues=[make_tracker_issue(ISSUE)],
+            clock=clock,
+            failures=1,
+        )
+        await tracker.claim_issue(
+            issue_key=ISSUE,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        with structlog.testing.capture_logs() as logs:
+            async with heartbeat(tracker, clock=clock).renewing(issue_key=ISSUE):
+                await run_until(tracker, renewals=2)
+
+        assert [
+            entry["event"] for entry in logs if entry["event"] == "claim_renewal_failed"
+        ]
+        assert not [
+            entry
+            for entry in logs
+            if entry["event"] == "claim_renewal_credential_refused"
+        ]
 
 
 class TestTheWatcherDrivesTheHeartbeat:

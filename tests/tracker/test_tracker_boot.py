@@ -1,5 +1,7 @@
 """Boot validation: one bad mapping aborts startup naming exactly that entry."""
 
+import json
+from base64 import urlsafe_b64encode
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import ClassVar
@@ -10,13 +12,20 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
-from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.adapters.linear_mcp_tracker import (
+    LinearMcpTracker,
+    credential_expiry_field,
+)
 from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.composition.tracker import boot_tracker, refuse_expiring_credential
+from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     PromptRenderError,
     TrackerBootValidationError,
+    TrackerCredentialExpiryError,
     TrackerEnsureConflictError,
 )
+from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import TrackerPort
 from kodezart.services.tracker_boot import (
@@ -48,6 +57,7 @@ from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     MappingKind,
     MappingRef,
+    TrackerBackend,
 )
 from tests.fakes import FakeLinearMcpServer, FakeMcpDocument, FakeTrackerPort
 from tests.prompt_census import configured_investigation_cap
@@ -820,3 +830,89 @@ class TestWorkflowStatesResolvePerTeam:
         )
 
         assert await tracker.resolve_mappings(refs=[nowhere]) == (nowhere,)
+
+
+# ---------------------------------------------------------------------------
+# The credential boot refuses (KOD-171)
+# ---------------------------------------------------------------------------
+
+
+def _jwt(claims: Mapping[str, object]) -> str:
+    """A credential in the shape an OAuth access token arrives in.
+
+    Shape only: the signature is a fixture string, because nothing reads
+    it.  What boot reads is the claim set, which is what says whether this
+    credential outlives the process it is starting.
+    """
+
+    def segment(payload: Mapping[str, object]) -> str:
+        encoded = urlsafe_b64encode(json.dumps(payload).encode()).decode()
+        return encoded.rstrip("=")
+
+    header = segment({"alg": "HS256", "typ": "JWT"})
+    return f"{header}.{segment(claims)}.a-fixture-signature"
+
+
+#: The long-lived arm: a personal key, opaque and carrying no claims at all.
+LONG_LIVED_KEY = "lin_api_" + "0" * 40
+
+#: The arm measured on 2026-09-01: a credential that states its own expiry.
+EXPIRING_TOKEN = _jwt({"sub": "fixture-actor", "exp": 1_900_000_000})
+
+
+class TestTheCredentialBootRefuses:
+    """A credential that dies under the boot is refused before the dial.
+
+    Measured 2026-09-01 (KOD-171): a boot ran for fifty-one minutes and then
+    met HTTP 401 on every tracker call for the rest of its life.  Nothing
+    here refreshes a credential, so the only moment this is actionable is
+    startup.
+    """
+
+    def test_an_expiry_bearing_credential_is_refused_naming_its_field(self) -> None:
+        with pytest.raises(TrackerCredentialExpiryError) as caught:
+            refuse_expiring_credential(
+                backend=TrackerBackend.LINEAR,
+                token=EXPIRING_TOKEN,
+            )
+
+        assert caught.value.field == "exp"
+        assert "exp" in str(caught.value)
+        assert "long-lived" in str(caught.value)
+
+    def test_a_long_lived_key_is_accepted(self) -> None:
+        """The paired positive: the credential the guide tells you to mint."""
+        assert (
+            refuse_expiring_credential(
+                backend=TrackerBackend.LINEAR,
+                token=LONG_LIVED_KEY,
+            )
+            is None
+        )
+
+    def test_a_credential_that_declares_no_expiry_is_accepted(self) -> None:
+        """A claim set is not itself the problem; an expiry in it is."""
+        assert credential_expiry_field(_jwt({"sub": "fixture-actor"})) is None
+
+    def test_a_credential_that_is_not_a_claim_set_is_not_guessed_about(self) -> None:
+        """Three dotted segments that decode to nothing declare nothing."""
+        assert credential_expiry_field("not.a.jwt") is None
+
+    async def test_boot_refuses_the_credential_before_it_dials_anything(self) -> None:
+        """The refusal is the boot's FIRST act, not a failed connection.
+
+        The endpoint below is unreachable by construction, so a boot that
+        dialled first would raise the transport's failure instead of this
+        one.
+        """
+        config = AppConfig(
+            tracker_token=EXPIRING_TOKEN,
+            tracker_mcp_server_url="https://tracker.invalid/mcp",
+        )
+
+        with pytest.raises(TrackerCredentialExpiryError):
+            await boot_tracker(
+                config=config,
+                operation=operation_config(),
+                log=get_logger(__name__),
+            )

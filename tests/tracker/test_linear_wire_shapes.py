@@ -35,6 +35,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
@@ -245,6 +246,21 @@ LIST_COMMENTS: Mapping[str, object] = {
             "author": {"id": APPROVER_ID, "name": APPROVER_NAME},
             "onBehalfOf": None,
         },
+        # The entry the dispatch tick died on, 2026-09-01 (KOD-172).  The
+        # key is PRESENT and carries ``null``: the vendor is saying this
+        # comment has no author — a removed user, or an integration — not
+        # declining to say anything about authorship.
+        {
+            "id": "1ac11111-0000-4000-8000-000000000002",
+            "body": "a fixture comment the vendor attributes to nobody",
+            "createdAt": "2031-02-11T08:15:02.200Z",
+            "updatedAt": "2031-02-11T08:15:02.190Z",
+            "parentId": None,
+            "resolvedAt": None,
+            "quotedText": None,
+            "author": None,
+            "onBehalfOf": None,
+        },
     ],
     "hasNextPage": False,
 }
@@ -349,6 +365,41 @@ def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
         max_retries=0,
         retry_backoff_factor=0.0,
     )
+
+
+class MalformedAuthorCaller(CaptureCaller):
+    """The captures, with the comment listing's author present but malformed.
+
+    The paired negative of the null-author arm at the port (KOD-185): the
+    key is there and carries an object, and the object lacks the name the
+    wire model requires.
+    """
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if name != "list_comments":
+            return await super().call_tool(name=name, arguments=arguments)
+        self.calls.append((name, dict(arguments)))
+        return {
+            "comments": [
+                {
+                    "id": "1ac11111-0000-4000-8000-000000000003",
+                    "body": "a fixture comment",
+                    "createdAt": "2031-02-11T08:15:01.200Z",
+                    "updatedAt": "2031-02-11T08:15:01.190Z",
+                    "parentId": None,
+                    "resolvedAt": None,
+                    "quotedText": None,
+                    "author": {"id": APPROVER_ID},
+                    "onBehalfOf": None,
+                },
+            ],
+            "hasNextPage": False,
+        }
 
 
 class TestListingEnvelopes:
@@ -542,15 +593,58 @@ class TestDocumentReadShape:
 
 
 class TestCommentShape:
-    """The comment names its author and does not name its issue."""
+    """The comment names its author, or names nobody, and never its issue."""
 
     def test_the_comment_listing_validates_and_carries_an_author_object(self) -> None:
         listing = LinearCommentListWire.model_validate(LIST_COMMENTS)
-        (comment,) = listing.comments
+        comment, _ = listing.comments
+        assert comment.author is not None
         assert comment.author.name == APPROVER_NAME
         assert comment.author.id == APPROVER_ID
         assert comment.body == "a fixture comment"
         assert comment.created_at == datetime(2031, 2, 11, 8, 15, 1, 200000, tzinfo=UTC)
+
+    def test_the_captured_null_author_entry_validates(self) -> None:
+        """The payload the boot died on (KOD-172), read as its own shape.
+
+        ``author`` was required, so the whole listing failed validation and
+        the dispatch tick reading it died — over one comment out of nine.
+        """
+        listing = LinearCommentListWire.model_validate(LIST_COMMENTS)
+        _, unattributed = listing.comments
+
+        assert unattributed.author is None
+        assert unattributed.body == "a fixture comment the vendor attributes to nobody"
+
+    def test_an_author_that_is_present_but_malformed_still_refuses(self) -> None:
+        """The paired negative: admitting ``null`` admitted nothing else.
+
+        ``null`` is the vendor saying there is no author.  An object
+        missing the name, or a bare string where an object belongs, is a
+        payload this module has not measured — reading it would be the
+        guess the whole wire layer exists to refuse.
+        """
+        for malformed in ({"id": APPROVER_ID}, APPROVER_NAME, []):
+            with pytest.raises(ValidationError):
+                LinearCommentWire.model_validate(
+                    {
+                        "id": "1ac11111-0000-4000-8000-000000000003",
+                        "body": "a fixture comment",
+                        "createdAt": "2031-02-11T08:15:01.200Z",
+                        "author": malformed,
+                    },
+                )
+
+    def test_an_absent_author_key_is_not_the_same_as_a_null_one(self) -> None:
+        """A payload that dropped the key says nothing about authorship."""
+        with pytest.raises(ValidationError):
+            LinearCommentWire.model_validate(
+                {
+                    "id": "1ac11111-0000-4000-8000-000000000004",
+                    "body": "a fixture comment",
+                    "createdAt": "2031-02-11T08:15:01.200Z",
+                },
+            )
 
     def test_the_invented_user_and_issue_id_comment_no_longer_validates(self) -> None:
         """Two required fields the vendor never sends — the boot-killer class."""
@@ -600,9 +694,28 @@ class TestTheAdapterOverTheCaptures:
         comments = await tracker_over(CaptureCaller()).list_comments(
             issue_key="FIX-12",
         )
-        (comment,) = comments
-        assert comment.author_key == APPROVER_NAME
-        assert comment.issue_key == "FIX-12"
+        attributed, unattributed = comments
+        assert attributed.author_key == APPROVER_NAME
+        assert attributed.issue_key == "FIX-12"
+        # The vendor attributed the second one to nobody, and the port says
+        # exactly that rather than putting a name there (KOD-172).
+        assert unattributed.author_key is None
+        assert unattributed.issue_key == "FIX-12"
+
+    async def test_a_malformed_author_refuses_with_the_protocol_error(self) -> None:
+        """KOD-185 at the port: admitting ``null`` admitted nothing else.
+
+        The wire model's refusal is the adapter's ``TrackerProtocolError``
+        naming the tool, and it is the whole listing that is refused — no
+        comment is read past an author the vendor half-sent.
+        """
+        with pytest.raises(TrackerProtocolError) as caught:
+            await tracker_over(MalformedAuthorCaller()).list_comments(
+                issue_key="FIX-12",
+            )
+
+        assert caught.value.tool == "list_comments"
+        assert "author" in caught.value.detail
 
     async def test_the_document_read_answers_with_its_text(self) -> None:
         content = await tracker_over(CaptureCaller()).read_document(

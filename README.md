@@ -431,8 +431,18 @@ Put the value in `KODEZART_TRACKER_TOKEN` in the service's environment and
 nowhere else: the operation config is `extra="forbid"`, so a token key in that
 file fails the load rather than sitting in a repository.
 
-*Observable result:* the variable is set in the process environment, and
-`grep -r` for the value across the repository finds nothing.
+**It must be a long-lived key, and boot enforces that.** The vendor accepts
+either a personal key or an OAuth access token in the same header, and only the
+first one lives longer than a run: an OAuth access token states its own expiry
+and this service refreshes nothing, so pasting one buys a process that works
+until the token dies and then answers every tracker call with a refusal — the
+failure measured on 2026-09-01, fifty-one minutes into a boot. A credential that
+declares an expiry is refused at startup with `TrackerCredentialExpiryError`
+naming the field it read it from, before the service dials anything.
+
+*Observable result:* the variable is set in the process environment, the service
+boots without `TrackerCredentialExpiryError`, and `grep -r` for the value across
+the repository finds nothing.
 
 **What a personal key costs, stated plainly.** Every write the service performs
 is attributed to **the person who owns the key**. On the board a machine write
@@ -599,6 +609,7 @@ it could not resolve. Nothing runs until you fix it.
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
 | `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
+| `TrackerCredentialExpiryError` naming a field | C | `KODEZART_TRACKER_TOKEN` holds a credential that declares its own expiry. Mint the long-lived personal key from step 1 and set that instead; nothing here refreshes a token. |
 
 *Observable result:* one of the three states, identified by name, with no line
 in the startup log left unaccounted for.

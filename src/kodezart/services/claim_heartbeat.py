@@ -42,6 +42,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from traceback import format_exception
 
+from kodezart.core.errors import McpCredentialRefusedError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 
@@ -121,6 +122,23 @@ class ClaimHeartbeat:
                 )
             except asyncio.CancelledError:
                 raise
+            except McpCredentialRefusedError as exc:
+                # A third arm, and it is neither of the two above.  A write
+                # that FAILED is survivable by design — the interval is a
+                # fraction of the lease so several may fail — and a renewal
+                # REFUSED means the claim moved.  Here the tracker refused
+                # the credential: no later renewal can succeed, and every
+                # interval from now on would repeat this line forever.  It
+                # is said once, loudly, and the lease is left to lapse,
+                # which is the recovery this module rests on (KOD-171).
+                await self._log.aerror(
+                    "claim_renewal_credential_refused",
+                    issue_key=issue_key,
+                    holder=self._holder,
+                    server_name=exc.server_name,
+                    error=str(exc),
+                )
+                return
             except Exception as exc:
                 await self._log.aerror(
                     "claim_renewal_failed",

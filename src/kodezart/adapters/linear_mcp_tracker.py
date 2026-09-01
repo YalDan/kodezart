@@ -25,7 +25,9 @@ records stays the order every claimant computes from it.
 """
 
 import asyncio
+import json
 import re
+from base64 import urlsafe_b64decode
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -34,6 +36,7 @@ from typing import assert_never
 from pydantic import ValidationError
 
 from kodezart.core.errors import (
+    McpCredentialRefusedError,
     McpTransportError,
     TrackerBootValidationError,
     TrackerEnsureConflictError,
@@ -118,6 +121,16 @@ _SCOPE_PROBE_LIMIT = 1
 #: a scope is missing, so matching one would invent a diagnosis out of a
 #: failure nobody made.
 _SCOPE_REFUSAL_MARKER = "auth_insufficient_scope"
+
+#: The JWT wire format, which is what an expiry-bearing credential is: three
+#: base64url segments, the middle one the claim set, padded to the base64
+#: quantum.  Format constants, not knobs — a deployment cannot choose them.
+_JWT_SEGMENTS = 3
+_JWT_PAYLOAD_SEGMENT = 1
+_BASE64_QUANTUM = 4
+
+#: The registered claim a credential states its own lifetime in.
+_JWT_EXPIRY_CLAIM = "exp"
 
 _CLAIM_MARKER = re.compile(
     r"<!--\s*kodezart-claim\s+holder=\"(?P<holder>[^\"]+)\"\s+"
@@ -253,6 +266,36 @@ def _without_mention_syntax(identity: str) -> str:
     would answer it silently for every workspace.
     """
     return identity.removeprefix("@")
+
+
+def credential_expiry_field(token: str) -> str | None:
+    """The field a Linear bearer credential declares its own expiry in, if any.
+
+    The vendor takes two kinds of credential in the same header, measured
+    2026-09-01 (KOD-171): a long-lived personal key, which carries no
+    expiry at all, and an OAuth access token, which is a JWT and states its
+    lifetime in the registered ``exp`` claim of its payload.  Only the
+    second kind can die under a running boot, and this process refreshes
+    nothing — so this is the one distinction boot has to make, and it is
+    made from the credential's own bytes rather than by asking the server
+    a question it answers identically for both.
+
+    A token this cannot read as a JWT declares no expiry and is not
+    guessed about: what is returned is the claim's NAME, so a refusal can
+    tell an operator which field it read.
+    """
+    segments = token.split(".")
+    if len(segments) != _JWT_SEGMENTS:
+        return None
+    payload = segments[_JWT_PAYLOAD_SEGMENT]
+    padding = "=" * (-len(payload) % _BASE64_QUANTUM)
+    try:
+        claims = json.loads(urlsafe_b64decode(payload + padding))
+    except ValueError:
+        return None
+    if isinstance(claims, dict) and _JWT_EXPIRY_CLAIM in claims:
+        return _JWT_EXPIRY_CLAIM
+    return None
 
 
 def _utc_now() -> datetime:
@@ -1448,6 +1491,17 @@ class LinearMcpTracker:
         while True:
             try:
                 return await self._caller.call_tool(name=tool, arguments=arguments)
+            except McpCredentialRefusedError as exc:
+                # Named once and raised, never retried: the refusal is the
+                # same on every attempt, so a budget spent on it buys the
+                # first answer again and delays the one event an operator
+                # can act on by the whole back-off (KOD-171).
+                await self._log.aerror(
+                    "tracker_credential_refused",
+                    tool=tool,
+                    server_name=exc.server_name,
+                )
+                raise
             except (McpTransportError, TransientAPIError):
                 if attempt >= self._max_retries:
                     raise
@@ -1579,11 +1633,17 @@ class LinearMcpTracker:
         one place it is known for certain.  The author is the name the
         vendor attributes the comment to, which is the only authorship
         this surface attests at all.
+
+        A comment the vendor attributes to nobody keeps that state whole:
+        the port's ``author_key`` is ``None`` and no name is put in its
+        place.  There is nothing to substitute that would be true, and a
+        substitution would say a removed user's words were somebody
+        else's (KOD-172).
         """
         return TrackerComment(
             comment_key=wire.id,
             issue_key=issue_key,
-            author_key=wire.author.name,
+            author_key=None if wire.author is None else wire.author.name,
             body=wire.body,
             created_at=wire.created_at,
         )
