@@ -425,9 +425,9 @@ class AppConfig(BaseSettings):
             "arrives in, measured 2026-09-01 (KOD-171) — never sends the "
             "close its reader is waiting for, so without this bound the "
             "call in flight waits forever and the pass holding it never "
-            "returns. Bounded above by what the transport gives one HTTP "
-            "exchange, so a call can never outlast the connection carrying "
-            "it."
+            "returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that "
+            "bound is the transport's, on the HTTP exchange; this one is the "
+            "session's, on the wait for one answer."
         ),
     )
     tracker_mcp_error_detail_limit: int = Field(

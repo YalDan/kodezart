@@ -475,7 +475,7 @@ class TestAFailedPassGivesTheWakeUpBack:
         assert [scan.updated_since for scan in tracker.scans] == [None, None]
 
     async def test_a_refused_credential_gives_the_wake_up_back_too(self) -> None:
-        """The class the gate names rather than leaking (KOD-277).
+        """A refused credential is a failed pass, and the window comes back.
 
         A credential refusal beneath the gate is a pass that read nothing,
         so the window it was woken for is owed back exactly as a transport

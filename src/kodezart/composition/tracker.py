@@ -30,7 +30,7 @@ from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 CREDENTIAL_FIELD: Final[str] = "KODEZART_TRACKER_TOKEN"
 
 
-def make_mcp_tool_caller(*, config: AppConfig, token: str) -> HttpMcpToolCaller:
+def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
     """The vendor MCP transport this deployment dials.
 
     One server definition, one consumer: this factory, which builds the

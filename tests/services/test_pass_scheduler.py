@@ -87,11 +87,9 @@ class Exploder:
 class CredentialRefuser:
     """A pass whose tracker refuses the credential on every tick.
 
-    The class the gate now names rather than leaking (KOD-277) still
-    reaches the scheduler from everything BENEATH the gate — the
-    dispatcher's own reads — and a refused credential answers every tick
-    the same way, so the loop must keep reporting it by name rather than
-    ending on it.
+    A refused credential reaches the scheduler from the dispatcher's own
+    reads, and it answers every tick the same way, so the loop must keep
+    reporting it by name rather than ending on it.
     """
 
     def __init__(self) -> None:
