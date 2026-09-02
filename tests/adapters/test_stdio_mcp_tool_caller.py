@@ -24,6 +24,8 @@ from typing import Final, Self
 
 import pytest
 import structlog.testing
+from mcp.shared.exceptions import McpError
+from mcp.types import INVALID_PARAMS
 
 from kodezart.adapters.stdio_mcp_tool_caller import StdioMcpToolCaller
 from kodezart.core.errors import McpSessionClosedError, McpTransportError
@@ -86,6 +88,7 @@ def _caller(
     refuse_after: str = "",
     refuse_spawns: str = "",
     tool_error: str = "",
+    rpc_error_spawns: str = "",
     death: _Death | None = None,
 ) -> tuple[StdioMcpToolCaller, Path]:
     """A caller over the fake server, and the file counting its spawns."""
@@ -101,6 +104,7 @@ def _caller(
             "FAKE_MCP_REFUSE_AFTER": refuse_after,
             "FAKE_MCP_REFUSE_SPAWNS": refuse_spawns,
             "FAKE_MCP_TOOL_ERROR": tool_error,
+            "FAKE_MCP_RPC_ERROR_SPAWNS": rpc_error_spawns,
             "FAKE_MCP_EXIT_TRIGGER": "" if death is None else str(death.trigger),
             "FAKE_MCP_EXIT_MARKER": "" if death is None else str(death.marker),
         },
@@ -238,6 +242,79 @@ async def test_a_tool_error_the_server_composed_is_not_a_closed_session(
     assert not isinstance(caught.value, McpSessionClosedError)
     assert refusal in str(caught.value)
     assert _spawns(spawn_log) == 1
+
+
+async def test_a_protocol_error_the_server_composed_is_not_a_closed_session(
+    tmp_path: Path,
+) -> None:
+    """The discriminator's other arm at the client's own seam (KOD-192).
+
+    A JSON-RPC error the server SENT reaches the caller as the very class
+    a dead pipe arrives in, under a different code.  The server is there
+    and said no: the call leaves as the plain transport error with the
+    server's own error as its cause, and nothing is reopened — a caller
+    that read it as a death would respawn the server once per bad
+    argument, and the record path would file a payload defect under
+    "session closed".
+    """
+    caller, spawn_log = _caller(tmp_path, calls=1, rpc_error_spawns="1")
+    await caller.open()
+    try:
+        with pytest.raises(McpTransportError) as caught:
+            await caller.call_tool(name=TOOL, arguments={})
+    finally:
+        await caller.close()
+
+    assert not isinstance(caught.value, McpSessionClosedError)
+    cause = caught.value.__cause__
+    assert isinstance(cause, McpError)
+    assert cause.error.code == INVALID_PARAMS
+    assert TOOL in cause.error.message
+    assert _spawns(spawn_log) == 1
+
+
+async def test_a_reopened_server_that_answers_with_a_protocol_error_is_there(
+    tmp_path: Path,
+) -> None:
+    """The same discriminator on the reopened session's own call.
+
+    The server dies under the first call and the fresh process answers
+    with a JSON-RPC error: the reopen is paid for once, and the answer
+    leaves as the plain transport error, never as a second death.
+    """
+    caller, spawn_log = _caller(tmp_path, calls=0, rpc_error_spawns="2")
+    await caller.open()
+    try:
+        with pytest.raises(McpTransportError) as caught:
+            await caller.call_tool(name=TOOL, arguments={})
+    finally:
+        await caller.close()
+
+    assert not isinstance(caught.value, McpSessionClosedError)
+    assert "reopened session" in str(caught.value)
+    assert isinstance(caught.value.__cause__, McpError)
+    assert _spawns(spawn_log) == 2
+
+
+async def test_a_reopened_session_that_dies_again_is_a_death_and_not_a_loop(
+    tmp_path: Path,
+) -> None:
+    """The paired negative: the fresh process dies under the retried call.
+
+    That is the closed-session class again — and it is raised, not
+    answered with a third spawn: one reopen per call, whatever the second
+    process does.
+    """
+    caller, spawn_log = _caller(tmp_path, calls=0)
+    await caller.open()
+    try:
+        with pytest.raises(McpSessionClosedError) as caught:
+            await caller.call_tool(name=TOOL, arguments={})
+    finally:
+        await caller.close()
+
+    assert "reopened session" in str(caught.value)
+    assert _spawns(spawn_log) == 2
 
 
 async def test_a_caller_nobody_opened_refuses_without_spawning(

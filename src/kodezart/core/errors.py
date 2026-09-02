@@ -339,7 +339,7 @@ class McpTransportError(Exception):
 
 
 class McpSessionClosedError(McpTransportError):
-    """Raised when the SESSION could not carry the call, refusal or not.
+    """Raised when the SESSION is gone or could not be brought up.
 
     The discriminator the record path reads (KOD-177): a server that
     ANSWERED — with a result or with a tool error — is a server that is

@@ -82,6 +82,17 @@ def _is_closed_session(exc: Exception) -> bool:
     return isinstance(exc, McpError) and exc.error.code == CONNECTION_CLOSED
 
 
+def _failure_of(exc: Exception) -> type[McpTransportError]:
+    """The class a failed call leaves as: the session's death, or its answer.
+
+    A closed session is the subclass the record path reads as one to
+    reopen; anything else the client raised — a protocol error the server
+    composed, an answer that would not parse — came from a server that is
+    there, and leaves as the plain transport error (KOD-192).
+    """
+    return McpSessionClosedError if _is_closed_session(exc) else McpTransportError
+
+
 #: Where a stderr tail was read: the four moments a server's last words
 #: are worth having, named so the log says which one produced them.
 _OPEN_FAILED = "session_open_failed"
@@ -211,7 +222,7 @@ class StdioMcpToolCaller:
         except Exception as exc:
             if not _is_closed_session(exc):
                 await self._report_stderr(path=self._stderr_path, context=_CALL_FAILED)
-                raise McpSessionClosedError(
+                raise McpTransportError(
                     "the MCP tool call failed in transport",
                     server_name=self._server_name,
                     tool_name=name,
@@ -240,6 +251,9 @@ class StdioMcpToolCaller:
         has to see.  A reopen that fails therefore raises the open's own
         typed refusal under the reopen's own words, and leaves the caller
         in service so the NEXT call tries again.
+
+        The call on the fresh session is classified as any call is: a
+        death is the closed-session class, an answer is not.
         """
         try:
             session = await self._spawn()
@@ -259,7 +273,7 @@ class StdioMcpToolCaller:
             return await session.call_tool(name, dict(arguments))
         except Exception as exc:
             await self._report_stderr(path=self._stderr_path, context=_CALL_FAILED)
-            raise McpSessionClosedError(
+            raise _failure_of(exc)(
                 "the MCP tool call failed in transport on a reopened session",
                 server_name=self._server_name,
                 tool_name=name,

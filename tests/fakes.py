@@ -3448,6 +3448,35 @@ class RefusingRecordSink:
         )
 
 
+class BrokenRecordSink:
+    """A ``RunRecordSink`` whose own code fails, outside the transport's words.
+
+    Neither a dead session nor a vendor's answer: the class it raises is
+    one no destination produces, which is how the tests hold the recorder
+    to classifying nothing it cannot tell apart, and the producers to
+    naming such a failure apart from a record the destination refused
+    (KOD-192).
+    """
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        msg = "the sink's own payload builder reads a field the record has not got"
+        raise KeyError(msg)
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        msg = "the sink's own payload builder reads a field the record has not got"
+        raise KeyError(msg)
+
+
 # ---------------------------------------------------------------------------
 # The stdio MCP server fakes: a REAL subprocess, scripted to die (KOD-177)
 # ---------------------------------------------------------------------------
@@ -3469,6 +3498,11 @@ class RefusingRecordSink:
 #: * ``FAKE_MCP_STDERR`` — a line it writes to its own stderr at startup;
 #: * ``FAKE_MCP_TOOL_ERROR`` — the message it ANSWERS every tool call with,
 #:   as the vendor's own refusal: a server that is there and says no;
+#: * ``FAKE_MCP_RPC_ERROR_SPAWNS`` — the spawn numbers that ANSWER every
+#:   tool call with a JSON-RPC error naming the tool, as a server composes
+#:   one for a tool it has not got: the client raises it as the very class
+#:   a dead pipe arrives in, under a different code, and it must never be
+#:   read as a closed session (KOD-192);
 #: * ``FAKE_MCP_REFUSE_AFTER`` — the spawn number after which it exits
 #:   before serving anything at all: a server that cannot be brought back;
 #: * ``FAKE_MCP_REFUSE_SPAWNS`` — the individual spawn numbers that exit
@@ -3509,6 +3543,11 @@ WAIT_LIMIT_SECONDS = 30.0
 #: The spawn that dies between calls: the boot session, never a reopened
 #: one, whose survival is what the reopen tests are about.
 FIRST_SPAWN = 1
+
+#: JSON-RPC 2.0's own code for a request the server understood and would
+#: not serve: an error the server COMPOSES, as distinct from the one the
+#: client synthesises when the pipe dies under a request.
+INVALID_PARAMS = -32602
 
 
 def _send(payload: dict[str, object]) -> None:
@@ -3557,6 +3596,10 @@ def main() -> int:
     refused = os.environ.get("FAKE_MCP_REFUSE_SPAWNS", "")
     if spawns in {int(number) for number in refused.split(",") if number}:
         return 1
+    answering = os.environ.get("FAKE_MCP_RPC_ERROR_SPAWNS", "")
+    composes_errors = spawns in {
+        int(number) for number in answering.split(",") if number
+    }
     budget = int(os.environ.get("FAKE_MCP_CALLS", "0"))
     exit_trigger = os.environ.get("FAKE_MCP_EXIT_TRIGGER", "")
     exit_marker = os.environ.get("FAKE_MCP_EXIT_MARKER", "")
@@ -3583,6 +3626,18 @@ def main() -> int:
         elif method == "tools/list":
             _send({"jsonrpc": "2.0", "id": identifier, "result": {"tools": []}})
         elif method == "tools/call":
+            if composes_errors:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": identifier,
+                        "error": {
+                            "code": INVALID_PARAMS,
+                            "message": "unknown tool: " + message["params"]["name"],
+                        },
+                    },
+                )
+                continue
             refusal = os.environ.get("FAKE_MCP_TOOL_ERROR", "")
             if refusal:
                 _send(

@@ -30,7 +30,7 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
-from tests.fakes import RecordingLogSink, RefusingRecordSink
+from tests.fakes import BrokenRecordSink, RecordingLogSink, RefusingRecordSink
 
 STARTED_AT = datetime(2026, 9, 1, 11, 58, tzinfo=UTC)
 RECORDED_AT = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
@@ -240,6 +240,21 @@ class TestRunRecorder:
 
         assert caught.value.failure == RunRecordFailure.VENDOR_REFUSED.value
         assert caught.value.cause_type == "McpTransportError"
+
+    async def test_a_sink_breaking_outside_the_transports_words_is_not_classified(
+        self,
+    ) -> None:
+        """A defect in the sink's own code is neither a dead session nor a
+        vendor's answer, and a recorder that filed it under either would
+        send an operator to the wrong remedy: it leaves as itself, for the
+        producer to name apart (KOD-192)."""
+        recorder = RunRecorder(
+            records={RunKind.FIRE_PREP.value: _destination(DocumentSystem.KNOWLEDGE)},
+            sinks={DocumentSystem.KNOWLEDGE: BrokenRecordSink()},
+        )
+
+        with pytest.raises(KeyError):
+            await recorder.record(_record())
 
 
 class TestLinearRecordSink:

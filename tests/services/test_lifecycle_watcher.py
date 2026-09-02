@@ -51,6 +51,7 @@ from kodezart.types.domain.tracker import ClaimStatus
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FIXTURE_EPOCH,
+    BrokenRecordSink,
     FakeFireReport,
     FakeJobQueue,
     FakeTrackerPort,
@@ -935,6 +936,32 @@ class TestTheFireRecordFailureNamesTheLogItLost:
         names = [event["event"] for event in events]
         assert names.count("lifecycle_watch_finished") == 1
         assert names.count("run_record_write_failed") == 1
+
+    async def test_a_sink_defect_is_named_apart_from_a_refused_record(self) -> None:
+        """The record event keeps its one field set: a failure the recorder
+        could not classify is the reporter's own, named apart and contained
+        the same — the watch still finishes."""
+        watch = watcher_over_sink(
+            BrokenRecordSink(),
+            AssistantTextEvent(text="working", model=MODEL),
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+
+        with structlog.testing.capture_logs() as events:
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id="job-0001",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        names = [event["event"] for event in events]
+        assert "run_record_write_failed" not in names
+        (defect,) = [
+            event for event in events if event["event"] == "run_record_reporter_failed"
+        ]
+        assert defect["name"] == ISSUE
+        assert defect["error_type"] == "KeyError"
+        assert names.count("lifecycle_watch_finished") == 1
 
 
 def watcher_reporting(

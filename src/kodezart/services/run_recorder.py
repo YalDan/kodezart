@@ -17,11 +17,15 @@ declared configuration:
   and raises — the config promised a write this process cannot perform,
   and absorbing that would be the silent skip this service exists to end.
 
-Every way the destination hop can fail leaves here as ONE class carrying
+Every way the DESTINATION can refuse leaves here as ONE class carrying
 what the producers cannot know — which destination, whose system, and
 which of the three failure classes it was — because the measured boot
 logged a bare error string per failed write and a dead knowledge session
-read exactly like a refused page (KOD-177).
+read exactly like a refused page (KOD-177).  A sink failing outside the
+transport's own vocabulary is the record path's own defect, not a
+destination refusing, and it propagates as itself for the producers to
+name apart: filed under either class, it would send an operator to the
+wrong remedy.
 
 The obligation is that ONE record exists per run, not that the runner
 writes one: a session's rich row through the rendered mechanism IS the
@@ -38,7 +42,12 @@ row, the first answering for the second (KOD-288).
 
 from collections.abc import Mapping
 
-from kodezart.core.errors import McpSessionClosedError, RunRecordWriteError
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    McpSessionClosedError,
+    McpTransportError,
+    RunRecordWriteError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import RunRecordSink
 from kodezart.types.domain.operation import DocumentSystem, RecordDestination
@@ -49,13 +58,15 @@ from kodezart.types.domain.run_records import (
 )
 
 
-def _failure_class(exc: Exception) -> RunRecordFailure:
+def _failure_class(
+    exc: McpTransportError | McpCredentialRefusedError,
+) -> RunRecordFailure:
     """Which failure the destination hop met, for the producer's event.
 
     The transport is the only component that can tell the two apart, and
     it says so by class: a session that is GONE is one to reopen or a
-    process to diagnose, and anything else that came back from the
-    destination is the destination's own answer to fix (KOD-177).
+    process to diagnose, and a vendor's own refusal — of the call or of
+    the credential — is the destination's answer to fix (KOD-177).
     """
     if isinstance(exc, McpSessionClosedError):
         return RunRecordFailure.SESSION_CLOSED
@@ -118,7 +129,7 @@ class RunRecorder:
             )
             if not present:
                 await sink.write_record(destination=destination, record=record)
-        except Exception as exc:
+        except (McpTransportError, McpCredentialRefusedError) as exc:
             raise RunRecordWriteError(
                 "the run's declared destination did not take its record",
                 kind=record.kind.value,
