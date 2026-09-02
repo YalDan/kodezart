@@ -17,7 +17,11 @@ import pytest
 
 from kodezart.adapters.linear_record_sink import LinearRecordSink
 from kodezart.adapters.notion_record_sink import NotionRecordSink
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import (
+    McpSessionClosedError,
+    McpTransportError,
+    RunRecordWriteError,
+)
 from kodezart.core.protocols import McpToolResult
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.operation import (
@@ -25,7 +29,8 @@ from kodezart.types.domain.operation import (
     RecordDestination,
     RunKind,
 )
-from kodezart.types.domain.run_records import RunOutcome, RunRecord
+from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
+from tests.fakes import RefusingRecordSink
 
 STARTED_AT = datetime(2026, 9, 1, 11, 58, tzinfo=UTC)
 RECORDED_AT = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
@@ -154,11 +159,48 @@ class TestRunRecorder:
             sinks={},
         )
 
-        with pytest.raises(LookupError) as caught:
+        with pytest.raises(RunRecordWriteError) as caught:
             await recorder.record(_record())
 
         assert "tracker" in str(caught.value)
         assert "fire_prep" in str(caught.value)
+        assert caught.value.failure == RunRecordFailure.SINK_UNWIRED.value
+        # Nothing else raised, so the class an operator reads is this one.
+        assert caught.value.cause_type == "RunRecordWriteError"
+
+    async def test_a_dead_transport_names_the_session_it_could_not_use(self) -> None:
+        """The measured 18:22 shape (KOD-177): the knowledge session died
+        between record writes, and the producers' event has to say so —
+        the remedy is a server to diagnose, not a payload to fix."""
+        recorder = RunRecorder(
+            records={RunKind.FIRE_PREP.value: _destination(DocumentSystem.KNOWLEDGE)},
+            sinks={DocumentSystem.KNOWLEDGE: RefusingRecordSink(McpSessionClosedError)},
+        )
+
+        with pytest.raises(RunRecordWriteError) as caught:
+            await recorder.record(_record())
+
+        assert caught.value.failure == RunRecordFailure.SESSION_CLOSED.value
+        assert caught.value.kind == RunKind.FIRE_PREP.value
+        assert caught.value.destination == "destination-1"
+        assert caught.value.system == DocumentSystem.KNOWLEDGE.value
+        assert caught.value.cause_type == "McpSessionClosedError"
+
+    async def test_a_destination_that_answered_and_refused_is_the_other_class(
+        self,
+    ) -> None:
+        """The paired positive: a server that ANSWERED is a server that is
+        there, and reopening its transport would repair nothing."""
+        recorder = RunRecorder(
+            records={RunKind.FIRE_PREP.value: _destination(DocumentSystem.KNOWLEDGE)},
+            sinks={DocumentSystem.KNOWLEDGE: RefusingRecordSink(McpTransportError)},
+        )
+
+        with pytest.raises(RunRecordWriteError) as caught:
+            await recorder.record(_record())
+
+        assert caught.value.failure == RunRecordFailure.VENDOR_REFUSED.value
+        assert caught.value.cause_type == "McpTransportError"
 
 
 class TestLinearRecordSink:

@@ -17,6 +17,12 @@ declared configuration:
   and raises — the config promised a write this process cannot perform,
   and absorbing that would be the silent skip this service exists to end.
 
+Every way the destination hop can fail leaves here as ONE class carrying
+what the producers cannot know — which destination, whose system, and
+which of the three failure classes it was — because the measured boot
+logged a bare error string per failed write and a dead knowledge session
+read exactly like a refused page (KOD-177).
+
 The obligation is that ONE record exists per run, not that the runner
 writes one: a session's rich row through the rendered mechanism IS the
 record when present (two rows per run made every log read as two runs —
@@ -27,10 +33,24 @@ on absence.
 
 from collections.abc import Mapping
 
+from kodezart.core.errors import McpSessionClosedError, RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import RunRecordSink
 from kodezart.types.domain.operation import DocumentSystem, RecordDestination
-from kodezart.types.domain.run_records import RunRecord
+from kodezart.types.domain.run_records import RunRecord, RunRecordFailure
+
+
+def _failure_class(exc: Exception) -> RunRecordFailure:
+    """Which failure the destination hop met, for the producer's event.
+
+    The transport is the only component that can tell the two apart, and
+    it says so by class: a session that is GONE is one to reopen or a
+    process to diagnose, and anything else that came back from the
+    destination is the destination's own answer to fix (KOD-177).
+    """
+    if isinstance(exc, McpSessionClosedError):
+        return RunRecordFailure.SESSION_CLOSED
+    return RunRecordFailure.VENDOR_REFUSED
 
 
 class RunRecorder:
@@ -70,11 +90,29 @@ class RunRecorder:
                 f"wired; the composition owes one for every system the "
                 f"config declares"
             )
-            raise LookupError(msg)
-        if await sink.has_record_since(
-            destination=destination,
-            since=record.started_at,
-        ):
+            raise RunRecordWriteError(
+                msg,
+                kind=record.kind.value,
+                destination=destination.id,
+                system=destination.system.value,
+                failure=RunRecordFailure.SINK_UNWIRED.value,
+            )
+        try:
+            present = await sink.has_record_since(
+                destination=destination,
+                since=record.started_at,
+            )
+            if not present:
+                await sink.write_record(destination=destination, record=record)
+        except Exception as exc:
+            raise RunRecordWriteError(
+                "the run's declared destination did not take its record",
+                kind=record.kind.value,
+                destination=destination.id,
+                system=destination.system.value,
+                failure=_failure_class(exc).value,
+            ) from exc
+        if present:
             await self._log.ainfo(
                 "run_record_verified",
                 kind=record.kind.value,
@@ -84,7 +122,6 @@ class RunRecorder:
                 system=destination.system.value,
             )
             return
-        await sink.write_record(destination=destination, record=record)
         await self._log.ainfo(
             "run_record_written",
             kind=record.kind.value,

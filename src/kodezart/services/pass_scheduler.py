@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from traceback import format_exception
 
+from kodezart.core.errors import RunRecordWriteError
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import LogEmitter
 from kodezart.types.domain.dispatch import PassRun
@@ -214,14 +215,39 @@ class PassScheduler:
         fact about the record path, reported under its own name so a
         broken destination cannot silently starve the next window
         (KOD-170).
+
+        The event is the same field set the fire's producer emits, and it
+        comes off the failure rather than out of this module: which kind
+        was owed a row, which destination, whose system, and which class
+        of failure it was — a dead session and a refused row have
+        different remedies and the measured boot named neither (KOD-177).
+
+        A report hop that fails with anything else is a defect in the
+        record path's own wiring rather than a destination refusing, and
+        it is named apart: half a field set under the record event is the
+        muddle this exists to end.  Both are CONTAINED, because a driver
+        task that unwinds here stops its pass for the life of the boot.
         """
         if entry.report is None:
             return
         try:
             await entry.report(outcome, duration_seconds, started_at)
-        except Exception as exc:
+        except RunRecordWriteError as exc:
             await self._log.aerror(
                 "run_record_write_failed",
+                kind=exc.kind,
+                name=entry.name,
+                outcome=outcome.value,
+                destination=exc.destination,
+                system=exc.system,
+                failure=exc.failure,
+                error_type=exc.cause_type,
+                error=str(exc),
+                traceback="".join(format_exception(exc)),
+            )
+        except Exception as exc:
+            await self._log.aerror(
+                "run_record_reporter_failed",
                 name=entry.name,
                 outcome=outcome.value,
                 error_type=type(exc).__name__,

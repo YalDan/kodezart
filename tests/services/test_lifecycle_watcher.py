@@ -20,7 +20,12 @@ import pytest
 import structlog.testing
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
-from kodezart.core.errors import McpCredentialRefusedError, McpTransportError
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    McpSessionClosedError,
+    McpTransportError,
+)
+from kodezart.core.protocols import RunRecordSink
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.run_recorder import RunRecorder
@@ -42,7 +47,7 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
-from kodezart.types.domain.run_records import RunOutcome, RunRecord
+from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
 from kodezart.types.domain.tracker import ClaimStatus
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
@@ -51,6 +56,7 @@ from tests.fakes import (
     FakeJobQueue,
     FakeTrackerPort,
     PassThroughGate,
+    RefusingRecordSink,
     make_tracker_issue,
 )
 
@@ -828,6 +834,107 @@ class TestTheFireRecord:
 
         (record,) = recorder.records
         assert record.outcome is RunOutcome.NEVER_STARTED
+
+
+def watcher_over_sink(
+    sink: RunRecordSink,
+    *events: AgentEvent,
+) -> LifecycleWatcher:
+    """The shipped watcher and the shipped recorder over one sink.
+
+    No capturing recorder: what is under test is the event the PRODUCER
+    emits when the record path fails, which only the real recorder's own
+    typed failure can carry (KOD-192).
+    """
+    tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+    return LifecycleWatcher(
+        recorder=RunRecorder(
+            records={RunKind.FIRE.value: FIRE_DESTINATION},
+            sinks={DocumentSystem.KNOWLEDGE: sink},
+        ),
+        queue=FakeJobQueue(events=events),
+        registry=FakeJobQueue(),
+        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        heartbeat=claim_heartbeat(tracker),
+        report=FakeFireReport(),
+    )
+
+
+class TestTheFireRecordFailureNamesTheLogItLost:
+    """KOD-192 — the producer's event says WHICH log and WHY it went unwritten.
+
+    Measured 2026-09-01 18:22: ``run_record_write_failed`` carried an
+    error string, so a knowledge session that had died and a destination
+    that had refused a page read exactly alike, and neither named the log
+    the run went unrecorded in.
+    """
+
+    async def test_a_dead_session_is_named_as_the_transport_it_was(self) -> None:
+        watch = watcher_over_sink(
+            RefusingRecordSink(McpSessionClosedError),
+            AssistantTextEvent(text="working", model=MODEL),
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+
+        with structlog.testing.capture_logs() as events:
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id="job-0001",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        (failed,) = [
+            event for event in events if event["event"] == "run_record_write_failed"
+        ]
+        assert failed["kind"] == RunKind.FIRE.value
+        assert failed["name"] == ISSUE
+        assert failed["outcome"] == RunOutcome.COMPLETED.value
+        assert failed["destination"] == FIRE_DESTINATION.id
+        assert failed["system"] == DocumentSystem.KNOWLEDGE.value
+        assert failed["failure"] == RunRecordFailure.SESSION_CLOSED.value
+        assert failed["error_type"] == "McpSessionClosedError"
+
+    async def test_a_refused_destination_is_the_other_class(self) -> None:
+        """The paired positive: the vendor answered, so nothing is reopened."""
+        watch = watcher_over_sink(
+            RefusingRecordSink(McpTransportError),
+            AssistantTextEvent(text="working", model=MODEL),
+        )
+
+        with structlog.testing.capture_logs() as events:
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id="job-0001",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        (failed,) = [
+            event for event in events if event["event"] == "run_record_write_failed"
+        ]
+        assert failed["outcome"] == RunOutcome.FAILED.value
+        assert failed["failure"] == RunRecordFailure.VENDOR_REFUSED.value
+        assert failed["error_type"] == "McpTransportError"
+
+    async def test_the_watch_finishes_whatever_the_record_path_did(self) -> None:
+        """The containment that was already true stays true (KOD-170): the
+        put-back and the claim release happened before the record, and a
+        broken destination may not report a finished run as a broken one."""
+        watch = watcher_over_sink(
+            RefusingRecordSink(McpSessionClosedError),
+            AssistantTextEvent(text="working", model=MODEL),
+            complete(merged=True, outcome=WorkflowOutcome.ci_passed),
+        )
+
+        with structlog.testing.capture_logs() as events:
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id="job-0001",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        names = [event["event"] for event in events]
+        assert names.count("lifecycle_watch_finished") == 1
+        assert names.count("run_record_write_failed") == 1
 
 
 def watcher_reporting(

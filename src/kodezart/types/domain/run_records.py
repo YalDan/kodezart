@@ -34,6 +34,22 @@ class RunOutcome(StrEnum):
     NEVER_STARTED = "never_started"
 
 
+class RunRecordFailure(StrEnum):
+    """Why a run's declared destination did not take its record.
+
+    Three members because the three have three different remedies, and
+    the measured boot's record failures named none of them: the transport
+    said the session was GONE (reopen it, read the server's stderr), the
+    destination's system ANSWERED and would not take the row (fix the
+    payload or the destination), or this process holds no sink for the
+    declared system at all (fix the wiring, or stop declaring it).
+    """
+
+    SESSION_CLOSED = "session_closed"
+    VENDOR_REFUSED = "vendor_refused"
+    SINK_UNWIRED = "sink_unwired"
+
+
 class RunRecord(BaseModel):
     """One run, as its runner measured it.
 

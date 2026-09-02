@@ -16,15 +16,17 @@ in a loop" are told apart by counting processes rather than by reading the
 code that spawns them.
 """
 
+import asyncio
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, Self
 
 import pytest
 import structlog.testing
 
 from kodezart.adapters.stdio_mcp_tool_caller import StdioMcpToolCaller
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import McpSessionClosedError, McpTransportError
 from kodezart.types.domain.credentials import REDACTION_SENTINEL
 from tests.fakes import write_stdio_fake_server
 
@@ -33,9 +35,47 @@ TOOL: Final[str] = "append-block"
 ERROR_DETAIL_LIMIT: Final[int] = 500
 STDERR_TAIL_LIMIT: Final[int] = 2000
 
+#: How long the fixture waits for the fake server to shut its own pipe,
+#: and how often it looks: the marker is written AFTER stdout is closed,
+#: so what is being waited on is a fact and not a duration.
+DEATH_TIMEOUT_SECONDS: Final[float] = 10.0
+DEATH_POLL_SECONDS: Final[float] = 0.01
+
 #: A Notion-shaped credential, in the shape the redaction table publishes:
 #: exactly what a crashing server prints when it echoes its configuration.
 CREDENTIAL: Final[str] = "ntn_" + ("T" * 44)
+
+
+@dataclass(frozen=True)
+class _Death:
+    """The two files a between-calls death is driven and observed by.
+
+    Two, because the death has two halves that must not be guessed at:
+    the test says WHEN (after the call it made has returned, so the last
+    answer is safely home) and the server says DONE (after its stdout is
+    shut, so the next call meets a closed stream and not a race).
+    """
+
+    trigger: Path
+    marker: Path
+
+    @classmethod
+    def under(cls, directory: Path) -> Self:
+        return cls(
+            trigger=directory / "die-now",
+            marker=directory / "server-exited",
+        )
+
+    async def strike(self) -> None:
+        """Tell the server to die, and wait until it says it has."""
+        self.trigger.write_text("die\n", encoding="utf-8")
+        async with asyncio.timeout(DEATH_TIMEOUT_SECONDS):
+            while not self.marker.exists():
+                await asyncio.sleep(DEATH_POLL_SECONDS)
+        # The pipe is shut at the operating system's end; the client's own
+        # reader is woken by the kernel and needs a turn of the loop to
+        # carry that closure into the session it is driving.
+        await asyncio.sleep(DEATH_POLL_SECONDS)
 
 
 def _caller(
@@ -44,6 +84,9 @@ def _caller(
     calls: int,
     stderr: str = "",
     refuse_after: str = "",
+    refuse_spawns: str = "",
+    tool_error: str = "",
+    death: _Death | None = None,
 ) -> tuple[StdioMcpToolCaller, Path]:
     """A caller over the fake server, and the file counting its spawns."""
     script = write_stdio_fake_server(tmp_path)
@@ -56,6 +99,10 @@ def _caller(
             "FAKE_MCP_CALLS": str(calls),
             "FAKE_MCP_STDERR": stderr,
             "FAKE_MCP_REFUSE_AFTER": refuse_after,
+            "FAKE_MCP_REFUSE_SPAWNS": refuse_spawns,
+            "FAKE_MCP_TOOL_ERROR": tool_error,
+            "FAKE_MCP_EXIT_TRIGGER": "" if death is None else str(death.trigger),
+            "FAKE_MCP_EXIT_MARKER": "" if death is None else str(death.marker),
         },
         server_name=SERVER_NAME,
         error_detail_limit=ERROR_DETAIL_LIMIT,
@@ -105,6 +152,113 @@ async def test_a_closed_session_is_reopened_once_and_the_call_succeeds(
     assert reopened["closed_by"]
 
 
+async def test_a_server_that_died_between_calls_is_reopened_on_the_measured_class(
+    tmp_path: Path,
+) -> None:
+    """The measured class itself: ``anyio.ClosedResourceError`` (KOD-286).
+
+    The server closes its stdout and exits once its budget is spent, so
+    the session is already gone when the next call is WRITTEN rather than
+    dying with a request outstanding — which is the 18:22 shape, and the
+    arm the client reports as a closed stream instead of its own
+    ``CONNECTION_CLOSED``.  Both arms reach the same reopen.
+    """
+    death = _Death.under(tmp_path)
+    with structlog.testing.capture_logs() as logs:
+        caller, spawn_log = _caller(tmp_path, calls=1, death=death)
+        await caller.open()
+        try:
+            first = await caller.call_tool(name=TOOL, arguments={})
+            await death.strike()
+            second = await caller.call_tool(name=TOOL, arguments={})
+        finally:
+            await caller.close()
+
+    assert first == {"served": 1}
+    assert second == {"served": 1}
+    assert _spawns(spawn_log) == 2
+    (reopened,) = _named(logs, "mcp_session_reopened")
+    assert reopened["closed_by"] == "ClosedResourceError"
+
+
+async def test_a_failed_reopen_leaves_the_record_path_open_to_the_next_call(
+    tmp_path: Path,
+) -> None:
+    """One bad instant is not a boot-long outage (KOD-287).
+
+    The server dies between calls, refuses the reopen that follows, and is
+    back for the one after.  The failed reopen is loud and names itself;
+    the next call spawns again and succeeds, so no "not open for the rest
+    of the boot" state survives a moment the server was down.
+    """
+    death = _Death.under(tmp_path)
+    caller, spawn_log = _caller(
+        tmp_path,
+        calls=1,
+        refuse_spawns="2",
+        death=death,
+    )
+    await caller.open()
+    try:
+        assert await caller.call_tool(name=TOOL, arguments={}) == {"served": 1}
+        await death.strike()
+
+        with pytest.raises(McpSessionClosedError) as refused:
+            await caller.call_tool(name=TOOL, arguments={})
+        assert "reopened" in str(refused.value)
+        assert _spawns(spawn_log) == 2
+
+        assert await caller.call_tool(name=TOOL, arguments={}) == {"served": 1}
+    finally:
+        await caller.close()
+
+    # One spawn per call while the session is down, and no more: the third
+    # call paid for exactly one reopen.
+    assert _spawns(spawn_log) == 3
+
+
+async def test_a_tool_error_the_server_composed_is_not_a_closed_session(
+    tmp_path: Path,
+) -> None:
+    """The other side of the discriminator the record path reads (KOD-192).
+
+    A server that ANSWERED is a server that is there: its refusal raises
+    the plain transport error, spawns nothing, and must never be reported
+    as a dead session — the two have different remedies entirely.
+    """
+    refusal = "body.properties.Run is not a property that exists"
+    caller, spawn_log = _caller(tmp_path, calls=1, tool_error=refusal)
+    await caller.open()
+    try:
+        with pytest.raises(McpTransportError) as caught:
+            await caller.call_tool(name=TOOL, arguments={})
+    finally:
+        await caller.close()
+
+    assert not isinstance(caught.value, McpSessionClosedError)
+    assert refusal in str(caught.value)
+    assert _spawns(spawn_log) == 1
+
+
+async def test_a_caller_nobody_opened_refuses_without_spawning(
+    tmp_path: Path,
+) -> None:
+    """The paired negative for the per-call reopen: a caller out of service.
+
+    Holding no session because nobody dialled — or because the shutdown
+    already closed it — is not a death to recover from, and answering it
+    with a spawn would give the record path a session the composition
+    never opened.
+    """
+    caller, spawn_log = _caller(tmp_path, calls=1)
+
+    with pytest.raises(McpSessionClosedError) as caught:
+        await caller.call_tool(name=TOOL, arguments={})
+
+    assert "not open" in str(caught.value)
+    assert _spawns(spawn_log) == 0
+
+
 async def test_the_servers_own_stderr_reaches_the_process_log_redacted(
     tmp_path: Path,
 ) -> None:
@@ -128,31 +282,33 @@ async def test_the_servers_own_stderr_reaches_the_process_log_redacted(
     assert captured["server_name"] == SERVER_NAME
 
 
-async def test_an_unreachable_server_refuses_every_call_and_reopens_once(
+async def test_an_unreachable_server_refuses_every_call_and_reopens_once_per_call(
     tmp_path: Path,
 ) -> None:
     """The paired negative: nothing is silent, and nothing is a loop.
 
     The server serves the handshake, dies on the first call, and refuses
     every spawn after its first — a genuinely unreachable server. Each
-    call raises the typed transport failure, and the second call costs no
-    spawn at all, because a caller that kept reopening would spend a
-    subprocess per attempt to learn what the first one already said.
+    call raises the typed transport failure, and each pays for exactly ONE
+    reopen: a caller that retried inside a call would spend a subprocess
+    per attempt to learn what the first one already said, and a caller
+    that stopped trying between calls would still be down when the server
+    came back (KOD-287).
     """
     caller, spawn_log = _caller(tmp_path, calls=0, refuse_after="1")
     await caller.open()
     try:
-        with pytest.raises(McpTransportError) as first:
+        with pytest.raises(McpSessionClosedError) as first:
             await caller.call_tool(name=TOOL, arguments={})
         assert _spawns(spawn_log) == 2
 
-        with pytest.raises(McpTransportError) as second:
+        with pytest.raises(McpSessionClosedError) as second:
             await caller.call_tool(name=TOOL, arguments={})
     finally:
         await caller.close()
 
     assert first.value.server_name == SERVER_NAME
-    assert "could not be opened" in str(first.value)
-    assert "not open" in str(second.value)
-    # One reopen, for the whole outage: the second call spawned nothing.
-    assert _spawns(spawn_log) == 2
+    assert "reopened" in str(first.value)
+    assert "reopened" in str(second.value)
+    # One reopen per call, and no loop inside either.
+    assert _spawns(spawn_log) == 3

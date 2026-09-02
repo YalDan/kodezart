@@ -63,6 +63,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
+from kodezart.core.errors import RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
@@ -371,6 +372,17 @@ class LifecycleWatcher:
         failure of the watch: the lifecycle write-back and the claim
         release already happened, and re-raising here would report a
         finished run as a broken one (KOD-170).
+
+        The event names the whole failure — which kind, which destination,
+        whose system, and which class of failure — because the measured
+        boot's ``run_record_write_failed`` carried an error string and
+        nothing else, and a dead knowledge session read exactly like a
+        page the vendor refused (KOD-177).
+
+        A recorder that fails with anything else is a defect in the record
+        path's own wiring rather than a destination refusing, and it is
+        named apart: half a field set under the record event is the muddle
+        this exists to end.  Both are contained, for the reason above.
         """
         try:
             await self._recorder.record(
@@ -383,9 +395,21 @@ class LifecycleWatcher:
                     recorded_at=datetime.now(UTC),
                 ),
             )
-        except Exception as exc:
+        except RunRecordWriteError as exc:
             await self._log.aerror(
                 "run_record_write_failed",
+                kind=exc.kind,
+                name=issue_key,
+                outcome=outcome.value,
+                destination=exc.destination,
+                system=exc.system,
+                failure=exc.failure,
+                error_type=exc.cause_type,
+                error=str(exc),
+            )
+        except Exception as exc:
+            await self._log.aerror(
+                "run_record_reporter_failed",
                 name=issue_key,
                 outcome=outcome.value,
                 error_type=type(exc).__name__,

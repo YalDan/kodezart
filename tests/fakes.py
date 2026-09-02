@@ -79,10 +79,14 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.job import JobRecord, JobState
-from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    QueueState,
+    RecordDestination,
+)
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.run_records import RunOutcome
+from kodezart.types.domain.run_records import RunOutcome, RunRecord
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -3372,6 +3376,46 @@ class FakeFireReport:
         self.reported.append((issue_key, outcome, failure_class))
 
 
+class RefusingRecordSink:
+    """A ``RunRecordSink`` whose destination never takes the row.
+
+    The CLASS it raises is the whole of it: the transport says a session
+    died by raising ``McpSessionClosedError``, and a destination that
+    answered and refused raises the plain transport error, which is how
+    the recorder tells a server to diagnose from a payload to fix
+    (KOD-177).  It refuses at the verification, so the write hop behind it
+    is never reached and the refusal cannot be mistaken for a half-written
+    row.
+    """
+
+    def __init__(self, failure: type[McpTransportError]) -> None:
+        self.failure: type[McpTransportError] = failure
+
+    async def has_record_since(
+        self,
+        *,
+        destination: RecordDestination,
+        since: datetime,
+    ) -> bool:
+        raise self.failure(
+            "the record destination could not be read",
+            server_name="fixture-knowledge",
+            tool_name="API-query-data-source",
+        )
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        raise self.failure(
+            "the record destination refused the row",
+            server_name="fixture-knowledge",
+            tool_name="API-post-page",
+        )
+
+
 # ---------------------------------------------------------------------------
 # The stdio MCP server fakes: a REAL subprocess, scripted to die (KOD-177)
 # ---------------------------------------------------------------------------
@@ -3391,14 +3435,48 @@ class FakeFireReport:
 #: * ``FAKE_MCP_CALLS`` — how many tool calls it serves before exiting,
 #:   which is how a session closes under a live caller;
 #: * ``FAKE_MCP_STDERR`` — a line it writes to its own stderr at startup;
+#: * ``FAKE_MCP_TOOL_ERROR`` — the message it ANSWERS every tool call with,
+#:   as the vendor's own refusal: a server that is there and says no;
 #: * ``FAKE_MCP_REFUSE_AFTER`` — the spawn number after which it exits
-#:   before serving anything at all: a server that cannot be brought back.
+#:   before serving anything at all: a server that cannot be brought back;
+#: * ``FAKE_MCP_REFUSE_SPAWNS`` — the individual spawn numbers that exit
+#:   before serving, so a server can be down for ONE reopen and back for
+#:   the next: the outage a caller must not turn into a boot-long one;
+#: * ``FAKE_MCP_EXIT_TRIGGER`` / ``FAKE_MCP_EXIT_MARKER`` — the pair that
+#:   kills the server BETWEEN calls rather than during one, which is the
+#:   measured shape (KOD-286).  Once its budget is spent the server waits
+#:   for the trigger file, then closes its stdout and touches the marker.
+#:   The wait is what makes the last answer safe: a server that closed
+#:   stdout in the same breath as its reply raced the client's own reader
+#:   and the reply was lost as ``CONNECTION_CLOSED`` — measured here.  The
+#:   test triggers the death only after the call it made has RETURNED, and
+#:   the marker (written after the close) says the pipe is shut at the
+#:   operating system's end, so both halves wait on facts rather than on
+#:   durations.  The waiting is done by a thread while the main loop keeps
+#:   answering, because a tool call is not over when its result lands: the
+#:   client reads the server's tool list afterwards to validate structured
+#:   content, and a server that shut its pipe in the same breath as the
+#:   reply took its own call down with it (measured here).  Only the FIRST
+#:   spawn dies this way: a server brought back by a reopen is the one
+#:   whose survival the test is about, and it serves on until the caller
+#:   closes its stdin.
 STDIO_FAKE_SERVER_SOURCE = '''\
 """A minimal MCP server over stdio, scripted by its environment."""
 
 import json
 import os
 import sys
+import threading
+import time
+
+#: How the death wait is paced, and how long it may last before the
+#: server gives up on a trigger no test is going to write.
+POLL_SECONDS = 0.01
+WAIT_LIMIT_SECONDS = 30.0
+
+#: The spawn that dies between calls: the boot session, never a reopened
+#: one, whose survival is what the reopen tests are about.
+FIRST_SPAWN = 1
 
 
 def _send(payload: dict[str, object]) -> None:
@@ -3414,6 +3492,27 @@ def _spawns() -> int:
         return len(handle.readlines())
 
 
+def _arm_the_death(trigger: str, marker: str) -> None:
+    """Watch for the word in a thread, and die on it while idle.
+
+    The main loop keeps answering meanwhile: a call is not over when its
+    result lands, and a server that shut its pipe in the same breath took
+    the client's follow-up schema read down with it.
+    """
+
+    def watch() -> None:
+        waited = 0.0
+        while not os.path.exists(trigger) and waited < WAIT_LIMIT_SECONDS:
+            time.sleep(POLL_SECONDS)
+            waited += POLL_SECONDS
+        sys.stdout.close()
+        with open(marker, "w", encoding="utf-8") as handle:
+            handle.write("exited\\n")
+        os._exit(0)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def main() -> int:
     spawns = _spawns()
     noise = os.environ.get("FAKE_MCP_STDERR", "")
@@ -3423,7 +3522,12 @@ def main() -> int:
     refuse_after = os.environ.get("FAKE_MCP_REFUSE_AFTER", "")
     if refuse_after and spawns > int(refuse_after):
         return 1
+    refused = os.environ.get("FAKE_MCP_REFUSE_SPAWNS", "")
+    if spawns in {int(number) for number in refused.split(",") if number}:
+        return 1
     budget = int(os.environ.get("FAKE_MCP_CALLS", "0"))
+    exit_trigger = os.environ.get("FAKE_MCP_EXIT_TRIGGER", "")
+    exit_marker = os.environ.get("FAKE_MCP_EXIT_MARKER", "")
     served = 0
     for line in sys.stdin:
         text = line.strip()
@@ -3447,6 +3551,19 @@ def main() -> int:
         elif method == "tools/list":
             _send({"jsonrpc": "2.0", "id": identifier, "result": {"tools": []}})
         elif method == "tools/call":
+            refusal = os.environ.get("FAKE_MCP_TOOL_ERROR", "")
+            if refusal:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": identifier,
+                        "result": {
+                            "content": [{"type": "text", "text": refusal}],
+                            "isError": True,
+                        },
+                    },
+                )
+                continue
             if served >= budget:
                 return 0
             served += 1
@@ -3461,6 +3578,8 @@ def main() -> int:
                     },
                 },
             )
+            if served >= budget and exit_marker and spawns == FIRST_SPAWN:
+                _arm_the_death(exit_trigger, exit_marker)
         elif identifier is not None:
             _send(
                 {

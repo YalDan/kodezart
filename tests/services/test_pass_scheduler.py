@@ -28,7 +28,12 @@ import pytest
 import structlog.testing
 
 from kodezart.composition.records import run_report
-from kodezart.core.errors import McpCredentialRefusedError
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    McpSessionClosedError,
+    McpTransportError,
+)
+from kodezart.core.protocols import RunRecordSink
 from kodezart.services.pass_scheduler import PassScheduler, RunReport, ScheduledPass
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.dispatch import PassRun
@@ -37,8 +42,8 @@ from kodezart.types.domain.operation import (
     RecordDestination,
     RunKind,
 )
-from kodezart.types.domain.run_records import RunOutcome, RunRecord
-from tests.fakes import RecordingLogger
+from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
+from tests.fakes import RecordingLogger, RefusingRecordSink
 
 SCHEDULER_SOURCE = (
     Path(__file__).resolve().parents[2]
@@ -709,9 +714,77 @@ async def test_a_timed_out_tick_reports_timed_out() -> None:
     assert [outcome for outcome, _, _ in reports.reports] == [RunOutcome.TIMED_OUT]
 
 
-async def test_a_failing_report_is_its_own_loud_event_and_keeps_the_cadence() -> None:
-    """The pass did what it did; a broken record path is reported under its
-    own name and never reclassifies the tick or ends the loop (KOD-170)."""
+async def test_a_record_failure_names_the_kind_destination_system_and_class() -> None:
+    """The producer's half of the measured record blackout (KOD-192).
+
+    The real recorder over a sink whose transport is gone: the event says
+    which kind was owed a row, which destination in whose system, and that
+    the SESSION died rather than the vendor refusing — the two the measured
+    boot's ``run_record_write_failed`` could not be told apart in.
+    """
+    recorder = Recorder()
+    report = run_report(
+        _recorder(RefusingRecordSink(McpSessionClosedError)),
+        RunKind.FIRE_PREP,
+        "fire_prep_pass",
+    )
+
+    log = await _one_tick(
+        ScheduledPass(
+            name="fire_prep_pass",
+            interval_seconds=FAST_INTERVAL,
+            timeout_seconds=GENEROUS_TIMEOUT,
+            run=recorder.run,
+            report=report,
+        ),
+    )
+
+    (failed,) = log.named("run_record_write_failed")
+    assert failed.level == "error"
+    assert failed.fields["kind"] == RunKind.FIRE_PREP.value
+    assert failed.fields["name"] == "fire_prep_pass"
+    assert failed.fields["outcome"] == RunOutcome.COMPLETED.value
+    assert failed.fields["destination"] == DESTINATION.id
+    assert failed.fields["system"] == DocumentSystem.KNOWLEDGE.value
+    assert failed.fields["failure"] == RunRecordFailure.SESSION_CLOSED.value
+    assert failed.fields["error_type"] == "McpSessionClosedError"
+
+
+async def test_a_vendor_refusal_carries_the_other_failure_class() -> None:
+    """The paired positive: a destination that ANSWERED and would not take
+    the row is a payload to fix, not a transport to reopen."""
+    recorder = Recorder()
+    report = run_report(
+        _recorder(RefusingRecordSink(McpTransportError)),
+        RunKind.GROOMING,
+        "grooming_pass",
+    )
+
+    log = await _one_tick(
+        ScheduledPass(
+            name="grooming_pass",
+            interval_seconds=FAST_INTERVAL,
+            timeout_seconds=GENEROUS_TIMEOUT,
+            run=recorder.run,
+            report=report,
+        ),
+    )
+
+    (failed,) = log.named("run_record_write_failed")
+    assert failed.fields["kind"] == RunKind.GROOMING.value
+    assert failed.fields["failure"] == RunRecordFailure.VENDOR_REFUSED.value
+    assert failed.fields["error_type"] == "McpTransportError"
+
+
+async def test_a_report_hop_that_breaks_otherwise_is_named_apart() -> None:
+    """A defect in the record path's own wiring is not a destination
+    refusing, and half a field set under the record event would be the
+    muddle KOD-177 exists to end.
+
+    It is contained exactly as a record failure is (KOD-170): the pass did
+    what it did, and a driver task that unwound here would stop its pass
+    for the life of the boot.
+    """
     recorder, exploding = Recorder(), ExplodingReport()
 
     log = await _one_tick(
@@ -726,9 +799,11 @@ async def test_a_failing_report_is_its_own_loud_event_and_keeps_the_cadence() ->
 
     assert recorder.calls == 1
     assert exploding.calls == 1
-    events = [entry.event for entry in log.events]
-    assert "scheduled_pass_completed" in events
-    assert "run_record_write_failed" in events
+    assert "scheduled_pass_completed" in [entry.event for entry in log.events]
+    assert log.named("run_record_write_failed") == []
+    (defect,) = log.named("run_record_reporter_failed")
+    assert defect.level == "error"
+    assert defect.fields["error_type"] == "RuntimeError"
 
 
 async def test_a_pass_without_a_report_records_nowhere_by_design() -> None:
@@ -788,7 +863,7 @@ DESTINATION = RecordDestination(
 )
 
 
-def _recorder(sink: SpyingSink) -> RunRecorder:
+def _recorder(sink: RunRecordSink) -> RunRecorder:
     """The real recorder over one sink, for both scheduled kinds."""
     return RunRecorder(
         records={
