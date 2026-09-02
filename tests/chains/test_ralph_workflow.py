@@ -2226,6 +2226,9 @@ class _ScriptedCriteriaExecutor:
         self._inner = FakeAgentExecutor(events=[])
         self._script = list(script)
         self.criteria_attempts = 0
+        #: When each criteria attempt began, so a case can clock the gap
+        #: between two of them rather than the run around them.
+        self.criteria_attempt_times: list[float] = []
 
     @property
     def calls(self) -> list[dict[str, object]]:
@@ -2261,6 +2264,7 @@ class _ScriptedCriteriaExecutor:
 
         step = self._script[min(self.criteria_attempts, len(self._script) - 1)]
         self.criteria_attempts += 1
+        self.criteria_attempt_times.append(time.perf_counter())
         if step == "raise":
             msg = "provider is down"
             raise RuntimeError(msg)
@@ -2428,8 +2432,8 @@ async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
 
 
 #: The floor a rate-limited attempt waits in the fixture below.  Long
-#: enough that only the floor can account for the elapsed time, short
-#: enough that the case costs the suite nothing to run.
+#: enough that only the floor can account for the gap between two
+#: attempts, short enough that the case costs the suite nothing to run.
 RATE_LIMIT_FLOOR_SECONDS = 0.15
 
 
@@ -2447,8 +2451,11 @@ async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
 
     The rejection is retried — KOD-43 stands, and the budget is untouched
     — but the second attempt cannot begin until the floor has passed.  The
-    back-off interval is two orders of magnitude smaller than the floor,
-    so the elapsed time has one explanation.
+    clock is read at the start of each criteria attempt, and the back-off
+    interval is two orders of magnitude smaller than the floor, so the gap
+    between the two attempts has one explanation.  The run around them is
+    not the observable: a whole run takes longer than the floor with no
+    floor at all.
     """
     persister = _DiskArtifactPersister(tmp_path)
     executor = _ScriptedCriteriaExecutor(script=["rejected", "ok"])
@@ -2460,7 +2467,6 @@ async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
         delay_floor_for=_floor_under_a_rate_limit,
     )
 
-    started = time.perf_counter()
     events = [
         event
         async for event in engine.run(
@@ -2473,10 +2479,10 @@ async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
             cache_key=uuid.uuid4().hex,
         )
     ]
-    elapsed = time.perf_counter() - started
 
     assert executor.criteria_attempts == 2
-    assert elapsed >= RATE_LIMIT_FLOOR_SECONDS
+    first_attempt, second_attempt = executor.criteria_attempt_times
+    assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
     assert len([e for e in events if isinstance(e, WorkflowCompleteEvent)]) == 1
 
 

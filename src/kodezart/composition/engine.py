@@ -118,10 +118,9 @@ class OriginRoutedWorkflowEngine:
 def rate_limit_delay_floor(config: AppConfig) -> DelayFloor:
     """The floor a node attempt waits when a PROVIDER RATE LIMIT killed it.
 
-    The classification lives here rather than in ``core.retry``: that
-    module decides transience over the domain taxonomy and nothing else,
-    and which classes are a rate limit — and what an operator is willing
-    to wait under one — is a composition decision.
+    Which classes are a rate limit, and what an operator is willing to
+    wait under one, is composition's statement; ``core.retry`` decides
+    transience over the domain taxonomy and nothing else.
 
     A rejection that states its own retry-after is honoured verbatim,
     because the provider knows when it will answer again; one that states
