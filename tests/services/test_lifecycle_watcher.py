@@ -1182,11 +1182,15 @@ class StalledQueue:
     def attach(self, *, job_id: str) -> AsyncIterator[AgentEvent]:
         self.attached.append(job_id)
         stopped = self.stopped
+        # A RUNNING job has produced a frame — that IS the dequeue, and it
+        # is the only way a watch learns its run began.  A QUEUED one has
+        # produced nothing, which is the distinction the sweep records.
+        running = self.records[job_id].state is JobState.RUNNING
 
         async def _stream() -> AsyncIterator[AgentEvent]:
+            if running:
+                yield AssistantTextEvent(text="working", model=MODEL)
             await stopped.wait()
-            return
-            yield  # pragma: no cover - unreachable, makes this a generator
 
         return _stream()
 
@@ -1232,36 +1236,26 @@ async def _abandon(watch: LifecycleWatcher) -> None:
     await asyncio.gather(*watch.following, return_exceptions=True)
 
 
-def swept_watcher(
-    queue: StalledQueue,
-    tracker: FakeTrackerPort,
-) -> tuple[LifecycleWatcher, CapturingRecorder]:
-    """The shipped watcher with a capturing recorder over stalled fires."""
-    recorder = CapturingRecorder()
-    return (
-        LifecycleWatcher(
-            recorder=recorder,
-            queue=queue,
-            registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
-            heartbeat=claim_heartbeat(tracker),
-            report=FakeFireReport(),
-        ),
-        recorder,
-    )
-
-
 class TestTheShutdownRecordSweep:
-    """KOD-178 — a shutdown leaves no fire unaccounted for."""
+    """KOD-178 — a shutdown leaves no fire unaccounted for.
+
+    Driven through the SHIPPED recorder into a Fire Log double, because
+    what these cases turn on is what lands in the log: a capturing
+    recorder stands in for the very arm — verify, then backfill — that
+    decides whether a row is written at all.
+    """
 
     async def test_every_unfinished_fire_gets_its_row_naming_its_issue(self) -> None:
         """The measured boot: three fires ran and the Fire Log held one line.
 
-        Both non-terminal states are here because they record differently
+        Both non-terminal ends are here because they record differently
         and the distinction is the whole content of the row: a dequeued run
         that will not finish FAILED, and one that never left the queue
-        never started.  Each row names its ISSUE, which is what a fire is
-        called everywhere the log is read.
+        never started.  The registry is TERMINAL for both by then — the
+        queue's stop marks everything it holds — so the distinction comes
+        from the watcher's own memory of which of them ever began, and each
+        row names its ISSUE, which is what a fire is called everywhere the
+        log is read.
         """
         second = "K-2"
         tracker = FakeTrackerPort(
@@ -1270,7 +1264,7 @@ class TestTheShutdownRecordSweep:
         queue = StalledQueue()
         queue.enqueue("job-0001", JobState.RUNNING)
         queue.enqueue("job-0002", JobState.QUEUED)
-        watch, recorder = swept_watcher(queue, tracker)
+        watch, log = recording_watcher(queue, tracker)
 
         watch.follow(
             issue_key=ISSUE,
@@ -1283,14 +1277,25 @@ class TestTheShutdownRecordSweep:
             pre_claim_state=PRE_CLAIM_STATE,
         )
         await asyncio.sleep(0)
-        await watch.record_unfinished()
+        queue.terminate("job-0001")
+        queue.terminate("job-0002")
+        with structlog.testing.capture_logs() as logs:
+            await watch.record_unfinished()
         await _abandon(watch)
 
-        assert [(row.name, row.outcome) for row in recorder.records] == [
+        assert [(row.name, row.outcome) for row in log.writes] == [
             (ISSUE, RunOutcome.FAILED),
             (second, RunOutcome.NEVER_STARTED),
         ]
-        assert all(row.kind is RunKind.FIRE for row in recorder.records)
+        assert all(row.kind is RunKind.FIRE for row in log.writes)
+        assert [
+            (entry["issue_key"], entry["outcome"])
+            for entry in logs
+            if entry["event"] == "unfinished_fire_recorded"
+        ] == [
+            (ISSUE, RunOutcome.FAILED.value),
+            (second, RunOutcome.NEVER_STARTED.value),
+        ]
 
     async def test_a_swept_fire_whose_watch_then_ends_writes_exactly_once(self) -> None:
         """The paired positive, driven in the shutdown's own order.
@@ -1304,18 +1309,7 @@ class TestTheShutdownRecordSweep:
         tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
         queue = StalledQueue()
         queue.enqueue("job-0001", JobState.RUNNING)
-        log = RecordingLogSink()
-        watch = LifecycleWatcher(
-            recorder=RunRecorder(
-                records={RunKind.FIRE.value: FIRE_DESTINATION},
-                sinks={DocumentSystem.KNOWLEDGE: log},
-            ),
-            queue=queue,
-            registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
-            heartbeat=claim_heartbeat(tracker),
-            report=FakeFireReport(),
-        )
+        watch, log = recording_watcher(queue, tracker)
 
         watch.follow(
             issue_key=ISSUE,
@@ -1331,18 +1325,52 @@ class TestTheShutdownRecordSweep:
             (ISSUE, RunOutcome.FAILED),
         ]
 
-    async def test_a_fire_whose_job_reached_terminal_is_passed_over(self) -> None:
-        """A run that reached its own outcome has a record: never a second.
+    async def test_a_row_already_there_is_verified_and_announced_by_nobody(
+        self,
+    ) -> None:
+        """The event follows the RECORDER, never the intent to record.
 
-        The watch here recorded nothing — it was abandoned before its end —
-        and the job is terminal, which is the registry saying the run
-        finished.  The sweep answers for the unfinished, and this is the
-        other half of that sentence.
+        A second sweep over the same fire finds the row the first one
+        wrote: nothing is written, and nothing announces a row it did not
+        write — the measured shape logged ``unfinished_fire_recorded``
+        beside the recorder's own "verified" (KOD-178, ruled).
         """
         tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
         queue = StalledQueue()
         queue.enqueue("job-0001", JobState.RUNNING)
-        watch, recorder = swept_watcher(queue, tracker)
+        watch, log = recording_watcher(queue, tracker)
+
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+        await asyncio.sleep(0)
+        await watch.record_unfinished()
+        with structlog.testing.capture_logs() as logs:
+            await watch.record_unfinished()
+        await _abandon(watch)
+
+        assert len(log.writes) == 1
+        assert [
+            entry for entry in logs if entry["event"] == "unfinished_fire_recorded"
+        ] == []
+        assert [entry["event"] for entry in logs].count("run_record_verified") == 1
+
+    async def test_a_terminal_job_whose_watch_never_recorded_still_gets_its_row(
+        self,
+    ) -> None:
+        """No fire is skipped on its job STATE (KOD-178, ruled 2026-09-02).
+
+        The watch here recorded nothing — it raised before its end — and
+        the job then reached terminal, which under the state skip meant no
+        row at all.  The question is put to the recorder instead: the log
+        holds no row for this run, so the run gets one.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        queue = StalledQueue()
+        queue.enqueue("job-0001", JobState.RUNNING)
+        watch, log = recording_watcher(queue, tracker)
 
         watch.follow(
             issue_key=ISSUE,
@@ -1354,4 +1382,6 @@ class TestTheShutdownRecordSweep:
         queue.terminate("job-0001")
         await watch.record_unfinished()
 
-        assert recorder.records == []
+        assert [(row.name, row.outcome) for row in log.writes] == [
+            (ISSUE, RunOutcome.FAILED),
+        ]

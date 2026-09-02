@@ -202,15 +202,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # instance that skipped it locked its own replacement out of the
         # issue for the rest of the lease (KOD-152).
         await dispatch.scheduler.stop()
-        # Between the two, because this is the last moment a job's state is
-        # a fact: stopping the queue marks everything it holds terminal, and
-        # after it a fire that was mid-run and a fire that never left the
-        # queue read identically. Every fire without a row gets one here —
-        # the measured boot ran three and logged one (KOD-178).
+        await job_queue.stop()
+        # After the stop, because that is when no run can finish underneath
+        # the sweep: a fire completing between a registry read and the stop
+        # would be recorded as failed and its own true row verified away.
+        # Every fire without a row gets one here — the measured boot ran
+        # three and logged one (KOD-178).
         if dispatch.lifecycle is not None:
             await dispatch.lifecycle.record_unfinished()
-        await job_queue.stop()
-        if dispatch.lifecycle is not None:
             await dispatch.lifecycle.drain()
         # The drain's own fire records write through this session, so it
         # closes after the drain and before the tracker transport.

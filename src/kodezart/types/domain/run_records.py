@@ -34,6 +34,22 @@ class RunOutcome(StrEnum):
     NEVER_STARTED = "never_started"
 
 
+class RunRecordResult(StrEnum):
+    """What became of a run's record obligation, for the caller that asked.
+
+    Three members because the recorder does three things and its callers
+    distinguish them: it WROTE the structural row into an absence, it
+    VERIFIED the row the run already had, or the run's kind declares no
+    destination at all.  A shutdown sweep announces the fires it recorded,
+    and announcing one it only verified would report a row it did not
+    write (KOD-178).
+    """
+
+    WRITTEN = "written"
+    VERIFIED = "verified"
+    UNDECLARED = "undeclared"
+
+
 class RunRecordFailure(StrEnum):
     """Why a run's declared destination did not take its record.
 

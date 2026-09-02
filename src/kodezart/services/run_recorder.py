@@ -42,7 +42,11 @@ from kodezart.core.errors import McpSessionClosedError, RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import RunRecordSink
 from kodezart.types.domain.operation import DocumentSystem, RecordDestination
-from kodezart.types.domain.run_records import RunRecord, RunRecordFailure
+from kodezart.types.domain.run_records import (
+    RunRecord,
+    RunRecordFailure,
+    RunRecordResult,
+)
 
 
 def _failure_class(exc: Exception) -> RunRecordFailure:
@@ -71,12 +75,17 @@ class RunRecorder:
         self._sinks: dict[DocumentSystem, RunRecordSink] = dict(sinks)
         self._log: BoundLogger = get_logger(__name__)
 
-    async def record(self, record: RunRecord) -> None:
+    async def record(self, record: RunRecord) -> RunRecordResult:
         """See that *record*'s run is recorded once, or name why not.
 
-        The session's own row, when the destination shows one created
-        within the run's window, discharges the obligation; the
-        structural minimum is written only into a genuine absence.
+        The session's own row, when the destination already holds one for
+        this run, discharges the obligation; the structural minimum is
+        written only into a genuine absence.
+
+        What it did is ANSWERED, because a caller announcing the rows it
+        placed may not announce the ones it only found: the shutdown
+        sweep logged a fire as recorded beside the recorder's own
+        "verified", for a row nothing had written (KOD-178).
         """
         destination = self._records.get(record.kind.value)
         if destination is None:
@@ -86,7 +95,7 @@ class RunRecorder:
                 name=record.name,
                 outcome=record.outcome.value,
             )
-            return
+            return RunRecordResult.UNDECLARED
         sink = self._sinks.get(destination.system)
         if sink is None:
             msg = (
@@ -126,7 +135,7 @@ class RunRecorder:
                 destination=destination.id,
                 system=destination.system.value,
             )
-            return
+            return RunRecordResult.VERIFIED
         await self._log.ainfo(
             "run_record_written",
             kind=record.kind.value,
@@ -135,3 +144,4 @@ class RunRecorder:
             destination=destination.id,
             system=destination.system.value,
         )
+        return RunRecordResult.WRITTEN
