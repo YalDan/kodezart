@@ -41,6 +41,7 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
+from enum import Enum, auto
 from http import HTTPStatus
 from importlib.metadata import version
 from typing import Final
@@ -126,6 +127,23 @@ class _PendingCall:
     reply: asyncio.Future[McpToolResult] = field(repr=False)
 
 
+class _Phase(Enum):
+    """Where the host is in its one session's life.
+
+    Read SYNCHRONOUSLY by ``call_tool`` before it hands over a call,
+    because that is the whole of what keeps a call from being queued onto
+    a host that will never answer it.  ENDED is its own value rather than
+    the absence of SERVING: a caller arriving after a mid-session teardown
+    is owed the fact that the session is GONE, which is a different act
+    for whoever reads it than a session nobody opened.
+    """
+
+    CLOSED = auto()
+    OPENING = auto()
+    SERVING = auto()
+    ENDED = auto()
+
+
 class HttpMcpToolCaller:
     """A single initialised MCP session, addressed by tool name."""
 
@@ -170,11 +188,7 @@ class HttpMcpToolCaller:
         #: its host would hold calls nothing will ever answer.
         self._inbox: MemoryObjectSendStream[_PendingCall] | None = None
         self._pending: set[_PendingCall] = set()
-        #: Whether the host is between a completed handshake and its own
-        #: end.  Read SYNCHRONOUSLY by ``call_tool`` before it hands over a
-        #: call, because that is the whole of what keeps a call from being
-        #: queued onto a host that has already drained.
-        self._serving: bool = False
+        self._phase: _Phase = _Phase.CLOSED
         #: Whether the server has answered this session's credential with a
         #: refusal.  Latched, because a credential does not heal: once it is
         #: refused every later failure of this session is that same refusal.
@@ -290,6 +304,7 @@ class HttpMcpToolCaller:
             _INBOX_UNBOUNDED,
         )
         self._inbox = inbox
+        self._phase = _Phase.OPENING
         host = asyncio.create_task(self._host_session(ready, posted))
         self._host = host
         try:
@@ -299,6 +314,7 @@ class HttpMcpToolCaller:
             self._inbox = None
             inbox.close()
             await _join(host)
+            self._phase = _Phase.CLOSED
             raise
         await self._log.ainfo(
             "mcp_session_opened",
@@ -321,6 +337,7 @@ class HttpMcpToolCaller:
             return
         inbox.close()
         await _join(host)
+        self._phase = _Phase.CLOSED
         await self._log.ainfo("mcp_session_closed", server_name=self._server_name)
 
     async def call_tool(
@@ -349,12 +366,8 @@ class HttpMcpToolCaller:
         that has already drained cannot be handed a call afterwards.
         """
         inbox = self._inbox
-        if inbox is None or not self._serving:
-            raise McpTransportError(
-                "the MCP session is not open",
-                server_name=self._server_name,
-                tool_name=name,
-            )
+        if inbox is None or self._phase is not _Phase.SERVING:
+            raise self._not_serving(name)
         call = _PendingCall(
             name=name,
             arguments=dict(arguments),
@@ -399,7 +412,14 @@ class HttpMcpToolCaller:
         posted: MemoryObjectReceiveStream[_PendingCall],
         client: httpx.AsyncClient,
     ) -> None:
-        """Dial, hand back the handshake's answer, and serve until the end."""
+        """Dial, hand back the handshake's answer, and serve until the end.
+
+        A session that ends after its handshake is logged HERE, under its
+        own event, because nothing outside this task sees it end: a
+        caller under it is told by its reply, but a session that dies
+        between calls would otherwise be legible only as the next call's
+        refusal.
+        """
         try:
             async with (
                 client,
@@ -411,33 +431,47 @@ class HttpMcpToolCaller:
                 ClientSession(read, write) as session,
             ):
                 await session.initialize()
-                self._serving = True
-                ready.set_result(None)
+                self._phase = _Phase.SERVING
+                if not ready.done():
+                    ready.set_result(None)
                 await self._serve(session, posted)
         except BaseException as exc:
             if not ready.done():
                 ready.set_exception(self._open_failure(exc))
+            else:
+                await self._log.aerror(
+                    "mcp_session_ended",
+                    server_name=self._server_name,
+                    exc_info=exc,
+                )
         finally:
-            self._serving = False
-            self._abandon_pending()
+            self._end_service()
 
     async def _serve(
         self,
         session: ClientSession,
         posted: MemoryObjectReceiveStream[_PendingCall],
     ) -> None:
-        """Answer calls until the inbox runs out, which is the close."""
-        async for call in posted:
-            try:
-                await self._answer(call, session)
-            except BaseException:
-                # The session died with this call in flight: the host is
-                # about to unwind, and the caller waiting on this answer
-                # is owed the reason before it does (KOD-272).
-                if not call.reply.done():
-                    call.reply.set_exception(self._teardown_failure(call.name))
-                self._pending.discard(call)
-                raise
+        """Answer calls until the inbox runs out, which is the close.
+
+        Each call is answered in a task of its own under the host, so the
+        calls of several workers are in flight together — as they were
+        over the session directly, which multiplexes them by request id —
+        and a call the server is slow to answer holds up nobody else's.
+
+        A session that ends under any of them ends them all: the group
+        cancels every answer, and every reply still owed is resolved with
+        the closed-session class HERE, before the SDK's own contexts
+        unwind — a session with an id is terminated over the wire on the
+        way out, and a worker is not made to wait on that (KOD-272).
+        """
+        try:
+            async with anyio.create_task_group() as answers:
+                async for call in posted:
+                    answers.start_soon(self._answer, call, session)
+        except BaseException:
+            self._end_service()
+            raise
 
     async def _answer(self, call: _PendingCall, session: ClientSession) -> None:
         """Run one call and resolve its reply, however it went."""
@@ -448,40 +482,84 @@ class HttpMcpToolCaller:
                 read_timeout_seconds=timedelta(seconds=self._call_timeout_seconds),
             )
         except Exception as exc:
-            call.reply.set_exception(self._call_failure(exc, call.name))
+            self._tell(call, self._call_failure(exc, call.name))
         else:
-            self._resolve(call, result)
-        self._pending.discard(call)
+            self._tell(call, self._decode(call, result))
 
-    def _resolve(self, call: _PendingCall, result: CallToolResult) -> None:
-        """Decode the server's answer onto the reply, or the refusal it is."""
+    def _decode(
+        self,
+        call: _PendingCall,
+        result: CallToolResult,
+    ) -> McpToolResult | McpTransportError:
+        """The server's answer as a value, or the refusal it is."""
         if result.isError:
             detail = error_detail(result, limit=self._error_detail_limit)
-            call.reply.set_exception(
-                McpTransportError(
-                    f"the MCP server reported a tool error: {detail}",
-                    server_name=self._server_name,
-                    tool_name=call.name,
-                ),
+            return McpTransportError(
+                f"the MCP server reported a tool error: {detail}",
+                server_name=self._server_name,
+                tool_name=call.name,
             )
-            return
         try:
-            decoded = structured_result(
+            return structured_result(
                 result,
                 server_name=self._server_name,
                 tool_name=call.name,
             )
         except McpTransportError as exc:
-            call.reply.set_exception(exc)
-            return
-        call.reply.set_result(decoded)
+            return exc
 
-    def _abandon_pending(self) -> None:
-        """Tell every caller still waiting that the session is gone."""
+    def _tell(self, call: _PendingCall, outcome: McpToolResult | Exception) -> None:
+        """Resolve the reply — unless its waiter has already given up on it.
+
+        A task cancelled while it awaits a future cancels that future, so
+        a worker whose pass ran out of budget mid-call leaves a reply
+        nothing may resolve: measured 2026-09-02 (KOD-270 review), the
+        host resolved it anyway, raised ``InvalidStateError`` and ended,
+        and one pass's timeout was the whole session's death.  The answer
+        goes to nobody; the session stays.
+        """
+        self._pending.discard(call)
+        if call.reply.done():
+            return
+        if isinstance(outcome, Exception):
+            call.reply.set_exception(outcome)
+        else:
+            call.reply.set_result(outcome)
+
+    def _end_service(self) -> None:
+        """Mark the session ended and tell every caller still waiting.
+
+        Idempotent, because the host's way out passes here twice: once
+        the moment the serving loop collapses, so no worker waits on the
+        SDK's unwinding, and once more when the task ends, for any call
+        handed over in between.
+        """
+        if self._phase is _Phase.SERVING:
+            self._phase = _Phase.ENDED
         for call in list(self._pending):
-            if not call.reply.done():
-                call.reply.set_exception(self._teardown_failure(call.name))
-        self._pending.clear()
+            self._tell(call, self._teardown_failure(call.name))
+
+    def _not_serving(self, name: str) -> McpTransportError:
+        """Why a call cannot even be handed over.
+
+        A host that ENDED is the closed-session class — what the record
+        path reads as a transport to reopen (KOD-177) — so a caller
+        arriving after a mid-session teardown is told the same fact as
+        the callers who were under it.  A caller nobody opened, or one
+        the shutdown already closed, is not that and refuses by the base
+        class.
+        """
+        if self._phase is _Phase.ENDED:
+            return McpSessionClosedError(
+                "the MCP session has ended",
+                server_name=self._server_name,
+                tool_name=name,
+            )
+        return McpTransportError(
+            "the MCP session is not open",
+            server_name=self._server_name,
+            tool_name=name,
+        )
 
     def _open_failure(self, exc: BaseException) -> Exception:
         """Why the handshake did not complete, in the caller's vocabulary.

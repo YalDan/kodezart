@@ -33,6 +33,7 @@ from typing import Any, Final
 import anyio
 import httpx
 import pytest
+import structlog.testing
 from mcp import types
 from mcp.server.lowlevel import Server
 from mcp.shared.memory import create_connected_server_and_client_session
@@ -41,6 +42,7 @@ from mcp.types import CallToolResult, ContentBlock, TextContent
 from kodezart.adapters.http_mcp_tool_caller import (
     _INBOX_UNBOUNDED,
     HttpMcpToolCaller,
+    _Phase,
 )
 from kodezart.core.errors import (
     McpCredentialRefusedError,
@@ -166,13 +168,13 @@ async def serving(
     inbox, posted = anyio.create_memory_object_stream[Any](_INBOX_UNBOUNDED)
     serve: Callable[..., Awaitable[None]] = caller._serve
     caller._inbox = inbox
-    caller._serving = True
+    caller._phase = _Phase.SERVING
     async with posted:
         host = asyncio.create_task(serve(session, posted))
         try:
             yield
         finally:
-            caller._serving = False
+            caller._phase = _Phase.CLOSED
             inbox.close()
             await host
 
@@ -618,6 +620,10 @@ class _FakeStreamableServer:
 
     No ``mcp-session-id`` is issued, so the client opens no server-push
     GET stream: what these cases watch is the request path.
+
+    With ``hold_calls`` every tool call is held at the server until the
+    case sets ``release``: the state a call is in while its waiter's own
+    budget runs out, and while a second worker's call joins it.
     """
 
     def __init__(
@@ -625,15 +631,18 @@ class _FakeStreamableServer:
         *,
         initialize_status: HTTPStatus = HTTPStatus.OK,
         on_call: _CallBehaviour = _CallBehaviour.ANSWERS,
+        hold_calls: bool = False,
     ) -> None:
         self._initialize_status = initialize_status
         self._on_call = on_call
+        self._hold_calls = hold_calls
+        self.release: asyncio.Event = asyncio.Event()
         self.calls: list[str] = []
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._answer)
 
-    def _answer(self, request: httpx.Request) -> httpx.Response:
+    async def _answer(self, request: httpx.Request) -> httpx.Response:
         message = json.loads(request.content)
         method = message.get("method")
         if method == "initialize":
@@ -655,6 +664,8 @@ class _FakeStreamableServer:
             # roster is all it needs back.
             return self._frame(message["id"], {"tools": _FIXTURE_TOOLS})
         self.calls.append(str(method))
+        if self._hold_calls:
+            await self.release.wait()
         if self._on_call is _CallBehaviour.DROPS:
             raise httpx.ReadError("the server dropped the stream mid-call")
         if self._on_call is _CallBehaviour.REFUSES:
@@ -753,6 +764,81 @@ class TestTheSessionIsHostedInOneTask:
         await booting
         await caller.close()
 
+    async def test_a_dropped_stream_tells_every_call_in_flight(self) -> None:
+        """KOD-272 — two workers under one session, and both are told."""
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS, hold_calls=True)
+        caller = held_caller_fixture(server)
+        await caller.open()
+
+        first = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
+        second = asyncio.create_task(
+            caller.call_tool(name="list_issues", arguments={}),
+        )
+        await _held(server, calls=2)
+        server.release.set()
+        outcomes = await asyncio.wait_for(
+            asyncio.gather(first, second, return_exceptions=True),
+            timeout=_HANG_CEILING_SECONDS,
+        )
+
+        assert [type(outcome) for outcome in outcomes] == [
+            McpSessionClosedError,
+            McpSessionClosedError,
+        ]
+        await caller.close()
+
+    async def test_a_call_after_the_session_ended_is_told_it_ended(self) -> None:
+        """KOD-272 — the caller who arrives after the teardown is owed the same fact.
+
+        The paired arm of ``test_a_closed_caller_refuses_the_next_call_by_name``:
+        a session the shutdown closed is not open, a session the server
+        took down has ENDED — the closed-session class the record path
+        reads as a transport to reopen — and the ending is logged under
+        its own event, because a session that dies between calls is
+        otherwise legible only as the next call's refusal.
+        """
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
+        caller = caller_fixture(transport_factory=server.transport)
+        await caller.open()
+
+        with structlog.testing.capture_logs() as logs:
+            with pytest.raises(McpSessionClosedError):
+                await caller.call_tool(name="get_issue", arguments={})
+            with pytest.raises(McpSessionClosedError, match="has ended"):
+                await caller.call_tool(name="list_issues", arguments={})
+            await caller.close()
+
+        assert [log["event"] for log in logs].count("mcp_session_ended") == 1
+        assert server.calls == ["tools/call"]
+
+    async def test_calls_from_two_workers_are_in_flight_together(self) -> None:
+        """KOD-273 — as they were over the session directly.
+
+        The session multiplexes calls by request id, so one the server is
+        slow to answer never held up another worker's; a host that
+        answered them one at a time would make every worker wait out the
+        slowest call's whole read timeout.
+        """
+        caller = caller_fixture()
+
+        async with create_connected_server_and_client_session(
+            fixture_server(),
+        ) as session:
+            async with serving(caller, session):
+                hanging = asyncio.create_task(
+                    caller.call_tool(name=_HANGING_TOOL, arguments={}),
+                )
+                await asyncio.sleep(0)
+                answered = await asyncio.wait_for(
+                    caller.call_tool(name=_ANSWERING_TOOL, arguments={}),
+                    timeout=_HANG_CEILING_SECONDS,
+                )
+                assert not hanging.done()
+                with pytest.raises(McpTransportError):
+                    await hanging
+
+        assert answered == {"id": "K-1"}
+
     async def test_a_server_composed_error_is_the_base_transport_class(self) -> None:
         """The paired negative: a server that ANSWERED is a server that is there.
 
@@ -818,6 +904,84 @@ async def _settled(before: set[asyncio.Task[object]]) -> set[asyncio.Task[object
     for _ in range(_SETTLE_TURNS):
         await asyncio.sleep(0)
     return {task for task in asyncio.all_tasks() - before if not task.done()}
+
+
+async def _held(server: _FakeStreamableServer, *, calls: int) -> None:
+    """Wait until *calls* tool calls are held at *server*."""
+    async with asyncio.timeout(_HANG_CEILING_SECONDS):
+        while len(server.calls) < calls:
+            await asyncio.sleep(0)
+
+
+def held_caller_fixture(server: _FakeStreamableServer) -> HttpMcpToolCaller:
+    """A caller over a server that holds its calls, with the bound out of the way.
+
+    What the cases over a held call observe is what happens while the
+    call is in flight, so the read timeout is set at the ceiling: a bound
+    that fired first would end the call as a timeout and prove nothing
+    about the cancellation or the drop under it.
+    """
+    return caller_fixture(
+        call_timeout_seconds=_HANG_CEILING_SECONDS,
+        transport_factory=server.transport,
+    )
+
+
+class TestTheHostOutlivesItsWaiters:
+    """A reply nobody waits for goes to nobody, and the session stays.
+
+    Measured 2026-09-02 (KOD-270 review): a task cancelled while it
+    awaits a future cancels that future — the shape the scheduler's
+    budget produces when a pass runs out mid-call — and the host,
+    resolving the abandoned reply, raised ``InvalidStateError`` and
+    ended.  One pass's timeout was the whole session's death, and every
+    call for the rest of the boot was refused.
+    """
+
+    async def test_a_waiter_that_gave_up_on_an_answer_leaves_the_session_serving(
+        self,
+    ) -> None:
+        server = _FakeStreamableServer(hold_calls=True)
+        caller = held_caller_fixture(server)
+        before = asyncio.all_tasks()
+        await caller.open()
+
+        waiter = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
+        await _held(server, calls=1)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        server.release.set()
+
+        assert await caller.call_tool(name="list_issues", arguments={}) == {
+            "id": "K-1",
+        }
+        assert server.calls == ["tools/call", "tools/call"]
+        await caller.close()
+        assert await _settled(before) == set()
+
+    async def test_a_waiter_that_gave_up_on_a_refusal_leaves_the_session_serving(
+        self,
+    ) -> None:
+        """The paired arm: the answer that was a refusal has nowhere to go either."""
+        server = _FakeStreamableServer(on_call=_CallBehaviour.REFUSES, hold_calls=True)
+        caller = held_caller_fixture(server)
+        await caller.open()
+
+        waiter = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
+        await _held(server, calls=1)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        server.release.set()
+
+        with pytest.raises(McpTransportError) as excinfo:
+            await caller.call_tool(name="list_issues", arguments={})
+
+        assert not isinstance(excinfo.value, McpSessionClosedError)
+        assert "must be a UUID" in str(excinfo.value.__cause__)
+        assert server.calls == ["tools/call", "tools/call"]
+        await caller.close()
 
 
 class TestACallTheServerNeverAnswers:
