@@ -20,6 +20,7 @@ first optional and the vendor's live server sends only the second
 Every refusal names its ground; no silent arm.
 """
 
+import ast
 import asyncio
 import json
 import time
@@ -28,6 +29,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from enum import StrEnum
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any, Final
 
 import anyio
@@ -39,6 +41,7 @@ from mcp.server.lowlevel import Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult, ContentBlock, TextContent
 
+from kodezart.adapters import http_mcp_tool_caller
 from kodezart.adapters.http_mcp_tool_caller import (
     _INBOX_UNBOUNDED,
     HttpMcpToolCaller,
@@ -65,6 +68,11 @@ _CALL_TIMEOUT_SECONDS: Final[float] = 0.2
 #: leaves the suite hung rather than red — which is the state this whole
 #: bound exists to prevent, and a test cannot demonstrate it by joining it.
 _HANG_CEILING_SECONDS: Final[float] = 5.0
+
+#: How long the fixture session's event stream may go quiet.  Deliberately
+#: not the shipped default and not the exchange bound either, so a client
+#: built on the wrong one of the three is legible here (KOD-299).
+_SSE_READ_TIMEOUT_SECONDS: Final[float] = 123.0
 
 #: How many loop turns a case gives the SDK's task group to unwind before
 #: it reads the surviving tasks.  Cancellations are delivered on later
@@ -120,6 +128,7 @@ def caller_fixture(
         token=_FIXTURE_TOKEN,
         timeout_seconds=5.0,
         call_timeout_seconds=call_timeout_seconds,
+        sse_read_timeout_seconds=_SSE_READ_TIMEOUT_SECONDS,
         auth_header_name="Authorization",
         auth_scheme="Bearer",
         error_detail_limit=_ERROR_DETAIL_LIMIT,
@@ -682,11 +691,20 @@ _FIXTURE_TOOLS: Final[list[dict[str, object]]] = [
 
 
 class _CallBehaviour(StrEnum):
-    """What the fixture server does with a tool call."""
+    """What the fixture server does with a tool call.
+
+    ``DROPS_ONCE`` and ``UNWELL_ONCE`` are the transient shapes: the
+    server misbehaves on the first tool call it is asked and is healthy
+    from then on, which is the state a reopen has to be able to recover
+    from — one dropped stream or one 502 used to end the session for the
+    rest of the boot (KOD-300).
+    """
 
     ANSWERS = "answers"
     REFUSES = "refuses"
     DROPS = "drops"
+    DROPS_ONCE = "drops_once"
+    UNWELL_ONCE = "unwell_once"
 
 
 class _FakeStreamableServer:
@@ -713,11 +731,14 @@ class _FakeStreamableServer:
         on_call: _CallBehaviour = _CallBehaviour.ANSWERS,
         hold_calls: bool = False,
     ) -> None:
-        self._initialize_status = initialize_status
+        self.initialize_status = initialize_status
         self._on_call = on_call
         self._hold_calls = hold_calls
         self.release: asyncio.Event = asyncio.Event()
         self.calls: list[str] = []
+        #: Every JSON-RPC method the endpoint was asked, tool calls and
+        #: handshakes alike — what "nothing was dialled" is read off.
+        self.requests: list[str] = []
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._answer)
@@ -725,9 +746,10 @@ class _FakeStreamableServer:
     async def _answer(self, request: httpx.Request) -> httpx.Response:
         message = json.loads(request.content)
         method = message.get("method")
+        self.requests.append(str(method))
         if method == "initialize":
-            if self._initialize_status is not HTTPStatus.OK:
-                return httpx.Response(status_code=self._initialize_status, json={})
+            if self.initialize_status is not HTTPStatus.OK:
+                return httpx.Response(status_code=self.initialize_status, json={})
             return self._frame(
                 message["id"],
                 {
@@ -746,8 +768,13 @@ class _FakeStreamableServer:
         self.calls.append(str(method))
         if self._hold_calls:
             await self.release.wait()
-        if self._on_call is _CallBehaviour.DROPS:
+        first_call = len(self.calls) == 1
+        if self._on_call is _CallBehaviour.DROPS or (
+            self._on_call is _CallBehaviour.DROPS_ONCE and first_call
+        ):
             raise httpx.ReadError("the server dropped the stream mid-call")
+        if self._on_call is _CallBehaviour.UNWELL_ONCE and first_call:
+            return httpx.Response(status_code=HTTPStatus.BAD_GATEWAY, json={})
         if self._on_call is _CallBehaviour.REFUSES:
             return self._error_frame(message["id"])
         return self._frame(
@@ -867,15 +894,19 @@ class TestTheSessionIsHostedInOneTask:
         ]
         await caller.close()
 
-    async def test_a_call_after_the_session_ended_is_told_it_ended(self) -> None:
-        """KOD-272 — the caller who arrives after the teardown is owed the same fact.
+    async def test_a_call_after_the_session_ended_meets_a_server_still_dropping(
+        self,
+    ) -> None:
+        """KOD-272 — the caller after the teardown is owed the same fact.
 
         The paired arm of ``test_a_closed_caller_refuses_the_next_call_by_name``:
-        a session the shutdown closed is not open, a session the server
-        took down has ENDED — the closed-session class the record path
-        reads as a transport to reopen — and the ending is logged under
-        its own event, because a session that dies between calls is
-        otherwise legible only as the next call's refusal.
+        a session the shutdown closed is not open, and a session the
+        server took down has ENDED — the closed-session class the record
+        path reads as a transport to reopen.  Reopening is what the second
+        call now does (KOD-300), and against a server that drops every
+        stream it ends the same way; each ending is logged under its own
+        event, because a session that dies between calls is otherwise
+        legible only as the next call's refusal.
         """
         server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
         caller = caller_fixture(client_factory=client_over(server.transport))
@@ -884,12 +915,12 @@ class TestTheSessionIsHostedInOneTask:
         with structlog.testing.capture_logs() as logs:
             with pytest.raises(McpSessionClosedError):
                 await caller.call_tool(name="get_issue", arguments={})
-            with pytest.raises(McpSessionClosedError, match="has ended"):
+            with pytest.raises(McpSessionClosedError):
                 await caller.call_tool(name="list_issues", arguments={})
             await caller.close()
 
-        assert [log["event"] for log in logs].count("mcp_session_ended") == 1
-        assert server.calls == ["tools/call"]
+        assert [log["event"] for log in logs].count("mcp_session_ended") == 3
+        assert server.calls == ["tools/call"] * 3
 
     async def test_calls_from_two_workers_are_in_flight_together(self) -> None:
         """KOD-273 — as they were over the session directly.
@@ -1154,3 +1185,226 @@ class TestACallTheServerNeverAnswers:
                 result = await caller.call_tool(name=_ANSWERING_TOOL, arguments={})
 
         assert result == {"id": "K-1"}
+
+
+class _RecordingClientFactory:
+    """The caller's client factory, remembering the timeouts it was asked for.
+
+    The bound under test lives on the client the HOST builds, and a client
+    is not observable from outside the session it runs — so the seam
+    production leaves open is where a case reads it (KOD-299).
+    """
+
+    def __init__(self, transport_factory: Callable[[], httpx.AsyncBaseTransport]):
+        self._transport_factory = transport_factory
+        self.timeouts: list[httpx.Timeout] = []
+
+    def __call__(
+        self,
+        *,
+        follow_redirects: bool,
+        headers: dict[str, str],
+        timeout: httpx.Timeout,
+        event_hooks: Mapping[str, list[Callable[[httpx.Response], Awaitable[None]]]],
+    ) -> httpx.AsyncClient:
+        self.timeouts.append(timeout)
+        return httpx.AsyncClient(
+            follow_redirects=follow_redirects,
+            headers=headers,
+            timeout=timeout,
+            event_hooks=event_hooks,
+            transport=self._transport_factory(),
+        )
+
+
+class TestTheStreamsQuietTimeIsConfigured:
+    """The session's read bound is an operator's value, not a vendor's.
+
+    Measured at `d842513` (KOD-299): the bound came from
+    ``mcp.shared._httpx_utils`` — the only private third-party import in
+    ``src/`` and the one timeout on this transport with no knob, so a
+    deployment whose server holds its stream longer than the vendor's
+    default had no way to say so.
+    """
+
+    async def test_the_host_client_reads_on_the_configured_bound(self) -> None:
+        server = _FakeStreamableServer()
+        factory = _RecordingClientFactory(server.transport)
+        caller = caller_fixture(client_factory=factory)
+
+        await caller.open()
+        try:
+            assert [timeout.read for timeout in factory.timeouts] == [
+                _SSE_READ_TIMEOUT_SECONDS,
+            ]
+        finally:
+            await caller.close()
+
+    async def test_the_exchange_bound_still_governs_every_other_phase(self) -> None:
+        """The paired positive: one bound moved, the other two did not.
+
+        Connect and write stay on the transport's own exchange bound — a
+        stream allowed five quiet minutes is not a connect allowed five
+        quiet minutes, and reading the same number into all three would be
+        the muddle the separate field exists to end.
+        """
+        server = _FakeStreamableServer()
+        factory = _RecordingClientFactory(server.transport)
+        caller = caller_fixture(client_factory=factory)
+
+        await caller.open()
+        try:
+            timeout = factory.timeouts[0]
+            assert (timeout.connect, timeout.write) == (5.0, 5.0)
+        finally:
+            await caller.close()
+
+
+def test_no_private_vendor_module_is_imported_by_the_transport() -> None:
+    """The import itself, asserted gone (KOD-299).
+
+    A module whose name begins with an underscore is the vendor's own
+    business: it carries no compatibility promise, and the constant this
+    one held is now a field an operator sets.
+    """
+    source = Path(http_mcp_tool_caller.__file__).read_text(encoding="utf-8")
+    imported = {
+        node.module
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+    private = {
+        module
+        for module in imported
+        if any(part.startswith("_") for part in module.split("."))
+    }
+    assert private == set()
+
+
+class TestASessionThatEndedIsReopenedForTheNextCall:
+    """The ENDED phase is a state a call leaves, not a state a boot dies in.
+
+    Measured at `d842513` (KOD-300): a session that ended stayed ended for
+    the life of the caller, so one dropped stream or one transient vendor
+    status left every dispatch, claim, heartbeat and record refusing for
+    the rest of the boot.  The stdio caller has reopened once per call
+    since KOD-187; this is the same policy on the same port.
+    """
+
+    async def test_a_dropped_stream_is_reopened_and_the_call_goes_again(
+        self,
+    ) -> None:
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS_ONCE)
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+
+        with structlog.testing.capture_logs() as logs:
+            result = await caller.call_tool(name="get_issue", arguments={})
+
+        assert result == {"id": "K-1"}
+        assert server.calls == ["tools/call", "tools/call"]
+        assert [log["event"] for log in logs].count("mcp_session_reopened") == 1
+        await caller.close()
+
+    async def test_one_transient_status_does_not_end_the_caller(self) -> None:
+        """A 502 on one tool call, and the boot goes on.
+
+        The status ends the session under the SDK, so before the reopen
+        this call raised the closed-session class and every call after it
+        raised too — a whole boot's dispatch lost to one bad gateway.
+        """
+        server = _FakeStreamableServer(on_call=_CallBehaviour.UNWELL_ONCE)
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+
+        first = await caller.call_tool(name="get_issue", arguments={})
+        second = await caller.call_tool(name="list_issues", arguments={})
+
+        assert (first, second) == ({"id": "K-1"}, {"id": "K-1"})
+        assert server.calls == ["tools/call"] * 3, "the refused call went again"
+        await caller.close()
+
+    async def test_a_reopen_that_fails_is_the_closed_session_class(self) -> None:
+        """One reopen per call: the second failure is the answer, not a loop."""
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+        with pytest.raises(McpSessionClosedError):
+            await caller.call_tool(name="get_issue", arguments={})
+        server.initialize_status = HTTPStatus.BAD_GATEWAY
+
+        with pytest.raises(McpSessionClosedError, match="could not be reopened"):
+            await caller.call_tool(name="list_issues", arguments={})
+
+        await caller.close()
+
+    async def test_a_caller_whose_reopen_failed_still_tries_the_next_call(
+        self,
+    ) -> None:
+        """The paired positive: a failed reopen ends a call, never the caller.
+
+        KOD-287's rule, on this transport: a caller in service that holds
+        no session is a call away from having one, so an outage that
+        clears is recovered from without a boot.
+        """
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.DROPS,
+            initialize_status=HTTPStatus.BAD_GATEWAY,
+        )
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        caller._phase = _Phase.ENDED
+        with pytest.raises(McpSessionClosedError):
+            await caller.call_tool(name="get_issue", arguments={})
+        server.initialize_status = HTTPStatus.OK
+        server._on_call = _CallBehaviour.ANSWERS
+
+        result = await caller.call_tool(name="list_issues", arguments={})
+
+        assert result == {"id": "K-1"}
+        await caller.close()
+
+    async def test_a_refused_credential_reopens_nothing(self) -> None:
+        """No fresh session mints a new token, so none is dialled for one.
+
+        The caller is in the state a mid-session 401 leaves it in: the
+        session ended and the refusal is latched.  A reopen here would
+        present the same token to the same refusal every call, forever.
+        """
+        server = _FakeStreamableServer()
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        caller._phase = _Phase.ENDED
+        caller._credential_refused = True
+
+        with pytest.raises(McpCredentialRefusedError):
+            await caller.call_tool(name="get_issue", arguments={})
+
+        assert server.requests == [], "no session was dialled at all"
+
+    async def test_an_error_the_server_composed_reopens_nothing(self) -> None:
+        """The paired negative: the transport was never the problem.
+
+        A tool error is the server's ANSWER — reopening for it would spend
+        a session to be told the same thing.
+        """
+        server = _FakeStreamableServer(on_call=_CallBehaviour.REFUSES)
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+
+        with pytest.raises(McpTransportError) as excinfo:
+            await caller.call_tool(name="get_issue", arguments={})
+
+        assert not isinstance(excinfo.value, McpSessionClosedError)
+        assert server.calls == ["tools/call"]
+        await caller.close()
+
+    async def test_close_after_a_reopen_leaves_no_task_behind(self) -> None:
+        """Every host the caller started is joined by the one close."""
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS_ONCE)
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        before = asyncio.all_tasks()
+        await caller.open()
+        await caller.call_tool(name="get_issue", arguments={})
+
+        await caller.close()
+
+        assert await _settled(before) == set()

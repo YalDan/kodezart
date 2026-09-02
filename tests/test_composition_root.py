@@ -30,15 +30,18 @@ from pathlib import Path
 
 import pytest
 import structlog.testing
+from pydantic import SecretStr
 from structlog.typing import EventDict
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.composition.passes import (
     build_dispatch_runtime,
     build_gate,
     build_prompt_passes,
 )
-from kodezart.composition.tracker import DialledTracker
+from kodezart.composition.records import _knowledge_caller
+from kodezart.composition.tracker import DialledTracker, make_mcp_tool_caller
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import McpSessionClosedError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
@@ -520,3 +523,44 @@ async def test_a_shutdown_whose_watches_all_record_is_announced_by_nobody() -> N
         for entry in logs
         if entry["event"] in {"run_record_verified", "unfinished_fire_recorded"}
     ] == []
+
+
+class TestBothTransportsReadOnTheirOwnConfiguredBound:
+    """One field per constructing composition, wired by that composition.
+
+    Measured at `d842513` (KOD-299): the stream's read bound came from a
+    private vendor constant, so both HTTP callers ran on a number no
+    deployment could state and neither composition passed anything.
+    """
+
+    #: The credential shape boot accepts; its value is never presented
+    #: here, because nothing in these cases opens a session.
+    FIXTURE_TOKEN = "lin_api_" + "T" * 40
+
+    TRACKER_BOUND = 111.0
+    KNOWLEDGE_BOUND = 222.0
+
+    def _config(self) -> AppConfig:
+        return AppConfig(
+            tracker_mcp_sse_read_timeout_seconds=self.TRACKER_BOUND,
+            knowledge_mcp_sse_read_timeout_seconds=self.KNOWLEDGE_BOUND,
+            knowledge_mcp_server_url="https://knowledge.invalid/mcp",
+            knowledge_mcp_token=SecretStr("ntn_" + "K" * 44),
+        )
+
+    def test_the_tracker_composition_passes_its_field(self) -> None:
+        caller = make_mcp_tool_caller(config=self._config(), token=self.FIXTURE_TOKEN)
+
+        assert isinstance(caller, HttpMcpToolCaller)
+        assert caller._sse_read_timeout_seconds == self.TRACKER_BOUND
+
+    def test_the_knowledge_composition_passes_its_own(self) -> None:
+        """The paired positive: two transports, two fields, no sharing.
+
+        One number for both would make a knowledge server that streams
+        slowly a reason to loosen the tracker's bound.
+        """
+        caller = _knowledge_caller(self._config(), ["records.fire_prep"])
+
+        assert isinstance(caller, HttpMcpToolCaller)
+        assert caller._sse_read_timeout_seconds == self.KNOWLEDGE_BOUND

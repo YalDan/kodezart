@@ -411,7 +411,11 @@ class AppConfig(BaseSettings):
         ge=5.0,
         le=120.0,
         description=(
-            "Timeout the tracker MCP transport gives one HTTP exchange with the server."
+            "Timeout the tracker MCP transport gives one HTTP exchange with "
+            "the server, on every phase but the session stream's read: a "
+            "streamable-HTTP response stays open across quiet minutes, and "
+            "that phase is bounded by "
+            "KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS instead."
         ),
     )
     tracker_mcp_call_timeout_seconds: float = Field(
@@ -428,6 +432,22 @@ class AppConfig(BaseSettings):
             "returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that "
             "bound is the transport's, on the HTTP exchange; this one is the "
             "session's, on the wait for one answer."
+        ),
+    )
+    tracker_mcp_sse_read_timeout_seconds: float = Field(
+        default=300.0,
+        ge=30.0,
+        le=3600.0,
+        description=(
+            "Seconds the tracker MCP session's event stream may go quiet "
+            "before its read is abandoned. The third bound on this "
+            "transport and the only one about the STREAM: "
+            "KODEZART_TRACKER_TIMEOUT_SECONDS bounds one HTTP exchange's "
+            "connect and write phases, KODEZART_TRACKER_MCP_CALL_TIMEOUT_"
+            "SECONDS bounds the wait for one answer, and this bounds how "
+            "long the long-lived streamable-HTTP response may say nothing "
+            "at all. The default is the value the session ran on while the "
+            "bound came from a private vendor constant."
         ),
     )
     tracker_mcp_error_detail_limit: int = Field(
@@ -806,6 +826,17 @@ class AppConfig(BaseSettings):
             "same bound the tracker transport carries, on the same "
             "transport class: a record write on a torn-down session hangs "
             "the pass holding it exactly as a tracker scan does."
+        ),
+    )
+    knowledge_mcp_sse_read_timeout_seconds: float = Field(
+        default=300.0,
+        ge=30.0,
+        le=3600.0,
+        description=(
+            "Seconds the knowledge MCP session's event stream may go quiet "
+            "before its read is abandoned, when the record path is reached "
+            "over HTTP. The same bound the tracker transport carries, on "
+            "the same transport class."
         ),
     )
     knowledge_mcp_error_detail_limit: int = Field(

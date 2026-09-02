@@ -51,7 +51,6 @@ import httpx
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT
 from mcp.types import (
     LATEST_PROTOCOL_VERSION,
     CallToolResult,
@@ -201,6 +200,7 @@ class HttpMcpToolCaller:
         token: str,
         timeout_seconds: float,
         call_timeout_seconds: float,
+        sse_read_timeout_seconds: float,
         auth_header_name: str,
         auth_scheme: str,
         error_detail_limit: int,
@@ -211,6 +211,7 @@ class HttpMcpToolCaller:
         self._token: str = token
         self._timeout_seconds: float = timeout_seconds
         self._call_timeout_seconds: float = call_timeout_seconds
+        self._sse_read_timeout_seconds: float = sse_read_timeout_seconds
         self._auth_header_name: str = auth_header_name
         self._auth_scheme: str = auth_scheme
         self._error_detail_limit: int = error_detail_limit
@@ -402,10 +403,44 @@ class HttpMcpToolCaller:
 
         Handing the call over is SYNCHRONOUS up to the wait, so a host
         that has already drained cannot be handed a call afterwards.
+
+        A session that has ENDED is reopened and the call goes again —
+        once per call, never once per boot.  Ending was terminal while the
+        caller was in service, so one dropped stream or one transient
+        vendor status left dispatch, claims, heartbeats and records dead
+        for the rest of the boot (KOD-300); it is now a state a call
+        leaves, exactly as the stdio caller's is (KOD-177, KOD-187).  A
+        server that ANSWERED with an error reopens nothing — the transport
+        was never the problem — and a refused credential reopens nothing
+        either, because no fresh session mints a new one.
         """
+        if self._phase is _Phase.ENDED:
+            return await self._call_on_a_reopened_session(
+                name=name,
+                arguments=arguments,
+            )
         inbox = self._inbox
         if inbox is None or self._phase is not _Phase.SERVING:
             raise self._not_serving(name)
+        try:
+            return await self._hand_over(inbox, name=name, arguments=arguments)
+        except McpSessionClosedError:
+            # The session ended under this very call.  The reopen is the
+            # same one a call arriving after the end takes, and it is the
+            # LAST thing tried on this call's behalf.
+            return await self._call_on_a_reopened_session(
+                name=name,
+                arguments=arguments,
+            )
+
+    async def _hand_over(
+        self,
+        inbox: MemoryObjectSendStream[_PendingCall],
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        """Post one call to the host and wait for the answer it owes."""
         call = _PendingCall(
             name=name,
             arguments=dict(arguments),
@@ -414,6 +449,70 @@ class HttpMcpToolCaller:
         self._pending.add(call)
         inbox.send_nowait(call)
         return await call.reply
+
+    async def _call_on_a_reopened_session(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        """Host a fresh session, then make the call the ended one lost.
+
+        Once per call, and never in a loop within one: a server that is
+        genuinely unreachable answers the second dial exactly as it
+        answered the first, so retrying inside one call would spend
+        sessions to learn what the first attempt already said, and hide
+        the failure an operator has to see.  A reopen that fails raises
+        the closed-session class under the reopen's own words and leaves
+        the caller IN SERVICE, so the next call tries its own (KOD-287).
+
+        A credential this server has already refused is asked nothing: a
+        new session presents the same token to the same refusal.
+        """
+        if self._credential_refused:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name=self._server_name,
+                tool_name=name,
+            )
+        await self._discard_host()
+        try:
+            await self.open()
+        except McpCredentialRefusedError:
+            self._phase = _Phase.ENDED
+            raise
+        except McpTransportError as exc:
+            self._phase = _Phase.ENDED
+            raise McpSessionClosedError(
+                "the MCP session could not be reopened for the call",
+                server_name=self._server_name,
+                tool_name=name,
+            ) from exc
+        await self._log.awarning(
+            "mcp_session_reopened",
+            server_name=self._server_name,
+            tool_name=name,
+        )
+        inbox = self._inbox
+        if inbox is None:
+            raise self._not_serving(name)
+        return await self._hand_over(inbox, name=name, arguments=arguments)
+
+    async def _discard_host(self) -> None:
+        """Let go of the ended host, leaving the caller in service.
+
+        The difference from :meth:`close` is the phase it leaves behind:
+        a shutdown ends the caller, and this ends only its session.
+        """
+        host = self._host
+        inbox = self._inbox
+        self._host = None
+        self._inbox = None
+        if inbox is not None:
+            inbox.close()
+        if host is not None:
+            await _join(host)
+        self._phase = _Phase.ENDED
 
     async def _host_session(
         self,
@@ -432,9 +531,14 @@ class HttpMcpToolCaller:
             headers={
                 self._auth_header_name: f"{self._auth_scheme} {self._token}",
             },
+            # The session's response is a stream the server holds open, so
+            # the read phase is bounded on its OWN configured value rather
+            # than on the exchange bound every other phase takes: a bound
+            # short enough for a request/response is a session torn down
+            # every time the board is quiet (KOD-299).
             timeout=httpx.Timeout(
                 self._timeout_seconds,
-                read=MCP_DEFAULT_SSE_READ_TIMEOUT,
+                read=self._sse_read_timeout_seconds,
             ),
         )
         # The inbox's receiving end belongs to the host for the host's whole
@@ -580,19 +684,12 @@ class HttpMcpToolCaller:
     def _not_serving(self, name: str) -> McpTransportError:
         """Why a call cannot even be handed over.
 
-        A host that ENDED is the closed-session class — what the record
-        path reads as a transport to reopen (KOD-177) — so a caller
-        arriving after a mid-session teardown is told the same fact as
-        the callers who were under it.  A caller nobody opened, or one
-        the shutdown already closed, is not that and refuses by the base
-        class.
+        A caller nobody opened, or one the shutdown already closed,
+        refuses by the base class: there is no session to reopen and
+        nobody is in service to reopen it for.  An ENDED session is the
+        other case and never reaches here — a call meeting one reopens it
+        (KOD-300).
         """
-        if self._phase is _Phase.ENDED:
-            return McpSessionClosedError(
-                "the MCP session has ended",
-                server_name=self._server_name,
-                tool_name=name,
-            )
         return McpTransportError(
             "the MCP session is not open",
             server_name=self._server_name,

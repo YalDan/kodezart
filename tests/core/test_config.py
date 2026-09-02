@@ -187,3 +187,52 @@ def test_a_table_of_prompt_keys_loads_verbatim(
         "implementation": "engine-a",
         "fix": "engine-b",
     }
+
+
+SSE_READ_FIELDS = (
+    "tracker_mcp_sse_read_timeout_seconds",
+    "knowledge_mcp_sse_read_timeout_seconds",
+)
+#: The bounds the sibling timeouts are declared with, and the default the
+#: session ran on while the value came from a private vendor constant
+#: (KOD-299).
+SSE_READ_DEFAULT = 300.0
+SSE_READ_FLOOR = 30.0
+SSE_READ_CEILING = 3600.0
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+@pytest.mark.parametrize("field", SSE_READ_FIELDS)
+def test_the_stream_read_bound_defaults_to_what_the_session_ran_on(
+    field: str,
+) -> None:
+    """Adopting the knob changes who owns the number, not the number."""
+    assert getattr(AppConfig(), field) == SSE_READ_DEFAULT
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+@pytest.mark.parametrize("field", SSE_READ_FIELDS)
+def test_the_stream_read_bound_is_read_from_the_prefixed_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+) -> None:
+    monkeypatch.setenv(f"KODEZART_{field.upper()}", "450")
+
+    assert getattr(AppConfig(), field) == 450.0
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+@pytest.mark.parametrize("field", SSE_READ_FIELDS)
+@pytest.mark.parametrize("value", [SSE_READ_FLOOR - 1, SSE_READ_CEILING + 1])
+def test_a_stream_read_bound_outside_its_range_refuses_at_construction(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: float,
+) -> None:
+    """Out of range fails at boot, naming the field — never a silent clamp."""
+    monkeypatch.setenv(f"KODEZART_{field.upper()}", str(value))
+
+    with pytest.raises(ValidationError) as excinfo:
+        AppConfig()
+
+    assert field in str(excinfo.value)

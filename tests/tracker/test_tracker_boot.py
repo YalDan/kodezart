@@ -978,6 +978,7 @@ def _caller_over(endpoint: _Endpoint, *, token: str) -> HttpMcpToolCaller:
         token=token,
         timeout_seconds=5.0,
         call_timeout_seconds=5.0,
+        sse_read_timeout_seconds=300.0,
         auth_header_name="Authorization",
         auth_scheme="Bearer",
         error_detail_limit=500,
