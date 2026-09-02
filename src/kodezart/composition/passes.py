@@ -437,6 +437,7 @@ async def build_dispatch_passes(
     # into them (KOD-174).
     lifecycle = LifecycleWatcher(
         queue=queue,
+        registry=registry,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,

@@ -252,6 +252,7 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
         lifecycle=LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
+            registry=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=ClaimHeartbeat(
                 tracker=tracker,
@@ -341,6 +342,7 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
     lifecycle = LifecycleWatcher(
         recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
+        registry=queue,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
@@ -422,6 +424,7 @@ def failing_tick(
             lifecycle=LifecycleWatcher(
                 recorder=RunRecorder(records={}, sinks={}),
                 queue=queue,
+                registry=queue,
                 writer=TrackerLifecycleWriter(
                     tracker=tracker,
                     gate=PassThroughGate(),

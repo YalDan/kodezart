@@ -51,3 +51,55 @@ def test_the_guard_reads_a_real_module() -> None:
     defined = _top_level_definitions()
 
     assert set(defined) == PERMITTED
+
+
+def _dotted(node: ast.expr) -> str:
+    """The dotted name of an attribute chain, or "" for anything else."""
+    parts: list[str] = []
+    current = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return ""
+    parts.append(current.id)
+    return ".".join(reversed(parts))
+
+
+def _lifespan_calls() -> list[str]:
+    """Every dotted call the lifespan makes, in source order."""
+    tree = ast.parse(ROOT.read_text(encoding="utf-8"))
+    (hook,) = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "lifespan"
+    ]
+    calls = [
+        node
+        for node in ast.walk(hook)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    ]
+    # ``ast.walk`` is breadth-first; the question here is ORDER, so the
+    # nodes are put back into the order they were written in.
+    calls.sort(key=lambda node: (node.lineno, node.col_offset))
+    return [_dotted(node.func) for node in calls]
+
+
+def test_the_shutdown_records_unfinished_fires_while_their_state_is_still_true() -> (
+    None
+):
+    """KOD-178 — the sweep's placement IS its correctness.
+
+    Stopping the queue marks every job it holds terminal, so a sweep after
+    it cannot tell a run that was mid-flight from one that never left the
+    queue — and that distinction is the whole content of the row. It must
+    also land before the knowledge session closes, because that session is
+    what the rows are written through.
+    """
+    calls = _lifespan_calls()
+    sweep = calls.index("dispatch.lifecycle.record_unfinished")
+
+    assert sweep > calls.index("dispatch.scheduler.stop")
+    assert sweep < calls.index("job_queue.stop")
+    assert sweep < calls.index("dispatch.lifecycle.drain")
+    assert sweep < calls.index("built_recorder.knowledge_caller.close")

@@ -48,6 +48,15 @@ DIES releases nothing, which is the arm the lease expiry exists for and the
 one arm that may not change; the measured incident is the other one, an
 instance stopped and its replacement locked out of the issue for the rest
 of a lease nobody was working under.
+
+**And the run record has a shutdown half** (KOD-178).  Recording at the
+watch's end means a fire that is still queued or still running when the
+process goes down is recorded nowhere at all: three fires ran on the
+measured boot and the Fire Log held one line.  So the fires this process
+started are remembered until their watches record them, and
+:meth:`LifecycleWatcher.record_unfinished` gives the rest their row on the
+way out, reading each one's state off the registry while that state is
+still a fact.
 """
 
 import asyncio
@@ -55,7 +64,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import JobQueue
+from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
@@ -66,6 +75,7 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.run_records import RunOutcome, RunRecord
 
@@ -98,12 +108,17 @@ class LifecycleWatcher:
         self,
         *,
         queue: JobQueue,
+        registry: JobRegistry,
         writer: TrackerLifecycleWriter,
         heartbeat: ClaimHeartbeat,
         recorder: RunRecorder,
         report: FireReport,
     ) -> None:
         self._queue: JobQueue = queue
+        #: Read only at shutdown, and only about fires this process
+        #: started: the state a job holds is what says whether an
+        #: unfinished one had been dequeued (KOD-178).
+        self._registry: JobRegistry = registry
         self._writer: TrackerLifecycleWriter = writer
         self._heartbeat: ClaimHeartbeat = heartbeat
         self._recorder: RunRecorder = recorder
@@ -112,6 +127,12 @@ class LifecycleWatcher:
         #: being re-selected whole at the next tick (KOD-174).
         self._report: FireReport = report
         self._following: set[asyncio.Task[None]] = set()
+        #: Every fire this process started, by job, until its watch has
+        #: recorded it.  A watch records at its END, so a shutdown that
+        #: arrives first — or a watch that raises on the way — leaves the
+        #: run with no row at all, and the measured boot's Fire Log held
+        #: one row for three fires (KOD-178).
+        self._unrecorded: dict[str, str] = {}
         self._log: BoundLogger = get_logger(__name__)
 
     def follow(
@@ -140,6 +161,7 @@ class LifecycleWatcher:
         claimed issue sits on, which the dispatch pass knows and this does
         not, and public is what keeps the outbound gate engaged.
         """
+        self._unrecorded[job_id] = issue_key
         task = asyncio.create_task(
             self.watch(
                 issue_key=issue_key,
@@ -178,6 +200,64 @@ class LifecycleWatcher:
                     error=str(outcome),
                     error_kind=type(outcome).__name__,
                 )
+
+    async def record_unfinished(self) -> None:
+        """Give every fire this process started and did not finish its row.
+
+        The shutdown half of :meth:`_record_fire`.  A watch records at its
+        END, so a job that is still queued or still running when the
+        process goes down has no row and never will: the measured boot ran
+        three fires — one finished, one killed mid-run, one never started —
+        and the Fire Log held one line (KOD-178).
+
+        Called BEFORE the queue is stopped, because that is the last moment
+        the distinction is a FACT: stopping the queue marks every job it
+        holds terminal, and after it a run that was mid-flight and a run
+        that never left the queue read identically.  Which one a job was is
+        the whole difference between ``failed`` and ``never_started``, and
+        this reads it off the registry rather than inferring it.
+
+        A job the registry reports TERMINAL is skipped: its watch reached
+        its own end and recorded there, and a second row for one run is the
+        defect the runner's verify-before-write exists to prevent.  A fire
+        whose watch is still in flight is recorded here AND at its end,
+        which is the same case — the recorder finds the row this pass wrote
+        inside the run's window and writes nothing beside it.
+
+        The registry is in-process, so this answers for a shutdown and for
+        nothing else: a process that is killed outright records none of
+        this, and the durable registry that would is v0.3's.
+        """
+        for job_id, issue_key in list(self._unrecorded.items()):
+            # Taken per fire, and at the sweep rather than at the job's
+            # submission, because the destination answers "is there a row
+            # since T?" about the WHOLE log: a window opened when this job
+            # was submitted is answered by every other fire's line, and
+            # every run after the first would be verified away by a row
+            # that is not about it.  Nothing has recorded THIS run — the
+            # registry has just said it never finished — so the window
+            # that is true of it opens here.
+            now = datetime.now(UTC)
+            record = await self._registry.get(job_id=job_id)
+            if record is None or record.state is JobState.TERMINAL:
+                continue
+            outcome = _fire_outcome(
+                started=record.state is JobState.RUNNING,
+                terminal=False,
+            )
+            await self._log.ainfo(
+                "unfinished_fire_recorded",
+                issue_key=issue_key,
+                job_id=job_id,
+                job_state=record.state.value,
+                outcome=outcome.value,
+            )
+            await self._record_fire(
+                issue_key=issue_key,
+                outcome=outcome,
+                duration_seconds=(now - record.submitted_at).total_seconds(),
+                started_at=record.submitted_at,
+            )
 
     async def watch(
         self,
@@ -274,6 +354,7 @@ class LifecycleWatcher:
             duration_seconds=loop.time() - watch_started,
             started_at=watch_started_at,
         )
+        self._unrecorded.pop(job_id, None)
 
     async def _record_fire(
         self,

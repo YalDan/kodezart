@@ -14,6 +14,7 @@ written to honour it is not asserted at all.
 
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import datetime
 
 import pytest
 import structlog.testing
@@ -32,13 +33,20 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
 )
 from kodezart.types.domain.branch import WorkRefRole
-from kodezart.types.domain.job import JobState
-from kodezart.types.domain.operation import LifecycleStage, QueueState, RunKind
+from kodezart.types.domain.job import JobRecord, JobState
+from kodezart.types.domain.operation import (
+    DocumentSystem,
+    LifecycleStage,
+    QueueState,
+    RecordDestination,
+    RunKind,
+)
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome, RunRecord
 from kodezart.types.domain.tracker import ClaimStatus
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
+    FIXTURE_EPOCH,
     FakeFireReport,
     FakeJobQueue,
     FakeTrackerPort,
@@ -120,9 +128,11 @@ def watcher_over(
     issue, and a fixture that made a fresh tracker per run could not carry
     what the first run left for the second to collide with.
     """
+    queue = FakeJobQueue(events=events)
     return LifecycleWatcher(
         recorder=RunRecorder(records={}, sinks={}),
-        queue=FakeJobQueue(events=events),
+        queue=queue,
+        registry=queue,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=claim_heartbeat(tracker),
         report=FakeFireReport(),
@@ -139,6 +149,7 @@ def watcher(
         LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
+            registry=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
@@ -442,6 +453,7 @@ class TestThePremiseAgainstTheShippedQueue:
             watch = LifecycleWatcher(
                 recorder=RunRecorder(records={}, sinks={}),
                 queue=queue,
+                registry=queue,
                 writer=TrackerLifecycleWriter(
                     tracker=tracker,
                     gate=PassThroughGate(),
@@ -507,6 +519,7 @@ class TestGracefulShutdownHandsTheClaimBack:
         watch = LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
+            registry=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
@@ -573,6 +586,7 @@ class TestTheWatcherIsUnknownJobSafe:
         watch = LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
+            registry=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
@@ -755,6 +769,7 @@ def watcher_recording(
         LifecycleWatcher(
             recorder=recorder,
             queue=FakeJobQueue(events=events),
+            registry=FakeJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
@@ -830,6 +845,7 @@ def watcher_reporting(
         LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=FakeJobQueue(events=events),
+            registry=FakeJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=report,
@@ -944,6 +960,7 @@ class TestAReportThatRaisesLosesNothingButTheNews:
                 queue=FakeJobQueue(
                     events=(AssistantTextEvent(text="working", model=MODEL),),
                 ),
+                registry=FakeJobQueue(),
                 writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
                 heartbeat=claim_heartbeat(tracker),
                 report=report,
@@ -1006,6 +1023,7 @@ class TestAReportThatRaisesLosesNothingButTheNews:
             queue=FakeJobQueue(
                 events=(AssistantTextEvent(text="working", model=MODEL),),
             ),
+            registry=FakeJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=report,
@@ -1021,3 +1039,239 @@ class TestAReportThatRaisesLosesNothingButTheNews:
         assert report.reported == [(ISSUE, RunOutcome.FAILED, None)]
         assert len(recorder.records) == 1
         assert [entry for entry in logs if entry["event"] == "fire_report_failed"] == []
+
+
+class StalledQueue:
+    """A queue whose streams end only when it is told to, records set by hand.
+
+    The shutdown condition, exactly: fires enqueued — one dequeued and
+    running, one still waiting — and no watch anywhere near its end.
+    ``FakeJobQueue`` replays a scripted run and closes, which is a watch
+    that finishes and records itself; what is under test here is the fire
+    that never gets that far, and then the moment ``job_queue.stop()``
+    ends its stream underneath it.
+    """
+
+    def __init__(self) -> None:
+        self.records: dict[str, JobRecord] = {}
+        self.attached: list[str] = []
+        self.stopped: asyncio.Event = asyncio.Event()
+
+    def enqueue(self, job_id: str, state: JobState) -> None:
+        self.records[job_id] = JobRecord(
+            job_id=job_id,
+            lane="lane",
+            state=state,
+            queue_position=None if state is JobState.RUNNING else 1,
+            submitted_at=FIXTURE_EPOCH,
+        )
+
+    def terminate(self, job_id: str) -> None:
+        """Mark the job terminal, as the queue's own shutdown sweep does."""
+        self.records[job_id] = self.records[job_id].model_copy(
+            update={"state": JobState.TERMINAL},
+        )
+
+    def attach(self, *, job_id: str) -> AsyncIterator[AgentEvent]:
+        self.attached.append(job_id)
+        stopped = self.stopped
+
+        async def _stream() -> AsyncIterator[AgentEvent]:
+            await stopped.wait()
+            return
+            yield  # pragma: no cover - unreachable, makes this a generator
+
+        return _stream()
+
+    async def get(self, *, job_id: str) -> JobRecord | None:
+        await asyncio.sleep(0)
+        return self.records.get(job_id)
+
+
+class FireLog:
+    """A record sink that answers about the rows it already holds.
+
+    The verify arm, as a destination implements it: a row inside a run's
+    window is what makes the runner leave that run alone.
+    """
+
+    def __init__(self) -> None:
+        self.writes: list[RunRecord] = []
+
+    async def has_record_since(
+        self,
+        *,
+        destination: RecordDestination,
+        since: datetime,
+    ) -> bool:
+        return any(row.recorded_at >= since for row in self.writes)
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        self.writes.append(record)
+
+
+FIRE_DESTINATION = RecordDestination(
+    system=DocumentSystem.KNOWLEDGE,
+    name="Fire Log",
+    id="fire-log",
+    append_only=True,
+)
+
+
+def recording_watcher(
+    queue: StalledQueue,
+    tracker: FakeTrackerPort,
+) -> tuple[LifecycleWatcher, FireLog]:
+    """The shipped watcher over the shipped recorder and a real Fire Log."""
+    log = FireLog()
+    return (
+        LifecycleWatcher(
+            recorder=RunRecorder(
+                records={RunKind.FIRE.value: FIRE_DESTINATION},
+                sinks={DocumentSystem.KNOWLEDGE: log},
+            ),
+            queue=queue,
+            registry=queue,
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
+        ),
+        log,
+    )
+
+
+async def _abandon(watch: LifecycleWatcher) -> None:
+    """Cancel the watches in flight: a watch that recorded nothing."""
+    for task in watch.following:
+        task.cancel()
+    await asyncio.gather(*watch.following, return_exceptions=True)
+
+
+def swept_watcher(
+    queue: StalledQueue,
+    tracker: FakeTrackerPort,
+) -> tuple[LifecycleWatcher, CapturingRecorder]:
+    """The shipped watcher with a capturing recorder over stalled fires."""
+    recorder = CapturingRecorder()
+    return (
+        LifecycleWatcher(
+            recorder=recorder,
+            queue=queue,
+            registry=queue,
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
+        ),
+        recorder,
+    )
+
+
+class TestTheShutdownRecordSweep:
+    """KOD-178 — a shutdown leaves no fire unaccounted for."""
+
+    async def test_every_unfinished_fire_gets_its_row_naming_its_issue(self) -> None:
+        """The measured boot: three fires ran and the Fire Log held one line.
+
+        Both non-terminal states are here because they record differently
+        and the distinction is the whole content of the row: a dequeued run
+        that will not finish FAILED, and one that never left the queue
+        never started.  Each row names its ISSUE, which is what a fire is
+        called everywhere the log is read.
+        """
+        second = "K-2"
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue(ISSUE), make_tracker_issue(second)],
+        )
+        queue = StalledQueue()
+        queue.enqueue("job-0001", JobState.RUNNING)
+        queue.enqueue("job-0002", JobState.QUEUED)
+        watch, recorder = swept_watcher(queue, tracker)
+
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+        watch.follow(
+            issue_key=second,
+            job_id="job-0002",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+        await asyncio.sleep(0)
+        await watch.record_unfinished()
+        await _abandon(watch)
+
+        assert [(row.name, row.outcome) for row in recorder.records] == [
+            (ISSUE, RunOutcome.FAILED),
+            (second, RunOutcome.NEVER_STARTED),
+        ]
+        assert all(row.kind is RunKind.FIRE for row in recorder.records)
+
+    async def test_a_swept_fire_whose_watch_then_ends_writes_exactly_once(self) -> None:
+        """The paired positive, driven in the shutdown's own order.
+
+        The sweep runs, the queue then ends the stream, and the watch
+        reaches its end and records — into a destination that already
+        holds this run's row, which the runner's verify-before-write finds
+        and leaves alone.  Asserted at the DESTINATION rather than at the
+        recorder, because "exactly once" is a claim about rows.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        queue = StalledQueue()
+        queue.enqueue("job-0001", JobState.RUNNING)
+        log = FireLog()
+        watch = LifecycleWatcher(
+            recorder=RunRecorder(
+                records={RunKind.FIRE.value: FIRE_DESTINATION},
+                sinks={DocumentSystem.KNOWLEDGE: log},
+            ),
+            queue=queue,
+            registry=queue,
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
+        )
+
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+        await asyncio.sleep(0)
+        await watch.record_unfinished()
+        queue.stopped.set()
+        await watch.drain()
+
+        assert [(row.name, row.outcome) for row in log.writes] == [
+            (ISSUE, RunOutcome.FAILED),
+        ]
+
+    async def test_a_fire_whose_job_reached_terminal_is_passed_over(self) -> None:
+        """A run that reached its own outcome has a record: never a second.
+
+        The watch here recorded nothing — it was abandoned before its end —
+        and the job is terminal, which is the registry saying the run
+        finished.  The sweep answers for the unfinished, and this is the
+        other half of that sentence.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        queue = StalledQueue()
+        queue.enqueue("job-0001", JobState.RUNNING)
+        watch, recorder = swept_watcher(queue, tracker)
+
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+        await asyncio.sleep(0)
+        await _abandon(watch)
+        queue.terminate("job-0001")
+        await watch.record_unfinished()
+
+        assert recorder.records == []
