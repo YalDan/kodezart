@@ -30,16 +30,20 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
-from tests.fakes import RefusingRecordSink
+from tests.fakes import RecordingLogSink, RefusingRecordSink
 
 STARTED_AT = datetime(2026, 9, 1, 11, 58, tzinfo=UTC)
 RECORDED_AT = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 
 
-def _record(kind: RunKind = RunKind.FIRE_PREP) -> RunRecord:
+def _record(
+    kind: RunKind = RunKind.FIRE_PREP,
+    *,
+    name: str = "fire_prep_pass",
+) -> RunRecord:
     return RunRecord(
         kind=kind,
-        name="fire_prep_pass",
+        name=name,
         outcome=RunOutcome.COMPLETED,
         duration_seconds=12.34,
         started_at=STARTED_AT,
@@ -66,16 +70,16 @@ class CapturingSink:
 
     def __init__(self, *, present: bool = False) -> None:
         self.present = present
-        self.asks: list[tuple[RecordDestination, datetime]] = []
+        self.asks: list[tuple[RecordDestination, RunRecord]] = []
         self.writes: list[tuple[RecordDestination, RunRecord]] = []
 
-    async def has_record_since(
+    async def holds_record(
         self,
         *,
         destination: RecordDestination,
-        since: datetime,
+        record: RunRecord,
     ) -> bool:
-        self.asks.append((destination, since))
+        self.asks.append((destination, record))
         return self.present
 
     async def write_record(
@@ -117,7 +121,7 @@ class TestRunRecorder:
 
         await recorder.record(_record())
 
-        assert sink.asks == [(destination, STARTED_AT)]
+        assert sink.asks == [(destination, _record())]
         assert sink.writes == [(destination, _record())]
 
     async def test_a_sessions_own_row_discharges_the_obligation(self) -> None:
@@ -132,8 +136,43 @@ class TestRunRecorder:
 
         await recorder.record(_record())
 
-        assert sink.asks == [(destination, STARTED_AT)]
+        assert sink.asks == [(destination, _record())]
         assert sink.writes == []
+
+    async def test_two_runs_of_one_kind_in_one_instant_both_get_their_rows(
+        self,
+    ) -> None:
+        """The measured sweep defect (KOD-288): two fires, one row.
+
+        Both runs are the same kind and share an instant — the shutdown
+        that swept them — and they are different runs, so the log owes
+        both a row.  Under "any row since" the first row answered for the
+        second and the second was verified away.
+        """
+        log = RecordingLogSink()
+        recorder = RunRecorder(
+            records={RunKind.FIRE.value: _destination(DocumentSystem.KNOWLEDGE)},
+            sinks={DocumentSystem.KNOWLEDGE: log},
+        )
+
+        await recorder.record(_record(RunKind.FIRE, name="K-1"))
+        await recorder.record(_record(RunKind.FIRE, name="K-2"))
+
+        assert [row.name for row in log.writes] == ["K-1", "K-2"]
+
+    async def test_the_same_run_recorded_twice_writes_once(self) -> None:
+        """The paired positive: the row this run already has IS its record,
+        which is what the sweep and the watch's own end both rely on."""
+        log = RecordingLogSink()
+        recorder = RunRecorder(
+            records={RunKind.FIRE.value: _destination(DocumentSystem.KNOWLEDGE)},
+            sinks={DocumentSystem.KNOWLEDGE: log},
+        )
+
+        await recorder.record(_record(RunKind.FIRE, name="K-1"))
+        await recorder.record(_record(RunKind.FIRE, name="K-1"))
+
+        assert [row.name for row in log.writes] == ["K-1"]
 
     async def test_an_undeclared_kind_is_a_named_absence_and_writes_nothing(
         self,
@@ -228,45 +267,52 @@ class TestLinearRecordSink:
             ),
         ]
 
-    async def test_a_document_written_during_the_run_verifies_present(self) -> None:
-        """``updatedAt`` at or past the run's start is the vendor's own
-        word that a row landed — no line-format parsing anywhere."""
+    async def test_a_document_carrying_this_runs_row_verifies_present(self) -> None:
+        """The document IS the log, so the log is read for this run's row."""
+        record = _record()
         caller = CapturingCaller(
-            {"get_document": {"updatedAt": "2026-09-01T11:59:00.000Z"}},
+            {"get_document": {"content": f"an older line\n{record.line()}"}},
         )
 
-        present = await self._sink(caller).has_record_since(
+        present = await self._sink(caller).holds_record(
             destination=_destination(DocumentSystem.TRACKER),
-            since=STARTED_AT,
+            record=record,
         )
 
         assert present
         assert caller.calls == [("get_document", {"id": "destination-1"})]
 
-    async def test_a_document_untouched_since_the_run_began_is_absent(self) -> None:
+    async def test_a_row_naming_another_run_leaves_this_one_absent(self) -> None:
+        """The defect this replaced (KOD-288): a neighbour's row answered.
+
+        A document written to inside this run's window, by another run,
+        is not this run's record — under ``updatedAt`` it was, and the
+        second of two fires swept at one shutdown lost its row to the
+        first.
+        """
         caller = CapturingCaller(
-            {"get_document": {"updatedAt": "2026-09-01T11:00:00.000Z"}},
+            {"get_document": {"content": f"{_record(name='K-2').line()}"}},
         )
 
-        present = await self._sink(caller).has_record_since(
+        present = await self._sink(caller).holds_record(
             destination=_destination(DocumentSystem.TRACKER),
-            since=STARTED_AT,
+            record=_record(name="K-1"),
         )
 
         assert not present
 
-    async def test_a_read_without_updated_at_refuses_naming_it(self) -> None:
+    async def test_a_read_without_content_refuses_naming_it(self) -> None:
         """A guessed ``False`` would double every record and a guessed
         ``True`` would silently skip one; the sink guesses neither."""
         caller = CapturingCaller({"get_document": {"id": "destination-1"}})
 
         with pytest.raises(McpTransportError) as caught:
-            await self._sink(caller).has_record_since(
+            await self._sink(caller).holds_record(
                 destination=_destination(DocumentSystem.TRACKER),
-                since=STARTED_AT,
+                record=_record(),
             )
 
-        assert "updatedAt" in str(caught.value)
+        assert "content" in str(caught.value)
 
 
 #: The measured shape of a data-source schema answer: the title property
@@ -352,11 +398,14 @@ class TestNotionRecordSink:
         assert "title property" in str(caught.value)
         assert [name for name, _ in caller.calls] == ["API-retrieve-a-data-source"]
 
-    async def test_a_page_created_during_the_run_verifies_present(self) -> None:
-        """One filtered query on the vendor's own ``created_time`` — the
-        exact wire shape measured live on the Grooming Log (2026-09-01)."""
+    async def test_this_runs_page_inside_the_window_verifies_present(self) -> None:
+        """One filtered query, on both halves of a run's identity: the
+        vendor's own ``created_time`` for the window (the wire shape
+        measured live on the Grooming Log, 2026-09-01) and the discovered
+        title property for the run's NAME (KOD-288)."""
         caller = CapturingCaller(
             {
+                "API-retrieve-a-data-source": _SCHEMA,
                 "API-query-data-source": {
                     "object": "list",
                     "results": [{"object": "page", "id": "page-1"}],
@@ -364,34 +413,51 @@ class TestNotionRecordSink:
             },
         )
 
-        present = await self._sink(caller).has_record_since(
+        present = await self._sink(caller).holds_record(
             destination=_destination(DocumentSystem.KNOWLEDGE),
-            since=STARTED_AT,
+            record=_record(),
         )
 
         assert present
         assert caller.calls == [
+            ("API-retrieve-a-data-source", {"data_source_id": "destination-1"}),
             (
                 "API-query-data-source",
                 {
                     "data_source_id": "destination-1",
                     "filter": {
-                        "timestamp": "created_time",
-                        "created_time": {"on_or_after": "2026-09-01T11:58:00+00:00"},
+                        "and": [
+                            {
+                                "timestamp": "created_time",
+                                "created_time": {
+                                    "on_or_after": "2026-09-01T11:58:00+00:00",
+                                },
+                            },
+                            {
+                                "property": "Run",
+                                "title": {"contains": "fire_prep_pass"},
+                            },
+                        ],
                     },
                     "page_size": 1,
                 },
             ),
         ]
 
-    async def test_an_empty_window_is_absent(self) -> None:
+    async def test_a_window_holding_no_row_of_this_runs_is_absent(self) -> None:
+        """The vendor answered about THIS run and found nothing: a log
+        written to by another run in the same window says nothing here,
+        because the query never asked about it (KOD-288)."""
         caller = CapturingCaller(
-            {"API-query-data-source": {"object": "list", "results": []}},
+            {
+                "API-retrieve-a-data-source": _SCHEMA,
+                "API-query-data-source": {"object": "list", "results": []},
+            },
         )
 
-        present = await self._sink(caller).has_record_since(
+        present = await self._sink(caller).holds_record(
             destination=_destination(DocumentSystem.KNOWLEDGE),
-            since=STARTED_AT,
+            record=_record(),
         )
 
         assert not present
@@ -399,12 +465,17 @@ class TestNotionRecordSink:
     async def test_an_answer_without_results_refuses_naming_it(self) -> None:
         """A guessed ``False`` would double every record and a guessed
         ``True`` would silently skip one; the sink guesses neither."""
-        caller = CapturingCaller({"API-query-data-source": {"object": "list"}})
+        caller = CapturingCaller(
+            {
+                "API-retrieve-a-data-source": _SCHEMA,
+                "API-query-data-source": {"object": "list"},
+            },
+        )
 
         with pytest.raises(McpTransportError) as caught:
-            await self._sink(caller).has_record_since(
+            await self._sink(caller).holds_record(
                 destination=_destination(DocumentSystem.KNOWLEDGE),
-                since=STARTED_AT,
+                record=_record(),
             )
 
         assert "results" in str(caught.value)

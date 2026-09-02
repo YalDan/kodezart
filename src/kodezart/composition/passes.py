@@ -539,62 +539,102 @@ async def _verify_wired_gates(
     )
 
 
+def _session_running(kind: RunKind) -> SessionType:
+    """Which session runs a kind, and therefore reads its record's log.
+
+    The two judgment passes are one session type by design — they differ
+    in what their prompt says, not in what kind of session runs them — and
+    a fire is its own.  Exhaustive by ``match``: a fourth run kind cannot
+    be added without answering this question for it.
+    """
+    match kind:
+        case RunKind.FIRE_PREP | RunKind.GROOMING:
+            return SessionType.SCHEDULED_PASS
+        case RunKind.FIRE:
+            return SessionType.TICKET_FIRE
+
+
+def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionType]]:
+    """Every knowledge-system surface the operation declares, by its reader.
+
+    THREE registries, because the operation declares three: a ``documents``
+    entry and a ``records`` entry in the knowledge system, and the
+    ``knowledge`` map itself — the what-lives-where prelude, which is
+    rendered only for a GRANTED session type, so a declared map under an
+    ungranted session is an operation whose passes are told to consult a
+    map they were never given.
+
+    The reader is not the same for all three.  Documents and the map are a
+    scheduled pass's; a record belongs to whichever session runs its KIND,
+    and the fire's row is a fire's (KOD-265).
+    """
+    surfaces = [
+        (f"documents.{key} ({entry.name})", SessionType.SCHEDULED_PASS)
+        for key, entry in operation.documents.items()
+        if entry.system is DocumentSystem.KNOWLEDGE
+    ]
+    surfaces.extend(
+        (f"records.{key} ({entry.name})", _session_running(RunKind(key)))
+        for key, entry in operation.records.items()
+        if entry.system is DocumentSystem.KNOWLEDGE
+    )
+    surfaces.extend(
+        (f"knowledge.{key} ({title})", SessionType.SCHEDULED_PASS)
+        for key, title in operation.knowledge.items()
+    )
+    return surfaces
+
+
 def _verify_knowledge_destinations(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
 ) -> None:
-    """Refuse to boot when a scheduled pass is sent to a store it cannot open.
+    """Refuse to boot when a session is sent to a store it cannot open.
 
     The mismatch lives across two files and neither half is wrong alone:
     the operation names a surface in the knowledge system, and the
-    deployment grants the knowledge server to no session type.  Composed,
-    they leave a scheduled pass addressing a store its session holds no
-    capability for — and the only place that can fail is inside the
-    session, where it looks like a pass that ran and recorded nothing.
+    deployment grants the knowledge server to the session type that reads
+    it nowhere.  Composed, they leave a session addressing a store it
+    holds no capability for — and the only place that can fail is inside
+    the session, where it looks like a run that happened and recorded
+    nothing.
 
-    THREE surfaces, because the operation declares three and a pass reads
-    all of them: a ``documents`` entry and a ``records`` entry in the
-    knowledge system, and the ``knowledge`` map itself — the what-lives-
-    where prelude, which is rendered only for a GRANTED session type, so a
-    declared map under an ungranted pass is an operation whose passes are
-    told to consult a map their session was never given.
+    Asked PER SESSION TYPE.  Until now the only type this asked about was
+    the scheduled pass, so a granted scheduled pass answered for every
+    surface in the operation and a fire declaring a knowledge-side record
+    booted with its own capability unchecked — the arm that carries the
+    session's prose contribution to the Fire Log (KOD-265).
 
     Checked HERE, on the same predicate the prompt-pass wiring below uses:
     a deployment that schedules no prompt pass reaches none of these, and
     refusing boot over a surface nothing reads would hold it hostage to
     configuration nobody acts on.
 
-    Every affected entry is named at once, because an operator moving one
-    surface at a time pays a boot cycle per entry.  A document or record in
-    the TRACKER system is untouched — a pass reaches the tracker through
-    the server the host attaches, whatever the knowledge grant says.
+    Every affected entry is named at once, with the session type each one
+    needs, because an operator moving one surface at a time pays a boot
+    cycle per entry.  A document or record in the TRACKER system is
+    untouched — a session reaches the tracker through the server the host
+    attaches, whatever the knowledge grant says.
     """
     if operation is None:
         return
-    if SessionType.SCHEDULED_PASS in config.knowledge_session_grants:
-        return
-    destinations = [
-        f"documents.{key} ({entry.name})"
-        for key, entry in operation.documents.items()
-        if entry.system is DocumentSystem.KNOWLEDGE
+    granted = set(config.knowledge_session_grants)
+    unreachable = [
+        (surface, session_type)
+        for surface, session_type in _knowledge_surfaces(operation)
+        if session_type not in granted
     ]
-    destinations.extend(
-        f"records.{key} ({entry.name})"
-        for key, entry in operation.records.items()
-        if entry.system is DocumentSystem.KNOWLEDGE
-    )
-    destinations.extend(
-        f"knowledge.{key} ({title})" for key, title in operation.knowledge.items()
-    )
-    if not destinations:
+    if not unreachable:
         return
+    ungranted = sorted({session_type.value for _, session_type in unreachable})
     raise PassKnowledgeCapabilityError(
-        f"the operation declares {DocumentSystem.KNOWLEDGE.value} surfaces and "
-        f"{SessionType.SCHEDULED_PASS.value} is not named in "
-        f"knowledge_session_grants, so no scheduled pass holds the capability "
-        f"to reach one",
-        destinations=destinations,
+        f"the operation declares {DocumentSystem.KNOWLEDGE.value} surfaces read "
+        f"by sessions knowledge_session_grants does not name ({', '.join(ungranted)}), "
+        f"so the session that reaches one holds no capability for it",
+        destinations=[
+            f"{surface} → {session_type.value}" for surface, session_type in unreachable
+        ],
     )
 
 

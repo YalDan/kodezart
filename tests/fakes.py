@@ -3376,6 +3376,38 @@ class FakeFireReport:
         self.reported.append((issue_key, outcome, failure_class))
 
 
+class RecordingLogSink:
+    """A ``RunRecordSink`` that behaves like the log it stands for.
+
+    It holds the rows written to it and answers the verify question the
+    way a destination does: per RUN — a row naming THIS run inside its own
+    window — so a neighbour's row in the same window answers nothing about
+    it, and a second call for the same run finds the first (KOD-288).
+    """
+
+    def __init__(self) -> None:
+        self.writes: list[RunRecord] = []
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        return any(
+            row.name == record.name and row.recorded_at >= record.started_at
+            for row in self.writes
+        )
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        self.writes.append(record)
+
+
 class RefusingRecordSink:
     """A ``RunRecordSink`` whose destination never takes the row.
 
@@ -3391,11 +3423,11 @@ class RefusingRecordSink:
     def __init__(self, failure: type[McpTransportError]) -> None:
         self.failure: type[McpTransportError] = failure
 
-    async def has_record_since(
+    async def holds_record(
         self,
         *,
         destination: RecordDestination,
-        since: datetime,
+        record: RunRecord,
     ) -> bool:
         raise self.failure(
             "the record destination could not be read",

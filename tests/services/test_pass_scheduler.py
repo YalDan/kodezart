@@ -834,16 +834,16 @@ class SpyingSink:
 
     def __init__(self, *, present: bool = False) -> None:
         self.present: bool = present
-        self.asks: list[tuple[RecordDestination, datetime]] = []
+        self.asks: list[tuple[RecordDestination, RunRecord]] = []
         self.writes: list[tuple[RecordDestination, RunRecord]] = []
 
-    async def has_record_since(
+    async def holds_record(
         self,
         *,
         destination: RecordDestination,
-        since: datetime,
+        record: RunRecord,
     ) -> bool:
-        self.asks.append((destination, since))
+        self.asks.append((destination, record))
         return self.present
 
     async def write_record(

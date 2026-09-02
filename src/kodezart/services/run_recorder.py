@@ -26,9 +26,14 @@ read exactly like a refused page (KOD-177).
 The obligation is that ONE record exists per run, not that the runner
 writes one: a session's rich row through the rendered mechanism IS the
 record when present (two rows per run made every log read as two runs —
-KOD-170, amended), so the recorder VERIFIES the destination for a row
-created within the run's window and backfills the structural minimum only
-on absence.
+KOD-170, amended), so the recorder VERIFIES the destination for THIS
+run's row and backfills the structural minimum only on absence.
+
+Per run, and never "has anything been written lately": the question is
+asked with the record in hand — its kind, its name, its window — because
+a destination-wide answer makes every run after the first in a window a
+duplicate of its neighbour.  Two fires swept at one shutdown produced one
+row, the first answering for the second (KOD-288).
 """
 
 from collections.abc import Mapping
@@ -98,9 +103,9 @@ class RunRecorder:
                 failure=RunRecordFailure.SINK_UNWIRED.value,
             )
         try:
-            present = await sink.has_record_since(
+            present = await sink.holds_record(
                 destination=destination,
-                since=record.started_at,
+                record=record,
             )
             if not present:
                 await sink.write_record(destination=destination, record=record)

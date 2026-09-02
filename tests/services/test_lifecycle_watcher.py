@@ -14,7 +14,6 @@ written to honour it is not asserted at all.
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import datetime
 
 import pytest
 import structlog.testing
@@ -56,6 +55,7 @@ from tests.fakes import (
     FakeJobQueue,
     FakeTrackerPort,
     PassThroughGate,
+    RecordingLogSink,
     RefusingRecordSink,
     make_tracker_issue,
 )
@@ -1195,33 +1195,6 @@ class StalledQueue:
         return self.records.get(job_id)
 
 
-class FireLog:
-    """A record sink that answers about the rows it already holds.
-
-    The verify arm, as a destination implements it: a row inside a run's
-    window is what makes the runner leave that run alone.
-    """
-
-    def __init__(self) -> None:
-        self.writes: list[RunRecord] = []
-
-    async def has_record_since(
-        self,
-        *,
-        destination: RecordDestination,
-        since: datetime,
-    ) -> bool:
-        return any(row.recorded_at >= since for row in self.writes)
-
-    async def write_record(
-        self,
-        *,
-        destination: RecordDestination,
-        record: RunRecord,
-    ) -> None:
-        self.writes.append(record)
-
-
 FIRE_DESTINATION = RecordDestination(
     system=DocumentSystem.KNOWLEDGE,
     name="Fire Log",
@@ -1233,9 +1206,9 @@ FIRE_DESTINATION = RecordDestination(
 def recording_watcher(
     queue: StalledQueue,
     tracker: FakeTrackerPort,
-) -> tuple[LifecycleWatcher, FireLog]:
+) -> tuple[LifecycleWatcher, RecordingLogSink]:
     """The shipped watcher over the shipped recorder and a real Fire Log."""
-    log = FireLog()
+    log = RecordingLogSink()
     return (
         LifecycleWatcher(
             recorder=RunRecorder(
@@ -1331,7 +1304,7 @@ class TestTheShutdownRecordSweep:
         tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
         queue = StalledQueue()
         queue.enqueue("job-0001", JobState.RUNNING)
-        log = FireLog()
+        log = RecordingLogSink()
         watch = LifecycleWatcher(
             recorder=RunRecorder(
                 records={RunKind.FIRE.value: FIRE_DESTINATION},

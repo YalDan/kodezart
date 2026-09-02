@@ -7,13 +7,12 @@ rides the vendor's patch operation rather than a read-modify-write of the
 whole content: two writers appending concurrently must not lose each
 other's lines (KOD-170).
 
-Verification reads the vendor's OWN clock: the document's ``updatedAt``
-moves on every write, so a document touched at or after a run's start
-holds that run's row — whatever prose the session appended — without this
-adapter parsing anyone's line format.
+Verification reads the document itself and looks for THIS run's row.  The
+document's ``updatedAt`` was the earlier answer — it moves on every write,
+so any run in the window answered for every other, and two fires swept at
+one shutdown produced one row (KOD-288).  What identifies a run in a log
+of runs is its NAME: the issue a fire ran on, the pass a scheduled run is.
 """
-
-from datetime import datetime
 
 from kodezart.core.errors import McpTransportError
 from kodezart.core.protocols import McpToolCaller
@@ -31,18 +30,18 @@ class LinearRecordSink:
         self._caller: McpToolCaller = caller
         self._server_name: str = server_name
 
-    async def has_record_since(
+    async def holds_record(
         self,
         *,
         destination: RecordDestination,
-        since: datetime,
+        record: RunRecord,
     ) -> bool:
-        """Whether the document was written at or after *since*.
+        """Whether the document already carries a row about THIS run.
 
-        ``updatedAt`` is the vendor's timestamp for the LAST write, which
-        is exactly the question: a run whose session appended its row
-        moved it past the run's start, and one that skipped left it
-        behind (measured live on the scan checkpoint, 2026-09-01).
+        The document is the log, so the log is read: a row naming this
+        run is this run's record, whatever prose surrounds it, and a row
+        naming another run is another run's — which is the whole of what
+        "any row since" could not tell apart (KOD-288).
         """
         payload = await self._caller.call_tool(
             name=_TOOL_GET_DOCUMENT,
@@ -50,26 +49,18 @@ class LinearRecordSink:
         )
         if not isinstance(payload, dict):
             raise McpTransportError(
-                "the document read answered with no object to read updatedAt from",
+                "the document read answered with no object to read content from",
                 server_name=self._server_name,
                 tool_name=_TOOL_GET_DOCUMENT,
             )
-        updated_at = payload.get("updatedAt")
-        if not isinstance(updated_at, str):
+        content = payload.get("content")
+        if not isinstance(content, str):
             raise McpTransportError(
-                "the document read carries no updatedAt timestamp",
+                "the document read carries no content to search for the run's row",
                 server_name=self._server_name,
                 tool_name=_TOOL_GET_DOCUMENT,
             )
-        try:
-            updated = datetime.fromisoformat(updated_at)
-        except ValueError as exc:
-            raise McpTransportError(
-                f"the document's updatedAt is not a readable timestamp: {updated_at!r}",
-                server_name=self._server_name,
-                tool_name=_TOOL_GET_DOCUMENT,
-            ) from exc
-        return updated >= since
+        return record.name in content
 
     async def write_record(
         self,
