@@ -82,10 +82,7 @@ class GatedDispatchPass:
         # and it is the ONLY outcome that leaves one running.  Every other
         # outcome either never claimed at all, or claimed and released
         # before it returned — so none of them has a run to follow, and no
-        # empty watch is ever started "just in case".  Stated as a property
-        # of the members rather than as a roster of them: the roster grows
-        # — ``winner_blocked`` joined it (KOD-173) — and a comment counting
-        # the members went stale the moment it did.
+        # empty watch is ever started "just in case".
         if report.outcome is not DispatchOutcome.fire_enqueued:
             return
         if (

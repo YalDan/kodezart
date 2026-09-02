@@ -25,8 +25,7 @@ class DispatchOutcome(StrEnum):
     """The partition of a dispatch pass's terminal dispositions.
 
     Exhaustive and disjoint: a pass ends on exactly one member, and the
-    set is named by nothing but this declaration — a prose count of the
-    members drifts the moment one is added, as it did here.
+    set is named by nothing but this declaration.
 
     The FIELD is ``outcome``, matching the run-side discriminator's naming
     discipline, and this report is the single surface a pass reports on —
@@ -63,10 +62,7 @@ class ExclusionClause(StrEnum):
 
     Members are ordered as the predicate evaluates them, and an issue is
     annotated with the FIRST clause that excluded it, so the annotation is
-    a function of the data rather than of evaluation luck.  ``LIVE_BLOCKER``
-    is the exception the order cannot express: it is decided on the winner
-    after the predicate has run, and reaches a scanned issue only through
-    the remembered-exclusion map.
+    a function of the data rather than of evaluation luck.
     """
 
     OUTSIDE_TEAM = "outside_team"
@@ -133,15 +129,14 @@ class ExclusionClause(StrEnum):
     """An issue the graph blocks, by an edge to an issue still open.  The
     detail carries the blocker's key.
 
-    Decided at ONE site, the pre-claim reading of the winner: a listing
-    answers with each issue's own fields and no edges, so this clause
-    asked over a scan entry could only pass (KOD-173).  The winner it
-    excludes is then remembered under it, by the same mechanism
+    Asked over each scan entry's edges, and again over the winner's at
+    the pre-claim reading, which supplies the edges a listing does not
+    carry — the measured backend answers a listing with each issue's own
+    fields and no relations (KOD-173).  A winner that reading finds
+    blocked is remembered under this clause, by the same mechanism
     ``BASE_UNRESOLVED`` and ``RUN_FAILED`` use, so the lane's next tick
-    ranks the next unblocked candidate instead of spending every tick
-    re-deciding a blocker that has not moved — which is also how the
-    clause reaches a report line for an issue that is not this pass's
-    winner."""
+    ranks the next unblocked candidate instead of re-deciding a blocker
+    that has not moved."""
 
     CLAIMED_OR_IN_FLIGHT = "claimed_or_in_flight"
     OPEN_DELIVERY = "open_delivery"
