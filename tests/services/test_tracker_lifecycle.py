@@ -490,3 +490,21 @@ class TestTheFailureArm:
 
         assert tracker.restored_states == [("K-1", "Todo")]
         assert tracker.comments == []
+
+
+#: The ruling the failure arm runs under, as the docstring must name it:
+#: 2026-08-26, option (a) — restore the pre-claim state AND comment the
+#: failure, rather than comment alone.  A bare "(KOD-146, ruled)" sends a
+#: reader to an issue carrying several rulings with nothing saying which
+#: one this arm is, and the choice not taken is the one an operator is
+#: most likely to re-propose (KOD-266).
+FAILURE_ARM_RULING = ("KOD-146", "2026-08-26", "option (a)")
+
+
+def test_the_failure_arms_docstring_cites_its_ruling_by_date() -> None:
+    """The owed half of the ruling: the code says which one it is under."""
+    docstring = TrackerLifecycleWriter.on_run_failed.__doc__
+
+    assert docstring is not None
+    for cited in FAILURE_ARM_RULING:
+        assert cited in docstring, cited
