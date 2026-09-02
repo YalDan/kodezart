@@ -71,12 +71,14 @@ class RetryFloor:
     under a standing limit therefore surfaces its terminal frame a floor
     later, which is the same wait the next attempt would have cost.
 
-    Constructed with ``None`` where no resolver is supplied, which is the
-    graph's own back-off and nothing more.
+    The resolver is required.  A caller that means "no floor for any
+    failure" says so in a resolver that answers ``None``, which is a
+    statement someone made; an absent resolver was the same silence
+    KOD-282 removed from the three loops one layer up.
     """
 
-    def __init__(self, delay_floor_for: DelayFloor | None) -> None:
-        self._delay_floor_for: DelayFloor | None = delay_floor_for
+    def __init__(self, delay_floor_for: DelayFloor) -> None:
+        self._delay_floor_for: DelayFloor = delay_floor_for
 
     def __call__(
         self,
@@ -90,7 +92,7 @@ class RetryFloor:
             try:
                 return await node(state, config)
             except Exception as exc:
-                floor = None if resolve is None else resolve(exc)
+                floor = resolve(exc)
                 if floor is not None:
                     await asyncio.sleep(floor)
                 raise

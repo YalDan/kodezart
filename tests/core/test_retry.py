@@ -11,7 +11,7 @@ from kodezart.composition.engine import rate_limit_delay_floor
 from kodezart.core import retry as retry_module
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, soft_failure
-from kodezart.core.retry import GraphNode, RetryFloor, should_retry
+from kodezart.core.retry import DelayFloor, GraphNode, RetryFloor, should_retry
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.agent import RaiseSite
 
@@ -245,13 +245,38 @@ async def test_a_node_that_answers_pays_no_floor_at_all() -> None:
     assert elapsed < UNDELAYED_CEILING_SECONDS
 
 
-async def test_a_wrapper_built_with_no_resolver_delays_nothing() -> None:
-    """The graph's own back-off and nothing more — what an engine gets by default."""
+def test_every_wrapper_is_built_over_a_resolver() -> None:
+    """The floor's resolver is a required dependency (KOD-301).
+
+    Measured at ``b5d1297``: the constructor took ``DelayFloor | None``
+    and skipped the resolver entirely for ``None`` — an arm no production
+    caller could reach once KOD-282 made the resolver required on all
+    three loops, kept alive by the one test that passed ``None``.  A
+    caller meaning "no floor" states it in a resolver that answers
+    ``None``, which is a decision on the record rather than an omission.
+    """
+    parameter = inspect.signature(RetryFloor.__init__).parameters["delay_floor_for"]
+
+    assert parameter.default is inspect.Parameter.empty
+    assert parameter.annotation == DelayFloor
+
+
+async def test_a_resolver_that_names_no_floor_for_anything_delays_nothing() -> None:
+    """The graph's own back-off, asked for rather than fallen into.
+
+    The behaviour the deleted ``None`` arm provided, now reached the only
+    way it can be: a resolver a caller wrote that answers ``None`` to
+    every failure it is shown.
+    """
+
+    def no_floor_for_anything(exc: Exception) -> float | None:
+        _ = exc
+        return None
 
     async def node(state: str, config: RunnableConfig) -> str:
         raise RateLimitError(state)
 
-    elapsed = await _elapsed_of(RetryFloor(None)(node), RateLimitError)
+    elapsed = await _elapsed_of(RetryFloor(no_floor_for_anything)(node), RateLimitError)
 
     assert elapsed < UNDELAYED_CEILING_SECONDS
 
