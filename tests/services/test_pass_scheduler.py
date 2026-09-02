@@ -20,13 +20,12 @@ import ast
 import asyncio
 import re
 from collections import Counter
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
 import pytest
-import structlog
+import structlog.testing
 
 from kodezart.composition.records import run_report
 from kodezart.core.errors import McpCredentialRefusedError
@@ -523,18 +522,8 @@ async def test_a_failure_event_carries_the_traceback_that_produced_it() -> None:
     """
     exploder = Exploder()
     metronome = Metronome(limit=1)
-    events: list[structlog.typing.EventDict] = []
 
-    def capture(
-        _logger: object,
-        _name: str,
-        event_dict: structlog.typing.EventDict,
-    ) -> structlog.typing.EventDict:
-        events.append(dict(event_dict))
-        raise structlog.DropEvent
-
-    structlog.configure(processors=[capture])
-    try:
+    with structlog.testing.capture_logs() as events:
         scheduler = PassScheduler(
             passes=[
                 ScheduledPass(
@@ -549,8 +538,6 @@ async def test_a_failure_event_carries_the_traceback_that_produced_it() -> None:
         await scheduler.start()
         await _settle(metronome.parked)
         await scheduler.stop()
-    finally:
-        structlog.reset_defaults()
 
     (failure,) = [
         event for event in events if event["event"] == "scheduled_pass_failed"
@@ -833,30 +820,6 @@ class CountedReport:
         await self._inner(outcome, duration_seconds, started_at)
 
 
-@contextmanager
-def _captured_events() -> Iterator[list[structlog.typing.EventDict]]:
-    """Every event emitted through the process-wide chain, and nothing rendered.
-
-    The recorder takes no injected emitter — it is not the collaborator
-    under test here — so its events are read off the chain itself.
-    """
-    events: list[structlog.typing.EventDict] = []
-
-    def capture(
-        _logger: object,
-        _name: str,
-        event_dict: structlog.typing.EventDict,
-    ) -> structlog.typing.EventDict:
-        events.append(dict(event_dict))
-        raise structlog.DropEvent
-
-    structlog.configure(processors=[capture])
-    try:
-        yield events
-    finally:
-        structlog.reset_defaults()
-
-
 async def test_a_gate_skipped_tick_writes_no_run_record_and_names_the_skip() -> None:
     """KOD-176: the phantom row, as a fixture.
 
@@ -871,7 +834,9 @@ async def test_a_gate_skipped_tick_writes_no_run_record_and_names_the_skip() -> 
         run_report(_recorder(sink), RunKind.FIRE_PREP, "fire_prep_pass"),
     )
 
-    with _captured_events() as events:
+    # The recorder takes no injected emitter — it is not the collaborator
+    # under test here — so its events are read off the chain itself.
+    with structlog.testing.capture_logs() as events:
         log = await _one_tick(
             ScheduledPass(
                 name="fire_prep_pass",
@@ -917,7 +882,9 @@ async def test_a_real_run_beside_a_skipped_tick_still_records_its_row(
     metronome = PerPassMetronome(limits={FAST_INTERVAL: 1, SLOW_INTERVAL: 1})
     log = RecordingLogger()
 
-    with _captured_events() as events:
+    # The recorder takes no injected emitter — it is not the collaborator
+    # under test here — so its events are read off the chain itself.
+    with structlog.testing.capture_logs() as events:
         scheduler = PassScheduler(
             passes=[
                 ScheduledPass(

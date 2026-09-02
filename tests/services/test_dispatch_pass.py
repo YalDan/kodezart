@@ -51,6 +51,7 @@ from kodezart.types.domain.dispatch import (
     DispatchOutcome,
     DispatchReport,
     ExclusionClause,
+    PassRun,
     PassSignal,
 )
 from kodezart.types.domain.gating import OutboundDestination, RepoVisibility
@@ -276,26 +277,33 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
 
 
 async def test_a_delta_runs_the_pass_and_the_work_reaches_the_queue() -> None:
-    """AC-19: something moved, so the expensive half runs and produces a job."""
+    """AC-19: something moved, so the expensive half runs and produces a job.
+
+    The tick says it RAN: its driver tells a run from a skip by the return
+    (KOD-176).
+    """
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
     )
     pass_, queue = tick(tracker)
 
-    await pass_.run()
+    assert await pass_.run() is PassRun.RAN
 
     assert [lane for lane, _ in queue.submissions] == [LANE]
     assert tracker.claims["K-1"].holder == HOLDER
 
 
 async def test_a_quiet_board_never_wakes_the_dispatcher() -> None:
-    """AC-19: the gate is the whole cost of a tick over a board at rest."""
+    """AC-19: the gate is the whole cost of a tick over a board at rest.
+
+    The tick says it SKIPPED, so its driver records no run for it (KOD-176).
+    """
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1", queue_states=[QueueState.TRIAGE])],
     )
     pass_, queue = tick(tracker)
 
-    await pass_.run()
+    assert await pass_.run() is PassRun.SKIPPED
 
     assert queue.submissions == []
     assert tracker.claims == {}
