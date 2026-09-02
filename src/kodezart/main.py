@@ -171,8 +171,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         dispatch = await build_dispatch_runtime(
             config=config,
             operation=operation,
-            tracker=tracker,
-            ledger=None if dialled is None else dialled.ledger,
+            dialled=dialled,
             github_api=github_api,
             queue=job_queue,
             registry=job_queue,

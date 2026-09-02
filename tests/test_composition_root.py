@@ -24,13 +24,22 @@ sequence rather than of any component in it (KOD-178).
 
 import ast
 import asyncio
+import inspect
 from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 
+import pytest
 import structlog.testing
 from structlog.typing import EventDict
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.composition.passes import (
+    build_dispatch_runtime,
+    build_gate,
+    build_prompt_passes,
+)
+from kodezart.composition.tracker import DialledTracker
+from kodezart.core.config import AppConfig
 from kodezart.core.errors import McpSessionClosedError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
@@ -41,6 +50,7 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     WorkflowCompleteEvent,
 )
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
     LifecycleStage,
@@ -144,6 +154,110 @@ def test_the_shutdown_records_unfinished_fires_over_a_quiescent_registry() -> No
     assert sweep > calls.index("job_queue.stop")
     assert sweep > calls.index("dispatch.lifecycle.drain")
     assert sweep < calls.index("built_recorder.knowledge_caller.close")
+
+
+# ---------------------------------------------------------------------------
+# KOD-289: a tracker and its self-write ledger are one value, or neither
+# ---------------------------------------------------------------------------
+
+
+def _build_dispatch_runtime_keywords() -> set[str]:
+    """The keywords the root hands :func:`build_dispatch_runtime`."""
+    tree = ast.parse(ROOT.read_text(encoding="utf-8"))
+    (call,) = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "build_dispatch_runtime"
+    ]
+    return {keyword.arg for keyword in call.keywords if keyword.arg is not None}
+
+
+class TestATrackerTravelsWithItsOwnWriteLedger:
+    """Half a tracker is refused by name, never served as a working one.
+
+    Measured at ``084f762``: the port and the ledger of this process's own
+    writes arrived as two nullable arguments, so a ledger missing beside a
+    live port made :func:`build_gate` return ``None`` — every prompt pass
+    ran ungated at full session cost — and made
+    :func:`build_dispatch_runtime` skip every dispatch pass, while the log
+    it wrote said the tracker was present (KOD-289).
+    """
+
+    def test_a_gate_asked_for_without_the_ledger_is_refused_by_name(self) -> None:
+        """The missing half is named, where it used to be a silent ``None``.
+
+        Called through an untyped reference, because the refusal under test
+        is what a caller MEETS: the type checker refuses this call outright,
+        and the run refuses it too rather than building a gate that cannot
+        recognise its own writes.
+        """
+        builder: Callable[..., object] = build_gate
+
+        with pytest.raises(TypeError, match="ledger"):
+            builder(
+                config=None,
+                tracker=FakeTrackerPort(),
+                signals=[PassSignal.approved_changed],
+                team_keys=["KOD"],
+                repo_urls=[REPO_URL],
+            )
+
+    def test_the_pair_reaches_the_runtime_as_one_value(self) -> None:
+        """No builder takes a ledger the boot could forget to pass.
+
+        The two halves are one fact, so they travel as the one value boot
+        produced: there is no argument left for half of a tracker to arrive
+        in.
+        """
+        runtime = inspect.signature(build_dispatch_runtime).parameters
+        prompt = inspect.signature(build_prompt_passes).parameters
+
+        assert "ledger" not in runtime
+        assert "tracker" not in runtime
+        assert "ledger" not in prompt
+        assert "tracker" not in prompt
+        assert runtime["dialled"].annotation == DialledTracker | None
+        assert prompt["dialled"].annotation == DialledTracker | None
+
+    def test_the_composition_root_hands_the_tracker_over_whole(self) -> None:
+        """The boot's own call, read off the root: one value, not two halves."""
+        keywords = _build_dispatch_runtime_keywords()
+
+        assert "dialled" in keywords
+        assert "ledger" not in keywords
+        assert "tracker" not in keywords
+
+    def test_a_pass_that_declares_no_signal_is_the_one_ungated_arm(self) -> None:
+        """The paired positive and the only remaining absence.
+
+        A whole tracker plus a declared signal builds a gate; the same
+        tracker with no signal declared builds none, which is the pass
+        saying it wants none rather than the wiring losing one.
+        """
+        tracker = FakeTrackerPort()
+        built = build_gate(
+            config=AppConfig(),
+            tracker=tracker,
+            ledger=tracker.self_writes,
+            signals=[PassSignal.approved_changed],
+            team_keys=["KOD"],
+            repo_urls=[REPO_URL],
+        )
+
+        assert built is not None
+        assert (
+            build_gate(
+                config=AppConfig(),
+                tracker=tracker,
+                ledger=tracker.self_writes,
+                signals=[],
+                team_keys=["KOD"],
+                repo_urls=[REPO_URL],
+            )
+            is None
+        )
 
 
 # ---------------------------------------------------------------------------

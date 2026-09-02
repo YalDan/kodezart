@@ -11,6 +11,7 @@ from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
+from kodezart.composition.tracker import DialledTracker
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.errors import (
@@ -125,24 +126,25 @@ def delivery_probe_for(repo_url: str, *, forge: DeliveryProbe) -> DeliveryProbe:
 def build_gate(
     *,
     config: AppConfig,
-    tracker: TrackerPort | None,
-    ledger: SelfWriteLedger | None,
+    tracker: TrackerPort,
+    ledger: SelfWriteLedger,
     signals: Sequence[PassSignal],
     team_keys: Sequence[str],
     repo_urls: Sequence[str],
 ) -> PassGate | None:
-    """A gate over *signals*, or none when this deployment cannot ask them.
+    """A gate over *signals*, or none when the pass declares none.
 
-    Two ways to be ungated, and neither silently becomes the other: the
-    pass declares no signals, or no tracker port exists to answer the ones
-    it declares.  The second is reported by the caller, because "the gate
-    is absent" and "nothing moved" have opposite costs and must never be
-    confused for one another.
+    That is the ONLY way a built gate is absent.  Having no tracker at all
+    is the caller's arm — it holds a dialled tracker or it does not — and
+    it is reported there, because "the gate is absent" and "nothing moved"
+    have opposite costs and must never be confused for one another.
 
-    *ledger* is absent in exactly the second case and never on its own: it
-    is the tracker's own write log, dialled with it and handed on with it,
-    so the two nulls are one fact rather than a third way to be ungated
-    (KOD-175).
+    Both halves are REQUIRED, and the callers take them from one value, so
+    no boot can hand this half of a tracker.  The port and its write ledger
+    are one fact — the writer and the reader of the same issues — and while
+    the ledger could go missing on its own this returned ``None``, and the
+    pass it guards ran ungated at full session cost with nothing saying so
+    (KOD-175, KOD-289).
 
     *team_keys* and *repo_urls* are the containers the pass is scoped to —
     the boards its issue signals ask within and the repositories its review
@@ -150,7 +152,7 @@ def build_gate(
     empty refuses at construction; it is the caller that knows which
     containers its pass owns.
     """
-    if not signals or tracker is None or ledger is None:
+    if not signals:
         return None
     return PassGate(
         tracker=tracker,
@@ -244,8 +246,7 @@ async def build_prompt_passes(
     config: AppConfig,
     operation: OperationConfig,
     prompts: PromptSetProvider,
-    tracker: TrackerPort | None,
-    ledger: SelfWriteLedger | None,
+    dialled: DialledTracker | None,
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
@@ -279,6 +280,10 @@ async def build_prompt_passes(
     every declared team and every declared repository — the narrowing the
     per-repository dispatch pass makes is a property of that pass, not of
     the mechanism.
+
+    *dialled* is the tracker AND the ledger of this process's own writes,
+    as one value: a pass gated on a port whose self-writes it cannot
+    recognise wakes on the operation's own churn every tick (KOD-289).
     """
     log: BoundLogger = get_logger(__name__)
     absent = absent_roster(operation)
@@ -295,7 +300,7 @@ async def build_prompt_passes(
     # Read only where a gate will actually be built: naming the operation's
     # teams REFUSES when it declares none, and a deployment whose passes are
     # all ungated has no scan for that refusal to be about.
-    gated = tracker is not None and any(row.signals for row in schedule.values())
+    gated = dialled is not None and any(row.signals for row in schedule.values())
     team_keys = operation.team_keys() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
     return [
@@ -308,10 +313,12 @@ async def build_prompt_passes(
                 key=key,
                 prompts=prompts,
                 runner=runner,
-                gate=build_gate(
+                gate=None
+                if dialled is None
+                else build_gate(
                     config=config,
-                    tracker=tracker,
-                    ledger=ledger,
+                    tracker=dialled.tracker,
+                    ledger=dialled.ledger,
                     signals=row.signals,
                     team_keys=team_keys,
                     repo_urls=repo_urls,
@@ -682,8 +689,7 @@ async def build_dispatch_runtime(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
-    tracker: TrackerPort | None,
-    ledger: SelfWriteLedger | None,
+    dialled: DialledTracker | None,
     github_api: DeliveryProbe | None,
     queue: JobQueue,
     registry: JobRegistry,
@@ -706,23 +712,24 @@ async def build_dispatch_runtime(
     before it builds the queue this constructs against — checking again
     here would be a second answer to a question already settled, on a path
     where refusing costs a started queue and an open transport.
+
+    The tracker arrives WHOLE — the port and the ledger of this process's
+    own writes, as the one value boot produced.  Taking the two halves
+    separately gave this a fourth state nobody named: a ledger absent
+    beside a live port skipped every dispatch pass and ran every prompt
+    pass ungated, and the log said the tracker was present (KOD-289).
     """
     # Cadence is scheduler configuration and nothing else. Three
     # states, none silent: no tracker, or no delivery probe to answer
     # "is this issue already delivered?", and the passes do not run —
     # named, never inferred from an empty schedule.
     built: DispatchPasses | None = None
-    if (
-        tracker is not None
-        and ledger is not None
-        and operation is not None
-        and github_api is not None
-    ):
+    if dialled is not None and operation is not None and github_api is not None:
         built = await build_dispatch_passes(
             config=config,
             operation=operation,
-            tracker=tracker,
-            ledger=ledger,
+            tracker=dialled.tracker,
+            ledger=dialled.ledger,
             delivery=github_api,
             queue=queue,
             registry=registry,
@@ -735,7 +742,7 @@ async def build_dispatch_runtime(
     else:
         await log.ainfo(
             "scheduled_passes_not_wired",
-            tracker_present=tracker is not None,
+            tracker_present=dialled is not None,
             operation_config_present=operation is not None,
             delivery_probe_present=github_api is not None,
         )
@@ -744,7 +751,7 @@ async def build_dispatch_runtime(
     # do without is the operation config their prompts render from.
     scheduled: list[ScheduledPass] = [] if built is None else list(built.passes)
     if operation is not None:
-        if tracker is None and (
+        if dialled is None and (
             config.fire_prep_pass_gate_signals or config.grooming_pass_gate_signals
         ):
             # Named, never inferred: a pass that declares signals and has
@@ -765,8 +772,7 @@ async def build_dispatch_runtime(
                 config=config,
                 operation=operation,
                 prompts=prompts,
-                tracker=tracker,
-                ledger=ledger,
+                dialled=dialled,
                 runner=runner,
                 skills=skills,
                 recorder=recorder,

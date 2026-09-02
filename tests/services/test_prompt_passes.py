@@ -21,6 +21,7 @@ from kodezart.composition.passes import (
     build_prompt_passes,
     verify_pass_preflight,
 )
+from kodezart.composition.tracker import DialledTracker
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     PassGateCapabilityError,
@@ -45,6 +46,7 @@ from tests.fakes import (
     FakeAgentRunner,
     FakeJobQueue,
     FakeTrackerPort,
+    ManagedFakeLinearMcpServer,
     make_tracker_issue,
 )
 from tests.prompts.test_claude_opus_goldens import V5_SET
@@ -95,6 +97,27 @@ def _config(tmp_path: Path, **overrides: object) -> AppConfig:
     return AppConfig(**settings)  # type: ignore[arg-type]
 
 
+def dialled_over(
+    tracker: FakeTrackerPort | None,
+    operation: OperationConfig,
+) -> DialledTracker | None:
+    """A boot's tracker: the port, its session and its own write ledger.
+
+    One value, because the builders take one.  A port handed over without
+    the ledger of this process's writes is a pass gate that wakes on the
+    operation's own churn, and there is no shape here that can express it
+    (KOD-289).
+    """
+    if tracker is None:
+        return None
+    return DialledTracker(
+        tracker=tracker,
+        caller=ManagedFakeLinearMcpServer(),
+        operation=operation,
+        ledger=tracker.self_writes,
+    )
+
+
 async def _registrations(
     tmp_path: Path,
     *,
@@ -112,8 +135,7 @@ async def _registrations(
             config=_config(tmp_path, **overrides),
             operation=declared,
             prompts=prompts,
-            tracker=tracker,
-            ledger=None if tracker is None else tracker.self_writes,
+            dialled=dialled_over(tracker, declared),
             runner=runner,
             skills=SUPPRESS_ALL_SKILLS,
         ),
@@ -159,8 +181,7 @@ async def _runtime(
         recorder=RunRecorder(records={}, sinks={}),
         config=config,
         operation=declared,
-        tracker=tracker,
-        ledger=None if tracker is None else tracker.self_writes,
+        dialled=dialled_over(tracker, declared),
         github_api=None,
         queue=queue,
         registry=queue,
