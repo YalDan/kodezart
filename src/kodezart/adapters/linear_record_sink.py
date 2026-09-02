@@ -7,13 +7,15 @@ rides the vendor's patch operation rather than a read-modify-write of the
 whole content: two writers appending concurrently must not lose each
 other's lines (KOD-170).
 
-Verification reads the vendor's OWN clock: the document's ``updatedAt``
-moves on every write, so a document touched at or after a run's start
-holds that run's row — whatever prose the session appended — without this
-adapter parsing anyone's line format.
+Verification reads the document itself and looks for THIS run's row.  The
+document's ``updatedAt`` was the earlier answer — it moves on every write,
+so any run in the window answered for every other, and two fires swept at
+one shutdown produced one row (KOD-288).  What identifies a run in a log
+of runs is the record's own TITLE, and a row is a LINE that begins with
+it: the run's kind, its name and the instant it began, matched whole.  A
+substring of the log was the second wrong answer — a row for ``KOD-170``
+verified away the record owed to ``KOD-17``.
 """
-
-from datetime import datetime
 
 from kodezart.core.errors import McpTransportError
 from kodezart.core.protocols import McpToolCaller
@@ -31,18 +33,21 @@ class LinearRecordSink:
         self._caller: McpToolCaller = caller
         self._server_name: str = server_name
 
-    async def has_record_since(
+    async def holds_record(
         self,
         *,
         destination: RecordDestination,
-        since: datetime,
+        record: RunRecord,
     ) -> bool:
-        """Whether the document was written at or after *since*.
+        """Whether the document already carries a row about THIS run.
 
-        ``updatedAt`` is the vendor's timestamp for the LAST write, which
-        is exactly the question: a run whose session appended its row
-        moved it past the run's start, and one that skipped left it
-        behind (measured live on the scan checkpoint, 2026-09-01).
+        The document is the log, so the log is read line by line, and a
+        line that BEGINS with this record's title is this run's row —
+        whatever the session wrote after it.  Matched at the start of a
+        line and against the whole title, because the title carries the
+        run's own start stamp: that is what keeps a neighbour's row, a row
+        for a longer name this one prefixes, and the same name from
+        another window out of this run's answer (KOD-288).
         """
         payload = await self._caller.call_tool(
             name=_TOOL_GET_DOCUMENT,
@@ -50,26 +55,19 @@ class LinearRecordSink:
         )
         if not isinstance(payload, dict):
             raise McpTransportError(
-                "the document read answered with no object to read updatedAt from",
+                "the document read answered with no object to read content from",
                 server_name=self._server_name,
                 tool_name=_TOOL_GET_DOCUMENT,
             )
-        updated_at = payload.get("updatedAt")
-        if not isinstance(updated_at, str):
+        content = payload.get("content")
+        if not isinstance(content, str):
             raise McpTransportError(
-                "the document read carries no updatedAt timestamp",
+                "the document read carries no content to search for the run's row",
                 server_name=self._server_name,
                 tool_name=_TOOL_GET_DOCUMENT,
             )
-        try:
-            updated = datetime.fromisoformat(updated_at)
-        except ValueError as exc:
-            raise McpTransportError(
-                f"the document's updatedAt is not a readable timestamp: {updated_at!r}",
-                server_name=self._server_name,
-                tool_name=_TOOL_GET_DOCUMENT,
-            ) from exc
-        return updated >= since
+        title = record.title()
+        return any(line.startswith(title) for line in content.splitlines())
 
     async def write_record(
         self,

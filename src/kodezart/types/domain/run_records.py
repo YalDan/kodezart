@@ -14,10 +14,16 @@ name, when it began, how it ended, and how long it took.
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Final
 
 from pydantic import BaseModel, ConfigDict
 
 from kodezart.types.domain.operation import RunKind
+
+#: How every stamp inside a record is spelled.  One format, because a row
+#: is FOUND by the string it carries: two spellings of one instant are two
+#: rows to any destination matching on the title (KOD-288).
+_STAMP_FORMAT: Final[str] = "%Y-%m-%dT%H:%M:%SZ"
 
 
 class RunOutcome(StrEnum):
@@ -34,12 +40,47 @@ class RunOutcome(StrEnum):
     NEVER_STARTED = "never_started"
 
 
+class RunRecordResult(StrEnum):
+    """What became of a run's record obligation, for the caller that asked.
+
+    Three members because the recorder does three things and its callers
+    distinguish them: it WROTE the structural row into an absence, it
+    VERIFIED the row the run already had, or the run's kind declares no
+    destination at all.  A shutdown sweep announces the fires it recorded,
+    and announcing one it only verified would report a row it did not
+    write (KOD-178).
+    """
+
+    WRITTEN = "written"
+    VERIFIED = "verified"
+    UNDECLARED = "undeclared"
+
+
+class RunRecordFailure(StrEnum):
+    """Why a run's declared destination did not take its record.
+
+    Three members because the three have three different remedies, and
+    the measured boot's record failures named none of them: the transport
+    said the session was GONE (reopen it, read the server's stderr), the
+    destination's system ANSWERED and would not take the row (fix the
+    payload or the destination), or this process holds no sink for the
+    declared system at all (fix the wiring, or stop declaring it).
+    """
+
+    SESSION_CLOSED = "session_closed"
+    VENDOR_REFUSED = "vendor_refused"
+    SINK_UNWIRED = "sink_unwired"
+
+
 class RunRecord(BaseModel):
     """One run, as its runner measured it.
 
-    ``started_at`` is the verification window's left edge: a destination
-    row created at or after it belongs to THIS run, so the runner treats
-    the record as already written and backfills nothing.
+    Three facts make a run itself — which KIND ran, under what NAME, and
+    WHEN it began — and :meth:`title` is the one string that spells all
+    three.  A destination row carrying that title is this run's record and
+    no other's: a neighbour's row, a row for a run whose name this one's
+    merely prefixes (``KOD-17`` against ``KOD-170``), and the same name
+    from another window are each a different title (KOD-288).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -51,14 +92,31 @@ class RunRecord(BaseModel):
     started_at: datetime
     recorded_at: datetime
 
+    def title(self) -> str:
+        """What identifies THIS run, wherever a row about it is written.
+
+        Declared once and read twice: the runner verifies a destination by
+        it and writes it, and the rendered Record clause prescribes the
+        same string to the session that writes its own row.  Two spellings
+        of one run are two rows, which is the whole of what the measured
+        substring match could not tell apart (KOD-288).
+        """
+        return (
+            f"{self.kind.value} — {self.name} @ "
+            f"{self.started_at.strftime(_STAMP_FORMAT)}"
+        )
+
     def line(self) -> str:
         """The one-line rendering every sink writes, vendor-agnostic.
 
         Composed HERE so two sinks cannot drift into two dialects of the
         same record; what differs per sink is only where the line lands.
+        It OPENS with the title, because that is what a sink matches a row
+        by, and closes with the writing stamp, because a log is also read
+        chronologically and ``started_at`` cannot say when a row landed.
         """
-        stamp = self.recorded_at.strftime("%Y-%m-%dT%H:%M:%SZ")
         return (
-            f"{stamp} — {self.kind.value} — {self.name}: {self.outcome.value} "
-            f"({self.duration_seconds:.1f}s)"
+            f"{self.title()} — {self.outcome.value} "
+            f"({self.duration_seconds:.1f}s) — recorded "
+            f"{self.recorded_at.strftime(_STAMP_FORMAT)}"
         )

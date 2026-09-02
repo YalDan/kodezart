@@ -45,7 +45,7 @@ from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
@@ -406,6 +406,7 @@ class LinearMcpTracker:
         max_retries: int,
         retry_backoff_factor: float,
         clock: Callable[[], datetime] = _utc_now,
+        ledger: SelfWriteLedger | None = None,
     ) -> None:
         self._caller: McpToolCaller = caller
         self._max_retries: int = max_retries
@@ -420,6 +421,15 @@ class LinearMcpTracker:
         #: from the teams listing.  ``None`` means "not read yet", which is
         #: not the same state as "the workspace holds no teams".
         self._team_containers: Mapping[str, str] | None = None
+        #: Where every write this adapter makes leaves the stamp it landed
+        #: on, so the pass gates can tell the operation's own churn from a
+        #: principal's edit (KOD-175).  Handed in by the composition that
+        #: also hands it to the gates — one process, one record of what it
+        #: wrote — and its own when nobody is reading, which is every
+        #: deployment that schedules no gated pass.
+        self._self_writes: SelfWriteLedger = (
+            SelfWriteLedger() if ledger is None else ledger
+        )
         self._log: BoundLogger = get_logger(__name__)
 
         known = {member.value for member in QueueState}
@@ -577,6 +587,29 @@ class LinearMcpTracker:
         """The full issue — body, state, relations, parent, assignee."""
         return self._to_issue(await self._read_issue_wire(issue_key))
 
+    def _wrote(self, issue: TrackerIssue) -> TrackerIssue:
+        """Record what this write left on the issue, and hand it back.
+
+        Threaded through the RESPONSE wherever the backend answers a write
+        with the stored issue, because that answer already carries the
+        stamp the write produced and a second read would be a round trip
+        for a value in hand (KOD-175).
+        """
+        self._self_writes.record(issue_key=issue.issue_key, updated_at=issue.updated_at)
+        return issue
+
+    async def _wrote_by_reading(self, issue_key: str) -> None:
+        """Read the issue back to learn what this write left on it.
+
+        The other half of :meth:`_wrote`, for the writes the backend
+        answers with something that is not the issue — every marker on the
+        comment log, which moves the issue's ``updated_at`` while answering
+        with a comment.  The read is the only place that stamp exists, and
+        without it the operation's own markers read as a principal's edit
+        on the next tick.
+        """
+        self._wrote(self._to_issue(await self._read_issue_wire(issue_key)))
+
     async def create_issue(
         self,
         *,
@@ -595,8 +628,8 @@ class LinearMcpTracker:
                 "priority": _RAW_BY_PRIORITY[priority],
             },
         )
-        return self._to_issue(
-            self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE),
+        return self._wrote(
+            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
         )
 
     async def update_issue(
@@ -613,8 +646,8 @@ class LinearMcpTracker:
         if body is not None:
             arguments["description"] = body
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
-        return self._to_issue(
-            self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE),
+        return self._wrote(
+            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
         )
 
     async def set_workflow_state(
@@ -648,8 +681,8 @@ class LinearMcpTracker:
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},
         )
-        return self._to_issue(
-            self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE),
+        return self._wrote(
+            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
         )
 
     async def set_queue_state(
@@ -667,8 +700,8 @@ class LinearMcpTracker:
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "labels": [*preserved, self._label_for(state)]},
         )
-        return self._to_issue(
-            self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE),
+        return self._wrote(
+            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
         )
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
@@ -677,10 +710,12 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT,
             {"issueId": issue_key, "body": body},
         )
-        return self._to_comment(
+        comment = self._to_comment(
             self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT),
             issue_key=issue_key,
         )
+        await self._wrote_by_reading(issue_key)
+        return comment
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         """Every comment on the issue, oldest first."""
@@ -722,6 +757,7 @@ class LinearMcpTracker:
         if winner is not None and winner.holder == holder:
             return winner
         await self._call(_TOOL_DELETE_COMMENT, {"id": appended})
+        await self._wrote_by_reading(issue_key)
         return ClaimResult(
             issue_key=issue_key,
             status=ClaimStatus.LOST,
@@ -789,6 +825,7 @@ class LinearMcpTracker:
         )
         for duplicate in duplicates:
             await self._call(_TOOL_DELETE_COMMENT, {"id": duplicate.comment_key})
+        await self._wrote_by_reading(issue_key)
         return ClaimResult(
             issue_key=issue_key,
             status=ClaimStatus.GRANTED,
@@ -815,7 +852,9 @@ class LinearMcpTracker:
                 "body": _claim_marker_body(holder=holder, expires_at=expires_at),
             },
         )
-        return self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT).id
+        appended = self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT).id
+        await self._wrote_by_reading(issue_key)
+        return appended
 
     async def _unexpired_claim_markers(
         self,
@@ -846,10 +885,14 @@ class LinearMcpTracker:
 
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         """Delete every claim marker *holder* wrote on the issue."""
+        released = False
         for wire in await self._comment_wires(issue_key):
             match = _CLAIM_MARKER.search(wire.body)
             if match is not None and match.group("holder") == holder:
                 await self._call(_TOOL_DELETE_COMMENT, {"id": wire.id})
+                released = True
+        if released:
+            await self._wrote_by_reading(issue_key)
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
         """The earliest unexpired claim marker's holder, or ``None``."""
@@ -921,6 +964,7 @@ class LinearMcpTracker:
             {"issueId": ref.issue_id, "body": _work_ref_marker(ref)},
         )
         self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
+        await self._wrote_by_reading(ref.issue_id)
 
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         """Every work ref recorded on the issue, oldest first."""
@@ -961,6 +1005,7 @@ class LinearMcpTracker:
             {"issueId": issue_key, "body": _base_spec_marker(spec)},
         )
         self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
+        await self._wrote_by_reading(issue_key)
 
     async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
         """The latest recorded spec, or ``None`` when none was ever recorded.

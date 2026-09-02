@@ -338,6 +338,22 @@ class McpTransportError(Exception):
         self.tool_name: str | None = tool_name
 
 
+class McpSessionClosedError(McpTransportError):
+    """Raised when the SESSION is gone or could not be brought up.
+
+    The discriminator the record path reads (KOD-177): a server that
+    ANSWERED — with a result or with a tool error — is a server that is
+    there, and the remedy is the payload or the destination; a session
+    that is gone is a transport to reopen or a process to diagnose, and
+    the measured boot spent nine minutes writing nothing because the two
+    reached the log as one indistinguishable event.
+
+    A subclass rather than a peer, because every existing handler of a
+    transport failure treats this as one: what is new is only that the
+    class SAYS which of the two it was.
+    """
+
+
 class McpCredentialRefusedError(Exception):
     """Raised when an MCP server refuses the CREDENTIAL rather than the call.
 
@@ -425,3 +441,46 @@ class ContentScannerBootError(Exception):
     def __init__(self, message: str, *, missing: str) -> None:
         super().__init__(f"{message} ({missing})")
         self.missing: str = missing
+
+
+class RunRecordWriteError(Exception):
+    """Raised when a run's declared destination did not take its record.
+
+    The one class the two record producers catch, and the reason they can
+    log ONE field set: which kind ran, which destination it was owed to,
+    whose system holds it, and which of the three failure classes it was.
+    The measured boot logged a bare error string per failed write, so a
+    dead knowledge session and a refused page read identically and neither
+    named the log that went unwritten (KOD-177).
+
+    The fields are plain strings — the enum VALUES their producers carry —
+    because this module is under the domain vocabulary rather than over
+    it, and an event's fields are strings by the time they are read.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str,
+        destination: str,
+        system: str,
+        failure: str,
+    ) -> None:
+        super().__init__(f"{message} ({kind} → {system}/{destination}: {failure})")
+        self.kind: str = kind
+        self.destination: str = destination
+        self.system: str = system
+        self.failure: str = failure
+
+    @property
+    def cause_type(self) -> str:
+        """The class that actually failed, for the producers' one event.
+
+        This class itself when nothing else raised — a wiring defect is
+        raised here rather than caught from anywhere — and the underlying
+        class in every other case, because "RunRecordWriteError" alone
+        tells an operator only that a record failed to land.
+        """
+        cause = self.__cause__
+        return type(self if cause is None else cause).__name__

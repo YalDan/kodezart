@@ -23,20 +23,32 @@ Every refusal names its ground; no silent arm.
 import asyncio
 import json
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
 from datetime import timedelta
+from enum import StrEnum
 from http import HTTPStatus
-from typing import Final
+from typing import Any, Final
 
+import anyio
 import httpx
 import pytest
+import structlog.testing
 from mcp import types
 from mcp.server.lowlevel import Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult, ContentBlock, TextContent
 
-from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.core.errors import McpCredentialRefusedError, McpTransportError
+from kodezart.adapters.http_mcp_tool_caller import (
+    _INBOX_UNBOUNDED,
+    HttpMcpToolCaller,
+    _Phase,
+)
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    McpSessionClosedError,
+    McpTransportError,
+)
 
 _FIXTURE_TOKEN: Final[str] = "fixture-tracker-token"
 _ERROR_DETAIL_LIMIT: Final[int] = 500
@@ -51,6 +63,12 @@ _CALL_TIMEOUT_SECONDS: Final[float] = 0.2
 #: leaves the suite hung rather than red — which is the state this whole
 #: bound exists to prevent, and a test cannot demonstrate it by joining it.
 _HANG_CEILING_SECONDS: Final[float] = 5.0
+
+#: How many loop turns a case gives the SDK's task group to unwind before
+#: it reads the surviving tasks.  Cancellations are delivered on later
+#: iterations, so a leak asserted on the first turn is a task that has
+#: merely not finished yet.
+_SETTLE_TURNS: Final[int] = 10
 
 #: The fixture server's two tools: one that answers, one that never does.
 _ANSWERING_TOOL: Final[str] = "answers"
@@ -135,6 +153,32 @@ class _StubSession:
         return self._result
 
 
+@asynccontextmanager
+async def serving(
+    caller: HttpMcpToolCaller,
+    session: object,
+) -> AsyncIterator[None]:
+    """Run *caller*'s HOST loop over *session*, and shut it down after.
+
+    A call is a message to the host task, so a case about what a call
+    returns has to go through one.  The session under it is scripted,
+    because what these cases are about is this module's own decoding and
+    classification rather than the SDK's wire (KOD-270).
+    """
+    inbox, posted = anyio.create_memory_object_stream[Any](_INBOX_UNBOUNDED)
+    serve: Callable[..., Awaitable[None]] = caller._serve
+    caller._inbox = inbox
+    caller._phase = _Phase.SERVING
+    async with posted:
+        host = asyncio.create_task(serve(session, posted))
+        try:
+            yield
+        finally:
+            caller._phase = _Phase.CLOSED
+            inbox.close()
+            await host
+
+
 async def test_a_closed_caller_refuses_rather_than_dials() -> None:
     with pytest.raises(McpTransportError):
         await caller_fixture().call_tool(name="get_issue", arguments={})
@@ -142,19 +186,21 @@ async def test_a_closed_caller_refuses_rather_than_dials() -> None:
 
 async def test_a_structured_result_passes_through() -> None:
     caller = caller_fixture()
-    caller._session = _StubSession(
+    session = _StubSession(
         CallToolResult(content=[], structuredContent={"id": "K-1"}),
     )
-    assert await caller.call_tool(name="get_issue", arguments={}) == {"id": "K-1"}
+
+    async with serving(caller, session):
+        assert await caller.call_tool(name="get_issue", arguments={}) == {"id": "K-1"}
 
 
 async def test_a_network_failure_mid_call_surfaces_as_the_transport_error() -> None:
     """The one await that used to leak raw network exceptions is wrapped."""
     caller = caller_fixture()
-    caller._session = _StubSession()
 
-    with pytest.raises(McpTransportError) as excinfo:
-        await caller.call_tool(name="get_issue", arguments={})
+    async with serving(caller, _StubSession()):
+        with pytest.raises(McpTransportError) as excinfo:
+            await caller.call_tool(name="get_issue", arguments={})
 
     assert isinstance(excinfo.value.__cause__, ConnectionResetError)
     assert excinfo.value.tool_name == "get_issue"
@@ -191,6 +237,45 @@ class _Endpoint:
     def _answer(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         return httpx.Response(status_code=self._status, json={})
+
+
+class _NeverEndingBody(httpx.AsyncByteStream):
+    """A response body that is opened and then never ends.
+
+    The shape a streamable-HTTP endpoint answers ``initialize`` with when
+    it keeps the event stream open for the session that follows: the
+    status line and headers arrive, and the body does not finish.  Records
+    its own closing, because "the probe leaked no stream" is a fact about
+    this object and nothing above it.
+    """
+
+    def __init__(self) -> None:
+        self.closed: bool = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        await asyncio.Event().wait()
+        yield b""
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _StallingEndpoint:
+    """An endpoint answering one status, then holding its body open."""
+
+    def __init__(self, status: HTTPStatus) -> None:
+        self._status = status
+        self.body: _NeverEndingBody = _NeverEndingBody()
+
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._answer)
+
+    def _answer(self, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=self._status,
+            headers={"content-type": "text/event-stream"},
+            stream=self.body,
+        )
 
 
 class TestTheCredentialProbe:
@@ -246,6 +331,38 @@ class TestTheCredentialProbe:
         assert request.headers["Authorization"] == f"Bearer {_FIXTURE_TOKEN}"
         assert json.loads(request.content)["method"] == "initialize"
 
+    async def test_a_body_that_never_ends_still_answers_the_probe(self) -> None:
+        """The status is the whole answer, so the body is never read (KOD-284).
+
+        Restore ``client.post`` and this case reaches
+        ``_HANG_CEILING_SECONDS`` and fails on ``TimeoutError``: reading to
+        the end of a body that has no end is exactly the stalled boot the
+        streaming arm exists to prevent.
+        """
+        endpoint = _StallingEndpoint(HTTPStatus.OK)
+        caller = caller_fixture(transport_factory=endpoint.transport)
+
+        await asyncio.wait_for(caller.probe(), timeout=_HANG_CEILING_SECONDS)
+
+        assert endpoint.body.closed
+
+    async def test_a_refusal_on_a_body_that_never_ends_is_still_classified(
+        self,
+    ) -> None:
+        """The paired negative: the classification survives the same body.
+
+        A boot refused for the credential and a boot stalled on a stream
+        are different operator acts, and only the status line tells them
+        apart.
+        """
+        endpoint = _StallingEndpoint(HTTPStatus.UNAUTHORIZED)
+        caller = caller_fixture(transport_factory=endpoint.transport)
+
+        with pytest.raises(McpCredentialRefusedError):
+            await asyncio.wait_for(caller.probe(), timeout=_HANG_CEILING_SECONDS)
+
+        assert endpoint.body.closed
+
     async def test_an_unreachable_server_is_the_transport_class(self) -> None:
         """A probe that never got an answer says the transport failed."""
 
@@ -275,11 +392,11 @@ class TestARefusedCredential:
         self,
     ) -> None:
         caller = caller_fixture()
-        caller._session = _StubSession()
         await answer_with(caller, HTTPStatus.UNAUTHORIZED)
 
-        with pytest.raises(McpCredentialRefusedError) as excinfo:
-            await caller.call_tool(name="get_issue", arguments={})
+        async with serving(caller, _StubSession()):
+            with pytest.raises(McpCredentialRefusedError) as excinfo:
+                await caller.call_tool(name="get_issue", arguments={})
 
         assert not isinstance(excinfo.value, McpTransportError)
         assert excinfo.value.server_name == "fixture-server"
@@ -293,36 +410,43 @@ class TestARefusedCredential:
         credential would stop a run that had nothing wrong with its token.
         """
         caller = caller_fixture()
-        caller._session = _StubSession()
         await answer_with(caller, HTTPStatus.FORBIDDEN)
 
-        with pytest.raises(McpTransportError):
-            await caller.call_tool(name="get_issue", arguments={})
+        async with serving(caller, _StubSession()):
+            with pytest.raises(McpTransportError):
+                await caller.call_tool(name="get_issue", arguments={})
 
     async def test_an_unrefused_session_is_the_transport_class(self) -> None:
         """No refusal observed at all: the ordinary failure is unchanged."""
         caller = caller_fixture()
-        caller._session = _StubSession()
 
-        with pytest.raises(McpTransportError):
-            await caller.call_tool(name="get_issue", arguments={})
+        async with serving(caller, _StubSession()):
+            with pytest.raises(McpTransportError):
+                await caller.call_tool(name="get_issue", arguments={})
+
+
+@asynccontextmanager
+async def serving_over(result: CallToolResult) -> AsyncIterator[HttpMcpToolCaller]:
+    """A caller whose host answers every call with *result*.
+
+    One helper for both classes below: what they are about is how the
+    module DECODES an answer, and the answer is the only thing that
+    differs between them.
+    """
+    caller = caller_fixture()
+    async with serving(caller, _StubSession(result)):
+        yield caller
 
 
 class TestReportedToolErrors:
     """A refusal carries the server's OWN diagnosis, never just its fact."""
 
-    @staticmethod
-    def caller_over(result: CallToolResult) -> HttpMcpToolCaller:
-        caller = caller_fixture()
-        caller._session = _StubSession(result)
-        return caller
-
     async def test_a_reported_tool_error_surfaces_as_the_transport_error(
         self,
     ) -> None:
-        caller = self.caller_over(CallToolResult(content=[], isError=True))
-        with pytest.raises(McpTransportError):
-            await caller.call_tool(name="get_issue", arguments={})
+        async with serving_over(CallToolResult(content=[], isError=True)) as caller:
+            with pytest.raises(McpTransportError):
+                await caller.call_tool(name="get_issue", arguments={})
 
     async def test_the_servers_own_message_reaches_the_raised_error(self) -> None:
         """The 400 that cost a boot cycle to diagnose (KOD-143).
@@ -335,35 +459,37 @@ class TestReportedToolErrors:
             '{"error":"invalid_request","message":"teamId must be a UUID.",'
             '"status":400}'
         )
-        caller = self.caller_over(
-            CallToolResult(
-                content=[TextContent(type="text", text=body)],
-                isError=True,
-            ),
+        answer = CallToolResult(
+            content=[TextContent(type="text", text=body)],
+            isError=True,
         )
-        with pytest.raises(McpTransportError) as excinfo:
-            await caller.call_tool(name="create_issue_label", arguments={})
+
+        async with serving_over(answer) as caller:
+            with pytest.raises(McpTransportError) as excinfo:
+                await caller.call_tool(name="create_issue_label", arguments={})
+
         assert "teamId must be a UUID." in str(excinfo.value)
         assert excinfo.value.tool_name == "create_issue_label"
 
     async def test_an_error_with_no_readable_text_says_so(self) -> None:
-        caller = self.caller_over(CallToolResult(content=[], isError=True))
-        with pytest.raises(
-            McpTransportError,
-            match="no readable diagnosis",
-        ):
-            await caller.call_tool(name="get_issue", arguments={})
+        async with serving_over(CallToolResult(content=[], isError=True)) as caller:
+            with pytest.raises(
+                McpTransportError,
+                match="no readable diagnosis",
+            ):
+                await caller.call_tool(name="get_issue", arguments={})
 
     async def test_a_long_diagnosis_is_bounded(self) -> None:
         """Bounded by configuration, not by a number written here."""
-        caller = self.caller_over(
-            CallToolResult(
-                content=[TextContent(type="text", text="x" * 5_000)],
-                isError=True,
-            ),
+        answer = CallToolResult(
+            content=[TextContent(type="text", text="x" * 5_000)],
+            isError=True,
         )
-        with pytest.raises(McpTransportError) as excinfo:
-            await caller.call_tool(name="get_issue", arguments={})
+
+        async with serving_over(answer) as caller:
+            with pytest.raises(McpTransportError) as excinfo:
+                await caller.call_tool(name="get_issue", arguments={})
+
         assert "x" * _ERROR_DETAIL_LIMIT in str(excinfo.value)
         assert "x" * (_ERROR_DETAIL_LIMIT + 1) not in str(excinfo.value)
 
@@ -371,68 +497,63 @@ class TestReportedToolErrors:
 class TestTextContentResults:
     """The vendor's live wire shape: the JSON document rides one text block."""
 
-    @staticmethod
-    def caller_over(result: CallToolResult) -> HttpMcpToolCaller:
-        caller = caller_fixture()
-        caller._session = _StubSession(result)
-        return caller
-
     async def test_text_content_json_is_parsed_and_returned(self) -> None:
-        caller = self.caller_over(
-            CallToolResult(
-                content=[
-                    TextContent(
-                        type="text",
-                        text='{"labels": [{"name": "queue:approved"}]}',
-                    ),
-                ],
-            ),
+        answer = CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text='{"labels": [{"name": "queue:approved"}]}',
+                ),
+            ],
         )
-        assert await caller.call_tool(name="list_issue_labels", arguments={}) == {
-            "labels": [{"name": "queue:approved"}],
-        }
+
+        async with serving_over(answer) as caller:
+            assert await caller.call_tool(
+                name="list_issue_labels",
+                arguments={},
+            ) == {"labels": [{"name": "queue:approved"}]}
 
     async def test_structured_content_still_wins_and_is_returned_unchanged(
         self,
     ) -> None:
-        caller = self.caller_over(
-            CallToolResult(
-                content=[TextContent(type="text", text='{"source": "text"}')],
-                structuredContent={"source": "structured"},
-            ),
+        answer = CallToolResult(
+            content=[TextContent(type="text", text='{"source": "text"}')],
+            structuredContent={"source": "structured"},
         )
-        assert await caller.call_tool(name="get_issue", arguments={}) == {
-            "source": "structured",
-        }
+
+        async with serving_over(answer) as caller:
+            assert await caller.call_tool(name="get_issue", arguments={}) == {
+                "source": "structured",
+            }
 
     async def test_no_content_at_all_is_refused_by_name(self) -> None:
-        caller = self.caller_over(CallToolResult(content=[]))
-        with pytest.raises(
-            McpTransportError,
-            match="no structured content and no content blocks",
-        ):
-            await caller.call_tool(name="get_issue", arguments={})
+        async with serving_over(CallToolResult(content=[])) as caller:
+            with pytest.raises(
+                McpTransportError,
+                match="no structured content and no content blocks",
+            ):
+                await caller.call_tool(name="get_issue", arguments={})
 
     async def test_more_than_one_content_block_is_refused_by_name(self) -> None:
-        caller = self.caller_over(
-            CallToolResult(
-                content=[
-                    TextContent(type="text", text='{"half": 1}'),
-                    TextContent(type="text", text='{"half": 2}'),
-                ],
-            ),
+        answer = CallToolResult(
+            content=[
+                TextContent(type="text", text='{"half": 1}'),
+                TextContent(type="text", text='{"half": 2}'),
+            ],
         )
-        with pytest.raises(McpTransportError, match="several content blocks"):
-            await caller.call_tool(name="get_issue", arguments={})
+
+        async with serving_over(answer) as caller:
+            with pytest.raises(McpTransportError, match="several content blocks"):
+                await caller.call_tool(name="get_issue", arguments={})
 
     async def test_non_json_text_is_refused_by_name(self) -> None:
-        caller = self.caller_over(
-            CallToolResult(
-                content=[TextContent(type="text", text="not a json document")],
-            ),
+        answer = CallToolResult(
+            content=[TextContent(type="text", text="not a json document")],
         )
-        with pytest.raises(McpTransportError, match="not valid JSON"):
-            await caller.call_tool(name="get_issue", arguments={})
+
+        async with serving_over(answer) as caller:
+            with pytest.raises(McpTransportError, match="not valid JSON"):
+                await caller.call_tool(name="get_issue", arguments={})
 
     async def test_a_json_array_passes_through_unchanged(self) -> None:
         """A bare array is a shape the vendor really answers with (KOD-143).
@@ -441,35 +562,426 @@ class TestTextContentResults:
         transport that refused arrays would put the tool out of reach of
         every adapter above it.
         """
-        caller = self.caller_over(
-            CallToolResult(
-                content=[
-                    TextContent(
-                        type="text",
-                        text='[{"id": "state-1", "type": "backlog", '
-                        '"name": "Backlog"}]',
-                    ),
-                ],
-            ),
+        answer = CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text='[{"id": "state-1", "type": "backlog", "name": "Backlog"}]',
+                ),
+            ],
         )
-        assert await caller.call_tool(
-            name="list_issue_statuses",
-            arguments={},
-        ) == [{"id": "state-1", "type": "backlog", "name": "Backlog"}]
+
+        async with serving_over(answer) as caller:
+            assert await caller.call_tool(
+                name="list_issue_statuses",
+                arguments={},
+            ) == [{"id": "state-1", "type": "backlog", "name": "Backlog"}]
 
     async def test_json_that_is_neither_object_nor_array_is_refused_by_name(
         self,
     ) -> None:
-        caller = self.caller_over(
-            CallToolResult(
-                content=[TextContent(type="text", text='"a bare string"')],
-            ),
+        answer = CallToolResult(
+            content=[TextContent(type="text", text='"a bare string"')],
         )
-        with pytest.raises(
-            McpTransportError,
-            match="neither an object nor an array",
-        ):
+
+        async with serving_over(answer) as caller:
+            with pytest.raises(
+                McpTransportError,
+                match="neither an object nor an array",
+            ):
+                await caller.call_tool(name="get_issue", arguments={})
+
+
+#: The roster the fixture server answers ``tools/list`` with — the tools
+#: the cases below call, with no output schema, so a result is taken as
+#: the server sent it.
+_FIXTURE_TOOLS: Final[list[dict[str, object]]] = [
+    {"name": name, "description": name, "inputSchema": {"type": "object"}}
+    for name in ("get_issue", "list_issues")
+]
+
+
+class _CallBehaviour(StrEnum):
+    """What the fixture server does with a tool call."""
+
+    ANSWERS = "answers"
+    REFUSES = "refuses"
+    DROPS = "drops"
+
+
+class _FakeStreamableServer:
+    """A streamable-HTTP MCP endpoint, over the caller's own client.
+
+    Only what the task shape turns on: the handshake, one tool answer,
+    and the two ways a session ends — a credential refused at
+    ``initialize``, and a stream the server drops with a call in flight.
+    Anything richer would be re-implementing the SDK's server inside cases
+    about this module's own task ownership (KOD-270).
+
+    No ``mcp-session-id`` is issued, so the client opens no server-push
+    GET stream: what these cases watch is the request path.
+
+    With ``hold_calls`` every tool call is held at the server until the
+    case sets ``release``: the state a call is in while its waiter's own
+    budget runs out, and while a second worker's call joins it.
+    """
+
+    def __init__(
+        self,
+        *,
+        initialize_status: HTTPStatus = HTTPStatus.OK,
+        on_call: _CallBehaviour = _CallBehaviour.ANSWERS,
+        hold_calls: bool = False,
+    ) -> None:
+        self._initialize_status = initialize_status
+        self._on_call = on_call
+        self._hold_calls = hold_calls
+        self.release: asyncio.Event = asyncio.Event()
+        self.calls: list[str] = []
+
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._answer)
+
+    async def _answer(self, request: httpx.Request) -> httpx.Response:
+        message = json.loads(request.content)
+        method = message.get("method")
+        if method == "initialize":
+            if self._initialize_status is not HTTPStatus.OK:
+                return httpx.Response(status_code=self._initialize_status, json={})
+            return self._frame(
+                message["id"],
+                {
+                    "protocolVersion": message["params"]["protocolVersion"],
+                    "capabilities": {},
+                    "serverInfo": {"name": "fixture-server", "version": "1"},
+                },
+            )
+        if "id" not in message:
+            return httpx.Response(status_code=HTTPStatus.ACCEPTED)
+        if method == "tools/list":
+            # The client refreshes its output-schema cache after a
+            # successful call; none of these tools declares one, so the
+            # roster is all it needs back.
+            return self._frame(message["id"], {"tools": _FIXTURE_TOOLS})
+        self.calls.append(str(method))
+        if self._hold_calls:
+            await self.release.wait()
+        if self._on_call is _CallBehaviour.DROPS:
+            raise httpx.ReadError("the server dropped the stream mid-call")
+        if self._on_call is _CallBehaviour.REFUSES:
+            return self._error_frame(message["id"])
+        return self._frame(
+            message["id"],
+            {"content": [{"type": "text", "text": _ANSWER}]},
+        )
+
+    @staticmethod
+    def _frame(request_id: object, result: dict[str, object]) -> httpx.Response:
+        body = json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result})
+        return httpx.Response(
+            status_code=HTTPStatus.OK,
+            headers={"content-type": "text/event-stream"},
+            content=f"event: message\ndata: {body}\n\n".encode(),
+        )
+
+    @staticmethod
+    def _error_frame(request_id: object) -> httpx.Response:
+        body = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32602, "message": "teamId must be a UUID."},
+            },
+        )
+        return httpx.Response(
+            status_code=HTTPStatus.OK,
+            headers={"content-type": "text/event-stream"},
+            content=f"event: message\ndata: {body}\n\n".encode(),
+        )
+
+
+class TestTheSessionIsHostedInOneTask:
+    """Open, call and close are MESSAGES to a task this module owns.
+
+    Measured 2026-09-02 (KOD-270): the session was entered on an
+    ``AsyncExitStack`` spanning tasks, so the SDK's structured concurrency
+    delivered every failure under it as a CANCELLATION of whichever task
+    had opened — the boot's.  A 401 at open cancelled the boot task and a
+    mid-session teardown stranded a worker's call in flight.
+    """
+
+    async def test_a_refused_credential_at_open_is_a_value_not_a_cancellation(
+        self,
+    ) -> None:
+        """KOD-271 — the class reaches the opener, and the opener survives."""
+        server = _FakeStreamableServer(initialize_status=HTTPStatus.UNAUTHORIZED)
+        caller = caller_fixture(transport_factory=server.transport)
+        before = asyncio.all_tasks()
+
+        with pytest.raises(McpCredentialRefusedError) as excinfo:
+            await caller.open()
+
+        assert not isinstance(excinfo.value, McpTransportError)
+        assert excinfo.value.server_name == "fixture-server"
+        opener = asyncio.current_task()
+        assert opener is not None
+        assert opener.cancelling() == 0
+        assert await _settled(before) == set()
+
+    async def test_an_unwell_server_at_open_is_the_transport_class(self) -> None:
+        """The paired negative: a 502 is not a dead credential (KOD-271)."""
+        server = _FakeStreamableServer(initialize_status=HTTPStatus.BAD_GATEWAY)
+        caller = caller_fixture(transport_factory=server.transport)
+
+        with pytest.raises(McpTransportError):
+            await caller.open()
+
+    async def test_a_dropped_stream_ends_the_call_and_not_the_opener(self) -> None:
+        """KOD-272 — the worker is told, the boot task is untouched."""
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
+        caller = caller_fixture(transport_factory=server.transport)
+        opened = asyncio.Event()
+        release = asyncio.Event()
+
+        async def boot() -> None:
+            await caller.open()
+            opened.set()
+            await release.wait()
+
+        booting = asyncio.create_task(boot())
+        await asyncio.wait_for(opened.wait(), timeout=_HANG_CEILING_SECONDS)
+
+        with pytest.raises(McpSessionClosedError) as excinfo:
+            await asyncio.wait_for(
+                caller.call_tool(name="get_issue", arguments={}),
+                timeout=_HANG_CEILING_SECONDS,
+            )
+
+        assert excinfo.value.tool_name == "get_issue"
+        assert not booting.done()
+        assert booting.cancelling() == 0
+        release.set()
+        await booting
+        await caller.close()
+
+    async def test_a_dropped_stream_tells_every_call_in_flight(self) -> None:
+        """KOD-272 — two workers under one session, and both are told."""
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS, hold_calls=True)
+        caller = held_caller_fixture(server)
+        await caller.open()
+
+        first = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
+        second = asyncio.create_task(
+            caller.call_tool(name="list_issues", arguments={}),
+        )
+        await _held(server, calls=2)
+        server.release.set()
+        outcomes = await asyncio.wait_for(
+            asyncio.gather(first, second, return_exceptions=True),
+            timeout=_HANG_CEILING_SECONDS,
+        )
+
+        assert [type(outcome) for outcome in outcomes] == [
+            McpSessionClosedError,
+            McpSessionClosedError,
+        ]
+        await caller.close()
+
+    async def test_a_call_after_the_session_ended_is_told_it_ended(self) -> None:
+        """KOD-272 — the caller who arrives after the teardown is owed the same fact.
+
+        The paired arm of ``test_a_closed_caller_refuses_the_next_call_by_name``:
+        a session the shutdown closed is not open, a session the server
+        took down has ENDED — the closed-session class the record path
+        reads as a transport to reopen — and the ending is logged under
+        its own event, because a session that dies between calls is
+        otherwise legible only as the next call's refusal.
+        """
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
+        caller = caller_fixture(transport_factory=server.transport)
+        await caller.open()
+
+        with structlog.testing.capture_logs() as logs:
+            with pytest.raises(McpSessionClosedError):
+                await caller.call_tool(name="get_issue", arguments={})
+            with pytest.raises(McpSessionClosedError, match="has ended"):
+                await caller.call_tool(name="list_issues", arguments={})
+            await caller.close()
+
+        assert [log["event"] for log in logs].count("mcp_session_ended") == 1
+        assert server.calls == ["tools/call"]
+
+    async def test_calls_from_two_workers_are_in_flight_together(self) -> None:
+        """KOD-273 — as they were over the session directly.
+
+        The session multiplexes calls by request id, so one the server is
+        slow to answer never held up another worker's; a host that
+        answered them one at a time would make every worker wait out the
+        slowest call's whole read timeout.
+        """
+        caller = caller_fixture()
+
+        async with create_connected_server_and_client_session(
+            fixture_server(),
+        ) as session:
+            async with serving(caller, session):
+                hanging = asyncio.create_task(
+                    caller.call_tool(name=_HANGING_TOOL, arguments={}),
+                )
+                await asyncio.sleep(0)
+                answered = await asyncio.wait_for(
+                    caller.call_tool(name=_ANSWERING_TOOL, arguments={}),
+                    timeout=_HANG_CEILING_SECONDS,
+                )
+                assert not hanging.done()
+                with pytest.raises(McpTransportError):
+                    await hanging
+
+        assert answered == {"id": "K-1"}
+
+    async def test_a_server_composed_error_is_the_base_transport_class(self) -> None:
+        """The paired negative: a server that ANSWERED is a server that is there.
+
+        A protocol error the server composed and sent is not a session to
+        reopen, and classifying it as one would respawn a transport once
+        per malformed argument (KOD-272).
+        """
+        server = _FakeStreamableServer(on_call=_CallBehaviour.REFUSES)
+        caller = caller_fixture(transport_factory=server.transport)
+        await caller.open()
+
+        with pytest.raises(McpTransportError) as excinfo:
             await caller.call_tool(name="get_issue", arguments={})
+
+        assert not isinstance(excinfo.value, McpSessionClosedError)
+        await caller.close()
+
+    async def test_open_calls_and_close_leave_no_task_behind(self) -> None:
+        """KOD-273 — the paired positive: the happy path, and nothing left over."""
+        server = _FakeStreamableServer()
+        caller = caller_fixture(transport_factory=server.transport)
+        before = asyncio.all_tasks()
+
+        await caller.open()
+        first = await caller.call_tool(name="get_issue", arguments={})
+        second = await caller.call_tool(name="list_issues", arguments={})
+        await caller.close()
+
+        assert first == {"id": "K-1"}
+        assert second == {"id": "K-1"}
+        assert server.calls == ["tools/call", "tools/call"]
+        assert await _settled(before) == set()
+
+    async def test_a_closed_caller_refuses_the_next_call_by_name(self) -> None:
+        """After the close there is no host, so a call is refused rather than hung."""
+        server = _FakeStreamableServer()
+        caller = caller_fixture(transport_factory=server.transport)
+
+        await caller.open()
+        await caller.close()
+
+        with pytest.raises(McpTransportError, match="not open"):
+            await caller.call_tool(name="get_issue", arguments={})
+
+    async def test_opening_an_open_session_refuses(self) -> None:
+        server = _FakeStreamableServer()
+        caller = caller_fixture(transport_factory=server.transport)
+        await caller.open()
+
+        with pytest.raises(McpTransportError, match="already open"):
+            await caller.open()
+
+        await caller.close()
+
+
+async def _settled(before: set[asyncio.Task[object]]) -> set[asyncio.Task[object]]:
+    """The tasks that outlived *before*, once the loop has drained.
+
+    A few turns, because the SDK's task group unwinds through
+    cancellations that are delivered on later iterations: asserting on the
+    first would report leaks that are merely not finished yet.
+    """
+    for _ in range(_SETTLE_TURNS):
+        await asyncio.sleep(0)
+    return {task for task in asyncio.all_tasks() - before if not task.done()}
+
+
+async def _held(server: _FakeStreamableServer, *, calls: int) -> None:
+    """Wait until *calls* tool calls are held at *server*."""
+    async with asyncio.timeout(_HANG_CEILING_SECONDS):
+        while len(server.calls) < calls:
+            await asyncio.sleep(0)
+
+
+def held_caller_fixture(server: _FakeStreamableServer) -> HttpMcpToolCaller:
+    """A caller over a server that holds its calls, with the bound out of the way.
+
+    What the cases over a held call observe is what happens while the
+    call is in flight, so the read timeout is set at the ceiling: a bound
+    that fired first would end the call as a timeout and prove nothing
+    about the cancellation or the drop under it.
+    """
+    return caller_fixture(
+        call_timeout_seconds=_HANG_CEILING_SECONDS,
+        transport_factory=server.transport,
+    )
+
+
+class TestTheHostOutlivesItsWaiters:
+    """A reply nobody waits for goes to nobody, and the session stays.
+
+    Measured 2026-09-02 (KOD-270 review): a task cancelled while it
+    awaits a future cancels that future — the shape the scheduler's
+    budget produces when a pass runs out mid-call — and the host,
+    resolving the abandoned reply, raised ``InvalidStateError`` and
+    ended.  One pass's timeout was the whole session's death, and every
+    call for the rest of the boot was refused.
+    """
+
+    async def test_a_waiter_that_gave_up_on_an_answer_leaves_the_session_serving(
+        self,
+    ) -> None:
+        server = _FakeStreamableServer(hold_calls=True)
+        caller = held_caller_fixture(server)
+        before = asyncio.all_tasks()
+        await caller.open()
+
+        waiter = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
+        await _held(server, calls=1)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        server.release.set()
+
+        assert await caller.call_tool(name="list_issues", arguments={}) == {
+            "id": "K-1",
+        }
+        assert server.calls == ["tools/call", "tools/call"]
+        await caller.close()
+        assert await _settled(before) == set()
+
+    async def test_a_waiter_that_gave_up_on_a_refusal_leaves_the_session_serving(
+        self,
+    ) -> None:
+        """The paired arm: the answer that was a refusal has nowhere to go either."""
+        server = _FakeStreamableServer(on_call=_CallBehaviour.REFUSES, hold_calls=True)
+        caller = held_caller_fixture(server)
+        await caller.open()
+
+        waiter = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
+        await _held(server, calls=1)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        server.release.set()
+
+        with pytest.raises(McpTransportError) as excinfo:
+            await caller.call_tool(name="list_issues", arguments={})
+
+        assert not isinstance(excinfo.value, McpSessionClosedError)
+        assert "must be a UUID" in str(excinfo.value.__cause__)
+        assert server.calls == ["tools/call", "tools/call"]
+        await caller.close()
 
 
 class TestACallTheServerNeverAnswers:
@@ -496,14 +1008,14 @@ class TestACallTheServerNeverAnswers:
         async with create_connected_server_and_client_session(
             fixture_server(),
         ) as session:
-            caller._session = session
-            started = time.perf_counter()
-            with pytest.raises(McpTransportError) as excinfo:
-                await asyncio.wait_for(
-                    caller.call_tool(name=_HANGING_TOOL, arguments={}),
-                    timeout=_HANG_CEILING_SECONDS,
-                )
-            elapsed = time.perf_counter() - started
+            async with serving(caller, session):
+                started = time.perf_counter()
+                with pytest.raises(McpTransportError) as excinfo:
+                    await asyncio.wait_for(
+                        caller.call_tool(name=_HANGING_TOOL, arguments={}),
+                        timeout=_HANG_CEILING_SECONDS,
+                    )
+                elapsed = time.perf_counter() - started
 
         assert excinfo.value.tool_name == _HANGING_TOOL
         assert excinfo.value.server_name == "fixture-server"
@@ -525,12 +1037,12 @@ class TestACallTheServerNeverAnswers:
         async with create_connected_server_and_client_session(
             fixture_server(),
         ) as session:
-            caller._session = session
-            with pytest.raises(McpCredentialRefusedError) as excinfo:
-                await asyncio.wait_for(
-                    caller.call_tool(name=_HANGING_TOOL, arguments={}),
-                    timeout=_HANG_CEILING_SECONDS,
-                )
+            async with serving(caller, session):
+                with pytest.raises(McpCredentialRefusedError) as excinfo:
+                    await asyncio.wait_for(
+                        caller.call_tool(name=_HANGING_TOOL, arguments={}),
+                        timeout=_HANG_CEILING_SECONDS,
+                    )
 
         assert not isinstance(excinfo.value, McpTransportError)
         assert excinfo.value.tool_name == _HANGING_TOOL
@@ -545,9 +1057,9 @@ class TestACallTheServerNeverAnswers:
         session = _StubSession(
             CallToolResult(content=[], structuredContent={"id": "K-1"}),
         )
-        caller._session = session
 
-        await caller.call_tool(name="get_issue", arguments={})
+        async with serving(caller, session):
+            await caller.call_tool(name="get_issue", arguments={})
 
         assert session.read_timeouts == [timedelta(seconds=_CALL_TIMEOUT_SECONDS)]
 
@@ -558,7 +1070,7 @@ class TestACallTheServerNeverAnswers:
         async with create_connected_server_and_client_session(
             fixture_server(),
         ) as session:
-            caller._session = session
-            result = await caller.call_tool(name=_ANSWERING_TOOL, arguments={})
+            async with serving(caller, session):
+                result = await caller.call_tool(name=_ANSWERING_TOOL, arguments={})
 
         assert result == {"id": "K-1"}

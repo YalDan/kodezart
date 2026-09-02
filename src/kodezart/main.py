@@ -171,7 +171,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         dispatch = await build_dispatch_runtime(
             config=config,
             operation=operation,
-            tracker=tracker,
+            dialled=dialled,
             github_api=github_api,
             queue=job_queue,
             registry=job_queue,
@@ -204,8 +204,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await job_queue.stop()
         if dispatch.lifecycle is not None:
             await dispatch.lifecycle.drain()
-        # The drain's own fire records write through this session, so it
-        # closes after the drain and before the tracker transport.
+            # After the stop, so no run finishes underneath the sweep; after
+            # the drain, so nothing records beside it — a watch ending on the
+            # stopped stream verifies the log and then writes, exactly as the
+            # sweep does, and two of those interleaved over one run are two
+            # rows.  Every fire the drained watches left without a row gets
+            # one here — the measured boot ran three and logged one (KOD-178).
+            await dispatch.lifecycle.record_unfinished()
+        # The drained watches' fire records and the sweep's write through
+        # this session, so it closes after both and before the tracker
+        # transport.
         if built_recorder.knowledge_caller is not None:
             await built_recorder.knowledge_caller.close()
         if mcp_caller is not None:

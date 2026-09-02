@@ -167,6 +167,7 @@ def _knowledge_caller(
             env=env,
             server_name=config.knowledge_mcp_server_name,
             error_detail_limit=config.knowledge_mcp_error_detail_limit,
+            stderr_tail_limit=config.knowledge_mcp_stderr_tail_limit,
         )
     url = config.knowledge_mcp_server_url
     if url is None:

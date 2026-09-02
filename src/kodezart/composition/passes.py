@@ -11,6 +11,7 @@ from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
+from kodezart.composition.tracker import DialledTracker
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import UNATTENDED_PERMISSION_MODE
 from kodezart.core.errors import (
@@ -42,7 +43,7 @@ from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import run_prompt_pass
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
@@ -125,18 +126,25 @@ def delivery_probe_for(repo_url: str, *, forge: DeliveryProbe) -> DeliveryProbe:
 def build_gate(
     *,
     config: AppConfig,
-    tracker: TrackerPort | None,
+    tracker: TrackerPort,
+    ledger: SelfWriteLedger,
     signals: Sequence[PassSignal],
     team_keys: Sequence[str],
     repo_urls: Sequence[str],
 ) -> PassGate | None:
-    """A gate over *signals*, or none when this deployment cannot ask them.
+    """A gate over *signals*, or none when the pass declares none.
 
-    Two ways to be ungated, and neither silently becomes the other: the
-    pass declares no signals, or no tracker port exists to answer the ones
-    it declares.  The second is reported by the caller, because "the gate
-    is absent" and "nothing moved" have opposite costs and must never be
-    confused for one another.
+    That is the ONLY way a built gate is absent.  Having no tracker at all
+    is the caller's arm — it holds a dialled tracker or it does not — and
+    it is reported there, because "the gate is absent" and "nothing moved"
+    have opposite costs and must never be confused for one another.
+
+    Both halves are REQUIRED, and the callers take them from one value, so
+    no boot can hand this half of a tracker.  The port and its write ledger
+    are one fact — the writer and the reader of the same issues — and while
+    the ledger could go missing on its own this returned ``None``, and the
+    pass it guards ran ungated at full session cost with nothing saying so
+    (KOD-175, KOD-289).
 
     *team_keys* and *repo_urls* are the containers the pass is scoped to —
     the boards its issue signals ask within and the repositories its review
@@ -144,10 +152,11 @@ def build_gate(
     empty refuses at construction; it is the caller that knows which
     containers its pass owns.
     """
-    if not signals or tracker is None:
+    if not signals:
         return None
     return PassGate(
         tracker=tracker,
+        ledger=ledger,
         signals=signals,
         team_keys=team_keys,
         repo_urls=repo_urls,
@@ -237,7 +246,7 @@ async def build_prompt_passes(
     config: AppConfig,
     operation: OperationConfig,
     prompts: PromptSetProvider,
-    tracker: TrackerPort | None,
+    dialled: DialledTracker | None,
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
@@ -271,6 +280,10 @@ async def build_prompt_passes(
     every declared team and every declared repository — the narrowing the
     per-repository dispatch pass makes is a property of that pass, not of
     the mechanism.
+
+    *dialled* is the tracker AND the ledger of this process's own writes,
+    as one value: a pass gated on a port whose self-writes it cannot
+    recognise wakes on the operation's own churn every tick (KOD-289).
     """
     log: BoundLogger = get_logger(__name__)
     absent = absent_roster(operation)
@@ -287,7 +300,7 @@ async def build_prompt_passes(
     # Read only where a gate will actually be built: naming the operation's
     # teams REFUSES when it declares none, and a deployment whose passes are
     # all ungated has no scan for that refusal to be about.
-    gated = tracker is not None and any(row.signals for row in schedule.values())
+    gated = dialled is not None and any(row.signals for row in schedule.values())
     team_keys = operation.team_keys() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
     return [
@@ -300,9 +313,12 @@ async def build_prompt_passes(
                 key=key,
                 prompts=prompts,
                 runner=runner,
-                gate=build_gate(
+                gate=None
+                if dialled is None
+                else build_gate(
                     config=config,
-                    tracker=tracker,
+                    tracker=dialled.tracker,
+                    ledger=dialled.ledger,
                     signals=row.signals,
                     team_keys=team_keys,
                     repo_urls=repo_urls,
@@ -368,6 +384,7 @@ async def build_dispatch_passes(
     config: AppConfig,
     operation: OperationConfig,
     tracker: TrackerPort,
+    ledger: SelfWriteLedger,
     delivery: DeliveryProbe,
     queue: JobQueue,
     registry: JobRegistry,
@@ -437,6 +454,7 @@ async def build_dispatch_passes(
     # into them (KOD-174).
     lifecycle = LifecycleWatcher(
         queue=queue,
+        registry=registry,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
@@ -458,6 +476,7 @@ async def build_dispatch_passes(
                     gate=build_gate(
                         config=config,
                         tracker=tracker,
+                        ledger=ledger,
                         signals=config.dispatch_pass_gate_signals,
                         team_keys=operation.team_keys_for_repo(repo.url),
                         repo_urls=[repo.url],
@@ -527,62 +546,102 @@ async def _verify_wired_gates(
     )
 
 
+def _session_running(kind: RunKind) -> SessionType:
+    """Which session runs a kind, and therefore reads its record's log.
+
+    The two judgment passes are one session type by design — they differ
+    in what their prompt says, not in what kind of session runs them — and
+    a fire is its own.  Exhaustive by ``match``: a fourth run kind cannot
+    be added without answering this question for it.
+    """
+    match kind:
+        case RunKind.FIRE_PREP | RunKind.GROOMING:
+            return SessionType.SCHEDULED_PASS
+        case RunKind.FIRE:
+            return SessionType.TICKET_FIRE
+
+
+def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionType]]:
+    """Every knowledge-system surface the operation declares, by its reader.
+
+    THREE registries, because the operation declares three: a ``documents``
+    entry and a ``records`` entry in the knowledge system, and the
+    ``knowledge`` map itself — the what-lives-where prelude, which is
+    rendered only for a GRANTED session type, so a declared map under an
+    ungranted session is an operation whose passes are told to consult a
+    map they were never given.
+
+    The reader is not the same for all three.  Documents and the map are a
+    scheduled pass's; a record belongs to whichever session runs its KIND,
+    and the fire's row is a fire's (KOD-265).
+    """
+    surfaces = [
+        (f"documents.{key} ({entry.name})", SessionType.SCHEDULED_PASS)
+        for key, entry in operation.documents.items()
+        if entry.system is DocumentSystem.KNOWLEDGE
+    ]
+    surfaces.extend(
+        (f"records.{key} ({entry.name})", _session_running(RunKind(key)))
+        for key, entry in operation.records.items()
+        if entry.system is DocumentSystem.KNOWLEDGE
+    )
+    surfaces.extend(
+        (f"knowledge.{key} ({title})", SessionType.SCHEDULED_PASS)
+        for key, title in operation.knowledge.items()
+    )
+    return surfaces
+
+
 def _verify_knowledge_destinations(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
 ) -> None:
-    """Refuse to boot when a scheduled pass is sent to a store it cannot open.
+    """Refuse to boot when a session is sent to a store it cannot open.
 
     The mismatch lives across two files and neither half is wrong alone:
     the operation names a surface in the knowledge system, and the
-    deployment grants the knowledge server to no session type.  Composed,
-    they leave a scheduled pass addressing a store its session holds no
-    capability for — and the only place that can fail is inside the
-    session, where it looks like a pass that ran and recorded nothing.
+    deployment grants the knowledge server to the session type that reads
+    it nowhere.  Composed, they leave a session addressing a store it
+    holds no capability for — and the only place that can fail is inside
+    the session, where it looks like a run that happened and recorded
+    nothing.
 
-    THREE surfaces, because the operation declares three and a pass reads
-    all of them: a ``documents`` entry and a ``records`` entry in the
-    knowledge system, and the ``knowledge`` map itself — the what-lives-
-    where prelude, which is rendered only for a GRANTED session type, so a
-    declared map under an ungranted pass is an operation whose passes are
-    told to consult a map their session was never given.
+    Asked PER SESSION TYPE.  Until now the only type this asked about was
+    the scheduled pass, so a granted scheduled pass answered for every
+    surface in the operation and a fire declaring a knowledge-side record
+    booted with its own capability unchecked — the arm that carries the
+    session's prose contribution to the Fire Log (KOD-265).
 
     Checked HERE, on the same predicate the prompt-pass wiring below uses:
     a deployment that schedules no prompt pass reaches none of these, and
     refusing boot over a surface nothing reads would hold it hostage to
     configuration nobody acts on.
 
-    Every affected entry is named at once, because an operator moving one
-    surface at a time pays a boot cycle per entry.  A document or record in
-    the TRACKER system is untouched — a pass reaches the tracker through
-    the server the host attaches, whatever the knowledge grant says.
+    Every affected entry is named at once, with the session type each one
+    needs, because an operator moving one surface at a time pays a boot
+    cycle per entry.  A document or record in the TRACKER system is
+    untouched — a session reaches the tracker through the server the host
+    attaches, whatever the knowledge grant says.
     """
     if operation is None:
         return
-    if SessionType.SCHEDULED_PASS in config.knowledge_session_grants:
-        return
-    destinations = [
-        f"documents.{key} ({entry.name})"
-        for key, entry in operation.documents.items()
-        if entry.system is DocumentSystem.KNOWLEDGE
+    granted = set(config.knowledge_session_grants)
+    unreachable = [
+        (surface, session_type)
+        for surface, session_type in _knowledge_surfaces(operation)
+        if session_type not in granted
     ]
-    destinations.extend(
-        f"records.{key} ({entry.name})"
-        for key, entry in operation.records.items()
-        if entry.system is DocumentSystem.KNOWLEDGE
-    )
-    destinations.extend(
-        f"knowledge.{key} ({title})" for key, title in operation.knowledge.items()
-    )
-    if not destinations:
+    if not unreachable:
         return
+    ungranted = sorted({session_type.value for _, session_type in unreachable})
     raise PassKnowledgeCapabilityError(
-        f"the operation declares {DocumentSystem.KNOWLEDGE.value} surfaces and "
-        f"{SessionType.SCHEDULED_PASS.value} is not named in "
-        f"knowledge_session_grants, so no scheduled pass holds the capability "
-        f"to reach one",
-        destinations=destinations,
+        f"the operation declares {DocumentSystem.KNOWLEDGE.value} surfaces read "
+        f"by sessions knowledge_session_grants does not name ({', '.join(ungranted)}), "
+        f"so the session that reaches one holds no capability for it",
+        destinations=[
+            f"{surface} → {session_type.value}" for surface, session_type in unreachable
+        ],
     )
 
 
@@ -630,7 +689,7 @@ async def build_dispatch_runtime(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
-    tracker: TrackerPort | None,
+    dialled: DialledTracker | None,
     github_api: DeliveryProbe | None,
     queue: JobQueue,
     registry: JobRegistry,
@@ -653,17 +712,24 @@ async def build_dispatch_runtime(
     before it builds the queue this constructs against — checking again
     here would be a second answer to a question already settled, on a path
     where refusing costs a started queue and an open transport.
+
+    The tracker arrives WHOLE — the port and the ledger of this process's
+    own writes, as the one value boot produced.  Taking the two halves
+    separately gave this a fourth state nobody named: a ledger absent
+    beside a live port skipped every dispatch pass and ran every prompt
+    pass ungated, and the log said the tracker was present (KOD-289).
     """
     # Cadence is scheduler configuration and nothing else. Three
     # states, none silent: no tracker, or no delivery probe to answer
     # "is this issue already delivered?", and the passes do not run —
     # named, never inferred from an empty schedule.
     built: DispatchPasses | None = None
-    if tracker is not None and operation is not None and github_api is not None:
+    if dialled is not None and operation is not None and github_api is not None:
         built = await build_dispatch_passes(
             config=config,
             operation=operation,
-            tracker=tracker,
+            tracker=dialled.tracker,
+            ledger=dialled.ledger,
             delivery=github_api,
             queue=queue,
             registry=registry,
@@ -676,7 +742,7 @@ async def build_dispatch_runtime(
     else:
         await log.ainfo(
             "scheduled_passes_not_wired",
-            tracker_present=tracker is not None,
+            tracker_present=dialled is not None,
             operation_config_present=operation is not None,
             delivery_probe_present=github_api is not None,
         )
@@ -685,7 +751,7 @@ async def build_dispatch_runtime(
     # do without is the operation config their prompts render from.
     scheduled: list[ScheduledPass] = [] if built is None else list(built.passes)
     if operation is not None:
-        if tracker is None and (
+        if dialled is None and (
             config.fire_prep_pass_gate_signals or config.grooming_pass_gate_signals
         ):
             # Named, never inferred: a pass that declares signals and has
@@ -706,7 +772,7 @@ async def build_dispatch_runtime(
                 config=config,
                 operation=operation,
                 prompts=prompts,
-                tracker=tracker,
+                dialled=dialled,
                 runner=runner,
                 skills=skills,
                 recorder=recorder,

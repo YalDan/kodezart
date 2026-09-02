@@ -22,6 +22,7 @@ from kodezart.core.protocols import (
     TrackerPort,
 )
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
+from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 
@@ -83,15 +84,22 @@ def build_tracker(
     config: AppConfig,
     operation: OperationConfig,
     caller: McpToolCaller,
-) -> TrackerPort:
+) -> tuple[TrackerPort, SelfWriteLedger]:
     """The ``TrackerPort`` implementation ``config.tracker`` selects.
 
     Adding a backend is a new adapter plus a member on ``TrackerBackend``.
     Consumers hold the protocol and change by nothing at all.
+
+    The write ledger is built here and comes back BESIDE the port: the
+    pass gates need the record of this process's own writes, and a port
+    method for it would put a gate's concern into every tracker
+    implementation — and an adapter's public surface is exactly the port's,
+    which a reader on it would break (KOD-175).
     """
+    ledger = SelfWriteLedger()
     match config.tracker:
         case TrackerBackend.LINEAR:
-            return LinearMcpTracker(
+            adapter = LinearMcpTracker(
                 caller=caller,
                 queue_state_labels=operation.queue_states,
                 workflow_state_names=operation.workflow_states,
@@ -100,7 +108,9 @@ def build_tracker(
                 },
                 max_retries=config.tracker_max_retries,
                 retry_backoff_factor=config.tracker_retry_backoff_factor,
+                ledger=ledger,
             )
+            return adapter, ledger
 
 
 @dataclass(frozen=True)
@@ -116,6 +126,10 @@ class DialledTracker:
     tracker: TrackerPort
     caller: ManagedMcpToolCaller
     operation: OperationConfig
+    ledger: SelfWriteLedger
+    """Where this tracker's own writes leave their stamp, for the pass gates
+    that must not wake on them.  It travels WITH the tracker because the two
+    are one fact: the writer and the reader of the same issues (KOD-175)."""
 
 
 async def boot_tracker(
@@ -153,7 +167,11 @@ async def boot_tracker(
     await caller.probe()
     await caller.open()
     try:
-        tracker = build_tracker(config=config, operation=operation, caller=caller)
+        tracker, ledger = build_tracker(
+            config=config,
+            operation=operation,
+            caller=caller,
+        )
         reconciliation = await reconcile_tracker_mappings(
             tracker=tracker,
             config=operation,
@@ -179,4 +197,5 @@ async def boot_tracker(
         tracker=tracker,
         caller=caller,
         operation=reconciliation.config,
+        ledger=ledger,
     )

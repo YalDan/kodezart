@@ -31,6 +31,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.logging import configure_logging, get_logger
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.services.test_pass_scheduler import Metronome
 
@@ -113,7 +114,7 @@ class Exploder:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> None:
+    async def run(self) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
         raise RuntimeError(FAILURE)

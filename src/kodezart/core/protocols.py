@@ -1,7 +1,6 @@
 """Protocol definitions — composition without inheritance."""
 
 from collections.abc import AsyncIterator, Mapping, Sequence
-from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
@@ -478,23 +477,28 @@ class RunRecordSink(Protocol):
     the domain's one line.  The recorder service routes by the declared
     system and never learns either vendor's shape (KOD-170).
 
-    Verification is part of the same vendor knowledge: whether a row
-    landed since a run began is answered from the backend's OWN
-    timestamps, so a session's rich row counts regardless of its prose
-    shape and the runner backfills only a genuine absence.
+    Verification is part of the same vendor knowledge, and it is asked
+    PER RUN: whether THIS run's row is there, never whether the
+    destination has been written to lately.  "Any row since" made every
+    run after the first in a window a duplicate of its neighbour — two
+    unfinished fires swept at one shutdown produced one row, because the
+    first row answered for the second (KOD-288).
     """
 
-    async def has_record_since(
+    async def holds_record(
         self,
         *,
         destination: RecordDestination,
-        since: datetime,
+        record: RunRecord,
     ) -> bool:
-        """Whether *destination* holds a row created at or after *since*.
+        """Whether *destination* already holds a row about *record*'s run.
 
-        Answered from the backend's own timestamps, or raised naming what
-        refused — a guessed ``False`` would double every record and a
-        guessed ``True`` would silently skip one.
+        Identity is the run's NAME inside its window — the issue a fire
+        ran on, the pass a scheduled run is — so a row about another run
+        in the same window answers nothing about this one.  Answered from
+        the backend's own state, or raised naming what refused: a guessed
+        ``False`` would double every record and a guessed ``True`` would
+        silently skip one.
         """
         ...
 

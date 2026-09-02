@@ -203,6 +203,7 @@ async def watched(*, events: tuple[AgentEvent, ...]) -> FakeTrackerPort:
     watch = LifecycleWatcher(
         recorder=RunRecorder(records={}, sinks={}),
         queue=FakeJobQueue(events=events),
+        registry=FakeJobQueue(),
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=heartbeat(tracker, clock=clock),
         report=FakeFireReport(),
@@ -507,6 +508,7 @@ class TestTheWatcherDrivesTheHeartbeat:
         watch = LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=RaisingJobQueue(),
+            registry=FakeJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),
             report=FakeFireReport(),
@@ -580,6 +582,7 @@ class TestTheClaimIsHandedBackWhenTheJobEnds:
         watch = LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=RaisingJobQueue(),
+            registry=FakeJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),
             report=FakeFireReport(),
@@ -613,6 +616,7 @@ class TestTheClaimIsHandedBackWhenTheJobEnds:
         watch = LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=FakeJobQueue(events=(TERMINAL_EVENT,)),
+            registry=FakeJobQueue(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=heartbeat(tracker, clock=clock),
             report=FakeFireReport(),

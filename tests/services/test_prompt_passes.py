@@ -21,6 +21,7 @@ from kodezart.composition.passes import (
     build_prompt_passes,
     verify_pass_preflight,
 )
+from kodezart.composition.tracker import DialledTracker
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     PassGateCapabilityError,
@@ -36,6 +37,7 @@ from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
     QueueState,
+    RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
@@ -44,6 +46,7 @@ from tests.fakes import (
     FakeAgentRunner,
     FakeJobQueue,
     FakeTrackerPort,
+    ManagedFakeLinearMcpServer,
     make_tracker_issue,
 )
 from tests.prompts.test_claude_opus_goldens import V5_SET
@@ -94,6 +97,27 @@ def _config(tmp_path: Path, **overrides: object) -> AppConfig:
     return AppConfig(**settings)  # type: ignore[arg-type]
 
 
+def dialled_over(
+    tracker: FakeTrackerPort | None,
+    operation: OperationConfig,
+) -> DialledTracker | None:
+    """A boot's tracker: the port, its session and its own write ledger.
+
+    One value, because the builders take one.  A port handed over without
+    the ledger of this process's writes is a pass gate that wakes on the
+    operation's own churn, and there is no shape here that can express it
+    (KOD-289).
+    """
+    if tracker is None:
+        return None
+    return DialledTracker(
+        tracker=tracker,
+        caller=ManagedFakeLinearMcpServer(),
+        operation=operation,
+        ledger=tracker.self_writes,
+    )
+
+
 async def _registrations(
     tmp_path: Path,
     *,
@@ -111,7 +135,7 @@ async def _registrations(
             config=_config(tmp_path, **overrides),
             operation=declared,
             prompts=prompts,
-            tracker=tracker,
+            dialled=dialled_over(tracker, declared),
             runner=runner,
             skills=SUPPRESS_ALL_SKILLS,
         ),
@@ -157,7 +181,7 @@ async def _runtime(
         recorder=RunRecorder(records={}, sinks={}),
         config=config,
         operation=declared,
-        tracker=tracker,
+        dialled=dialled_over(tracker, declared),
         github_api=None,
         queue=queue,
         registry=queue,
@@ -636,6 +660,85 @@ async def test_the_declared_map_boots_once_the_scheduled_pass_is_granted(
     )
 
     assert operation.knowledge
+    assert {entry.name for entry in runtime.scheduler.passes} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
+
+
+#: The fire's own log, in the knowledge store: the shape the operation
+#: took when fires gained a record destination of their own (KOD-170).  A
+#: fire's session — not a scheduled pass — is what reaches it.
+FIRE_LOG_NAME = "Example Fire Log"
+
+
+def _fire_record_knowledge_side(raw: dict[str, object]) -> None:
+    """Declare the fire's record destination in the knowledge system."""
+    registry = raw["records"]
+    assert isinstance(registry, dict)
+    registry[RunKind.FIRE.value] = {
+        "system": DocumentSystem.KNOWLEDGE.value,
+        "name": FIRE_LOG_NAME,
+        "id": "example-fire-log-destination-id",
+        "append_only": True,
+    }
+
+
+async def test_a_fire_log_the_fires_own_session_cannot_reach_aborts_boot(
+    tmp_path: Path,
+) -> None:
+    """KOD-265: the capability question is asked of every session, not one.
+
+    The deployment grants the knowledge store to the scheduled passes and
+    the operation declares the FIRE's log in it, so a granted scheduled
+    pass answered for a surface it never reads and the fire's own missing
+    capability went unchecked — the arm that carries the session's prose
+    contribution to the Fire Log.  The refusal names the session type that
+    is missing, and names only the surface that session was owed.
+    """
+    operation = load_operation_config(_mutated(tmp_path, _fire_record_knowledge_side))
+
+    with pytest.raises(PassKnowledgeCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=None,
+            runner=FakeAgentRunner(events=[]),
+            operation=operation,
+        )
+
+    named = str(caught.value)
+    assert SessionType.TICKET_FIRE.value in named
+    assert f"records.{RunKind.FIRE.value} ({FIRE_LOG_NAME})" in named
+    # The scheduled pass holds its capability, so not one of ITS surfaces
+    # is named: the refusal is about the session that is missing one.
+    assert caught.value.destinations == (
+        f"records.{RunKind.FIRE.value} ({FIRE_LOG_NAME}) "
+        f"→ {SessionType.TICKET_FIRE.value}",
+    )
+
+
+async def test_the_same_operation_boots_once_the_fire_is_granted_too(
+    tmp_path: Path,
+) -> None:
+    """The paired positive: the grant list names the session, and it boots.
+
+    Non-vacuity for the refusal above, and the shipped deployment's own
+    shape — ``ticket_fire`` was added to the grants for exactly this row.
+    """
+    operation = load_operation_config(_mutated(tmp_path, _fire_record_knowledge_side))
+
+    runtime = await _runtime(
+        tmp_path,
+        tracker=None,
+        runner=FakeAgentRunner(events=[]),
+        operation=operation,
+        knowledge_session_grants=[
+            SessionType.SCHEDULED_PASS,
+            SessionType.TICKET_FIRE,
+        ],
+    )
+
+    assert operation.records[RunKind.FIRE.value].system is DocumentSystem.KNOWLEDGE
     assert {entry.name for entry in runtime.scheduler.passes} == {
         PromptKey.FIRE_PREP_PASS.value,
         PromptKey.GROOMING_PASS.value,

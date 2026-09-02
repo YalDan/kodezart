@@ -64,7 +64,7 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
     ValidatedCriterion,
 )
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
     ContentClass,
@@ -79,10 +79,14 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.job import JobRecord, JobState
-from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    QueueState,
+    RecordDestination,
+)
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.run_records import RunOutcome
+from kodezart.types.domain.run_records import RunOutcome, RunRecord
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -157,6 +161,9 @@ def knowledge_grant_for(
 #: with a knowledge server at all.
 NO_KNOWLEDGE_GRANT: KnowledgeGrant = knowledge_grant_for()
 FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+#: How far a write on the fake workspace moves an issue's stamp past
+#: whatever it carried: strictly forward, as the vendor's does (KOD-175).
+FIXTURE_WRITE_STEP: timedelta = timedelta(seconds=1)
 #: The configured team key every fixture issue belongs to, and the one a
 #: fixture operation declares.  A test reaching for an issue OUTSIDE the
 #: declared containers passes its own key — or ``None`` for one whose team
@@ -2291,6 +2298,23 @@ class FakeLinearMcpServer:
             raise LookupError(msg)
         return issue
 
+    def _moved(self, issue_key: str) -> None:
+        """A write moves the issue's stamp strictly forward, as the vendor's does.
+
+        Every issue save and every entry on its comment log — created,
+        edited or deleted — lands on ``updatedAt``.  That movement is what
+        the pass gates read and what the adapter records after its own
+        writes, so a fake that left the stamp where it was could not tell
+        a post-write read from a pre-write one (KOD-175).  An issue the
+        fixture never seeded has no stamp to move.
+        """
+        issue = self.issues.get(issue_key)
+        if issue is None:
+            return
+        issue.updated_at = (
+            max(issue.updated_at, self._next_instant()) + FIXTURE_WRITE_STEP
+        )
+
     def _tool_list_issues(
         self,
         arguments: Mapping[str, object],
@@ -2358,6 +2382,7 @@ class FakeLinearMcpServer:
             assert isinstance(raw_labels, list)
             new_labels = [str(entry) for entry in raw_labels]
             issue.labels = new_labels
+        self._moved(issue.id)
         return issue.wire()
 
     def _tool_save_comment(
@@ -2375,6 +2400,7 @@ class FakeLinearMcpServer:
                     # ``created_at`` survives an edit, which is the whole
                     # property the claim order depends on.
                     existing.body = str(arguments["body"])
+                    self._moved(existing.issue_id)
                     return existing.wire()
             raise KeyError(f"no comment {comment_id} to update")
         created_at = self._next_instant()
@@ -2387,6 +2413,7 @@ class FakeLinearMcpServer:
             created_at=created_at,
         )
         self.comments.append(comment)
+        self._moved(comment.issue_id)
         return comment.wire()
 
     def _tool_get_project(
@@ -2419,7 +2446,10 @@ class FakeLinearMcpServer:
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
         comment_id = str(arguments["id"])
+        deleted = [c for c in self.comments if c.id == comment_id]
         self.comments = [c for c in self.comments if c.id != comment_id]
+        for comment in deleted:
+            self._moved(comment.issue_id)
         return {}
 
     def _tool_get_document(
@@ -2771,6 +2801,26 @@ class FakeTrackerPort:
         }
         self._clock: Callable[[], datetime] = clock
         self._sequence: int = 0
+        #: What THIS double's own writes left on each issue, exactly as the
+        #: shipped adapter keeps it: a write moves the issue's stamp and
+        #: records the stamp it left, so a consumer's gate can tell the
+        #: operation's own churn from a principal's edit (KOD-175).
+        self.self_writes: SelfWriteLedger = SelfWriteLedger()
+
+    def _wrote(self, issue_key: str) -> None:
+        """Stamp the issue as a backend would, and remember our own write.
+
+        Forward only, because a clock never runs backwards: a fixture that
+        seeded a stamp later than this double's clock keeps it, and what
+        goes into the ledger is the stamp the issue actually carries after
+        the write — which is what a scan will report.
+        """
+        issue = self.issues.get(issue_key)
+        if issue is None:
+            return
+        stamp = max(self._clock(), issue.updated_at)
+        self.issues[issue_key] = issue.model_copy(update={"updated_at": stamp})
+        self.self_writes.record(issue_key=issue_key, updated_at=stamp)
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
         await asyncio.sleep(0)
@@ -2862,6 +2912,7 @@ class FakeTrackerPort:
             }
         )
         self.issues[issue_key] = updated
+        self._wrote(issue_key)
         return updated
 
     async def set_workflow_state(
@@ -2881,6 +2932,7 @@ class FakeTrackerPort:
             },
         )
         self.issues[issue_key] = updated
+        self._wrote(issue_key)
         return updated
 
     async def restore_workflow_state(
@@ -2900,6 +2952,7 @@ class FakeTrackerPort:
             update={"state_name": state_name, "state_kind": kind},
         )
         self.issues[issue_key] = updated
+        self._wrote(issue_key)
         return updated
 
     async def set_queue_state(
@@ -2912,6 +2965,7 @@ class FakeTrackerPort:
         issue = self.issues[issue_key]
         updated = issue.model_copy(update={"queue_states": frozenset({state})})
         self.issues[issue_key] = updated
+        self._wrote(issue_key)
         return updated
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
@@ -2924,6 +2978,7 @@ class FakeTrackerPort:
             created_at=self._clock(),
         )
         self.comments.append(comment)
+        self._wrote(issue_key)
         return comment
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
@@ -2957,6 +3012,7 @@ class FakeTrackerPort:
         )
         self.claims[issue_key] = granted
         self.claim_writes.append(issue_key)
+        self._wrote(issue_key)
         return granted
 
     async def renew_claim(
@@ -2980,12 +3036,14 @@ class FakeTrackerPort:
             },
         )
         self.claims[issue_key] = renewed
+        self._wrote(issue_key)
         return renewed
 
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         held = self.claims.get(issue_key)
         if held is not None and held.holder == holder:
             del self.claims[issue_key]
+            self._wrote(issue_key)
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
         await asyncio.sleep(0)
@@ -3015,6 +3073,7 @@ class FakeTrackerPort:
                     offered_branch=ref.branch,
                 )
         held.append(ref)
+        self._wrote(ref.issue_id)
 
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         await asyncio.sleep(0)
@@ -3023,6 +3082,7 @@ class FakeTrackerPort:
     async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
         await asyncio.sleep(0)
         self.recorded_base_specs[issue_key] = spec
+        self._wrote(issue_key)
 
     async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
         await asyncio.sleep(0)
@@ -3314,3 +3374,316 @@ class FakeFireReport:
         failure_class: str | None,
     ) -> None:
         self.reported.append((issue_key, outcome, failure_class))
+
+
+class RecordingLogSink:
+    """A ``RunRecordSink`` that behaves like the log it stands for.
+
+    It holds the rows written to it and answers the verify question the
+    way a destination does: by the record's own TITLE, which carries the
+    kind, the name and the instant the run began — so a neighbour's row in
+    the same window answers nothing about it, a row for a longer name this
+    one prefixes answers nothing either, and a second call for the same run
+    finds the first (KOD-288).
+    """
+
+    def __init__(self) -> None:
+        self.writes: list[RunRecord] = []
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        return any(row.title() == record.title() for row in self.writes)
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        self.writes.append(record)
+
+
+class RefusingRecordSink:
+    """A ``RunRecordSink`` whose destination never takes the row.
+
+    The CLASS it raises is the whole of it: the transport says a session
+    died by raising ``McpSessionClosedError``, and a destination that
+    answered and refused raises the plain transport error, which is how
+    the recorder tells a server to diagnose from a payload to fix
+    (KOD-177).  It refuses at the verification, so the write hop behind it
+    is never reached and the refusal cannot be mistaken for a half-written
+    row.
+    """
+
+    def __init__(self, failure: type[McpTransportError]) -> None:
+        self.failure: type[McpTransportError] = failure
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        raise self.failure(
+            "the record destination could not be read",
+            server_name="fixture-knowledge",
+            tool_name="API-query-data-source",
+        )
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        raise self.failure(
+            "the record destination refused the row",
+            server_name="fixture-knowledge",
+            tool_name="API-post-page",
+        )
+
+
+class BrokenRecordSink:
+    """A ``RunRecordSink`` whose own code fails, outside the transport's words.
+
+    Neither a dead session nor a vendor's answer: the class it raises is
+    one no destination produces, which is how the tests hold the recorder
+    to classifying nothing it cannot tell apart, and the producers to
+    naming such a failure apart from a record the destination refused
+    (KOD-192).
+    """
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        msg = "the sink's own payload builder reads a field the record has not got"
+        raise KeyError(msg)
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        msg = "the sink's own payload builder reads a field the record has not got"
+        raise KeyError(msg)
+
+
+# ---------------------------------------------------------------------------
+# The stdio MCP server fakes: a REAL subprocess, scripted to die (KOD-177)
+# ---------------------------------------------------------------------------
+
+#: One MCP server over stdio, in as little as speaks the protocol.
+#:
+#: A real process rather than a substituted session, because what is under
+#: test is what happens when the process on the other end of the pipe GOES
+#: AWAY — a stubbed session can be told to raise, but only a spawned server
+#: that exits mid-conversation produces the closed transport the measured
+#: boot met (KOD-177).
+#:
+#: Scripted entirely through the environment the caller passes down:
+#:
+#: * ``FAKE_MCP_SPAWN_LOG`` — a file it appends one line to per spawn, so a
+#:   test can count the spawns a single call cost;
+#: * ``FAKE_MCP_CALLS`` — how many tool calls it serves before exiting,
+#:   which is how a session closes under a live caller;
+#: * ``FAKE_MCP_STDERR`` — a line it writes to its own stderr at startup;
+#: * ``FAKE_MCP_TOOL_ERROR`` — the message it ANSWERS every tool call with,
+#:   as the vendor's own refusal: a server that is there and says no;
+#: * ``FAKE_MCP_RPC_ERROR_SPAWNS`` — the spawn numbers that ANSWER every
+#:   tool call with a JSON-RPC error naming the tool, as a server composes
+#:   one for a tool it has not got: the client raises it as the very class
+#:   a dead pipe arrives in, under a different code, and it must never be
+#:   read as a closed session (KOD-192);
+#: * ``FAKE_MCP_REFUSE_AFTER`` — the spawn number after which it exits
+#:   before serving anything at all: a server that cannot be brought back;
+#: * ``FAKE_MCP_REFUSE_SPAWNS`` — the individual spawn numbers that exit
+#:   before serving, so a server can be down for ONE reopen and back for
+#:   the next: the outage a caller must not turn into a boot-long one;
+#: * ``FAKE_MCP_EXIT_TRIGGER`` / ``FAKE_MCP_EXIT_MARKER`` — the pair that
+#:   kills the server BETWEEN calls rather than during one, which is the
+#:   measured shape (KOD-286).  Once its budget is spent the server waits
+#:   for the trigger file, then closes its stdout and touches the marker.
+#:   The wait is what makes the last answer safe: a server that closed
+#:   stdout in the same breath as its reply raced the client's own reader
+#:   and the reply was lost as ``CONNECTION_CLOSED`` — measured here.  The
+#:   test triggers the death only after the call it made has RETURNED, and
+#:   the marker (written after the close) says the pipe is shut at the
+#:   operating system's end, so both halves wait on facts rather than on
+#:   durations.  The waiting is done by a thread while the main loop keeps
+#:   answering, because a tool call is not over when its result lands: the
+#:   client reads the server's tool list afterwards to validate structured
+#:   content, and a server that shut its pipe in the same breath as the
+#:   reply took its own call down with it (measured here).  Only the FIRST
+#:   spawn dies this way: a server brought back by a reopen is the one
+#:   whose survival the test is about, and it serves on until the caller
+#:   closes its stdin.
+STDIO_FAKE_SERVER_SOURCE = '''\
+"""A minimal MCP server over stdio, scripted by its environment."""
+
+import json
+import os
+import sys
+import threading
+import time
+
+#: How the death wait is paced, and how long it may last before the
+#: server gives up on a trigger no test is going to write.
+POLL_SECONDS = 0.01
+WAIT_LIMIT_SECONDS = 30.0
+
+#: The spawn that dies between calls: the boot session, never a reopened
+#: one, whose survival is what the reopen tests are about.
+FIRST_SPAWN = 1
+
+#: JSON-RPC 2.0's own code for a request the server understood and would
+#: not serve: an error the server COMPOSES, as distinct from the one the
+#: client synthesises when the pipe dies under a request.
+INVALID_PARAMS = -32602
+
+
+def _send(payload: dict[str, object]) -> None:
+    sys.stdout.write(json.dumps(payload) + "\\n")
+    sys.stdout.flush()
+
+
+def _spawns() -> int:
+    path = os.environ["FAKE_MCP_SPAWN_LOG"]
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("spawn\\n")
+    with open(path, encoding="utf-8") as handle:
+        return len(handle.readlines())
+
+
+def _arm_the_death(trigger: str, marker: str) -> None:
+    """Watch for the word in a thread, and die on it while idle.
+
+    The main loop keeps answering meanwhile: a call is not over when its
+    result lands, and a server that shut its pipe in the same breath took
+    the client's follow-up schema read down with it.
+    """
+
+    def watch() -> None:
+        waited = 0.0
+        while not os.path.exists(trigger) and waited < WAIT_LIMIT_SECONDS:
+            time.sleep(POLL_SECONDS)
+            waited += POLL_SECONDS
+        sys.stdout.close()
+        with open(marker, "w", encoding="utf-8") as handle:
+            handle.write("exited\\n")
+        os._exit(0)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def main() -> int:
+    spawns = _spawns()
+    noise = os.environ.get("FAKE_MCP_STDERR", "")
+    if noise:
+        sys.stderr.write(noise + "\\n")
+        sys.stderr.flush()
+    refuse_after = os.environ.get("FAKE_MCP_REFUSE_AFTER", "")
+    if refuse_after and spawns > int(refuse_after):
+        return 1
+    refused = os.environ.get("FAKE_MCP_REFUSE_SPAWNS", "")
+    if spawns in {int(number) for number in refused.split(",") if number}:
+        return 1
+    answering = os.environ.get("FAKE_MCP_RPC_ERROR_SPAWNS", "")
+    composes_errors = spawns in {
+        int(number) for number in answering.split(",") if number
+    }
+    budget = int(os.environ.get("FAKE_MCP_CALLS", "0"))
+    exit_trigger = os.environ.get("FAKE_MCP_EXIT_TRIGGER", "")
+    exit_marker = os.environ.get("FAKE_MCP_EXIT_MARKER", "")
+    served = 0
+    for line in sys.stdin:
+        text = line.strip()
+        if not text:
+            continue
+        message = json.loads(text)
+        identifier = message.get("id")
+        method = message.get("method")
+        if method == "initialize":
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "result": {
+                        "protocolVersion": message["params"]["protocolVersion"],
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "fake-knowledge", "version": "1"},
+                    },
+                },
+            )
+        elif method == "tools/list":
+            _send({"jsonrpc": "2.0", "id": identifier, "result": {"tools": []}})
+        elif method == "tools/call":
+            if composes_errors:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": identifier,
+                        "error": {
+                            "code": INVALID_PARAMS,
+                            "message": "unknown tool: " + message["params"]["name"],
+                        },
+                    },
+                )
+                continue
+            refusal = os.environ.get("FAKE_MCP_TOOL_ERROR", "")
+            if refusal:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": identifier,
+                        "result": {
+                            "content": [{"type": "text", "text": refusal}],
+                            "isError": True,
+                        },
+                    },
+                )
+                continue
+            if served >= budget:
+                return 0
+            served += 1
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "result": {
+                        "content": [{"type": "text", "text": "recorded"}],
+                        "structuredContent": {"served": served},
+                        "isError": False,
+                    },
+                },
+            )
+            if served >= budget and exit_marker and spawns == FIRST_SPAWN:
+                _arm_the_death(exit_trigger, exit_marker)
+        elif identifier is not None:
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "error": {"code": -32601, "message": "no such method"},
+                },
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def write_stdio_fake_server(directory: Path) -> Path:
+    """Put the fake server on disk under *directory* and name its path."""
+    script = directory / "fake_mcp_server.py"
+    script.write_text(STDIO_FAKE_SERVER_SOURCE, encoding="utf-8")
+    return script

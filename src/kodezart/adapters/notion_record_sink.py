@@ -12,10 +12,20 @@ The tool names are the vendor MCP server's OpenAPI-derived ones, held
 here because they are vendor knowledge; the verification boot exercises
 them against the live server, which is where a version mismatch fails
 loudly (KOD-170).
+
+The title property earns its schema read twice over: it is where a row is
+written, and it is what a row is FOUND by — verification asks whether
+this run's row is there, not whether the log has been written to lately
+(KOD-288).  A row is asked for by the record's whole TITLE at the head of
+that property, never by containment of its name: a title containing
+``KOD-17`` is also every title containing ``KOD-170``.  At the head rather
+than whole, because the two writers of a row title it differently and both
+are this run's — a session writes the prescribed title alone, and this
+sink's own backfill writes the title followed by the outcome and the
+duration a structural row owes (KOD-238).
 """
 
 from collections.abc import Mapping
-from datetime import datetime
 
 from kodezart.core.errors import McpTransportError
 from kodezart.core.logging import BoundLogger, get_logger
@@ -40,26 +50,41 @@ class NotionRecordSink:
         self._title_properties: dict[str, str] = {}
         self._log: BoundLogger = get_logger(__name__)
 
-    async def has_record_since(
+    async def holds_record(
         self,
         *,
         destination: RecordDestination,
-        since: datetime,
+        record: RunRecord,
     ) -> bool:
-        """Whether the data source holds a page created at or after *since*.
+        """Whether the data source holds a row about THIS run.
 
-        One filtered query on the vendor's OWN ``created_time`` — a
-        session's row counts whatever its prose looks like, and page one
-        of size one is all the answer needs (measured live on the
-        Grooming Log, 2026-09-01).
+        Two conditions, and neither leans on the other: the vendor's OWN
+        ``created_time`` inside the run's window, and the record's whole
+        TITLE at the head of the title property every row of this data
+        source carries.  The window alone answered for the whole log — two
+        fires swept at one shutdown produced one row, the first answering
+        for the second — and a title CONTAINING the name answered for
+        every longer name it prefixed (KOD-288).  Page one of size one is
+        all the answer needs.
         """
+        title_property = await self._title_property(destination)
         payload = await self._caller.call_tool(
             name=_TOOL_QUERY_DATA_SOURCE,
             arguments={
                 "data_source_id": destination.id,
                 "filter": {
-                    "timestamp": "created_time",
-                    "created_time": {"on_or_after": since.isoformat()},
+                    "and": [
+                        {
+                            "timestamp": "created_time",
+                            "created_time": {
+                                "on_or_after": record.started_at.isoformat(),
+                            },
+                        },
+                        {
+                            "property": title_property,
+                            "title": {"starts_with": record.title()},
+                        },
+                    ],
                 },
                 "page_size": 1,
             },

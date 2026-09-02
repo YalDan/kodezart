@@ -5,15 +5,17 @@ gate is deterministic and free; the pass beneath it reads several issues
 and claims one.  Running the pass unconditionally on a quiet board would
 spend that work to discover nothing moved, every tick, forever.
 
-The tick reports through the log rather than returning a value: it is
-driven by the scheduler, which has no caller to hand a report to.
+What the tick DID is reported through the log — it is driven by the
+scheduler, which has no caller to hand a report to.  What it returns is
+one bit narrower and belongs to the driver: whether a tick ran at all, so
+a skipped one is never recorded as a run (KOD-176).
 """
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
-from kodezart.types.domain.dispatch import DispatchOutcome
+from kodezart.types.domain.dispatch import DispatchOutcome, PassRun
 
 
 class GatedDispatchPass:
@@ -31,13 +33,16 @@ class GatedDispatchPass:
         self._lifecycle: LifecycleWatcher = lifecycle
         self._log: BoundLogger = get_logger(__name__)
 
-    async def run(self) -> None:
+    async def run(self) -> PassRun:
         """Consult the gate; run the pass only when something moved.
 
         An absent gate means this pass is ungated and runs every tick.
         The alternative — a gate holding no signals — would report an
         empty delta forever and silently pin the pass shut, which is why
         "no signals configured" resolves to no gate rather than to one.
+
+        Returns which of the two happened, for the driver that has to tell
+        a run from a tick that produced none.
 
         A ``fire_enqueued`` report missing the issue, the job or the
         pre-claim state RAISES.  The dispatcher cannot emit that shape,
@@ -59,7 +64,7 @@ class GatedDispatchPass:
             delta = await self._gate.delta()
             if not delta.has_delta():
                 await self._log.ainfo("dispatch_pass_skipped_no_delta")
-                return
+                return PassRun.SKIPPED
             changed = delta.changed
         try:
             await self._dispatch(changed=changed)
@@ -67,6 +72,7 @@ class GatedDispatchPass:
             if self._gate is not None:
                 self._gate.rearm()
             raise
+        return PassRun.RAN
 
     async def _dispatch(self, *, changed: tuple[str, ...]) -> None:
         """The work the gate opened a window for: one pass, and its watch."""

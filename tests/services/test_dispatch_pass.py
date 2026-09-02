@@ -51,6 +51,7 @@ from kodezart.types.domain.dispatch import (
     DispatchOutcome,
     DispatchReport,
     ExclusionClause,
+    PassRun,
     PassSignal,
 )
 from kodezart.types.domain.gating import OutboundDestination, RepoVisibility
@@ -252,6 +253,7 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
         lifecycle=LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
+            registry=queue,
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=ClaimHeartbeat(
                 tracker=tracker,
@@ -263,6 +265,7 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
         ),
         gate=PassGate(
             tracker=tracker,
+            ledger=tracker.self_writes,
             signals=[PassSignal.approved_changed],
             team_keys=operation_config().team_keys_for_repo(PRIMARY_REPO),
             repo_urls=[PRIMARY_REPO],
@@ -274,26 +277,33 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
 
 
 async def test_a_delta_runs_the_pass_and_the_work_reaches_the_queue() -> None:
-    """AC-19: something moved, so the expensive half runs and produces a job."""
+    """AC-19: something moved, so the expensive half runs and produces a job.
+
+    The tick says it RAN: its driver tells a run from a skip by the return
+    (KOD-176).
+    """
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1")],
     )
     pass_, queue = tick(tracker)
 
-    await pass_.run()
+    assert await pass_.run() is PassRun.RAN
 
     assert [lane for lane, _ in queue.submissions] == [LANE]
     assert tracker.claims["K-1"].holder == HOLDER
 
 
 async def test_a_quiet_board_never_wakes_the_dispatcher() -> None:
-    """AC-19: the gate is the whole cost of a tick over a board at rest."""
+    """AC-19: the gate is the whole cost of a tick over a board at rest.
+
+    The tick says it SKIPPED, so its driver records no run for it (KOD-176).
+    """
     tracker = FakeTrackerPort(
         issues=[make_tracker_issue("K-1", queue_states=[QueueState.TRIAGE])],
     )
     pass_, queue = tick(tracker)
 
-    await pass_.run()
+    assert await pass_.run() is PassRun.SKIPPED
 
     assert queue.submissions == []
     assert tracker.claims == {}
@@ -341,6 +351,7 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
     lifecycle = LifecycleWatcher(
         recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
+        registry=queue,
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
@@ -411,6 +422,7 @@ def failing_tick(
     queue = FakeJobQueue()
     guard = PassGate(
         tracker=tracker,
+        ledger=tracker.self_writes,
         signals=[PassSignal.approved_changed],
         team_keys=operation_config().team_keys_for_repo(PRIMARY_REPO),
         repo_urls=[PRIMARY_REPO],
@@ -422,6 +434,7 @@ def failing_tick(
             lifecycle=LifecycleWatcher(
                 recorder=RunRecorder(records={}, sinks={}),
                 queue=queue,
+                registry=queue,
                 writer=TrackerLifecycleWriter(
                     tracker=tracker,
                     gate=PassThroughGate(),
@@ -553,6 +566,7 @@ async def test_the_root_builds_one_gated_pass_per_declared_repository() -> None:
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
@@ -602,6 +616,7 @@ async def test_an_issue_only_fires_into_the_repository_its_team_is_bound_to() ->
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
@@ -649,6 +664,7 @@ async def test_a_repository_no_team_is_bound_to_gets_a_named_skip() -> None:
                 },
             ),
             tracker=tracker,
+            ledger=tracker.self_writes,
             delivery=FakeDeliveryProbe(),
             queue=queue,
             registry=queue,
@@ -682,6 +698,7 @@ async def test_the_root_gives_every_pass_the_configured_cadence() -> None:
         config=config,
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
@@ -719,6 +736,7 @@ async def test_the_root_gives_every_pass_the_configured_budget() -> None:
         config=config,
         operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
@@ -742,6 +760,7 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
         config=AppConfig(),
         operation=operation_config(repos=(SECOND_REPO,)),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
@@ -789,6 +808,7 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
         config=AppConfig(),
         operation=operation_config(),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
@@ -851,6 +871,7 @@ async def test_a_run_that_died_is_reported_into_the_pass_that_fired_it() -> None
         config=AppConfig(dispatch_pass_gate_signals=[]),
         operation=operation_config(),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
@@ -916,6 +937,7 @@ async def test_the_pass_threads_the_claimed_boards_posture_to_the_watch() -> Non
             },
         ),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=FakeDeliveryProbe(),
         queue=queue,
         registry=queue,
@@ -980,6 +1002,7 @@ async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
         config=AppConfig(),
         operation=operation_config(repos=(FILE_ORIGIN,)),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=forge,
         queue=queue,
         registry=queue,
@@ -1008,6 +1031,7 @@ async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
         config=AppConfig(),
         operation=operation_config(repos=(PRIMARY_REPO,)),
         tracker=tracker,
+        ledger=tracker.self_writes,
         delivery=forge,
         queue=queue,
         registry=queue,
