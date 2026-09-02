@@ -42,7 +42,7 @@ from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import run_prompt_pass
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
@@ -126,6 +126,7 @@ def build_gate(
     *,
     config: AppConfig,
     tracker: TrackerPort | None,
+    ledger: SelfWriteLedger | None,
     signals: Sequence[PassSignal],
     team_keys: Sequence[str],
     repo_urls: Sequence[str],
@@ -138,16 +139,22 @@ def build_gate(
     is absent" and "nothing moved" have opposite costs and must never be
     confused for one another.
 
+    *ledger* is absent in exactly the second case and never on its own: it
+    is the tracker's own write log, dialled with it and handed on with it,
+    so the two nulls are one fact rather than a third way to be ungated
+    (KOD-175).
+
     *team_keys* and *repo_urls* are the containers the pass is scoped to —
     the boards its issue signals ask within and the repositories its review
     signal asks within.  A gate carrying a signal whose container class is
     empty refuses at construction; it is the caller that knows which
     containers its pass owns.
     """
-    if not signals or tracker is None:
+    if not signals or tracker is None or ledger is None:
         return None
     return PassGate(
         tracker=tracker,
+        ledger=ledger,
         signals=signals,
         team_keys=team_keys,
         repo_urls=repo_urls,
@@ -238,6 +245,7 @@ async def build_prompt_passes(
     operation: OperationConfig,
     prompts: PromptSetProvider,
     tracker: TrackerPort | None,
+    ledger: SelfWriteLedger | None,
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
@@ -303,6 +311,7 @@ async def build_prompt_passes(
                 gate=build_gate(
                     config=config,
                     tracker=tracker,
+                    ledger=ledger,
                     signals=row.signals,
                     team_keys=team_keys,
                     repo_urls=repo_urls,
@@ -368,6 +377,7 @@ async def build_dispatch_passes(
     config: AppConfig,
     operation: OperationConfig,
     tracker: TrackerPort,
+    ledger: SelfWriteLedger,
     delivery: DeliveryProbe,
     queue: JobQueue,
     registry: JobRegistry,
@@ -459,6 +469,7 @@ async def build_dispatch_passes(
                     gate=build_gate(
                         config=config,
                         tracker=tracker,
+                        ledger=ledger,
                         signals=config.dispatch_pass_gate_signals,
                         team_keys=operation.team_keys_for_repo(repo.url),
                         repo_urls=[repo.url],
@@ -632,6 +643,7 @@ async def build_dispatch_runtime(
     config: AppConfig,
     operation: OperationConfig | None,
     tracker: TrackerPort | None,
+    ledger: SelfWriteLedger | None,
     github_api: DeliveryProbe | None,
     queue: JobQueue,
     registry: JobRegistry,
@@ -660,11 +672,17 @@ async def build_dispatch_runtime(
     # "is this issue already delivered?", and the passes do not run —
     # named, never inferred from an empty schedule.
     built: DispatchPasses | None = None
-    if tracker is not None and operation is not None and github_api is not None:
+    if (
+        tracker is not None
+        and ledger is not None
+        and operation is not None
+        and github_api is not None
+    ):
         built = await build_dispatch_passes(
             config=config,
             operation=operation,
             tracker=tracker,
+            ledger=ledger,
             delivery=github_api,
             queue=queue,
             registry=registry,
@@ -708,6 +726,7 @@ async def build_dispatch_runtime(
                 operation=operation,
                 prompts=prompts,
                 tracker=tracker,
+                ledger=ledger,
                 runner=runner,
                 skills=skills,
                 recorder=recorder,

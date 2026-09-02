@@ -148,6 +148,7 @@ def pass_gate(tracker: FakeTrackerPort, *signals: PassSignal) -> PassGate:
     operation = example_config()
     return PassGate(
         tracker=tracker,
+        ledger=tracker.self_writes,
         signals=list(signals),
         team_keys=operation.team_keys(),
         repo_urls=[repo.url for repo in operation.repos],

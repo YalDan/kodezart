@@ -42,6 +42,14 @@ this gate advanced for a pass that then RAISED is put back — ``rearm`` —
 because asking is not reading: the window was opened for work that never
 happened, and leaving the mark past it spends a wake-up on nothing.
 
+A delta is a PRINCIPAL's movement, never the operation's own.  Every
+deterministic write this process makes bumps the same ``updated_at`` the
+gate reads, so a lane that claimed an issue woke itself on the claim and
+again on the release: the writers therefore record what they left, and an
+issue whose newest stamp is exactly that is no delta (KOD-175).  The
+ledger is the operation's own writes only; a judgment session's MCP writes
+are outside it and still wake the next tick.
+
 Asking is itself three-state, never two.  A signal resolves to
 saw-something, saw-nothing, or COULD-NOT-ASK: a transport that refused to
 answer contributes nothing to the disjunction, leaves its own mark exactly
@@ -58,7 +66,7 @@ from kodezart.core.errors import McpTransportError, PassGateScopeError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.git_url import is_forge_less_origin
-from kodezart.types.domain.dispatch import PassDelta, PassSignal
+from kodezart.types.domain.dispatch import PassDelta, PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import OperationMemberAbsentError, QueueState
 from kodezart.types.domain.tracker import (
     IssueQuery,
@@ -79,8 +87,13 @@ class PassGate:
         team_keys: Sequence[str],
         repo_urls: Sequence[str],
         page_size: int,
+        ledger: SelfWriteLedger,
     ) -> None:
         self._tracker: TrackerPort = tracker
+        #: What this process's own writes left on the issues it touched.
+        #: Shared with the writer, because a listing carries no actor and
+        #: the reading alone cannot say whose edit it is (KOD-175).
+        self._ledger: SelfWriteLedger = ledger
         self._signals: tuple[PassSignal, ...] = tuple(signals)
         self._team_keys: tuple[str, ...] = tuple(team_keys)
         self._repo_urls: tuple[str, ...] = tuple(repo_urls)
@@ -255,7 +268,20 @@ class PassGate:
         team_key: str,
         queue_state: QueueState | None,
     ) -> tuple[str, ...]:
-        """Issues that moved on *signal* since its mark; an absent state is any."""
+        """Issues that moved on *signal* since its mark; an absent state is any.
+
+        An issue whose newest stamp is EXACTLY the one this process's own
+        write left is not movement, and it is dropped from the delta: the
+        operation woke itself on its own claims, markers and lifecycle
+        transitions on the measured boot, 30 dispatch ticks out of 31
+        (KOD-175).  A principal's edit carries a strictly later stamp and
+        still reports, which is why this is an equality and not a window.
+
+        The MARK still advances over the whole page, self-writes included.
+        The window has genuinely been read — every issue in it was looked
+        at and judged — so re-asking from before it would re-read the same
+        rows every tick for as long as the operation keeps writing.
+        """
         issues: Sequence[TrackerIssue] = await self._tracker.scan_issues(
             query=IssueQuery(
                 queue_state=queue_state,
@@ -268,7 +294,14 @@ class PassGate:
             return ()
         self._advanced[signal, team_key] = self._marks[signal, team_key]
         self._marks[signal, team_key] = max(issue.updated_at for issue in issues)
-        return tuple(issue.issue_key for issue in issues)
+        return tuple(
+            issue.issue_key
+            for issue in issues
+            if not self._ledger.wrote(
+                issue_key=issue.issue_key,
+                updated_at=issue.updated_at,
+            )
+        )
 
     async def _review_delta(
         self,

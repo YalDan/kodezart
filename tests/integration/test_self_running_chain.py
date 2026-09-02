@@ -36,6 +36,7 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
+from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -149,6 +150,7 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
             config=config,
             operation=operation_config(),
             tracker=tracker,
+            ledger=SelfWriteLedger(),
             delivery=FakeDeliveryProbe(),
             queue=queue,
             registry=queue,
@@ -218,6 +220,7 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
             config=config,
             operation=operation_config(),
             tracker=tracker,
+            ledger=SelfWriteLedger(),
             delivery=FakeDeliveryProbe(),
             queue=queue,
             registry=queue,
@@ -290,6 +293,7 @@ async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
             config=config,
             operation=operation_config(),
             tracker=tracker,
+            ledger=SelfWriteLedger(),
             delivery=FakeDeliveryProbe(),
             queue=queue,
             registry=queue,

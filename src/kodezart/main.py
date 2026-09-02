@@ -172,6 +172,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             config=config,
             operation=operation,
             tracker=tracker,
+            ledger=None if dialled is None else dialled.ledger,
             github_api=github_api,
             queue=job_queue,
             registry=job_queue,

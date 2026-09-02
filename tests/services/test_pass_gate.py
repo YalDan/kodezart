@@ -24,8 +24,13 @@ import structlog.testing
 
 from kodezart.core.errors import McpTransportError, PassGateScopeError
 from kodezart.services.pass_gate import PassGate
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import PassSignal
-from kodezart.types.domain.operation import OperationMemberAbsentError, QueueState
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    OperationMemberAbsentError,
+    QueueState,
+)
 from kodezart.types.domain.tracker import (
     IssueQuery,
     ReviewQuery,
@@ -75,6 +80,7 @@ def gate(tracker: FakeTrackerPort) -> PassGate:
     """
     return PassGate(
         tracker=tracker,
+        ledger=tracker.self_writes,
         signals=[PassSignal.approved_changed],
         team_keys=[TEAM],
         repo_urls=[REPO],
@@ -221,6 +227,7 @@ def signal_gate(
 ) -> PassGate:
     return PassGate(
         tracker=tracker,
+        ledger=tracker.self_writes,
         signals=list(signals),
         team_keys=team_keys,
         repo_urls=repo_urls,
@@ -697,3 +704,114 @@ class TestRearmingAMarkTheConsumerNeverRead:
         subject.rearm()
 
         assert subject.mark(PassSignal.approved_changed, container=TEAM) is None
+
+
+class TestTheOperationsOwnWritesAreNotADelta:
+    """KOD-175 — a gate wakes on a principal's change, never on ours.
+
+    The measured boot: 30 of 31 dispatch ticks found a delta and five full
+    judgment sessions woke in 53 minutes, and what had moved every time was
+    the operation's own claim and route markers, its staging edits and its
+    lifecycle transitions bumping ``updated_at``.
+
+    The fake tracker stamps and records exactly as the shipped adapter
+    does — a write moves the issue's stamp and remembers the stamp it left
+    — so what these cases drive is the mechanism, not a description of it.
+    """
+
+    HOLDER = "pass-a"
+    LEASE = 600.0
+
+    def _tracker(self) -> FakeTrackerPort:
+        """A board whose clock runs, so a write moves what a gate reads."""
+        stamps = iter(
+            [FIXTURE_EPOCH + timedelta(minutes=index) for index in range(1, 60)],
+        )
+        return FakeTrackerPort(
+            issues=[make_tracker_issue("FIX-1")],
+            clock=lambda: next(stamps),
+        )
+
+    async def _service_writes(self, tracker: FakeTrackerPort) -> None:
+        """Every write the operation makes on an issue it is working."""
+        await tracker.claim_issue(
+            issue_key="FIX-1",
+            holder=self.HOLDER,
+            lease_seconds=self.LEASE,
+        )
+        await tracker.renew_claim(
+            issue_key="FIX-1",
+            holder=self.HOLDER,
+            lease_seconds=self.LEASE,
+        )
+        await tracker.post_comment(issue_key="FIX-1", body="<!-- route marker -->")
+        await tracker.record_base_spec(issue_key="FIX-1", spec=trunk_base("main"))
+        await tracker.set_workflow_state(
+            issue_key="FIX-1",
+            stage=LifecycleStage.IN_PROGRESS,
+        )
+        await tracker.release_claim(issue_key="FIX-1", holder=self.HOLDER)
+
+    async def test_the_operations_own_writes_wake_no_pass(self) -> None:
+        """Six writes by us, and the next tick has nothing to report.
+
+        The MARK still advances over them: the window was genuinely read,
+        and re-asking from before it would re-read these same rows every
+        tick for as long as the operation keeps working the issue.
+        """
+        tracker = self._tracker()
+        subject = signal_gate(tracker, PassSignal.issues_changed)
+        await subject.delta()
+        opening = subject.mark(PassSignal.issues_changed, container=TEAM)
+
+        await self._service_writes(tracker)
+        delta = await subject.delta()
+
+        assert not delta.has_delta()
+        assert delta.changed == ()
+        advanced = subject.mark(PassSignal.issues_changed, container=TEAM)
+        assert opening is not None
+        assert advanced is not None
+        assert advanced > opening
+        assert advanced == tracker.issues["FIX-1"].updated_at
+
+    async def test_a_principals_edit_after_our_writes_wakes_the_pass(self) -> None:
+        """The paired positive: a strictly later stamp is somebody else's.
+
+        Nothing about the ledger is time-boxed — it holds the stamp our own
+        last write left, and any stamp past it is an edit we did not make.
+        """
+        tracker = self._tracker()
+        subject = signal_gate(tracker, PassSignal.issues_changed)
+        await subject.delta()
+        await self._service_writes(tracker)
+        await subject.delta()
+
+        issue = tracker.issues["FIX-1"]
+        tracker.issues["FIX-1"] = issue.model_copy(
+            update={
+                "updated_at": issue.updated_at + timedelta(minutes=1),
+                "body": "a principal rewrote this",
+            },
+        )
+        delta = await subject.delta()
+
+        assert delta.has_delta()
+        assert delta.changed == ("FIX-1",)
+
+    async def test_an_issue_we_never_wrote_to_is_reported_as_it_always_was(
+        self,
+    ) -> None:
+        """The ledger answers about the issues it holds and about no others."""
+        tracker = self._tracker()
+        tracker.issues["FIX-2"] = make_tracker_issue("FIX-2", updated_at=LATER)
+        subject = signal_gate(tracker, PassSignal.issues_changed)
+        await subject.delta()
+
+        await self._service_writes(tracker)
+        tracker.issues["FIX-2"] = tracker.issues["FIX-2"].model_copy(
+            update={"updated_at": LATEST},
+        )
+        delta = await subject.delta()
+
+        assert delta.changed == ("FIX-2",)

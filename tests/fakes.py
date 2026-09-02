@@ -64,7 +64,7 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
     ValidatedCriterion,
 )
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
     ContentClass,
@@ -2771,6 +2771,26 @@ class FakeTrackerPort:
         }
         self._clock: Callable[[], datetime] = clock
         self._sequence: int = 0
+        #: What THIS double's own writes left on each issue, exactly as the
+        #: shipped adapter keeps it: a write moves the issue's stamp and
+        #: records the stamp it left, so a consumer's gate can tell the
+        #: operation's own churn from a principal's edit (KOD-175).
+        self.self_writes: SelfWriteLedger = SelfWriteLedger()
+
+    def _wrote(self, issue_key: str) -> None:
+        """Stamp the issue as a backend would, and remember our own write.
+
+        Forward only, because a clock never runs backwards: a fixture that
+        seeded a stamp later than this double's clock keeps it, and what
+        goes into the ledger is the stamp the issue actually carries after
+        the write — which is what a scan will report.
+        """
+        issue = self.issues.get(issue_key)
+        if issue is None:
+            return
+        stamp = max(self._clock(), issue.updated_at)
+        self.issues[issue_key] = issue.model_copy(update={"updated_at": stamp})
+        self.self_writes.record(issue_key=issue_key, updated_at=stamp)
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
         await asyncio.sleep(0)
@@ -2862,6 +2882,7 @@ class FakeTrackerPort:
             }
         )
         self.issues[issue_key] = updated
+        self._wrote(issue_key)
         return updated
 
     async def set_workflow_state(
@@ -2881,6 +2902,7 @@ class FakeTrackerPort:
             },
         )
         self.issues[issue_key] = updated
+        self._wrote(issue_key)
         return updated
 
     async def restore_workflow_state(
@@ -2900,6 +2922,7 @@ class FakeTrackerPort:
             update={"state_name": state_name, "state_kind": kind},
         )
         self.issues[issue_key] = updated
+        self._wrote(issue_key)
         return updated
 
     async def set_queue_state(
@@ -2912,6 +2935,7 @@ class FakeTrackerPort:
         issue = self.issues[issue_key]
         updated = issue.model_copy(update={"queue_states": frozenset({state})})
         self.issues[issue_key] = updated
+        self._wrote(issue_key)
         return updated
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
@@ -2957,6 +2981,7 @@ class FakeTrackerPort:
         )
         self.claims[issue_key] = granted
         self.claim_writes.append(issue_key)
+        self._wrote(issue_key)
         return granted
 
     async def renew_claim(
@@ -2980,12 +3005,14 @@ class FakeTrackerPort:
             },
         )
         self.claims[issue_key] = renewed
+        self._wrote(issue_key)
         return renewed
 
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         held = self.claims.get(issue_key)
         if held is not None and held.holder == holder:
             del self.claims[issue_key]
+            self._wrote(issue_key)
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
         await asyncio.sleep(0)
@@ -3015,6 +3042,7 @@ class FakeTrackerPort:
                     offered_branch=ref.branch,
                 )
         held.append(ref)
+        self._wrote(ref.issue_id)
 
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         await asyncio.sleep(0)
@@ -3023,6 +3051,7 @@ class FakeTrackerPort:
     async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
         await asyncio.sleep(0)
         self.recorded_base_specs[issue_key] = spec
+        self._wrote(issue_key)
 
     async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
         await asyncio.sleep(0)
