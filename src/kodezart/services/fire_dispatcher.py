@@ -605,7 +605,9 @@ class FireDispatcher:
             # rejection that killed the last one (KOD-174), or re-reads an
             # edge that cannot have moved while it holds the lane's whole
             # throughput (KOD-173).
-            if issue.updated_at <= remembered.updated_at:
+            if issue.updated_at <= remembered.updated_at and await self._still_stands(
+                remembered,
+            ):
                 return IssueExclusion(
                     issue_key=issue.issue_key,
                     clause=remembered.clause,
@@ -729,6 +731,28 @@ class FireDispatcher:
                 else "the issue belongs to no project"
             ),
         )
+
+    async def _still_stands(self, remembered: _RememberedExclusion) -> bool:
+        """Whether *remembered* is still true of the board it was taken on.
+
+        Every memory but one is about the issue it excludes, and lifts
+        when that issue moves.  The blocked winner's is about a SECOND
+        issue: its detail is the blocker's key, and a blocker that has
+        since closed is a premise delivered — nothing the blocked issue
+        does or fails to do bears on that.  Held to its own timestamp
+        alone, a candidate whose blocker closed quietly stayed remembered
+        until something unrelated happened to touch it (KOD-285), which on
+        a board where the blocker is the thing being worked is exactly the
+        moment it becomes fireable.
+
+        One read per tick per remembered blocked issue, and only while the
+        issue itself has not moved — an issue that has moved is re-admitted
+        without asking anything about its blocker.
+        """
+        if remembered.clause is not ExclusionClause.LIVE_BLOCKER:
+            return True
+        blocker = await self._tracker.read_issue(issue_key=remembered.detail)
+        return clause_open(blocker)
 
     async def _live_blocker_of(self, issue: TrackerIssue) -> str | None:
         """Clause 4 over *issue*'s own edges: the first live blocker's key.

@@ -1878,6 +1878,65 @@ class TestTheWinnerIsReadBeforeItIsClaimed:
 
         assert third.outcome is DispatchOutcome.winner_blocked
 
+    async def test_a_closed_blocker_re_admits_the_winner_it_was_holding(self) -> None:
+        """The memory is about the BLOCKER, and it lifts when the blocker does.
+
+        Measured at ``6e98499``: the blocked winner's memory expired on
+        its own ``updated_at``, so a blocker closing without touching the
+        issue it blocked left that issue remembered until something
+        unrelated moved it — on a board where the blocker is the work in
+        progress, that is precisely the tick the candidate becomes
+        fireable (KOD-285).  K-1 does not move here; K-2 finishes, and
+        that alone is what re-admits it.
+        """
+        tracker = RelationlessScanTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
+            ],
+        )
+        fire, queue, _ = dispatcher(tracker)
+        first = await fire.run_pass()
+        assert first.outcome is DispatchOutcome.winner_blocked
+        tracker.issues["K-2"] = make_tracker_issue(
+            "K-2",
+            queue_states=[QueueState.DONE],
+            state_kind=WorkflowStateKind.COMPLETED,
+        )
+
+        second = await fire.run_pass()
+
+        assert second.outcome is DispatchOutcome.fire_enqueued
+        assert second.claimed_issue_key == "K-1"
+        assert len(queue.submissions) == 1
+
+    async def test_a_blocker_still_open_keeps_the_memory_at_one_read(self) -> None:
+        """The paired negative: a standing blocker costs a read, not a claim.
+
+        The blocker is re-read once for the remembered issue on this tick
+        and nothing else follows from it — no claim, no fire, and the
+        exclusion still names the blocker it is waiting on.
+        """
+        tracker = RelationlessScanTrackerPort(
+            issues=[
+                make_tracker_issue("K-1", blocked_by=["K-2"]),
+                make_tracker_issue("K-2", queue_states=[QueueState.TRIAGE]),
+            ],
+        )
+        fire, queue, _ = dispatcher(tracker)
+        await fire.run_pass()
+        tracker.issue_reads.clear()
+
+        second = await fire.run_pass()
+
+        assert second.outcome is DispatchOutcome.empty_eligible_set
+        assert [
+            (item.issue_key, item.clause, item.detail) for item in second.exclusions
+        ] == [("K-1", ExclusionClause.LIVE_BLOCKER, "K-2")]
+        assert tracker.issue_reads == ["K-2"]
+        assert tracker.claim_writes == []
+        assert queue.submissions == []
+
     async def test_a_closed_blocker_does_not_block_the_winner(self) -> None:
         """A finished dependency is an edge, not an obstacle.
 
