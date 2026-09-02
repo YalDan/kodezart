@@ -920,9 +920,16 @@ async def test_a_rate_limit_in_one_repositorys_pass_stops_the_other_repositorys(
     the second repository's tick is the observable, and its own winner is
     excluded under the lane-backoff clause carrying that class.  Nothing
     here calls ``record_run_outcome``: the only inputs are the passes the
-    root built and a queue whose job dies, so a root that gave each
-    dispatcher a cooldown of its own fires the design board's issue here,
-    into the same limit.
+    root built and a queue whose job dies, so what cools the second
+    repository is the root's own report path — the watch fanning the
+    outcome to every dispatcher, each setting the lane's cooldown before
+    asking whose run it was — and this case is red at the ``6e98499``
+    ordering.  It does NOT tell a root that built one cooldown from a
+    root that built one per dispatcher: through that fan-out the second
+    repository is cooled either way (measured at verification), so the
+    shared object is pinned by ``TestTheCooldownIsTheWholeOperations``,
+    which reports to one dispatcher only, and the root's single
+    construction is read off ``build_dispatch_passes``.
 
     The passes are UNGATED — the shipped empty-signals configuration — so
     the second tick is the pass deciding rather than the gate finding a
