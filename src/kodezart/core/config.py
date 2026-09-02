@@ -273,7 +273,7 @@ class AppConfig(BaseSettings):
             "Claude Code output style every engine session runs under. None "
             "sends no style at all and the CLI's own default stands; no "
             "style is ever picked in code. A declared style the session's "
-            "own init message does not confirm fails that session rather "
+            "own opening message does not confirm fails that session rather "
             "than running it under some other system prompt."
         ),
     )

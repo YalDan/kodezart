@@ -26,6 +26,7 @@ from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.core.errors import OutputStyleNotConfirmedError
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent, SystemEvent
+from kodezart.types.domain.subagents import SessionPolicy, WorkflowAccess
 from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
     FAKE_SESSION_TYPE,
@@ -180,6 +181,32 @@ async def test_declaring_no_style_sends_no_settings_at_all() -> None:
     )
 
     assert cast(Any, session.options).settings is None
+
+
+async def test_the_style_and_the_fan_out_bound_share_one_settings_object() -> None:
+    """``settings`` is ONE option: the style joins the bound, replacing nothing.
+
+    A mapper that built the style's object on its own would drop the bound
+    a dispatch declared, or the other way round, and every single-key test
+    above would still pass.
+    """
+    session = await recorded_session(
+        _EXECUTOR_MODULE,
+        output_style=_DECLARED_STYLE,
+        session_policy=SessionPolicy(
+            workflow_access=WorkflowAccess(
+                workflows_path=".claude/workflows",
+                size_guideline=6,
+                enabled=True,
+            ),
+        ),
+        messages=[_init(_DECLARED_STYLE)],
+    )
+
+    assert json.loads(cast(Any, session.options).settings) == {
+        "workflowSizeGuideline": 6,
+        "outputStyle": _DECLARED_STYLE,
+    }
 
 
 async def test_a_confirmed_style_rides_the_frame_that_reports_the_engine() -> None:
