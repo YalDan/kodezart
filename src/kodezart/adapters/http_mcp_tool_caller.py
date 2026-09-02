@@ -160,6 +160,13 @@ class HttpMcpToolCaller:
         Silence means accepted.  A 401 is the credential's own refusal; any
         other error status is a server this deployment cannot use, which is
         the transport's failure and not the operator's credential.
+
+        The whole answer is the STATUS LINE, so the body is never consumed:
+        a streamable-HTTP endpoint may answer ``initialize`` on an event
+        stream it then holds open, and a probe reading to the end of that
+        body would wait out the transport's read timeout and refuse a boot
+        whose credential the server had already accepted.  The response is
+        streamed, classified from its headers and closed unread (KOD-284).
         """
         async with self._http_client(
             headers={
@@ -169,21 +176,26 @@ class HttpMcpToolCaller:
             timeout=httpx.Timeout(self._timeout_seconds),
         ) as client:
             try:
-                response = await client.post(self._url, json=_PROBE_BODY)
+                async with client.stream(
+                    "POST",
+                    self._url,
+                    json=_PROBE_BODY,
+                ) as response:
+                    status_code = response.status_code
+                    server_is_unwell = response.is_error
             except httpx.HTTPError as exc:
                 raise McpTransportError(
                     "the MCP server could not be reached to check the credential",
                     server_name=self._server_name,
                 ) from exc
-        if response.status_code == HTTPStatus.UNAUTHORIZED:
+        if status_code == HTTPStatus.UNAUTHORIZED:
             raise McpCredentialRefusedError(
                 "the MCP server refused the configured credential",
                 server_name=self._server_name,
             )
-        if response.is_error:
+        if server_is_unwell:
             raise McpTransportError(
-                "the MCP server answered the credential check with HTTP "
-                f"{response.status_code}",
+                f"the MCP server answered the credential check with HTTP {status_code}",
                 server_name=self._server_name,
             )
         await self._log.ainfo(

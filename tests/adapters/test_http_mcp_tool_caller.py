@@ -23,7 +23,7 @@ Every refusal names its ground; no silent arm.
 import asyncio
 import json
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import timedelta
 from http import HTTPStatus
 from typing import Final
@@ -193,6 +193,45 @@ class _Endpoint:
         return httpx.Response(status_code=self._status, json={})
 
 
+class _NeverEndingBody(httpx.AsyncByteStream):
+    """A response body that is opened and then never ends.
+
+    The shape a streamable-HTTP endpoint answers ``initialize`` with when
+    it keeps the event stream open for the session that follows: the
+    status line and headers arrive, and the body does not finish.  Records
+    its own closing, because "the probe leaked no stream" is a fact about
+    this object and nothing above it.
+    """
+
+    def __init__(self) -> None:
+        self.closed: bool = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        await asyncio.Event().wait()
+        yield b""
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _StallingEndpoint:
+    """An endpoint answering one status, then holding its body open."""
+
+    def __init__(self, status: HTTPStatus) -> None:
+        self._status = status
+        self.body: _NeverEndingBody = _NeverEndingBody()
+
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._answer)
+
+    def _answer(self, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=self._status,
+            headers={"content-type": "text/event-stream"},
+            stream=self.body,
+        )
+
+
 class TestTheCredentialProbe:
     """The credential is presented once, before any session exists.
 
@@ -245,6 +284,38 @@ class TestTheCredentialProbe:
         assert request.url == httpx.URL("https://mcp.invalid/mcp")
         assert request.headers["Authorization"] == f"Bearer {_FIXTURE_TOKEN}"
         assert json.loads(request.content)["method"] == "initialize"
+
+    async def test_a_body_that_never_ends_still_answers_the_probe(self) -> None:
+        """The status is the whole answer, so the body is never read (KOD-284).
+
+        Restore ``client.post`` and this case reaches
+        ``_HANG_CEILING_SECONDS`` and fails on ``TimeoutError``: reading to
+        the end of a body that has no end is exactly the stalled boot the
+        streaming arm exists to prevent.
+        """
+        endpoint = _StallingEndpoint(HTTPStatus.OK)
+        caller = caller_fixture(transport_factory=endpoint.transport)
+
+        await asyncio.wait_for(caller.probe(), timeout=_HANG_CEILING_SECONDS)
+
+        assert endpoint.body.closed
+
+    async def test_a_refusal_on_a_body_that_never_ends_is_still_classified(
+        self,
+    ) -> None:
+        """The paired negative: the classification survives the same body.
+
+        A boot refused for the credential and a boot stalled on a stream
+        are different operator acts, and only the status line tells them
+        apart.
+        """
+        endpoint = _StallingEndpoint(HTTPStatus.UNAUTHORIZED)
+        caller = caller_fixture(transport_factory=endpoint.transport)
+
+        with pytest.raises(McpCredentialRefusedError):
+            await asyncio.wait_for(caller.probe(), timeout=_HANG_CEILING_SECONDS)
+
+        assert endpoint.body.closed
 
     async def test_an_unreachable_server_is_the_transport_class(self) -> None:
         """A probe that never got an answer says the transport failed."""
