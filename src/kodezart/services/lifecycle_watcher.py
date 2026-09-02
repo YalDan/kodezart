@@ -412,13 +412,16 @@ class LifecycleWatcher:
                 job_id=job_id,
                 outcome=outcome.value,
             )
-            return
-        await self._record_fire(
-            issue_key=issue_key,
-            outcome=outcome,
-            duration_seconds=loop.time() - watch_started,
-            started_at=started_at,
-        )
+        else:
+            await self._record_fire(
+                issue_key=issue_key,
+                outcome=outcome,
+                duration_seconds=loop.time() - watch_started,
+                started_at=started_at,
+            )
+        # Forgotten on either arm: a watch that reached its end has ruled on
+        # its fire, and a sweep meeting the fire again would announce the
+        # same absence a second time, as unfinished.
         self._unrecorded.pop(job_id, None)
 
     async def _run_started_at(self, job_id: str) -> datetime | None:

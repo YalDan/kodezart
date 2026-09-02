@@ -1444,6 +1444,51 @@ class TestTheShutdownRecordSweep:
             if entry["event"] == "finished_fire_unknown_to_registry"
         ] == [ISSUE]
 
+    async def test_a_fire_the_watch_could_not_name_is_not_swept_again(
+        self,
+    ) -> None:
+        """The watch's ruling on its fire is the last word.
+
+        A watch that reached its end forgets its fire whether or not the
+        record landed, and the arm above is no exception: a fire it named
+        as unknown to the registry, left behind, would be announced by the
+        shutdown sweep a second time — as unfinished — over the very
+        absence the watch had already named.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        queue = StalledQueue()
+        queue.enqueue(JOB_ID, JobState.RUNNING)
+        log = RecordingLogSink()
+        watch = LifecycleWatcher(
+            recorder=RunRecorder(
+                records={RunKind.FIRE.value: FIRE_DESTINATION},
+                sinks={DocumentSystem.KNOWLEDGE: log},
+            ),
+            queue=queue,
+            registry=FakeJobQueue(),
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
+        )
+
+        watch.follow(
+            issue_key=ISSUE,
+            job_id=JOB_ID,
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+        await asyncio.sleep(0)
+        queue.stopped.set()
+        await watch.drain()
+        with structlog.testing.capture_logs() as logs:
+            await watch.record_unfinished()
+
+        assert log.writes == []
+        assert [
+            entry["event"]
+            for entry in logs
+            if entry["event"].endswith("_unknown_to_registry")
+        ] == []
+
     async def test_a_row_already_there_is_verified_and_announced_by_nobody(
         self,
     ) -> None:

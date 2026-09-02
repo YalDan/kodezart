@@ -438,6 +438,30 @@ class TestLinearRecordSink:
 
         assert present
 
+    async def test_a_line_merely_mentioning_the_title_is_not_a_row(self) -> None:
+        """The paired negative of the line anchor: a row BEGINS a line.
+
+        Prose that cites this run's title mid-line is a mention of the
+        run, not its record, so the runner still owes the row — a
+        containment match on the whole document would have called the
+        mention the row (KOD-288).
+        """
+        record = _record()
+        caller = CapturingCaller(
+            {
+                "get_document": {
+                    "content": f"the runner had not yet written {record.title()} here",
+                },
+            },
+        )
+
+        present = await self._sink(caller).holds_record(
+            destination=_destination(DocumentSystem.TRACKER),
+            record=record,
+        )
+
+        assert not present
+
     async def test_the_backfilled_line_opens_with_the_prescribed_title(
         self,
     ) -> None:
