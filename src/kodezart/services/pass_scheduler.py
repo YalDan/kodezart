@@ -22,6 +22,10 @@ a loop that has moved on.  A hang and a raise have different remedies, so
 outcome, including the quiet one, carries the seconds it took, because a
 tick's duration is the only reading that says a pass is degrading before
 it stops returning at all.
+
+A tick that RAN and a tick its gate skipped are the fourth distinction,
+and the pass itself is what draws it: the run record obligation belongs to
+runs, and a skipped tick is not one (KOD-176).
 """
 
 import asyncio
@@ -32,6 +36,7 @@ from traceback import format_exception
 
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import LogEmitter
+from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.run_records import RunOutcome
 
 #: How a pass's outcome leaves the scheduler: the outcome, the seconds the
@@ -55,7 +60,10 @@ class ScheduledPass:
     name: str
     interval_seconds: float
     timeout_seconds: float
-    run: Callable[[], Awaitable[None]]
+    #: The tick itself, which SAYS whether it ran: a pass whose gate found
+    #: nothing opened no session, so it produced no run for this scheduler
+    #: to report on (KOD-176).
+    run: Callable[[], Awaitable[PassRun]]
     #: Where this pass's outcome is reported after every tick, or ``None``
     #: for a pass that records nowhere BY DESIGN — the dispatch scans,
     #: whose outcome is the fire they start.  The two judgment passes are
@@ -126,15 +134,22 @@ class PassScheduler:
     async def _tick(self, entry: ScheduledPass) -> None:
         """Run the pass once under its own budget and name what it did.
 
-        Three outcomes, three events, and the loop keeps its cadence
-        through all of them.  The budget is enforced by cancelling the
-        coroutine in flight, so a session or a tracker call that stopped
-        returning is genuinely unwound rather than abandoned in place.
+        Four outcomes, four events, and the loop keeps its cadence through
+        all of them.  The budget is enforced by cancelling the coroutine in
+        flight, so a session or a tracker call that stopped returning is
+        genuinely unwound rather than abandoned in place.
 
         A ``TimeoutError`` the pass raised ITSELF is a failure, not a
         hang: the two are told apart by asking the budget whether it was
         the one that fired, so a collaborator's own timeout keeps its
         traceback instead of being reported as an unresponsive pass.
+
+        A tick whose gate found nothing is the fourth, and it REPORTS
+        NOWHERE.  A run record asserts that a run happened; a skipped tick
+        opened no session, so a row backfilled for it is a phantom run in
+        the very log the next window reads to decide what to do (KOD-176).
+        The skip is named in its own event, under the pass's own name, so
+        a quiet board stays as legible as a busy one.
         """
         loop = asyncio.get_running_loop()
         started = loop.time()
@@ -142,7 +157,7 @@ class PassScheduler:
         budget = asyncio.timeout(entry.timeout_seconds)
         try:
             async with budget:
-                await entry.run()
+                ran = await entry.run()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -170,6 +185,13 @@ class PassScheduler:
             await self._report(entry, RunOutcome.FAILED, duration, started_at)
             return
         duration = loop.time() - started
+        if ran is PassRun.SKIPPED:
+            await self._log.ainfo(
+                "scheduled_pass_skipped",
+                name=entry.name,
+                duration_seconds=duration,
+            )
+            return
         await self._log.ainfo(
             "scheduled_pass_completed",
             name=entry.name,

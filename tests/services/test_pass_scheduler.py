@@ -20,15 +20,25 @@ import ast
 import asyncio
 import re
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 import structlog
 
+from kodezart.composition.records import run_report
 from kodezart.core.errors import McpCredentialRefusedError
-from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
-from kodezart.types.domain.run_records import RunOutcome
+from kodezart.services.pass_scheduler import PassScheduler, RunReport, ScheduledPass
+from kodezart.services.run_recorder import RunRecorder
+from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.operation import (
+    DocumentSystem,
+    RecordDestination,
+    RunKind,
+)
+from kodezart.types.domain.run_records import RunOutcome, RunRecord
 from tests.fakes import RecordingLogger
 
 SCHEDULER_SOURCE = (
@@ -61,14 +71,32 @@ SETTLE_TIMEOUT = 5.0
 
 
 class Recorder:
-    """A pass that counts its own invocations."""
+    """A pass that counts its own invocations, and ran on every one."""
 
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> None:
+    async def run(self) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
+        return PassRun.RAN
+
+
+class Skipper:
+    """A pass whose gate found nothing: it is called, and it runs nothing.
+
+    The measured shape (KOD-176): the fire-prep tick returned in 3.5
+    seconds having opened no session at all, and the scheduler backfilled
+    a "completed" run record row for it.
+    """
+
+    def __init__(self) -> None:
+        self.calls: int = 0
+
+    async def run(self) -> PassRun:
+        await asyncio.sleep(0)
+        self.calls += 1
+        return PassRun.SKIPPED
 
 
 class Exploder:
@@ -77,7 +105,7 @@ class Exploder:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> None:
+    async def run(self) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
         msg = "the pass could not reach the tracker"
@@ -95,7 +123,7 @@ class CredentialRefuser:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> None:
+    async def run(self) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
         raise McpCredentialRefusedError(
@@ -155,13 +183,14 @@ class Sleeper:
         self.calls: int = 0
         self.cancelled: int = 0
 
-    async def run(self) -> None:
+    async def run(self) -> PassRun:
         self.calls += 1
         try:
             await asyncio.Event().wait()
         except asyncio.CancelledError:
             self.cancelled += 1
             raise
+        return PassRun.RAN
 
 
 class Metronome:
@@ -731,3 +760,209 @@ async def test_a_pass_without_a_report_records_nowhere_by_design() -> None:
     events = [entry.event for entry in log.events]
     assert "scheduled_pass_completed" in events
     assert "run_record_write_failed" not in events
+
+
+class SpyingSink:
+    """A record sink that remembers every ask and every write.
+
+    ``present`` scripts what the verification finds: ``False`` is a
+    destination with no row for this run's window, so a real run backfills
+    the structural one; ``True`` is a session that wrote its own.
+    """
+
+    def __init__(self, *, present: bool = False) -> None:
+        self.present: bool = present
+        self.asks: list[tuple[RecordDestination, datetime]] = []
+        self.writes: list[tuple[RecordDestination, RunRecord]] = []
+
+    async def has_record_since(
+        self,
+        *,
+        destination: RecordDestination,
+        since: datetime,
+    ) -> bool:
+        self.asks.append((destination, since))
+        return self.present
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        self.writes.append((destination, record))
+
+
+DESTINATION = RecordDestination(
+    system=DocumentSystem.KNOWLEDGE,
+    name="Fixture Log",
+    id="destination-1",
+    append_only=True,
+)
+
+
+def _recorder(sink: SpyingSink) -> RunRecorder:
+    """The real recorder over one sink, for both scheduled kinds."""
+    return RunRecorder(
+        records={
+            RunKind.FIRE_PREP.value: DESTINATION,
+            RunKind.GROOMING.value: DESTINATION,
+        },
+        sinks={DocumentSystem.KNOWLEDGE: sink},
+    )
+
+
+class CountedReport:
+    """The real report binding, with a count of how often it was called.
+
+    Both halves are needed: that the scheduler did not REPORT, and that
+    nothing reached the destination behind it.
+    """
+
+    def __init__(self, inner: RunReport) -> None:
+        self._inner: RunReport = inner
+        self.calls: int = 0
+
+    async def report(
+        self,
+        outcome: RunOutcome,
+        duration_seconds: float,
+        started_at: datetime,
+    ) -> None:
+        self.calls += 1
+        await self._inner(outcome, duration_seconds, started_at)
+
+
+@contextmanager
+def _captured_events() -> Iterator[list[structlog.typing.EventDict]]:
+    """Every event emitted through the process-wide chain, and nothing rendered.
+
+    The recorder takes no injected emitter — it is not the collaborator
+    under test here — so its events are read off the chain itself.
+    """
+    events: list[structlog.typing.EventDict] = []
+
+    def capture(
+        _logger: object,
+        _name: str,
+        event_dict: structlog.typing.EventDict,
+    ) -> structlog.typing.EventDict:
+        events.append(dict(event_dict))
+        raise structlog.DropEvent
+
+    structlog.configure(processors=[capture])
+    try:
+        yield events
+    finally:
+        structlog.reset_defaults()
+
+
+async def test_a_gate_skipped_tick_writes_no_run_record_and_names_the_skip() -> None:
+    """KOD-176: the phantom row, as a fixture.
+
+    Measured on the 2026-09-01 boot — a fire-prep tick returned in 3.5
+    seconds having opened no session, and a "completed" run record row was
+    backfilled for it, so the next window read a run that never happened.
+    The skip is still legible: it is named in its own event, under the
+    pass's own name, and it carries the tick's duration like every other.
+    """
+    skipper, sink = Skipper(), SpyingSink()
+    counted = CountedReport(
+        run_report(_recorder(sink), RunKind.FIRE_PREP, "fire_prep_pass"),
+    )
+
+    with _captured_events() as events:
+        log = await _one_tick(
+            ScheduledPass(
+                name="fire_prep_pass",
+                interval_seconds=FAST_INTERVAL,
+                timeout_seconds=GENEROUS_TIMEOUT,
+                run=skipper.run,
+                report=counted.report,
+            ),
+        )
+
+    assert skipper.calls == 1
+    assert counted.calls == 0
+    assert sink.asks == []
+    assert sink.writes == []
+    assert [
+        event["event"]
+        for event in events
+        if str(event["event"]).startswith("run_record")
+    ] == []
+    (skip,) = log.named("scheduled_pass_skipped")
+    assert skip.level == "info"
+    assert skip.fields["name"] == "fire_prep_pass"
+    _assert_carries_duration(skip.fields)
+    assert log.named("scheduled_pass_completed") == []
+
+
+@pytest.mark.parametrize(
+    ("present", "expected_event"),
+    [(False, "run_record_written"), (True, "run_record_verified")],
+)
+async def test_a_real_run_beside_a_skipped_tick_still_records_its_row(
+    present: bool,
+    expected_event: str,
+) -> None:
+    """The paired positive: the skip narrows nothing but its own tick.
+
+    Both arms of the runner's obligation are asserted, because the fix
+    must leave them exactly as they were: an absent row is backfilled and
+    a session's own row is verified and left alone.
+    """
+    skipper, ran, sink = Skipper(), Recorder(), SpyingSink(present=present)
+    recorder = _recorder(sink)
+    metronome = PerPassMetronome(limits={FAST_INTERVAL: 1, SLOW_INTERVAL: 1})
+    log = RecordingLogger()
+
+    with _captured_events() as events:
+        scheduler = PassScheduler(
+            passes=[
+                ScheduledPass(
+                    name="fire_prep_pass",
+                    interval_seconds=FAST_INTERVAL,
+                    timeout_seconds=GENEROUS_TIMEOUT,
+                    run=skipper.run,
+                    report=run_report(recorder, RunKind.FIRE_PREP, "fire_prep_pass"),
+                ),
+                ScheduledPass(
+                    name="grooming_pass",
+                    interval_seconds=SLOW_INTERVAL,
+                    timeout_seconds=GENEROUS_TIMEOUT,
+                    run=ran.run,
+                    report=run_report(recorder, RunKind.GROOMING, "grooming_pass"),
+                ),
+            ],
+            sleep=metronome.sleep,
+            log=log,
+        )
+        await scheduler.start()
+        await _settle(metronome.parked)
+        await scheduler.stop()
+
+    assert skipper.calls == 1
+    assert ran.calls == 1
+    # Exactly one run happened, so exactly one destination question was
+    # asked, and it was asked about the run that happened.
+    assert [destination for destination, _ in sink.asks] == [DESTINATION]
+    assert [record.name for _, record in sink.writes] == (
+        [] if present else ["grooming_pass"]
+    )
+    if not present:
+        assert sink.writes[0][1].outcome is RunOutcome.COMPLETED
+        assert sink.writes[0][1].kind is RunKind.GROOMING
+    assert [
+        event["event"]
+        for event in events
+        if str(event["event"]).startswith("run_record")
+    ] == [expected_event]
+    assert [
+        entry.fields["name"] for entry in log.named("scheduled_pass_completed")
+    ] == [
+        "grooming_pass",
+    ]
+    assert [entry.fields["name"] for entry in log.named("scheduled_pass_skipped")] == [
+        "fire_prep_pass",
+    ]

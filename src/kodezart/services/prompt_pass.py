@@ -33,6 +33,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.agent import ErrorEvent, ResultEvent
+from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -51,13 +52,18 @@ async def run_prompt_pass(
     allowed_tools: list[str],
     skills: SkillsSelection,
     session_type: SessionType,
-) -> None:
+) -> PassRun:
     """Render *key*'s prompt and run it as one session, unless its gate is quiet.
 
     An absent *gate* means this pass is ungated and issues no query at all
     — the cheapest path, and a deliberate configuration rather than a
     degraded one.  A gate that reports nothing skips the session entirely,
     which is the whole token saving.
+
+    Which of the two happened is RETURNED rather than only logged, because
+    the caller has an obligation that turns on it: a skipped tick produced
+    no run, and the record its scheduler would otherwise backfill would
+    assert one (KOD-176).
 
     Raises :class:`PromptRenderError` naming every unconditional
     placeholder without a config value — a pass whose identities cannot
@@ -94,7 +100,7 @@ async def run_prompt_pass(
     started = loop.time()
     if gate is not None and not (await gate.delta()).has_delta():
         await _log.ainfo("prompt_pass_skipped_no_delta", name=key.value)
-        return
+        return PassRun.SKIPPED
     counts: Counter[str] = Counter()
     failure: ErrorEvent | None = None
     result_observed = False
@@ -133,5 +139,6 @@ async def run_prompt_pass(
             error_kind=failure.error_kind,
             **observed,
         )
-        return
+        return PassRun.RAN
     await _log.ainfo("prompt_pass_finished", **observed)
+    return PassRun.RAN

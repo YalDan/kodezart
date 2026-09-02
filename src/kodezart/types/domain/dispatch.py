@@ -268,3 +268,17 @@ class PassDelta(DispatchModel):
     def has_delta(self) -> bool:
         """True iff something moved and a full pass is therefore warranted."""
         return bool(self.changed)
+
+
+class PassRun(StrEnum):
+    """What one scheduled tick actually did: work, or nothing at all.
+
+    A gate-skipped tick opened no session and produced no run, so it has
+    nothing to record — the measured boot backfilled a "completed" row for
+    a 3.5-second fire-prep tick that never started one (KOD-176).  Separate
+    from ``RunOutcome``, which partitions how a run ENDED: a tick that ran
+    nothing has no end to name, so the two never share a member.
+    """
+
+    RAN = "ran"
+    SKIPPED = "skipped"

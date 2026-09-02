@@ -37,7 +37,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     ToolUseEvent,
 )
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
@@ -162,8 +162,8 @@ async def run(
     gate: PassGate | None = None,
     key: PromptKey = PromptKey.GROOMING_PASS,
     skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
-) -> None:
-    await run_prompt_pass(
+) -> PassRun:
+    return await run_prompt_pass(
         key=key,
         prompts=prompts,
         runner=runner,
@@ -288,7 +288,7 @@ async def test_an_ungated_pass_asks_nothing_and_always_runs() -> None:
     tracker = FakeTrackerPort(issues=[make_tracker_issue("FIX-1")])
     runner = FakeAgentRunner(events=[])
 
-    await run(prompts=bound_registry(), runner=runner, gate=None)
+    assert await run(prompts=bound_registry(), runner=runner, gate=None) is PassRun.RAN
 
     assert len(runner.calls) == 1
     assert tracker.scans == []
@@ -296,7 +296,13 @@ async def test_an_ungated_pass_asks_nothing_and_always_runs() -> None:
 
 
 async def test_a_quiet_gate_opens_no_session_and_renders_nothing() -> None:
-    """The token claim, asserted: a quiet board pays for neither."""
+    """The token claim, asserted: a quiet board pays for neither.
+
+    The pass SAYS it skipped, rather than ending indistinguishably from
+    one that ran: its driver has a record obligation that turns on the
+    difference, and answering "completed" here backfilled a phantom run
+    record row for every quiet tick of the measured boot (KOD-176).
+    """
     tracker = FakeTrackerPort()
     runner = FakeAgentRunner(events=[])
     signals = (PassSignal.issues_changed, PassSignal.triage_backlog)
@@ -305,7 +311,9 @@ async def test_a_quiet_gate_opens_no_session_and_renders_nothing() -> None:
     # An unbound registry would raise on render. It does not, which is how
     # this asserts the render never happened rather than merely that no
     # session opened after one.
-    await run(prompts=load_registry(), runner=runner, gate=gate)
+    assert await run(prompts=load_registry(), runner=runner, gate=gate) is (
+        PassRun.SKIPPED
+    )
 
     assert runner.calls == []
     # One query per signal per declared board: the questions are asked
@@ -314,7 +322,11 @@ async def test_a_quiet_gate_opens_no_session_and_renders_nothing() -> None:
 
 
 async def test_one_signal_reporting_work_is_enough_to_run_the_pass() -> None:
-    """A review with no issue activity still wakes the pass."""
+    """A review with no issue activity still wakes the pass.
+
+    The paired positive of the skip: a woken pass reports that it RAN, so
+    its driver keeps the record obligation the skip does not carry.
+    """
     tracker = FakeTrackerPort()
     repo_url = example_config().repos[0].url
     tracker.reviews[repo_url] = [make_tracker_review("acme/repo#7", updated_at=LATER)]
@@ -326,7 +338,7 @@ async def test_one_signal_reporting_work_is_enough_to_run_the_pass() -> None:
         PassSignal.reviews_changed,
     )
 
-    await run(prompts=bound_registry(), runner=runner, gate=gate)
+    assert await run(prompts=bound_registry(), runner=runner, gate=gate) is PassRun.RAN
 
     assert len(runner.calls) == 1
 
