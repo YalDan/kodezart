@@ -55,14 +55,16 @@ process goes down is recorded nowhere at all: three fires ran on the
 measured boot and the Fire Log held one line.  So the fires this process
 started are remembered until their watches record them, and
 :meth:`LifecycleWatcher.record_unfinished` gives the rest their row on the
-way out — after the queue has stopped, so no run finishes underneath it,
-and off this watcher's own memory of which of them ever began.
+way out — after the queue has stopped and the watches have drained, so no
+run finishes underneath it and nothing records beside it — off this
+watcher's own memory of which of them ever began.
 """
 
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from typing import Self
 
 from kodezart.core.errors import RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
@@ -108,7 +110,7 @@ class _UnrecordedFire:
     issue_key: str
     dequeued: bool
 
-    def running(self) -> "_UnrecordedFire":
+    def running(self) -> Self:
         """The same fire, with its dequeue remembered."""
         return replace(self, dequeued=True)
 
@@ -250,19 +252,27 @@ class LifecycleWatcher:
         three fires — one finished, one killed mid-run, one never started —
         and the Fire Log held one line (KOD-178).
 
-        Called AFTER the queue is stopped, when the registry is quiescent.
-        A job that finished between a read and the stop would otherwise be
-        swept as failed, and its own true row verified away by the sweep's
-        (KOD-178, ruled 2026-09-02).  What the stop costs is the registry's
-        answer to "was this one running?" — it marks everything it holds
-        terminal — so the dequeue is remembered HERE, off the first frame
-        of each watch, which is the moment the queue handed the job to a
-        worker.
+        Called AFTER the queue is stopped and AFTER the watches are drained.
+        After the stop, when the registry is quiescent: a job that finished
+        between a read and the stop would otherwise be swept as failed, and
+        its own true row verified away by the sweep's (KOD-178, ruled
+        2026-09-02).  After the drain, so nothing records beside this: a
+        watch ending on the stopped stream verifies the log and then
+        writes, exactly as this does, and two of those interleaved over one
+        run — each verifying before either has written — are two rows, the
+        thing the verify arm exists to prevent.  What the stop costs is the
+        registry's answer to "was this one running?" — it marks everything
+        it holds terminal — so the dequeue is remembered HERE, off the first
+        frame of each watch, which is the moment the queue handed the job
+        to a worker.
 
-        No job is skipped on its STATE.  A watch that raised leaves a fire
-        with no row whatever the registry says about it, so the question is
-        put to the recorder per job — verify, then backfill — and a fire
-        whose row is already there costs one read and no row.
+        By then every watch that reached its end has recorded its fire and
+        forgotten it, so what is left here is the fires whose watches
+        RAISED on the way.  No job is skipped on its STATE: a watch that
+        raised leaves a fire with no row whatever the registry says about
+        it, so the question is put to the recorder per job — verify, then
+        backfill — and a fire whose row is already there costs one read and
+        no row.
 
         The registry is in-process, so this answers for a shutdown and for
         nothing else: a process that is killed outright records none of
@@ -272,6 +282,17 @@ class LifecycleWatcher:
         for job_id, fire in list(self._unrecorded.items()):
             record = await self._registry.get(job_id=job_id)
             if record is None:
+                # A fire this process started, that nothing recorded, and
+                # that the registry has since evicted: its submission is the
+                # left edge of the window a row is verified in, and without
+                # it there is no row this can honestly write.  Loud, because
+                # the log will never hold this fire.
+                await self._log.aerror(
+                    "unfinished_fire_unknown_to_registry",
+                    issue_key=fire.issue_key,
+                    job_id=job_id,
+                    dequeued=fire.dequeued,
+                )
                 continue
             outcome = _fire_outcome(started=fire.dequeued, terminal=False)
             placed = await self._record_fire(

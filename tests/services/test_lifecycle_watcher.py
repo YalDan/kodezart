@@ -1412,3 +1412,34 @@ class TestTheShutdownRecordSweep:
         assert [(row.name, row.outcome) for row in log.writes] == [
             (ISSUE, RunOutcome.FAILED),
         ]
+
+    async def test_a_fire_the_registry_has_forgotten_is_named_and_gets_no_row(
+        self,
+    ) -> None:
+        """A fire nothing recorded, whose job the registry no longer holds.
+
+        Its submission is the left edge of the window a row is verified
+        in, and the registry was the only thing that held it: there is no
+        row this sweep can honestly write.  What it does not do is lose
+        the fire silently — one loud event names it, and no row follows.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        queue = StalledQueue()
+        watch, log = recording_watcher(queue, tracker)
+
+        watch.follow(
+            issue_key=ISSUE,
+            job_id="job-0001",
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+        await asyncio.sleep(0)
+        await _abandon(watch)
+        with structlog.testing.capture_logs() as logs:
+            await watch.record_unfinished()
+
+        assert log.writes == []
+        assert [
+            (entry["issue_key"], entry["job_id"])
+            for entry in logs
+            if entry["event"] == "unfinished_fire_unknown_to_registry"
+        ] == [(ISSUE, "job-0001")]

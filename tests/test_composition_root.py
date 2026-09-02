@@ -24,12 +24,14 @@ sequence rather than of any component in it (KOD-178).
 
 import ast
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 
 import structlog.testing
+from structlog.typing import EventDict
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.core.errors import McpSessionClosedError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.run_recorder import RunRecorder
@@ -46,7 +48,8 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
-from kodezart.types.domain.run_records import RunOutcome
+from kodezart.types.domain.run_records import RunOutcome, RunRecord
+from kodezart.types.domain.tracker import TrackerIssue
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FakeFireReport,
@@ -128,17 +131,18 @@ def test_the_shutdown_records_unfinished_fires_over_a_quiescent_registry() -> No
     After the queue's stop, because that is when nothing can finish
     underneath it: a fire completing between a registry read and the stop
     would be swept as failed and its own true row verified away (ruled
-    2026-09-02). Before the drain, so a watch that ends on the stopped
-    stream meets a log that already holds its run's row rather than the
-    other way round, and before the knowledge session closes, because that
-    session is what the rows are written through.
+    2026-09-02). After the drain, because that is when nothing records
+    beside it: a watch ending on the stopped stream verifies the log and
+    then writes, exactly as the sweep does, and the two interleaved over
+    one run are two rows. And before the knowledge session closes, because
+    that session is what the rows are written through.
     """
     calls = _lifespan_calls()
     sweep = calls.index("dispatch.lifecycle.record_unfinished")
 
     assert sweep > calls.index("dispatch.scheduler.stop")
     assert sweep > calls.index("job_queue.stop")
-    assert sweep < calls.index("dispatch.lifecycle.drain")
+    assert sweep > calls.index("dispatch.lifecycle.drain")
     assert sweep < calls.index("built_recorder.knowledge_caller.close")
 
 
@@ -216,16 +220,48 @@ async def _until(condition: Callable[[], bool]) -> None:
             await asyncio.sleep(SETTLE_POLL)
 
 
-async def test_the_shutdown_leaves_no_fire_without_its_row() -> None:
-    """KOD-178 — the measured boot: three fires ran, the Fire Log held one.
+class _TrackerGoneAtShutdown(FakeTrackerPort):
+    """A tracker whose session is gone by the time one failure arm writes.
 
-    Driven over the shipped queue, the shipped watcher and the shipped
-    recorder, in the lifespan's own shutdown order: the queue stops, the
-    registry is swept, the watches are drained.  One fire recorded itself
-    at its own end; the other two were still running and still queued, and
-    the shutdown owes each of them a row naming its issue and how it ended.
-    Exactly one row per fire, because the recorder's verify arm answers per
-    run — whichever of the sweep and the drained watch reaches it first.
+    The measured class (KOD-177), met by the one watch whose put-back
+    needs the tracker at shutdown: that watch raises on its way to its own
+    record, which is the fire a drain alone cannot account for and the one
+    the sweep exists for.  Every other write still lands.
+    """
+
+    def __init__(self, *, issues: Sequence[TrackerIssue], gone_for: str) -> None:
+        super().__init__(issues=issues)
+        self._gone_for: str = gone_for
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        if issue_key == self._gone_for:
+            raise McpSessionClosedError(
+                "the tracker session is gone",
+                server_name="fixture-tracker",
+                tool_name="save_issue",
+            )
+        return await super().restore_workflow_state(
+            issue_key=issue_key,
+            state_name=state_name,
+        )
+
+
+async def _shutdown(
+    tracker: FakeTrackerPort,
+) -> tuple[list[RunRecord], list[EventDict]]:
+    """The measured boot, then the lifespan's own shutdown, over *tracker*.
+
+    Three fires through the shipped queue, watcher and recorder into a Fire
+    Log double: the first finishes and records itself, the second is
+    dequeued and hangs, the third waits behind it.  Then the shutdown in
+    the lifespan's order — the queue stops, the watches drain, the registry
+    is swept — answered as the rows the log holds and the events emitted
+    on the way out.
     """
     engine = _ScriptedEngine(finishing=FINISHED)
     queue = AsyncioJobQueue(
@@ -237,9 +273,6 @@ async def test_the_shutdown_leaves_no_fire_without_its_row() -> None:
         event_buffer_capacity=BUFFER_CAPACITY,
     )
     await queue.start()
-    tracker = FakeTrackerPort(
-        issues=[make_tracker_issue(key) for key in (FINISHED, KILLED, NEVER_RAN)],
-    )
     log = RecordingLogSink()
     watch = LifecycleWatcher(
         queue=queue,
@@ -279,22 +312,78 @@ async def test_the_shutdown_leaves_no_fire_without_its_row() -> None:
 
         with structlog.testing.capture_logs() as logs:
             await queue.stop()
-            await watch.record_unfinished()
             await watch.drain()
+            await watch.record_unfinished()
     finally:
         await queue.stop()
 
-    assert [(row.name, row.outcome) for row in log.writes] == [
-        (FINISHED, RunOutcome.COMPLETED),
-        (KILLED, RunOutcome.FAILED),
-        (NEVER_RAN, RunOutcome.NEVER_STARTED),
-    ]
-    # Every announcement names a row that was actually written, and the
-    # fire that recorded itself is announced by nobody.
-    announced = [
-        entry["issue_key"]
+    return log.writes, logs
+
+
+def _rows_by_fire(rows: Sequence[RunRecord]) -> dict[str, RunOutcome]:
+    return {row.name: row.outcome for row in rows}
+
+
+async def test_the_shutdown_leaves_no_fire_without_its_row() -> None:
+    """KOD-178 — the measured boot: three fires ran, the Fire Log held one.
+
+    The killed fire's watch meets a tracker whose session is gone and
+    raises on its way to its own record — the one fire the drain cannot
+    account for.  The sweep gives it its row, after the drain and through
+    the same recorder, and announces exactly that row: the never-started
+    fire's watch reached its own end and recorded, so the sweep finds that
+    row and says nothing about it.  One row per fire, each naming its
+    issue and how it ended.
+    """
+    tracker = _TrackerGoneAtShutdown(
+        issues=[make_tracker_issue(key) for key in (FINISHED, KILLED, NEVER_RAN)],
+        gone_for=KILLED,
+    )
+
+    rows, logs = await _shutdown(tracker)
+
+    assert _rows_by_fire(rows) == {
+        FINISHED: RunOutcome.COMPLETED,
+        KILLED: RunOutcome.FAILED,
+        NEVER_RAN: RunOutcome.NEVER_STARTED,
+    }
+    assert len(rows) == len(_rows_by_fire(rows))
+    # The sweep's row is the last to land: it runs once the drain is over.
+    assert rows[-1].name == KILLED
+    assert [
+        entry["error_kind"]
+        for entry in logs
+        if entry["event"] == "lifecycle_watch_failed"
+    ] == [McpSessionClosedError.__name__]
+    assert [
+        (entry["issue_key"], entry["outcome"])
         for entry in logs
         if entry["event"] == "unfinished_fire_recorded"
-    ]
-    assert set(announced) <= {KILLED, NEVER_RAN}
-    assert len(announced) == len(set(announced))
+    ] == [(KILLED, RunOutcome.FAILED.value)]
+
+
+async def test_a_shutdown_whose_watches_all_record_is_announced_by_nobody() -> None:
+    """The paired case: every watch reaches its end on the stopped stream.
+
+    Each records its own fire at its end and forgets it, so the sweep that
+    follows the drain has no fire left to ask about — one row per fire,
+    nothing verified a second time, and no announcement of a row the sweep
+    did not write.
+    """
+    tracker = FakeTrackerPort(
+        issues=[make_tracker_issue(key) for key in (FINISHED, KILLED, NEVER_RAN)],
+    )
+
+    rows, logs = await _shutdown(tracker)
+
+    assert _rows_by_fire(rows) == {
+        FINISHED: RunOutcome.COMPLETED,
+        KILLED: RunOutcome.FAILED,
+        NEVER_RAN: RunOutcome.NEVER_STARTED,
+    }
+    assert len(rows) == len(_rows_by_fire(rows))
+    assert [
+        entry["event"]
+        for entry in logs
+        if entry["event"] in {"run_record_verified", "unfinished_fire_recorded"}
+    ] == []
