@@ -34,10 +34,14 @@ KOD-170, amended), so the recorder VERIFIES the destination for THIS
 run's row and backfills the structural minimum only on absence.
 
 Per run, and never "has anything been written lately": the question is
-asked with the record in hand — its kind, its name, its window — because
-a destination-wide answer makes every run after the first in a window a
-duplicate of its neighbour.  Two fires swept at one shutdown produced one
-row, the first answering for the second (KOD-288).
+asked with the record in hand, and what a sink matches a row by is that
+record's own TITLE — its kind, its name and the instant it began, spelled
+once on the record itself and read by both sinks.  A destination-wide
+answer made every run after the first in a window a duplicate of its
+neighbour (two fires swept at one shutdown produced one row), and a
+name-shaped answer made every run whose name another one's prefixes a
+duplicate of it (KOD-288).  The title rides both outcome events, because
+an operator reading "verified" owes a row to go and look at.
 """
 
 from collections.abc import Mapping
@@ -142,6 +146,7 @@ class RunRecorder:
                 "run_record_verified",
                 kind=record.kind.value,
                 name=record.name,
+                title=record.title(),
                 outcome=record.outcome.value,
                 destination=destination.id,
                 system=destination.system.value,
@@ -151,6 +156,7 @@ class RunRecorder:
             "run_record_written",
             kind=record.kind.value,
             name=record.name,
+            title=record.title(),
             outcome=record.outcome.value,
             destination=destination.id,
             system=destination.system.value,

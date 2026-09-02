@@ -16,7 +16,13 @@ loudly (KOD-170).
 The title property earns its schema read twice over: it is where a row is
 written, and it is what a row is FOUND by — verification asks whether
 this run's row is there, not whether the log has been written to lately
-(KOD-288).
+(KOD-288).  A row is asked for by the record's whole TITLE at the head of
+that property, never by containment of its name: a title containing
+``KOD-17`` is also every title containing ``KOD-170``.  At the head rather
+than whole, because the two writers of a row title it differently and both
+are this run's — a session writes the prescribed title alone, and this
+sink's own backfill writes the title followed by the outcome and the
+duration a structural row owes (KOD-238).
 """
 
 from collections.abc import Mapping
@@ -52,13 +58,14 @@ class NotionRecordSink:
     ) -> bool:
         """Whether the data source holds a row about THIS run.
 
-        Two conditions, because a run is identified by both: the vendor's
-        OWN ``created_time`` inside the run's window, and the run's NAME
-        in the title property every row of this data source carries.  The
-        window alone answered for the whole log — two fires swept at one
-        shutdown produced one row, the first answering for the second
-        (KOD-288) — and the name alone would answer for the same issue's
-        run last week.  Page one of size one is all the answer needs.
+        Two conditions, and neither leans on the other: the vendor's OWN
+        ``created_time`` inside the run's window, and the record's whole
+        TITLE at the head of the title property every row of this data
+        source carries.  The window alone answered for the whole log — two
+        fires swept at one shutdown produced one row, the first answering
+        for the second — and a title CONTAINING the name answered for
+        every longer name it prefixed (KOD-288).  Page one of size one is
+        all the answer needs.
         """
         title_property = await self._title_property(destination)
         payload = await self._caller.call_tool(
@@ -75,7 +82,7 @@ class NotionRecordSink:
                         },
                         {
                             "property": title_property,
-                            "title": {"contains": record.name},
+                            "title": {"starts_with": record.title()},
                         },
                     ],
                 },

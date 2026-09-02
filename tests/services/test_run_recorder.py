@@ -35,18 +35,23 @@ from tests.fakes import BrokenRecordSink, RecordingLogSink, RefusingRecordSink
 STARTED_AT = datetime(2026, 9, 1, 11, 58, tzinfo=UTC)
 RECORDED_AT = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 
+#: A second window, for the same name firing twice: one issue's fire today
+#: and its fire an hour later are two runs and owe two rows (KOD-288).
+LATER = datetime(2026, 9, 1, 12, 58, tzinfo=UTC)
+
 
 def _record(
     kind: RunKind = RunKind.FIRE_PREP,
     *,
     name: str = "fire_prep_pass",
+    started_at: datetime = STARTED_AT,
 ) -> RunRecord:
     return RunRecord(
         kind=kind,
         name=name,
         outcome=RunOutcome.COMPLETED,
         duration_seconds=12.34,
-        started_at=STARTED_AT,
+        started_at=started_at,
         recorded_at=RECORDED_AT,
     )
 
@@ -173,6 +178,60 @@ class TestRunRecorder:
         await recorder.record(_record(RunKind.FIRE, name="K-1"))
 
         assert [row.name for row in log.writes] == ["K-1"]
+
+    async def test_a_run_whose_name_another_ones_prefixes_still_gets_its_row(
+        self,
+    ) -> None:
+        """The second wrong answer (KOD-288): a substring verified a run away.
+
+        ``KOD-170``'s row contains ``KOD-17``, so under a containment match
+        the shorter issue's fire was reported as already recorded and its
+        row was never written.
+        """
+        log = RecordingLogSink()
+        recorder = RunRecorder(
+            records={RunKind.FIRE.value: _destination(DocumentSystem.KNOWLEDGE)},
+            sinks={DocumentSystem.KNOWLEDGE: log},
+        )
+
+        await recorder.record(_record(RunKind.FIRE, name="KOD-170"))
+        await recorder.record(_record(RunKind.FIRE, name="KOD-17"))
+
+        assert [row.name for row in log.writes] == ["KOD-170", "KOD-17"]
+
+    async def test_the_same_name_from_another_window_is_a_different_run(
+        self,
+    ) -> None:
+        """One issue fires twice, and each firing owes its own row.
+
+        The window is carried by the title, so the earlier run's row says
+        nothing about the later one — under a name-only match the second
+        fire of an issue was verified away by the first.
+        """
+        log = RecordingLogSink()
+        recorder = RunRecorder(
+            records={RunKind.FIRE.value: _destination(DocumentSystem.KNOWLEDGE)},
+            sinks={DocumentSystem.KNOWLEDGE: log},
+        )
+
+        await recorder.record(_record(RunKind.FIRE, name="K-1"))
+        await recorder.record(_record(RunKind.FIRE, name="K-1", started_at=LATER))
+
+        assert [row.started_at for row in log.writes] == [STARTED_AT, LATER]
+
+    async def test_the_title_is_one_declaration_of_the_runs_three_facts(
+        self,
+    ) -> None:
+        """What a row is found by, and what the backfilled row carries.
+
+        The runner's own line OPENS with exactly this string, so the row
+        it writes is the row it will verify next time — and the rendered
+        Record clause prescribes the same one to the session.
+        """
+        record = _record(RunKind.FIRE, name="K-1")
+
+        assert record.title() == "fire — K-1 @ 2026-09-01T11:58:00Z"
+        assert record.line().startswith(record.title())
 
     async def test_an_undeclared_kind_is_a_named_absence_and_writes_nothing(
         self,
@@ -316,6 +375,89 @@ class TestLinearRecordSink:
 
         assert not present
 
+    async def test_a_row_for_a_longer_name_leaves_the_shorter_run_absent(
+        self,
+    ) -> None:
+        """The substring defect (KOD-288): ``KOD-170``'s row contains
+        ``KOD-17``, and answered for it."""
+        caller = CapturingCaller(
+            {"get_document": {"content": _record(name="KOD-170").line()}},
+        )
+
+        present = await self._sink(caller).holds_record(
+            destination=_destination(DocumentSystem.TRACKER),
+            record=_record(name="KOD-17"),
+        )
+
+        assert not present
+
+    async def test_the_same_name_from_another_window_leaves_this_one_absent(
+        self,
+    ) -> None:
+        """The stamp is READ FROM THE LINE, inside the title it carries.
+
+        The same pass ran an hour ago and left its row; that row is not
+        this run's record, and a log matched on the name alone said it was.
+        """
+        caller = CapturingCaller(
+            {"get_document": {"content": _record(started_at=LATER).line()}},
+        )
+
+        present = await self._sink(caller).holds_record(
+            destination=_destination(DocumentSystem.TRACKER),
+            record=_record(),
+        )
+
+        assert not present
+
+    async def test_a_session_row_titled_as_prescribed_verifies_this_run(
+        self,
+    ) -> None:
+        """The paired positive: the session's own row IS the record.
+
+        A line OPENING with the prescribed title, whatever prose the
+        session wrote after it, discharges the run's obligation — which is
+        what stops the runner writing a second row beside it (KOD-170,
+        amended).
+        """
+        record = _record()
+        caller = CapturingCaller(
+            {
+                "get_document": {
+                    "content": (
+                        f"an older line\n{record.title()} — swept 14 issues, staged 2"
+                    ),
+                },
+            },
+        )
+
+        present = await self._sink(caller).holds_record(
+            destination=_destination(DocumentSystem.TRACKER),
+            record=record,
+        )
+
+        assert present
+
+    async def test_the_backfilled_line_opens_with_the_prescribed_title(
+        self,
+    ) -> None:
+        """What the runner writes is what the runner will next verify."""
+        caller = CapturingCaller({"save_document": {"id": "destination-1"}})
+        record = _record()
+
+        await self._sink(caller).write_record(
+            destination=_destination(DocumentSystem.TRACKER),
+            record=record,
+        )
+
+        (_, arguments) = caller.calls[0]
+        patch = arguments["patch"]
+        assert isinstance(patch, list)
+        assert (
+            patch[0]["text"]
+            == f"\n{record.title()} — completed (12.3s) — recorded 2026-09-01T12:00:00Z"
+        )
+
     async def test_a_read_without_content_refuses_naming_it(self) -> None:
         """A guessed ``False`` would double every record and a guessed
         ``True`` would silently skip one; the sink guesses neither."""
@@ -414,10 +556,18 @@ class TestNotionRecordSink:
         assert [name for name, _ in caller.calls] == ["API-retrieve-a-data-source"]
 
     async def test_this_runs_page_inside_the_window_verifies_present(self) -> None:
-        """One filtered query, on both halves of a run's identity: the
-        vendor's own ``created_time`` for the window (the wire shape
-        measured live on the Grooming Log, 2026-09-01) and the discovered
-        title property for the run's NAME (KOD-288)."""
+        """One filtered query, on both halves of a run's identity, neither
+        leaning on the other: the vendor's own ``created_time`` for the
+        window (the wire shape measured live on the Grooming Log,
+        2026-09-01) and the discovered title property for the record's
+        whole TITLE.
+
+        ``starts_with`` and not ``contains``: a title containing ``KOD-17``
+        is every title containing ``KOD-170``.  At the head and not whole,
+        because a session writes the prescribed title alone while this
+        sink's own backfill writes it followed by the outcome and duration
+        a structural row owes (KOD-288).
+        """
         caller = CapturingCaller(
             {
                 "API-retrieve-a-data-source": _SCHEMA,
@@ -450,13 +600,51 @@ class TestNotionRecordSink:
                             },
                             {
                                 "property": "Run",
-                                "title": {"contains": "fire_prep_pass"},
+                                "title": {
+                                    "starts_with": (
+                                        "fire_prep — fire_prep_pass @ "
+                                        "2026-09-01T11:58:00Z"
+                                    ),
+                                },
                             },
                         ],
                     },
                     "page_size": 1,
                 },
             ),
+        ]
+
+    async def test_the_two_halves_of_the_query_move_with_the_run(self) -> None:
+        """Neither half is a constant: a second run moves both.
+
+        A filter that carried a fixed window or a fixed title would pass
+        the case above while answering the same thing about every run,
+        which is exactly what the measured destination-wide answer did.
+        """
+        caller = CapturingCaller(
+            {
+                "API-retrieve-a-data-source": _SCHEMA,
+                "API-query-data-source": {"object": "list", "results": []},
+            },
+        )
+
+        await self._sink(caller).holds_record(
+            destination=_destination(DocumentSystem.KNOWLEDGE),
+            record=_record(RunKind.FIRE, name="K-1", started_at=LATER),
+        )
+
+        (_, arguments) = caller.calls[1]
+        clauses = arguments["filter"]
+        assert isinstance(clauses, dict)
+        assert clauses["and"] == [
+            {
+                "timestamp": "created_time",
+                "created_time": {"on_or_after": LATER.isoformat()},
+            },
+            {
+                "property": "Run",
+                "title": {"starts_with": "fire — K-1 @ 2026-09-01T12:58:00Z"},
+            },
         ]
 
     async def test_a_window_holding_no_row_of_this_runs_is_absent(self) -> None:

@@ -62,6 +62,12 @@ from tests.fakes import (
 )
 
 ISSUE = "K-1"
+#: The job every case below follows.  The registry has to HOLD it, because
+#: a fire's row is stamped with its job's submission — one reading for the
+#: watch and for the shutdown sweep, so the two cannot title one run two
+#: ways (KOD-288).  In production the dispatcher submitted it before
+#: anything followed it.
+JOB_ID = "job-0001"
 #: The state ``make_tracker_issue`` seeds, and therefore the state a
 #: crashed run has to be put back into.
 PRE_CLAIM_STATE = "Todo"
@@ -123,6 +129,23 @@ def claim_heartbeat(tracker: FakeTrackerPort) -> ClaimHeartbeat:
         lease_seconds=LEASE_SECONDS,
         renewal_fraction=RENEWAL_FRACTION,
     )
+
+
+def registry_holding(job_id: str = JOB_ID) -> FakeJobQueue:
+    """A registry that knows the job a watch is about to follow.
+
+    The submission it holds is the run's own beginning, and it is what
+    both the watch and the shutdown sweep stamp their row with (KOD-288).
+    """
+    registry = FakeJobQueue()
+    registry.records[job_id] = JobRecord(
+        job_id=job_id,
+        lane="lane",
+        state=JobState.RUNNING,
+        queue_position=None,
+        submitted_at=FIXTURE_EPOCH,
+    )
+    return registry
 
 
 def watcher_over(
@@ -776,7 +799,7 @@ def watcher_recording(
         LifecycleWatcher(
             recorder=recorder,
             queue=FakeJobQueue(events=events),
-            registry=FakeJobQueue(),
+            registry=registry_holding(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
@@ -854,7 +877,7 @@ def watcher_over_sink(
             sinks={DocumentSystem.KNOWLEDGE: sink},
         ),
         queue=FakeJobQueue(events=events),
-        registry=FakeJobQueue(),
+        registry=registry_holding(),
         writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
         heartbeat=claim_heartbeat(tracker),
         report=FakeFireReport(),
@@ -979,7 +1002,7 @@ def watcher_reporting(
         LifecycleWatcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=FakeJobQueue(events=events),
-            registry=FakeJobQueue(),
+            registry=registry_holding(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=report,
@@ -1094,7 +1117,7 @@ class TestAReportThatRaisesLosesNothingButTheNews:
                 queue=FakeJobQueue(
                     events=(AssistantTextEvent(text="working", model=MODEL),),
                 ),
-                registry=FakeJobQueue(),
+                registry=registry_holding(),
                 writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
                 heartbeat=claim_heartbeat(tracker),
                 report=report,
@@ -1157,7 +1180,7 @@ class TestAReportThatRaisesLosesNothingButTheNews:
             queue=FakeJobQueue(
                 events=(AssistantTextEvent(text="working", model=MODEL),),
             ),
-            registry=FakeJobQueue(),
+            registry=registry_holding(),
             writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
             heartbeat=claim_heartbeat(tracker),
             report=report,
@@ -1351,6 +1374,75 @@ class TestTheShutdownRecordSweep:
         assert [(row.name, row.outcome) for row in log.writes] == [
             (ISSUE, RunOutcome.FAILED),
         ]
+
+    async def test_both_producers_title_one_fire_the_same_way(self) -> None:
+        """One run, one title, whichever end of the shutdown writes it.
+
+        A row is FOUND by its title, and the title carries the instant the
+        run began — so a watch stamping its own start beside a sweep
+        reading the job's submission would put one fire in the log twice
+        (KOD-288).  Both read the submission, which is what the case above
+        depends on and this one names.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        queue = StalledQueue()
+        queue.enqueue(JOB_ID, JobState.RUNNING)
+        watch, log = recording_watcher(queue, tracker)
+
+        watch.follow(
+            issue_key=ISSUE,
+            job_id=JOB_ID,
+            pre_claim_state=PRE_CLAIM_STATE,
+        )
+        await asyncio.sleep(0)
+        await watch.record_unfinished()
+        queue.stopped.set()
+        await watch.drain()
+
+        (row,) = log.writes
+        assert row.title() == f"fire — {ISSUE} @ 2026-01-01T00:00:00Z"
+        assert row.started_at == FIXTURE_EPOCH
+
+    async def test_a_finished_fire_the_registry_forgot_is_named_not_guessed(
+        self,
+    ) -> None:
+        """The paired negative: no submission, no window, no row.
+
+        A run whose job the registry no longer holds has no honest left
+        edge, and a row stamped with anything else would be a second run
+        in the log the moment the sweep wrote its own.  Loud, because that
+        fire's record is now lost (KOD-288).
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        queue = StalledQueue()
+        queue.enqueue(JOB_ID, JobState.RUNNING)
+        queue.stopped.set()
+        log = RecordingLogSink()
+        watch = LifecycleWatcher(
+            recorder=RunRecorder(
+                records={RunKind.FIRE.value: FIRE_DESTINATION},
+                sinks={DocumentSystem.KNOWLEDGE: log},
+            ),
+            queue=queue,
+            registry=FakeJobQueue(),
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+            report=FakeFireReport(),
+        )
+
+        with structlog.testing.capture_logs() as logs:
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id=JOB_ID,
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        assert log.writes == []
+        assert [
+            entry["issue_key"]
+            for entry in logs
+            if entry["event"] == "finished_fire_unknown_to_registry"
+        ] == [ISSUE]
 
     async def test_a_row_already_there_is_verified_and_announced_by_nobody(
         self,

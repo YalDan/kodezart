@@ -11,7 +11,10 @@ Verification reads the document itself and looks for THIS run's row.  The
 document's ``updatedAt`` was the earlier answer — it moves on every write,
 so any run in the window answered for every other, and two fires swept at
 one shutdown produced one row (KOD-288).  What identifies a run in a log
-of runs is its NAME: the issue a fire ran on, the pass a scheduled run is.
+of runs is the record's own TITLE, and a row is a LINE that begins with
+it: the run's kind, its name and the instant it began, matched whole.  A
+substring of the log was the second wrong answer — a row for ``KOD-170``
+verified away the record owed to ``KOD-17``.
 """
 
 from kodezart.core.errors import McpTransportError
@@ -38,10 +41,13 @@ class LinearRecordSink:
     ) -> bool:
         """Whether the document already carries a row about THIS run.
 
-        The document is the log, so the log is read: a row naming this
-        run is this run's record, whatever prose surrounds it, and a row
-        naming another run is another run's — which is the whole of what
-        "any row since" could not tell apart (KOD-288).
+        The document is the log, so the log is read line by line, and a
+        line that BEGINS with this record's title is this run's row —
+        whatever the session wrote after it.  Matched at the start of a
+        line and against the whole title, because the title carries the
+        run's own start stamp: that is what keeps a neighbour's row, a row
+        for a longer name this one prefixes, and the same name from
+        another window out of this run's answer (KOD-288).
         """
         payload = await self._caller.call_tool(
             name=_TOOL_GET_DOCUMENT,
@@ -60,7 +66,8 @@ class LinearRecordSink:
                 server_name=self._server_name,
                 tool_name=_TOOL_GET_DOCUMENT,
             )
-        return record.name in content
+        title = record.title()
+        return any(line.startswith(title) for line in content.splitlines())
 
     async def write_record(
         self,

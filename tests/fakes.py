@@ -3380,9 +3380,11 @@ class RecordingLogSink:
     """A ``RunRecordSink`` that behaves like the log it stands for.
 
     It holds the rows written to it and answers the verify question the
-    way a destination does: per RUN — a row naming THIS run inside its own
-    window — so a neighbour's row in the same window answers nothing about
-    it, and a second call for the same run finds the first (KOD-288).
+    way a destination does: by the record's own TITLE, which carries the
+    kind, the name and the instant the run began — so a neighbour's row in
+    the same window answers nothing about it, a row for a longer name this
+    one prefixes answers nothing either, and a second call for the same run
+    finds the first (KOD-288).
     """
 
     def __init__(self) -> None:
@@ -3394,10 +3396,7 @@ class RecordingLogSink:
         destination: RecordDestination,
         record: RunRecord,
     ) -> bool:
-        return any(
-            row.name == record.name and row.recorded_at >= record.started_at
-            for row in self.writes
-        )
+        return any(row.title() == record.title() for row in self.writes)
 
     async def write_record(
         self,

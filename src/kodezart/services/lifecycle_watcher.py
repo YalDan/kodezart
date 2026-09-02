@@ -280,8 +280,8 @@ class LifecycleWatcher:
         """
         now = datetime.now(UTC)
         for job_id, fire in list(self._unrecorded.items()):
-            record = await self._registry.get(job_id=job_id)
-            if record is None:
+            started_at = await self._run_started_at(job_id)
+            if started_at is None:
                 # A fire this process started, that nothing recorded, and
                 # that the registry has since evicted: its submission is the
                 # left edge of the window a row is verified in, and without
@@ -298,8 +298,8 @@ class LifecycleWatcher:
             placed = await self._record_fire(
                 issue_key=fire.issue_key,
                 outcome=outcome,
-                duration_seconds=(now - record.submitted_at).total_seconds(),
-                started_at=record.submitted_at,
+                duration_seconds=(now - started_at).total_seconds(),
+                started_at=started_at,
             )
             if placed is not RunRecordResult.WRITTEN:
                 continue
@@ -334,7 +334,6 @@ class LifecycleWatcher:
         """
         loop = asyncio.get_running_loop()
         watch_started = loop.time()
-        watch_started_at = datetime.now(UTC)
         started = False
         terminal = False
         failure: ErrorEvent | None = None
@@ -401,13 +400,38 @@ class LifecycleWatcher:
                 error_type=type(exc).__name__,
                 error=str(exc),
             )
+        started_at = await self._run_started_at(job_id)
+        if started_at is None:
+            # The same absence the sweep names, met at the other end: a run
+            # whose submission the registry no longer holds has no window,
+            # and a row stamped with anything else would be a second run in
+            # the log the moment the sweep wrote its own (KOD-288).
+            await self._log.aerror(
+                "finished_fire_unknown_to_registry",
+                issue_key=issue_key,
+                job_id=job_id,
+                outcome=outcome.value,
+            )
+            return
         await self._record_fire(
             issue_key=issue_key,
             outcome=outcome,
             duration_seconds=loop.time() - watch_started,
-            started_at=watch_started_at,
+            started_at=started_at,
         )
         self._unrecorded.pop(job_id, None)
+
+    async def _run_started_at(self, job_id: str) -> datetime | None:
+        """When the run this job carries BEGAN — its submission, or nothing.
+
+        ONE reading for both producers.  A fire's record identity is its
+        kind, its issue and this instant, so a watch stamping its own start
+        while the shutdown sweep read the submission would title the same
+        run two ways, and the log would hold it twice — which is the defect
+        the exact identity was introduced to end (KOD-288, KOD-178).
+        """
+        record = await self._registry.get(job_id=job_id)
+        return None if record is None else record.submitted_at
 
     async def _record_fire(
         self,
