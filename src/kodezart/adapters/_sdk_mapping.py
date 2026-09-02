@@ -1,8 +1,18 @@
-"""SDK message to domain event mapping — shared by all Claude adapters."""
+"""SDK message to domain event mapping — shared by all Claude adapters.
+
+The match below is total over the SDK's ``Message`` union.  A message type
+the union gains and this module has not absorbed is a named refusal at
+runtime and a type error at check time, because the alternative — the
+``isinstance`` chain that fell through to an empty list — reported a
+widened vendor vocabulary as a session that simply said nothing.
+"""
+
+from typing import Final, Never, NoReturn
 
 from claude_agent_sdk import (
     TERMINAL_TASK_STATUSES,
     AssistantMessage,
+    ConversationResetMessage,
     Message,
     RateLimitEvent,
     ResultMessage,
@@ -19,6 +29,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
+from kodezart.core.errors import UnmappedAgentMessageError
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
@@ -37,6 +48,11 @@ from kodezart.types.domain.agent import (
     UserMessageEvent,
 )
 
+#: The subtype the CLI's conversation-reset frame reaches consumers under.
+#: The SDK models the frame as its own message class rather than a system
+#: message, so the mapping restates the name the CLI already uses.
+_CONVERSATION_RESET_SUBTYPE: Final = "conversation_reset"
+
 
 def _task_updated_status(message: TaskUpdatedMessage) -> str | None:
     """The status the update reports — the patch first, the field behind it.
@@ -51,133 +67,136 @@ def _task_updated_status(message: TaskUpdatedMessage) -> str | None:
     return message.status
 
 
+def _task_updated_event(message: TaskUpdatedMessage) -> TaskUpdatedEvent:
+    """A background task's state change, resolved against the terminal set."""
+    status = _task_updated_status(message)
+    return TaskUpdatedEvent(
+        subtype=message.subtype,
+        task_id=message.task_id,
+        status=status,
+        terminal=status in TERMINAL_TASK_STATUSES,
+        patch=dict(message.patch),
+        uuid=message.uuid,
+        session_id=message.session_id,
+        data=dict(message.data),
+    )
+
+
+def _assistant_events(message: AssistantMessage) -> list[AgentEvent]:
+    """Every block of one assistant turn, or the turn's error alone."""
+    if message.error is not None:
+        return [ErrorEvent(error=f"Claude API error: {message.error}")]
+    events: list[AgentEvent] = []
+    for block in message.content:
+        if isinstance(block, TextBlock):
+            events.append(
+                AssistantTextEvent.model_validate(
+                    {**vars(block), "model": message.model},
+                )
+            )
+        elif isinstance(block, ThinkingBlock):
+            events.append(
+                AssistantThinkingEvent.model_validate(
+                    {
+                        "thinking": block.thinking,
+                        "model": message.model,
+                    },
+                )
+            )
+        elif isinstance(block, ToolUseBlock):
+            events.append(
+                ToolUseEvent.model_validate(
+                    {**vars(block), "model": message.model},
+                )
+            )
+        elif isinstance(block, ToolResultBlock):
+            events.append(
+                ToolResultEvent.model_validate(
+                    block,
+                    from_attributes=True,
+                )
+            )
+    return events
+
+
+def _rate_limit_events(message: RateLimitEvent) -> list[AgentEvent]:
+    """The two statuses a consumer acts on; ``allowed`` is the quiet one."""
+    info = message.rate_limit_info
+    match info.status:
+        case "allowed_warning" | "rejected":
+            return [
+                RateLimitWarningEvent(
+                    status=info.status,
+                    rate_limit_type=info.rate_limit_type,
+                    utilization=info.utilization,
+                    resets_at=info.resets_at,
+                )
+            ]
+        case "allowed":
+            return []
+
+
+def _conversation_reset_event(message: ConversationResetMessage) -> SystemEvent:
+    """The reset frame, named on the stream rather than dropped.
+
+    A reset discards the transcript and zeroes the running totals later
+    results report, so a consumer accumulating them has to see it happen.
+    It rides the system event under the CLI's own subtype: the reset is a
+    session-level fact, and inventing an event type for it would widen the
+    wire contract for one field set the system event already carries.
+    """
+    return SystemEvent(
+        subtype=_CONVERSATION_RESET_SUBTYPE,
+        data={
+            "new_conversation_id": message.new_conversation_id,
+            "uuid": message.uuid,
+            "session_id": message.session_id,
+        },
+    )
+
+
+def _refuse_unmapped(message: Never) -> NoReturn:
+    """Refuse a message type this module does not name.
+
+    Reached only when the SDK's union widens under a version bump that
+    left this mapping behind — statically unreachable, which is what makes
+    the parameter's ``Never`` type an exhaustiveness proof over the match.
+    """
+    raise UnmappedAgentMessageError(type(message).__name__)
+
+
 def map_message(message: Message) -> list[AgentEvent]:
     """Convert a claude-agent-sdk Message into a list of domain AgentEvent instances.
 
     A single ``AssistantMessage`` may yield multiple events (text, thinking,
-    tool_use, tool_result blocks).  Returns an empty list for unrecognized
-    message types.
+    tool_use, tool_result blocks).  An empty list means the message carried
+    nothing a consumer acts on — never that its type went unrecognised.
     """
-    events: list[AgentEvent] = []
-
-    if isinstance(message, ResultMessage):
-        events.append(
-            ResultEvent.model_validate(
-                message,
-                from_attributes=True,
-            )
-        )
-    elif isinstance(message, TaskStartedMessage):
-        events.append(
-            TaskStartedEvent.model_validate(
-                message,
-                from_attributes=True,
-            )
-        )
-    elif isinstance(message, TaskProgressMessage):
-        events.append(
-            TaskProgressEvent.model_validate(
-                message,
-                from_attributes=True,
-            )
-        )
-    elif isinstance(message, TaskNotificationMessage):
-        events.append(
-            TaskNotificationEvent.model_validate(
-                message,
-                from_attributes=True,
-            )
-        )
-    elif isinstance(message, TaskUpdatedMessage):
-        # Ahead of the SystemMessage arm, which this SDK type subclasses:
-        # below it, a terminal task state reaches the wire as an untyped
-        # system event and no consumer can clear the task it names.
-        status = _task_updated_status(message)
-        events.append(
-            TaskUpdatedEvent(
-                subtype=message.subtype,
-                task_id=message.task_id,
-                status=status,
-                terminal=status in TERMINAL_TASK_STATUSES,
-                patch=dict(message.patch),
-                uuid=message.uuid,
-                session_id=message.session_id,
-                data=dict(message.data),
-            )
-        )
-    elif isinstance(message, SystemMessage):
-        events.append(
-            SystemEvent.model_validate(
-                message,
-                from_attributes=True,
-            )
-        )
-    elif isinstance(message, AssistantMessage):
-        if message.error is not None:
-            events.append(ErrorEvent(error=f"Claude API error: {message.error}"))
-            return events
-        for block in message.content:
-            if isinstance(block, TextBlock):
-                events.append(
-                    AssistantTextEvent.model_validate(
-                        {**vars(block), "model": message.model},
-                    )
-                )
-            elif isinstance(block, ThinkingBlock):
-                events.append(
-                    AssistantThinkingEvent.model_validate(
-                        {
-                            "thinking": block.thinking,
-                            "model": message.model,
-                        },
-                    )
-                )
-            elif isinstance(block, ToolUseBlock):
-                events.append(
-                    ToolUseEvent.model_validate(
-                        {**vars(block), "model": message.model},
-                    )
-                )
-            elif isinstance(block, ToolResultBlock):
-                events.append(
-                    ToolResultEvent.model_validate(
-                        block,
-                        from_attributes=True,
-                    )
-                )
-    elif isinstance(message, UserMessage):
-        events.append(
-            UserMessageEvent.model_validate(
-                message,
-                from_attributes=True,
-            )
-        )
-    elif isinstance(message, StreamEvent):
-        events.append(
-            StreamDataEvent.model_validate(
-                message,
-                from_attributes=True,
-            )
-        )
-    elif isinstance(message, RateLimitEvent):
-        info = message.rate_limit_info
-        if info.status == "allowed_warning":
-            events.append(
-                RateLimitWarningEvent(
-                    status="allowed_warning",
-                    rate_limit_type=info.rate_limit_type,
-                    utilization=info.utilization,
-                    resets_at=info.resets_at,
-                )
-            )
-        elif info.status == "rejected":
-            events.append(
-                RateLimitWarningEvent(
-                    status="rejected",
-                    rate_limit_type=info.rate_limit_type,
-                    utilization=info.utilization,
-                    resets_at=info.resets_at,
-                )
-            )
-
-    return events
+    match message:
+        case ResultMessage():
+            return [ResultEvent.model_validate(message, from_attributes=True)]
+        case TaskStartedMessage():
+            return [TaskStartedEvent.model_validate(message, from_attributes=True)]
+        case TaskProgressMessage():
+            return [TaskProgressEvent.model_validate(message, from_attributes=True)]
+        case TaskNotificationMessage():
+            return [TaskNotificationEvent.model_validate(message, from_attributes=True)]
+        case TaskUpdatedMessage():
+            # Ahead of the SystemMessage arm, which this SDK type subclasses:
+            # below it, a terminal task state reaches the wire as an untyped
+            # system event and no consumer can clear the task it names.
+            return [_task_updated_event(message)]
+        case SystemMessage():
+            return [SystemEvent.model_validate(message, from_attributes=True)]
+        case AssistantMessage():
+            return _assistant_events(message)
+        case UserMessage():
+            return [UserMessageEvent.model_validate(message, from_attributes=True)]
+        case StreamEvent():
+            return [StreamDataEvent.model_validate(message, from_attributes=True)]
+        case RateLimitEvent():
+            return _rate_limit_events(message)
+        case ConversationResetMessage():
+            return [_conversation_reset_event(message)]
+        case _ as unmapped:
+            _refuse_unmapped(unmapped)

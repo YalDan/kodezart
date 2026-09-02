@@ -443,6 +443,23 @@ class ContentScannerBootError(Exception):
         self.missing: str = missing
 
 
+class UnmappedAgentMessageError(Exception):
+    """Raised when the SDK streams a message type the mapping does not name.
+
+    Only a version bump that widened the vendor's message union without
+    widening the mapping reaches this.  It is loud because the arm it
+    replaced returned an empty list: a session that had absorbed a new
+    kind of message and said nothing about it read, from the outside,
+    exactly like a session with nothing to say.
+    """
+
+    def __init__(self, message_type: str) -> None:
+        super().__init__(
+            f"the agent stream carried an unmapped message type: {message_type}"
+        )
+        self.message_type: str = message_type
+
+
 class RunRecordWriteError(Exception):
     """Raised when a run's declared destination did not take its record.
 
