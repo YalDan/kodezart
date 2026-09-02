@@ -42,6 +42,7 @@ from tests.fakes import (
     FakeAgentExecutor,
     FakeWorkspaceProvider,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -65,6 +66,7 @@ def _make_loop(
         review_mode=TicketReviewMode.REVIEWED,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -690,6 +692,7 @@ def _make_loop_with_workspace(
         review_mode=TicketReviewMode.REVIEWED,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -874,6 +877,7 @@ def _v5_loop(
         max_reviews=max_reviews,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -1124,6 +1128,7 @@ def test_create_only_refuses_a_set_that_declares_no_critic() -> None:
             review_mode=TicketReviewMode.CREATE_ONLY,
             retry_max_attempts=3,
             retry_initial_interval=1.0,
+            delay_floor_for=no_delay_floor,
         )
 
     assert excinfo.value.settings == (

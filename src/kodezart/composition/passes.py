@@ -36,7 +36,7 @@ from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
-from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
@@ -417,6 +417,12 @@ async def build_dispatch_passes(
         fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,
     )
     resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
+    # ONE cooldown for the whole operation: its dispatchers are one per
+    # repository over a single provider account, so the limit one of them
+    # meets is the limit all of them would meet next (KOD-281).
+    cooldown = LaneCooldown(
+        cooldown_seconds=config.dispatch_rate_limit_cooldown_seconds,
+    )
     dispatchers: list[tuple[RepoEntry, FireDispatcher]] = []
     for repo in operation.repos:
         if not operation.teams_scanned_by(repo.url):
@@ -436,9 +442,7 @@ async def build_dispatch_passes(
                     holder=config.dispatch_holder,
                     claim_lease_seconds=config.tracker_claim_lease_seconds,
                     query_page_size=config.tracker_query_page_size,
-                    rate_limit_cooldown_seconds=(
-                        config.dispatch_rate_limit_cooldown_seconds
-                    ),
+                    cooldown=cooldown,
                     assembler=assembler,
                     resolver=resolver,
                     cache=cache,

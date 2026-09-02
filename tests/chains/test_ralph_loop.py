@@ -12,6 +12,8 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.ralph_loop import RalphLoop
+from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor
 from kodezart.domain.criteria_grading import grade_iteration
@@ -62,6 +64,7 @@ from tests.fakes import (
     make_criteria,
     make_minted_criteria,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -93,6 +96,7 @@ def _make_loop(
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -332,6 +336,7 @@ async def test_loop_second_iteration_succeeds() -> None:
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [e async for e in loop.run(**_run_kwargs())]
@@ -780,6 +785,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [e async for e in loop.run(**_run_kwargs())]
@@ -906,6 +912,7 @@ async def test_the_first_iteration_is_dispatched_with_the_recorded_base() -> Non
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     with pytest.raises(NoStructuredOutputError):
@@ -1878,3 +1885,19 @@ async def test_a_legacy_run_carries_no_effort_at_any_dispatch() -> None:
     for dispatch in runner.dispatches:
         assert dispatch.policy.effort is None
         assert dispatch.policy.system_prompt_append is None
+
+
+def test_every_loop_requires_a_delay_floor_of_its_caller() -> None:
+    """No default resolver on any of the three loops (KOD-282).
+
+    Measured at ``6e98499``: ``delay_floor_for`` defaulted to ``None`` on
+    ``RalphLoop``, ``TicketGenerationLoop`` and ``RalphWorkflowEngine``, so
+    an engine assembled without one silently retried a provider rate limit
+    at the graph's own speed — the respawns KOD-174 measured, with the
+    remedy wired but not reaching the object.  A caller that means "no
+    floor" now has to pass a resolver saying so.
+    """
+    for loop in (RalphLoop, TicketGenerationLoop, RalphWorkflowEngine):
+        parameter = inspect.signature(loop.__init__).parameters["delay_floor_for"]
+        assert parameter.default is inspect.Parameter.empty, loop.__name__
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, loop.__name__

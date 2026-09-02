@@ -64,7 +64,7 @@ class RalphLoop:
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int,
         retry_initial_interval: float,
-        delay_floor_for: DelayFloor | None = None,
+        delay_floor_for: DelayFloor,
         fan_in_max_attempts: int,
     ) -> None:
         self._service = service

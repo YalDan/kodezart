@@ -39,6 +39,7 @@ from tests.fakes import (
     attached_job_queue,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -241,6 +242,7 @@ async def _workflow_client(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service
@@ -269,6 +271,7 @@ async def create_only_workflow_client() -> AsyncGenerator[AsyncClient, None]:
         review_mode=TicketReviewMode.CREATE_ONLY,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     async with _workflow_client(loop) as client:
         yield client
@@ -517,6 +520,7 @@ async def _workflow_client_with(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service

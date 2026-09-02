@@ -68,6 +68,7 @@ from tests.fakes import (
     attached_job_queue,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -221,6 +222,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -231,6 +233,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         review_mode=TicketReviewMode.REVIEWED,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -250,6 +253,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -369,6 +373,7 @@ async def test_workflow_e2e_exhausts_iterations(
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -379,6 +384,7 @@ async def test_workflow_e2e_exhausts_iterations(
         review_mode=TicketReviewMode.REVIEWED,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -398,6 +404,7 @@ async def test_workflow_e2e_exhausts_iterations(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -571,6 +578,7 @@ async def test_workflow_e2e_divergent_base_branch(
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -581,6 +589,7 @@ async def test_workflow_e2e_divergent_base_branch(
         review_mode=TicketReviewMode.REVIEWED,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -600,6 +609,7 @@ async def test_workflow_e2e_divergent_base_branch(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -868,6 +878,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -878,6 +889,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         review_mode=TicketReviewMode.REVIEWED,
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -897,6 +909,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1160,6 +1173,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     with pytest.raises(RuntimeError) as excinfo:
@@ -1292,6 +1306,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service
@@ -1446,6 +1461,7 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
             retry_max_attempts=3,
             retry_initial_interval=1.0,
             fan_in_max_attempts=2,
+            delay_floor_for=no_delay_floor,
         ),
         ticket_generator=TicketGenerationLoop(
             skills=SUPPRESS_ALL_SKILLS,
@@ -1456,6 +1472,7 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
             max_reviews=config.explicit_max_reviews(),
             retry_max_attempts=3,
             retry_initial_interval=1.0,
+            delay_floor_for=no_delay_floor,
         ),
         merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
         git_base_url="https://github.com",
@@ -1468,6 +1485,7 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1542,6 +1560,7 @@ async def test_the_flipped_defaults_attach_the_sets_lenses_to_the_creator(
         max_reviews=config.explicit_max_reviews(),
         retry_max_attempts=3,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1692,6 +1711,7 @@ def _remediation_engine(
             retry_max_attempts=3,
             retry_initial_interval=1.0,
             fan_in_max_attempts=2,
+            delay_floor_for=no_delay_floor,
         ),
         ticket_generator=TicketGenerationLoop(
             skills=SUPPRESS_ALL_SKILLS,
@@ -1702,6 +1722,7 @@ def _remediation_engine(
             review_mode=TicketReviewMode.REVIEWED,
             retry_max_attempts=3,
             retry_initial_interval=1.0,
+            delay_floor_for=no_delay_floor,
         ),
         merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
         git_base_url="https://github.com",
@@ -1715,6 +1736,7 @@ def _remediation_engine(
         retry_initial_interval=1.0,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 

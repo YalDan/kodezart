@@ -40,6 +40,7 @@ from tests.fakes import (
     PassThroughGate,
     ScriptedFakeExecutor,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 BLOCKER_A_BRANCH = "kodezart/blocker-a-11111111"
@@ -175,6 +176,7 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
             retry_max_attempts=3,
             retry_initial_interval=1.0,
             fan_in_max_attempts=2,
+            delay_floor_for=no_delay_floor,
         ),
         ticket_generator=TicketGenerationLoop(
             skills=SUPPRESS_ALL_SKILLS,
@@ -185,6 +187,7 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
             review_mode=TicketReviewMode.REVIEWED,
             retry_max_attempts=3,
             retry_initial_interval=1.0,
+            delay_floor_for=no_delay_floor,
         ),
         merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
         git_base_url="https://github.com",
@@ -197,6 +200,7 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 

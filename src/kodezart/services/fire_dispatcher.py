@@ -114,6 +114,63 @@ def _now() -> datetime:
     return datetime.now(tz=UTC)
 
 
+class LaneCooldown:
+    """The one cooldown every dispatcher of an operation shares.
+
+    A rate limit is spent against the ACCOUNT, and an operation's
+    dispatchers are one per repository over that single account.  Held
+    inside a dispatcher, the cooldown reached only the pass that happened
+    to fire the run that met the limit, and the operation's other
+    repositories kept firing into it — the loop KOD-174 measured, one
+    dispatcher narrower (KOD-281).  Composition builds ONE of these per
+    operation and hands it to every dispatcher, so the first failure to
+    name the limit stops all of them.
+
+    The clock is the same one the dispatcher reads: a cooldown is lifted
+    by time passing and by nothing else, since nothing an issue or a board
+    does clears a provider's limit.
+    """
+
+    def __init__(
+        self,
+        *,
+        cooldown_seconds: float,
+        clock: Callable[[], datetime] = _now,
+    ) -> None:
+        self._cooldown_seconds: float = cooldown_seconds
+        self._clock: Callable[[], datetime] = clock
+        self._backoff: _LaneBackoff | None = None
+
+    @property
+    def cooldown_seconds(self) -> float:
+        """The configured hold, for the event that reports one beginning."""
+        return self._cooldown_seconds
+
+    def begin(self, failure_class: str) -> datetime:
+        """Hold the lane back from now, and answer until when."""
+        backoff = _LaneBackoff(
+            until=self._clock() + timedelta(seconds=self._cooldown_seconds),
+            failure_class=failure_class,
+        )
+        self._backoff = backoff
+        return backoff.until
+
+    def holding(self) -> str | None:
+        """The failure class still holding the lane back, or ``None``.
+
+        A lapsed hold is dropped as it is read: the next question is asked
+        against a lane with no cooldown on it at all, rather than against
+        an expired one that has to be re-compared every tick forever.
+        """
+        backoff = self._backoff
+        if backoff is None:
+            return None
+        if self._clock() < backoff.until:
+            return backoff.failure_class
+        self._backoff = None
+        return None
+
+
 class FireDispatcher:
     """Runs one deterministic dispatch pass per invocation."""
 
@@ -130,7 +187,7 @@ class FireDispatcher:
         holder: str,
         claim_lease_seconds: float,
         query_page_size: int,
-        rate_limit_cooldown_seconds: float,
+        cooldown: LaneCooldown,
         assembler: FireContextAssembler,
         resolver: BaseResolver,
         cache: RepoCache,
@@ -150,7 +207,7 @@ class FireDispatcher:
         self._holder: str = holder
         self._claim_lease_seconds: float = claim_lease_seconds
         self._query_page_size: int = query_page_size
-        self._rate_limit_cooldown_seconds: float = rate_limit_cooldown_seconds
+        self._cooldown: LaneCooldown = cooldown
         self._resolver: BaseResolver = resolver
         self._cache: RepoCache = cache
         self._trunk: str = trunk
@@ -162,9 +219,6 @@ class FireDispatcher:
         #: Remembered failures — an unresolvable base, a run that died, a
         #: winner the graph blocks — each held until its issue changes.
         self._remembered: dict[str, _RememberedExclusion] = {}
-        #: The lane's own cooldown, set by a failure class the next fire
-        #: would meet unchanged.  ``None`` until one is measured.
-        self._backoff: _LaneBackoff | None = None
         #: One ``initiative_identifiers`` read per distinct project for
         #: this dispatcher's lifetime — membership does not move under a
         #: running pass (KOD-169).
@@ -458,8 +512,25 @@ class FireDispatcher:
         never fired is likewise not its run to remember: every dispatcher
         on the lane hears every finished fire, and the one holding the job
         is the one that started it.
+
+        The lane's cooldown is the one thing set BEFORE that ownership
+        check, because it is not about the issue or about who fired it:
+        the limit belongs to the account all of them spend.  Set after the
+        check, it reached only the dispatcher that fired the run, and the
+        operation's other repositories went on firing into the same limit
+        (KOD-281).
         """
-        if outcome is RunOutcome.COMPLETED or issue_key not in self._jobs_by_issue:
+        if outcome is RunOutcome.COMPLETED:
+            return
+        if failure_class == RateLimitedSoftFailureError.__name__:
+            until = self._cooldown.begin(failure_class)
+            await self._log.awarning(
+                "dispatch_lane_backoff",
+                failure_class=failure_class,
+                until=until.isoformat(),
+                cooldown_seconds=self._cooldown.cooldown_seconds,
+            )
+        if issue_key not in self._jobs_by_issue:
             return
         refreshed = await self._tracker.read_issue(issue_key=issue_key)
         self._remembered[issue_key] = _RememberedExclusion(
@@ -475,18 +546,6 @@ class FireDispatcher:
             issue_key=issue_key,
             outcome=outcome.value,
             failure_class=failure_class,
-        )
-        if failure_class != RateLimitedSoftFailureError.__name__:
-            return
-        self._backoff = _LaneBackoff(
-            until=self._clock() + timedelta(seconds=self._rate_limit_cooldown_seconds),
-            failure_class=failure_class,
-        )
-        await self._log.awarning(
-            "dispatch_lane_backoff",
-            failure_class=failure_class,
-            until=self._backoff.until.isoformat(),
-            cooldown_seconds=self._rate_limit_cooldown_seconds,
         )
 
     async def _scan(self, team_keys: Sequence[str]) -> tuple[TrackerIssue, ...]:
@@ -553,23 +612,23 @@ class FireDispatcher:
                     detail=remembered.detail,
                 )
             del self._remembered[issue.issue_key]
-        backoff = self._backoff
-        if backoff is not None:
-            # The one clause that is not about the issue it annotates: the
-            # limit that killed the last fire is the ACCOUNT's, so the
-            # next-ranked candidate meets it unchanged and firing it is
-            # the same failure with a different key on it.  Evaluated
-            # after the issue's own memory so the issue that died still
-            # reports what it died of, and lifted by the clock rather than
-            # by a change on the board — nothing an issue does clears a
-            # rate limit.
-            if self._clock() < backoff.until:
-                return IssueExclusion(
-                    issue_key=issue.issue_key,
-                    clause=ExclusionClause.LANE_BACKOFF,
-                    detail=backoff.failure_class,
-                )
-            self._backoff = None
+        # The one clause that is not about the issue it annotates: the
+        # limit that killed the last fire is the ACCOUNT's, so the
+        # next-ranked candidate meets it unchanged and firing it is the
+        # same failure with a different key on it — and so does the next
+        # repository's candidate, which is why the cooldown asked here is
+        # the operation's rather than this dispatcher's (KOD-281).
+        # Evaluated after the issue's own memory so the issue that died
+        # still reports what it died of, and lifted by the clock rather
+        # than by a change on the board — nothing an issue does clears a
+        # rate limit.
+        holding = self._cooldown.holding()
+        if holding is not None:
+            return IssueExclusion(
+                issue_key=issue.issue_key,
+                clause=ExclusionClause.LANE_BACKOFF,
+                detail=holding,
+            )
         scope_exclusion = await self._exclude_by_scope(issue)
         if scope_exclusion is not None:
             return scope_exclusion

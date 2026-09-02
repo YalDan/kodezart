@@ -170,7 +170,7 @@ class RalphWorkflowEngine:
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int,
         retry_initial_interval: float,
-        delay_floor_for: DelayFloor | None = None,
+        delay_floor_for: DelayFloor,
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
         ref_publisher: RefPublisher | None = None,

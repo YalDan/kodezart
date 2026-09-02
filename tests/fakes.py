@@ -137,6 +137,19 @@ _FIXTURE_KNOWLEDGE_CREDENTIAL: str = "ntn_" + ("K" * 44)
 FIXTURE_KNOWLEDGE_MAP: str = "── FIXTURE MAP ── where the fixture things live"
 
 
+def no_delay_floor(_exc: Exception) -> float | None:
+    """The fixture retry floor: no failure carries one, and it is SAID.
+
+    The three loops take their floor resolver as a required argument, so a
+    fixture that wants its retries to run at the graph's own speed states
+    that here rather than by leaving the argument off — an absent floor
+    once meant an engine built without one silently had no floor at all
+    (KOD-282).  Every test construction site passes this one object, so a
+    fixture that means something else has to say so too.
+    """
+    return None
+
+
 def knowledge_grant_for(
     *granted: SessionType,
     knowledge_map: str = FIXTURE_KNOWLEDGE_MAP,

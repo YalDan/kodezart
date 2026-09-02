@@ -36,6 +36,7 @@ from tests.fakes import (
     PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -75,6 +76,7 @@ def _make_engine(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 

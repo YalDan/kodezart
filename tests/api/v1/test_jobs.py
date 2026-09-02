@@ -60,6 +60,7 @@ from tests.fakes import (
     ScriptedFakeExecutor,
     make_passing_evaluation_over,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 _BODY: dict[str, object] = {"prompt": "fix", "repoPath": "/tmp/fake"}
@@ -265,6 +266,7 @@ def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngi
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -413,6 +415,7 @@ def _mid_run_engine(
         retry_initial_interval=1.0,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 

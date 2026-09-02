@@ -104,6 +104,7 @@ from tests.fakes import (
     make_passing_evaluation,
     make_passing_evaluation_over,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -132,7 +133,7 @@ def _make_engine(
     git: FakeGitService | None = None,
     retry_initial_interval: float = 1.0,
     retry_max_attempts: int = 3,
-    delay_floor_for: DelayFloor | None = None,
+    delay_floor_for: DelayFloor = no_delay_floor,
 ) -> RalphWorkflowEngine:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -694,6 +695,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     from kodezart.core.errors import NoStructuredOutputError
@@ -936,6 +938,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -1323,6 +1326,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         retry_initial_interval=1.0,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1633,6 +1637,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1792,6 +1797,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         retry_initial_interval=1.0,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -2935,6 +2941,7 @@ def _make_engine_with_executor(
         retry_initial_interval=1.0,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -3065,6 +3072,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -3144,6 +3152,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -3230,6 +3239,7 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events: list[AgentEvent] = []
@@ -3573,6 +3583,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     with pytest.raises(NoStructuredOutputError, match="branch name") as excinfo:
@@ -3904,6 +3915,7 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
         retry_initial_interval=1.0,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -4164,6 +4176,7 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     with pytest.raises(RuntimeError, match="requires ref_publisher"):

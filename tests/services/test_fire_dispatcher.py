@@ -20,7 +20,7 @@ from kodezart.domain.dispatch import DOMAIN_PRIORITY_ORDER
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.fire_context import FireContextAssembler
-from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import (
     DispatchOutcome,
@@ -183,6 +183,13 @@ def operation_config(
     )
 
 
+def lane_cooldown(*, clock: MovingClock | None = None) -> LaneCooldown:
+    """The operation's cooldown, reading the case's clock when it has one."""
+    if clock is None:
+        return LaneCooldown(cooldown_seconds=RATE_LIMIT_COOLDOWN_SECONDS)
+    return LaneCooldown(cooldown_seconds=RATE_LIMIT_COOLDOWN_SECONDS, clock=clock)
+
+
 def dispatcher(
     tracker: FakeTrackerPort,
     *,
@@ -192,9 +199,16 @@ def dispatcher(
     draw: object = None,
     git: FakeGitService | None = None,
     operation: OperationConfig | None = None,
-    clock: object = None,
+    clock: MovingClock | None = None,
+    cooldown: LaneCooldown | None = None,
+    repo_url: str = REPO_URL,
 ) -> tuple[FireDispatcher, FakeJobQueue, FakeDeliveryProbe]:
-    """A dispatcher plus the doubles a test asserts against."""
+    """A dispatcher plus the doubles a test asserts against.
+
+    *cooldown* is what a two-dispatcher case passes to BOTH of them: the
+    shipped root builds one per operation, so a case about the operation's
+    second repository has to share the object rather than the number.
+    """
     the_queue = queue or FakeJobQueue()
     the_delivery = delivery or FakeDeliveryProbe()
     git = git or FakeGitService()
@@ -204,12 +218,12 @@ def dispatcher(
         "registry": the_queue,
         "delivery": the_delivery,
         "operation": operation or operation_config(),
-        "repo_url": REPO_URL,
+        "repo_url": repo_url,
         "lane": LANE,
         "holder": holder,
         "claim_lease_seconds": LEASE_SECONDS,
         "query_page_size": PAGE_SIZE,
-        "rate_limit_cooldown_seconds": RATE_LIMIT_COOLDOWN_SECONDS,
+        "cooldown": cooldown or lane_cooldown(clock=clock),
         "assembler": FireContextAssembler(
             tracker=tracker,
             gate=PassThroughGate(),
@@ -2138,3 +2152,162 @@ class TestTheLaneBacksOffAfterARateLimit:
         assert second.outcome is DispatchOutcome.fire_enqueued
         assert second.claimed_issue_key == "K-3"
         assert len(queue.submissions) == 2
+
+
+class TestTheCooldownIsTheWholeOperations:
+    """One account, one limit, one cooldown for every repository (KOD-281).
+
+    An operation's dispatchers are one per repository over a single
+    provider account.  Held inside the dispatcher that fired the run, the
+    cooldown left the operation's other repositories firing into the same
+    limit — the measured loop of KOD-174, one dispatcher narrower.
+    """
+
+    RATE_LIMIT_CLASS = RateLimitedSoftFailureError.__name__
+    CRASH_CLASS = RuntimeError.__name__
+
+    @staticmethod
+    def _board() -> FakeTrackerPort:
+        """One issue for each repository's pass to claim.
+
+        ``K-1`` is on the bound board and fires into ``REPO_URL``; ``DUC-1``
+        is on the unbound board and its recorded route sends it to
+        ``OTHER_REPO_URL`` — so each dispatcher has a winner of its own and
+        neither can claim the other's.
+        """
+        return FakeTrackerPort(
+            issues=[
+                make_tracker_issue("K-1"),
+                make_tracker_issue("DUC-1", team_key="duck"),
+            ],
+            recorded_repositories={"DUC-1": OTHER_REPO_URL},
+        )
+
+    @staticmethod
+    def _two_repositories(
+        tracker: FakeTrackerPort,
+        *,
+        clock: MovingClock,
+    ) -> tuple[FireDispatcher, FireDispatcher, FakeJobQueue]:
+        """The two passes the root builds, sharing one cooldown object."""
+        cooldown = lane_cooldown(clock=clock)
+        operation = two_repo_operation()
+        queue = FakeJobQueue()
+        first, _, _ = dispatcher(
+            tracker,
+            queue=queue,
+            operation=operation,
+            clock=clock,
+            cooldown=cooldown,
+        )
+        second, _, _ = dispatcher(
+            tracker,
+            queue=queue,
+            operation=operation,
+            clock=clock,
+            cooldown=cooldown,
+            repo_url=OTHER_REPO_URL,
+            holder="pass-b",
+        )
+        return first, second, queue
+
+    async def _fire_then_fail(
+        self,
+        tracker: FakeTrackerPort,
+        failure_class: str,
+        *,
+        clock: MovingClock,
+    ) -> tuple[FireDispatcher, FireDispatcher, FakeJobQueue]:
+        """The first repository's pass fires, and its run dies.
+
+        The outcome is reported to the dispatcher that OWNS the run and to
+        no other, so what stops the second repository can only be the
+        shared cooldown object.  The watch's own fan-out reaches every
+        dispatcher, which would tell the second one about the limit
+        directly and prove nothing about sharing.
+        """
+        first, second, queue = self._two_repositories(tracker, clock=clock)
+        report = await first.run_pass()
+        assert report.claimed_issue_key == "K-1"
+        await release_run(tracker, queue, report)
+        await first.record_run_outcome("K-1", RunOutcome.FAILED, failure_class)
+        return first, second, queue
+
+    async def test_a_rate_limit_in_one_repository_stops_the_other_repository(
+        self,
+    ) -> None:
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = self._board()
+        _, second, queue = await self._fire_then_fail(
+            tracker,
+            self.RATE_LIMIT_CLASS,
+            clock=clock,
+        )
+
+        report = await second.run_pass()
+
+        assert report.outcome is DispatchOutcome.empty_eligible_set
+        assert [
+            (item.issue_key, item.clause, item.detail) for item in report.exclusions
+        ] == [("DUC-1", ExclusionClause.LANE_BACKOFF, self.RATE_LIMIT_CLASS)]
+        assert len(queue.submissions) == 1, "the second repository fired nothing"
+
+    async def test_the_other_repository_resumes_once_the_cooldown_lapses(self) -> None:
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = self._board()
+        _, second, queue = await self._fire_then_fail(
+            tracker,
+            self.RATE_LIMIT_CLASS,
+            clock=clock,
+        )
+        await second.run_pass()
+        clock.advance(seconds=RATE_LIMIT_COOLDOWN_SECONDS)
+
+        report = await second.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert report.claimed_issue_key == "DUC-1"
+        assert len(queue.submissions) == 2
+
+    async def test_a_crash_in_one_repository_cools_no_other_repository(self) -> None:
+        """The paired negative: a traceback is one run's, not the account's."""
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = self._board()
+        _, second, queue = await self._fire_then_fail(
+            tracker,
+            self.CRASH_CLASS,
+            clock=clock,
+        )
+
+        report = await second.run_pass()
+
+        assert report.outcome is DispatchOutcome.fire_enqueued
+        assert report.claimed_issue_key == "DUC-1"
+        assert len(queue.submissions) == 2
+
+    async def test_the_dispatcher_that_never_fired_the_run_still_cools_the_lane(
+        self,
+    ) -> None:
+        """The cooldown is set BEFORE the ownership check, and only it is.
+
+        The limit belongs to the account, not to the issue and not to the
+        dispatcher that happened to spend it — so a dispatcher hearing
+        about another repository's rate-limited run holds its own lane back
+        while still remembering nothing about an issue that is not its run
+        to remember.
+        """
+        clock = MovingClock(start=FIXTURE_EPOCH)
+        tracker = self._board()
+        _, second, queue = self._two_repositories(tracker, clock=clock)
+
+        await second.record_run_outcome(
+            "K-1",
+            RunOutcome.FAILED,
+            self.RATE_LIMIT_CLASS,
+        )
+        report = await second.run_pass()
+
+        assert [
+            (item.issue_key, item.clause, item.detail) for item in report.exclusions
+        ] == [("DUC-1", ExclusionClause.LANE_BACKOFF, self.RATE_LIMIT_CLASS)]
+        assert queue.submissions == []

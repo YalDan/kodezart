@@ -51,6 +51,7 @@ from tests.fakes import (
     PassThroughGate,
     as_validated,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 # Two criteria chosen for the exact shapes the incident report names: a
@@ -207,6 +208,7 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -226,6 +228,7 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -297,6 +300,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -315,6 +319,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -360,6 +365,7 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [

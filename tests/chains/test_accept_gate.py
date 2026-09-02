@@ -66,6 +66,7 @@ from tests.fakes import (
     PassThroughGate,
     make_criteria,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 HARD = CriterionClass.hard_gate
@@ -367,6 +368,7 @@ def _engine(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -691,6 +693,7 @@ def _engine_over_a_real_loop(
             retry_max_attempts=3,
             retry_initial_interval=1.0,
             fan_in_max_attempts=2,
+            delay_floor_for=no_delay_floor,
         ),
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
@@ -704,6 +707,7 @@ def _engine_over_a_real_loop(
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 

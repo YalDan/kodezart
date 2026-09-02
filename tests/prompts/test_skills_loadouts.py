@@ -31,6 +31,7 @@ from tests.fakes import (
     make_criteria,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
 from tests.prompts.test_prompt_wiring import GOLDEN_CASES, load_registry
 
@@ -255,6 +256,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -289,6 +291,7 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     with pytest.raises(NoStructuredOutputError):
         _ = [

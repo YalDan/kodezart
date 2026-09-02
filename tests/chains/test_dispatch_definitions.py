@@ -40,6 +40,7 @@ from tests.fakes import (
     FakeGitService,
     FakeRepoCache,
     make_criteria,
+    no_delay_floor,
 )
 from tests.prompt_census import configured_investigation_cap
 from tests.prompts.test_claude_opus_goldens import V5_SET
@@ -322,6 +323,7 @@ async def creator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunner:
         retry_max_attempts=1,
         review_mode=TicketReviewMode.REVIEWED,
         retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     with pytest.raises(NoStructuredOutputError):
         async for _event in loop.run(
@@ -380,6 +382,7 @@ async def evaluator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunne
         retry_max_attempts=3,
         retry_initial_interval=1.0,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     async for _event in loop.run(
         prompt="fix it",

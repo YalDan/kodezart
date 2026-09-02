@@ -63,6 +63,7 @@ from tests.fakes import (
     make_passing_evaluation,
     make_passing_evaluation_over,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 INFEASIBLE_A = {
@@ -224,6 +225,7 @@ def _engine(
         retry_initial_interval=1.0,
         remediation_max_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 

@@ -37,7 +37,7 @@ from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
-from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.run_recorder import RunRecorder
@@ -227,7 +227,7 @@ def fire_dispatcher(
         holder=HOLDER,
         claim_lease_seconds=LEASE_SECONDS,
         query_page_size=PAGE_SIZE,
-        rate_limit_cooldown_seconds=RATE_LIMIT_COOLDOWN_SECONDS,
+        cooldown=LaneCooldown(cooldown_seconds=RATE_LIMIT_COOLDOWN_SECONDS),
         assembler=FireContextAssembler(
             tracker=tracker,
             gate=PassThroughGate(),
@@ -899,6 +899,120 @@ async def test_a_run_that_died_is_reported_into_the_pass_that_fired_it() -> None
         for entry in logs
         if entry["event"] == "dispatch_empty_eligible_set"
     ] == [[{"issueKey": "K-1", "clause": ExclusionClause.RUN_FAILED.value}]]
+
+
+async def test_a_rate_limit_in_one_repositorys_pass_stops_the_other_repositorys() -> (
+    None
+):
+    """The account's limit reaches every pass the root built (KOD-281).
+
+    Two repositories, two boards, one provider account.  The first
+    repository's pass fires and its run dies on a rate-limit rejection;
+    the second repository's tick is the observable, and its own winner is
+    excluded under the lane-backoff clause carrying that class.  Nothing
+    here calls ``record_run_outcome``: the only inputs are the passes the
+    root built and a queue whose job dies, so a root that gave each
+    dispatcher a cooldown of its own fires the design board's issue here,
+    into the same limit.
+
+    The passes are UNGATED — the shipped empty-signals configuration — so
+    the second tick is the pass deciding rather than the gate finding a
+    quiet board.
+    """
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue("K-ENG", team_key="engineering", body=ENGINEERING_BODY),
+            make_tracker_issue("K-DES", team_key="design", body=DESIGN_BODY),
+        ],
+    )
+    queue = FakeJobQueue(
+        events=[
+            AssistantTextEvent(text="working", model="fixture-model"),
+            ErrorEvent(
+                error="rate limited",
+                error_kind="RateLimitedSoftFailureError",
+                raise_site="acceptance_criteria",
+            ),
+        ],
+    )
+    built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
+        config=AppConfig(dispatch_pass_gate_signals=[]),
+        operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
+        tracker=tracker,
+        ledger=tracker.self_writes,
+        delivery=FakeDeliveryProbe(),
+        queue=queue,
+        registry=queue,
+        gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+    await built.passes[0].run()
+    with structlog.testing.capture_logs() as logs:
+        await built.lifecycle.drain()
+        queue.mark("job-0001", JobState.TERMINAL)
+        await built.passes[1].run()
+
+    assert len(queue.submissions) == 1, "the second repository fired nothing"
+    assert [
+        entry["exclusions"]
+        for entry in logs
+        if entry["event"] == "dispatch_empty_eligible_set"
+    ] == [[{"issueKey": "K-DES", "clause": ExclusionClause.LANE_BACKOFF.value}]]
+
+
+async def test_a_crashed_run_in_one_repository_leaves_the_other_firing() -> None:
+    """The paired negative: only the account's own failure crosses passes.
+
+    The same two repositories and the same dead run, failing on a
+    traceback instead of a limit — the second repository's pass claims its
+    winner, because a crash in one run says nothing about what the next
+    fire will meet.
+    """
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue("K-ENG", team_key="engineering", body=ENGINEERING_BODY),
+            make_tracker_issue("K-DES", team_key="design", body=DESIGN_BODY),
+        ],
+    )
+    queue = FakeJobQueue(
+        events=[
+            AssistantTextEvent(text="working", model="fixture-model"),
+            ErrorEvent(
+                error="the run crashed",
+                error_kind="RuntimeError",
+                raise_site="acceptance_criteria",
+            ),
+        ],
+    )
+    built = await build_dispatch_passes(
+        recorder=RunRecorder(records={}, sinks={}),
+        config=AppConfig(dispatch_pass_gate_signals=[]),
+        operation=operation_config(repos=(PRIMARY_REPO, SECOND_REPO)),
+        tracker=tracker,
+        ledger=tracker.self_writes,
+        delivery=FakeDeliveryProbe(),
+        queue=queue,
+        registry=queue,
+        gate=PassThroughGate(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+    await built.passes[0].run()
+    await built.lifecycle.drain()
+    queue.mark("job-0001", JobState.TERMINAL)
+    await built.passes[1].run()
+
+    assert [request.repo_url for _, request in queue.submissions] == [
+        PRIMARY_REPO,
+        SECOND_REPO,
+    ]
+    assert DESIGN_BODY in queue.submissions[1][1].prompt
 
 
 async def test_the_pass_threads_the_claimed_boards_posture_to_the_watch() -> None:

@@ -61,6 +61,7 @@ from tests.fakes import (
     PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 #: The origin the hundred-minute fire ran over: a local bare repository,
@@ -177,6 +178,7 @@ def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
         remediation_max_rounds=1,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
