@@ -69,9 +69,11 @@ class RunRecordFailure(StrEnum):
 class RunRecord(BaseModel):
     """One run, as its runner measured it.
 
-    ``started_at`` is the verification window's left edge: a destination
-    row created at or after it belongs to THIS run, so the runner treats
-    the record as already written and backfills nothing.
+    ``started_at`` is the verification window's left edge and ``name`` is
+    what identifies the run inside it: a destination row naming this run
+    at or after that edge is THIS run's, so the runner treats the record
+    as already written and backfills nothing.  A row in the window naming
+    another run says nothing about this one (KOD-288).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
