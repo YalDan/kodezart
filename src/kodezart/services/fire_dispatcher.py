@@ -598,13 +598,16 @@ class FireDispatcher:
             )
         remembered = self._remembered.get(issue.issue_key)
         if remembered is not None:
-            # Re-admitted only once the issue has CHANGED past the reading
-            # taken after the failure — retrying an unchanged issue re-runs
-            # the same failing resolution and re-writes the claim churn it
-            # produced (KOD-169), fires the whole run again into the
-            # rejection that killed the last one (KOD-174), or re-reads an
-            # edge that cannot have moved while it holds the lane's whole
-            # throughput (KOD-173).
+            # Re-admitted once the issue has CHANGED past the reading taken
+            # after the failure — retrying an unchanged issue re-runs the
+            # same failing resolution and re-writes the claim churn it
+            # produced (KOD-169), or fires the whole run again into the
+            # rejection that killed the last one (KOD-174) — or once the
+            # memory no longer stands on its own terms: the blocked
+            # winner's is about its BLOCKER, which ``_still_stands`` reads,
+            # so a blocker that closed re-admits an issue that never moved
+            # (KOD-285), while a standing one costs a read rather than the
+            # lane's whole throughput (KOD-173).
             if issue.updated_at <= remembered.updated_at and await self._still_stands(
                 remembered,
             ):
