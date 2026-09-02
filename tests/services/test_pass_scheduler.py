@@ -75,14 +75,21 @@ SETTLE_TIMEOUT = 5.0
 
 
 class Recorder:
-    """A pass that counts its own invocations, and ran on every one."""
+    """A pass that counts its own invocations, and ran on every one.
+
+    It keeps the stamp each tick handed it, because that stamp is the half
+    of the run's identity the pass prescribes its record's title from
+    (KOD-290).
+    """
 
     def __init__(self) -> None:
         self.calls: int = 0
+        self.stamps: list[datetime] = []
 
     async def run(self, started_at: datetime) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
+        self.stamps.append(started_at)
         return PassRun.RAN
 
 
@@ -680,6 +687,29 @@ async def test_a_completed_tick_reports_its_outcome_and_duration() -> None:
     # The verification window's left edge is a wall-clock fact the tick
     # stamped itself, aware so it compares against any vendor timestamp.
     assert reports.reports[0][2].tzinfo is not None
+
+
+async def test_the_tick_and_its_report_are_handed_one_start_stamp() -> None:
+    """One declaration of when the run began, read twice (KOD-290).
+
+    The pass prescribes its record's title from the stamp it is handed,
+    and the runner verifies by the title spelled from the stamp the report
+    is handed; the two are one string only if they are one instant.
+    """
+    recorder, reports = Recorder(), ReportLog()
+
+    await _one_tick(
+        ScheduledPass(
+            name="fire_prep_pass",
+            interval_seconds=FAST_INTERVAL,
+            timeout_seconds=GENEROUS_TIMEOUT,
+            run=recorder.run,
+            report=reports.report,
+        ),
+    )
+
+    assert recorder.stamps == [started_at for _, _, started_at in reports.reports]
+    assert len(recorder.stamps) == 1
 
 
 async def test_a_failing_tick_reports_failed() -> None:

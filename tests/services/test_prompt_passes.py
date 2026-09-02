@@ -847,6 +847,14 @@ class SessionWrittenLog:
     looks its run up by the one string that spells the run's identity, and
     whatever prose the session put under that title is not this
     obligation's business (KOD-290).
+
+    Answered the way both shipped sinks answer — by the record's title at
+    the HEAD of a row (``LinearRecordSink`` reads a document line that
+    opens with it, ``NotionRecordSink`` asks the title property for a
+    ``starts_with``).  The row the clause instructs is one line on the
+    document arm, the title and then the prose, and the runner's own line
+    opens with the title too; a fake matching the title whole would reject
+    the very row the session was told to write.
     """
 
     def __init__(self, titles: list[str]) -> None:
@@ -858,7 +866,7 @@ class SessionWrittenLog:
         destination: RecordDestination,
         record: RunRecord,
     ) -> bool:
-        return record.title() in self.titles
+        return any(title.startswith(record.title()) for title in self.titles)
 
     async def write_record(
         self,
@@ -948,19 +956,37 @@ class TestTheClauseAndTheRunnerNameOneRow:
         assert result is RunRecordResult.VERIFIED
         assert len(log.titles) == 1, "the runner wrote no second row"
 
+    async def test_the_row_the_clause_instructs_is_verified_with_its_prose(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The row as the clause has the session write it: the title, then
+        what it examined and changed, on the one line the document arm
+        holds a row as — verified, because the title heads it."""
+        prompt = await self._prompt_of_one_run(tmp_path)
+        row = f"{prescribed_title(prompt)} — examined 3 issues, staged 1"
+        log = SessionWrittenLog([row])
+
+        result = await self._recorder(log).record(self._record())
+
+        assert result is RunRecordResult.VERIFIED
+        assert log.titles == [row], "the runner wrote no second row"
+
     async def test_a_row_titled_any_other_way_leaves_the_run_unrecorded(
         self,
         tmp_path: Path,
     ) -> None:
         """The paired negative, and the shape the measured defect produced.
 
-        A session that titles its row its own way has written about this
-        run and said so nowhere the runner can read, so the runner
-        backfills — and the log then holds two rows for one run, which is
-        what every live pass produced before the clause carried the title.
+        Before the clause carried a title the session spelled the run's
+        identity its own way — the same kind, name and instant, in words
+        the runner does not read — so it had written about this run and
+        said so nowhere the runner looks, and the runner backfilled: two
+        rows for one run, on every live pass.
         """
         prompt = await self._prompt_of_one_run(tmp_path)
-        other = f"{prescribed_title(prompt)} (grooming notes)"
+        other = prescribed_title(prompt).replace(" — ", " - ")
+        assert other != prescribed_title(prompt)
         log = SessionWrittenLog([other])
 
         result = await self._recorder(log).record(self._record())
