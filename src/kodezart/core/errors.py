@@ -365,19 +365,25 @@ class McpCredentialRefusedError(Exception):
         self.tool_name: str | None = tool_name
 
 
-class TrackerCredentialExpiryError(Exception):
-    """Raised at boot when the tracker credential declares its own expiry.
+class TrackerCredentialShapeError(Exception):
+    """Raised at boot when the tracker credential is not the accepted shape.
 
-    Names the FIELD the credential declares it in, because that is the one
-    thing an operator can act on: the vendor accepts a long-lived key in the
-    same header, and nothing in this process refreshes anything.  A boot that
-    accepted an expiring credential would run until the expiry and then turn
-    every tracker call into a refusal, on a board nobody is watching.
+    Names the FIELD it was read from and the SHAPE that backend accepts,
+    because between them those are the whole of what an operator can act
+    on: mint this, put it there.  A refusal that named only what was wrong
+    would leave the next paste to guesswork.
+
+    The backend takes one credential that outlives a run and one that does
+    not, and nothing in this process refreshes anything, so a boot that
+    accepted the second would serve until the token died and then answer
+    every tracker call with a refusal, hours later, on a board nobody is
+    watching — measured 2026-09-01 (KOD-171).
     """
 
-    def __init__(self, message: str, *, field: str) -> None:
-        super().__init__(f"{message} (field: {field})")
+    def __init__(self, message: str, *, field: str, accepted_shape: str) -> None:
+        super().__init__(f"{message} ({field} must hold {accepted_shape})")
         self.field: str = field
+        self.accepted_shape: str = accepted_shape
 
 
 class PromptNamespaceCollisionError(Exception):

@@ -20,6 +20,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
+from kodezart.core.retry import DelayFloor
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.errors import (
     CriteriaFanInError,
@@ -131,6 +132,7 @@ def _make_engine(
     git: FakeGitService | None = None,
     retry_initial_interval: float = 1.0,
     retry_max_attempts: int = 3,
+    delay_floor_for: DelayFloor | None = None,
 ) -> RalphWorkflowEngine:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -172,6 +174,7 @@ def _make_engine(
         artifact_persister=artifact_persister,
         retry_initial_interval=retry_initial_interval,
         retry_max_attempts=retry_max_attempts,
+        delay_floor_for=delay_floor_for,
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
     )
@@ -2223,6 +2226,9 @@ class _ScriptedCriteriaExecutor:
         self._inner = FakeAgentExecutor(events=[])
         self._script = list(script)
         self.criteria_attempts = 0
+        #: When each criteria attempt began, so a case can clock the gap
+        #: between two of them rather than the run around them.
+        self.criteria_attempt_times: list[float] = []
 
     @property
     def calls(self) -> list[dict[str, object]]:
@@ -2258,6 +2264,7 @@ class _ScriptedCriteriaExecutor:
 
         step = self._script[min(self.criteria_attempts, len(self._script) - 1)]
         self.criteria_attempts += 1
+        self.criteria_attempt_times.append(time.perf_counter())
         if step == "raise":
             msg = "provider is down"
             raise RuntimeError(msg)
@@ -2422,6 +2429,61 @@ async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
     assert wire.raise_site == "acceptance_criteria"
     assert wire.rate_limit_rejected is True
     assert wire.result_tail == "Claude AI usage limit reached"
+
+
+#: The floor a rate-limited attempt waits in the fixture below.  Long
+#: enough that only the floor can account for the gap between two
+#: attempts, short enough that the case costs the suite nothing to run.
+RATE_LIMIT_FLOOR_SECONDS = 0.15
+
+
+def _floor_under_a_rate_limit(exc: Exception) -> float | None:
+    """A resolver of the shape ``composition.engine`` builds (KOD-195)."""
+    if isinstance(exc, RateLimitedSoftFailureError):
+        return RATE_LIMIT_FLOOR_SECONDS
+    return None
+
+
+async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
+    tmp_path: Path,
+) -> None:
+    """KOD-195: the floor reaches the graph's nodes, not just the wrapper.
+
+    The rejection is retried — KOD-43 stands, and the budget is untouched
+    — but the second attempt cannot begin until the floor has passed.  The
+    clock is read at the start of each criteria attempt, and the back-off
+    interval is two orders of magnitude smaller than the floor, so the gap
+    between the two attempts has one explanation.  The run around them is
+    not the observable: a whole run takes longer than the floor with no
+    floor at all.
+    """
+    persister = _DiskArtifactPersister(tmp_path)
+    executor = _ScriptedCriteriaExecutor(script=["rejected", "ok"])
+    engine = _make_engine(
+        executor=executor,
+        artifact_persister=persister,
+        retry_initial_interval=0.001,
+        retry_max_attempts=2,
+        delay_floor_for=_floor_under_a_rate_limit,
+    )
+
+    events = [
+        event
+        async for event in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    assert executor.criteria_attempts == 2
+    first_attempt, second_attempt = executor.criteria_attempt_times
+    assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
+    assert len([e for e in events if isinstance(e, WorkflowCompleteEvent)]) == 1
 
 
 async def test_workflow_cleans_artifacts_before_pr() -> None:

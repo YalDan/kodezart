@@ -19,6 +19,7 @@ import pytest
 import structlog.testing
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.core.errors import McpCredentialRefusedError, McpTransportError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.run_recorder import RunRecorder
@@ -894,3 +895,129 @@ class TestTheFireOutcomeIsReportedBack:
         )
 
         assert report.reported == [(ISSUE, RunOutcome.FAILED, None)]
+
+
+class RaisingFireReport:
+    """A report hop that raises, the tracker behind it refusing to answer.
+
+    ``record_run_outcome``'s first act is a tracker read, so the classes a
+    refusing tracker raises are the ones this seam has to survive: a
+    transport that cannot answer, and a credential the server refused
+    outright — the second is what a live boot met fifty-one minutes in.
+    """
+
+    def __init__(self, error: Exception) -> None:
+        self.error: Exception = error
+        self.calls: list[str] = []
+
+    async def __call__(
+        self,
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        self.calls.append(issue_key)
+        raise self.error
+
+
+class TestAReportThatRaisesLosesNothingButTheNews:
+    """The hop runs after the put-back and the release (KOD-276).
+
+    Measured at ``2b6953f``: a report whose tracker read raised took the
+    whole watch down with it — the run record was never written, ``watch``
+    raised into the queue's worker, and the dispatcher's memory stayed
+    empty anyway.  Everything the watch owes the run is already done by
+    then, so the failure is contained and named, exactly as the run
+    record's own write is.
+    """
+
+    @staticmethod
+    def _watch(
+        error: Exception,
+    ) -> tuple[LifecycleWatcher, FakeTrackerPort, CapturingRecorder, RaisingFireReport]:
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        recorder = CapturingRecorder()
+        report = RaisingFireReport(error)
+        return (
+            LifecycleWatcher(
+                recorder=recorder,
+                queue=FakeJobQueue(
+                    events=(AssistantTextEvent(text="working", model=MODEL),),
+                ),
+                writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+                heartbeat=claim_heartbeat(tracker),
+                report=report,
+            ),
+            tracker,
+            recorder,
+            report,
+        )
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            McpTransportError(
+                "the server did not answer",
+                server_name="linear",
+                tool_name="get_issue",
+            ),
+            McpCredentialRefusedError(
+                "unauthorized",
+                server_name="linear",
+                tool_name="get_issue",
+            ),
+        ],
+        ids=["transport", "credential"],
+    )
+    async def test_the_record_survives_and_the_watch_returns(
+        self,
+        error: Exception,
+    ) -> None:
+        watch, tracker, recorder, report = self._watch(error)
+
+        with structlog.testing.capture_logs() as logs:
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id="job-0001",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        assert report.calls == [ISSUE], "the hop was reached"
+        assert tracker.restored_states == [(ISSUE, PRE_CLAIM_STATE)], (
+            "the put-back happened before the hop"
+        )
+        assert await tracker.active_claim(issue_key=ISSUE) is None, (
+            "the claim was released before the hop"
+        )
+        (record,) = recorder.records
+        assert record.outcome is RunOutcome.FAILED
+        failed = [entry for entry in logs if entry["event"] == "fire_report_failed"]
+        assert len(failed) == 1
+        assert failed[0]["error_type"] == type(error).__name__
+        assert failed[0]["error"] == str(error)
+
+    async def test_a_report_that_answers_names_no_failure(self) -> None:
+        """The paired positive: containment is not a silence."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE)])
+        recorder = CapturingRecorder()
+        report = FakeFireReport()
+        watch = LifecycleWatcher(
+            recorder=recorder,
+            queue=FakeJobQueue(
+                events=(AssistantTextEvent(text="working", model=MODEL),),
+            ),
+            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            heartbeat=claim_heartbeat(tracker),
+            report=report,
+        )
+
+        with structlog.testing.capture_logs() as logs:
+            await watch.watch(
+                issue_key=ISSUE,
+                job_id="job-0001",
+                pre_claim_state=PRE_CLAIM_STATE,
+            )
+
+        assert report.reported == [(ISSUE, RunOutcome.FAILED, None)]
+        assert len(recorder.records) == 1
+        assert [entry for entry in logs if entry["event"] == "fire_report_failed"] == []

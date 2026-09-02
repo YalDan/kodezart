@@ -25,13 +25,11 @@ records stays the order every claimant computes from it.
 """
 
 import asyncio
-import json
 import re
-from base64 import urlsafe_b64decode
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import assert_never
+from typing import Final, assert_never
 
 from pydantic import ValidationError
 
@@ -122,15 +120,21 @@ _SCOPE_PROBE_LIMIT = 1
 #: failure nobody made.
 _SCOPE_REFUSAL_MARKER = "auth_insufficient_scope"
 
-#: The JWT wire format, which is what an expiry-bearing credential is: three
-#: base64url segments, the middle one the claim set, padded to the base64
-#: quantum.  Format constants, not knobs — a deployment cannot choose them.
-_JWT_SEGMENTS = 3
-_JWT_PAYLOAD_SEGMENT = 1
-_BASE64_QUANTUM = 4
+#: The vendor's long-lived personal key: prefix and total length.  Measured
+#: 2026-09-01 (KOD-171): the operator's live key is forty-eight characters
+#: beginning ``lin_api_`` and answered ``initialize`` with HTTP 200.  Wire
+#: format, not knobs — a deployment cannot choose what the vendor mints.
+_PERSONAL_KEY_PREFIX = "lin_api_"
+_PERSONAL_KEY_LENGTH = 48
 
-#: The registered claim a credential states its own lifetime in.
-_JWT_EXPIRY_CLAIM = "exp"
+#: What a refusal quotes back, so an operator reads what to mint rather
+#: than what was wrong with what they had.  Prose, because it is printed in
+#: an error and stated in the setup guide, and derived from the two
+#: constants above so the sentence cannot outlive the rule.
+ACCEPTED_CREDENTIAL_SHAPE: Final[str] = (
+    f"{_PERSONAL_KEY_PREFIX} followed by "
+    f"{_PERSONAL_KEY_LENGTH - len(_PERSONAL_KEY_PREFIX)} characters"
+)
 
 _CLAIM_MARKER = re.compile(
     r"<!--\s*kodezart-claim\s+holder=\"(?P<holder>[^\"]+)\"\s+"
@@ -268,34 +272,23 @@ def _without_mention_syntax(identity: str) -> str:
     return identity.removeprefix("@")
 
 
-def credential_expiry_field(token: str) -> str | None:
-    """The field a Linear bearer credential declares its own expiry in, if any.
+def is_long_lived_credential(token: str) -> bool:
+    """Whether *token* is the vendor's long-lived personal-key shape.
 
-    The vendor takes two kinds of credential in the same header, measured
-    2026-09-01 (KOD-171): a long-lived personal key, which carries no
-    expiry at all, and an OAuth access token, which is a JWT and states its
-    lifetime in the registered ``exp`` claim of its payload.  Only the
-    second kind can die under a running boot, and this process refreshes
-    nothing — so this is the one distinction boot has to make, and it is
-    made from the credential's own bytes rather than by asking the server
-    a question it answers identically for both.
+    The vendor takes exactly two kinds of credential in the same header,
+    measured 2026-09-01 (KOD-171): a personal key, which carries no expiry
+    at all, and an OAuth access token, which does and which nothing in this
+    process refreshes.  The access token is OPAQUE — it declares nothing a
+    reader can inspect — so the only sound split is the shape that is known
+    to outlive a boot against everything else, and it is stated here
+    because the shapes are this backend's vocabulary and no other layer's.
 
-    A token this cannot read as a JWT declares no expiry and is not
-    guessed about: what is returned is the claim's NAME, so a refusal can
-    tell an operator which field it read.
+    A positive answer is the one credential a deployment may boot on.  Every
+    other string — an ``lin_oauth_`` token, a truncated key, a paste of
+    something else entirely — is refused, so a boot cannot proceed on a
+    credential whose lifetime this process cannot see or renew.
     """
-    segments = token.split(".")
-    if len(segments) != _JWT_SEGMENTS:
-        return None
-    payload = segments[_JWT_PAYLOAD_SEGMENT]
-    padding = "=" * (-len(payload) % _BASE64_QUANTUM)
-    try:
-        claims = json.loads(urlsafe_b64decode(payload + padding))
-    except ValueError:
-        return None
-    if isinstance(claims, dict) and _JWT_EXPIRY_CLAIM in claims:
-        return _JWT_EXPIRY_CLAIM
-    return None
+    return token.startswith(_PERSONAL_KEY_PREFIX) and len(token) == _PERSONAL_KEY_LENGTH
 
 
 def _utc_now() -> datetime:

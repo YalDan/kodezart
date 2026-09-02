@@ -431,17 +431,22 @@ Put the value in `KODEZART_TRACKER_TOKEN` in the service's environment and
 nowhere else: the operation config is `extra="forbid"`, so a token key in that
 file fails the load rather than sitting in a repository.
 
-**It must be a long-lived key, and boot enforces that.** The vendor accepts
-either a personal key or an OAuth access token in the same header, and only the
-first one lives longer than a run: an OAuth access token states its own expiry
-and this service refreshes nothing, so pasting one buys a process that works
-until the token dies and then answers every tracker call with a refusal — the
-failure measured on 2026-09-01, fifty-one minutes into a boot. A credential that
-declares an expiry is refused at startup with `TrackerCredentialExpiryError`
-naming the field it read it from, before the service dials anything.
+**It must be a long-lived key, and boot enforces that by shape.** The vendor
+accepts either a personal key or an OAuth access token in the same header, and
+only the first one lives longer than a run: an access token expires and this
+service refreshes nothing, so pasting one buys a process that works until the
+token dies and then answers every tracker call with a refusal — the failure
+measured on 2026-09-01, fifty-one minutes into a boot. The access token is
+opaque and declares nothing a reader can inspect, so boot accepts exactly one
+shape — lin_api_ followed by 40 characters, which is what step 1 mints — and
+refuses everything else at startup with `TrackerCredentialShapeError`, naming
+both the variable it read and the shape it wanted, before the service dials
+anything. A key of the right shape is then **presented once** over plain HTTP
+before the MCP session opens, so a revoked or mistyped key is named as a
+refused credential rather than as a connection that would not come up.
 
 *Observable result:* the variable is set in the process environment, the service
-boots without `TrackerCredentialExpiryError`, and `grep -r` for the value across
+boots without `TrackerCredentialShapeError`, and `grep -r` for the value across
 the repository finds nothing.
 
 **What a personal key costs, stated plainly.** Every write the service performs
@@ -609,7 +614,8 @@ it could not resolve. Nothing runs until you fix it.
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
 | `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
-| `TrackerCredentialExpiryError` naming a field | C | `KODEZART_TRACKER_TOKEN` holds a credential that declares its own expiry. Mint the long-lived personal key from step 1 and set that instead; nothing here refreshes a token. |
+| `TrackerCredentialShapeError` naming a field and a shape | C | `KODEZART_TRACKER_TOKEN` does not hold the long-lived key shape the backend accepts. Mint the personal key from step 1 and set that instead; nothing here refreshes a token that expires. |
+| `McpCredentialRefusedError` before any session log line | C | The key is the right shape and the server would not take it: revoked, mistyped, or minted in another workspace. Mint a fresh one per step 1. |
 
 *Observable result:* one of the three states, identified by name, with no line
 in the startup log left unaccounted for.

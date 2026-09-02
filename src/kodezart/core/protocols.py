@@ -532,11 +532,21 @@ class McpToolCaller(Protocol):
 class ManagedMcpToolCaller(McpToolCaller, Protocol):
     """An ``McpToolCaller`` whose connection has a lifetime the host owns.
 
-    The composition root opens one at boot and closes it at shutdown, so a
-    session handshake is not re-run per tool call.  Separate from
-    ``McpToolCaller`` because a consumer never opens or closes anything —
-    it names a tool and reads a result.
+    The composition root probes and opens one at boot and closes it at
+    shutdown, so a session handshake is not re-run per tool call.  Separate
+    from ``McpToolCaller`` because a consumer never opens or closes
+    anything — it names a tool and reads a result.
     """
+
+    async def probe(self) -> None:
+        """Present the credential once, before any session exists.
+
+        Silence means accepted.  A refused credential leaves as the typed
+        credential error and anything else as the transport error, so boot
+        can name a refusal — the status is legible here and not once a
+        session is being opened around it (KOD-268).
+        """
+        ...
 
     async def open(self) -> None:
         """Establish the session. Opening an open caller is an error."""

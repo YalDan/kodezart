@@ -14,6 +14,7 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
+from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     ArtifactPersister,
@@ -26,6 +27,8 @@ from kodezart.core.protocols import (
     WorkflowEngine,
     WorkspaceProvider,
 )
+from kodezart.core.retry import DelayFloor
+from kodezart.domain.errors import RateLimitError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent
@@ -112,6 +115,29 @@ class OriginRoutedWorkflowEngine:
             yield event
 
 
+def rate_limit_delay_floor(config: AppConfig) -> DelayFloor:
+    """The floor a node attempt waits when a PROVIDER RATE LIMIT killed it.
+
+    Which classes are a rate limit, and what an operator is willing to
+    wait under one, is composition's statement; ``core.retry`` decides
+    transience over the domain taxonomy and nothing else.
+
+    A rejection that states its own retry-after is honoured verbatim,
+    because the provider knows when it will answer again; one that states
+    nothing gets the configured floor.  Every other failure resolves to
+    ``None`` and is retried on the graph's own back-off, unchanged.
+    """
+
+    def floor_for(exc: Exception) -> float | None:
+        if not isinstance(exc, RateLimitedSoftFailureError | RateLimitError):
+            return None
+        if exc.retry_after is None:
+            return config.retry_rate_limit_floor_seconds
+        return exc.retry_after
+
+    return floor_for
+
+
 def build_workflow_engine(
     *,
     config: AppConfig,
@@ -142,6 +168,7 @@ def build_workflow_engine(
     what the engine's signature asks for rather than a duplication this
     could remove.
     """
+    delay_floor_for = rate_limit_delay_floor(config)
     ralph_loop = RalphLoop(
         service=agent_service,
         max_iterations=config.max_iterations,
@@ -153,6 +180,7 @@ def build_workflow_engine(
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,
+        delay_floor_for=delay_floor_for,
         fan_in_max_attempts=config.fan_in_max_attempts,
     )
     ticket_generator = TicketGenerationLoop(
@@ -165,6 +193,7 @@ def build_workflow_engine(
         checkpointer=checkpointer,
         retry_max_attempts=config.retry_max_attempts,
         retry_initial_interval=config.retry_initial_interval,
+        delay_floor_for=delay_floor_for,
     )
     remediator = RemediationChain(
         service=agent_service,
@@ -189,6 +218,7 @@ def build_workflow_engine(
             checkpointer=checkpointer,
             retry_max_attempts=config.retry_max_attempts,
             retry_initial_interval=config.retry_initial_interval,
+            delay_floor_for=delay_floor_for,
             pr_creator=forge,
             ci_monitor=forge,
             ref_publisher=ref_publisher,

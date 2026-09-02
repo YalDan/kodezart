@@ -41,7 +41,7 @@ from kodezart.core.redispatch import (
     until_conforming,
     until_permutation,
 )
-from kodezart.core.retry import should_retry
+from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import (
     flagged_items,
@@ -170,6 +170,7 @@ class RalphWorkflowEngine:
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int,
         retry_initial_interval: float,
+        delay_floor_for: DelayFloor | None = None,
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
         ref_publisher: RefPublisher | None = None,
@@ -207,6 +208,7 @@ class RalphWorkflowEngine:
             initial_interval=retry_initial_interval,
             retry_on=should_retry,
         )
+        self._floor: RetryFloor = RetryFloor(delay_floor_for)
         self._log: BoundLogger = get_logger(__name__)
         self._checkpointer: BaseCheckpointSaver[str] | None = checkpointer
         self._compiled = self._build_graph().compile(
@@ -323,67 +325,67 @@ class RalphWorkflowEngine:
         )
         graph.add_node(
             "resolve_visibility",
-            self._resolve_visibility_node,
+            self._floor(self._resolve_visibility_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "generate_branch",
-            self._generate_branch_node,
+            self._floor(self._generate_branch_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "generate_ticket",
-            self._generate_ticket_node,
+            self._floor(self._generate_ticket_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "generate_criteria",
-            self._generate_criteria_node,
+            self._floor(self._generate_criteria_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "validate_criteria",
-            self._validate_criteria_node,
+            self._floor(self._validate_criteria_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "run_ralph_loop",
-            self._run_ralph_loop_node,
+            self._floor(self._run_ralph_loop_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "merge_to_feature",
-            self._merge_to_feature_node,
+            self._floor(self._merge_to_feature_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "land_best_iteration",
-            self._land_best_iteration_node,
+            self._floor(self._land_best_iteration_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "review_against_ticket",
-            self._review_against_ticket_node,
+            self._floor(self._review_against_ticket_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "remediate",
-            self._remediate_node,
+            self._floor(self._remediate_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "open_pr",
-            self._open_pr_node,
+            self._floor(self._open_pr_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "monitor_ci",
-            self._monitor_ci_node,
+            self._floor(self._monitor_ci_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "comment_failure",
-            self._comment_failure_node,
+            self._floor(self._comment_failure_node),
             retry_policy=self._retry,
         )
         graph.add_node("complete", self._complete_node)
@@ -391,12 +393,12 @@ class RalphWorkflowEngine:
         if self._artifact_persister is not None:
             graph.add_node(
                 "persist_ticket",
-                self._persist_ticket_node,
+                self._floor(self._persist_ticket_node),
                 retry_policy=self._retry,
             )
             graph.add_node(
                 "persist_artifacts",
-                self._persist_artifacts_node,
+                self._floor(self._persist_artifacts_node),
                 retry_policy=self._retry,
             )
 

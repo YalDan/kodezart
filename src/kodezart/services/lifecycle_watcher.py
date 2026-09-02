@@ -246,11 +246,28 @@ class LifecycleWatcher:
         # The dispatcher hears first: it is in this process, it costs
         # nothing, and what it does with the news is decide whether the
         # next tick may select this issue again (KOD-174).
-        await self._report(
-            issue_key,
-            outcome,
-            None if failure is None else failure.error_kind,
-        )
+        #
+        # Contained exactly as the run record below is, and for the same
+        # reason: the put-back and the claim release have already
+        # happened, so a report hop that raises would unwind a watch whose
+        # work is done, lose the record that says the run is over, and
+        # report a finished run as a broken one.  The dispatcher's memory
+        # is an optimisation over the next tick; the record and the
+        # put-back are the run's own history (KOD-276).
+        try:
+            await self._report(
+                issue_key,
+                outcome,
+                None if failure is None else failure.error_kind,
+            )
+        except Exception as exc:
+            await self._log.aerror(
+                "fire_report_failed",
+                issue_key=issue_key,
+                outcome=outcome.value,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
         await self._record_fire(
             issue_key=issue_key,
             outcome=outcome,

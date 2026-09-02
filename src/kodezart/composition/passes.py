@@ -4,7 +4,7 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -323,7 +323,7 @@ async def build_prompt_passes(
     ]
 
 
-def fire_report(dispatchers: Sequence[FireDispatcher]) -> FireReport:
+def fire_report(dispatchers: Mapping[str, FireDispatcher]) -> FireReport:
     """Every dispatcher on the lane hears every finished fire.
 
     The watcher is one object over N repositories and knows nothing about
@@ -331,15 +331,34 @@ def fire_report(dispatchers: Sequence[FireDispatcher]) -> FireReport:
     the job it enqueued — so the fan-out is total here and the filtering
     is the dispatcher's own (KOD-174).  A watcher told to route would need
     a second copy of the routing the passes already compute.
+
+    A dispatcher that RAISES on the news is contained per dispatcher, and
+    the key it is registered under names it in the event: the hop reads
+    the tracker, so one repository's dispatcher meeting a refused
+    credential would otherwise abort the fan-out and leave every
+    dispatcher after it in the iteration order unaware that its own fire
+    ended (KOD-276).
     """
+
+    log: BoundLogger = get_logger(__name__)
 
     async def report(
         issue_key: str,
         outcome: RunOutcome,
         failure_class: str | None,
     ) -> None:
-        for dispatcher in dispatchers:
-            await dispatcher.record_run_outcome(issue_key, outcome, failure_class)
+        for name, dispatcher in dispatchers.items():
+            try:
+                await dispatcher.record_run_outcome(issue_key, outcome, failure_class)
+            except Exception as exc:
+                await log.aerror(
+                    "fire_report_failed",
+                    dispatcher=name,
+                    issue_key=issue_key,
+                    outcome=outcome.value,
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                )
 
     return report
 
@@ -400,6 +419,9 @@ async def build_dispatch_passes(
                     holder=config.dispatch_holder,
                     claim_lease_seconds=config.tracker_claim_lease_seconds,
                     query_page_size=config.tracker_query_page_size,
+                    rate_limit_cooldown_seconds=(
+                        config.dispatch_rate_limit_cooldown_seconds
+                    ),
                     assembler=assembler,
                     resolver=resolver,
                     cache=cache,
@@ -423,7 +445,7 @@ async def build_dispatch_passes(
             renewal_fraction=config.tracker_claim_renewal_fraction,
         ),
         recorder=recorder,
-        report=fire_report([dispatcher for _, dispatcher in dispatchers]),
+        report=fire_report({repo.url: dispatcher for repo, dispatcher in dispatchers}),
     )
     return DispatchPasses(
         passes=tuple(

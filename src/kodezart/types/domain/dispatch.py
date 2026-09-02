@@ -22,7 +22,10 @@ from kodezart.types.domain.tracker import IssuePriority
 
 
 class DispatchOutcome(StrEnum):
-    """Four-way partition of a dispatch pass's terminal dispositions.
+    """The partition of a dispatch pass's terminal dispositions.
+
+    Exhaustive and disjoint: a pass ends on exactly one member, and the
+    set is named by nothing but this declaration.
 
     The FIELD is ``outcome``, matching the run-side discriminator's naming
     discipline, and this report is the single surface a pass reports on —
@@ -49,9 +52,9 @@ class DispatchOutcome(StrEnum):
     empty, and distinct from ``base_unresolved`` because no claim was
     spent: the exclusion is decided before the first write (KOD-173).  The
     pass does not fall through to the next-ranked issue — one issue read
-    per pass buys one decided winner — so the next pass recomputes, and
-    the blocker's key rides in the exclusions under the live-blocker
-    clause."""
+    per pass buys one decided winner — so the next pass recomputes over a
+    set the blocked winner has been remembered out of, and the blocker's
+    key rides in the exclusions under the live-blocker clause."""
 
 
 class ExclusionClause(StrEnum):
@@ -91,6 +94,18 @@ class ExclusionClause(StrEnum):
     carries the class the run died of, or how it ended when no error frame
     named one."""
 
+    LANE_BACKOFF = "lane_backoff"
+    """The lane is holding back after a failure the whole account shares.
+
+    The one clause that is not about the issue it annotates: a provider
+    rate limit killed the last fire, and the next-ranked candidate would
+    meet it unchanged, so every remaining issue on the board carries this
+    line until the cooldown lapses (KOD-174).  Evaluated after the clause
+    above so the issue that died still reports what it died of, and lifted
+    by the CLOCK rather than by a change on the board — nothing an issue
+    does clears a rate limit.  The detail carries the failure class that
+    set it."""
+
     OUT_OF_SCOPE = "out_of_scope"
     """The issue's team declares a scope and the issue's project and
     initiatives are not in it (KOD-169).  The detail carries the issue's
@@ -111,6 +126,18 @@ class ExclusionClause(StrEnum):
     NOT_APPROVED = "not_approved"
     NOT_OPEN = "not_open"
     LIVE_BLOCKER = "live_blocker"
+    """An issue the graph blocks, by an edge to an issue still open.  The
+    detail carries the blocker's key.
+
+    Asked over each scan entry's edges, and again over the winner's at
+    the pre-claim reading, which supplies the edges a listing does not
+    carry — the measured backend answers a listing with each issue's own
+    fields and no relations (KOD-173).  A winner that reading finds
+    blocked is remembered under this clause, by the same mechanism
+    ``BASE_UNRESOLVED`` and ``RUN_FAILED`` use, so the lane's next tick
+    ranks the next unblocked candidate instead of re-deciding a blocker
+    that has not moved."""
+
     CLAIMED_OR_IN_FLIGHT = "claimed_or_in_flight"
     OPEN_DELIVERY = "open_delivery"
 

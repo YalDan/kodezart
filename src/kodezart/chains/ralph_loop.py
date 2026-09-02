@@ -18,7 +18,7 @@ from kodezart.core.protocols import (
     RepoCache,
 )
 from kodezart.core.redispatch import until_permutation
-from kodezart.core.retry import should_retry
+from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.criteria_grading import grade_iteration
@@ -64,6 +64,7 @@ class RalphLoop:
         checkpointer: BaseCheckpointSaver[str] | None = None,
         retry_max_attempts: int,
         retry_initial_interval: float,
+        delay_floor_for: DelayFloor | None = None,
         fan_in_max_attempts: int,
     ) -> None:
         self._service = service
@@ -83,6 +84,7 @@ class RalphLoop:
             initial_interval=retry_initial_interval,
             retry_on=should_retry,
         )
+        self._floor: RetryFloor = RetryFloor(delay_floor_for)
         self._log: BoundLogger = get_logger(__name__)
         self._checkpointer = checkpointer
         self._compiled = self._build_graph().compile(
@@ -165,8 +167,16 @@ class RalphLoop:
         graph: StateGraph[RalphLoopState, None, RalphLoopState, RalphLoopState] = (
             StateGraph(RalphLoopState)
         )
-        graph.add_node("execute", self._execute_node, retry_policy=self._retry)
-        graph.add_node("evaluate", self._evaluate_node, retry_policy=self._retry)
+        graph.add_node(
+            "execute",
+            self._floor(self._execute_node),
+            retry_policy=self._retry,
+        )
+        graph.add_node(
+            "evaluate",
+            self._floor(self._evaluate_node),
+            retry_policy=self._retry,
+        )
         graph.add_edge(START, "execute")
         graph.add_edge("execute", "evaluate")
         graph.add_conditional_edges(

@@ -17,8 +17,9 @@ Throughput comes from successive passes, not from batch sends.
 import secrets
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     DeliveryProbe,
@@ -76,7 +77,10 @@ class _RememberedExclusion:
     write-delete cycles, each feeding the next tick's gate delta), and the
     put-back and terminal comment for a run that died (KOD-174).
     Remembered at scan time, this pass's own noise would re-admit the
-    issue on the very next tick, which IS both measured loops.
+    issue on the very next tick, which IS both measured loops.  The third
+    entrant — a winner the pre-claim read found blocked (KOD-173) — is
+    recorded off that same reading, which is already after everything
+    this pass did to the issue, because that arm writes nothing at all.
 
     ``clause`` and ``detail`` are what the exclusion reports: one
     mechanism, and the report still says which failure is being
@@ -86,6 +90,24 @@ class _RememberedExclusion:
     updated_at: datetime
     clause: ExclusionClause
     detail: str
+
+
+@dataclass(frozen=True)
+class _LaneBackoff:
+    """The whole lane held back, and what put it there.
+
+    An unresolvable base and a dead run are facts about ONE issue; a
+    provider rate limit is a fact about the account every fire on the lane
+    would spend.  Measured 2026-09-01: the run that died at 17:57 on a
+    rejection was followed by the next tick firing again into the same
+    limit, and the creator's retry policy spawning sixteen empty sessions
+    under it (KOD-174).  Remembering the issue is not enough — the next
+    issue meets the same limit — so the lane itself stops until the
+    cooldown lapses.
+    """
+
+    until: datetime
+    failure_class: str
 
 
 def _now() -> datetime:
@@ -108,6 +130,7 @@ class FireDispatcher:
         holder: str,
         claim_lease_seconds: float,
         query_page_size: int,
+        rate_limit_cooldown_seconds: float,
         assembler: FireContextAssembler,
         resolver: BaseResolver,
         cache: RepoCache,
@@ -127,6 +150,7 @@ class FireDispatcher:
         self._holder: str = holder
         self._claim_lease_seconds: float = claim_lease_seconds
         self._query_page_size: int = query_page_size
+        self._rate_limit_cooldown_seconds: float = rate_limit_cooldown_seconds
         self._resolver: BaseResolver = resolver
         self._cache: RepoCache = cache
         self._trunk: str = trunk
@@ -135,9 +159,12 @@ class FireDispatcher:
         self._clock: Callable[[], datetime] = clock
         self._log: BoundLogger = get_logger(__name__)
         self._jobs_by_issue: dict[str, str] = {}
-        #: Remembered failures — an unresolvable base, a run that died —
-        #: each held until its issue changes.
+        #: Remembered failures — an unresolvable base, a run that died, a
+        #: winner the graph blocks — each held until its issue changes.
         self._remembered: dict[str, _RememberedExclusion] = {}
+        #: The lane's own cooldown, set by a failure class the next fire
+        #: would meet unchanged.  ``None`` until one is measured.
+        self._backoff: _LaneBackoff | None = None
         #: One ``initiative_identifiers`` read per distinct project for
         #: this dispatcher's lifetime — membership does not move under a
         #: running pass (KOD-169).
@@ -234,6 +261,20 @@ class FireDispatcher:
         winner = await self._tracker.read_issue(issue_key=selection.winner_key)
         blocking = await self._live_blocker_of(winner)
         if blocking is not None:
+            # Remembered, exactly as an unresolvable base and a dead run
+            # are, and for the same reason: the pass claims one winner per
+            # snapshot and does not fall through, so a blocked top-ranked
+            # issue re-decided every tick would leave every lower-ranked
+            # candidate unfired for as long as the blocker stands.  The
+            # reading is the pre-claim one, which is also the post-read
+            # one — this arm writes nothing, so nothing has moved the
+            # issue since — and the blocker's key is what the exclusion
+            # keeps reporting while the memory holds.
+            self._remembered[winner.issue_key] = _RememberedExclusion(
+                updated_at=winner.updated_at,
+                clause=ExclusionClause.LIVE_BLOCKER,
+                detail=blocking,
+            )
             await self._log.ainfo(
                 "dispatch_winner_blocked",
                 outcome=DispatchOutcome.winner_blocked.value,
@@ -435,6 +476,18 @@ class FireDispatcher:
             outcome=outcome.value,
             failure_class=failure_class,
         )
+        if failure_class != RateLimitedSoftFailureError.__name__:
+            return
+        self._backoff = _LaneBackoff(
+            until=self._clock() + timedelta(seconds=self._rate_limit_cooldown_seconds),
+            failure_class=failure_class,
+        )
+        await self._log.awarning(
+            "dispatch_lane_backoff",
+            failure_class=failure_class,
+            until=self._backoff.until.isoformat(),
+            cooldown_seconds=self._rate_limit_cooldown_seconds,
+        )
 
     async def _scan(self, team_keys: Sequence[str]) -> tuple[TrackerIssue, ...]:
         """Every approved issue on the declared teams, in declaration order.
@@ -489,8 +542,10 @@ class FireDispatcher:
             # Re-admitted only once the issue has CHANGED past the reading
             # taken after the failure — retrying an unchanged issue re-runs
             # the same failing resolution and re-writes the claim churn it
-            # produced (KOD-169), or fires the whole run again into the
-            # rejection that killed the last one (KOD-174).
+            # produced (KOD-169), fires the whole run again into the
+            # rejection that killed the last one (KOD-174), or re-reads an
+            # edge that cannot have moved while it holds the lane's whole
+            # throughput (KOD-173).
             if issue.updated_at <= remembered.updated_at:
                 return IssueExclusion(
                     issue_key=issue.issue_key,
@@ -498,6 +553,23 @@ class FireDispatcher:
                     detail=remembered.detail,
                 )
             del self._remembered[issue.issue_key]
+        backoff = self._backoff
+        if backoff is not None:
+            # The one clause that is not about the issue it annotates: the
+            # limit that killed the last fire is the ACCOUNT's, so the
+            # next-ranked candidate meets it unchanged and firing it is
+            # the same failure with a different key on it.  Evaluated
+            # after the issue's own memory so the issue that died still
+            # reports what it died of, and lifted by the clock rather than
+            # by a change on the board — nothing an issue does clears a
+            # rate limit.
+            if self._clock() < backoff.until:
+                return IssueExclusion(
+                    issue_key=issue.issue_key,
+                    clause=ExclusionClause.LANE_BACKOFF,
+                    detail=backoff.failure_class,
+                )
+            self._backoff = None
         scope_exclusion = await self._exclude_by_scope(issue)
         if scope_exclusion is not None:
             return scope_exclusion

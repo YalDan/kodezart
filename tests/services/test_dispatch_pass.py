@@ -12,15 +12,27 @@ object, one per declared repository, carrying the configured cadence.
 """
 
 import asyncio
+import inspect
+import io
+import re
+import tokenize
 from collections.abc import Callable
+from types import ModuleType
+from typing import Final
 
 import pytest
 import structlog.testing
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
-from kodezart.composition.passes import build_dispatch_passes, delivery_probe_for
+from kodezart.composition.passes import (
+    build_dispatch_passes,
+    delivery_probe_for,
+    fire_report,
+)
 from kodezart.core.config import AppConfig
+from kodezart.core.errors import McpCredentialRefusedError
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.services import dispatch_pass as dispatch_pass_module
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -84,6 +96,7 @@ INTEGRATION_DIR = "/tmp/fixture-integration"
 HOLDER = "pass-a"
 LEASE_SECONDS = 600.0
 PAGE_SIZE = 50
+RATE_LIMIT_COOLDOWN_SECONDS = 1800.0
 ASSET_MAX_COUNT = 20
 ASSET_MAX_BYTES = 262144
 ASSET_FETCH_TIMEOUT_SECONDS = 30.0
@@ -190,6 +203,48 @@ def operation_config(
     )
 
 
+def fire_dispatcher(
+    tracker: FakeTrackerPort,
+    queue: FakeJobQueue,
+    *,
+    dispatcher_class: type[FireDispatcher] = FireDispatcher,
+) -> FireDispatcher:
+    """The shipped dispatcher's wiring, over *tracker* and *queue*.
+
+    ``dispatcher_class`` is what lets a case build the same dispatcher with
+    one hop replaced: the report hop's containment is about a dispatcher
+    that RAISES, and no state a real one can be driven into produces that.
+    """
+    return dispatcher_class(
+        tracker=tracker,
+        queue=queue,
+        registry=queue,
+        delivery=FakeDeliveryProbe(),
+        operation=operation_config(),
+        repo_url=PRIMARY_REPO,
+        lane=LANE,
+        holder=HOLDER,
+        claim_lease_seconds=LEASE_SECONDS,
+        query_page_size=PAGE_SIZE,
+        rate_limit_cooldown_seconds=RATE_LIMIT_COOLDOWN_SECONDS,
+        assembler=FireContextAssembler(
+            tracker=tracker,
+            gate=PassThroughGate(),
+            max_count=ASSET_MAX_COUNT,
+            max_bytes=ASSET_MAX_BYTES,
+            fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,
+        ),
+        resolver=BaseResolver(
+            tracker=tracker,
+            git=FakeGitService(),
+            remote=REMOTE,
+        ),
+        cache=FakeRepoCache(),
+        trunk=TRUNK,
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+
+
 def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
     """The shipped tick over the shipped gate and the shipped dispatcher."""
     queue = FakeJobQueue()
@@ -213,33 +268,7 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
             repo_urls=[PRIMARY_REPO],
             page_size=PAGE_SIZE,
         ),
-        dispatcher=FireDispatcher(
-            tracker=tracker,
-            queue=queue,
-            registry=queue,
-            delivery=FakeDeliveryProbe(),
-            operation=operation_config(),
-            repo_url=PRIMARY_REPO,
-            lane=LANE,
-            holder=HOLDER,
-            claim_lease_seconds=LEASE_SECONDS,
-            query_page_size=PAGE_SIZE,
-            assembler=FireContextAssembler(
-                tracker=tracker,
-                gate=PassThroughGate(),
-                max_count=ASSET_MAX_COUNT,
-                max_bytes=ASSET_MAX_BYTES,
-                fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,
-            ),
-            resolver=BaseResolver(
-                tracker=tracker,
-                git=FakeGitService(),
-                remote=REMOTE,
-            ),
-            cache=FakeRepoCache(),
-            trunk=TRUNK,
-            integration_workspace_dir=INTEGRATION_DIR,
-        ),
+        dispatcher=fire_dispatcher(tracker, queue),
     )
     return pass_, queue
 
@@ -351,22 +380,32 @@ class _FailingDispatcher:
     board exactly as the gate found it.
     """
 
-    def __init__(self, *, block: asyncio.Event | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        block: asyncio.Event | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.calls: int = 0
         self._block: asyncio.Event | None = block
+        self._error: Exception = (
+            TimeoutError("the delivery probe could not be reached")
+            if error is None
+            else error
+        )
 
     async def run_pass(self) -> DispatchReport:
         self.calls += 1
         if self._block is not None:
             await self._block.wait()
-        msg = "the delivery probe could not be reached"
-        raise TimeoutError(msg)
+        raise self._error
 
 
 def failing_tick(
     tracker: FakeTrackerPort,
     *,
     block: asyncio.Event | None = None,
+    error: Exception | None = None,
 ) -> tuple[GatedDispatchPass, PassGate, _FailingDispatcher]:
     """The shipped tick and gate, over a pass that cannot finish."""
     queue = FakeJobQueue()
@@ -377,7 +416,7 @@ def failing_tick(
         repo_urls=[PRIMARY_REPO],
         page_size=PAGE_SIZE,
     )
-    dispatcher = _FailingDispatcher(block=block)
+    dispatcher = _FailingDispatcher(block=block, error=error)
     return (
         GatedDispatchPass(
             lifecycle=LifecycleWatcher(
@@ -434,6 +473,29 @@ class TestAFailedPassGivesTheWakeUpBack:
 
         assert dispatcher.calls == 2, "the second tick reached the pass again"
         assert [scan.updated_since for scan in tracker.scans] == [None, None]
+
+    async def test_a_refused_credential_gives_the_wake_up_back_too(self) -> None:
+        """A refused credential is a failed pass, and the window comes back.
+
+        A credential refusal beneath the gate is a pass that read nothing,
+        so the window it was woken for is owed back exactly as a transport
+        timeout's is — and the refusal itself still leaves the tick, where
+        the scheduler names it.
+        """
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        pass_, guard, _ = failing_tick(
+            tracker,
+            error=McpCredentialRefusedError(
+                "the server refused the credential",
+                server_name="linear",
+                tool_name="get_issue",
+            ),
+        )
+
+        with pytest.raises(McpCredentialRefusedError):
+            await pass_.run()
+
+        assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
 
     async def test_a_tick_that_completed_still_advances_its_mark(self) -> None:
         """The paired positive: only a failure gives the window back."""
@@ -970,3 +1032,130 @@ def test_each_repository_gets_the_probe_its_own_origin_can_answer() -> None:
         delivery_probe_for(FILE_ORIGIN, forge=forge),
         NoForgeDeliveryProbe,
     )
+
+
+class RefusingDispatcher(FireDispatcher):
+    """A dispatcher whose report hop raises, the tracker behind it refusing.
+
+    ``record_run_outcome``'s first act is a tracker read, and a live boot
+    met a server answering every read with a refused credential (KOD-171).
+    Under the fan-out that is one dispatcher raising inside a loop over
+    all of them.
+    """
+
+    async def record_run_outcome(
+        self,
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        raise McpCredentialRefusedError(
+            "unauthorized",
+            server_name="linear",
+            tool_name="get_issue",
+        )
+
+
+async def test_one_dispatcher_refusing_the_report_still_reaches_the_others() -> None:
+    """The fan-out is contained per dispatcher (KOD-276).
+
+    The refusing dispatcher is FIRST in the mapping, so an uncontained
+    loop never reaches the one that actually fired the run — and that one
+    is the only dispatcher whose memory decides whether the issue may be
+    selected again.  Its next pass is the observable: an excluded issue
+    means the news arrived, and a re-fire means it did not.
+    """
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+    queue = FakeJobQueue()
+    refusing = fire_dispatcher(tracker, queue, dispatcher_class=RefusingDispatcher)
+    hearing = fire_dispatcher(tracker, queue)
+    first = await hearing.run_pass()
+    assert first.outcome is DispatchOutcome.fire_enqueued
+    report = fire_report({"repo-refusing": refusing, "repo-hearing": hearing})
+
+    with structlog.testing.capture_logs() as logs:
+        await report("K-1", RunOutcome.FAILED, "RateLimitedSoftFailureError")
+
+    assert [
+        (entry["dispatcher"], entry["issue_key"], entry["error_type"])
+        for entry in logs
+        if entry["event"] == "fire_report_failed"
+    ] == [("repo-refusing", "K-1", "McpCredentialRefusedError")]
+    second = await hearing.run_pass()
+    assert second.outcome is DispatchOutcome.empty_eligible_set
+    assert [
+        (item.issue_key, item.clause, item.detail) for item in second.exclusions
+    ] == [("K-1", ExclusionClause.RUN_FAILED, "RateLimitedSoftFailureError")]
+    assert len(queue.submissions) == 1, "the whole run is not fired again"
+
+
+async def test_a_fan_out_no_dispatcher_refuses_names_no_failure() -> None:
+    """The paired positive: containment is not a silence."""
+    tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+    queue = FakeJobQueue()
+    hearing = fire_dispatcher(tracker, queue)
+    await hearing.run_pass()
+    report = fire_report({"repo-hearing": hearing})
+
+    with structlog.testing.capture_logs() as logs:
+        await report("K-1", RunOutcome.FAILED, "RateLimitedSoftFailureError")
+
+    assert [entry for entry in logs if entry["event"] == "fire_report_failed"] == []
+    second = await hearing.run_pass()
+    assert [item.clause for item in second.exclusions] == [ExclusionClause.RUN_FAILED]
+
+
+#: Every cardinal that could name a member roster's size in prose.  ``one``
+#: is absent on purpose: a comment saying a pass leaves ONE run running is
+#: a statement about the outcome, not a count of the outcomes.
+ROSTER_CARDINALS: Final[frozenset[str]] = frozenset(
+    {
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+    },
+)
+
+
+def _comment_words(module: ModuleType) -> frozenset[str]:
+    """Every word appearing in *module*'s ``#`` comments, lowercased."""
+    source = io.StringIO(inspect.getsource(module))
+    return frozenset(
+        word
+        for token in tokenize.generate_tokens(source.readline)
+        if token.type is tokenize.COMMENT
+        for word in re.findall(r"[a-z]+", token.string.lower())
+    )
+
+
+def test_the_dispatch_pass_comments_count_no_outcome_members() -> None:
+    """The comment states the deciding property, never the roster (KOD-279).
+
+    Measured: the watch-start comment said ``fire_enqueued`` was "the only
+    outcome of the four", and the enum had carried five members since
+    ``winner_blocked`` was added (KOD-173).  A count of another
+    declaration's members is a fact this module does not own — it goes
+    stale silently, and only a sweep sees it, because no behaviour changes
+    when it does.
+    """
+    assert _comment_words(dispatch_pass_module) & ROSTER_CARDINALS == frozenset()
+
+
+def test_the_outcome_enum_counts_its_own_members_nowhere() -> None:
+    """The same defect at its source, where the roster is declared.
+
+    The docstring over the members is where a count is most tempting and
+    least visible: it reads as a definition, and it is the one place the
+    roster is already stated exhaustively by the code beneath it.
+    """
+    docstring = DispatchOutcome.__doc__
+    assert docstring is not None
+    words = frozenset(re.findall(r"[a-z]+", docstring.lower()))
+
+    assert words & ROSTER_CARDINALS == frozenset()

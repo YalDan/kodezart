@@ -1,13 +1,17 @@
 """Tests for shared retry predicate."""
 
 import inspect
-from typing import Final
+import time
+from typing import Final, cast
 
 import pytest
+from langchain_core.runnables import RunnableConfig
 
+from kodezart.composition.engine import rate_limit_delay_floor
 from kodezart.core import retry as retry_module
+from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, soft_failure
-from kodezart.core.retry import should_retry
+from kodezart.core.retry import GraphNode, RetryFloor, should_retry
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.agent import RaiseSite
 
@@ -155,3 +159,126 @@ def test_the_predicate_itself_names_no_soft_failure_class() -> None:
     assert "NoStructuredOutputError" not in source
     assert "RateLimitedSoftFailureError" not in source
     assert "rate_limit_rejected" not in source
+
+
+# ---------------------------------------------------------------------------
+# KOD-195 — the floor a rate-limited attempt waits before the next one
+# ---------------------------------------------------------------------------
+
+#: Long enough that a scheduler hiccup cannot account for it, short enough
+#: that the suite pays it several times without noticing.
+FLOOR_SECONDS: Final[float] = 0.05
+
+#: The floor's own negative: a failure the resolver says nothing about must
+#: reach the policy's back-off at once, so the elapsed time of such an
+#: attempt has to stay well under the floor.
+UNDELAYED_CEILING_SECONDS: Final[float] = FLOOR_SECONDS / 2
+
+
+def _floor_for_rate_limits(exc: Exception) -> float | None:
+    """A resolver of the shape composition supplies, over the domain class."""
+    if isinstance(exc, RateLimitError):
+        return FLOOR_SECONDS
+    return None
+
+
+async def _elapsed_of(node: object, exc_type: type[Exception] | None) -> float:
+    """Drive *node* once and return how long the attempt took."""
+    guarded = cast("GraphNode[str, str]", node)
+    started = time.perf_counter()
+    if exc_type is None:
+        await guarded("state", RunnableConfig())
+    else:
+        with pytest.raises(exc_type):
+            await guarded("state", RunnableConfig())
+    return time.perf_counter() - started
+
+
+async def test_a_failure_carrying_a_floor_waits_it_out_before_the_policy_sees_it() -> (
+    None
+):
+    """The measured defect: sixteen sessions in thirty seconds (KOD-174).
+
+    ``RetryPolicy`` holds ONE interval for every failure it matches, so a
+    provider limit that wants a minute and a dropped connection that wants
+    a second cannot both be expressed there.  The floor rides with the
+    exception instead, and is paid where the exception leaves the node —
+    before the policy's own back-off begins.
+    """
+
+    async def node(state: str, config: RunnableConfig) -> str:
+        raise RateLimitError(state)
+
+    elapsed = await _elapsed_of(
+        RetryFloor(_floor_for_rate_limits)(node), RateLimitError
+    )
+
+    assert elapsed >= FLOOR_SECONDS
+
+
+async def test_a_failure_the_resolver_names_no_floor_for_is_not_delayed() -> None:
+    """The paired negative: the floor is one class's, never every failure's.
+
+    A blanket delay would pace every retry in the graph off a rate limit's
+    clock — a dropped connection would wait a minute to be tried again.
+    """
+
+    async def node(state: str, config: RunnableConfig) -> str:
+        raise ConnectionError(state)
+
+    elapsed = await _elapsed_of(
+        RetryFloor(_floor_for_rate_limits)(node),
+        ConnectionError,
+    )
+
+    assert elapsed < UNDELAYED_CEILING_SECONDS
+
+
+async def test_a_node_that_answers_pays_no_floor_at_all() -> None:
+    """The successful path is untouched — the floor is a failure's price."""
+
+    async def node(state: str, config: RunnableConfig) -> str:
+        return state
+
+    elapsed = await _elapsed_of(RetryFloor(_floor_for_rate_limits)(node), None)
+
+    assert elapsed < UNDELAYED_CEILING_SECONDS
+
+
+async def test_a_wrapper_built_with_no_resolver_delays_nothing() -> None:
+    """The graph's own back-off and nothing more — what an engine gets by default."""
+
+    async def node(state: str, config: RunnableConfig) -> str:
+        raise RateLimitError(state)
+
+    elapsed = await _elapsed_of(RetryFloor(None)(node), RateLimitError)
+
+    assert elapsed < UNDELAYED_CEILING_SECONDS
+
+
+def test_the_floor_resolver_is_compositions_statement_not_this_modules() -> None:
+    """Which classes are a rate limit is a COMPOSITION decision (KOD-195).
+
+    ``core.retry`` decides transience over the domain taxonomy and nothing
+    else — the guard above sweeps it for the soft-failure class names it
+    must not mention — so the mapping from a class to a number of seconds
+    an operator configured is built where the config is read.
+
+    A rejection that states its own retry-after is honoured verbatim: the
+    provider knows when it will answer again, and a configured default
+    would either overrule it or be overruled by it.
+    """
+    config = AppConfig()
+    resolve = rate_limit_delay_floor(config)
+    rejected = soft_failure(
+        "no structured output",
+        raise_site="acceptance_criteria",
+        result_event=None,
+        rate_limit_rejected=True,
+    )
+
+    assert resolve(rejected) == config.retry_rate_limit_floor_seconds
+    assert resolve(RateLimitError("limited", retry_after=12.0)) == 12.0
+    assert resolve(RateLimitError("limited")) == config.retry_rate_limit_floor_seconds
+    assert resolve(ConnectionError("reset")) is None
+    assert resolve(TransientAPIError("blip")) is None

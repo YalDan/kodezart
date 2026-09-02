@@ -163,6 +163,19 @@ class AppConfig(BaseSettings):
         ge=0.1,
         description="Retry backoff initial interval in seconds.",
     )
+    retry_rate_limit_floor_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=3600.0,
+        description=(
+            "Seconds a node attempt that died on a provider rate-limit "
+            "rejection waits before the graph's own back-off begins, when "
+            "the rejection states no retry-after of its own. Measured "
+            "2026-09-01: under one standing limit the retry policy spawned "
+            "around sixteen empty sessions in thirty seconds. The attempt "
+            "budget is unchanged — only the spacing is."
+        ),
+    )
     content_scan_retry_max_attempts: int = Field(
         default=2,
         ge=1,
@@ -397,7 +410,25 @@ class AppConfig(BaseSettings):
         default=30.0,
         ge=5.0,
         le=120.0,
-        description="Timeout for one tracker MCP tool call.",
+        description=(
+            "Timeout the tracker MCP transport gives one HTTP exchange with the server."
+        ),
+    )
+    tracker_mcp_call_timeout_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=120.0,
+        description=(
+            "Seconds one tracker MCP tool call may wait for its answer "
+            "before it is abandoned as the typed transport failure. A "
+            "session torn down mid-call — the shape a refused credential "
+            "arrives in, measured 2026-09-01 (KOD-171) — never sends the "
+            "close its reader is waiting for, so without this bound the "
+            "call in flight waits forever and the pass holding it never "
+            "returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that "
+            "bound is the transport's, on the HTTP exchange; this one is the "
+            "session's, on the wait for one answer."
+        ),
     )
     tracker_mcp_error_detail_limit: int = Field(
         default=500,
@@ -583,6 +614,21 @@ class AppConfig(BaseSettings):
             "workspace must carry different values or they cannot race."
         ),
     )
+    dispatch_rate_limit_cooldown_seconds: float = Field(
+        default=1800.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds the dispatch lane fires nothing after a run dies on a "
+            "provider rate-limit rejection. The limit belongs to the "
+            "account, not to the issue, so the next-ranked candidate would "
+            "meet it unchanged: measured 2026-09-01, a run that died at "
+            "17:57 on a rejection was re-fired whole four minutes later. "
+            "Lifted by the clock alone — nothing on the board clears a rate "
+            "limit — and the lower bound keeps a cooldown longer than the "
+            "tick that would otherwise re-fire."
+        ),
+    )
     tracker_asset_max_count: int = Field(
         default=20,
         ge=1,
@@ -746,8 +792,20 @@ class AppConfig(BaseSettings):
         ge=5.0,
         le=120.0,
         description=(
-            "Timeout for one knowledge MCP tool call on the programmatic "
-            "record path (http transport)."
+            "Timeout the knowledge MCP transport gives one HTTP exchange "
+            "with the server on the programmatic record path."
+        ),
+    )
+    knowledge_mcp_call_timeout_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=120.0,
+        description=(
+            "Seconds one knowledge MCP tool call may wait for its answer "
+            "before it is abandoned as the typed transport failure. The "
+            "same bound the tracker transport carries, on the same "
+            "transport class: a record write on a torn-down session hangs "
+            "the pass holding it exactly as a tracker scan does."
         ),
     )
     knowledge_mcp_error_detail_limit: int = Field(
