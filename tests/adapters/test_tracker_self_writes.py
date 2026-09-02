@@ -79,6 +79,7 @@ async def test_a_write_answered_with_the_issue_records_that_answers_stamp() -> N
         stage=LifecycleStage.DONE,
     )
 
+    assert issue.updated_at > STAMP
     assert ledger.wrote(issue_key=ISSUE, updated_at=issue.updated_at)
 
 
@@ -87,6 +88,9 @@ async def test_a_marker_write_records_the_stamp_a_read_back_finds() -> None:
 
     Every claim, renewal, release, work ref and base spec rides this shape,
     and it is the one the measured boot woke itself on 30 ticks out of 31.
+    What the ledger holds is the stamp the write LEFT — strictly past the
+    one the issue carried before it — so a read placed ahead of the write
+    would record the wrong one and fail here.
     """
     ledger = SelfWriteLedger()
     server = _server()
@@ -95,6 +99,7 @@ async def test_a_marker_write_records_the_stamp_a_read_back_finds() -> None:
     await tracker.record_base_spec(issue_key=ISSUE, spec=trunk_base("main"))
 
     stored = await tracker.read_issue(issue_key=ISSUE)
+    assert stored.updated_at > STAMP
     assert ledger.wrote(issue_key=ISSUE, updated_at=stored.updated_at)
 
 

@@ -157,6 +157,9 @@ def knowledge_grant_for(
 #: with a knowledge server at all.
 NO_KNOWLEDGE_GRANT: KnowledgeGrant = knowledge_grant_for()
 FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+#: How far a write on the fake workspace moves an issue's stamp past
+#: whatever it carried: strictly forward, as the vendor's does (KOD-175).
+FIXTURE_WRITE_STEP: timedelta = timedelta(seconds=1)
 #: The configured team key every fixture issue belongs to, and the one a
 #: fixture operation declares.  A test reaching for an issue OUTSIDE the
 #: declared containers passes its own key — or ``None`` for one whose team
@@ -2291,6 +2294,23 @@ class FakeLinearMcpServer:
             raise LookupError(msg)
         return issue
 
+    def _moved(self, issue_key: str) -> None:
+        """A write moves the issue's stamp strictly forward, as the vendor's does.
+
+        Every issue save and every entry on its comment log — created,
+        edited or deleted — lands on ``updatedAt``.  That movement is what
+        the pass gates read and what the adapter records after its own
+        writes, so a fake that left the stamp where it was could not tell
+        a post-write read from a pre-write one (KOD-175).  An issue the
+        fixture never seeded has no stamp to move.
+        """
+        issue = self.issues.get(issue_key)
+        if issue is None:
+            return
+        issue.updated_at = (
+            max(issue.updated_at, self._next_instant()) + FIXTURE_WRITE_STEP
+        )
+
     def _tool_list_issues(
         self,
         arguments: Mapping[str, object],
@@ -2358,6 +2378,7 @@ class FakeLinearMcpServer:
             assert isinstance(raw_labels, list)
             new_labels = [str(entry) for entry in raw_labels]
             issue.labels = new_labels
+        self._moved(issue.id)
         return issue.wire()
 
     def _tool_save_comment(
@@ -2375,6 +2396,7 @@ class FakeLinearMcpServer:
                     # ``created_at`` survives an edit, which is the whole
                     # property the claim order depends on.
                     existing.body = str(arguments["body"])
+                    self._moved(existing.issue_id)
                     return existing.wire()
             raise KeyError(f"no comment {comment_id} to update")
         created_at = self._next_instant()
@@ -2387,6 +2409,7 @@ class FakeLinearMcpServer:
             created_at=created_at,
         )
         self.comments.append(comment)
+        self._moved(comment.issue_id)
         return comment.wire()
 
     def _tool_get_project(
@@ -2419,7 +2442,10 @@ class FakeLinearMcpServer:
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
         comment_id = str(arguments["id"])
+        deleted = [c for c in self.comments if c.id == comment_id]
         self.comments = [c for c in self.comments if c.id != comment_id]
+        for comment in deleted:
+            self._moved(comment.issue_id)
         return {}
 
     def _tool_get_document(
@@ -2948,6 +2974,7 @@ class FakeTrackerPort:
             created_at=self._clock(),
         )
         self.comments.append(comment)
+        self._wrote(issue_key)
         return comment
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
