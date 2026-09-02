@@ -29,6 +29,7 @@ from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.prompt_rendering import binding_names
 from kodezart.types.domain.prompts import PromptKey
+from tests.fakes import pass_render_variables
 from tests.prompts.test_claude_opus_goldens import V5_SET
 from tests.prompts.test_operation_config import raw_example, write_toml
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
@@ -204,7 +205,9 @@ def rendered(config_path: Path, set_name: str, key: PromptKey) -> str:
     """One pass template, rendered against the config at *config_path*."""
     bindings = dict(bindings_for(load_operation_config(config_path)))
     registry = load_registry(default_set=set_name, bindings=bindings)
-    return registry.template_for(key).render({"skills_reference": ""})
+    return registry.template_for(key).render(
+        {"skills_reference": "", **pass_render_variables(key)},
+    )
 
 
 def written(tmp_path: Path, mutate: Mutation | None = None) -> Path:

@@ -23,6 +23,7 @@ import sys
 import warnings
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
+from datetime import datetime
 
 import structlog
 
@@ -114,7 +115,7 @@ class Exploder:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> PassRun:
+    async def run(self, started_at: datetime) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
         raise RuntimeError(FAILURE)

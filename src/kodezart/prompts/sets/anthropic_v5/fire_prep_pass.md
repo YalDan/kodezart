@@ -45,11 +45,17 @@ report.{{/if}}
 {{pass_mechanisms}}
 
 Record. {{#if records.fire_prep}}When the work is done, write this pass's own row in
-{{records.fire_prep.name}}, the {{records.fire_prep.system}} destination {{records.fire_prep.id}}: this pass's start
-time, what you examined, what you changed, and what you could not do and why. Your row IS
-the run's record and the next pass's window boundary: the runner verifies one exists and
-backfills a bare structural line only when you skipped it, written after the work rather
-than before it — and a pass that changed nothing writes one too, because a gap in the
-record cannot be told apart from a pass that never ran.{{/if}}{{#if records.fire_prep_absent}}No record destination
+{{records.fire_prep.name}}, the {{records.fire_prep.system}} destination {{records.fire_prep.id}}, titled EXACTLY
+
+{{record_title}}
+
+and carrying what you examined, what you changed, and what you could not do and why. That
+title is this run's identity and the string the runner looks your row up by; any other
+title is a row about some other run. Your row IS the run's record and the next pass's
+window boundary — its title carries the start time the next window begins at: the runner
+verifies a row with that title exists and backfills a bare structural line only when you
+skipped it, written after the work rather than before it — and a pass that changed nothing
+writes one too, because a gap in the record cannot be told apart from a pass that never
+ran.{{/if}}{{#if records.fire_prep_absent}}No record destination
 is declared for this pass's kind. Nothing outside the tracker records this pass, and
 nothing is written outside it.{{/if}}

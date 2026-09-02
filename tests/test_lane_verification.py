@@ -16,6 +16,7 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.config import AppConfig
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.prompts import PromptKey
+from tests.fakes import pass_render_variables
 from tests.prompt_census import PROMPT_FUNCTION_COUNT
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -53,7 +54,7 @@ def test_pass_templates_resolve_by_key_under_default_configuration(
     """Both pass templates resolve through the port and render, end to end."""
     registry = default_registry()
     assert registry.resolution_table()[key] == AppConfig().prompt_set
-    rendered = registry.template_for(key).render({})
+    rendered = registry.template_for(key).render(pass_render_variables(key))
     assert rendered
     assert "{{" not in rendered
 

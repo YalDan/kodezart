@@ -74,6 +74,7 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome
 from kodezart.types.domain.tracker import IssuePriority
 from tests.fakes import (
+    FIXTURE_EPOCH,
     FakeDeliveryProbe,
     FakeFireReport,
     FakeGitService,
@@ -83,6 +84,11 @@ from tests.fakes import (
     PassThroughGate,
     make_tracker_issue,
 )
+
+#: What the scheduler hands a tick: the instant its run began.  The
+#: dispatch pass takes it and reads none of it — its outcome is the fire
+#: it starts, and that fire's own run is what gets recorded (KOD-290).
+TICK_STARTED_AT = FIXTURE_EPOCH
 
 APPROVER = "the-approver"
 PRIMARY_REPO = "https://example.invalid/owner/primary"
@@ -287,7 +293,7 @@ async def test_a_delta_runs_the_pass_and_the_work_reaches_the_queue() -> None:
     )
     pass_, queue = tick(tracker)
 
-    assert await pass_.run() is PassRun.RAN
+    assert await pass_.run(TICK_STARTED_AT) is PassRun.RAN
 
     assert [lane for lane, _ in queue.submissions] == [LANE]
     assert tracker.claims["K-1"].holder == HOLDER
@@ -303,7 +309,7 @@ async def test_a_quiet_board_never_wakes_the_dispatcher() -> None:
     )
     pass_, queue = tick(tracker)
 
-    assert await pass_.run() is PassRun.SKIPPED
+    assert await pass_.run(TICK_STARTED_AT) is PassRun.SKIPPED
 
     assert queue.submissions == []
     assert tracker.claims == {}
@@ -376,7 +382,7 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
     )
 
     with pytest.raises(RuntimeError, match=absent_field):
-        await pass_.run()
+        await pass_.run(TICK_STARTED_AT)
 
     assert lifecycle.following == frozenset()
 
@@ -471,7 +477,7 @@ class TestAFailedPassGivesTheWakeUpBack:
         pass_, guard, _ = failing_tick(tracker)
 
         with pytest.raises(TimeoutError):
-            await pass_.run()
+            await pass_.run(TICK_STARTED_AT)
 
         assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
 
@@ -482,7 +488,7 @@ class TestAFailedPassGivesTheWakeUpBack:
 
         for _ in range(2):
             with pytest.raises(TimeoutError):
-                await pass_.run()
+                await pass_.run(TICK_STARTED_AT)
 
         assert dispatcher.calls == 2, "the second tick reached the pass again"
         assert [scan.updated_since for scan in tracker.scans] == [None, None]
@@ -506,7 +512,7 @@ class TestAFailedPassGivesTheWakeUpBack:
         )
 
         with pytest.raises(McpCredentialRefusedError):
-            await pass_.run()
+            await pass_.run(TICK_STARTED_AT)
 
         assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
 
@@ -515,11 +521,11 @@ class TestAFailedPassGivesTheWakeUpBack:
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         pass_, queue = tick(tracker)
 
-        await pass_.run()
+        await pass_.run(TICK_STARTED_AT)
 
         assert len(queue.submissions) == 1
         assert tracker.scans[-1].updated_since is None
-        await pass_.run()
+        await pass_.run(TICK_STARTED_AT)
         assert tracker.scans[-1].updated_since is not None
 
     async def test_a_tick_cancelled_on_its_budget_keeps_its_window_too(
@@ -536,7 +542,10 @@ class TestAFailedPassGivesTheWakeUpBack:
         pass_, guard, dispatcher = failing_tick(tracker, block=asyncio.Event())
 
         with pytest.raises(TimeoutError):
-            await asyncio.wait_for(pass_.run(), timeout=SETTLE_DELAY_SECONDS)
+            await asyncio.wait_for(
+                pass_.run(TICK_STARTED_AT),
+                timeout=SETTLE_DELAY_SECONDS,
+            )
 
         assert dispatcher.calls == 1, "the pass was entered and then abandoned"
         assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
@@ -548,10 +557,10 @@ async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:
         issues=[make_tracker_issue("K-1")],
     )
     pass_, queue = tick(tracker)
-    await pass_.run()
+    await pass_.run(TICK_STARTED_AT)
     scans_after_work = len(tracker.scans)
 
-    await pass_.run()
+    await pass_.run(TICK_STARTED_AT)
 
     assert len(tracker.scans) == scans_after_work + 1
     assert len(queue.submissions) == 1
@@ -626,8 +635,8 @@ async def test_an_issue_only_fires_into_the_repository_its_team_is_bound_to() ->
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
-    await built.passes[1].run()
+    await built.passes[0].run(TICK_STARTED_AT)
+    await built.passes[1].run(TICK_STARTED_AT)
 
     # The body is what identifies the issue inside the fire: it is the one
     # part of the request that came from the ticket the pass claimed.
@@ -770,7 +779,7 @@ async def test_a_pass_the_root_built_dispatches_the_repository_it_names() -> Non
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
+    await built.passes[0].run(TICK_STARTED_AT)
 
     assert len(queue.submissions) == 1
     lane, request = queue.submissions[0]
@@ -818,7 +827,7 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
+    await built.passes[0].run(TICK_STARTED_AT)
     # The write-back runs in a background watch, so the test waits for the
     # terminal chain it asserts on: the DONE transition, then the comment
     # that ``LifecycleWatcher`` posts after it.
@@ -881,11 +890,11 @@ async def test_a_run_that_died_is_reported_into_the_pass_that_fired_it() -> None
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
+    await built.passes[0].run(TICK_STARTED_AT)
     with structlog.testing.capture_logs() as logs:
         await built.lifecycle.drain()
         queue.mark("job-0001", JobState.TERMINAL)
-        await built.passes[0].run()
+        await built.passes[0].run(TICK_STARTED_AT)
 
     assert queue.attached == ["job-0001"]
     assert len(queue.submissions) == 1, "the whole run is not fired again"
@@ -950,11 +959,11 @@ async def test_a_rate_limit_in_one_repositorys_pass_stops_the_other_repositorys(
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
+    await built.passes[0].run(TICK_STARTED_AT)
     with structlog.testing.capture_logs() as logs:
         await built.lifecycle.drain()
         queue.mark("job-0001", JobState.TERMINAL)
-        await built.passes[1].run()
+        await built.passes[1].run(TICK_STARTED_AT)
 
     assert len(queue.submissions) == 1, "the second repository fired nothing"
     assert [
@@ -1003,10 +1012,10 @@ async def test_a_crashed_run_in_one_repository_leaves_the_other_firing() -> None
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
+    await built.passes[0].run(TICK_STARTED_AT)
     await built.lifecycle.drain()
     queue.mark("job-0001", JobState.TERMINAL)
-    await built.passes[1].run()
+    await built.passes[1].run(TICK_STARTED_AT)
 
     assert [request.repo_url for _, request in queue.submissions] == [
         PRIMARY_REPO,
@@ -1061,7 +1070,7 @@ async def test_the_pass_threads_the_claimed_boards_posture_to_the_watch() -> Non
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
+    await built.passes[0].run(TICK_STARTED_AT)
     await settled(lambda: bool(tracker.comments))
 
     assert [
@@ -1126,7 +1135,7 @@ async def test_a_pass_over_a_forge_less_origin_completes_its_tick() -> None:
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
+    await built.passes[0].run(TICK_STARTED_AT)
 
     assert len(queue.submissions) == 1
     _, request = queue.submissions[0]
@@ -1155,7 +1164,7 @@ async def test_a_pass_over_a_forge_shaped_origin_still_asks_the_forge() -> None:
         integration_workspace_dir=INTEGRATION_DIR,
     )
 
-    await built.passes[0].run()
+    await built.passes[0].run(TICK_STARTED_AT)
 
     assert forge.calls == ["K-1"]
     assert len(queue.submissions) == 1

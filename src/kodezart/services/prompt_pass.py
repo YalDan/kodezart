@@ -27,6 +27,7 @@ whether a terminal result arrived, and how long the pass took.
 
 import asyncio
 from collections import Counter
+from datetime import datetime
 
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
@@ -34,15 +35,30 @@ from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.agent import ErrorEvent, ResultEvent
 from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
 _log: BoundLogger = get_logger(__name__)
 
 
+def pass_render_bindings(identity: RunIdentity) -> dict[str, object]:
+    """The per-call namespace every rendering of a pass prompt binds.
+
+    One function because there are two renderers of these templates — the
+    tick, and the boot preflight that proves they resolve — and a template
+    the preflight rendered with a name the tick does not bind would pass
+    boot and refuse on the first interval.
+    """
+    return {"record_title": identity.title()}
+
+
 async def run_prompt_pass(
+    started_at: datetime,
     *,
+    kind: RunKind,
     key: PromptKey,
     prompts: PromptSetProvider,
     runner: AgentRunner,
@@ -95,6 +111,14 @@ async def run_prompt_pass(
     session that was supposed to work that window never ran, so the marks
     go back and the next tick asks again.  A cancelled tick is the same
     case — a timed-out pass may not eat a wake-up either.
+
+    *started_at* and *kind* are this run's identity, and the only thing
+    this function does with them is put the row title they spell into the
+    render.  The session's Record clause then prescribes the EXACT string
+    the runner will look for, off :meth:`RunIdentity.title` rather than a
+    second spelling of it — a clause prescribing no title left every
+    session-written row invisible to a runner matching per run, which
+    backfilled a second row beside each one (KOD-290).
     """
     loop = asyncio.get_running_loop()
     started = loop.time()
@@ -105,7 +129,8 @@ async def run_prompt_pass(
     failure: ErrorEvent | None = None
     result_observed = False
     try:
-        prompt = prompts.template_for(key).render({})
+        identity = RunIdentity(kind=kind, name=key.value, started_at=started_at)
+        prompt = prompts.template_for(key).render(pass_render_bindings(identity))
         async for event in runner.stream_in_workspace(
             prompt=prompt,
             workspace_path=workspace_path,

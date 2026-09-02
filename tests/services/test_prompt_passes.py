@@ -37,11 +37,18 @@ from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
     QueueState,
+    RecordDestination,
     RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import (
+    RunOutcome,
+    RunRecord,
+    RunRecordResult,
+)
 from kodezart.types.domain.session import SessionType
 from tests.fakes import (
+    FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
     FakeAgentRunner,
     FakeJobQueue,
@@ -404,7 +411,7 @@ async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
         for entry in runtime.scheduler.passes
         if entry.name == PromptKey.FIRE_PREP_PASS.value
     )
-    await fire_prep.run()
+    await fire_prep.run(FIXTURE_EPOCH)
 
     assert len(runner.calls) == 1
 
@@ -782,7 +789,7 @@ async def test_a_deployment_with_no_store_wires_both_passes_and_records_nothing(
         PromptKey.GROOMING_PASS.value,
     }
     for entry in runtime.scheduler.passes:
-        await entry.run()
+        await entry.run(FIXTURE_EPOCH)
     assert len(runner.calls) == len(runtime.scheduler.passes)
     for call in runner.calls:
         prompt = str(call["prompt"])
@@ -823,3 +830,140 @@ async def test_adding_a_pass_is_a_table_row(tmp_path: Path) -> None:
         FIRE_PREP_INTERVAL,
         GROOMING_INTERVAL,
     ]
+
+
+def prescribed_title(prompt: str) -> str:
+    """The row title the rendered Record clause told the session to use."""
+    _, marker, tail = prompt.partition("titled EXACTLY")
+    assert marker, "the Record clause prescribes no title"
+    return tail.strip().splitlines()[0]
+
+
+class SessionWrittenLog:
+    """The declared destination as it stands after a SESSION wrote its row.
+
+    Rows are held by TITLE alone, because a title is the whole of what a
+    destination can be asked about a row somebody else wrote: the runner
+    looks its run up by the one string that spells the run's identity, and
+    whatever prose the session put under that title is not this
+    obligation's business (KOD-290).
+    """
+
+    def __init__(self, titles: list[str]) -> None:
+        self.titles: list[str] = titles
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        return record.title() in self.titles
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        self.titles.append(record.title())
+
+
+class TestTheClauseAndTheRunnerNameOneRow:
+    """One declaration, two readers — the session's and the runner's.
+
+    Measured at ``00416e1``: the Record clause prescribed no title at all,
+    so once verification became per-run and exact (KOD-288) every
+    session-written row was invisible to the runner, which backfilled a
+    second row beside it on every pass.  The prompt now carries the exact
+    string the runner will look for, rendered from the same run identity.
+    """
+
+    KIND = RunKind.FIRE_PREP
+    KEY = PromptKey.FIRE_PREP_PASS
+
+    @staticmethod
+    async def _prompt_of_one_run(tmp_path: Path) -> str:
+        """Run the shipped fire-prep pass once and take the prompt it sent."""
+        operation = example_config()
+        tracker = FakeTrackerPort(
+            issues=[
+                make_tracker_issue(
+                    "FIX-1",
+                    team_key=operation.team_keys()[0],
+                    queue_states=[QueueState.TRIAGE],
+                ),
+            ],
+        )
+        runner = FakeAgentRunner(events=[])
+        runtime = await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=runner,
+            prompt_set=V5_SET,
+        )
+        entry = next(
+            item
+            for item in runtime.scheduler.passes
+            if item.name == PromptKey.FIRE_PREP_PASS.value
+        )
+        await entry.run(FIXTURE_EPOCH)
+        return str(runner.calls[0]["prompt"])
+
+    @staticmethod
+    def _recorder(sink: SessionWrittenLog) -> RunRecorder:
+        records = example_config().records
+        return RunRecorder(
+            records=records,
+            sinks={records["fire_prep"].system: sink},
+        )
+
+    def _record(self) -> RunRecord:
+        return RunRecord(
+            kind=self.KIND,
+            name=self.KEY.value,
+            outcome=RunOutcome.COMPLETED,
+            duration_seconds=1.0,
+            started_at=FIXTURE_EPOCH,
+            recorded_at=FIXTURE_EPOCH,
+        )
+
+    async def test_the_clause_prescribes_the_title_the_runner_verifies_by(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        prompt = await self._prompt_of_one_run(tmp_path)
+
+        assert prescribed_title(prompt) == self._record().title()
+
+    async def test_a_row_titled_as_prescribed_is_verified_and_not_backfilled(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        prompt = await self._prompt_of_one_run(tmp_path)
+        log = SessionWrittenLog([prescribed_title(prompt)])
+
+        result = await self._recorder(log).record(self._record())
+
+        assert result is RunRecordResult.VERIFIED
+        assert len(log.titles) == 1, "the runner wrote no second row"
+
+    async def test_a_row_titled_any_other_way_leaves_the_run_unrecorded(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The paired negative, and the shape the measured defect produced.
+
+        A session that titles its row its own way has written about this
+        run and said so nowhere the runner can read, so the runner
+        backfills — and the log then holds two rows for one run, which is
+        what every live pass produced before the clause carried the title.
+        """
+        prompt = await self._prompt_of_one_run(tmp_path)
+        other = f"{prescribed_title(prompt)} (grooming notes)"
+        log = SessionWrittenLog([other])
+
+        result = await self._recorder(log).record(self._record())
+
+        assert result is RunRecordResult.WRITTEN
+        assert log.titles == [other, self._record().title()]

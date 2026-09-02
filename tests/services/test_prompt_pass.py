@@ -25,6 +25,7 @@ import pytest
 import structlog.testing
 
 from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
@@ -165,6 +166,8 @@ async def run(
     skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
 ) -> PassRun:
     return await run_prompt_pass(
+        FIXTURE_EPOCH,
+        kind=RECORD_KIND_BY_PASS[key],
         key=key,
         prompts=prompts,
         runner=runner,

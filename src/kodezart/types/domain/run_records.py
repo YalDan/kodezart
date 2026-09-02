@@ -72,6 +72,31 @@ class RunRecordFailure(StrEnum):
     SINK_UNWIRED = "sink_unwired"
 
 
+class RunIdentity(BaseModel):
+    """WHICH run this is — the three facts a row about it is found by.
+
+    Stamped before the run begins, because one of the three is when it
+    began: the scheduler takes the instant, and the pass it drives carries
+    the kind and the name.  It exists apart from :class:`RunRecord`
+    because the identity is known at the START and the record only at the
+    end — and the prompt the run is sent as has to prescribe the row's
+    title while the run is still going (KOD-290).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: RunKind
+    name: str
+    started_at: datetime
+
+    def title(self) -> str:
+        """The one string that spells all three, for every reader of it."""
+        return (
+            f"{self.kind.value} — {self.name} @ "
+            f"{self.started_at.strftime(_STAMP_FORMAT)}"
+        )
+
+
 class RunRecord(BaseModel):
     """One run, as its runner measured it.
 
@@ -92,19 +117,26 @@ class RunRecord(BaseModel):
     started_at: datetime
     recorded_at: datetime
 
+    def identity(self) -> RunIdentity:
+        """Which run this record is OF, as the run's own prompt knew it."""
+        return RunIdentity(
+            kind=self.kind,
+            name=self.name,
+            started_at=self.started_at,
+        )
+
     def title(self) -> str:
         """What identifies THIS run, wherever a row about it is written.
 
         Declared once and read twice: the runner verifies a destination by
         it and writes it, and the rendered Record clause prescribes the
-        same string to the session that writes its own row.  Two spellings
-        of one run are two rows, which is the whole of what the measured
-        substring match could not tell apart (KOD-288).
+        same string to the session that writes its own row — the SAME
+        method, off the same identity, so the two cannot spell one run two
+        ways (KOD-288, KOD-290).  Two spellings of one run are two rows,
+        which is the whole of what the measured substring match could not
+        tell apart.
         """
-        return (
-            f"{self.kind.value} — {self.name} @ "
-            f"{self.started_at.strftime(_STAMP_FORMAT)}"
-        )
+        return self.identity().title()
 
     def line(self) -> str:
         """The one-line rendering every sink writes, vendor-agnostic.

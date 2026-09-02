@@ -54,6 +54,9 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "changeset_has_commits",
         "content",
         "destination",
+        # The row title a scheduled pass's own record must carry: per call
+        # because it spells the instant that run began (KOD-290).
+        "record_title",
     }
 )
 

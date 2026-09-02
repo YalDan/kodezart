@@ -6,6 +6,7 @@ than defines.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 
@@ -40,7 +41,7 @@ from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
-from kodezart.services.prompt_pass import run_prompt_pass
+from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
@@ -51,7 +52,7 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.run_records import RunOutcome
+from kodezart.types.domain.run_records import RunIdentity, RunOutcome
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
@@ -171,9 +172,19 @@ def _assert_renders(*, key: PromptKey, prompts: PromptSetProvider) -> None:
     exists at all.  The refusal carries the same type and the same
     ``missing`` list a tick would raise, with the pass named in the message
     because a boot wiring several of them owes an operator that.
+
+    Bound the way a TICK binds, off the identity a run beginning at this
+    instant would carry: the render a boot proves has to be the render a
+    pass will actually make, or the two namespaces differ and boot proves
+    the wrong one (KOD-290).
     """
+    identity = RunIdentity(
+        kind=_record_kind_for(key),
+        name=key.value,
+        started_at=datetime.now(UTC),
+    )
     try:
-        prompts.template_for(key).render({})
+        prompts.template_for(key).render(pass_render_bindings(identity))
     except PromptRenderError as error:
         msg = (
             f"scheduled pass {key.value} cannot render from this operation "
@@ -310,6 +321,11 @@ async def build_prompt_passes(
             timeout_seconds=row.timeout_seconds,
             run=partial(
                 run_prompt_pass,
+                # The record identity's other two thirds, read from the same
+                # two pure functions of the key the report below reads, so
+                # the title the session is given and the title the runner
+                # verifies by are one string (KOD-290).
+                kind=_record_kind_for(key),
                 key=key,
                 prompts=prompts,
                 runner=runner,

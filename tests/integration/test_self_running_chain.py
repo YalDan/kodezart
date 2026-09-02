@@ -41,6 +41,7 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
+    FIXTURE_EPOCH,
     FakeDeliveryProbe,
     FakeGitService,
     FakeRepoCache,
@@ -108,6 +109,10 @@ class _MergingEngine:
         )
 
 
+#: The stamp the scheduler hands every tick — the instant the run began.
+TICK_STARTED_AT = FIXTURE_EPOCH
+
+
 async def _until(condition: object, *, timeout: float = SETTLE_TIMEOUT) -> None:
     """Yield to the loop until *condition* holds, or fail on a real clock.
 
@@ -160,7 +165,7 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
             integration_workspace_dir=INTEGRATION_DIR,
         )
 
-        await built.passes[0].run()
+        await built.passes[0].run(TICK_STARTED_AT)
 
         # 1. the claim was granted, to this deployment's configured holder.
         #    Read while the run is in flight, which is the whole window the
@@ -230,7 +235,7 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
             integration_workspace_dir=INTEGRATION_DIR,
         )
 
-        await built.passes[0].run()
+        await built.passes[0].run(TICK_STARTED_AT)
         for _ in range(64):
             await asyncio.sleep(0)
 
@@ -303,7 +308,7 @@ async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
             integration_workspace_dir=INTEGRATION_DIR,
         )
 
-        await built.passes[0].run()
+        await built.passes[0].run(TICK_STARTED_AT)
         await _until(lambda: bool(tracker.comments))
 
         # 1. the lifecycle still walked forward while the run was live

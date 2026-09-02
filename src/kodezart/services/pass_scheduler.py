@@ -61,10 +61,16 @@ class ScheduledPass:
     name: str
     interval_seconds: float
     timeout_seconds: float
-    #: The tick itself, which SAYS whether it ran: a pass whose gate found
-    #: nothing opened no session, so it produced no run for this scheduler
-    #: to report on (KOD-176).
-    run: Callable[[], Awaitable[PassRun]]
+    #: The tick itself, taking the instant its run BEGAN and saying whether
+    #: it ran: a pass whose gate found nothing opened no session, so it
+    #: produced no run for this scheduler to report on (KOD-176).
+    #:
+    #: The stamp is the scheduler's half of the run's identity, and it is
+    #: the same value the report is given.  A tick that could not be told
+    #: when it began could not prescribe the title its own record will be
+    #: found by, so a session's row and the runner's spelled one run two
+    #: ways (KOD-290).
+    run: Callable[[datetime], Awaitable[PassRun]]
     #: Where this pass's outcome is reported after every tick, or ``None``
     #: for a pass that records nowhere BY DESIGN — the dispatch scans,
     #: whose outcome is the fire they start.  The two judgment passes are
@@ -158,7 +164,7 @@ class PassScheduler:
         budget = asyncio.timeout(entry.timeout_seconds)
         try:
             async with budget:
-                ran = await entry.run()
+                ran = await entry.run(started_at)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

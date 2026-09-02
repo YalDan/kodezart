@@ -17,6 +17,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.core.errors import (
     McpCredentialRefusedError,
     McpTransportError,
@@ -38,6 +39,7 @@ from kodezart.domain.errors import (
     WorkspaceError,
 )
 from kodezart.domain.trajectory import fold_trajectory
+from kodezart.services.prompt_pass import pass_render_bindings
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -86,7 +88,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.run_records import RunOutcome, RunRecord
+from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -174,6 +176,28 @@ def knowledge_grant_for(
 #: with a knowledge server at all.
 NO_KNOWLEDGE_GRANT: KnowledgeGrant = knowledge_grant_for()
 FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def fixture_run_identity(key: PromptKey) -> RunIdentity:
+    """Which run a fixture render of *key*'s pass template is FOR.
+
+    A pass template's Record clause prescribes the row title the runner
+    verifies by, and that title spells the run's own identity — so a case
+    rendering one of these templates supplies the identity exactly as the
+    tick does, off the same key-to-kind map composition reads (KOD-290).
+    """
+    return RunIdentity(
+        kind=RECORD_KIND_BY_PASS[key],
+        name=key.value,
+        started_at=FIXTURE_EPOCH,
+    )
+
+
+def pass_render_variables(key: PromptKey) -> dict[str, object]:
+    """The per-call namespace a render of *key*'s pass template binds."""
+    return pass_render_bindings(fixture_run_identity(key))
+
+
 #: How far a write on the fake workspace moves an issue's stamp past
 #: whatever it carried: strictly forward, as the vendor's does (KOD-175).
 FIXTURE_WRITE_STEP: timedelta = timedelta(seconds=1)

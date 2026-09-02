@@ -80,7 +80,7 @@ class Recorder:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> PassRun:
+    async def run(self, started_at: datetime) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
         return PassRun.RAN
@@ -97,7 +97,7 @@ class Skipper:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> PassRun:
+    async def run(self, started_at: datetime) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
         return PassRun.SKIPPED
@@ -109,7 +109,7 @@ class Exploder:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> PassRun:
+    async def run(self, started_at: datetime) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
         msg = "the pass could not reach the tracker"
@@ -127,7 +127,7 @@ class CredentialRefuser:
     def __init__(self) -> None:
         self.calls: int = 0
 
-    async def run(self) -> PassRun:
+    async def run(self, started_at: datetime) -> PassRun:
         await asyncio.sleep(0)
         self.calls += 1
         raise McpCredentialRefusedError(
@@ -187,7 +187,7 @@ class Sleeper:
         self.calls: int = 0
         self.cancelled: int = 0
 
-    async def run(self) -> PassRun:
+    async def run(self, started_at: datetime) -> PassRun:
         self.calls += 1
         try:
             await asyncio.Event().wait()

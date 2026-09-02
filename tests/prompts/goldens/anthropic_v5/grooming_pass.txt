@@ -37,12 +37,18 @@ need to the destination that holds that kind of content. Nothing read there reac
 public surface.
 
 Record. When the work is done, write this pass's own row in
-Example Grooming Log, the knowledge destination example-grooming-log-destination-id: this pass's start
-time, what you examined, what you changed, and what you could not do and why. Your row IS
-the run's record and the next pass's window boundary: the runner verifies one exists and
-backfills a bare structural line only when you skipped it, written after the work rather
-than before it — and a pass that changed nothing writes one too, because a gap in the
-record cannot be told apart from a pass that never ran.
+Example Grooming Log, the knowledge destination example-grooming-log-destination-id, titled EXACTLY
+
+grooming — grooming_pass @ 2026-01-01T00:00:00Z
+
+and carrying what you examined, what you changed, and what you could not do and why. That
+title is this run's identity and the string the runner looks your row up by; any other
+title is a row about some other run. Your row IS the run's record and the next pass's
+window boundary — its title carries the start time the next window begins at: the runner
+verifies a row with that title exists and backfills a bare structural line only when you
+skipped it, written after the work rather than before it — and a pass that changed nothing
+writes one too, because a gap in the record cannot be told apart from a pass that never
+ran.
 
 Ultrathink. Deeper reasoning is requested for this work — reason as thoroughly
 as the task warrants before you act.

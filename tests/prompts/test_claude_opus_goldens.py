@@ -38,6 +38,7 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.config import AppConfig
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.types.domain.prompts import PromptKey
+from tests.fakes import pass_render_variables
 from tests.prompts.test_prompt_wiring import (
     DEFAULT_SET,
     GOLDEN_CASES,
@@ -69,8 +70,14 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         {"content": AUDITED_PAYLOAD, "destination": AUDIT_DESTINATION},
     ),
     "knowledge_map": (PromptKey.KNOWLEDGE_MAP, {}),
-    "fire_prep_pass": (PromptKey.FIRE_PREP_PASS, {}),
-    "grooming_pass": (PromptKey.GROOMING_PASS, {}),
+    "fire_prep_pass": (
+        PromptKey.FIRE_PREP_PASS,
+        pass_render_variables(PromptKey.FIRE_PREP_PASS),
+    ),
+    "grooming_pass": (
+        PromptKey.GROOMING_PASS,
+        pass_render_variables(PromptKey.GROOMING_PASS),
+    ),
     "remediation_ticket": (
         PromptKey.REMEDIATION_TICKET,
         {

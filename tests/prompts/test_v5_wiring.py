@@ -11,6 +11,7 @@ authoring but not rendering protects nothing.
 """
 
 import tomllib
+from datetime import timedelta
 
 import pytest
 
@@ -22,7 +23,9 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.prompt_rendering import free_binding_names
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.ticket_review import TicketReviewMode
+from tests.fakes import fixture_run_identity, pass_render_variables
 from tests.prompts.style_detectors import (
     artifact_tag_names,
     data_boundary_sentences,
@@ -211,3 +214,68 @@ def test_the_critique_hands_the_critic_the_task_the_content_and_the_draft() -> N
         "This critique is the only review this ticket receives; it is not optional."
         in rendered
     )
+
+
+# ---------------------------------------------------------------------------
+# KOD-290 — the Record clause prescribes the runner's own title
+# ---------------------------------------------------------------------------
+
+PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+
+
+@pytest.mark.parametrize("key", PASS_KEYS)
+def test_the_record_clause_names_the_title_the_runner_will_verify_by(
+    key: PromptKey,
+) -> None:
+    """One declaration, two readers: the session's row and the runner's.
+
+    The rendered clause carries the run's title and the runner looks the
+    run up by ``RunRecord.title`` — both off the same identity, and the
+    comparison here is against that method rather than against a copy of
+    the format, so a change to the spelling that reached only one of them
+    reds.  Measured at ``00416e1``: the clause prescribed no title, and a
+    per-run verification then saw no session's row at all.
+    """
+    identity = fixture_run_identity(key)
+    rendered = (
+        v5_registry()
+        .template_for(key)
+        .render(
+            {"skills_reference": "", **pass_render_variables(key)},
+        )
+    )
+    record = RunRecord(
+        kind=identity.kind,
+        name=identity.name,
+        outcome=RunOutcome.COMPLETED,
+        duration_seconds=1.0,
+        started_at=identity.started_at,
+        recorded_at=identity.started_at,
+    )
+
+    assert f"titled EXACTLY\n\n{record.title()}\n" in rendered
+
+
+@pytest.mark.parametrize("key", PASS_KEYS)
+def test_no_other_runs_title_reaches_the_clause(key: PromptKey) -> None:
+    """The paired negative: the clause is about THIS run and no other.
+
+    A title differing only in the instant is a different run's row, and a
+    clause carrying it would send the session to write where the runner
+    will not look.
+    """
+    identity = fixture_run_identity(key)
+    neighbour = RunIdentity(
+        kind=identity.kind,
+        name=identity.name,
+        started_at=identity.started_at + timedelta(minutes=1),
+    )
+    rendered = (
+        v5_registry()
+        .template_for(key)
+        .render(
+            {"skills_reference": "", **pass_render_variables(key)},
+        )
+    )
+
+    assert neighbour.title() not in rendered
