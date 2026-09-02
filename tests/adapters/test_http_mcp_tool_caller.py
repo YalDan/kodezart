@@ -738,7 +738,10 @@ class _FakeStreamableServer:
 
     With ``hold_calls`` every tool call is held at the server until the
     case sets ``release``: the state a call is in while its waiter's own
-    budget runs out, and while a second worker's call joins it.
+    budget runs out, and while a second worker's call joins it.  With
+    ``hold_reopens`` every handshake after the boot's is held until the
+    case sets ``release_reopen``: the state a reopen is in while another
+    worker's call arrives (KOD-300).
     """
 
     def __init__(
@@ -746,12 +749,18 @@ class _FakeStreamableServer:
         *,
         initialize_status: HTTPStatus = HTTPStatus.OK,
         on_call: _CallBehaviour = _CallBehaviour.ANSWERS,
+        unwell_status: HTTPStatus = HTTPStatus.BAD_GATEWAY,
         hold_calls: bool = False,
+        hold_reopens: bool = False,
     ) -> None:
         self.initialize_status = initialize_status
         self._on_call = on_call
+        #: What ``UNWELL_ONCE`` answers the first tool call with.
+        self._unwell_status = unwell_status
         self._hold_calls = hold_calls
+        self._hold_reopens = hold_reopens
         self.release: asyncio.Event = asyncio.Event()
+        self.release_reopen: asyncio.Event = asyncio.Event()
         self.calls: list[str] = []
         #: Every JSON-RPC method the endpoint was asked, tool calls and
         #: handshakes alike — what "nothing was dialled" is read off.
@@ -765,6 +774,8 @@ class _FakeStreamableServer:
         method = message.get("method")
         self.requests.append(str(method))
         if method == "initialize":
+            if self._hold_reopens and self.requests.count("initialize") > 1:
+                await self.release_reopen.wait()
             if self.initialize_status is not HTTPStatus.OK:
                 return httpx.Response(status_code=self.initialize_status, json={})
             return self._frame(
@@ -791,7 +802,7 @@ class _FakeStreamableServer:
         ):
             raise httpx.ReadError("the server dropped the stream mid-call")
         if self._on_call is _CallBehaviour.UNWELL_ONCE and first_call:
-            return httpx.Response(status_code=HTTPStatus.BAD_GATEWAY, json={})
+            return httpx.Response(status_code=self._unwell_status, json={})
         if self._on_call is _CallBehaviour.REFUSES:
             return self._error_frame(message["id"])
         return self._frame(
@@ -1323,14 +1334,30 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         assert [log["event"] for log in logs].count("mcp_session_reopened") == 1
         await caller.close()
 
-    async def test_one_transient_status_does_not_end_the_caller(self) -> None:
-        """A 502 on one tool call, and the boot goes on.
+    @pytest.mark.parametrize(
+        "status",
+        [
+            HTTPStatus.TOO_MANY_REQUESTS,
+            HTTPStatus.BAD_GATEWAY,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+        ],
+    )
+    async def test_one_transient_status_does_not_end_the_caller(
+        self,
+        status: HTTPStatus,
+    ) -> None:
+        """One vendor status on one tool call, and the boot goes on.
 
         The status ends the session under the SDK, so before the reopen
         this call raised the closed-session class and every call after it
-        raised too — a whole boot's dispatch lost to one bad gateway.
+        raised too — a whole boot's dispatch lost to one bad gateway.  The
+        three statuses a live vendor answers a transient with, because the
+        SDK ends the session on any of them alike.
         """
-        server = _FakeStreamableServer(on_call=_CallBehaviour.UNWELL_ONCE)
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.UNWELL_ONCE,
+            unwell_status=status,
+        )
         caller = caller_fixture(client_factory=client_over(server.transport))
         await caller.open()
 
@@ -1364,13 +1391,11 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         no session is a call away from having one, so an outage that
         clears is recovered from without a boot.
         """
-        server = _FakeStreamableServer(
-            on_call=_CallBehaviour.DROPS,
-            initialize_status=HTTPStatus.BAD_GATEWAY,
-        )
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
         caller = caller_fixture(client_factory=client_over(server.transport))
-        caller._phase = _Phase.ENDED
-        with pytest.raises(McpSessionClosedError):
+        await caller.open()
+        server.initialize_status = HTTPStatus.BAD_GATEWAY
+        with pytest.raises(McpSessionClosedError, match="could not be reopened"):
             await caller.call_tool(name="get_issue", arguments={})
         server.initialize_status = HTTPStatus.OK
         server._on_call = _CallBehaviour.ANSWERS
@@ -1380,22 +1405,57 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         assert result == {"id": "K-1"}
         await caller.close()
 
-    async def test_a_refused_credential_reopens_nothing(self) -> None:
+    async def test_a_closed_caller_whose_reopen_had_failed_dials_nothing(
+        self,
+    ) -> None:
+        """The paired negative: out of service is out of service.
+
+        A caller whose last reopen failed holds no host, and the shutdown
+        finds nothing to join — it still ends the caller, so a straggler's
+        call after it refuses by name rather than reopening a session
+        nobody will close.
+        """
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        before = asyncio.all_tasks()
+        await caller.open()
+        server.initialize_status = HTTPStatus.BAD_GATEWAY
+        with pytest.raises(McpSessionClosedError, match="could not be reopened"):
+            await caller.call_tool(name="get_issue", arguments={})
+        await caller.close()
+        server.initialize_status = HTTPStatus.OK
+        server._on_call = _CallBehaviour.ANSWERS
+        dialled = len(server.requests)
+
+        with pytest.raises(McpTransportError, match="not open"):
+            await caller.call_tool(name="list_issues", arguments={})
+
+        assert len(server.requests) == dialled, "a closed caller dialled the server"
+        assert await _settled(before) == set()
+
+    async def test_a_refused_credential_at_reopen_ends_the_reopening(self) -> None:
         """No fresh session mints a new token, so none is dialled for one.
 
-        The caller is in the state a mid-session 401 leaves it in: the
-        session ended and the refusal is latched.  A reopen here would
-        present the same token to the same refusal every call, forever.
+        The reopen meets the 401 a mid-session refusal answers with: the
+        call is told the credential class, the refusal is latched, and the
+        next call presents nothing — a reopen there would present the same
+        token to the same refusal every call, forever.
         """
-        server = _FakeStreamableServer()
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
         caller = caller_fixture(client_factory=client_over(server.transport))
-        caller._phase = _Phase.ENDED
-        caller._credential_refused = True
-
+        before = asyncio.all_tasks()
+        await caller.open()
+        server.initialize_status = HTTPStatus.UNAUTHORIZED
         with pytest.raises(McpCredentialRefusedError):
             await caller.call_tool(name="get_issue", arguments={})
+        dialled = len(server.requests)
 
-        assert server.requests == [], "no session was dialled at all"
+        with pytest.raises(McpCredentialRefusedError):
+            await caller.call_tool(name="list_issues", arguments={})
+
+        assert len(server.requests) == dialled, "a refused credential was dialled"
+        await caller.close()
+        assert await _settled(before) == set()
 
     async def test_an_error_the_server_composed_reopens_nothing(self) -> None:
         """The paired negative: the transport was never the problem.
@@ -1425,3 +1485,86 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         await caller.close()
 
         assert await _settled(before) == set()
+
+
+class TestWorkersHitByOneDropShareOneReopen:
+    """A session ends under every call in flight at once; one reopen serves them all.
+
+    Measured 2026-09-02 (KOD-300 review): two workers' calls in flight
+    together — the production shape since KOD-273 — were both told the
+    session had ended, both reopened, and the second reopen met a caller
+    already reopening: its call failed as "could not be reopened" against
+    a server that was healthy, and one drop cost a worker its call.
+    """
+
+    async def test_two_workers_under_one_dropped_stream_both_recover(
+        self,
+    ) -> None:
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS_ONCE)
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+
+        with structlog.testing.capture_logs() as logs:
+            results = await asyncio.gather(
+                caller.call_tool(name="get_issue", arguments={}),
+                caller.call_tool(name="list_issues", arguments={}),
+            )
+
+        assert results == [{"id": "K-1"}, {"id": "K-1"}]
+        assert server.requests.count("initialize") == 2, "one boot, one reopen"
+        assert [log["event"] for log in logs].count("mcp_session_reopened") == 1
+        await caller.close()
+
+    async def test_a_call_arriving_during_a_siblings_reopen_rides_its_session(
+        self,
+    ) -> None:
+        """A worker meeting a reopen in progress waits for it, not for a refusal.
+
+        Without the wait it was refused as "not open" — the base class,
+        which the record path reads as a payload to fix rather than a
+        transport to reopen (KOD-177).
+        """
+        server = _FakeStreamableServer(
+            on_call=_CallBehaviour.DROPS_ONCE,
+            hold_reopens=True,
+        )
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+        first = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
+        async with asyncio.timeout(_HANG_CEILING_SECONDS):
+            while server.requests.count("initialize") < 2:
+                await asyncio.sleep(0)
+
+        second = asyncio.create_task(caller.call_tool(name="list_issues", arguments={}))
+        for _ in range(_SETTLE_TURNS):
+            await asyncio.sleep(0)
+        assert not second.done(), "the sibling was answered before the session was"
+        server.release_reopen.set()
+        async with asyncio.timeout(_HANG_CEILING_SECONDS):
+            results = [await first, await second]
+
+        assert results == [{"id": "K-1"}, {"id": "K-1"}]
+        assert server.requests.count("initialize") == 2, "the sibling dialled its own"
+        await caller.close()
+
+    async def test_siblings_of_a_failed_reopen_each_try_their_own(self) -> None:
+        """The paired negative: once per CALL, and a failed reopen serves nobody.
+
+        Two calls, two dials, two refusals — the count a caller reading
+        "could not be reopened" can rely on, and not one dial's failure
+        handed to a call that never tried.
+        """
+        server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
+        caller = caller_fixture(client_factory=client_over(server.transport))
+        await caller.open()
+        server.initialize_status = HTTPStatus.BAD_GATEWAY
+
+        results = await asyncio.gather(
+            caller.call_tool(name="get_issue", arguments={}),
+            caller.call_tool(name="list_issues", arguments={}),
+            return_exceptions=True,
+        )
+
+        assert all(isinstance(result, McpSessionClosedError) for result in results)
+        assert server.requests.count("initialize") == 3, "one boot, one dial per call"
+        await caller.close()

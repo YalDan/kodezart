@@ -7,12 +7,16 @@ conformance suite covers what every adapter must do; this module covers
 what THIS adapter does to get there.
 """
 
+import json
 from collections.abc import Mapping
 from datetime import timedelta
+from http import HTTPStatus
 
+import httpx
 import pytest
 import structlog
 
+from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.linear_mcp_tracker import _CLAIM_MARKER, LinearMcpTracker
 from kodezart.core.errors import (
     McpCredentialRefusedError,
@@ -36,6 +40,7 @@ from kodezart.types.domain.tracker import (
     is_open,
     priority_rank,
 )
+from tests.adapters.test_http_mcp_tool_caller import client_over
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
     APPROVER,
@@ -1274,3 +1279,119 @@ class TestInitiativeIdentifiers:
             {"init-9", "the big initiative", "init-10", "the other initiative"},
         )
         assert server.tool_calls("get_project") == [{"query": "proj-1"}]
+
+
+class _StreamableEndpointOver:
+    """A streamable-HTTP endpoint answering ``tools/call`` from the fake workspace.
+
+    What sits under the adapter here is the REAL HTTP transport over its
+    own client; this speaks only the handshake and the framing, and every
+    answer is the workspace's own.  The first tool call's stream is
+    dropped — the session death measured under KOD-300 — and the endpoint
+    is healthy from then on.
+    """
+
+    def __init__(self, workspace: FakeLinearMcpServer) -> None:
+        self._workspace = workspace
+        self.dropped: bool = False
+
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._answer)
+
+    async def _answer(self, request: httpx.Request) -> httpx.Response:
+        message = json.loads(request.content)
+        method = message.get("method")
+        if "id" not in message:
+            return httpx.Response(status_code=HTTPStatus.ACCEPTED)
+        if method == "initialize":
+            return self._frame(
+                message["id"],
+                {
+                    "protocolVersion": message["params"]["protocolVersion"],
+                    "capabilities": {},
+                    "serverInfo": {"name": "fake-linear", "version": "1"},
+                },
+            )
+        if method == "tools/list":
+            roster = [
+                {"name": name, "description": name, "inputSchema": {"type": "object"}}
+                for name in self._tool_names()
+            ]
+            return self._frame(message["id"], {"tools": roster})
+        if not self.dropped:
+            self.dropped = True
+            raise httpx.ReadError("the server dropped the stream mid-call")
+        params = message["params"]
+        result = await self._workspace.call_tool(
+            name=params["name"],
+            arguments=params.get("arguments", {}),
+        )
+        return self._frame(
+            message["id"],
+            {"content": [{"type": "text", "text": json.dumps(result)}]},
+        )
+
+    def _tool_names(self) -> list[str]:
+        prefix = "_tool_"
+        return [
+            name.removeprefix(prefix)
+            for name in dir(self._workspace)
+            if name.startswith(prefix)
+        ]
+
+    @staticmethod
+    def _frame(request_id: object, result: Mapping[str, object]) -> httpx.Response:
+        body = json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result})
+        return httpx.Response(
+            status_code=HTTPStatus.OK,
+            headers={"content-type": "text/event-stream"},
+            content=f"event: message\ndata: {body}\n\n".encode(),
+        )
+
+
+class TestARetryBudgetIsNotSpentOnASessionThatDied:
+    """The loop over a caller whose session died reaches the server on its own attempt.
+
+    Measured at `d842513` (KOD-300): after one dropped stream the HTTP
+    caller stayed ENDED for the rest of the boot, so every attempt in the
+    budget was a refusal and the budget bought nothing — dispatch, claims,
+    heartbeats and records dead until a restart.
+    """
+
+    #: The credential shape boot accepts; the endpoint reads nothing off it.
+    FIXTURE_TOKEN = "lin_api_" + "T" * 40
+
+    async def test_the_call_that_met_the_death_reaches_the_server_within_no_retries(
+        self,
+    ) -> None:
+        workspace = FakeLinearMcpServer(
+            issues=[FakeMcpIssue(id="T-9")],
+            state_types=STATE_TYPES,
+        )
+        endpoint = _StreamableEndpointOver(workspace)
+        caller = HttpMcpToolCaller(
+            url="https://tracker.invalid/mcp",
+            server_name="fake-linear",
+            token=self.FIXTURE_TOKEN,
+            timeout_seconds=5.0,
+            call_timeout_seconds=5.0,
+            sse_read_timeout_seconds=300.0,
+            auth_header_name="Authorization",
+            auth_scheme="Bearer",
+            error_detail_limit=500,
+            client_factory=client_over(endpoint.transport),
+        )
+        await caller.open()
+        try:
+            tracker = tracker_over(workspace, caller=caller, max_retries=0)
+            with structlog.testing.capture_logs() as logs:
+                issue = await tracker.read_issue(issue_key="T-9")
+        finally:
+            await caller.close()
+
+        assert issue.issue_key == "T-9"
+        assert endpoint.dropped, "the death was never met"
+        assert len(workspace.tool_calls("get_issue")) == 1
+        events = [entry["event"] for entry in logs]
+        assert events.count("mcp_session_reopened") == 1
+        assert "tracker_mcp_retry" not in events, "the budget was spent"

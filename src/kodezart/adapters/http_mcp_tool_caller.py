@@ -235,6 +235,13 @@ class HttpMcpToolCaller:
         #: refusal.  Latched, because a credential does not heal: once it is
         #: refused every later failure of this session is that same refusal.
         self._credential_refused: bool = False
+        #: Held across every change of session: open, reopen and close.
+        #: Calls on a serving session never take it.  Workers hit together
+        #: by one dropped stream reopen through it one at a time, and the
+        #: first to reopen reopens for all of them; a shutdown that arrives
+        #: mid-reopen waits for the fresh host so it is the one closed
+        #: rather than one left running (KOD-300).
+        self._lifetime: asyncio.Lock = asyncio.Lock()
         self._log: BoundLogger = get_logger(__name__)
 
     def _http_client(
@@ -333,11 +340,23 @@ class HttpMcpToolCaller:
         opens reached the boot task as ``CancelledError`` and the status
         was legible nowhere (KOD-270, KOD-271).
         """
+        async with self._lifetime:
+            await self._start()
+
+    async def _start(self) -> None:
+        """Host a session and await its handshake, under the lifetime lock.
+
+        A handshake that fails leaves the phase where it found it: a boot's
+        open leaves the caller CLOSED as it was, and a reopen leaves it
+        ENDED — still in service, so the next call tries its own reopen
+        (KOD-287).
+        """
         if self._host is not None:
             raise McpTransportError(
                 "the MCP session is already open",
                 server_name=self._server_name,
             )
+        found = self._phase
         ready: asyncio.Future[None] = asyncio.get_running_loop().create_future()
         inbox, posted = anyio.create_memory_object_stream[_PendingCall](
             _INBOX_UNBOUNDED,
@@ -353,7 +372,7 @@ class HttpMcpToolCaller:
             self._inbox = None
             inbox.close()
             await _join(host)
-            self._phase = _Phase.CLOSED
+            self._phase = found
             raise
         await self._log.ainfo(
             "mcp_session_opened",
@@ -367,16 +386,22 @@ class HttpMcpToolCaller:
         The inbox's end IS the shutdown message: the host reads it as the
         stream running out, so there is no sentinel value to keep in step
         with the calls beside it.
+
+        The caller is CLOSED whether or not there was a host to join.  A
+        caller whose last reopen failed holds no host and is still in
+        service, and a call arriving after the shutdown must refuse rather
+        than dial a session nobody will close (KOD-300).
         """
-        host = self._host
-        inbox = self._inbox
-        self._host = None
-        self._inbox = None
-        if host is None or inbox is None:
-            return
-        inbox.close()
-        await _join(host)
-        self._phase = _Phase.CLOSED
+        async with self._lifetime:
+            host = self._host
+            inbox = self._inbox
+            self._host = None
+            self._inbox = None
+            self._phase = _Phase.CLOSED
+            if host is None or inbox is None:
+                return
+            inbox.close()
+            await _join(host)
         await self._log.ainfo("mcp_session_closed", server_name=self._server_name)
 
     async def call_tool(
@@ -414,16 +439,14 @@ class HttpMcpToolCaller:
         was never the problem — and a refused credential reopens nothing
         either, because no fresh session mints a new one.
         """
-        if self._phase is _Phase.ENDED:
+        inbox = self._inbox
+        if inbox is None or self._phase is not _Phase.SERVING:
             return await self._call_on_a_reopened_session(
                 name=name,
                 arguments=arguments,
             )
-        inbox = self._inbox
-        if inbox is None or self._phase is not _Phase.SERVING:
-            raise self._not_serving(name)
         try:
-            return await self._hand_over(inbox, name=name, arguments=arguments)
+            return await self._post(inbox, name=name, arguments=arguments).reply
         except McpSessionClosedError:
             # The session ended under this very call.  The reopen is the
             # same one a call arriving after the end takes, and it is the
@@ -433,14 +456,19 @@ class HttpMcpToolCaller:
                 arguments=arguments,
             )
 
-    async def _hand_over(
+    def _post(
         self,
         inbox: MemoryObjectSendStream[_PendingCall],
         *,
         name: str,
         arguments: Mapping[str, object],
-    ) -> McpToolResult:
-        """Post one call to the host and wait for the answer it owes."""
+    ) -> _PendingCall:
+        """Hand one call to the host; the reply it owes is awaited by the caller.
+
+        Synchronous, so a host that has already drained cannot be handed a
+        call afterwards — and so a reopen posts its call before it releases
+        the lifetime lock, without holding that lock for the answer.
+        """
         call = _PendingCall(
             name=name,
             arguments=dict(arguments),
@@ -448,7 +476,7 @@ class HttpMcpToolCaller:
         )
         self._pending.add(call)
         inbox.send_nowait(call)
-        return await call.reply
+        return call
 
     async def _call_on_a_reopened_session(
         self,
@@ -456,7 +484,7 @@ class HttpMcpToolCaller:
         name: str,
         arguments: Mapping[str, object],
     ) -> McpToolResult:
-        """Host a fresh session, then make the call the ended one lost.
+        """Make the call on a session reopened for it, or on a sibling's.
 
         Once per call, and never in a loop within one: a server that is
         genuinely unreachable answers the second dial exactly as it
@@ -466,23 +494,39 @@ class HttpMcpToolCaller:
         the closed-session class under the reopen's own words and leaves
         the caller IN SERVICE, so the next call tries its own (KOD-287).
 
+        Under the lifetime lock, because a session ends under every call
+        in flight at once: the first worker through reopens, and each one
+        after it finds the fresh session serving and rides it — one drop
+        costs one handshake, not one failure per worker.  A caller the
+        shutdown closed, before or while this call waited, refuses by
+        name: there is nobody in service to reopen for.
+
         A credential this server has already refused is asked nothing: a
         new session presents the same token to the same refusal.
         """
+        if self._phase is _Phase.CLOSED:
+            raise self._not_serving(name)
         if self._credential_refused:
             raise McpCredentialRefusedError(
                 "the MCP server refused the configured credential",
                 server_name=self._server_name,
                 tool_name=name,
             )
+        async with self._lifetime:
+            if self._phase is _Phase.ENDED:
+                await self._reopen(name)
+            inbox = self._inbox
+            if inbox is None or self._phase is not _Phase.SERVING:
+                raise self._not_serving(name)
+            call = self._post(inbox, name=name, arguments=arguments)
+        return await call.reply
+
+    async def _reopen(self, name: str) -> None:
+        """Replace the ended host with a fresh one, for the call named."""
         await self._discard_host()
         try:
-            await self.open()
-        except McpCredentialRefusedError:
-            self._phase = _Phase.ENDED
-            raise
+            await self._start()
         except McpTransportError as exc:
-            self._phase = _Phase.ENDED
             raise McpSessionClosedError(
                 "the MCP session could not be reopened for the call",
                 server_name=self._server_name,
@@ -493,16 +537,13 @@ class HttpMcpToolCaller:
             server_name=self._server_name,
             tool_name=name,
         )
-        inbox = self._inbox
-        if inbox is None:
-            raise self._not_serving(name)
-        return await self._hand_over(inbox, name=name, arguments=arguments)
 
     async def _discard_host(self) -> None:
         """Let go of the ended host, leaving the caller in service.
 
-        The difference from :meth:`close` is the phase it leaves behind:
-        a shutdown ends the caller, and this ends only its session.
+        The phase stays as the host's ending set it — ENDED, which is what
+        routed the call here.  Only :meth:`close` takes a caller out of
+        service.
         """
         host = self._host
         inbox = self._inbox
@@ -512,7 +553,6 @@ class HttpMcpToolCaller:
             inbox.close()
         if host is not None:
             await _join(host)
-        self._phase = _Phase.ENDED
 
     async def _host_session(
         self,
