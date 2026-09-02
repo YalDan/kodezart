@@ -14,6 +14,7 @@ from kodezart.core.errors import NoStructuredOutputError, soft_failure
 from kodezart.core.retry import DelayFloor, GraphNode, RetryFloor, should_retry
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.agent import RaiseSite
+from tests.fakes import no_delay_floor
 
 
 def test_transient_api_error_is_retryable() -> None:
@@ -265,18 +266,14 @@ async def test_a_resolver_that_names_no_floor_for_anything_delays_nothing() -> N
     """The graph's own back-off, asked for rather than fallen into.
 
     The behaviour the deleted ``None`` arm provided, now reached the only
-    way it can be: a resolver a caller wrote that answers ``None`` to
-    every failure it is shown.
+    way it can be: a resolver that answers ``None`` to every failure it
+    is shown — the one every fixture construction site passes.
     """
-
-    def no_floor_for_anything(exc: Exception) -> float | None:
-        _ = exc
-        return None
 
     async def node(state: str, config: RunnableConfig) -> str:
         raise RateLimitError(state)
 
-    elapsed = await _elapsed_of(RetryFloor(no_floor_for_anything)(node), RateLimitError)
+    elapsed = await _elapsed_of(RetryFloor(no_delay_floor)(node), RateLimitError)
 
     assert elapsed < UNDELAYED_CEILING_SECONDS
 
