@@ -23,6 +23,7 @@ Every refusal names its ground; no silent arm.
 import ast
 import asyncio
 import json
+import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
@@ -330,6 +331,22 @@ class TestTheDeploymentsProxyReachesTheClient:
     """
 
     PROXY_URL = "http://proxy.invalid:8080"
+
+    @pytest.fixture(autouse=True)
+    def _an_environment_naming_no_proxy(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Each case sets the ONLY proxy variable its client will read.
+
+        httpx takes its mounts from ``urllib``'s ``getproxies``, which reads
+        every ``*_proxy`` variable in either case — so a developer's
+        ``NO_PROXY`` or ``http_proxy`` would add mounts no case set, and the
+        exact mount list below would be red on that machine alone.
+        """
+        for name in list(os.environ):
+            if name.lower().endswith("_proxy"):
+                monkeypatch.delenv(name)
 
     @staticmethod
     def _client(factory: HttpxClientFactory) -> httpx.AsyncClient:
