@@ -38,13 +38,13 @@ touched.
 
 import asyncio
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import Enum, auto
 from http import HTTPStatus
 from importlib.metadata import version
-from typing import Final
+from typing import Final, Protocol
 
 import anyio
 import httpx
@@ -100,6 +100,52 @@ _PROBE_BODY: Final[dict[str, object]] = JSONRPCRequest(
         clientInfo=Implementation(name=_CLIENT_NAME, version=version(_CLIENT_NAME)),
     ).model_dump(by_alias=True, exclude_none=True),
 ).model_dump(by_alias=True, exclude_none=True)
+
+
+class HttpxClientFactory(Protocol):
+    """How this transport gets the HTTP client a session runs on.
+
+    The seam is the CLIENT and not its transport, because a client handed
+    a transport is a client httpx will not fit into its environment:
+    ``allow_env_proxies`` holds only while the client builds the transport
+    itself, so an explicit one silently unset ``HTTPS_PROXY`` and
+    ``HTTP_PROXY`` for every tracker call (KOD-283).  A case that needs to
+    answer the wire itself replaces the whole client and states the
+    transport there, where nothing about a deployment is being decided.
+    """
+
+    def __call__(
+        self,
+        *,
+        follow_redirects: bool,
+        headers: dict[str, str],
+        timeout: httpx.Timeout,
+        event_hooks: Mapping[str, list[Callable[[httpx.Response], Awaitable[None]]]],
+    ) -> httpx.AsyncClient:
+        """Build the client, watching responses through *event_hooks*."""
+        ...
+
+
+def pooled_http_client(
+    *,
+    follow_redirects: bool,
+    headers: dict[str, str],
+    timeout: httpx.Timeout,
+    event_hooks: Mapping[str, list[Callable[[httpx.Response], Awaitable[None]]]],
+) -> httpx.AsyncClient:
+    """The deployment's client: httpx's own pool, read from its environment.
+
+    No transport is named, deliberately.  httpx honours the environment's
+    proxy variables only when it builds the transport itself, so naming one
+    here would take the deployment's proxy configuration away from every
+    tracker and knowledge call (KOD-283).
+    """
+    return httpx.AsyncClient(
+        follow_redirects=follow_redirects,
+        headers=headers,
+        timeout=timeout,
+        event_hooks=event_hooks,
+    )
 
 
 async def _join(host: asyncio.Task[None]) -> None:
@@ -158,10 +204,7 @@ class HttpMcpToolCaller:
         auth_header_name: str,
         auth_scheme: str,
         error_detail_limit: int,
-        transport_factory: Callable[
-            [],
-            httpx.AsyncBaseTransport,
-        ] = httpx.AsyncHTTPTransport,
+        client_factory: HttpxClientFactory = pooled_http_client,
     ) -> None:
         self._url: str = url
         self._server_name: str = server_name
@@ -171,14 +214,12 @@ class HttpMcpToolCaller:
         self._auth_header_name: str = auth_header_name
         self._auth_scheme: str = auth_scheme
         self._error_detail_limit: int = error_detail_limit
-        #: What gives each HTTP client under this transport its wire.  The
-        #: deployment gets httpx's own connection pool; a case puts an
-        #: in-process responder here and exercises the probe over the very
-        #: client the live session runs on, rather than over one built
-        #: beside it (KOD-268).
-        self._transport_factory: Callable[[], httpx.AsyncBaseTransport] = (
-            transport_factory
-        )
+        #: What builds each HTTP client under this transport.  The
+        #: deployment gets httpx's own pool and its environment; a case puts
+        #: an in-process responder behind a client of the same shape and
+        #: exercises the probe over the very client the live session runs
+        #: on, rather than over one built beside it (KOD-268, KOD-283).
+        self._client_factory: HttpxClientFactory = client_factory
         #: The task that OWNS the session — opens it, answers calls on it,
         #: and closes it — so every cancellation the SDK's task group
         #: produces lands inside this module (KOD-270).
@@ -197,9 +238,8 @@ class HttpMcpToolCaller:
 
     def _http_client(
         self,
-        headers: dict[str, str] | None = None,
-        timeout: httpx.Timeout | None = None,
-        auth: httpx.Auth | None = None,
+        headers: dict[str, str],
+        timeout: httpx.Timeout,
     ) -> httpx.AsyncClient:
         """The HTTP client the MCP session runs on, watching the status.
 
@@ -210,12 +250,10 @@ class HttpMcpToolCaller:
         transport reading only the exception could not tell a refused
         credential from any other broken session.
         """
-        return httpx.AsyncClient(
+        return self._client_factory(
             follow_redirects=True,
             headers=headers,
             timeout=timeout,
-            auth=auth,
-            transport=self._transport_factory(),
             event_hooks={"response": [self._observe_status]},
         )
 

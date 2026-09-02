@@ -61,6 +61,7 @@ from kodezart.types.domain.tracker import (
     MappingRef,
     TrackerBackend,
 )
+from tests.adapters.test_http_mcp_tool_caller import client_over
 from tests.fakes import (
     FakeLinearMcpServer,
     FakeMcpDocument,
@@ -980,7 +981,7 @@ def _caller_over(endpoint: _Endpoint, *, token: str) -> HttpMcpToolCaller:
         auth_header_name="Authorization",
         auth_scheme="Bearer",
         error_detail_limit=500,
-        transport_factory=endpoint.transport,
+        client_factory=client_over(endpoint.transport),
     )
 
 

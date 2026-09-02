@@ -42,7 +42,9 @@ from mcp.types import CallToolResult, ContentBlock, TextContent
 from kodezart.adapters.http_mcp_tool_caller import (
     _INBOX_UNBOUNDED,
     HttpMcpToolCaller,
+    HttpxClientFactory,
     _Phase,
+    pooled_http_client,
 )
 from kodezart.core.errors import (
     McpCredentialRefusedError,
@@ -76,13 +78,41 @@ _HANGING_TOOL: Final[str] = "never_answers"
 _ANSWER: Final[str] = '{"id": "K-1"}'
 
 
+def client_over(
+    transport_factory: Callable[[], httpx.AsyncBaseTransport],
+) -> HttpxClientFactory:
+    """The caller's own client, answering through an in-test transport.
+
+    The seam a case takes is the whole CLIENT, because that is the seam
+    production leaves open: a transport named at httpx's constructor takes
+    the environment's proxies away from the client that gets it (KOD-283),
+    so the deployment names none and a case that has to answer the wire
+    builds the client itself and states the transport HERE, where nothing
+    about a deployment is being described.
+    """
+
+    def build(
+        *,
+        follow_redirects: bool,
+        headers: dict[str, str],
+        timeout: httpx.Timeout,
+        event_hooks: Mapping[str, list[Callable[[httpx.Response], Awaitable[None]]]],
+    ) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            follow_redirects=follow_redirects,
+            headers=headers,
+            timeout=timeout,
+            event_hooks=event_hooks,
+            transport=transport_factory(),
+        )
+
+    return build
+
+
 def caller_fixture(
     *,
     call_timeout_seconds: float = _CALL_TIMEOUT_SECONDS,
-    transport_factory: Callable[
-        [],
-        httpx.AsyncBaseTransport,
-    ] = httpx.AsyncHTTPTransport,
+    client_factory: HttpxClientFactory = pooled_http_client,
 ) -> HttpMcpToolCaller:
     return HttpMcpToolCaller(
         url="https://mcp.invalid/mcp",
@@ -93,7 +123,7 @@ def caller_fixture(
         auth_header_name="Authorization",
         auth_scheme="Bearer",
         error_detail_limit=_ERROR_DETAIL_LIMIT,
-        transport_factory=transport_factory,
+        client_factory=client_factory,
     )
 
 
@@ -214,7 +244,7 @@ async def answer_with(caller: HttpMcpToolCaller, status: HTTPStatus) -> None:
     client raises its status error inside the task group that drives the
     session, and this hook is the only place the status is still legible.
     """
-    async with caller._http_client() as client:
+    async with caller._http_client(headers={}, timeout=httpx.Timeout(5.0)) as client:
         for hook in client.event_hooks["response"]:
             await hook(httpx.Response(status_code=status))
 
@@ -278,6 +308,56 @@ class _StallingEndpoint:
         )
 
 
+class TestTheDeploymentsProxyReachesTheClient:
+    """The client production builds is httpx's, environment and all.
+
+    Measured at ``6e98499`` (KOD-283): the test seam handed every client an
+    explicit transport, and httpx allows the environment's proxies only
+    while it builds the transport itself
+    (``allow_env_proxies = trust_env and transport is None``) — so a
+    deployment behind ``HTTPS_PROXY`` had its tracker calls quietly routed
+    around it.  The mount is read off the client because that is where
+    httpx records the decision.
+    """
+
+    PROXY_URL = "http://proxy.invalid:8080"
+
+    @staticmethod
+    def _client(factory: HttpxClientFactory) -> httpx.AsyncClient:
+        return factory(
+            follow_redirects=True,
+            headers={},
+            timeout=httpx.Timeout(5.0),
+            event_hooks={},
+        )
+
+    def test_the_production_client_carries_the_environments_proxy(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("HTTPS_PROXY", self.PROXY_URL)
+
+        client = self._client(pooled_http_client)
+
+        assert [pattern.pattern for pattern in client._mounts] == ["https://"]
+
+    def test_a_client_told_its_transport_takes_the_proxy_off(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The paired negative: the shape that lost it, kept out of production.
+
+        A case names its transport and is therefore not reading the
+        environment — which is right for a case, and is exactly why the
+        seam production leaves open is the client and not the transport.
+        """
+        monkeypatch.setenv("HTTPS_PROXY", self.PROXY_URL)
+
+        client = self._client(client_over(httpx.AsyncHTTPTransport))
+
+        assert client._mounts == {}
+
+
 class TestTheCredentialProbe:
     """The credential is presented once, before any session exists.
 
@@ -289,7 +369,7 @@ class TestTheCredentialProbe:
 
     async def test_a_refused_credential_leaves_as_the_credential_class(self) -> None:
         endpoint = _Endpoint(HTTPStatus.UNAUTHORIZED)
-        caller = caller_fixture(transport_factory=endpoint.transport)
+        caller = caller_fixture(client_factory=client_over(endpoint.transport))
 
         with pytest.raises(McpCredentialRefusedError) as excinfo:
             await caller.probe()
@@ -301,7 +381,7 @@ class TestTheCredentialProbe:
     async def test_an_accepted_credential_is_silence(self) -> None:
         """The paired positive: a served handshake raises nothing at all."""
         endpoint = _Endpoint(HTTPStatus.OK)
-        caller = caller_fixture(transport_factory=endpoint.transport)
+        caller = caller_fixture(client_factory=client_over(endpoint.transport))
 
         assert await caller.probe() is None
 
@@ -312,7 +392,7 @@ class TestTheCredentialProbe:
         whose token was fine and send an operator to mint a new one.
         """
         endpoint = _Endpoint(HTTPStatus.BAD_GATEWAY)
-        caller = caller_fixture(transport_factory=endpoint.transport)
+        caller = caller_fixture(client_factory=client_over(endpoint.transport))
 
         with pytest.raises(McpTransportError):
             await caller.probe()
@@ -320,7 +400,7 @@ class TestTheCredentialProbe:
     async def test_the_probe_is_one_initialize_carrying_the_credential(self) -> None:
         """What goes out is the handshake itself, with the configured bearer."""
         endpoint = _Endpoint(HTTPStatus.OK)
-        caller = caller_fixture(transport_factory=endpoint.transport)
+        caller = caller_fixture(client_factory=client_over(endpoint.transport))
 
         await caller.probe()
 
@@ -340,7 +420,7 @@ class TestTheCredentialProbe:
         streaming arm exists to prevent.
         """
         endpoint = _StallingEndpoint(HTTPStatus.OK)
-        caller = caller_fixture(transport_factory=endpoint.transport)
+        caller = caller_fixture(client_factory=client_over(endpoint.transport))
 
         await asyncio.wait_for(caller.probe(), timeout=_HANG_CEILING_SECONDS)
 
@@ -356,7 +436,7 @@ class TestTheCredentialProbe:
         apart.
         """
         endpoint = _StallingEndpoint(HTTPStatus.UNAUTHORIZED)
-        caller = caller_fixture(transport_factory=endpoint.transport)
+        caller = caller_fixture(client_factory=client_over(endpoint.transport))
 
         with pytest.raises(McpCredentialRefusedError):
             await asyncio.wait_for(caller.probe(), timeout=_HANG_CEILING_SECONDS)
@@ -370,7 +450,7 @@ class TestTheCredentialProbe:
             raise httpx.ConnectError("no route to host")
 
         caller = caller_fixture(
-            transport_factory=lambda: httpx.MockTransport(refuse),
+            client_factory=client_over(lambda: httpx.MockTransport(refuse)),
         )
 
         with pytest.raises(McpTransportError) as excinfo:
@@ -715,7 +795,7 @@ class TestTheSessionIsHostedInOneTask:
     ) -> None:
         """KOD-271 — the class reaches the opener, and the opener survives."""
         server = _FakeStreamableServer(initialize_status=HTTPStatus.UNAUTHORIZED)
-        caller = caller_fixture(transport_factory=server.transport)
+        caller = caller_fixture(client_factory=client_over(server.transport))
         before = asyncio.all_tasks()
 
         with pytest.raises(McpCredentialRefusedError) as excinfo:
@@ -731,7 +811,7 @@ class TestTheSessionIsHostedInOneTask:
     async def test_an_unwell_server_at_open_is_the_transport_class(self) -> None:
         """The paired negative: a 502 is not a dead credential (KOD-271)."""
         server = _FakeStreamableServer(initialize_status=HTTPStatus.BAD_GATEWAY)
-        caller = caller_fixture(transport_factory=server.transport)
+        caller = caller_fixture(client_factory=client_over(server.transport))
 
         with pytest.raises(McpTransportError):
             await caller.open()
@@ -739,7 +819,7 @@ class TestTheSessionIsHostedInOneTask:
     async def test_a_dropped_stream_ends_the_call_and_not_the_opener(self) -> None:
         """KOD-272 — the worker is told, the boot task is untouched."""
         server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
-        caller = caller_fixture(transport_factory=server.transport)
+        caller = caller_fixture(client_factory=client_over(server.transport))
         opened = asyncio.Event()
         release = asyncio.Event()
 
@@ -798,7 +878,7 @@ class TestTheSessionIsHostedInOneTask:
         otherwise legible only as the next call's refusal.
         """
         server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
-        caller = caller_fixture(transport_factory=server.transport)
+        caller = caller_fixture(client_factory=client_over(server.transport))
         await caller.open()
 
         with structlog.testing.capture_logs() as logs:
@@ -847,7 +927,7 @@ class TestTheSessionIsHostedInOneTask:
         per malformed argument (KOD-272).
         """
         server = _FakeStreamableServer(on_call=_CallBehaviour.REFUSES)
-        caller = caller_fixture(transport_factory=server.transport)
+        caller = caller_fixture(client_factory=client_over(server.transport))
         await caller.open()
 
         with pytest.raises(McpTransportError) as excinfo:
@@ -859,7 +939,7 @@ class TestTheSessionIsHostedInOneTask:
     async def test_open_calls_and_close_leave_no_task_behind(self) -> None:
         """KOD-273 — the paired positive: the happy path, and nothing left over."""
         server = _FakeStreamableServer()
-        caller = caller_fixture(transport_factory=server.transport)
+        caller = caller_fixture(client_factory=client_over(server.transport))
         before = asyncio.all_tasks()
 
         await caller.open()
@@ -875,7 +955,7 @@ class TestTheSessionIsHostedInOneTask:
     async def test_a_closed_caller_refuses_the_next_call_by_name(self) -> None:
         """After the close there is no host, so a call is refused rather than hung."""
         server = _FakeStreamableServer()
-        caller = caller_fixture(transport_factory=server.transport)
+        caller = caller_fixture(client_factory=client_over(server.transport))
 
         await caller.open()
         await caller.close()
@@ -885,7 +965,7 @@ class TestTheSessionIsHostedInOneTask:
 
     async def test_opening_an_open_session_refuses(self) -> None:
         server = _FakeStreamableServer()
-        caller = caller_fixture(transport_factory=server.transport)
+        caller = caller_fixture(client_factory=client_over(server.transport))
         await caller.open()
 
         with pytest.raises(McpTransportError, match="already open"):
@@ -923,7 +1003,7 @@ def held_caller_fixture(server: _FakeStreamableServer) -> HttpMcpToolCaller:
     """
     return caller_fixture(
         call_timeout_seconds=_HANG_CEILING_SECONDS,
-        transport_factory=server.transport,
+        client_factory=client_over(server.transport),
     )
 
 
