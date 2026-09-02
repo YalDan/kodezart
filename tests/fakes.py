@@ -2763,15 +2763,6 @@ class FakeTrackerPort:
         self._sequence: int = 0
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
-        """A listing, answered the way the measured backend answers one.
-
-        The entries carry each issue's OWN fields and no edges: relations
-        are stripped here because that is what the wire does, and a double
-        that seeded them made a consumer reading edges off a listing look
-        correct while the same code read an empty tuple in production
-        (KOD-173).  Reading an issue is what supplies its edges, and the
-        gap between the two answers is the fixture's whole point.
-        """
         await asyncio.sleep(0)
         self.scans.append(query)
         matched = [
@@ -2781,10 +2772,7 @@ class FakeTrackerPort:
             and (query.team_key is None or issue.team_key == query.team_key)
             and (query.updated_since is None or issue.updated_at > query.updated_since)
         ]
-        return tuple(
-            issue.model_copy(update={"relations": ()})
-            for issue in matched[: query.page_size]
-        )
+        return tuple(matched[: query.page_size])
 
     async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
         await asyncio.sleep(0)
