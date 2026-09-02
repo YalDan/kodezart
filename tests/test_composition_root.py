@@ -64,10 +64,12 @@ from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FakeFireReport,
     FakeTrackerPort,
+    ManagedFakeLinearMcpServer,
     PassThroughGate,
     RecordingLogSink,
     make_tracker_issue,
 )
+from tests.services.test_prompt_pass import example_config
 
 #: The two definitions the composition root is allowed to own: the ASGI
 #: lifespan hook the framework calls, and the application factory.
@@ -197,11 +199,28 @@ class TestATrackerTravelsWithItsOwnWriteLedger:
 
         with pytest.raises(TypeError, match="ledger"):
             builder(
-                config=None,
+                config=AppConfig(),
                 tracker=FakeTrackerPort(),
                 signals=[PassSignal.approved_changed],
                 team_keys=["KOD"],
                 repo_urls=[REPO_URL],
+            )
+
+    def test_a_dialled_tracker_without_its_ledger_is_refused_by_name(self) -> None:
+        """The one value the runtime takes cannot be built as half of itself.
+
+        :func:`build_dispatch_runtime` takes the tracker only as a
+        :class:`DialledTracker`, so "tracker present, ledger absent" is a
+        construction of that value — and it is refused where it is
+        attempted, naming the half that is missing.
+        """
+        factory: Callable[..., object] = DialledTracker
+
+        with pytest.raises(TypeError, match="ledger"):
+            factory(
+                tracker=FakeTrackerPort(),
+                caller=ManagedFakeLinearMcpServer(),
+                operation=example_config(),
             )
 
     def test_the_pair_reaches_the_runtime_as_one_value(self) -> None:
