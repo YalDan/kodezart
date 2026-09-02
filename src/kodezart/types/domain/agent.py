@@ -324,11 +324,19 @@ class ToolResultEvent(AgentEvent):
 
 
 class SystemEvent(AgentEvent):
-    """System-level event from the Claude SDK."""
+    """System-level event from the Claude SDK.
+
+    The session's opening frame is the one that reports what the session
+    actually loaded — the engine id among its ``data``, and beside it the
+    output style its system prompt runs under.  ``output_style`` is that
+    reported value, and it is ``None`` on every other subtype, which
+    knows nothing about one.
+    """
 
     type: Literal["system"] = "system"
     subtype: str
     data: dict[str, object]
+    output_style: str | None = None
 
 
 class TaskStartedEvent(AgentEvent):

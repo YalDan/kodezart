@@ -29,7 +29,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from kodezart.adapters._sdk_mapping import map_message
+from kodezart.adapters._sdk_mapping import INIT_SUBTYPE, map_message
 from kodezart.core.errors import UnmappedAgentMessageError
 from kodezart.types.domain.agent import SystemEvent, TaskUpdatedEvent
 
@@ -212,3 +212,32 @@ def test_an_allowed_rate_limit_is_quiet_rather_than_refused() -> None:
     )
 
     assert map_message(allowed) == []
+
+
+def test_the_opening_frame_carries_its_style_beside_the_engine_it_names() -> None:
+    """KOD-292: the frame that reports the engine also reports the style."""
+    opening = SystemMessage(
+        subtype=INIT_SUBTYPE,
+        data={"model": "engine-1", "output_style": "Concise"},
+    )
+
+    [event] = map_message(opening)
+
+    assert isinstance(event, SystemEvent)
+    assert event.output_style == "Concise"
+    assert event.data["model"] == "engine-1"
+
+
+def test_a_frame_that_is_not_the_opening_one_reports_no_style() -> None:
+    """The paired negative: only the frame that knows a style states one.
+
+    Reading the key off every subtype would let an unrelated frame that
+    happens to carry it stand in for the confirmation the session owes.
+    """
+    later = SystemMessage(subtype="compact_boundary", data={"output_style": "Concise"})
+
+    [event] = map_message(later)
+
+    assert isinstance(event, SystemEvent)
+    assert event.output_style is None
+    assert event.data["output_style"] == "Concise"

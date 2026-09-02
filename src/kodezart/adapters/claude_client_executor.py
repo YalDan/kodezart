@@ -18,22 +18,23 @@ from kodezart.adapters._agents_mapping import (
     map_agents,
     map_effort,
     map_model,
+    map_settings,
     map_system_prompt,
     map_workflow_env,
-    map_workflow_settings,
 )
 from kodezart.adapters._mcp_mapping import (
     map_knowledge_mcp,
     prompt_with_knowledge_map,
 )
 from kodezart.adapters._permission_modes import _validate_permission_mode
-from kodezart.adapters._sdk_mapping import map_message
+from kodezart.adapters._sdk_mapping import INIT_SUBTYPE, map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
 from kodezart.core.constants import STDERR_TAIL_BYTES
 from kodezart.core.error_egress import redact_credentials
+from kodezart.core.errors import OutputStyleNotConfirmedError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import AgentSDKError
-from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.agent import AgentEvent, SystemEvent
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -86,11 +87,34 @@ class ClaudeClientExecutor:
         model: str | None = None,
         setting_sources: list[SettingSource],
         knowledge_grant: KnowledgeGrant,
+        output_style: str | None = None,
     ) -> None:
         self._model = model
         self._setting_sources = setting_sources
         self._knowledge_grant = knowledge_grant
+        self._output_style = output_style
         self._log: BoundLogger = get_logger(__name__)
+
+    def _confirm_output_style(self, event: AgentEvent) -> None:
+        """Hold the session to the style it was told to run under.
+
+        The opening frame reports the style the CLI really loaded.  A
+        declared style it does not confirm means this session's system
+        prompt is not the one the operator asked for, so the session
+        fails on the frame that said so rather than producing work under
+        an unknown style.  Declaring nothing checks nothing: there is no
+        claim to confirm.
+        """
+        if self._output_style is None:
+            return
+        if not isinstance(event, SystemEvent) or event.subtype != INIT_SUBTYPE:
+            return
+        if event.output_style == self._output_style:
+            return
+        raise OutputStyleNotConfirmedError(
+            declared=self._output_style,
+            reported=event.output_style,
+        )
 
     async def stream(
         self,
@@ -139,7 +163,10 @@ class ClaudeClientExecutor:
             effort=map_effort(session_policy.effort),
             fallback_model=session_policy.fallback_model,
             env=map_workflow_env(session_policy.workflow_access),
-            settings=map_workflow_settings(session_policy.workflow_access),
+            settings=map_settings(
+                session_policy.workflow_access,
+                self._output_style,
+            ),
             **knowledge,
         )
         session_prompt = prompt_with_knowledge_map(
@@ -154,6 +181,7 @@ class ClaudeClientExecutor:
                 await client.query(session_prompt)
                 async for message in client.receive_response():
                     for event in map_message(message):
+                        self._confirm_output_style(event)
                         yield event
         except ResultError as exc:
             # Ahead of the ProcessError arm, which this SDK type subclasses:

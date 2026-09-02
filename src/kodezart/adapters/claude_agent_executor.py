@@ -14,9 +14,9 @@ from kodezart.adapters._agents_mapping import (
     map_agents,
     map_effort,
     map_model,
+    map_settings,
     map_system_prompt,
     map_workflow_env,
-    map_workflow_settings,
 )
 from kodezart.adapters._mcp_mapping import (
     map_knowledge_mcp,
@@ -97,7 +97,7 @@ class ClaudeAgentExecutor:
             model=map_model(session_policy, None),
             fallback_model=session_policy.fallback_model,
             env=map_workflow_env(session_policy.workflow_access),
-            settings=map_workflow_settings(session_policy.workflow_access),
+            settings=map_settings(session_policy.workflow_access, None),
             **knowledge,
         )
         session_prompt = prompt_with_knowledge_map(

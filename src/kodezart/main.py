@@ -118,6 +118,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             prompts=prompts,
             log=log,
         ),
+        output_style=config.claude_output_style,
     )
     gate = await build_outbound_gate(
         config=config,

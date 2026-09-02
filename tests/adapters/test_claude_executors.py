@@ -20,9 +20,9 @@ from pydantic import ValidationError
 from kodezart.adapters._agents_mapping import (
     map_agents,
     map_effort,
+    map_settings,
     map_system_prompt,
     map_workflow_env,
-    map_workflow_settings,
 )
 from kodezart.adapters._mcp_mapping import map_knowledge_mcp
 from kodezart.adapters._skills_mapping import map_skills
@@ -817,7 +817,7 @@ def test_the_sdk_shapes_are_built_inside_the_adapter_layer() -> None:
     assert map_system_prompt(UNCONFIGURED_SESSION_POLICY) is None
     assert map_effort(None) is None
     assert map_workflow_env(None) == {}
-    assert map_workflow_settings(None) is None
+    assert map_settings(None, None) is None
 
 
 def test_a_definition_is_frozen_and_carries_a_non_empty_tool_list() -> None:

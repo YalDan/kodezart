@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -227,6 +227,7 @@ def executor_for(
     grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT,
     *,
     model: str | None = None,
+    output_style: str | None = None,
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("claude_client_executor"):
@@ -234,6 +235,7 @@ def executor_for(
             model=model,
             setting_sources=DEFAULT_SETTING_SOURCES,
             knowledge_grant=grant,
+            output_style=output_style,
         )
     return ClaudeAgentExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
@@ -243,25 +245,38 @@ def executor_for(
 
 @dataclass(frozen=True)
 class RecordedSession:
-    """Everything an executor handed the SDK for one session.
+    """Everything one session exchanged with the SDK.
 
     The prompt is recorded beside the options because they are two
     consequences of one decision, and an assertion that can only see the
     options cannot tell whether the other consequence agreed with it.
+    ``events`` is the other direction: what the executor made of the
+    messages the transport streamed back, which is where a session's
+    reading of its own opening frame becomes visible.
     """
 
     options: object
     prompt: str
+    events: tuple[AgentEvent, ...] = ()
 
 
-async def _no_messages() -> AsyncGenerator[object, None]:
-    """A transport that accepts a session and returns nothing from it."""
-    for message in ():
-        yield message
+def _streaming(
+    messages: Sequence[object],
+) -> Callable[[], AsyncGenerator[object, None]]:
+    """A transport that accepts a session and streams *messages* back."""
+
+    async def stream() -> AsyncGenerator[object, None]:
+        for message in messages:
+            yield message
+
+    return stream
 
 
-def _recording_client(recorded: list[RecordedSession]) -> Callable[..., object]:
-    """Stand-in for the persistent SDK client that records and yields nothing."""
+def _recording_client(
+    recorded: list[RecordedSession],
+    messages: Sequence[object],
+) -> Callable[..., object]:
+    """Stand-in for the persistent SDK client that records what it was given."""
 
     class _Client:
         def __init__(self, *, options: object) -> None:
@@ -277,17 +292,20 @@ def _recording_client(recorded: list[RecordedSession]) -> Callable[..., object]:
             recorded.append(RecordedSession(options=self._options, prompt=prompt))
 
         def receive_response(self) -> AsyncGenerator[object, None]:
-            return _no_messages()
+            return _streaming(messages)()
 
     return _Client
 
 
-def _recording_query(recorded: list[RecordedSession]) -> Callable[..., object]:
+def _recording_query(
+    recorded: list[RecordedSession],
+    messages: Sequence[object],
+) -> Callable[..., object]:
     """Stand-in for the one-shot SDK entry point, same recording contract."""
 
     def query(*, prompt: str, options: object) -> AsyncGenerator[object, None]:
         recorded.append(RecordedSession(options=options, prompt=prompt))
-        return _no_messages()
+        return _streaming(messages)()
 
     return query
 
@@ -303,19 +321,22 @@ async def recorded_session(
     agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
     session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
     model: str | None = None,
+    output_style: str | None = None,
+    messages: Sequence[object] = (),
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
     target = "ClaudeSDKClient" if module.endswith("claude_client_executor") else "query"
     replacement = (
-        _recording_client(recorded)
+        _recording_client(recorded, messages)
         if target == "ClaudeSDKClient"
-        else _recording_query(recorded)
+        else _recording_query(recorded, messages)
     )
-    executor = executor_for(module, grant, model=model)
+    executor = executor_for(module, grant, model=model, output_style=output_style)
+    events: list[AgentEvent] = []
 
     with patch(f"{module}.{target}", replacement):
-        async for _event in executor.stream(
+        async for event in executor.stream(
             prompt=prompt,
             cwd=cwd,
             permission_mode="plan",
@@ -325,10 +346,10 @@ async def recorded_session(
             agents=agents,
             session_policy=session_policy,
         ):
-            pass
+            events.append(event)
 
     assert len(recorded) == 1
-    return recorded[0]
+    return replace(recorded[0], events=tuple(events))
 
 
 class FakeGitService:

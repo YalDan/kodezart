@@ -564,3 +564,42 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
 
         assert isinstance(caller, HttpMcpToolCaller)
         assert caller._sse_read_timeout_seconds == self.KNOWLEDGE_BOUND
+
+
+def _executor_keywords() -> dict[str, str]:
+    """Every keyword the root builds its executor with, as source text.
+
+    Read off the hook's own syntax tree for the reason the shutdown order
+    is: the executor is constructed inside the lifespan, so no unit call
+    reaches it, and the wiring is a property of this file rather than of
+    anything a fixture could hold.
+    """
+    tree = ast.parse(ROOT.read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "ClaudeClientExecutor"
+    ]
+    assert len(calls) == 1
+    return {
+        keyword.arg: ast.unparse(keyword.value)
+        for keyword in calls[0].keywords
+        if keyword.arg is not None
+    }
+
+
+def test_the_declared_output_style_reaches_the_executor_through_composition() -> None:
+    """The field an operator sets is the field the session is held to.
+
+    A style configured and never wired is the exact silence KOD-292 exists
+    to end: the sessions run under the CLI's default and the board says
+    they run under the declared one.
+    """
+    assert _executor_keywords()["output_style"] == "config.claude_output_style"
+
+
+def test_the_executor_keywords_are_read_off_a_real_call() -> None:
+    """Non-vacuity: an empty parse would let the rule above pass over nothing."""
+    assert _executor_keywords()["model"] == "config.model"

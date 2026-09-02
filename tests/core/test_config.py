@@ -189,6 +189,32 @@ def test_a_table_of_prompt_keys_loads_verbatim(
     }
 
 
+# ---------------------------------------------------------------------------
+# KOD-292 — the declared Claude Code output style
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+def test_no_output_style_is_declared_by_default() -> None:
+    """Absence is a state, not a style: the CLI's own default stands.
+
+    A shipped value here would be kodezart picking a system prompt for
+    every deployment that never asked for one.
+    """
+    field = AppConfig.model_fields["claude_output_style"]
+
+    assert field.annotation == str | None
+    assert AppConfig().claude_output_style is None
+
+
+@pytest.mark.usefixtures("_pristine_environment")
+def test_a_declared_style_loads_verbatim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The operation's value reaches the adapter as the operator typed it."""
+    monkeypatch.setenv("KODEZART_CLAUDE_OUTPUT_STYLE", "Concise")
+
+    assert AppConfig().claude_output_style == "Concise"
+
+
 SSE_READ_FIELDS = (
     "tracker_mcp_sse_read_timeout_seconds",
     "knowledge_mcp_sse_read_timeout_seconds",

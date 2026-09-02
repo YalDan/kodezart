@@ -193,7 +193,7 @@ field or a stale heading count reddens that test.
 | `assistant_thinking`  | `thinking`, `model`                                         |
 | `tool_use`            | `name`, `input`, `id`, `model`                              |
 | `tool_result`         | `content`, `toolUseId`, `isError`                           |
-| `system`              | `subtype`, `data`                                           |
+| `system`              | `subtype`, `data`, `outputStyle`                            |
 | `task_started`        | `subtype`, `taskId`, `description`, `uuid`, `sessionId`     |
 | `task_progress`       | `subtype`, `taskId`, `description`, `usage`, `uuid`, `sessionId` |
 | `task_notification`   | `subtype`, `taskId`, `status`, `outputFile`, `summary`, `uuid`, `sessionId` |

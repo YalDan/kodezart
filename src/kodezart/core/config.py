@@ -267,6 +267,17 @@ class AppConfig(BaseSettings):
             raise ValueError(msg)
         return value
 
+    claude_output_style: str | None = Field(
+        default=None,
+        description=(
+            "Claude Code output style every engine session runs under. None "
+            "sends no style at all and the CLI's own default stands; no "
+            "style is ever picked in code. A declared style the session's "
+            "own init message does not confirm fails that session rather "
+            "than running it under some other system prompt."
+        ),
+    )
+
     remediation_max_rounds: int = Field(
         default=1,
         ge=1,

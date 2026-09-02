@@ -460,6 +460,26 @@ class UnmappedAgentMessageError(Exception):
         self.message_type: str = message_type
 
 
+class OutputStyleNotConfirmedError(Exception):
+    """Raised when a session's init does not confirm the declared style.
+
+    An output style is a system-prompt modification, so a session running
+    under a style the operator did not declare is doing DIFFERENT work,
+    not slightly worse work.  The session fails here rather than carrying
+    on under whatever the CLI loaded, because carrying on is precisely
+    what makes the declaration unobservable — the state this class exists
+    to make impossible.
+    """
+
+    def __init__(self, *, declared: str, reported: str | None) -> None:
+        super().__init__(
+            f"the session declared output style {declared!r} and its init "
+            f"reported {reported!r}"
+        )
+        self.declared: str = declared
+        self.reported: str | None = reported
+
+
 class RunRecordWriteError(Exception):
     """Raised when a run's declared destination did not take its record.
 

@@ -32,6 +32,11 @@ _DISABLED_VALUE: Final = "1"
 #: The settings key bounding how wide one workflow may fan out.
 _SIZE_GUIDELINE_KEY: Final = "workflowSizeGuideline"
 
+#: The settings key naming the output style a session's system prompt runs
+#: under.  The Python SDK offers no programmatic option for it, so the
+#: settings object the CLI already reads is where it is stated.
+_OUTPUT_STYLE_KEY: Final = "outputStyle"
+
 
 def map_agents(
     definitions: Sequence[AgentDefinition],
@@ -98,15 +103,24 @@ def map_workflow_env(access: WorkflowAccess | None) -> dict[str, str]:
     return {_WORKFLOWS_DIR_VAR: access.workflows_path}
 
 
-def map_workflow_settings(access: WorkflowAccess | None) -> str | None:
-    """Map the fan-out bound onto the SDK ``settings`` option.
+def map_settings(access: WorkflowAccess | None, output_style: str | None) -> str | None:
+    """Map every Claude Code setting one dispatch declares onto ``settings``.
 
     The SDK accepts either a settings file path or an inline JSON object
-    for this option and forwards it to the CLI unchanged.
+    for this ONE option and forwards it to the CLI unchanged, so the
+    fan-out bound and the output style are two keys of one object rather
+    than two options.  A dispatch declaring neither passes no settings at
+    all, which leaves the CLI's own settings sources — and with them its
+    own default style — exactly as they were.
     """
-    if access is None or not access.enabled:
+    settings: dict[str, object] = {}
+    if access is not None and access.enabled:
+        settings[_SIZE_GUIDELINE_KEY] = access.size_guideline
+    if output_style is not None:
+        settings[_OUTPUT_STYLE_KEY] = output_style
+    if not settings:
         return None
-    return json.dumps({_SIZE_GUIDELINE_KEY: access.size_guideline})
+    return json.dumps(settings)
 
 
 def map_model(policy: SessionPolicy, construction_model: str | None) -> str | None:

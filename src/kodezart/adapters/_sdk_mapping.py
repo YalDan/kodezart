@@ -53,6 +53,15 @@ from kodezart.types.domain.agent import (
 #: message, so the mapping restates the name the CLI already uses.
 _CONVERSATION_RESET_SUBTYPE: Final = "conversation_reset"
 
+#: The subtype the session's opening frame carries — the one frame that
+#: reports what the session actually loaded rather than what it was asked
+#: for.  Adapters compare their declaration against it.
+INIT_SUBTYPE: Final = "init"
+
+#: The init frame's key naming the output style the session really runs
+#: under, beside the model id the same frame reports.
+_INIT_OUTPUT_STYLE_KEY: Final = "output_style"
+
 
 def _task_updated_status(message: TaskUpdatedMessage) -> str | None:
     """The status the update reports — the patch first, the field behind it.
@@ -155,6 +164,26 @@ def _conversation_reset_event(message: ConversationResetMessage) -> SystemEvent:
     )
 
 
+def _system_event(message: SystemMessage) -> SystemEvent:
+    """A system frame, with the init frame's output style read off it.
+
+    The init frame is where a session states the style it actually
+    loaded, beside the model id the same frame already carries, so the
+    style rides this event rather than one invented next to it.  Every
+    other subtype reports no style, because no other subtype knows one.
+    """
+    reported = message.data.get(_INIT_OUTPUT_STYLE_KEY)
+    return SystemEvent(
+        subtype=message.subtype,
+        data=dict(message.data),
+        output_style=(
+            reported
+            if message.subtype == INIT_SUBTYPE and isinstance(reported, str)
+            else None
+        ),
+    )
+
+
 def _refuse_unmapped(message: Never) -> NoReturn:
     """Refuse a message type this module does not name.
 
@@ -187,7 +216,7 @@ def map_message(message: Message) -> list[AgentEvent]:
             # system event and no consumer can clear the task it names.
             return [_task_updated_event(message)]
         case SystemMessage():
-            return [SystemEvent.model_validate(message, from_attributes=True)]
+            return [_system_event(message)]
         case AssistantMessage():
             return _assistant_events(message)
         case UserMessage():
