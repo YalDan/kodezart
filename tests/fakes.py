@@ -3314,3 +3314,115 @@ class FakeFireReport:
         failure_class: str | None,
     ) -> None:
         self.reported.append((issue_key, outcome, failure_class))
+
+
+# ---------------------------------------------------------------------------
+# The stdio MCP server fakes: a REAL subprocess, scripted to die (KOD-177)
+# ---------------------------------------------------------------------------
+
+#: One MCP server over stdio, in as little as speaks the protocol.
+#:
+#: A real process rather than a substituted session, because what is under
+#: test is what happens when the process on the other end of the pipe GOES
+#: AWAY — a stubbed session can be told to raise, but only a spawned server
+#: that exits mid-conversation produces the closed transport the measured
+#: boot met (KOD-177).
+#:
+#: Scripted entirely through the environment the caller passes down:
+#:
+#: * ``FAKE_MCP_SPAWN_LOG`` — a file it appends one line to per spawn, so a
+#:   test can count the spawns a single call cost;
+#: * ``FAKE_MCP_CALLS`` — how many tool calls it serves before exiting,
+#:   which is how a session closes under a live caller;
+#: * ``FAKE_MCP_STDERR`` — a line it writes to its own stderr at startup;
+#: * ``FAKE_MCP_REFUSE_AFTER`` — the spawn number after which it exits
+#:   before serving anything at all: a server that cannot be brought back.
+STDIO_FAKE_SERVER_SOURCE = '''\
+"""A minimal MCP server over stdio, scripted by its environment."""
+
+import json
+import os
+import sys
+
+
+def _send(payload: dict[str, object]) -> None:
+    sys.stdout.write(json.dumps(payload) + "\\n")
+    sys.stdout.flush()
+
+
+def _spawns() -> int:
+    path = os.environ["FAKE_MCP_SPAWN_LOG"]
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("spawn\\n")
+    with open(path, encoding="utf-8") as handle:
+        return len(handle.readlines())
+
+
+def main() -> int:
+    spawns = _spawns()
+    noise = os.environ.get("FAKE_MCP_STDERR", "")
+    if noise:
+        sys.stderr.write(noise + "\\n")
+        sys.stderr.flush()
+    refuse_after = os.environ.get("FAKE_MCP_REFUSE_AFTER", "")
+    if refuse_after and spawns > int(refuse_after):
+        return 1
+    budget = int(os.environ.get("FAKE_MCP_CALLS", "0"))
+    served = 0
+    for line in sys.stdin:
+        text = line.strip()
+        if not text:
+            continue
+        message = json.loads(text)
+        identifier = message.get("id")
+        method = message.get("method")
+        if method == "initialize":
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "result": {
+                        "protocolVersion": message["params"]["protocolVersion"],
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "fake-knowledge", "version": "1"},
+                    },
+                },
+            )
+        elif method == "tools/list":
+            _send({"jsonrpc": "2.0", "id": identifier, "result": {"tools": []}})
+        elif method == "tools/call":
+            if served >= budget:
+                return 0
+            served += 1
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "result": {
+                        "content": [{"type": "text", "text": "recorded"}],
+                        "structuredContent": {"served": served},
+                        "isError": False,
+                    },
+                },
+            )
+        elif identifier is not None:
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "error": {"code": -32601, "message": "no such method"},
+                },
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def write_stdio_fake_server(directory: Path) -> Path:
+    """Put the fake server on disk under *directory* and name its path."""
+    script = directory / "fake_mcp_server.py"
+    script.write_text(STDIO_FAKE_SERVER_SOURCE, encoding="utf-8")
+    return script

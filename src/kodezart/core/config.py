@@ -818,6 +818,16 @@ class AppConfig(BaseSettings):
             "path."
         ),
     )
+    knowledge_mcp_stderr_tail_limit: int = Field(
+        default=2000,
+        ge=200,
+        le=20000,
+        description=(
+            "Bytes of the spawned knowledge MCP server's OWN stderr carried "
+            "into the process log when its session fails or ends. The TAIL, "
+            "because a server that dies says why in its last lines."
+        ),
+    )
     knowledge_mcp_interactive_auth_hosts: list[str] = Field(
         default_factory=lambda: ["mcp.notion.com"],
         description=(
