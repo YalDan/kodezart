@@ -5,14 +5,16 @@ than defines.
 """
 
 from dataclasses import dataclass
+from typing import Final, assert_never
 
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.linear_mcp_tracker import (
+    ACCEPTED_CREDENTIAL_SHAPE,
     LinearMcpTracker,
-    credential_expiry_field,
+    is_long_lived_credential,
 )
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import TrackerCredentialExpiryError
+from kodezart.core.errors import TrackerCredentialShapeError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
@@ -23,8 +25,12 @@ from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 
+#: Where the tracker credential is read from, named in the refusal because
+#: it is half of what an operator has to act on.
+CREDENTIAL_FIELD: Final[str] = "KODEZART_TRACKER_TOKEN"
 
-def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+
+def make_mcp_tool_caller(*, config: AppConfig, token: str) -> HttpMcpToolCaller:
     """The vendor MCP transport this deployment dials.
 
     One server definition, one consumer: this factory, which builds the
@@ -43,24 +49,32 @@ def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCall
     )
 
 
-def refuse_expiring_credential(*, backend: TrackerBackend, token: str) -> None:
-    """Refuse a credential that will expire under the boot it is starting.
+def refuse_foreign_credential(*, backend: TrackerBackend, token: str) -> None:
+    """Refuse any credential that is not the backend's long-lived key shape.
 
     The SHAPE knowledge is the adapter's — which credentials its backend
-    takes and which of them declare a lifetime — and the refusal is boot's,
+    mints and which of them outlive a run — and the refusal is boot's,
     because this is the last moment at which a deployment can be told
     anything.  Nothing in this process refreshes a credential: a boot that
-    accepted an expiring one would serve until the expiry and then answer
+    accepted one with a lifetime would serve until it ended and then answer
     every tracker call with a refusal, hours later, unattended (KOD-171).
+
+    The match is TOTAL.  A second backend added without its own shape rule
+    stops the type check here rather than reaching this function's tail
+    with nothing decided about the credential it was handed.
     """
     match backend:
         case TrackerBackend.LINEAR:
-            field = credential_expiry_field(token)
-    if field is not None:
-        raise TrackerCredentialExpiryError(
-            "the tracker credential declares its own expiry and nothing here "
-            "refreshes it; configure a long-lived key instead",
-            field=field,
+            accepted = is_long_lived_credential(token)
+            shape = ACCEPTED_CREDENTIAL_SHAPE
+        case _:
+            assert_never(backend)
+    if not accepted:
+        raise TrackerCredentialShapeError(
+            "the tracker credential is not the vendor's long-lived key shape "
+            "and nothing here refreshes a credential that expires",
+            field=CREDENTIAL_FIELD,
+            accepted_shape=shape,
         )
 
 
@@ -118,9 +132,13 @@ async def boot_tracker(
     absent and leaves the tracker unwired; an unreconcilable mapping aborts
     boot with a typed error naming it.
 
-    The credential is judged BEFORE the dial: one that declares its own
-    expiry is refused here, so a deployment learns it at the second the
-    process starts rather than at the minute the token dies.
+    The credential is judged twice before the session exists, and both
+    judgements are cheap.  Its SHAPE is read first, off the bytes alone, so
+    a credential this process could not renew is refused without a request
+    being made at all.  Then it is PRESENTED once, over plain HTTP, so a
+    key of the right shape that the server does not accept is named as the
+    refusal it is — a 401 met while the session opens says only that the
+    session broke (KOD-268).
     """
     if operation is None or config.tracker_token is None:
         await log.ainfo(
@@ -130,8 +148,9 @@ async def boot_tracker(
         )
         return None
     token = config.tracker_token.get_secret_value()
-    refuse_expiring_credential(backend=config.tracker, token=token)
+    refuse_foreign_credential(backend=config.tracker, token=token)
     caller = make_mcp_tool_caller(config=config, token=token)
+    await caller.probe()
     await caller.open()
     try:
         tracker = build_tracker(config=config, operation=operation, caller=caller)

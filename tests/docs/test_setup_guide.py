@@ -12,6 +12,7 @@ import tomllib
 from fnmatch import fnmatch
 from pathlib import Path
 
+from kodezart.adapters.linear_mcp_tracker import ACCEPTED_CREDENTIAL_SHAPE
 from kodezart.core import errors
 from kodezart.types.domain.dispatch import DispatchOutcome
 from kodezart.types.domain.operation import (
@@ -49,7 +50,8 @@ CITED_ERRORS: frozenset[str] = frozenset(
         "OperationConfigError",
         "TrackerBootValidationError",
         "TrackerEnsureConflictError",
-        "TrackerCredentialExpiryError",
+        "TrackerCredentialShapeError",
+        "McpCredentialRefusedError",
     },
 )
 
@@ -154,19 +156,18 @@ def test_every_failure_class_the_guide_names_exists() -> None:
         assert name in guide, name
 
 
-def test_the_guide_states_the_long_lived_credential_requirement() -> None:
-    """KOD-186: the requirement boot enforces is the one the guide states.
+def test_the_guide_states_the_credential_shape_boot_enforces() -> None:
+    """KOD-186: the shape boot accepts is the shape the guide tells you to mint.
 
     An operator who pastes an OAuth access token gets a service that works
     for the length of that token and then refuses every tracker call — the
-    2026-09-01 failure.  Boot refuses that credential, so the guide has to
-    say so before step 1 sends anybody to mint one.
+    2026-09-01 failure.  Boot accepts one shape and refuses the rest, so the
+    guide has to state that shape before step 1 sends anybody to a settings
+    page.  Derived from the adapter's own constant: the error an operator
+    reads and the sentence they read it against cannot drift apart.  That
+    the class exists and is named here is the CITED_ERRORS test's job.
     """
-    guide = _guide()
-
-    assert "long-lived" in guide
-    assert "TrackerCredentialExpiryError" in guide
-    assert hasattr(errors, "TrackerCredentialExpiryError")
+    assert ACCEPTED_CREDENTIAL_SHAPE in _guide()
 
 
 def _shipped_variables() -> set[str]:

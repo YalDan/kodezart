@@ -2638,14 +2638,24 @@ class ManagedFakeLinearMcpServer(FakeLinearMcpServer):
         super().__init__(**kwargs)  # type: ignore[arg-type]
         self.opens: int = 0
         self.closes: int = 0
+        #: Every lifecycle act in the order boot performed it, so a case can
+        #: state that the credential was checked BEFORE a session existed
+        #: rather than only that both happened (KOD-268).
+        self.lifecycle: list[str] = []
+
+    async def probe(self) -> None:
+        await asyncio.sleep(0)
+        self.lifecycle.append("probe")
 
     async def open(self) -> None:
         await asyncio.sleep(0)
         self.opens += 1
+        self.lifecycle.append("open")
 
     async def close(self) -> None:
         await asyncio.sleep(0)
         self.closes += 1
+        self.lifecycle.append("close")
 
 
 #: What a lifecycle stage means as a workflow-state KIND.  The fake owns the

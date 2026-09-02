@@ -1,28 +1,30 @@
 """Boot validation: one bad mapping aborts startup naming exactly that entry."""
 
-import json
-from base64 import urlsafe_b64encode
 from collections.abc import Mapping, Sequence
+from http import HTTPStatus
 from pathlib import Path
 from typing import ClassVar
 
+import httpx
 import pytest
 
+from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
 from kodezart.adapters.linear_mcp_tracker import (
+    ACCEPTED_CREDENTIAL_SHAPE,
     LinearMcpTracker,
-    credential_expiry_field,
 )
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.composition.tracker import boot_tracker, refuse_expiring_credential
+from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
+    McpCredentialRefusedError,
     PromptRenderError,
     TrackerBootValidationError,
-    TrackerCredentialExpiryError,
+    TrackerCredentialShapeError,
     TrackerEnsureConflictError,
 )
 from kodezart.core.logging import get_logger
@@ -59,7 +61,12 @@ from kodezart.types.domain.tracker import (
     MappingRef,
     TrackerBackend,
 )
-from tests.fakes import FakeLinearMcpServer, FakeMcpDocument, FakeTrackerPort
+from tests.fakes import (
+    FakeLinearMcpServer,
+    FakeMcpDocument,
+    FakeTrackerPort,
+    ManagedFakeLinearMcpServer,
+)
 from tests.prompt_census import configured_investigation_cap
 from tests.tracker.conftest import (
     APPROVER,
@@ -837,66 +844,69 @@ class TestWorkflowStatesResolvePerTeam:
 # ---------------------------------------------------------------------------
 
 
-def _jwt(claims: Mapping[str, object]) -> str:
-    """A credential in the shape an OAuth access token arrives in.
-
-    Shape only: the signature is a fixture string, because nothing reads
-    it.  What boot reads is the claim set, which is what says whether this
-    credential outlives the process it is starting.
-    """
-
-    def segment(payload: Mapping[str, object]) -> str:
-        encoded = urlsafe_b64encode(json.dumps(payload).encode()).decode()
-        return encoded.rstrip("=")
-
-    header = segment({"alg": "HS256", "typ": "JWT"})
-    return f"{header}.{segment(claims)}.a-fixture-signature"
-
-
-#: The long-lived arm: a personal key, opaque and carrying no claims at all.
+#: The accepted arm: the vendor's long-lived personal key, at the length
+#: measured on the operator's live credential.  Assembled by concatenation
+#: so no literal in this file has the shape of a real credential.
 LONG_LIVED_KEY = "lin_api_" + "0" * 40
 
-#: The arm measured on 2026-09-01: a credential that states its own expiry.
-EXPIRING_TOKEN = _jwt({"sub": "fixture-actor", "exp": 1_900_000_000})
+#: The vendor's OTHER credential: an OAuth access token, which expires and
+#: which nothing in this process renews.
+OAUTH_TOKEN = "lin_oauth_" + "0" * 40
+
+#: Neither shape at all — the paste that is some other service's secret.
+FOREIGN_TOKEN = "fixture-tracker-token"
+
+#: The right prefix at the wrong length: a truncated key, which the vendor
+#: never minted and which a prefix test alone would wave through.
+TRUNCATED_KEY = "lin_api_" + "0" * 20
 
 
-class TestTheCredentialBootRefuses:
-    """A credential that dies under the boot is refused before the dial.
+class TestTheCredentialShapeBootRefuses:
+    """Only the shape that outlives a run boots; every other one is refused.
 
     Measured 2026-09-01 (KOD-171): a boot ran for fifty-one minutes and then
-    met HTTP 401 on every tracker call for the rest of its life.  Nothing
-    here refreshes a credential, so the only moment this is actionable is
-    startup.
+    met HTTP 401 on every tracker call for the rest of its life.  The vendor
+    mints exactly two credentials for this header and only one of them has
+    no lifetime, so the shape is the whole of the distinction — the other is
+    opaque and declares nothing a reader could inspect.
     """
 
-    def test_an_expiry_bearing_credential_is_refused_naming_its_field(self) -> None:
-        with pytest.raises(TrackerCredentialExpiryError) as caught:
-            refuse_expiring_credential(
-                backend=TrackerBackend.LINEAR,
-                token=EXPIRING_TOKEN,
-            )
-
-        assert caught.value.field == "exp"
-        assert "exp" in str(caught.value)
-        assert "long-lived" in str(caught.value)
-
-    def test_a_long_lived_key_is_accepted(self) -> None:
+    def test_the_long_lived_personal_key_is_accepted(self) -> None:
         """The paired positive: the credential the guide tells you to mint."""
         assert (
-            refuse_expiring_credential(
+            refuse_foreign_credential(
                 backend=TrackerBackend.LINEAR,
                 token=LONG_LIVED_KEY,
             )
             is None
         )
 
-    def test_a_credential_that_declares_no_expiry_is_accepted(self) -> None:
-        """A claim set is not itself the problem; an expiry in it is."""
-        assert credential_expiry_field(_jwt({"sub": "fixture-actor"})) is None
+    @pytest.mark.parametrize(
+        "token",
+        [OAUTH_TOKEN, FOREIGN_TOKEN, TRUNCATED_KEY],
+        ids=["oauth-access-token", "unknown-shape", "right-prefix-wrong-length"],
+    )
+    def test_every_other_shape_is_refused_naming_the_field_and_the_shape(
+        self,
+        token: str,
+    ) -> None:
+        with pytest.raises(TrackerCredentialShapeError) as caught:
+            refuse_foreign_credential(backend=TrackerBackend.LINEAR, token=token)
 
-    def test_a_credential_that_is_not_a_claim_set_is_not_guessed_about(self) -> None:
-        """Three dotted segments that decode to nothing declare nothing."""
-        assert credential_expiry_field("not.a.jwt") is None
+        assert caught.value.field == "KODEZART_TRACKER_TOKEN"
+        assert caught.value.accepted_shape == ACCEPTED_CREDENTIAL_SHAPE
+        assert "KODEZART_TRACKER_TOKEN" in str(caught.value)
+        assert ACCEPTED_CREDENTIAL_SHAPE in str(caught.value)
+
+    def test_the_refusal_never_carries_the_credential_it_read(self) -> None:
+        """A message an operator pastes into a ticket must be safe to paste."""
+        with pytest.raises(TrackerCredentialShapeError) as caught:
+            refuse_foreign_credential(
+                backend=TrackerBackend.LINEAR,
+                token=OAUTH_TOKEN,
+            )
+
+        assert OAUTH_TOKEN not in str(caught.value)
 
     async def test_boot_refuses_the_credential_before_it_dials_anything(self) -> None:
         """The refusal is the boot's FIRST act, not a failed connection.
@@ -906,13 +916,143 @@ class TestTheCredentialBootRefuses:
         one.
         """
         config = AppConfig(
-            tracker_token=EXPIRING_TOKEN,
+            tracker_token=OAUTH_TOKEN,
             tracker_mcp_server_url="https://tracker.invalid/mcp",
         )
 
-        with pytest.raises(TrackerCredentialExpiryError):
+        with pytest.raises(TrackerCredentialShapeError):
             await boot_tracker(
                 config=config,
                 operation=operation_config(),
                 log=get_logger(__name__),
             )
+
+
+# ---------------------------------------------------------------------------
+# The credential boot PRESENTS, before the session exists (KOD-268)
+# ---------------------------------------------------------------------------
+
+
+class _Endpoint:
+    """An MCP endpoint answering every request with one status.
+
+    Installed through the caller's OWN client factory, so what the probe
+    runs on is the client the live session runs on and not one built
+    beside it.  Records each request, because the point of probing before
+    the dial is that a refused boot makes exactly ONE.
+    """
+
+    def __init__(self, status: HTTPStatus) -> None:
+        self._status = status
+        self.requests: list[httpx.Request] = []
+
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._answer)
+
+    def _answer(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        return httpx.Response(status_code=self._status, json={})
+
+
+def _managed_fixture_server() -> ManagedFakeLinearMcpServer:
+    """The shared fixture workspace, plus the session lifetime boot drives."""
+    source = fixture_server()
+    managed = ManagedFakeLinearMcpServer()
+    managed.issues = source.issues
+    managed.documents = source.documents
+    managed.users = source.users
+    managed.teams = source.teams
+    managed.labels = source.labels
+    managed.team_labels = source.team_labels
+    managed.statuses = source.statuses
+    managed.state_types = source.state_types
+    managed.actor = source.actor
+    return managed
+
+
+def _caller_over(endpoint: _Endpoint, *, token: str) -> HttpMcpToolCaller:
+    return HttpMcpToolCaller(
+        url="https://tracker.invalid/mcp",
+        server_name="fixture-server",
+        token=token,
+        timeout_seconds=5.0,
+        call_timeout_seconds=5.0,
+        auth_header_name="Authorization",
+        auth_scheme="Bearer",
+        error_detail_limit=500,
+        transport_factory=endpoint.transport,
+    )
+
+
+class TestBootPresentsTheCredentialBeforeTheSessionOpens:
+    """A 401 at boot is the credential's refusal, named as such.
+
+    Measured 2026-09-01 (KOD-268): a 401 met while the SDK session opens
+    cancels the task that opened it, so ``open`` can only report a broken
+    session.  Boot therefore asks over plain HTTP first, where the status
+    is still legible.
+    """
+
+    async def test_a_refused_probe_stops_boot_before_any_session_opens(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Delete the probe call from boot and this case goes red.
+
+        Without it boot reaches ``open``, whose 401 leaves as the transport
+        failure — so the class asserted here is exactly what the probe buys.
+        """
+        endpoint = _Endpoint(HTTPStatus.UNAUTHORIZED)
+
+        def factory(*, config: AppConfig, token: str) -> HttpMcpToolCaller:
+            return _caller_over(endpoint, token=token)
+
+        monkeypatch.setattr(
+            "kodezart.composition.tracker.make_mcp_tool_caller",
+            factory,
+        )
+        config = AppConfig(
+            tracker_token=LONG_LIVED_KEY,
+            tracker_mcp_server_url="https://tracker.invalid/mcp",
+        )
+
+        with pytest.raises(McpCredentialRefusedError) as caught:
+            await boot_tracker(
+                config=config,
+                operation=operation_config(),
+                log=get_logger(__name__),
+            )
+
+        assert caught.value.server_name == "fixture-server"
+        assert len(endpoint.requests) == 1
+        assert endpoint.requests[0].headers["Authorization"] == (
+            f"Bearer {LONG_LIVED_KEY}"
+        )
+
+    async def test_the_probe_is_made_before_the_session_is_opened(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The paired positive: an accepted credential boots, probe first."""
+        server = _managed_fixture_server()
+
+        def factory(*, config: AppConfig, token: str) -> ManagedFakeLinearMcpServer:
+            return server
+
+        monkeypatch.setattr(
+            "kodezart.composition.tracker.make_mcp_tool_caller",
+            factory,
+        )
+        config = AppConfig(
+            tracker_token=LONG_LIVED_KEY,
+            tracker_mcp_server_url="https://tracker.invalid/mcp",
+        )
+
+        dialled = await boot_tracker(
+            config=config,
+            operation=operation_config(),
+            log=get_logger(__name__),
+        )
+
+        assert dialled is not None
+        assert server.lifecycle == ["probe", "open"]

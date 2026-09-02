@@ -21,8 +21,9 @@ Every refusal names its ground; no silent arm.
 """
 
 import asyncio
+import json
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import timedelta
 from http import HTTPStatus
 from typing import Final
@@ -60,6 +61,10 @@ _ANSWER: Final[str] = '{"id": "K-1"}'
 def caller_fixture(
     *,
     call_timeout_seconds: float = _CALL_TIMEOUT_SECONDS,
+    transport_factory: Callable[
+        [],
+        httpx.AsyncBaseTransport,
+    ] = httpx.AsyncHTTPTransport,
 ) -> HttpMcpToolCaller:
     return HttpMcpToolCaller(
         url="https://mcp.invalid/mcp",
@@ -70,6 +75,7 @@ def caller_fixture(
         auth_header_name="Authorization",
         auth_scheme="Bearer",
         error_detail_limit=_ERROR_DETAIL_LIMIT,
+        transport_factory=transport_factory,
     )
 
 
@@ -165,6 +171,95 @@ async def answer_with(caller: HttpMcpToolCaller, status: HTTPStatus) -> None:
     async with caller._http_client() as client:
         for hook in client.event_hooks["response"]:
             await hook(httpx.Response(status_code=status))
+
+
+class _Endpoint:
+    """An endpoint answering every request with one status, and recording it.
+
+    Handed to the caller as its TRANSPORT factory, so the probe runs on the
+    very client the live session runs on rather than on one built beside it
+    (KOD-268).
+    """
+
+    def __init__(self, status: HTTPStatus) -> None:
+        self._status = status
+        self.requests: list[httpx.Request] = []
+
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._answer)
+
+    def _answer(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        return httpx.Response(status_code=self._status, json={})
+
+
+class TestTheCredentialProbe:
+    """The credential is presented once, before any session exists.
+
+    Measured 2026-09-01 (KOD-171, KOD-268): a 401 met while the SDK opens
+    cancels the task that opened it, so the status reaches nothing that
+    could classify it and a refused credential arrived as a broken session.
+    Over plain HTTP the answer is a status code.
+    """
+
+    async def test_a_refused_credential_leaves_as_the_credential_class(self) -> None:
+        endpoint = _Endpoint(HTTPStatus.UNAUTHORIZED)
+        caller = caller_fixture(transport_factory=endpoint.transport)
+
+        with pytest.raises(McpCredentialRefusedError) as excinfo:
+            await caller.probe()
+
+        assert not isinstance(excinfo.value, McpTransportError)
+        assert excinfo.value.server_name == "fixture-server"
+        assert excinfo.value.tool_name is None
+
+    async def test_an_accepted_credential_is_silence(self) -> None:
+        """The paired positive: a served handshake raises nothing at all."""
+        endpoint = _Endpoint(HTTPStatus.OK)
+        caller = caller_fixture(transport_factory=endpoint.transport)
+
+        assert await caller.probe() is None
+
+    async def test_any_other_error_status_stays_the_transport_class(self) -> None:
+        """The paired negative: an unwell server is not a dead credential.
+
+        Classifying a bad gateway as a refused credential would stop a boot
+        whose token was fine and send an operator to mint a new one.
+        """
+        endpoint = _Endpoint(HTTPStatus.BAD_GATEWAY)
+        caller = caller_fixture(transport_factory=endpoint.transport)
+
+        with pytest.raises(McpTransportError):
+            await caller.probe()
+
+    async def test_the_probe_is_one_initialize_carrying_the_credential(self) -> None:
+        """What goes out is the handshake itself, with the configured bearer."""
+        endpoint = _Endpoint(HTTPStatus.OK)
+        caller = caller_fixture(transport_factory=endpoint.transport)
+
+        await caller.probe()
+
+        assert len(endpoint.requests) == 1
+        request = endpoint.requests[0]
+        assert request.method == "POST"
+        assert request.url == httpx.URL("https://mcp.invalid/mcp")
+        assert request.headers["Authorization"] == f"Bearer {_FIXTURE_TOKEN}"
+        assert json.loads(request.content)["method"] == "initialize"
+
+    async def test_an_unreachable_server_is_the_transport_class(self) -> None:
+        """A probe that never got an answer says the transport failed."""
+
+        def refuse(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("no route to host")
+
+        caller = caller_fixture(
+            transport_factory=lambda: httpx.MockTransport(refuse),
+        )
+
+        with pytest.raises(McpTransportError) as excinfo:
+            await caller.probe()
+
+        assert isinstance(excinfo.value.__cause__, httpx.ConnectError)
 
 
 class TestARefusedCredential:

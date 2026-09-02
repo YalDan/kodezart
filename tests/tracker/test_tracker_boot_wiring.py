@@ -38,7 +38,11 @@ from tests.tracker.conftest import (
     fixture_server,
 )
 
-TOKEN = "fixture-tracker-token"
+#: A credential in the shape boot accepts — the vendor's long-lived personal
+#: key — assembled by concatenation so no literal here has the shape of a
+#: real one.  Boot refuses every other shape before it dials (KOD-186), so a
+#: wiring case that used an arbitrary string would never reach the wiring.
+TOKEN = "lin_api_" + "0" * 40
 
 #: A cadence no default would produce, and long enough that no pass fires
 #: inside a test: what is asserted is the wiring of the knob, not a tick.
