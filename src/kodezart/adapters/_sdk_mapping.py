@@ -2,12 +2,10 @@
 
 The match below is total over the SDK's ``Message`` union.  A message type
 the union gains and this module has not absorbed is a named refusal at
-runtime and a type error at check time, because the alternative — the
-``isinstance`` chain that fell through to an empty list — reported a
-widened vendor vocabulary as a session that simply said nothing.
+runtime and a type error at check time.
 """
 
-from typing import Final, Never, NoReturn
+from typing import Final, Never, NoReturn, assert_never
 
 from claude_agent_sdk import (
     TERMINAL_TASK_STATUSES,
@@ -143,6 +141,8 @@ def _rate_limit_events(message: RateLimitEvent) -> list[AgentEvent]:
             ]
         case "allowed":
             return []
+        case _ as status:
+            assert_never(status)
 
 
 def _conversation_reset_event(message: ConversationResetMessage) -> SystemEvent:
@@ -150,9 +150,8 @@ def _conversation_reset_event(message: ConversationResetMessage) -> SystemEvent:
 
     A reset discards the transcript and zeroes the running totals later
     results report, so a consumer accumulating them has to see it happen.
-    It rides the system event under the CLI's own subtype: the reset is a
-    session-level fact, and inventing an event type for it would widen the
-    wire contract for one field set the system event already carries.
+    It rides the system event under the CLI's own subtype, as the
+    session-level fact it is.
     """
     return SystemEvent(
         subtype=_CONVERSATION_RESET_SUBTYPE,
