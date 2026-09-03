@@ -389,6 +389,8 @@ class _TrackerGoneAtShutdown(FakeTrackerPort):
 
 async def _shutdown(
     tracker: FakeTrackerPort,
+    *,
+    settle_before_drain: bool = False,
 ) -> tuple[list[RunRecord], list[EventDict]]:
     """The measured boot, then the lifespan's own shutdown, over *tracker*.
 
@@ -448,6 +450,13 @@ async def _shutdown(
 
         with structlog.testing.capture_logs() as logs:
             await queue.stop()
+            if settle_before_drain:
+                # Force the CI race: let every watch task finish — and so
+                # prune itself from the in-flight set — BEFORE the drain,
+                # so the killed watch's raise is reported off the task, not
+                # off a gather that no longer holds it (KOD-303).
+                while watch.following:
+                    await asyncio.sleep(0)
             await watch.drain()
             await watch.record_unfinished()
     finally:
@@ -485,6 +494,42 @@ async def test_the_shutdown_leaves_no_fire_without_its_row() -> None:
     }
     assert len(rows) == len(_rows_by_fire(rows))
     # The sweep's row is the last to land: it runs once the drain is over.
+    assert rows[-1].name == KILLED
+    assert [
+        entry["error_kind"]
+        for entry in logs
+        if entry["event"] == "lifecycle_watch_failed"
+    ] == [McpSessionClosedError.__name__]
+    assert [
+        (entry["issue_key"], entry["outcome"])
+        for entry in logs
+        if entry["event"] == "unfinished_fire_recorded"
+    ] == [(KILLED, RunOutcome.FAILED.value)]
+
+
+async def test_a_watch_that_raised_before_the_drain_is_still_reported() -> None:
+    """KOD-303 — the CI race: the killed watch finishes before the drain.
+
+    The stop ends every stream, and under a loaded runner the killed
+    watch runs its failure arm — meeting the gone session and raising —
+    and its done-callback prunes it from the in-flight set, all before
+    the drain snapshots that set.  The drain must still report the raise
+    and still leave no exception unretrieved: the failure is read off
+    the task as it ends, not off the drain's gather.  Green whatever the
+    ordering, where the timing-only version was flaky in the forge.
+    """
+    tracker = _TrackerGoneAtShutdown(
+        issues=[make_tracker_issue(key) for key in (FINISHED, KILLED, NEVER_RAN)],
+        gone_for=KILLED,
+    )
+
+    rows, logs = await _shutdown(tracker, settle_before_drain=True)
+
+    assert _rows_by_fire(rows) == {
+        FINISHED: RunOutcome.COMPLETED,
+        KILLED: RunOutcome.FAILED,
+        NEVER_RAN: RunOutcome.NEVER_STARTED,
+    }
     assert rows[-1].name == KILLED
     assert [
         entry["error_kind"]

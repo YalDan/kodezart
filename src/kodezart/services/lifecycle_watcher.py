@@ -155,6 +155,14 @@ class LifecycleWatcher:
         #: being re-selected whole at the next tick (KOD-174).
         self._report: FireReport = report
         self._following: set[asyncio.Task[None]] = set()
+        #: Watches that ended by RAISING, captured off each task the
+        #: moment it finishes.  Retrieving the exception here is what
+        #: keeps a raising watch from ending as an unretrieved task
+        #: exception, and holding it for the drain is what keeps a
+        #: watch that finished — and so pruned itself from the
+        #: in-flight set — BEFORE the drain from being missed by a
+        #: drain that gathers only what is still in flight (KOD-303).
+        self._raised: list[BaseException] = []
         #: Every fire this process started, by job, until its watch has
         #: recorded it.  A watch records at its END, so a shutdown that
         #: arrives first — or a watch that raises on the way — leaves the
@@ -202,7 +210,25 @@ class LifecycleWatcher:
             ),
         )
         self._following.add(task)
-        task.add_done_callback(self._following.discard)
+        task.add_done_callback(self._on_watch_done)
+
+    def _on_watch_done(self, task: asyncio.Task[None]) -> None:
+        """Account for a finished watch: prune it, and keep what it raised.
+
+        The one place every watch passes through exactly once, whenever
+        it ends.  Retrieving the exception HERE is what keeps a raising
+        watch from ending as an unretrieved task exception, and holding
+        it for the drain is what keeps a watch that finished before the
+        drain — and so already pruned itself from the in-flight set —
+        from being lost to a drain that gathers only what is still in
+        flight (KOD-303).
+        """
+        self._following.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            self._raised.append(exc)
 
     def _remember_dequeue(self, job_id: str) -> None:
         """Note that this job's run began, for a sweep the stop has blinded.
@@ -231,17 +257,19 @@ class LifecycleWatcher:
 
         The watches are AWAITED, never cancelled.  Cancelling them is
         precisely what would skip the write-back and the release this
-        exists to let happen; a watch that raises is reported here rather
-        than ending the shutdown, which has other things to close.
+        exists to let happen.  What each watch raised is read off the
+        task as it finished, not off this gather, so a watch that ended
+        before the drain is reported here exactly as one still in flight
+        is: the gather only waits the rest out (KOD-303).
         """
-        outcomes = await asyncio.gather(*self._following, return_exceptions=True)
-        for outcome in outcomes:
-            if isinstance(outcome, BaseException):
-                await self._log.aerror(
-                    "lifecycle_watch_failed",
-                    error=str(outcome),
-                    error_kind=type(outcome).__name__,
-                )
+        await asyncio.gather(*self._following, return_exceptions=True)
+        for exc in self._raised:
+            await self._log.aerror(
+                "lifecycle_watch_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+            )
+        self._raised.clear()
 
     async def record_unfinished(self) -> None:
         """Give every fire this process started and did not finish its row.
