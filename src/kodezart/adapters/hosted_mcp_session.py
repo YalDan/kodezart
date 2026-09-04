@@ -39,9 +39,19 @@ from mcp import ClientSession
 from mcp.types import CallToolResult
 
 from kodezart.adapters.mcp_result_decoding import error_detail, structured_result
-from kodezart.core.errors import McpSessionClosedError, McpTransportError
+from kodezart.core.errors import (
+    McpCallUnansweredError,
+    McpSessionClosedError,
+    McpTransportError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolResult
+from kodezart.types.domain.transport import (
+    AnyCallFailure,
+    CallFailed,
+    CallUnanswered,
+    SessionGone,
+)
 
 #: The host's inbox holds every call handed to it, unbounded: a caller
 #: waiting for room in the buffer would be waiting on the very host it is
@@ -225,44 +235,64 @@ class HostedSessionTransport(ABC):
         failure.__cause__ = exc
         return failure
 
-    def call_failed_as(
+    @abstractmethod
+    def classify(self, exc: Exception) -> AnyCallFailure:
+        """What became of a call that raised *exc*: see :mod:`transport`.
+
+        Required of every transport, because the two decisions the host
+        makes from it — does the caller make the call again, is the
+        session over — are exactly the ones a transport cannot be allowed
+        to leave to a default.  A transport that cannot tell answers
+        :class:`CallFailed`, which replays nothing and ends nothing: a
+        failure nobody could attribute to the session is not evidence the
+        session is gone (KOD-192).
+        """
+
+    def failure_for(
         self,
-        kind: type[McpTransportError],
+        failure: AnyCallFailure,
         exc: Exception,
         tool_name: str,
         *,
         on_reopened: bool,
     ) -> Exception:
-        """One failed call in the caller's vocabulary, as the *kind* given.
+        """One failed call in the caller's vocabulary, from what became of it.
 
-        The words are shared and the CLASS is the transport's own: a
-        transport that can tell a dead session from a call the server
-        refused says so here, and one that cannot must not guess — a
-        reopen bought on a refusal spends a handshake per malformed
-        argument (KOD-192).
+        ONE place derives the exception from the classification, so a
+        transport states what happened and never which class that is:
+        the closed-session class is what a caller makes the call again
+        on, and a call the server may have run must not leave in it.
         """
-        failure = kind(
-            f"the MCP tool call failed in transport{_where(on_reopened)}",
-            server_name=self.server_name,
-            tool_name=tool_name,
-        )
-        failure.__cause__ = exc
-        return failure
+        where = _where(on_reopened)
+        kind: type[McpTransportError]
+        match failure:
+            case SessionGone():
+                kind = McpSessionClosedError
+                message = f"the MCP session was gone before the call was written{where}"
+            case CallUnanswered():
+                kind = McpCallUnansweredError
+                message = f"the MCP call was written and never answered{where}"
+            case CallFailed():
+                kind = McpTransportError
+                message = f"the MCP tool call failed in transport{where}"
+        outcome = kind(message, server_name=self.server_name, tool_name=tool_name)
+        outcome.__cause__ = exc
+        return outcome
 
     async def failure_calling(
         self,
+        failure: AnyCallFailure,
         exc: Exception,
         tool_name: str,
         *,
         on_reopened: bool,
     ) -> Exception:
-        """Why one call did not answer, with the session still standing."""
-        return self.call_failed_as(
-            McpTransportError,
-            exc,
-            tool_name,
-            on_reopened=on_reopened,
-        )
+        """Why one call did not answer, given what became of it.
+
+        Async so a transport can say what its server said on the way out;
+        the default has nothing to add to the classification.
+        """
+        return self.failure_for(failure, exc, tool_name, on_reopened=on_reopened)
 
     def failure_unanswered(self, tool_name: str, *, on_reopened: bool) -> Exception:
         """Why a call went unanswered: the session ended under it.
@@ -677,13 +707,22 @@ class HostedMcpSession:
                 read_timeout_seconds=self._transport.call_timeout(),
             )
         except Exception as exc:
-            failure = await self._transport.failure_calling(
-                exc,
-                call.name,
-                on_reopened=call.on_reopened,
+            became = self._transport.classify(exc)
+            self._tell(
+                call,
+                await self._transport.failure_calling(
+                    became,
+                    exc,
+                    call.name,
+                    on_reopened=call.on_reopened,
+                ),
             )
-            self._tell(call, failure)
-            if isinstance(failure, McpSessionClosedError):
+            # Two decisions, and the classification carries both: whether
+            # the CALLER makes the call again is the exception's class,
+            # and whether the SESSION is over is this.  They came apart
+            # the day a request written and never answered had to end the
+            # session without being replayed (KOD-305).
+            if became.session_died:
                 # The phase moves BEFORE this call's waiter can run again:
                 # both statements are synchronous, so the caller resumes
                 # into an ENDED session and takes the reopen.  Telling it

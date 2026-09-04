@@ -44,6 +44,7 @@ import tempfile
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from http import HTTPStatus
 from pathlib import Path
 from typing import TextIO
 
@@ -58,48 +59,54 @@ from kodezart.adapters.hosted_mcp_session import (
     HostedSessionTransport,
 )
 from kodezart.core.error_egress import redact_credentials
-from kodezart.core.errors import McpSessionClosedError, McpTransportError
+from kodezart.core.errors import McpSessionClosedError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolResult
+from kodezart.types.domain.transport import (
+    AnyCallFailure,
+    CallFailed,
+    CallUnanswered,
+    SessionGone,
+)
 
-#: What a dead session raises on the way out of a call, in the stream's own
-#: vocabulary: the session's memory object streams are closed or broken.
-#: This is the class the measured boot met — ``anyio.ClosedResourceError``
-#: at 18:22 — and it arrives when the session is already gone before the
-#: request is written.
-_CLOSED_STREAM_ERRORS: tuple[type[Exception], ...] = (
+#: What a session that was gone BEFORE the request was written raises, in
+#: the stream's own vocabulary: the session's memory object streams are
+#: closed or broken.  This is the class the measured boot met —
+#: ``anyio.ClosedResourceError`` at 18:22 — and nothing reached the server,
+#: so the call may be made again (KOD-286).
+_GONE_BEFORE_WRITING: tuple[type[Exception], ...] = (
     anyio.BrokenResourceError,
     anyio.ClosedResourceError,
     anyio.EndOfStream,
 )
 
 
-def _is_closed_session(exc: Exception) -> bool:
-    """Whether *exc* says the SESSION died rather than the call failing.
+def _became_of(exc: Exception) -> AnyCallFailure:
+    """What became of a stdio call that raised *exc* (KOD-192, KOD-305).
 
-    Two arms, because the client reports the same death two ways: the
-    stream classes above when the session is gone before the request is
-    written, and its own ``CONNECTION_CLOSED`` error when the request was
-    written and the server's stdout reached EOF while the answer was
-    outstanding.  A protocol error the server COMPOSED and sent arrives as
-    the same class with a different code, and it is not this: answering a
-    vendor's refusal with a fresh subprocess would respawn the server once
-    per malformed argument.
+    Three arms, told apart by WHERE the call was: gone before the request
+    was written (the stream classes above — replay is safe); written and
+    never answered (the client's own ``CONNECTION_CLOSED``, synthesised
+    for every request outstanding when the server's stdout reaches EOF,
+    and its ``REQUEST_TIMEOUT`` when the bound ran out — the server may
+    have run it, and only the first of those took the session with it);
+    or answered, with a refusal the server composed or a payload the
+    client would not take, which is a server that is there.
+
+    ``CONNECTION_CLOSED`` is ``-32000``, inside the range JSON-RPC leaves
+    to servers, so a server that composes that code itself is read here as
+    its own death.  That costs one respawn and an honest "unanswered"
+    rather than the replay it used to cost; telling the two apart needs a
+    signal the protocol does not carry.
     """
-    if isinstance(exc, _CLOSED_STREAM_ERRORS):
-        return True
-    return isinstance(exc, McpError) and exc.error.code == CONNECTION_CLOSED
-
-
-def _failure_of(exc: Exception) -> type[McpTransportError]:
-    """The class a failed call leaves as: the session's death, or its answer.
-
-    A closed session is the subclass the record path reads as one to
-    reopen; anything else the client raised — a protocol error the server
-    composed, an answer that would not parse — came from a server that is
-    there, and leaves as the plain transport error (KOD-192).
-    """
-    return McpSessionClosedError if _is_closed_session(exc) else McpTransportError
+    if isinstance(exc, _GONE_BEFORE_WRITING):
+        return SessionGone()
+    if isinstance(exc, McpError):
+        if exc.error.code == CONNECTION_CLOSED:
+            return CallUnanswered(session_died=True)
+        if exc.error.code == HTTPStatus.REQUEST_TIMEOUT:
+            return CallUnanswered(session_died=False)
+    return CallFailed()
 
 
 #: Where a stderr tail was read: the four moments a server's last words
@@ -255,21 +262,20 @@ class _SpawnedServer(HostedSessionTransport):
         failure.__cause__ = exc
         return failure
 
+    def classify(self, exc: Exception) -> AnyCallFailure:
+        return _became_of(exc)
+
     async def failure_calling(
         self,
+        failure: AnyCallFailure,
         exc: Exception,
         tool_name: str,
         *,
         on_reopened: bool,
     ) -> Exception:
-        """The server's own last words, then the class its failure leaves as."""
+        """The server's own last words, then what its failure leaves as."""
         await self._report_stderr(path=self._stderr_path, context=_CALL_FAILED)
-        return self.call_failed_as(
-            _failure_of(exc),
-            exc,
-            tool_name,
-            on_reopened=on_reopened,
-        )
+        return self.failure_for(failure, exc, tool_name, on_reopened=on_reopened)
 
     def failure_not_serving(self, tool_name: str) -> Exception:
         """A caller nobody opened refuses as the record path reads refusals.

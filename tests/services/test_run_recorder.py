@@ -18,6 +18,7 @@ import pytest
 from kodezart.adapters.linear_record_sink import LinearRecordSink
 from kodezart.adapters.notion_record_sink import NotionRecordSink
 from kodezart.core.errors import (
+    McpCallUnansweredError,
     McpSessionClosedError,
     McpTransportError,
     RunRecordWriteError,
@@ -283,6 +284,26 @@ class TestRunRecorder:
         assert caught.value.destination == "destination-1"
         assert caught.value.system == DocumentSystem.KNOWLEDGE.value
         assert caught.value.cause_type == "McpSessionClosedError"
+
+    async def test_a_request_written_and_never_answered_is_its_own_class(self) -> None:
+        """Neither a dead session to reopen nor a refusal to fix (KOD-305).
+
+        The write may have landed; the honest remedy is to leave the row to
+        the verification that runs next, and the event has to say that
+        rather than file it under either of the two remedies it is not.
+        """
+        recorder = RunRecorder(
+            records={RunKind.FIRE_PREP.value: _destination(DocumentSystem.KNOWLEDGE)},
+            sinks={
+                DocumentSystem.KNOWLEDGE: RefusingRecordSink(McpCallUnansweredError),
+            },
+        )
+
+        with pytest.raises(RunRecordWriteError) as caught:
+            await recorder.record(_record())
+
+        assert caught.value.failure == RunRecordFailure.UNANSWERED.value
+        assert caught.value.cause_type == "McpCallUnansweredError"
 
     async def test_a_destination_that_answered_and_refused_is_the_other_class(
         self,

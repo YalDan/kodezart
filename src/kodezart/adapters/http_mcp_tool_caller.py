@@ -55,6 +55,7 @@ from kodezart.adapters.hosted_mcp_session import (
 from kodezart.core.errors import McpCredentialRefusedError, McpTransportError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolResult
+from kodezart.types.domain.transport import AnyCallFailure, CallFailed
 
 #: This client's identity in the MCP handshake, and the distribution its
 #: version is read from — the same package name the health surface reports.
@@ -246,6 +247,18 @@ class _RemoteServer(HostedSessionTransport):
         """
         return timedelta(seconds=self._call_timeout_seconds)
 
+    def classify(self, exc: Exception) -> AnyCallFailure:
+        """A call's failure is never this session's death, on this transport.
+
+        The SDK drives the session from a task group that collapses on
+        its own when the stream drops, and that collapse is the host's
+        signal; what a single call raises says only that the call failed.
+        So every failure here is the arm that replays nothing and ends
+        nothing, whatever *exc* was.
+        """
+        del exc
+        return CallFailed()
+
     def may_reopen(self) -> bool:
         """A credential this server has already refused is asked nothing.
 
@@ -325,17 +338,23 @@ class _RemoteServer(HostedSessionTransport):
 
     async def failure_calling(
         self,
+        failure: AnyCallFailure,
         exc: Exception,
         tool_name: str,
         *,
         on_reopened: bool,
     ) -> Exception:
-        """Why one call did not answer, with the session still standing."""
+        """A refused credential outranks whatever became of the call."""
         if self._credential_refused:
             refusal = self._refusal(tool_name)
             refusal.__cause__ = exc
             return refusal
-        return await super().failure_calling(exc, tool_name, on_reopened=on_reopened)
+        return await super().failure_calling(
+            failure,
+            exc,
+            tool_name,
+            on_reopened=on_reopened,
+        )
 
     def failure_unanswered(self, tool_name: str, *, on_reopened: bool) -> Exception:
         """Why a call went unanswered: the session ended under it.
