@@ -56,6 +56,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import RunRecordSink
 from kodezart.types.domain.operation import DocumentSystem, RecordDestination
 from kodezart.types.domain.run_records import (
+    RunOutcome,
     RunRecord,
     RunRecordFailure,
     RunRecordResult,
@@ -75,6 +76,55 @@ def _failure_class(
     if isinstance(exc, McpSessionClosedError):
         return RunRecordFailure.SESSION_CLOSED
     return RunRecordFailure.VENDOR_REFUSED
+
+
+async def report_record_failure(
+    log: BoundLogger,
+    *,
+    name: str,
+    outcome: RunOutcome,
+    exc: Exception,
+) -> None:
+    """Name a record that did not land, and which of two things refused.
+
+    ONE containment, shared by every producer of a run record, because
+    the two producers used to carry it verbatim each and drifted — one
+    gained a traceback field the other lacked, and a reader filtering on
+    the event could not tell a field that was absent from one that was
+    empty (KOD-192).  A destination that refused is named with what it
+    refused: the kind owed a row, the destination, its system, and the
+    class of refusal, all read off the failure rather than guessed here.
+    Anything else that raised is a defect in the record path's own wiring
+    rather than a destination refusing, and it is named apart: half a
+    field set under the record event is the muddle this exists to end.
+
+    Contained rather than raised, because both producers are past the
+    point where a raise could mean anything: the put-back and the claim
+    release have happened, or a driver task would stop its pass for the
+    life of the boot (KOD-170).
+    """
+    if isinstance(exc, RunRecordWriteError):
+        await log.aerror(
+            "run_record_write_failed",
+            kind=exc.kind,
+            name=name,
+            outcome=outcome.value,
+            destination=exc.destination,
+            system=exc.system,
+            failure=exc.failure,
+            error_type=exc.cause_type,
+            error=str(exc),
+            exc_info=exc,
+        )
+        return
+    await log.aerror(
+        "run_record_reporter_failed",
+        name=name,
+        outcome=outcome.value,
+        error_type=type(exc).__name__,
+        error=str(exc),
+        exc_info=exc,
+    )
 
 
 class RunRecorder:

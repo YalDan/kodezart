@@ -66,11 +66,10 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Self
 
-from kodezart.core.errors import RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
-from kodezart.services.run_recorder import RunRecorder
+from kodezart.services.run_recorder import RunRecorder, report_record_failure
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -523,27 +522,12 @@ class LifecycleWatcher:
                     recorded_at=datetime.now(UTC),
                 ),
             )
-        except RunRecordWriteError as exc:
-            await self._log.aerror(
-                "run_record_write_failed",
-                kind=exc.kind,
-                name=issue_key,
-                outcome=outcome.value,
-                destination=exc.destination,
-                system=exc.system,
-                failure=exc.failure,
-                error_type=exc.cause_type,
-                error=str(exc),
-                exc_info=exc,
-            )
         except Exception as exc:
-            await self._log.aerror(
-                "run_record_reporter_failed",
+            await report_record_failure(
+                self._log,
                 name=issue_key,
-                outcome=outcome.value,
-                error_type=type(exc).__name__,
-                error=str(exc),
-                exc_info=exc,
+                outcome=outcome,
+                exc=exc,
             )
         return None
 
