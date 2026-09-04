@@ -15,8 +15,8 @@ golden description
 golden rationale
 
 ## Acceptance Criteria
-- First criterion
-- Second criterion
+- AC-1 [hard_gate] First criterion
+- AC-2 [soft_signal] Second criterion
 
 ## Implementation Stats
 - Total iterations: 3

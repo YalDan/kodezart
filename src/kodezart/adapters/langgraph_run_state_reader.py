@@ -26,7 +26,7 @@ _RESERVED_NODES: frozenset[str] = frozenset({"__input__", "__start__"})
 _RUN_STATE_CHANNELS: tuple[str, ...] = (
     "total_iterations",
     "fix_rounds_used",
-    "accepted",
+    "accept_verdict",
     "merged",
     "review_passed",
     "ci_passed",

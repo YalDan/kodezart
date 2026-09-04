@@ -1,6 +1,7 @@
 """Tests for RalphLoop (inner quality-gating loop) with fakes."""
 
 import ast
+import inspect
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TypedDict
@@ -12,6 +13,7 @@ from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import AgentExecutor
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -20,6 +22,13 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.base_spec import (
+    BaseInput,
+    BaseRefRole,
+    BaseSpec,
+    trunk_base,
+)
+from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
@@ -28,11 +37,15 @@ from kodezart.types.domain.trajectory import IterationRecord
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
+    FakeAgentRunner,
     FakeChangePersister,
     FakeGitService,
     FakeRepoCache,
     FakeWorkspaceProvider,
     RecordingPromptProvider,
+    as_validated,
+    make_criteria,
+    make_minted_criteria,
     make_prompt_provider,
 )
 
@@ -70,17 +83,18 @@ class _RunKwargs(TypedDict):
     repo_url: str | None
     feature_branch: str
     ralph_branch: str
-    base_branch: str
+    base_spec: BaseSpec
     permission_mode: str
     allowed_tools: list[str]
-    acceptance_criteria: list[str]
+    acceptance_criteria: list[ValidatedCriterion]
     cache_key: str
     repo_visibility: RepoVisibility
 
 
 def _run_kwargs(
     *,
-    acceptance_criteria: list[str] | None = None,
+    acceptance_criteria: list[ValidatedCriterion] | None = None,
+    base_spec: BaseSpec | None = None,
 ) -> _RunKwargs:
     return _RunKwargs(
         prompt="fix it",
@@ -88,10 +102,10 @@ def _run_kwargs(
         repo_url=None,
         feature_branch="kodezart/test-12345678",
         ralph_branch="kodezart/test-12345678-ralph-abcdef01",
-        base_branch="main",
+        base_spec=base_spec if base_spec is not None else trunk_base("main"),
         permission_mode="bypassPermissions",
         allowed_tools=["Bash"],
-        acceptance_criteria=acceptance_criteria or ["Tests pass"],
+        acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),
         cache_key="test-cache-key",
         repo_visibility=RepoVisibility.UNKNOWN,
     )
@@ -112,6 +126,7 @@ async def test_loop_single_iteration_accepted() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "All good.",
@@ -136,7 +151,7 @@ async def test_loop_single_iteration_accepted() -> None:
     iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     assert len(iteration_events) >= 1
     last_iter = iteration_events[-1]
-    assert last_iter.accepted is True
+    assert last_iter.verdict is AcceptVerdict.accepted
     assert last_iter.iteration == 1
     assert last_iter.evaluation.criteria_results
     assert all(r.passed for r in last_iter.evaluation.criteria_results)
@@ -157,6 +172,7 @@ async def test_loop_max_iterations_exhausted() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": False,
                             "reasoning": "Tests fail.",
@@ -180,7 +196,7 @@ async def test_loop_max_iterations_exhausted() -> None:
 
     iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     last_iter = iteration_events[-1]
-    assert last_iter.accepted is False
+    assert last_iter.verdict is AcceptVerdict.rejected
     assert last_iter.iteration == 2
     assert any(not r.passed for r in last_iter.evaluation.criteria_results)
 
@@ -224,6 +240,7 @@ async def test_loop_second_iteration_succeeds() -> None:
                                 structured_output={
                                     "criteriaResults": [
                                         {
+                                            "criterionId": "AC-1",
                                             "criterion": "Tests pass",
                                             "passed": False,
                                             "reasoning": "Tests fail.",
@@ -242,6 +259,7 @@ async def test_loop_second_iteration_succeeds() -> None:
                                 structured_output={
                                     "criteriaResults": [
                                         {
+                                            "criterionId": "AC-1",
                                             "criterion": "Tests pass",
                                             "passed": True,
                                             "reasoning": "All good.",
@@ -288,7 +306,7 @@ async def test_loop_second_iteration_succeeds() -> None:
 
     iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     last_iter = iteration_events[-1]
-    assert last_iter.accepted is True
+    assert last_iter.verdict is AcceptVerdict.accepted
     assert last_iter.iteration == 2
 
 
@@ -307,6 +325,7 @@ async def test_loop_streams_events_per_node() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "OK.",
@@ -348,6 +367,7 @@ async def test_loop_does_not_emit_complete_event() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "OK.",
@@ -394,6 +414,7 @@ async def test_loop_exactly_one_iteration_event_per_cycle() -> None:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "All good.",
@@ -420,10 +441,10 @@ async def test_loop_exactly_one_iteration_event_per_cycle() -> None:
     assert len(iteration_events) == 1, (
         f"Expected 1 WorkflowIterationEvent per cycle, "
         f"got {len(iteration_events)}: "
-        f"{[e.accepted for e in iteration_events]}"
+        f"{[e.verdict for e in iteration_events]}"
     )
     # The single event must have accepted set (not None)
-    assert iteration_events[0].accepted is True
+    assert iteration_events[0].verdict is AcceptVerdict.accepted
     assert iteration_events[0].iteration == 1
 
 
@@ -525,16 +546,19 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
                                 structured_output={
                                     "criteriaResults": [
                                         {
+                                            "criterionId": "AC-1",
                                             "criterion": "Tests pass",
                                             "passed": True,
                                             "reasoning": "pytest green",
                                         },
                                         {
+                                            "criterionId": "AC-2",
                                             "criterion": "No lint errors",
                                             "passed": False,
                                             "reasoning": "ruff found B008",
                                         },
                                         {
+                                            "criterionId": "AC-3",
                                             "criterion": "Docs updated",
                                             "passed": True,
                                             "reasoning": "README has section",
@@ -553,16 +577,19 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
                                 structured_output={
                                     "criteriaResults": [
                                         {
+                                            "criterionId": "AC-1",
                                             "criterion": "Tests pass",
                                             "passed": True,
                                             "reasoning": "pytest green",
                                         },
                                         {
+                                            "criterionId": "AC-2",
                                             "criterion": "No lint errors",
                                             "passed": True,
                                             "reasoning": "ruff clean",
                                         },
                                         {
+                                            "criterionId": "AC-3",
                                             "criterion": "Docs updated",
                                             "passed": True,
                                             "reasoning": "README has section",
@@ -592,7 +619,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
     )
     loop = _make_loop(executor=executor, persister=persister, prompts=prompts)
 
-    criteria = ["Tests pass", "No lint errors", "Docs updated"]
+    criteria = make_criteria("Tests pass", "No lint errors", "Docs updated")
     events = [
         e
         async for e in loop.run(
@@ -665,6 +692,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
                             structured_output={
                                 "criteriaResults": [
                                     {
+                                        "criterionId": "AC-1",
                                         "criterion": "Tests pass",
                                         "passed": passed,
                                         "reasoning": "ok",
@@ -736,6 +764,7 @@ async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch()
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "ok",
@@ -754,6 +783,98 @@ async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch()
     assert diff_calls[0][3] == "kodezart/test-12345678-ralph-abcdef01"
 
 
+# ---------------------------------------------------------------------------
+# KOD-53/AC-22 and KOD-53/AC-26 — the digest's base is the recorded base
+# ---------------------------------------------------------------------------
+
+_STACKED = BaseSpec(
+    base_ref="kodezart/blocker-a-11111111",
+    role=BaseRefRole.deliverable,
+    inputs=(
+        BaseInput(
+            blocker_issue_id="KOD-A",
+            branch="kodezart/blocker-a-11111111",
+            sha="a" * 40,
+        ),
+    ),
+)
+
+
+def _one_passing_evaluation() -> FakeAgentExecutor:
+    return FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=10,
+                duration_api_ms=5,
+                is_error=False,
+                num_turns=1,
+                session_id="s1",
+                structured_output={
+                    "criteriaResults": [
+                        {
+                            "criterionId": "AC-1",
+                            "criterion": "Tests pass",
+                            "passed": True,
+                            "reasoning": "ok",
+                        },
+                    ],
+                },
+            ),
+        ]
+    )
+
+
+async def test_the_digest_of_a_stacked_lane_uses_its_recorded_base() -> None:
+    """KOD-53/AC-22: the stacked arm of the same selection the trunk test pins.
+
+    Grading the digest against trunk is the defect KOD-36 reports: every
+    line the lane inherited from its blocker enters the evaluator's
+    changeset as though the lane had written it.
+    """
+    git = FakeGitService()
+    loop = _make_loop(executor=_one_passing_evaluation(), git=git)
+
+    _ = [e async for e in loop.run(**_run_kwargs(base_spec=_STACKED))]
+
+    diff_calls = [c for c in git.calls if c[0] == "diff_summary"]
+    assert len(diff_calls) >= 1
+    assert diff_calls[0][2] == _STACKED.base_ref
+    assert diff_calls[0][2] != "main"
+
+
+async def test_the_first_iteration_is_dispatched_with_the_recorded_base() -> None:
+    """KOD-53/AC-26: ``stream_workflow``'s ``"main"`` default is never consulted.
+
+    The seam where the substitution would happen is the dispatch itself:
+    the loop names the base on every call, so the literal default on
+    ``AgentRunner.stream_workflow`` cannot become a scope baseline.
+    """
+    from kodezart.core.errors import NoStructuredOutputError
+
+    runner = FakeAgentRunner(events=[])
+    loop = RalphLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=runner,
+        max_iterations=1,
+        plateau_window=2,
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+    )
+
+    with pytest.raises(NoStructuredOutputError):
+        _ = [e async for e in loop.run(**_run_kwargs(base_spec=_STACKED))]
+
+    dispatches = [c for c in runner.calls if c["method"] == "stream_workflow"]
+    assert dispatches, "the execute node never dispatched"
+    assert dispatches[0]["base_branch"] == _STACKED.base_ref
+    service_default = inspect.signature(
+        AgentService.stream_workflow,
+    ).parameters["base_branch"]
+    assert dispatches[0]["base_branch"] != service_default.default
+
+
 async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> None:
     """The evaluation render receives digest DATA, not raw shell commands."""
     prompts = RecordingPromptProvider(make_prompt_provider())
@@ -770,6 +891,7 @@ async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> N
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
                             "passed": True,
                             "reasoning": "ok",
@@ -786,6 +908,48 @@ async def test_evaluate_node_renders_the_changeset_digest_into_the_prompt() -> N
     assert "file_paths" in captured[0]
     assert "commit_subjects" in captured[0]
     assert "commit_count" in captured[0]
+
+
+async def test_the_evaluation_prompt_states_each_criterion_verdict() -> None:
+    """KOD-53/AC-8: an unverifiable criterion is not dispatched as a plain one.
+
+    The rendered prompt names the verdict and the resource whose absence
+    blocks the demonstration, so the evaluator cannot read a deferred
+    demonstration as a criterion the implementation simply failed.
+    """
+    criteria = as_validated(
+        make_minted_criteria("Checkpoints survive a restart"),
+        verdict=CriterionVerdict.unverifiable,
+        missing_resource="a PostgreSQL server reachable from the runner",
+    )
+    executor = FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=10,
+                duration_api_ms=5,
+                is_error=False,
+                num_turns=1,
+                session_id="s1",
+                structured_output={
+                    "criteriaResults": [
+                        {
+                            "criterionId": "AC-1",
+                            "criterion": "Checkpoints survive a restart",
+                            "passed": False,
+                            "reasoning": "no database was reachable",
+                        },
+                    ],
+                },
+            ),
+        ]
+    )
+    loop = _make_loop(executor=executor)
+    _ = [e async for e in loop.run(**_run_kwargs(acceptance_criteria=criteria))]
+
+    rendered = str(executor.calls[-1]["prompt"])
+    assert "AC-1 [hard_gate] [unverifiable]" in rendered
+    assert "[blocked on: a PostgreSQL server reachable from the runner]" in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -858,7 +1022,11 @@ class _ScriptedLoopExecutor:
     ``IterationRecord.commit_sha`` is observable.
     """
 
-    def __init__(self, criteria: list[str], pass_masks: list[list[bool]]) -> None:
+    def __init__(
+        self,
+        criteria: list[ValidatedCriterion],
+        pass_masks: list[list[bool]],
+    ) -> None:
         self._criteria = criteria
         self._pass_masks = list(pass_masks)
         self._eval_count = 0
@@ -895,7 +1063,8 @@ class _ScriptedLoopExecutor:
                         structured_output={
                             "criteriaResults": [
                                 {
-                                    "criterion": criterion,
+                                    "criterionId": criterion.id,
+                                    "criterion": criterion.text,
                                     "passed": passed,
                                     "reasoning": "scripted",
                                 }
@@ -919,14 +1088,14 @@ class _ScriptedLoopExecutor:
         )
 
 
-_THREE_CRITERIA = ["Criterion A", "Criterion B", "Criterion C"]
+_THREE_CRITERIA = make_criteria("Criterion A", "Criterion B", "Criterion C")
 # passed counts 2, 1, 2 — no new best in the last two iterations.
 _PLATEAU_MASKS = [
     [True, True, False],
     [True, False, False],
     [True, True, False],
 ]
-_FIVE_CRITERIA = [f"Criterion {letter}" for letter in "ABCDE"]
+_FIVE_CRITERIA = make_criteria(*(f"Criterion {letter}" for letter in "ABCDE"))
 # passed counts 1, 2, 3, 4 — a new best every iteration, never all five.
 _IMPROVING_MASKS = [
     [True, False, False, False, False],
@@ -1121,11 +1290,11 @@ async def test_loop_stops_on_plateau_before_budget_is_exhausted() -> None:
     iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     assert len(iteration_events) == 3
     last = iteration_events[-1]
-    assert last.accepted is False
+    assert last.verdict is AcceptVerdict.rejected
     assert last.trajectory.plateaued is True
     # Budget is NOT silently swallowed: the run stopped with iterations left.
     assert last.iteration < 5
-    assert last.trajectory.never_passed_ids == ["Criterion C"]
+    assert last.trajectory.never_passed_ids == ["AC-3"]
 
 
 async def test_loop_still_improving_runs_its_full_budget() -> None:

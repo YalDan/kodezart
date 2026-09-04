@@ -15,7 +15,14 @@ from enum import StrEnum
 
 
 class WorkflowOutcome(StrEnum):
-    """Ten-way partition of the terminal routes reaching ``complete``."""
+    """Eleven-way partition of the terminal routes reaching ``complete``.
+
+    ``criteria_infeasible`` is the pre-loop halt: the feasibility sweep
+    exhausted its regeneration bound, so the run terminates BEFORE the
+    ralph loop with the sweep verdicts as its report rather than burning
+    the iteration budget proving a defect that existed before iteration
+    one.
+    """
 
     merge_divergent = "merge_divergent"
     fix_consolidation_failed = "fix_consolidation_failed"
@@ -27,3 +34,4 @@ class WorkflowOutcome(StrEnum):
     ci_passed = "ci_passed"
     ci_not_configured = "ci_not_configured"
     ci_failed_fix_budget_exhausted = "ci_failed_fix_budget_exhausted"
+    criteria_infeasible = "criteria_infeasible"

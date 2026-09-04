@@ -14,6 +14,8 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
+from kodezart.domain.accept_gate import accept_verdict
+from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
@@ -27,10 +29,19 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowTicketEvent,
 )
+from kodezart.types.domain.base_spec import BaseSpec
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
     ConsolidationStatus,
+)
+from kodezart.types.domain.criteria import (
+    CriterionClass,
+    CriterionFeasibility,
+    CriterionVerdict,
+    DraftedCriterion,
+    GeneratedCriterion,
+    ValidatedCriterion,
 )
 from kodezart.types.domain.gating import (
     GateDecision,
@@ -321,6 +332,17 @@ class FakeAgentExecutor:
         props = schema.get("properties", {})
         return isinstance(props, dict) and "criteriaResults" in props
 
+    def _is_criteria_validation_schema(
+        self, output_format: dict[str, object] | None
+    ) -> bool:
+        if output_format is None:
+            return False
+        schema = output_format.get("schema")
+        if not isinstance(schema, dict):
+            return False
+        props = schema.get("properties", {})
+        return isinstance(props, dict) and "findings" in props
+
     def _is_pr_description_schema(
         self, output_format: dict[str, object] | None
     ) -> bool:
@@ -374,7 +396,10 @@ class FakeAgentExecutor:
                 num_turns=1,
                 session_id="fake",
                 structured_output={
-                    "criteria": ["Tests pass", "No lint errors"],
+                    "criteria": [
+                        {"text": "Tests pass", "criterionClass": "hard_gate"},
+                        {"text": "No lint errors", "criterionClass": "soft_signal"},
+                    ],
                     "reasoning": "Fake criteria.",
                 },
             )
@@ -420,6 +445,31 @@ class FakeAgentExecutor:
                 },
             )
             return
+        if self._is_criteria_validation_schema(output_format):
+            yield ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="fake",
+                structured_output={
+                    "findings": [
+                        {
+                            "criterionId": "AC-1",
+                            "verdict": "feasible",
+                            "smallestRepair": "none",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "verdict": "feasible",
+                            "smallestRepair": "none",
+                        },
+                    ],
+                    "contradictions": [],
+                },
+            )
+            return
         if self._is_acceptance_criteria_schema(output_format) and not self._events:
             yield ResultEvent(
                 subtype="result",
@@ -431,7 +481,14 @@ class FakeAgentExecutor:
                 structured_output={
                     "criteriaResults": [
                         {
+                            "criterionId": "AC-1",
                             "criterion": "Tests pass",
+                            "passed": True,
+                            "reasoning": "Fake passing review.",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "criterion": "No lint errors",
                             "passed": True,
                             "reasoning": "Fake passing review.",
                         },
@@ -659,6 +716,7 @@ class FakeAgentRunner:
                 "prompt": prompt,
                 "skills": skills,
                 "visibility": visibility,
+                "base_branch": base_branch,
             },
         )
         for event in self._events:
@@ -695,16 +753,20 @@ class ScriptedFakeExecutor:
     - Schema with "title" + "body" → commit message result.
     - Schema with "title" + "requiredChanges" → ticket draft result.
     - Schema with "approved" + "feedback" → ticket review result.
+    - Schema with "findings" property → pops from validation_results, or a
+      clean all-feasible sweep over AC-1..AC-3 when none were scripted.
     - Schema with "criteriaResults" property → pops from eval_results (each entry
-      should be shaped like {"criteriaResults": [{"criterion": ..., "passed": ...,
-      "reasoning": ...}, ...]}).
+      should be shaped like {"criteriaResults": [{"criterionId": ...,
+      "criterion": ..., "passed": ..., "reasoning": ...}, ...]}).
     """
 
     def __init__(
         self,
         eval_results: list[dict[str, object]],
+        validation_results: list[dict[str, object]] | None = None,
     ) -> None:
         self._eval_results = list(eval_results)
+        self._validation_results = list(validation_results or [])
         self.calls: list[dict[str, object]] = []
 
     async def stream(
@@ -841,12 +903,46 @@ class ScriptedFakeExecutor:
                         session_id="scripted",
                         structured_output={
                             "criteria": [
-                                "The fix compiles without errors",
-                                "All existing tests pass",
-                                "Linting passes with no new warnings",
+                                {
+                                    "text": "The fix compiles without errors",
+                                    "criterionClass": "hard_gate",
+                                },
+                                {
+                                    "text": "All existing tests pass",
+                                    "criterionClass": "hard_gate",
+                                },
+                                {
+                                    "text": ("Linting passes with no new warnings"),
+                                    "criterionClass": "soft_signal",
+                                },
                             ],
                             "reasoning": "Generated from codebase analysis.",
                         },
+                    )
+                    return
+                if "findings" in props:
+                    yield ResultEvent(
+                        subtype="result",
+                        duration_ms=1,
+                        duration_api_ms=1,
+                        is_error=False,
+                        num_turns=1,
+                        session_id="scripted",
+                        structured_output=(
+                            self._validation_results.pop(0)
+                            if self._validation_results
+                            else {
+                                "findings": [
+                                    {
+                                        "criterionId": f"AC-{n}",
+                                        "verdict": "feasible",
+                                        "smallestRepair": "none",
+                                    }
+                                    for n in (1, 2, 3)
+                                ],
+                                "contradictions": [],
+                            }
+                        ),
                     )
                     return
                 if "criteriaResults" in props:
@@ -863,14 +959,117 @@ class ScriptedFakeExecutor:
                     return
 
 
+DEFAULT_CRITERION_ID = "AC-1"
+
+
+def as_validated(
+    criteria: Sequence[GeneratedCriterion],
+    *,
+    verdict: CriterionVerdict = CriterionVerdict.feasible,
+    missing_resource: str | None = None,
+) -> list[ValidatedCriterion]:
+    """Wrap minted criteria in the post-sweep shape the loop is handed.
+
+    The loop never receives a bare criterion: every dispatched criterion
+    carries the verdict the sweep computed and, when the verdict is
+    ``unverifiable``, the resource whose absence blocks its demonstration.
+    """
+    return [
+        ValidatedCriterion(
+            id=criterion.id,
+            text=criterion.text,
+            criterion_class=criterion.criterion_class,
+            feasibility=CriterionFeasibility(
+                criterion_id=criterion.id,
+                verdict=verdict,
+                missing_resource=missing_resource,
+            ),
+        )
+        for criterion in criteria
+    ]
+
+
+def make_minted_criteria(
+    *texts: str,
+    criterion_class: CriterionClass = CriterionClass.hard_gate,
+) -> list[GeneratedCriterion]:
+    """Mint AC-n identities for *texts* the way the generation node does."""
+    return list(
+        mint_criteria(
+            [
+                DraftedCriterion(text=text, criterion_class=criterion_class)
+                for text in (texts or ("Tests pass",))
+            ]
+        )
+    )
+
+
+def make_criteria(
+    *texts: str,
+    criterion_class: CriterionClass = CriterionClass.hard_gate,
+) -> list[ValidatedCriterion]:
+    """The dispatch shape: minted, then carrying a sweep verdict."""
+    return as_validated(make_minted_criteria(*texts, criterion_class=criterion_class))
+
+
+def make_dispatched_criteria() -> list[ValidatedCriterion]:
+    """What the gate is handed once the fake generator's criteria are swept."""
+    return as_validated(make_generated_criteria())
+
+
+def make_generated_criteria() -> list[GeneratedCriterion]:
+    """The minted criteria the fake generator emits — the harness's own copy."""
+    return list(
+        mint_criteria(
+            [
+                DraftedCriterion(
+                    text="Tests pass",
+                    criterion_class=CriterionClass.hard_gate,
+                ),
+                DraftedCriterion(
+                    text="No lint errors",
+                    criterion_class=CriterionClass.soft_signal,
+                ),
+            ]
+        )
+    )
+
+
 def make_passing_evaluation(
     criterion: str = "Tests pass",
     reasoning: str = "Fake passing evaluation.",
+    criterion_id: str = DEFAULT_CRITERION_ID,
 ) -> AcceptanceCriteriaOutput:
     """Construct an AcceptanceCriteriaOutput where the criterion passes."""
     return AcceptanceCriteriaOutput(
         criteria_results=[
-            CriterionResult(criterion=criterion, passed=True, reasoning=reasoning),
+            CriterionResult(
+                criterion_id=criterion_id,
+                criterion=criterion,
+                passed=True,
+                reasoning=reasoning,
+            ),
+        ],
+    )
+
+
+def make_passing_evaluation_over(*criterion_ids: str) -> AcceptanceCriteriaOutput:
+    """A pass for every dispatched id — the shape a real evaluator returns.
+
+    The gate grades against the DISPATCHED set, so an evaluation that
+    answers fewer ids than were dispatched is a failing run, not a
+    passing one.  A fixture that means "everything passed" has to say so
+    for every id.
+    """
+    return AcceptanceCriteriaOutput(
+        criteria_results=[
+            CriterionResult(
+                criterion_id=criterion_id,
+                criterion=f"criterion {criterion_id}",
+                passed=True,
+                reasoning="Fake passing evaluation.",
+            )
+            for criterion_id in criterion_ids
         ],
     )
 
@@ -878,11 +1077,17 @@ def make_passing_evaluation(
 def make_failing_evaluation(
     criterion: str = "Tests pass",
     reasoning: str = "Fake failing evaluation.",
+    criterion_id: str = DEFAULT_CRITERION_ID,
 ) -> AcceptanceCriteriaOutput:
     """Construct an AcceptanceCriteriaOutput where the criterion fails."""
     return AcceptanceCriteriaOutput(
         criteria_results=[
-            CriterionResult(criterion=criterion, passed=False, reasoning=reasoning),
+            CriterionResult(
+                criterion_id=criterion_id,
+                criterion=criterion,
+                passed=False,
+                reasoning=reasoning,
+            ),
         ],
     )
 
@@ -913,10 +1118,10 @@ class FakeQualityGate:
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
         permission_mode: str,
         allowed_tools: list[str],
-        acceptance_criteria: list[str],
+        acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -928,7 +1133,8 @@ class FakeQualityGate:
                 "repo_url": repo_url,
                 "feature_branch": feature_branch,
                 "ralph_branch": ralph_branch,
-                "base_branch": base_branch,
+                "base_spec": base_spec,
+                "base_branch": base_spec.base_ref,
                 "permission_mode": permission_mode,
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
@@ -942,7 +1148,7 @@ class FakeQualityGate:
             iteration=self._total_iterations,
             branch=ralph_branch,
             commit_sha=self._last_commit_sha,
-            accepted=all(r.passed for r in results),
+            verdict=accept_verdict(acceptance_criteria, results),
             evaluation=self._evaluation,
             trajectory=self._trajectory
             or fold_trajectory(
@@ -951,7 +1157,7 @@ class FakeQualityGate:
                         iteration=self._total_iterations,
                         passed_count=sum(1 for r in results if r.passed),
                         failing_criterion_ids=[
-                            r.criterion for r in results if not r.passed
+                            r.criterion_id for r in results if not r.passed
                         ],
                         commit_sha=self._last_commit_sha,
                     ),
@@ -1140,6 +1346,7 @@ class FakeArtifactPersister:
     ) -> None:
         self.persist_calls: list[tuple[str | None, str | None, str, str]] = []
         self.clean_calls: list[tuple[str | None, str | None, str]] = []
+        self.artifacts: list[Mapping[str, str]] = []
         self._persist_status: ArtifactPersistStatus = persist_status
 
     async def persist(
@@ -1153,6 +1360,7 @@ class FakeArtifactPersister:
         cache_key: str | None = None,
     ) -> ArtifactPersistStatus:
         self.persist_calls.append((repo_path, repo_url, branch, base_branch))
+        self.artifacts.append(dict(artifacts))
         return self._persist_status
 
     async def clean(

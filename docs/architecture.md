@@ -50,7 +50,7 @@ more adapter implementations:
 
 ## Workflow Pipeline
 
-The outer workflow runs as a 5-node LangGraph StateGraph defined in
+The outer workflow runs as a LangGraph StateGraph defined in
 `chains/ralph_workflow.py`:
 
 ```mermaid
@@ -58,7 +58,10 @@ stateDiagram-v2
     [*] --> generate_branch
     generate_branch --> generate_ticket
     generate_ticket --> generate_criteria
-    generate_criteria --> run_ralph_loop
+    generate_criteria --> validate_criteria
+    validate_criteria --> generate_criteria : regeneration demanded, bound not spent
+    validate_criteria --> complete : bound spent, criteria still infeasible
+    validate_criteria --> run_ralph_loop : criteria dispatchable
     run_ralph_loop --> finalize
     finalize --> [*]
 ```
@@ -70,9 +73,15 @@ stateDiagram-v2
    implementation ticket from the raw user prompt
 3. **generate_criteria** - Asks the agent to analyze the codebase and derive
    testable acceptance criteria from the ticket
-4. **run_ralph_loop** - Delegates to the QualityGate for iterative
+4. **validate_criteria** - Dispatches the drafted criteria to an adversarial
+   refuter, which returns a three-state verdict per criterion plus any jointly
+   unsatisfiable subsets. `infeasible` criteria and the members of a
+   contradiction are routed back to **generate_criteria** for amendment, up to
+   `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS`; a set that still demands
+   regeneration once the bound is spent halts the run before the loop
+5. **run_ralph_loop** - Delegates to the QualityGate for iterative
    execute/evaluate until criteria pass or max iterations
-5. **finalize** - Fast-forward merges the ralph branch into the feature branch,
+6. **finalize** - Fast-forward merges the ralph branch into the feature branch,
    pushes, and cleans up the ralph branch
 
 ## Ticket Generation Loop

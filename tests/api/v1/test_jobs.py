@@ -34,6 +34,12 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     WorkflowCompleteEvent,
 )
+from kodezart.types.domain.base_spec import (
+    BaseInput,
+    BaseRefRole,
+    BaseSpec,
+    trunk_base,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -51,7 +57,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     ScriptedFakeExecutor,
-    make_passing_evaluation,
+    make_passing_evaluation_over,
     make_prompt_provider,
 )
 
@@ -91,7 +97,8 @@ class GatedWorkflowEngine:
         prompt: str,
         repo_path: str | None,
         repo_url: str | None,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
@@ -117,7 +124,8 @@ class ChattyWorkflowEngine:
         prompt: str,
         repo_path: str | None,
         repo_url: str | None,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
@@ -142,40 +150,50 @@ async def _drain(queue: AsyncioJobQueue, job_id: str) -> list[AgentEvent]:
     return [event async for event in queue.attach(job_id=job_id)]
 
 
+# Waits are bounded by wall clock, not by a yield count: a fixed count of
+# zero-second yields underestimates how many scheduler turns a slow runner
+# needs, which made these waits flake on CI while passing locally.
+_WAIT_TIMEOUT = 30.0
+_WAIT_YIELD = 0.001
+
+
 async def _wait_terminal(
-    queue: AsyncioJobQueue, job_id: str, *, ticks: int = 400
+    queue: AsyncioJobQueue, job_id: str, *, timeout: float = _WAIT_TIMEOUT
 ) -> None:
     """Yield to the loop until *job_id* reaches TERMINAL, through the port."""
-    for _ in range(ticks):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
         record = await queue.get(job_id=job_id)
         if record is not None and record.state is JobState.TERMINAL:
             return
-        await asyncio.sleep(0)
+        await asyncio.sleep(_WAIT_YIELD)
     msg = f"job {job_id} never reached TERMINAL"
     raise AssertionError(msg)
 
 
 async def _wait_truncated(
-    queue: AsyncioJobQueue, job_id: str, *, ticks: int = 400
+    queue: AsyncioJobQueue, job_id: str, *, timeout: float = _WAIT_TIMEOUT
 ) -> None:
     """Yield to the loop until *job_id*'s record is marked truncated."""
-    for _ in range(ticks):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
         record = await queue.get(job_id=job_id)
         if record is not None and record.truncated:
             return
-        await asyncio.sleep(0)
+        await asyncio.sleep(_WAIT_YIELD)
     msg = f"job {job_id} was never marked truncated"
     raise AssertionError(msg)
 
 
-async def _until(predicate: object, *, ticks: int = 200) -> None:
+async def _until(predicate: object, *, timeout: float = _WAIT_TIMEOUT) -> None:
     """Yield to the loop until *predicate* holds. Fails loudly on timeout."""
     check = predicate
     assert callable(check)
-    for _ in range(ticks):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
         if check():
             return
-        await asyncio.sleep(0)
+        await asyncio.sleep(_WAIT_YIELD)
     msg = "condition never became true"
     raise AssertionError(msg)
 
@@ -223,7 +241,7 @@ def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngi
         service=service,
         quality_gate=FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_over("AC-1", "AC-2", "AC-3"),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -257,7 +275,7 @@ class GatedQualityGate:
         self._release: asyncio.Event = asyncio.Event()
         self._inner = FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_over("AC-1", "AC-2", "AC-3"),
             total_iterations=1,
             last_commit_sha="a" * 40,
         )
@@ -273,7 +291,8 @@ class GatedQualityGate:
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[str],
@@ -290,7 +309,7 @@ class GatedQualityGate:
             repo_url=repo_url,
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
-            base_branch=base_branch,
+            base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
@@ -316,7 +335,20 @@ def _mid_run_engine(
                 {
                     "criteriaResults": [
                         {
-                            "criterion": "Tests pass",
+                            "criterionId": "AC-1",
+                            "criterion": "The fix compiles without errors",
+                            "passed": False,
+                            "reasoning": "Review found a gap.",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "criterion": "All existing tests pass",
+                            "passed": False,
+                            "reasoning": "Review found a gap.",
+                        },
+                        {
+                            "criterionId": "AC-3",
+                            "criterion": "Linting passes with no new warnings",
                             "passed": False,
                             "reasoning": "Review found a gap.",
                         },
@@ -325,7 +357,20 @@ def _mid_run_engine(
                 {
                     "criteriaResults": [
                         {
-                            "criterion": "Tests pass",
+                            "criterionId": "AC-1",
+                            "criterion": "The fix compiles without errors",
+                            "passed": True,
+                            "reasoning": "Fixed.",
+                        },
+                        {
+                            "criterionId": "AC-2",
+                            "criterion": "All existing tests pass",
+                            "passed": True,
+                            "reasoning": "Fixed.",
+                        },
+                        {
+                            "criterionId": "AC-3",
+                            "criterion": "Linting passes with no new warnings",
                             "passed": True,
                             "reasoning": "Fixed.",
                         },
@@ -1291,3 +1336,73 @@ async def test_truncation_flag_reaches_the_status_payload() -> None:
             assert payload["truncated"] is True
     finally:
         await queue.stop()
+
+
+class BaseRecordingEngine:
+    """Engine double that records exactly which base it was dispatched with."""
+
+    def __init__(self) -> None:
+        self.base_specs: list[BaseSpec] = []
+        self.implied: list[BaseSpec | None] = []
+
+    async def run(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
+        permission_mode: str,
+        allowed_tools: list[str],
+        cache_key: str,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.base_specs.append(base_spec)
+        self.implied.append(implied_base)
+        yield _complete_event(WorkflowOutcome.pr_opened)
+
+
+async def test_a_recorded_base_is_dispatched_and_the_trunk_default_is_not() -> None:
+    """KOD-53/AC-26: the request's ``"main"`` default is never the baseline.
+
+    The request leaves ``baseBranch`` at its default and carries a
+    recorded base; what reaches the engine is the recorded base, and the
+    literal default is not consulted.
+    """
+    engine = BaseRecordingEngine()
+    recorded = BaseSpec(
+        base_ref="kodezart/blocker-a-11111111",
+        role=BaseRefRole.deliverable,
+        inputs=(
+            BaseInput(
+                blocker_issue_id="KOD-A",
+                branch="kodezart/blocker-a-11111111",
+                sha="a" * 40,
+            ),
+        ),
+    )
+    body: dict[str, object] = {
+        **_BODY,
+        "baseSpec": recorded.model_dump(by_alias=True, mode="json"),
+    }
+    async for wired in _build_app(engine):
+        fired = await wired.client.post("/api/v1/agent/fire", json=body)
+        await _wait_terminal(wired.queue, fired.json()["jobId"])
+
+    assert engine.base_specs == [recorded]
+    assert (
+        engine.base_specs[0].base_ref
+        != WorkflowRequest.model_fields["base_branch"].get_default()
+    )
+
+
+async def test_a_request_with_no_recorded_base_is_a_trunk_fired_lane() -> None:
+    """KOD-53/AC-22: the default IS the baseline exactly when there are no blockers."""
+    engine = BaseRecordingEngine()
+    async for wired in _build_app(engine):
+        fired = await wired.client.post("/api/v1/agent/fire", json=_BODY)
+        await _wait_terminal(wired.queue, fired.json()["jobId"])
+
+    assert engine.base_specs == [trunk_base("main")]
+    assert engine.base_specs[0].role is BaseRefRole.trunk
+    assert engine.implied == [None]

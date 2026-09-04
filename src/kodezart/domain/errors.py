@@ -79,3 +79,80 @@ class OutboundContentBlockedError(Exception):
 
 class QueueFullError(Exception):
     """Raised when a lane's queue is at capacity and cannot accept a submission."""
+
+
+class CriteriaFanInError(Exception):
+    """Raised when validator findings do not correspond 1:1 to dispatched ids.
+
+    Fail-closed and observable: the missing, duplicate and unknown ids are
+    all named, so the failure reads as a fan-in defect rather than as an
+    absent verdict silently defaulting to a pass.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        missing_ids: Sequence[str],
+        duplicate_ids: Sequence[str],
+        unknown_ids: Sequence[str],
+    ) -> None:
+        detail = (
+            f"{message} (missing: {', '.join(missing_ids) or '-'}; "
+            f"duplicate: {', '.join(duplicate_ids) or '-'}; "
+            f"unknown: {', '.join(unknown_ids) or '-'})"
+        )
+        super().__init__(detail)
+        self.missing_ids: tuple[str, ...] = tuple(missing_ids)
+        self.duplicate_ids: tuple[str, ...] = tuple(duplicate_ids)
+        self.unknown_ids: tuple[str, ...] = tuple(unknown_ids)
+
+
+class UngroundedVerdictError(Exception):
+    """Raised when a verdict or a resource claim arrives without its grounds.
+
+    Two raise surfaces.  The feasibility sweep raises it before anything
+    is recorded, on three grounds: a stated verdict its own evidence does
+    not derive (``_grounded``, comparing the statement with the derivation
+    ``classify_finding`` computed beside it), a repair demanded on a
+    criterion demonstrated satisfied at base (``classify_finding``), and a
+    measured uneconomic cost filed anywhere but the environment arm (both
+    ``_classify_criterion_side`` and ``_classify_no_repair``).  The accept
+    gate raises it at ``accept_gate.named_resource`` — the last check
+    before a resource name reaches a pull-request body.
+
+    A single finding's completeness — a verdict arriving with its own
+    repair and its evidence fields filled — is checked earlier still, on
+    ``CriterionFinding``'s ``model_validator``, and fails as a
+    ``ValidationError`` at the model boundary.  ``CriterionFeasibility``
+    carries no validator of its own, so what keeps its fields filled is
+    the finding it was projected from.
+    """
+
+    def __init__(self, message: str, *, criterion_id: str) -> None:
+        super().__init__(f"{message} (criterion: {criterion_id})")
+        self.criterion_id: str = criterion_id
+
+
+class StaleBaseError(Exception):
+    """Raised when a lane's recorded base is not the base its blockers imply.
+
+    A criterion graded against a branch is graded against that branch ON
+    ITS BASE, so when the base moves the tree the verdict was about no
+    longer exists.  Grading anyway would produce a fresh assertion about
+    a tree nobody has: the check refuses instead, and carries both refs
+    as primitives so a reader can see what moved.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        recorded_ref: str,
+        implied_ref: str,
+        changed_inputs: Sequence[str] = (),
+    ) -> None:
+        super().__init__(message)
+        self.recorded_ref: str = recorded_ref
+        self.implied_ref: str = implied_ref
+        self.changed_inputs: list[str] = list(changed_inputs)

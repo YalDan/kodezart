@@ -24,6 +24,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import WorkflowEngine
 from kodezart.domain.errors import QueueFullError
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.requests.agent import WorkflowRequest
@@ -276,7 +277,12 @@ class AsyncioJobQueue:
                 prompt=request.prompt,
                 repo_path=request.repo_path,
                 repo_url=request.repo_url,
-                base_branch=request.base_branch,
+                base_spec=(
+                    request.base_spec
+                    if request.base_spec is not None
+                    else trunk_base(request.base_branch)
+                ),
+                implied_base=request.implied_base,
                 permission_mode=request.permission_mode,
                 allowed_tools=request.allowed_tools,
                 cache_key=job_id,

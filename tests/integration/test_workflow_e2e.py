@@ -18,6 +18,7 @@ from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
@@ -132,7 +133,20 @@ async def test_workflow_e2e_creates_branch_and_pushes(
             {
                 "criteriaResults": [
                     {
-                        "criterion": "Tests pass",
+                        "criterionId": "AC-1",
+                        "criterion": "The fix compiles without errors",
+                        "passed": True,
+                        "reasoning": "All good.",
+                    },
+                    {
+                        "criterionId": "AC-2",
+                        "criterion": "All existing tests pass",
+                        "passed": True,
+                        "reasoning": "All good.",
+                    },
+                    {
+                        "criterionId": "AC-3",
+                        "criterion": "Linting passes with no new warnings",
                         "passed": True,
                         "reasoning": "All good.",
                     },
@@ -141,7 +155,20 @@ async def test_workflow_e2e_creates_branch_and_pushes(
             {
                 "criteriaResults": [
                     {
-                        "criterion": "Tests pass",
+                        "criterionId": "AC-1",
+                        "criterion": "The fix compiles without errors",
+                        "passed": True,
+                        "reasoning": "Post-merge review passed.",
+                    },
+                    {
+                        "criterionId": "AC-2",
+                        "criterion": "All existing tests pass",
+                        "passed": True,
+                        "reasoning": "Post-merge review passed.",
+                    },
+                    {
+                        "criterionId": "AC-3",
+                        "criterion": "Linting passes with no new warnings",
                         "passed": True,
                         "reasoning": "Post-merge review passed.",
                     },
@@ -192,7 +219,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -242,7 +269,20 @@ async def test_workflow_e2e_exhausts_iterations(
             {
                 "criteriaResults": [
                     {
-                        "criterion": "Tests pass",
+                        "criterionId": "AC-1",
+                        "criterion": "The fix compiles without errors",
+                        "passed": False,
+                        "reasoning": "Tests fail.",
+                    },
+                    {
+                        "criterionId": "AC-2",
+                        "criterion": "All existing tests pass",
+                        "passed": False,
+                        "reasoning": "Tests fail.",
+                    },
+                    {
+                        "criterionId": "AC-3",
+                        "criterion": "Linting passes with no new warnings",
                         "passed": False,
                         "reasoning": "Tests fail.",
                     },
@@ -251,7 +291,20 @@ async def test_workflow_e2e_exhausts_iterations(
             {
                 "criteriaResults": [
                     {
-                        "criterion": "Tests pass",
+                        "criterionId": "AC-1",
+                        "criterion": "The fix compiles without errors",
+                        "passed": False,
+                        "reasoning": "Tests fail.",
+                    },
+                    {
+                        "criterionId": "AC-2",
+                        "criterion": "All existing tests pass",
+                        "passed": False,
+                        "reasoning": "Tests fail.",
+                    },
+                    {
+                        "criterionId": "AC-3",
+                        "criterion": "Linting passes with no new warnings",
                         "passed": False,
                         "reasoning": "Tests fail.",
                     },
@@ -302,7 +355,7 @@ async def test_workflow_e2e_exhausts_iterations(
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -402,7 +455,20 @@ async def test_workflow_e2e_divergent_base_branch(
             {
                 "criteriaResults": [
                     {
-                        "criterion": "Tests pass",
+                        "criterionId": "AC-1",
+                        "criterion": "The fix compiles without errors",
+                        "passed": True,
+                        "reasoning": "All good.",
+                    },
+                    {
+                        "criterionId": "AC-2",
+                        "criterion": "All existing tests pass",
+                        "passed": True,
+                        "reasoning": "All good.",
+                    },
+                    {
+                        "criterionId": "AC-3",
+                        "criterion": "Linting passes with no new warnings",
                         "passed": True,
                         "reasoning": "All good.",
                     },
@@ -411,7 +477,20 @@ async def test_workflow_e2e_divergent_base_branch(
             {
                 "criteriaResults": [
                     {
-                        "criterion": "Tests pass",
+                        "criterionId": "AC-1",
+                        "criterion": "The fix compiles without errors",
+                        "passed": True,
+                        "reasoning": "Post-merge review passed.",
+                    },
+                    {
+                        "criterionId": "AC-2",
+                        "criterion": "All existing tests pass",
+                        "passed": True,
+                        "reasoning": "Post-merge review passed.",
+                    },
+                    {
+                        "criterionId": "AC-3",
+                        "criterion": "Linting passes with no new warnings",
                         "passed": True,
                         "reasoning": "Post-merge review passed.",
                     },
@@ -463,7 +542,7 @@ async def test_workflow_e2e_divergent_base_branch(
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
-            base_branch="develop",
+            base_spec=trunk_base("develop"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -662,7 +741,20 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
             {
                 "criteriaResults": [
                     {
-                        "criterion": "Tests pass",
+                        "criterionId": "AC-1",
+                        "criterion": "The fix compiles without errors",
+                        "passed": True,
+                        "reasoning": "All good.",
+                    },
+                    {
+                        "criterionId": "AC-2",
+                        "criterion": "All existing tests pass",
+                        "passed": True,
+                        "reasoning": "All good.",
+                    },
+                    {
+                        "criterionId": "AC-3",
+                        "criterion": "Linting passes with no new warnings",
                         "passed": True,
                         "reasoning": "All good.",
                     },
@@ -671,7 +763,20 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
             {
                 "criteriaResults": [
                     {
-                        "criterion": "Tests pass",
+                        "criterionId": "AC-1",
+                        "criterion": "The fix compiles without errors",
+                        "passed": True,
+                        "reasoning": "Post-merge review passed.",
+                    },
+                    {
+                        "criterionId": "AC-2",
+                        "criterion": "All existing tests pass",
+                        "passed": True,
+                        "reasoning": "Post-merge review passed.",
+                    },
+                    {
+                        "criterionId": "AC-3",
+                        "criterion": "Linting passes with no new warnings",
                         "passed": True,
                         "reasoning": "Post-merge review passed.",
                     },
@@ -722,7 +827,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -980,7 +1085,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
                 prompt="fix",
                 repo_path="/tmp/fake",
                 repo_url=None,
-                base_branch="main",
+                base_spec=trunk_base("main"),
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,

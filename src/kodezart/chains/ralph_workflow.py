@@ -8,7 +8,6 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
-from pydantic import TypeAdapter
 
 from kodezart.core.constants import (
     EVAL_PERMISSION_MODE,
@@ -33,16 +32,34 @@ from kodezart.core.protocols import (
 )
 from kodezart.core.retry import should_retry
 from kodezart.core.stream_drain import drain
+from kodezart.domain.accept_gate import (
+    flagged_items,
+    gate_cleared,
+    sherlock_items,
+)
 from kodezart.domain.agent import generate_ralph_branch_name
+from kodezart.domain.base_scope import scope_base
+from kodezart.domain.criteria import build_artifact, mint_criteria
+from kodezart.domain.criteria_feasibility import (
+    demands_regeneration,
+    regeneration_targets,
+    sweep,
+)
+from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.criteria_prompt import render_validation_findings
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
+from kodezart.domain.pr_body import append_flagged_section
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.domain.workflow_state import validated_artifact, validated_criteria
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     BRANCH_NAME_SCHEMA,
+    CRITERIA_VALIDATION_SCHEMA,
     GENERATED_CRITERIA_SCHEMA,
     PR_DESCRIPTION_SCHEMA,
     AcceptanceCriteriaOutput,
@@ -56,13 +73,20 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowConsolidationEvent,
     WorkflowCriteriaEvent,
+    WorkflowCriteriaValidationEvent,
     WorkflowIterationEvent,
     WorkflowPREvent,
     WorkflowReviewEvent,
+    WorkflowScopeBaseEvent,
     WorkflowTicketEvent,
     WorkflowVisibilityEvent,
 )
+from kodezart.types.domain.base_spec import BaseRefRole, BaseSpec
 from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.criteria import (
+    CriteriaValidationOutput,
+    ValidatedCriterion,
+)
 from kodezart.types.domain.gating import (
     GateVerdict,
     RepoVisibility,
@@ -71,8 +95,6 @@ from kodezart.types.domain.gating import (
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
-
-_CRITERIA_TA: TypeAdapter[list[str]] = TypeAdapter(list[str])
 
 
 class RalphWorkflowEngine:
@@ -103,6 +125,7 @@ class RalphWorkflowEngine:
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
         max_fix_rounds: int = 2,
+        criteria_max_regeneration_rounds: int = 1,
         artifact_persister: ArtifactPersister | None = None,
     ) -> None:
         self._service: AgentRunner = service
@@ -123,6 +146,7 @@ class RalphWorkflowEngine:
         self._pr_creator: PRCreator | None = pr_creator
         self._ci_monitor: CIMonitor | None = ci_monitor
         self._max_fix_rounds: int = max_fix_rounds
+        self._criteria_max_regeneration_rounds: int = criteria_max_regeneration_rounds
         self._artifact_persister: ArtifactPersister | None = artifact_persister
         self._retry: RetryPolicy = RetryPolicy(
             max_attempts=retry_max_attempts,
@@ -141,12 +165,18 @@ class RalphWorkflowEngine:
         prompt: str,
         repo_path: str | None,
         repo_url: str | None,
-        base_branch: str,
+        base_spec: BaseSpec,
+        implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the full workflow pipeline.
+
+        *base_spec* is the lane's recorded base and *implied_base* is the
+        base its blockers imply now; the run refuses before any node when
+        they differ, because a criterion graded against a base that has
+        moved is about a tree that no longer exists.
 
         ``cache_key`` IS the LangGraph thread id: the caller's job id
         addresses this run's checkpoints.
@@ -161,6 +191,10 @@ class RalphWorkflowEngine:
         #    ticket_generation.py TODOs).
         # 5. WorkflowRequest and the handler need a resume signal to
         #    plumb an existing job id back in from HTTP.
+        # Refuses here, before any node: a stale baseline produces no
+        # scope verdict at all rather than one graded against the wrong tree.
+        scope_base(base_spec, implied_base)
+
         resolved_url = (
             resolve_repo_url(repo_url, self._git_base_url)
             if repo_url is not None
@@ -172,7 +206,7 @@ class RalphWorkflowEngine:
             repo_path=repo_path,
             repo_url=resolved_url,
             cache_key=cache_key,
-            base_branch=base_branch,
+            base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
         )
@@ -187,7 +221,12 @@ class RalphWorkflowEngine:
             "ralph_branch": "",
             "ticket": None,
             "acceptance_criteria": [],
-            "accepted": False,
+            "criteria_artifact": None,
+            "criteria_validation": None,
+            "criteria_regeneration_rounds": 0,
+            "criteria_infeasible": False,
+            "accept_verdict": AcceptVerdict.rejected,
+            "flagged_items": [],
             "total_iterations": 0,
             "feature_tip_sha": None,
             "review_base_sha": None,
@@ -245,6 +284,11 @@ class RalphWorkflowEngine:
             retry_policy=self._retry,
         )
         graph.add_node(
+            "validate_criteria",
+            self._validate_criteria_node,
+            retry_policy=self._retry,
+        )
+        graph.add_node(
             "run_ralph_loop",
             self._run_ralph_loop_node,
             retry_policy=self._retry,
@@ -292,11 +336,23 @@ class RalphWorkflowEngine:
         graph.add_edge("resolve_visibility", "generate_branch")
         graph.add_edge("generate_branch", "generate_ticket")
         graph.add_edge("generate_ticket", "generate_criteria")
+        graph.add_edge("generate_criteria", "validate_criteria")
+        proceed = (
+            "persist_artifacts"
+            if self._artifact_persister is not None
+            else "run_ralph_loop"
+        )
+        graph.add_conditional_edges(
+            "validate_criteria",
+            self._route_after_validation,
+            {
+                "generate_criteria": "generate_criteria",
+                proceed: proceed,
+                "complete": "complete",
+            },
+        )
         if self._artifact_persister is not None:
-            graph.add_edge("generate_criteria", "persist_artifacts")
             graph.add_edge("persist_artifacts", "run_ralph_loop")
-        else:
-            graph.add_edge("generate_criteria", "run_ralph_loop")
         graph.add_edge("run_ralph_loop", "merge_to_feature")
         graph.add_conditional_edges(
             "merge_to_feature",
@@ -374,6 +430,20 @@ class RalphWorkflowEngine:
                 visibility=visibility,
                 repo_url=ctx.repo_url,
             )
+        )
+        # Stated once, before any surface compares anything against it.
+        writer(
+            WorkflowScopeBaseEvent(
+                base_ref=ctx.base_spec.base_ref,
+                role=ctx.base_spec.role,
+                inputs=list(ctx.base_spec.inputs),
+            )
+        )
+        await self._log.ainfo(
+            "scope_base_resolved",
+            base_ref=ctx.base_spec.base_ref,
+            role=ctx.base_spec.role.value,
+            input_count=len(ctx.base_spec.inputs),
         )
         return {"repo_visibility": visibility}
 
@@ -496,7 +566,14 @@ class RalphWorkflowEngine:
             raise RuntimeError(msg)
 
         prompt = self._prompts.template_for(PromptKey.ACCEPTANCE_CRITERIA).render(
-            {"task_description": format_ticket_as_task(ticket)},
+            {
+                "task_description": format_ticket_as_task(ticket),
+                "validation_findings": render_validation_findings(
+                    state["acceptance_criteria"],
+                    state["criteria_validation"],
+                ),
+                "base_ref": ctx.base_branch,
+            },
         )
 
         result_event, rate_limit_rejected = await drain(
@@ -528,15 +605,118 @@ class RalphWorkflowEngine:
         output = GeneratedCriteriaOutput.model_validate(
             result_event.structured_output,
         )
+        criteria = list(mint_criteria(output.criteria))
 
         writer(
             WorkflowCriteriaEvent(
-                criteria=output.criteria,
+                criteria=criteria,
                 reasoning=output.reasoning,
             )
         )
 
-        return {"acceptance_criteria": output.criteria}
+        return {"acceptance_criteria": criteria}
+
+    async def _validate_criteria_node(
+        self,
+        state: WorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Sweep the generated criteria for feasibility against the base ref.
+
+        The refuter reports a verdict per criterion with its evidence;
+        :func:`sweep` reconciles the report against the dispatched ids.
+        A set that still demands regeneration once the bound is spent halts
+        the run here — before the loop, with the sweep as its report.
+        """
+        ctx = ExecutionContext.from_configurable(config)
+        writer = get_stream_writer()
+
+        ticket = state["ticket"]
+        if ticket is None:
+            msg = "validate_criteria requires a ticket but state['ticket'] is None."
+            raise RuntimeError(msg)
+
+        criteria = state["acceptance_criteria"]
+        prompt = self._prompts.template_for(PromptKey.CRITERIA_VALIDATION).render(
+            {
+                "task_description": format_ticket_as_task(ticket),
+                "acceptance_criteria": criteria,
+                "base_ref": ctx.base_branch,
+            },
+        )
+
+        result_event, rate_limit_rejected = await drain(
+            self._service.stream(
+                prompt=prompt,
+                repo_path=ctx.repo_path,
+                repo_url=ctx.repo_url,
+                branch=ctx.base_branch,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=EVAL_TOOLS,
+                skills=self._skills,
+                output_format={
+                    "type": "json_schema",
+                    "schema": CRITERIA_VALIDATION_SCHEMA,
+                },
+                cache_key=ctx.cache_key,
+            )
+        )
+
+        if result_event is None or result_event.structured_output is None:
+            msg = "Agent did not produce structured output for criteria validation"
+            raise NoStructuredOutputError(
+                msg,
+                raise_site="criteria_validation",
+                result_event=result_event,
+                rate_limit_rejected=rate_limit_rejected,
+            )
+
+        validation = sweep(
+            criteria,
+            CriteriaValidationOutput.model_validate(result_event.structured_output),
+        )
+        targets = regeneration_targets(validation)
+        rounds_used = state["criteria_regeneration_rounds"]
+        bound_exhausted = (
+            bool(targets) and rounds_used >= self._criteria_max_regeneration_rounds
+        )
+
+        writer(
+            WorkflowCriteriaValidationEvent(
+                regeneration_round=rounds_used,
+                validation=validation,
+                regeneration_targets=list(targets),
+            )
+        )
+        await self._log.ainfo(
+            "criteria_sweep_complete",
+            regeneration_round=rounds_used,
+            regeneration_targets=list(targets),
+            satisfiable=validation.conjunction.satisfiable,
+            bound_exhausted=bound_exhausted,
+        )
+
+        return {
+            "criteria_validation": validation,
+            "criteria_artifact": build_artifact(criteria, validation),
+            "criteria_regeneration_rounds": (
+                rounds_used if bound_exhausted or not targets else rounds_used + 1
+            ),
+            "criteria_infeasible": bound_exhausted,
+        }
+
+    def _route_after_validation(self, state: WorkflowState) -> str:
+        """Halt, regenerate, or proceed — computed from the sweep alone."""
+        if state["criteria_infeasible"]:
+            return "complete"
+        validation = state["criteria_validation"]
+        if validation is not None and demands_regeneration(validation):
+            return "generate_criteria"
+        return (
+            "persist_artifacts"
+            if self._artifact_persister is not None
+            else "run_ralph_loop"
+        )
 
     async def _run_quality_gate(
         self,
@@ -546,10 +726,10 @@ class RalphWorkflowEngine:
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
         permission_mode: str,
         allowed_tools: list[str],
-        acceptance_criteria: list[str],
+        acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility,
     ) -> WorkflowIterationEvent:
@@ -562,7 +742,7 @@ class RalphWorkflowEngine:
             repo_url=repo_url,
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
-            base_branch=base_branch,
+            base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
@@ -602,10 +782,10 @@ class RalphWorkflowEngine:
             repo_url=ctx.repo_url,
             feature_branch=state["feature_branch"],
             ralph_branch=state["ralph_branch"],
-            base_branch=ctx.base_branch,
+            base_spec=ctx.base_spec,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            acceptance_criteria=state["acceptance_criteria"],
+            acceptance_criteria=validated_criteria(state),
             cache_key=ctx.cache_key,
             repo_visibility=state["repo_visibility"],
         )
@@ -613,7 +793,12 @@ class RalphWorkflowEngine:
         # feature_tip_sha is left None here; _merge_to_feature_node sets it
         # from the merger's outcome.feature_tip_sha (canonical, post-push).
         return {
-            "accepted": last_iteration_event.accepted,
+            "accept_verdict": last_iteration_event.verdict,
+            "flagged_items": flagged_items(
+                validated_criteria(state),
+                last_iteration_event.evaluation.criteria_results,
+                last_iteration_event.evaluation.sherlock_flags,
+            ),
             "total_iterations": last_iteration_event.iteration,
             "feature_tip_sha": None,
             "trajectory": last_iteration_event.trajectory,
@@ -637,6 +822,8 @@ class RalphWorkflowEngine:
             msg = "persist_artifacts requires a ticket but state['ticket'] is None."
             raise RuntimeError(msg)
 
+        criteria_artifact = validated_artifact(state)
+
         artifacts: dict[str, str] = {
             "ticket.json": await self._gated(
                 content=ticket.model_dump_json(indent=2, by_alias=True),
@@ -645,10 +832,7 @@ class RalphWorkflowEngine:
                 writer_name="artifact_ticket_json",
             ),
             "criteria.json": await self._gated(
-                content=_CRITERIA_TA.dump_json(
-                    state["acceptance_criteria"],
-                    indent=2,
-                ).decode(),
+                content=criteria_artifact.model_dump_json(indent=2, by_alias=True),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
                 writer_name="artifact_criteria_json",
@@ -691,7 +875,7 @@ class RalphWorkflowEngine:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        if not state["accepted"]:
+        if not gate_cleared(state["accept_verdict"]):
             return {
                 "merged": False,
                 "merge_error": None,
@@ -801,7 +985,7 @@ class RalphWorkflowEngine:
         )
         prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(
             {
-                "criteria": state["acceptance_criteria"],
+                "criteria": validated_criteria(state),
                 **changeset_variables(changeset),
             },
         )
@@ -832,25 +1016,45 @@ class RalphWorkflowEngine:
                 rate_limit_rejected=rate_limit_rejected,
             )
 
-        output = AcceptanceCriteriaOutput.model_validate(
-            result_event.structured_output,
+        grade = grade_iteration(
+            validated_criteria(state),
+            AcceptanceCriteriaOutput.model_validate(result_event.structured_output),
         )
-        passed = all(r.passed for r in output.criteria_results)
+        if grade.missing_ids or grade.unknown_ids or grade.duplicate_ids:
+            await self._log.awarning(
+                "review_result_reconciliation",
+                dispatched_count=grade.dispatched_count,
+                missing_ids=grade.missing_ids,
+                unknown_ids=grade.unknown_ids,
+                duplicate_ids=grade.duplicate_ids,
+            )
+        passed = gate_cleared(grade.verdict)
 
         feedback: str | None = None
         if not passed:
-            failures = [r for r in output.criteria_results if not r.passed]
-            feedback = "\n".join(f"- {r.criterion}: {r.reasoning}" for r in failures)
+            feedback = "\n".join(
+                f"- {f.criterion_id} {f.text}: {f.reasoning}" for f in grade.failures
+            )
 
         writer(
             WorkflowReviewEvent(
                 passed=passed,
-                evaluation=output,
+                evaluation=AcceptanceCriteriaOutput(criteria_results=grade.results),
                 fix_round=state["fix_rounds_used"],
             )
         )
 
-        return {"review_passed": passed, "review_feedback": feedback}
+        # The reviewer's own concerns ride to the pull request the prompt
+        # promises them to.  They are appended, not substituted: the loop's
+        # flagged items describe the work, these describe the review of it.
+        return {
+            "review_passed": passed,
+            "review_feedback": feedback,
+            "flagged_items": [
+                *state["flagged_items"],
+                *sherlock_items(grade.sherlock_flags),
+            ],
+        }
 
     def _route_after_review(self, state: WorkflowState) -> str:
         """Route based on review result, fix budget, and adapter preconditions."""
@@ -918,10 +1122,15 @@ class RalphWorkflowEngine:
             repo_url=ctx.repo_url,
             feature_branch=state["feature_branch"],
             ralph_branch=fix_branch,
-            base_branch=state["feature_branch"],
+            # The fix round measures itself against this lane's own
+            # deliverable ref, which is what the feature branch IS.
+            base_spec=BaseSpec(
+                base_ref=state["feature_branch"],
+                role=BaseRefRole.deliverable,
+            ),
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            acceptance_criteria=state["acceptance_criteria"],
+            acceptance_criteria=validated_criteria(state),
             cache_key=ctx.cache_key,
             repo_visibility=state["repo_visibility"],
         )
@@ -948,7 +1157,12 @@ class RalphWorkflowEngine:
         # invocation's.
         cumulative: dict[str, object] = {
             "fix_rounds_used": state["fix_rounds_used"] + 1,
-            "accepted": gate_event.accepted,
+            "accept_verdict": gate_event.verdict,
+            "flagged_items": flagged_items(
+                validated_criteria(state),
+                gate_event.evaluation.criteria_results,
+                gate_event.evaluation.sherlock_flags,
+            ),
             "total_iterations": state["total_iterations"] + gate_event.iteration,
             "trajectory": gate_event.trajectory,
         }
@@ -1036,7 +1250,7 @@ class RalphWorkflowEngine:
         prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
             {
                 "task_md": format_ticket_as_task(ticket),
-                "acceptance_criteria": state["acceptance_criteria"],
+                "acceptance_criteria": validated_criteria(state),
                 "total_iterations": state["total_iterations"],
             },
         )
@@ -1078,7 +1292,10 @@ class RalphWorkflowEngine:
                 writer_name="pr_title",
             ),
             body=await self._gated(
-                content=pr_output.description,
+                content=append_flagged_section(
+                    pr_output.description,
+                    state["flagged_items"],
+                ),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
                 writer_name="pr_body",
@@ -1216,7 +1433,7 @@ class RalphWorkflowEngine:
                 feature_branch=state["feature_branch"],
                 ralph_branch=state["ralph_branch"],
                 total_iterations=state["total_iterations"],
-                accepted=state["accepted"],
+                accepted=gate_cleared(state["accept_verdict"]),
                 outcome=classify_outcome(state),
                 merged=state["merged"],
                 final_commit_sha=state["feature_tip_sha"],
@@ -1225,10 +1442,11 @@ class RalphWorkflowEngine:
                 pr_number=state["pr_number"],
                 ci_passed=state["ci_passed"],
                 trajectory=state["trajectory"],
+                criteria_validation=state["criteria_validation"],
             )
         )
 
-        if state["accepted"] and state["merged"]:
+        if gate_cleared(state["accept_verdict"]) and state["merged"]:
             await self._log.ainfo(
                 "backup_cleanup_starting",
                 prefix=state["feature_branch"],
@@ -1242,7 +1460,7 @@ class RalphWorkflowEngine:
         else:
             await self._log.adebug(
                 "backup_cleanup_skipped",
-                accepted=state["accepted"],
+                accept_verdict=state["accept_verdict"],
                 merged=state["merged"],
             )
 

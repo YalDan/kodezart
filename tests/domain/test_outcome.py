@@ -3,14 +3,16 @@
 import pytest
 
 from kodezart.domain.outcome import classify_outcome
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
+from tests.fakes import make_criteria
 
 
 def _state(
     *,
-    accepted: bool = False,
+    verdict: AcceptVerdict = AcceptVerdict.rejected,
     merged: bool = False,
     merge_error: str | None = None,
     fix_rounds_used: int = 0,
@@ -20,14 +22,20 @@ def _state(
     ci_passed: bool | None = None,
     ci_summary: str | None = None,
     trajectory: LoopTrajectory | None = None,
+    criteria_infeasible: bool = False,
 ) -> WorkflowState:
     """A neutral terminal state; each test sets only its predicate's fields."""
     return WorkflowState(
         feature_branch="kodezart/x-12345678",
         ralph_branch="kodezart/x-12345678-ralph-abcdef01",
         ticket=None,
-        acceptance_criteria=["Tests pass"],
-        accepted=accepted,
+        acceptance_criteria=make_criteria("Tests pass"),
+        criteria_validation=None,
+        criteria_artifact=None,
+        criteria_regeneration_rounds=0,
+        criteria_infeasible=criteria_infeasible,
+        accept_verdict=verdict,
+        flagged_items=[],
         total_iterations=1,
         feature_tip_sha=None,
         review_base_sha=None,
@@ -65,7 +73,11 @@ def _trajectory(*, plateaued: bool) -> LoopTrajectory:
 
 
 def test_wire_values_are_pinned_verbatim() -> None:
-    """The ten values are a wire contract — a re-point must break the build."""
+    """The eleven values are a wire contract — a re-point must break the build.
+
+    The order is the module's stated extension convention: later work
+    APPENDS, so ``criteria_infeasible`` sits last rather than first.
+    """
     assert [member.value for member in WorkflowOutcome] == [
         "merge_divergent",
         "fix_consolidation_failed",
@@ -77,12 +89,13 @@ def test_wire_values_are_pinned_verbatim() -> None:
         "ci_passed",
         "ci_not_configured",
         "ci_failed_fix_budget_exhausted",
+        "criteria_infeasible",
     ]
 
 
 def test_merge_divergent() -> None:
     state = _state(
-        accepted=True,
+        verdict=AcceptVerdict.accepted,
         merged=False,
         merge_error="ralph diverged from feature",
         fix_rounds_used=0,
@@ -92,7 +105,7 @@ def test_merge_divergent() -> None:
 
 def test_fix_consolidation_failed() -> None:
     state = _state(
-        accepted=True,
+        verdict=AcceptVerdict.accepted,
         merged=False,
         merge_error="fix consolidation failed: status=divergent",
         fix_rounds_used=1,
@@ -102,7 +115,7 @@ def test_fix_consolidation_failed() -> None:
 
 def test_loop_plateaued() -> None:
     state = _state(
-        accepted=False,
+        verdict=AcceptVerdict.rejected,
         merged=False,
         merge_error=None,
         trajectory=_trajectory(plateaued=True),
@@ -112,7 +125,7 @@ def test_loop_plateaued() -> None:
 
 def test_loop_not_accepted_when_trajectory_did_not_plateau() -> None:
     state = _state(
-        accepted=False,
+        verdict=AcceptVerdict.rejected,
         merged=False,
         merge_error=None,
         trajectory=_trajectory(plateaued=False),
@@ -121,23 +134,29 @@ def test_loop_not_accepted_when_trajectory_did_not_plateau() -> None:
 
 
 def test_loop_not_accepted_when_no_trajectory() -> None:
-    state = _state(accepted=False, merged=False, merge_error=None, trajectory=None)
+    state = _state(
+        verdict=AcceptVerdict.rejected, merged=False, merge_error=None, trajectory=None
+    )
     assert classify_outcome(state) is WorkflowOutcome.loop_not_accepted
 
 
 def test_review_passed_no_pr_adapter() -> None:
-    state = _state(accepted=True, merged=True, review_passed=True, pr_url=None)
+    state = _state(
+        verdict=AcceptVerdict.accepted, merged=True, review_passed=True, pr_url=None
+    )
     assert classify_outcome(state) is WorkflowOutcome.review_passed_no_pr_adapter
 
 
 def test_review_failed_fix_budget_exhausted() -> None:
-    state = _state(accepted=True, merged=True, review_passed=False, pr_url=None)
+    state = _state(
+        verdict=AcceptVerdict.accepted, merged=True, review_passed=False, pr_url=None
+    )
     assert classify_outcome(state) is WorkflowOutcome.review_failed_fix_budget_exhausted
 
 
 def test_pr_opened() -> None:
     state = _state(
-        accepted=True,
+        verdict=AcceptVerdict.accepted,
         merged=True,
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
@@ -150,7 +169,7 @@ def test_pr_opened() -> None:
 
 def test_ci_passed() -> None:
     state = _state(
-        accepted=True,
+        verdict=AcceptVerdict.accepted,
         merged=True,
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
@@ -163,7 +182,7 @@ def test_ci_passed() -> None:
 
 def test_ci_not_configured() -> None:
     state = _state(
-        accepted=True,
+        verdict=AcceptVerdict.accepted,
         merged=True,
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
@@ -176,7 +195,7 @@ def test_ci_not_configured() -> None:
 
 def test_ci_failed_fix_budget_exhausted() -> None:
     state = _state(
-        accepted=True,
+        verdict=AcceptVerdict.accepted,
         merged=True,
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
@@ -197,7 +216,7 @@ def test_review_failure_after_pr_with_failing_ci_is_a_ci_failure() -> None:
     ``pr_url is None``.
     """
     state = _state(
-        accepted=True,
+        verdict=AcceptVerdict.accepted,
         merged=True,
         review_passed=False,
         pr_url="https://github.com/o/r/pull/1",
@@ -216,7 +235,7 @@ def test_divergent_fix_after_failed_ci_is_a_fix_consolidation_failure() -> None:
     ordering must pick fix_consolidation_failed.
     """
     state = _state(
-        accepted=True,
+        verdict=AcceptVerdict.accepted,
         merged=False,
         merge_error="fix consolidation failed: status=divergent",
         fix_rounds_used=1,
@@ -231,6 +250,8 @@ def test_divergent_fix_after_failed_ci_is_a_fix_consolidation_failure() -> None:
 
 def test_unclassifiable_state_raises_there_is_no_default_arm() -> None:
     """A state matching no predicate raises — a new terminal cannot ship dark."""
-    state = _state(accepted=True, merged=False, merge_error=None, pr_url=None)
+    state = _state(
+        verdict=AcceptVerdict.accepted, merged=False, merge_error=None, pr_url=None
+    )
     with pytest.raises(ValueError, match="Unclassifiable terminal state"):
         classify_outcome(state)

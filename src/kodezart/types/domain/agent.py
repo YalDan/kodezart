@@ -11,7 +11,17 @@ from pydantic import (
 )
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
+from kodezart.types.domain.base_spec import BaseInput, BaseRefRole
 from kodezart.types.domain.consolidation import ConsolidationStatus
+from kodezart.types.domain.criteria import (
+    CRITERION_ID_PATTERN,
+    CriteriaValidation,
+    CriteriaValidationOutput,
+    CriterionId,
+    DraftedCriterion,
+    GeneratedCriterion,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
@@ -33,6 +43,7 @@ RaiseSite = Literal[
     "ticket_reviewer",
     "branch_name",
     "acceptance_criteria",
+    "criteria_validation",
     "ralph_evaluator",
     "post_merge_review",
     "pr_description",
@@ -275,19 +286,47 @@ class CommitMessageOutput(CamelCaseModel):
 
 
 class CriterionResult(CamelCaseModel):
-    """Per-criterion evaluation result with evaluator reasoning."""
+    """Per-criterion evaluation result, keyed by the harness's stable id.
+
+    ``criterion`` is two different things on the two directions this model
+    travels, and only one of them has a defence.
+
+    OUTBOUND it carries the HARNESS's text, looked up by id:
+    ``grade_iteration`` overwrites the field on both the answered and the
+    unanswered path, and the result reaches a human in the
+    ``workflow_iteration`` and ``workflow_review`` SSE frames, where a
+    reader sees which criterion a verdict is about without joining the
+    frame against the criteria set.  Measured on the handler's own
+    ``model_dump(by_alias=True, exclude_none=True)``.
+
+    INBOUND it is the evaluator's ECHO, and that has no defence: nothing
+    ever reads it, so requiring it costs a full reproduction of every
+    criterion's text on every iteration and every post-merge review and
+    buys nothing.  Dropping the inbound obligation without dropping the
+    outbound field means splitting this model in two; KOD-91 deliverable 3
+    is already rewriting these field descriptions and removes it there,
+    with the two prompt lines that demand it.
+    """
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
+    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     criterion: str = Field(min_length=1)
     passed: bool
     reasoning: str = Field(min_length=1)
 
 
 class AcceptanceCriteriaOutput(CamelCaseModel):
-    """Structured output for acceptance criteria evaluation."""
+    """Structured output for acceptance criteria evaluation.
+
+    ``sherlock_flags`` carries the synthesis's own concerns as data.  A
+    reasoning error the evaluator noticed but could only write into prose
+    is invisible to every consumer downstream of it; as a typed field it
+    rides the iteration event and reaches the pull-request body.
+    """
 
     criteria_results: list[CriterionResult] = Field(min_length=1)
+    sherlock_flags: list[SherlockFlag] = Field(default_factory=list)
 
 
 class BranchNameOutput(CamelCaseModel):
@@ -297,9 +336,20 @@ class BranchNameOutput(CamelCaseModel):
 
 
 class GeneratedCriteriaOutput(CamelCaseModel):
-    """Agent-generated acceptance criteria from ticket + codebase analysis."""
+    """Agent-generated acceptance criteria from ticket + codebase analysis.
 
-    criteria: list[str] = Field(min_length=1)
+    Identity is NOT part of this shape — ``AC-n`` ids are minted
+    harness-side from emission order, so nothing a model echoes can
+    renumber a criterion WITHIN one dispatch.
+
+    The guarantee stops at the dispatch boundary and does not hold across
+    a regeneration round: ``mint_criteria`` always enumerates from 1 and
+    ``DraftedCriterion`` carries no id, so a regenerator cannot return an
+    identity even in principle.  Round two's ``AC-3`` is whatever landed
+    third, not round one's ``AC-3``.
+    """
+
+    criteria: list[DraftedCriterion] = Field(min_length=1)
     reasoning: str = Field(min_length=1)
 
 
@@ -354,13 +404,17 @@ class WorkflowIterationEvent(AgentEvent):
     ``trajectory`` is the loop's progress memory folded over every
     iteration so far.  It is required — the loop→workflow seam carries
     it on this existing channel rather than on a second event type.
+
+    ``verdict`` is three-state.  It replaced a boolean ``accepted``:
+    a run whose only failures are soft signals ships AND has something to
+    say, and no boolean could carry both.
     """
 
     type: Literal["workflow_iteration"] = "workflow_iteration"
     iteration: int
     branch: str
     commit_sha: str | None = None
-    accepted: bool
+    verdict: AcceptVerdict
     evaluation: AcceptanceCriteriaOutput
     trajectory: LoopTrajectory
 
@@ -417,6 +471,7 @@ class WorkflowCompleteEvent(AgentEvent):
     pr_number: int | None = None
     ci_passed: bool | None = None
     trajectory: LoopTrajectory | None = None
+    criteria_validation: CriteriaValidation | None = None
 
     @model_serializer(mode="wrap")
     def _force_ci_field(
@@ -439,6 +494,22 @@ class WorkflowVisibilityEvent(AgentEvent):
     repo_url: str | None = None
 
 
+class WorkflowScopeBaseEvent(AgentEvent):
+    """Emitted once per run: the ref every scope comparison is made against.
+
+    A maintainer reading a run's events can confirm which ref the scope
+    and no-touch checks compared against, and — on a constructed base —
+    which blockers it was built from.  Without this the baseline is only
+    visible by inference from a diff, which is exactly how a wrong one
+    went unnoticed.
+    """
+
+    type: Literal["workflow_scope_base"] = "workflow_scope_base"
+    base_ref: str
+    role: BaseRefRole
+    inputs: list[BaseInput] = Field(default_factory=list)
+
+
 class JobAcceptedEvent(AgentEvent):
     """Leading frame of an attached run — carries the reconnect handle.
 
@@ -458,8 +529,17 @@ class WorkflowCriteriaEvent(AgentEvent):
     """Emitted after acceptance criteria are generated from ticket analysis."""
 
     type: Literal["workflow_criteria"] = "workflow_criteria"
-    criteria: list[str]
+    criteria: list[GeneratedCriterion]
     reasoning: str
+
+
+class WorkflowCriteriaValidationEvent(AgentEvent):
+    """Emitted after every feasibility sweep over a generated criteria set."""
+
+    type: Literal["workflow_criteria_validation"] = "workflow_criteria_validation"
+    regeneration_round: int
+    validation: CriteriaValidation
+    regeneration_targets: list[str]
 
 
 class WorkflowTicketDraftEvent(AgentEvent):
@@ -500,6 +580,10 @@ BRANCH_NAME_SCHEMA: dict[str, object] = BranchNameOutput.model_json_schema()
 # Schema for agent-generated acceptance criteria from ticket analysis
 GENERATED_CRITERIA_SCHEMA: dict[str, object] = (
     GeneratedCriteriaOutput.model_json_schema()
+)
+# Schema for the feasibility sweep's per-criterion findings
+CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
+    CriteriaValidationOutput.model_json_schema()
 )
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()

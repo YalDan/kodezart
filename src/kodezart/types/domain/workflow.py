@@ -6,7 +6,16 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.agent import CriterionResult, TicketDraftOutput
+from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
+from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.criteria import (
+    CriteriaArtifact,
+    CriteriaValidation,
+    CriterionFailure,
+    GeneratedCriterion,
+    ValidatedCriterion,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
@@ -52,11 +61,22 @@ class WorkflowContext(CamelCaseModel):
 
 
 class ExecutionContext(WorkflowContext):
-    """Context for stages that execute code against a repository."""
+    """Context for stages that execute code against a repository.
 
-    base_branch: str = Field(min_length=1)
+    ``base_branch`` is not a field.  It is the recorded base's ref and
+    nothing else, so there is no second place a base could enter the run
+    and no way for a surface to be handed one baseline while another
+    surface uses a different one.
+    """
+
+    base_spec: BaseSpec
     permission_mode: str = Field(min_length=1)
     allowed_tools: list[str]
+
+    @property
+    def base_branch(self) -> str:
+        """The ref every scope surface compares against."""
+        return self.base_spec.base_ref
 
 
 class RalphLoopContext(ExecutionContext):
@@ -64,7 +84,7 @@ class RalphLoopContext(ExecutionContext):
 
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
-    acceptance_criteria: list[str] = Field(min_length=1)
+    acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
     repo_visibility: RepoVisibility
 
 
@@ -98,8 +118,8 @@ class RalphLoopState(TypedDict):
     """
 
     iteration: int
-    accepted: bool
-    pending_failures: list[CriterionResult]
+    verdict: AcceptVerdict
+    pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
     iteration_commit_sha: NotRequired[str | None]
 
@@ -121,8 +141,13 @@ class WorkflowState(TypedDict):
     feature_branch: str
     ralph_branch: str
     ticket: TicketDraftOutput | None
-    acceptance_criteria: list[str]
-    accepted: bool
+    acceptance_criteria: list[GeneratedCriterion]
+    criteria_artifact: CriteriaArtifact | None
+    criteria_validation: CriteriaValidation | None
+    criteria_regeneration_rounds: int
+    criteria_infeasible: bool
+    accept_verdict: AcceptVerdict
+    flagged_items: list[FlaggedItem]
     total_iterations: int
     feature_tip_sha: str | None
     review_base_sha: str | None

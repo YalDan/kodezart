@@ -15,6 +15,7 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
     WorkflowVisibilityEvent,
 )
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.gating import (
     RedactionCategory,
     RepoVisibility,
@@ -91,7 +92,7 @@ async def run_engine(
             prompt="do the thing",
             repo_path=repo_path,
             repo_url=repo_url,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -210,7 +211,7 @@ async def test_every_workflow_writer_routes_through_the_gate() -> None:
     joined = "\n".join(seen)
     assert "test-branch" in joined or "scripted-branch" in joined
     assert any('"title"' in payload for payload in seen)
-    assert any(payload.startswith("[") for payload in seen)
+    assert any('"conjunction"' in payload for payload in seen)
     assert any("kodezart: automated fix budget exhausted" in p for p in seen)
 
 

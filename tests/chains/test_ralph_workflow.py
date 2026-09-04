@@ -11,6 +11,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
+from kodezart.domain.accept_gate import accept_verdict
+from kodezart.domain.errors import StaleBaseError
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -25,7 +27,14 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
     WorkflowPREvent,
     WorkflowReviewEvent,
+    WorkflowScopeBaseEvent,
     WorkflowTicketEvent,
+)
+from kodezart.types.domain.base_spec import (
+    BaseInput,
+    BaseRefRole,
+    BaseSpec,
+    trunk_base,
 )
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
@@ -54,6 +63,7 @@ from tests.fakes import (
     PassThroughGate,
     RecordingPromptProvider,
     SequentialCIMonitor,
+    make_dispatched_criteria,
     make_failing_evaluation,
     make_passing_evaluation,
     make_prompt_provider,
@@ -80,6 +90,7 @@ def _make_engine(
     max_fix_rounds: int = 2,
     artifact_persister: FakeArtifactPersister | None = None,
     prompts: RecordingPromptProvider | None = None,
+    git: FakeGitService | None = None,
 ) -> RalphWorkflowEngine:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -104,7 +115,13 @@ def _make_engine(
         merger=merger or FakeBranchMerger(),
         git_base_url="https://github.com",
         git_remote="origin",
-        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        git=(
+            git
+            if git is not None
+            else FakeGitService(
+                remote_branch_shas={"main": "b" * 40},
+            )
+        ),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
@@ -129,7 +146,7 @@ async def test_workflow_single_iteration_accepted() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -158,7 +175,7 @@ async def test_workflow_max_iterations_exhausted() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -187,7 +204,7 @@ async def test_workflow_streams_events_per_node() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -219,7 +236,7 @@ async def test_workflow_accepted_calls_merger() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -269,7 +286,7 @@ async def test_workflow_merge_failure_reports_error() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -300,7 +317,7 @@ async def test_workflow_merge_success_has_no_error() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -330,7 +347,7 @@ async def test_workflow_rejected_does_not_merge() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -371,7 +388,7 @@ async def test_concurrent_workflow_runs_isolated() -> None:
                 prompt=prompt,
                 repo_path="/tmp/fake",
                 repo_url=None,
-                base_branch="main",
+                base_spec=trunk_base("main"),
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
@@ -402,7 +419,7 @@ async def test_quality_gate_receives_correct_params() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -415,7 +432,7 @@ async def test_quality_gate_receives_correct_params() -> None:
     assert "Test ticket" in call["prompt"]
     assert call["repo_path"] == "/tmp/fake"
     assert call["base_branch"] == "main"
-    assert call["acceptance_criteria"] == ["Tests pass", "No lint errors"]
+    assert call["acceptance_criteria"] == make_dispatched_criteria()
     assert isinstance(call["feature_branch"], str)
     assert call["feature_branch"].startswith("kodezart/")
     assert isinstance(call["ralph_branch"], str)
@@ -436,7 +453,7 @@ async def test_workflow_run_rejects_acceptance_criteria_kwarg() -> None:
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
-                base_branch="main",
+                base_spec=trunk_base("main"),
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
@@ -461,7 +478,7 @@ async def test_workflow_generates_criteria_before_loop() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -469,7 +486,7 @@ async def test_workflow_generates_criteria_before_loop() -> None:
     ]
 
     assert len(gate.calls) == 1
-    assert gate.calls[0]["acceptance_criteria"] == ["Tests pass", "No lint errors"]
+    assert gate.calls[0]["acceptance_criteria"] == make_dispatched_criteria()
 
 
 async def test_workflow_streams_criteria_event() -> None:
@@ -482,7 +499,7 @@ async def test_workflow_streams_criteria_event() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -505,7 +522,7 @@ async def test_workflow_criteria_event_before_iteration_event() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -629,7 +646,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
-                base_branch="main",
+                base_spec=trunk_base("main"),
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
@@ -654,7 +671,7 @@ async def test_workflow_quality_gate_never_receives_empty_criteria() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -684,7 +701,7 @@ async def test_workflow_accepted_cleans_up_ralph_branch() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -714,7 +731,7 @@ async def test_workflow_rejected_does_not_clean_up() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -755,7 +772,7 @@ async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -786,7 +803,7 @@ async def test_generate_ticket_runs_in_order() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -815,7 +832,7 @@ async def test_generate_ticket_node_forwards_base_branch() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="develop",
+            base_spec=trunk_base("develop"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -862,7 +879,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -912,7 +929,7 @@ async def test_quality_gate_receives_formatted_ticket() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -934,7 +951,7 @@ async def test_workflow_ticket_event_yielded() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -984,7 +1001,7 @@ async def test_no_ticket_event_raises() -> None:
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
-                base_branch="main",
+                base_spec=trunk_base("main"),
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
@@ -1042,7 +1059,16 @@ class _SequentialReviewExecutor:
                             num_turns=1,
                             session_id="seq",
                             structured_output={
-                                "criteria": ["Tests pass", "No lint errors"],
+                                "criteria": [
+                                    {
+                                        "text": "Tests pass",
+                                        "criterionClass": "hard_gate",
+                                    },
+                                    {
+                                        "text": "No lint errors",
+                                        "criterionClass": "soft_signal",
+                                    },
+                                ],
                                 "reasoning": "Generated.",
                             },
                         )
@@ -1058,6 +1084,31 @@ class _SequentialReviewExecutor:
                             structured_output={
                                 "title": "feat: test PR",
                                 "description": "Test PR description.",
+                            },
+                        )
+                        return
+                    if "findings" in props:
+                        yield ResultEvent(
+                            subtype="result",
+                            duration_ms=1,
+                            duration_api_ms=1,
+                            is_error=False,
+                            num_turns=1,
+                            session_id="seq",
+                            structured_output={
+                                "findings": [
+                                    {
+                                        "criterionId": "AC-1",
+                                        "verdict": "feasible",
+                                        "smallestRepair": "none",
+                                    },
+                                    {
+                                        "criterionId": "AC-2",
+                                        "verdict": "feasible",
+                                        "smallestRepair": "none",
+                                    },
+                                ],
+                                "contradictions": [],
                             },
                         )
                         return
@@ -1111,7 +1162,7 @@ async def test_workflow_review_passes_opens_pr() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1136,12 +1187,34 @@ async def test_workflow_review_fails_triggers_fix() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass now."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass now.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass now.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -1184,7 +1257,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1224,7 +1297,7 @@ async def test_workflow_ci_passes_completes() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1259,7 +1332,7 @@ async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1295,7 +1368,7 @@ async def test_workflow_no_pr_creator_skips_pr() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1332,7 +1405,7 @@ async def test_workflow_no_ci_monitor_skips_ci() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1369,7 +1442,7 @@ async def test_workflow_rejected_skips_review_and_pr() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1410,7 +1483,7 @@ async def test_workflow_complete_event_includes_pr_fields() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1434,7 +1507,18 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
@@ -1473,7 +1557,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1520,7 +1604,7 @@ async def test_workflow_ci_fails_budget_remaining_triggers_fix() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1555,12 +1639,34 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
     """
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
         ],
     }
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -1603,7 +1709,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1652,7 +1758,7 @@ async def test_workflow_repo_url_none_with_protocols_skips_pr() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1693,7 +1799,7 @@ async def test_route_after_review_no_pr_creator_routes_complete() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1728,7 +1834,7 @@ async def test_route_after_review_no_repo_url_routes_complete() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1795,7 +1901,7 @@ async def test_route_after_ci_budget_remaining_routes_fix() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1823,7 +1929,7 @@ async def test_workflow_persists_artifacts_after_criteria() -> None:
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1857,7 +1963,7 @@ async def test_workflow_reports_artifacts_ignored_by_target() -> None:
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1870,6 +1976,76 @@ async def test_workflow_reports_artifacts_ignored_by_target() -> None:
 
     complete = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete) == 1
+
+
+#: The base handed to the artifact persister is NOT a scope surface and grades
+#: no criterion (KOD-36 R5): it neither compares nor measures anything.  It is
+#: the point the ralph branch is cut from when a persister is configured, which
+#: is why a trunk literal there deletes a stacked lane's inherited work.
+ARTIFACT_STACKED_BASE = BaseSpec(
+    base_ref="kodezart/blocker-a-11111111",
+    role=BaseRefRole.deliverable,
+    inputs=(
+        BaseInput(
+            blocker_issue_id="KOD-A",
+            branch="kodezart/blocker-a-11111111",
+            sha="c" * 40,
+        ),
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [trunk_base("main"), ARTIFACT_STACKED_BASE],
+    ids=["trunk-fired", "stacked"],
+)
+async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
+    spec: BaseSpec,
+) -> None:
+    """The persist call creates the ralph branch, so its base is load-bearing.
+
+    ``_persist_artifacts_node`` runs BEFORE the loop, and when a persister
+    is configured it is what first brings the ralph branch into existence.
+    Cut that branch from trunk for a lane whose recorded base is another
+    lane's branch and everything inherited is simply not there — the
+    failure the stacked fixtures exist to catch, on a path neither reaches
+    because both build the engine with ``artifact_persister=None``.
+
+    Two runs differing only in the base they were fired with.  A literal
+    pinned at the call site satisfies at most one of them: ``main`` passes
+    the trunk row and fails the stacked one, the blocker ref does the
+    reverse, and any third value fails both.  ``main`` is a live ref on the
+    fake remote in both rows, so it is a substitution the harness would
+    otherwise accept.
+    """
+    persister = FakeArtifactPersister()
+    engine = _make_engine(
+        artifact_persister=persister,
+        git=FakeGitService(
+            remote_branch_shas={
+                "main": "b" * 40,
+                ARTIFACT_STACKED_BASE.base_ref: "c" * 40,
+            },
+        ),
+    )
+
+    _ = [
+        e
+        async for e in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=spec,
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    assert len(persister.persist_calls) == 1
+    *_, base_branch = persister.persist_calls[0]
+    assert base_branch == spec.base_ref
 
 
 async def test_workflow_cleans_artifacts_before_pr() -> None:
@@ -1887,7 +2063,7 @@ async def test_workflow_cleans_artifacts_before_pr() -> None:
             prompt="build feature",
             repo_path="/repo",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1913,7 +2089,7 @@ async def test_workflow_without_artifact_persister() -> None:
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1947,7 +2123,7 @@ async def test_workflow_success_cleans_backup_branches() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -1981,7 +2157,7 @@ async def test_workflow_rejected_skips_backup_cleanup() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2014,7 +2190,7 @@ async def test_backup_cleanup_failure_does_not_block_complete() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2041,7 +2217,18 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
     """
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -2090,7 +2277,7 @@ async def test_workflow_ci_fails_then_passes_after_fix() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2143,7 +2330,18 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
     """
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -2193,7 +2391,7 @@ async def test_workflow_ci_fails_twice_then_passes_after_two_fix_rounds() -> Non
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2265,7 +2463,7 @@ async def test_workflow_consolidation_event_emitted_post_loop() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2317,7 +2515,7 @@ async def test_complete_event_final_commit_sha_sources_from_feature_tip_sha() ->
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2352,7 +2550,7 @@ async def test_merge_to_feature_already_integrated_proceeds_to_review() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2389,7 +2587,7 @@ async def test_merge_to_feature_divergent_routes_to_complete_with_merge_error() 
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2426,7 +2624,7 @@ async def test_merge_to_feature_source_missing_raises() -> None:
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
-                base_branch="main",
+                base_spec=trunk_base("main"),
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
@@ -2459,7 +2657,7 @@ async def test_review_against_ticket_renders_the_changeset_digest() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2522,12 +2720,34 @@ async def test_fix_code_node_divergent_routes_to_comment_failure_when_pr_url_set
     """fix_code DIVERGENT + pr_url set → comment_failure → complete."""
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass.",
+            },
         ],
     }
     # 1st review: pass → open_pr; 2nd review (after CI fail + fix): fail → comment.
@@ -2565,7 +2785,7 @@ async def test_fix_code_node_divergent_routes_to_comment_failure_when_pr_url_set
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2580,7 +2800,18 @@ async def test_fix_code_node_divergent_routes_to_complete_when_no_pr_url() -> No
     """fix_code DIVERGENT + no pr_url → complete (no comment_failure)."""
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
@@ -2611,7 +2842,7 @@ async def test_fix_code_node_divergent_routes_to_complete_when_no_pr_url() -> No
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2635,7 +2866,18 @@ async def test_fix_code_node_already_integrated_does_not_raise_advances_fix_roun
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     # Two failing reviews so fix runs (and fix_rounds_used reaches max_fix_rounds=1).
@@ -2668,7 +2910,7 @@ async def test_fix_code_node_already_integrated_does_not_raise_advances_fix_roun
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2693,7 +2935,18 @@ async def test_fix_code_node_source_missing_routes_terminally() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
@@ -2723,7 +2976,7 @@ async def test_fix_code_node_source_missing_routes_terminally() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2767,7 +3020,7 @@ class _SequentialQualityGate:
         repo_url: str | None,
         feature_branch: str,
         ralph_branch: str,
-        base_branch: str,
+        base_spec: BaseSpec,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[str],
@@ -2781,7 +3034,7 @@ class _SequentialQualityGate:
                 "repo_url": repo_url,
                 "feature_branch": feature_branch,
                 "ralph_branch": ralph_branch,
-                "base_branch": base_branch,
+                "base_branch": base_spec.base_ref,
                 "permission_mode": permission_mode,
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
@@ -2795,7 +3048,7 @@ class _SequentialQualityGate:
             iteration=iteration,
             branch=ralph_branch,
             commit_sha=self._last_commit_sha,
-            accepted=all(r.passed for r in results),
+            verdict=accept_verdict(acceptance_criteria, results),
             evaluation=evaluation,
             trajectory=fold_trajectory(
                 [
@@ -2824,12 +3077,34 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Tests pass now."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Tests pass now.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Tests pass now.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -2882,7 +3157,7 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -2908,7 +3183,7 @@ async def test_fix_code_node_invokes_quality_gate_with_feature_base_branch() -> 
     # fix prompt carries the review-failure body so the routed-through-
     # gate path preserves the fix-prompt assembly (incl. the
     # "## Review Failures" header from _fix_code_node).
-    assert fix_call["acceptance_criteria"] == ["Tests pass", "No lint errors"]
+    assert fix_call["acceptance_criteria"] == make_dispatched_criteria()
     assert isinstance(fix_call["ralph_branch"], str)
     assert isinstance(fix_call["feature_branch"], str)
     assert fix_call["ralph_branch"].startswith(fix_call["feature_branch"])
@@ -2987,7 +3262,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3004,6 +3279,155 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
     assert len(head_ref) == 40
     assert base_ref == base_sha
     assert head_ref == feature_tip
+
+
+async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -> None:
+    """KOD-53/AC-22: the review diff's base is the lane's recorded base.
+
+    The stacked twin of the test above. A review taken against trunk sees
+    everything the lane inherited from its blocker as this lane's own
+    change — the reading that convicts inherited work of being
+    out-of-scope, which is the defect KOD-36 reports.
+    """
+    blocker_ref = "kodezart/blocker-a-11111111"
+    blocker_sha = "c" * 40
+    trunk_sha = "b" * 40
+    feature_tip = "a" * 40
+    git = FakeGitService(
+        remote_branch_shas={"main": trunk_sha, blocker_ref: blocker_sha},
+    )
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.FAST_FORWARDED,
+                feature_tip_sha=feature_tip,
+            ),
+        ],
+    )
+    service = AgentService(
+        executor=FakeAgentExecutor(events=[]),
+        workspace=FakeWorkspaceProvider(),
+        persister=FakeChangePersister(),
+    )
+    engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        quality_gate=FakeQualityGate(
+            events=[],
+            evaluation=make_passing_evaluation(),
+            total_iterations=1,
+            last_commit_sha=feature_tip,
+        ),
+        ticket_generator=FakeTicketGenerator(),
+        merger=merger,
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=git,
+        cache=FakeRepoCache(),
+        artifact_persister=None,
+    )
+
+    _ = [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_spec=BaseSpec(
+                base_ref=blocker_ref,
+                role=BaseRefRole.deliverable,
+                inputs=(
+                    BaseInput(
+                        blocker_issue_id="KOD-A",
+                        branch=blocker_ref,
+                        sha=blocker_sha,
+                    ),
+                ),
+            ),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    resolved = [c for c in git.calls if c[0] == "remote_branch_sha"]
+    assert [c[3] for c in resolved] == [blocker_ref]
+
+    diff_calls = [c for c in git.calls if c[0] == "diff_summary"]
+    assert len(diff_calls) >= 1
+    assert diff_calls[0][2] == blocker_sha
+    assert diff_calls[0][2] != trunk_sha
+
+
+async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
+    """KOD-53/AC-27: the refusal is the run's, not just the helper's.
+
+    ``scope_base`` refusing in isolation leaves the claim that MATTERS
+    unpinned — that nothing is graded. This asserts the absence: no scope
+    event is emitted, no diff is taken, and the loop is never entered, so
+    there is no verdict anywhere about a tree that has moved.
+    """
+    recorded = BaseSpec(
+        base_ref="kodezart/blocker-a-11111111",
+        role=BaseRefRole.deliverable,
+        inputs=(
+            BaseInput(
+                blocker_issue_id="KOD-A",
+                branch="kodezart/blocker-a-11111111",
+                sha="a" * 40,
+            ),
+        ),
+    )
+    implied = recorded.model_copy(
+        update={"inputs": (recorded.inputs[0].model_copy(update={"sha": "c" * 40}),)},
+    )
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+    engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=AgentService(
+            executor=FakeAgentExecutor(events=[]),
+            workspace=FakeWorkspaceProvider(),
+            persister=FakeChangePersister(),
+        ),
+        quality_gate=gate,
+        ticket_generator=FakeTicketGenerator(),
+        merger=FakeBranchMerger(),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=git,
+        cache=FakeRepoCache(),
+        artifact_persister=None,
+    )
+
+    events: list[AgentEvent] = []
+    with pytest.raises(StaleBaseError) as excinfo:
+        async for event in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_spec=recorded,
+            implied_base=implied,
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        ):
+            events.append(event)
+
+    assert excinfo.value.recorded_ref == recorded.base_ref
+    assert events == []
+    assert [e for e in events if isinstance(e, WorkflowScopeBaseEvent)] == []
+    assert [c for c in git.calls if c[0] == "diff_summary"] == []
+    assert gate.calls == []
 
 
 async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
@@ -3044,7 +3468,7 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
             "repo_path": "/tmp/fake",
             "repo_url": None,
             "cache_key": "test-cache",
-            "base_branch": "main",
+            "base_spec": trunk_base("main"),
             "permission_mode": "bypassPermissions",
             "allowed_tools": ["Bash"],
         }
@@ -3145,7 +3569,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
-                base_branch="main",
+                base_spec=trunk_base("main"),
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
@@ -3200,7 +3624,7 @@ async def test_terminal_event_always_carries_an_outcome() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3231,7 +3655,7 @@ async def test_terminal_outcome_merge_divergent_on_diverged_consolidation() -> N
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3255,7 +3679,7 @@ async def test_terminal_outcome_ci_passed_on_green_ci() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3279,7 +3703,7 @@ async def test_terminal_outcome_ci_not_configured_when_ci_reports_none() -> None
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3306,7 +3730,7 @@ async def test_terminal_outcome_loop_not_accepted_when_gate_rejects() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3336,7 +3760,7 @@ async def test_plateaued_run_reports_loop_plateaued_with_actionable_payload() ->
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3381,7 +3805,7 @@ async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3402,12 +3826,34 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Fixed."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Fixed.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Fixed.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -3447,7 +3893,7 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3463,7 +3909,18 @@ async def test_fix_round_divergent_still_sets_ci_passed_false() -> None:
     """The DIVERGENT / SOURCE_MISSING failure write is unchanged."""
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
@@ -3513,7 +3970,7 @@ async def test_fix_round_divergent_still_sets_ci_passed_false() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
@@ -3534,12 +3991,34 @@ async def test_terminal_totals_are_cumulative_and_last_round_wins() -> None:
     """
     failing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": False, "reasoning": "Tests fail."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": False,
+                "reasoning": "Tests fail.",
+            },
         ],
     }
     passing_review: dict[str, object] = {
         "criteriaResults": [
-            {"criterion": "Tests pass", "passed": True, "reasoning": "Fixed."},
+            {
+                "criterionId": "AC-1",
+                "criterion": "Tests pass",
+                "passed": True,
+                "reasoning": "Fixed.",
+            },
+            {
+                "criterionId": "AC-2",
+                "criterion": "No lint errors",
+                "passed": True,
+                "reasoning": "Fixed.",
+            },
         ],
     }
     executor = _SequentialReviewExecutor(
@@ -3580,7 +4059,7 @@ async def test_terminal_totals_are_cumulative_and_last_round_wins() -> None:
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,

@@ -10,6 +10,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, SkillPreflightError
 from kodezart.main import preflight_prompt_skill_loadouts, preflight_skills
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
@@ -24,6 +25,7 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
+    make_criteria,
     make_passing_evaluation,
     make_prompt_provider,
 )
@@ -250,7 +252,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
             prompt="do the thing",
             repo_path="/tmp/fake",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key="k",
@@ -283,10 +285,10 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
                 repo_url=None,
                 feature_branch="kodezart/f",
                 ralph_branch="kodezart/f-ralph",
-                base_branch="main",
+                base_spec=trunk_base("main"),
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
-                acceptance_criteria=["Tests pass"],
+                acceptance_criteria=make_criteria("Tests pass"),
                 cache_key="k",
                 repo_visibility=RepoVisibility.UNKNOWN,
             )
