@@ -7,15 +7,18 @@ being asked: that a session's whole life happens in one task, and that
 shutting one down terminates.
 """
 
+import ast
 import asyncio
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from pathlib import Path
 from typing import Final
 
 import pytest
 from mcp.types import CallToolResult
 
+from kodezart.adapters import hosted_mcp_session
 from kodezart.adapters.hosted_mcp_session import (
     HostedMcpSession,
     HostedSessionTransport,
@@ -116,3 +119,29 @@ def test_every_transport_states_the_bound_its_shutdown_depends_on() -> None:
     nobody having to notice.
     """
     assert "call_timeout" in HostedSessionTransport.__abstractmethods__
+
+
+def test_no_transport_dials_a_session_whose_handshake_is_unbounded() -> None:
+    """``open`` holds the lock the shutdown needs, so the dial must end.
+
+    A server that starts and never answers ``initialize`` would hold the
+    lifetime lock for the life of the process, and a process that cannot
+    finish opening a session cannot close one either — the same shutdown
+    that the unbounded CALL wedged, one step earlier. The SDK's session
+    takes the bound; every transport hands it the one it already states.
+    """
+    adapters = Path(hosted_mcp_session.__file__).parent
+    unbounded: list[str] = []
+    for path in sorted(adapters.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            if node.func.id != "ClientSession":
+                continue
+            if not any(k.arg == "read_timeout_seconds" for k in node.keywords):
+                unbounded.append(f"{path.name}:{node.lineno}")
+
+    assert unbounded == [], (
+        f"sessions dialled with no bound on the handshake: {unbounded}"
+    )

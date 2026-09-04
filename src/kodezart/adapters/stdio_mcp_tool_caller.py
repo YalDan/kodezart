@@ -186,6 +186,13 @@ class _SpawnedServer(HostedSessionTransport):
     async def session(self) -> AsyncIterator[ClientSession]:
         """Spawn the server, hand back its session, and reap it on the way out.
 
+        The HANDSHAKE is bounded by the same call bound every later
+        request takes, because ``open`` holds the lifetime lock the
+        shutdown also needs: a server that starts and never answers
+        ``initialize`` would otherwise hold that lock forever, and a
+        process that cannot finish opening a session could not close one
+        either.
+
         The subprocess, its stderr capture and the session over them are
         entered TOGETHER and left together, by whichever task is hosting
         — which is the one task that entered them.  The SDK drives the
@@ -213,7 +220,11 @@ class _SpawnedServer(HostedSessionTransport):
                         ),
                         errlog=errlog,
                     ) as (read, write),
-                    ClientSession(read, write) as session,
+                    ClientSession(
+                        read,
+                        write,
+                        read_timeout_seconds=self.call_timeout(),
+                    ) as session,
                 ):
                     await session.initialize()
                     self._stderr_path = path

@@ -223,7 +223,11 @@ class _RemoteServer(HostedSessionTransport):
         async with (
             client,
             streamable_http_client(self._url, http_client=client) as (read, write, _),
-            ClientSession(read, write) as session,
+            ClientSession(
+                read,
+                write,
+                read_timeout_seconds=self.call_timeout(),
+            ) as session,
         ):
             await session.initialize()
             yield session
