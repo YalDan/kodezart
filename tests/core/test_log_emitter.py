@@ -142,3 +142,62 @@ def test_the_port_declares_exactly_the_methods_src_calls() -> None:
     assert declared - called == set(), (
         f"declared on LogEmitter but never awaited: {sorted(declared - called)}"
     )
+
+
+def _shapes_by_event() -> dict[str, dict[frozenset[str], list[str]]]:
+    """Every log event in ``src``, by the field sets it is emitted with.
+
+    Taken from the syntax tree for the reason the method census is: a
+    reading of 168 event names goes stale, and what this asserts is a
+    property of every emit site rather than of the ones somebody
+    remembered.  Only the literal-named events are counted — an event
+    whose name is computed has no single shape to compare.
+    """
+    shapes: dict[str, dict[frozenset[str], list[str]]] = {}
+    for path in _source_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(
+                node.func, ast.Attribute
+            ):
+                continue
+            if _receiver_name(node.func.value) not in LOGGER_RECEIVERS:
+                continue
+            if not node.args or not isinstance(node.args[0], ast.Constant):
+                continue
+            event = node.args[0].value
+            if not isinstance(event, str):
+                continue
+            fields = frozenset(
+                keyword.arg for keyword in node.keywords if keyword.arg is not None
+            )
+            sites = shapes.setdefault(event, {}).setdefault(fields, [])
+            sites.append(f"{path.name}:{node.lineno}")
+    return shapes
+
+
+def test_one_event_name_is_emitted_in_exactly_one_shape() -> None:
+    """An event is a contract with whoever reads the log (KOD-192).
+
+    Measured 2026-09-01 18:22: ``run_record_write_failed`` reached the log
+    from two sites, one carrying a formatted traceback and one carrying
+    nothing of the sort, and a reader filtering on the event name could
+    not tell a field that was absent from a field that was empty.  Four
+    events had two shapes between them on the day this was written.
+
+    A site with a fact the other site does not have says so with the
+    field present and ``None`` — which is a STATE of the event, the way
+    every other three-state field in this codebase is — rather than by
+    leaving the field out.
+    """
+    divergent = {
+        event: shapes for event, shapes in _shapes_by_event().items() if len(shapes) > 1
+    }
+
+    assert divergent == {}, "\n".join(
+        f"{event}: "
+        + " vs ".join(
+            f"{sorted(fields)} at {sites}" for fields, sites in sorted(shapes.items())
+        )
+        for event, shapes in sorted(divergent.items())
+    )

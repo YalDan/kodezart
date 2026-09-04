@@ -64,6 +64,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from traceback import format_exception
 from typing import Self
 
 from kodezart.core.errors import RunRecordWriteError
@@ -518,6 +519,7 @@ class LifecycleWatcher:
                 failure=exc.failure,
                 error_type=exc.cause_type,
                 error=str(exc),
+                traceback="".join(format_exception(exc)),
             )
         except Exception as exc:
             await self._log.aerror(
@@ -526,6 +528,7 @@ class LifecycleWatcher:
                 outcome=outcome.value,
                 error_type=type(exc).__name__,
                 error=str(exc),
+                traceback="".join(format_exception(exc)),
             )
         return None
 
