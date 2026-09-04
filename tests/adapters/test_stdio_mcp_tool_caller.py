@@ -34,6 +34,9 @@ from tests.fakes import write_stdio_fake_server
 
 SERVER_NAME: Final[str] = "fixture-knowledge"
 TOOL: Final[str] = "append-block"
+#: Long enough that no case here ever reaches it, short enough that a
+#: case which DOES reach it fails the suite rather than hanging it.
+CALL_TIMEOUT_SECONDS: Final[float] = 10.0
 ERROR_DETAIL_LIMIT: Final[int] = 500
 STDERR_TAIL_LIMIT: Final[int] = 2000
 
@@ -109,6 +112,7 @@ def _caller(
             "FAKE_MCP_EXIT_MARKER": "" if death is None else str(death.marker),
         },
         server_name=SERVER_NAME,
+        call_timeout_seconds=CALL_TIMEOUT_SECONDS,
         error_detail_limit=ERROR_DETAIL_LIMIT,
         stderr_tail_limit=STDERR_TAIL_LIMIT,
     )
@@ -426,13 +430,18 @@ async def test_a_session_opened_by_the_boot_is_torn_down_without_touching_it(
         first = await caller.call_tool(name=TOOL, arguments={})
         await death.strike()
         second = await caller.call_tool(name=TOOL, arguments={})
+        still_holding_it = not boot.done()
         release.set()
-        await boot
+        # Gathered rather than awaited, so what the boot task met is an
+        # assertion here and not an error raised out of the case.
+        (boot_outcome,) = await asyncio.gather(boot, return_exceptions=True)
 
     assert first == {"served": 1}
     assert second == {"served": 1}, "the worker's call rode the reopened session"
     assert _spawns(spawn_log) == 2
-    assert boot.done() and boot.exception() is None, "the boot task was not touched"
-    assert _named(logs, "mcp_session_teardown_failed") == [], (
-        "the dead session was torn down by whoever owns it"
+    assert still_holding_it, "the boot task outlived the worker's reopen, as it must"
+    assert boot_outcome is None, f"the boot task was touched: {boot_outcome!r}"
+    (reopened,) = _named(logs, "mcp_session_reopened")
+    assert reopened["closed_by"] == "ClosedResourceError", (
+        "the worker's call drove the reopen across the task boundary"
     )

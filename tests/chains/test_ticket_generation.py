@@ -1,6 +1,5 @@
 """Tests for TicketGenerationLoop (ticket draft + review sub-graph) with fakes."""
 
-import random
 import time
 from collections.abc import AsyncGenerator, Sequence
 
@@ -42,9 +41,12 @@ from tests.chains.test_dispatch_definitions import (
 )
 from tests.fakes import (
     FAKE_SESSION_TYPE,
+    NEGLIGIBLE_BACKOFF_SECONDS,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeWorkspaceProvider,
+    floor_under_a_rate_limit,
     make_prompt_provider,
     no_delay_floor,
 )
@@ -1180,36 +1182,6 @@ async def test_the_critics_flags_ride_out_on_the_emitted_ticket() -> None:
 # ---------------------------------------------------------------------------
 
 
-#: The floor a rate-limited attempt waits in the case below.  Long enough
-#: that only the floor can account for the gap between two attempts, short
-#: enough that the case costs the suite nothing to run.
-RATE_LIMIT_FLOOR_SECONDS = 0.15
-
-#: Two orders of magnitude under the floor, so the retry policy's own
-#: back-off cannot be the explanation for the gap the case measures.
-NEGLIGIBLE_BACKOFF_SECONDS = 0.001
-
-
-@pytest.fixture
-def unjittered_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Take the randomness out of the vendor's back-off for one case.
-
-    ``RetryPolicy`` sleeps ``interval + random.uniform(0, 1)`` between
-    attempts, so up to a second of the gap between two attempts is the
-    policy's own jitter and NOT the floor.  A case measuring a floor
-    smaller than a second while the jitter is live is not measuring the
-    floor at all: it passes with the floor unwrapped, which is how the
-    wiring came to be unproven in the first place.
-    """
-    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
-
-
-def _floor_under_a_rate_limit(exc: Exception) -> float | None:
-    """A resolver of the shape ``composition.engine`` builds (KOD-195)."""
-    rejected = getattr(exc, "rate_limit_rejected", False)
-    return RATE_LIMIT_FLOOR_SECONDS if rejected else None
-
-
 class _RejectedThenDraftingExecutor(_ScriptedReviewExecutor):
     """The drafter is rate-limit rejected once, then answers.
 
@@ -1285,7 +1257,7 @@ async def test_a_rate_limited_draft_waits_the_floor_before_its_next_attempt() ->
     loop = _make_loop(
         executor=executor,
         retry_initial_interval=NEGLIGIBLE_BACKOFF_SECONDS,
-        delay_floor_for=_floor_under_a_rate_limit,
+        delay_floor_for=floor_under_a_rate_limit,
     )
 
     events = [event async for event in loop.run(**_run_kwargs())]

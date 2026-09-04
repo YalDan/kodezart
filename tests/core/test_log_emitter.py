@@ -144,6 +144,56 @@ def test_the_port_declares_exactly_the_methods_src_calls() -> None:
     )
 
 
+#: Stands in for a ``**`` spread whose contents the source cannot read.
+#: Marked rather than dropped, so an unreadable spread can never make two
+#: shapes look like one.
+_SPREAD = "**"
+
+
+def _literal_field_sets(scope: ast.AST) -> dict[str, frozenset[str]]:
+    """Names bound to a dict literal of string keys inside one function.
+
+    A field set assembled once and spread into two events is how two
+    events are kept in step, and it is readable here: the keys are in the
+    source, a few lines above the call.  What is NOT readable is a spread
+    of somebody else's mapping, and those two must not be confused.
+    """
+    bound: dict[str, frozenset[str]] = {}
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
+        if not isinstance(value, ast.Dict):
+            continue
+        keys = {
+            key.value
+            for key in value.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
+        if len(keys) != len(value.keys):
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                bound[target.id] = frozenset(keys)
+    return bound
+
+
+def _fields_of(call: ast.Call, bound: dict[str, frozenset[str]]) -> frozenset[str]:
+    """The field names one logging call carries, spreads resolved where they can be."""
+    fields: set[str] = set()
+    for keyword in call.keywords:
+        if keyword.arg is not None:
+            fields.add(keyword.arg)
+        elif isinstance(keyword.value, ast.Name) and keyword.value.id in bound:
+            fields |= bound[keyword.value.id]
+        else:
+            fields.add(_SPREAD)
+    return frozenset(fields)
+
+
 def _shapes_by_event() -> dict[str, dict[frozenset[str], list[str]]]:
     """Every log event in ``src``, by the field sets it is emitted with.
 
@@ -156,23 +206,31 @@ def _shapes_by_event() -> dict[str, dict[frozenset[str], list[str]]]:
     shapes: dict[str, dict[frozenset[str], list[str]]] = {}
     for path in _source_files():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(
-                node.func, ast.Attribute
-            ):
-                continue
-            if _receiver_name(node.func.value) not in LOGGER_RECEIVERS:
-                continue
-            if not node.args or not isinstance(node.args[0], ast.Constant):
-                continue
-            event = node.args[0].value
-            if not isinstance(event, str):
-                continue
-            fields = frozenset(
-                keyword.arg for keyword in node.keywords if keyword.arg is not None
-            )
-            sites = shapes.setdefault(event, {}).setdefault(fields, [])
-            sites.append(f"{path.name}:{node.lineno}")
+        scopes = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+        for scope in [*scopes, tree]:
+            bound = _literal_field_sets(scope)
+            for node in ast.walk(scope):
+                if not isinstance(node, ast.Call) or not isinstance(
+                    node.func, ast.Attribute
+                ):
+                    continue
+                if _receiver_name(node.func.value) not in LOGGER_RECEIVERS:
+                    continue
+                if not node.args or not isinstance(node.args[0], ast.Constant):
+                    continue
+                event = node.args[0].value
+                if not isinstance(event, str):
+                    continue
+                sites = shapes.setdefault(event, {}).setdefault(
+                    _fields_of(node, bound), []
+                )
+                site = f"{path.name}:{node.lineno}"
+                if site not in sites:
+                    sites.append(site)
     return shapes
 
 
@@ -201,3 +259,32 @@ def test_one_event_name_is_emitted_in_exactly_one_shape() -> None:
         )
         for event, shapes in sorted(divergent.items())
     )
+
+
+def test_no_log_event_is_handed_its_field_set_at_runtime() -> None:
+    """A spread hides the shape the census above exists to compare (KOD-192).
+
+    Measured 2026-09-04: ``mcp_session_opened`` was emitted with
+    ``**transport.describe()``, which is a url on one transport and a
+    command on the other — two shapes for one event, and the census could
+    not see either of them, because what a spread contributes is not in
+    the source. The guard found four divergences and was structurally
+    blind to the fifth, which the same batch had just introduced.
+
+    So the fields are written down. A transport with something of its own
+    to say says it as a VALUE under a field the event always carries.
+    """
+    spread = {
+        event: sorted(
+            {
+                site
+                for fields, sites in shapes.items()
+                if _SPREAD in fields
+                for site in sites
+            }
+        )
+        for event, shapes in _shapes_by_event().items()
+        if any(_SPREAD in fields for fields in shapes)
+    }
+
+    assert spread == {}, f"log events handed a field set at runtime: {spread}"

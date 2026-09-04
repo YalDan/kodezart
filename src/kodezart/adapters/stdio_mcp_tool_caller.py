@@ -43,6 +43,7 @@ import os
 import tempfile
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import TextIO
 
@@ -149,6 +150,7 @@ class _SpawnedServer(HostedSessionTransport):
         args: tuple[str, ...],
         env: Mapping[str, str],
         server_name: str,
+        call_timeout_seconds: float,
         error_detail_limit: int,
         stderr_tail_limit: int,
     ) -> None:
@@ -156,6 +158,7 @@ class _SpawnedServer(HostedSessionTransport):
             server_name=server_name,
             error_detail_limit=error_detail_limit,
         )
+        self._call_timeout_seconds: float = call_timeout_seconds
         self._command: str = command
         self._args: tuple[str, ...] = args
         self._env: dict[str, str] = dict(env)
@@ -166,9 +169,18 @@ class _SpawnedServer(HostedSessionTransport):
         self._stderr_path: Path | None = None
         self._log: BoundLogger = get_logger(__name__)
 
-    def describe(self) -> dict[str, object]:
+    def call_timeout(self) -> timedelta:
+        """A spawned server can stop answering without closing its pipe.
+
+        The same bound the HTTP transport carries, from the same operator
+        field: a record write on a server that has wandered off hangs the
+        pass holding it, and hangs the shutdown behind it.
+        """
+        return timedelta(seconds=self._call_timeout_seconds)
+
+    def address(self) -> str:
         """The command names this server, the way a URL names a remote one."""
-        return {"command": self._command}
+        return self._command
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[ClientSession]:
@@ -292,6 +304,7 @@ class StdioMcpToolCaller:
         args: tuple[str, ...],
         env: Mapping[str, str],
         server_name: str,
+        call_timeout_seconds: float,
         error_detail_limit: int,
         stderr_tail_limit: int,
     ) -> None:
@@ -300,6 +313,7 @@ class StdioMcpToolCaller:
             args=args,
             env=env,
             server_name=server_name,
+            call_timeout_seconds=call_timeout_seconds,
             error_detail_limit=error_detail_limit,
             stderr_tail_limit=stderr_tail_limit,
         )

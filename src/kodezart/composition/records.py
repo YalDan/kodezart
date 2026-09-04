@@ -166,6 +166,7 @@ def _knowledge_caller(
             args=tuple(config.knowledge_mcp_args),
             env=env,
             server_name=config.knowledge_mcp_server_name,
+            call_timeout_seconds=config.knowledge_mcp_call_timeout_seconds,
             error_detail_limit=config.knowledge_mcp_error_detail_limit,
             stderr_tail_limit=config.knowledge_mcp_stderr_tail_limit,
         )

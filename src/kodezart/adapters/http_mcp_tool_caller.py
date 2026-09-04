@@ -168,9 +168,9 @@ class _RemoteServer(HostedSessionTransport):
         self._credential_refused: bool = False
         self._log: BoundLogger = get_logger(__name__)
 
-    def describe(self) -> dict[str, object]:
+    def address(self) -> str:
         """The URL names this server, the way a command names a spawned one."""
-        return {"url": self._url}
+        return self._url
 
     def http_client(
         self,

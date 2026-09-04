@@ -145,8 +145,13 @@ async def _join(host: asyncio.Task[None]) -> None:
     group ends a broken session by CANCELLING — so re-raising here would
     carry that cancellation into a task that only asked to close, which is
     the shape the hosting task exists to end (KOD-270).
+
+    Waited on rather than gathered, because gathering CANCELS what it is
+    waiting for when the waiter is cancelled: a shutdown that ran out of
+    time would reach into the host and cut its teardown in half, which is
+    the one thing this module exists to keep whole.
     """
-    await asyncio.gather(host, return_exceptions=True)
+    await asyncio.wait({host})
 
 
 class HostedSessionTransport(ABC):
@@ -162,9 +167,16 @@ class HostedSessionTransport(ABC):
         self.server_name: str = server_name
         self._error_detail_limit: int = error_detail_limit
 
-    def describe(self) -> dict[str, object]:
-        """What names this server in a log line, beyond its own name."""
-        return {}
+    @abstractmethod
+    def address(self) -> str:
+        """How this server is reached, for the log line that says it opened.
+
+        A VALUE and not a field set: spreading a per-transport mapping
+        into the event gave ``mcp_session_opened`` one shape carrying a
+        url and another carrying a command, which is the divergence
+        KOD-192 forbids — and a spread is invisible to the census that
+        forbids it, so the guard could not have found this one.
+        """
 
     @abstractmethod
     def session(self) -> AbstractAsyncContextManager[ClientSession]:
@@ -176,13 +188,19 @@ class HostedSessionTransport(ABC):
         task that entered it.
         """
 
-    def call_timeout(self) -> timedelta | None:
+    @abstractmethod
+    def call_timeout(self) -> timedelta:
         """How long one call may go unanswered before it is a failure.
 
-        ``None`` leaves the bound to the transport underneath: a spawned
-        process that stops answering is a process whose pipe closes.
+        Required of every transport, because the host's own SHUTDOWN is
+        what depends on it.  ``close`` ends the inbox and waits out the
+        calls the session still owes, and a call nothing bounds is a wait
+        nothing ends: measured 2026-09-04, a stdio server that stopped
+        answering without closing its pipe wedged the shutdown forever,
+        because this answered ``None`` and nobody had to say otherwise.
+        A transport that means "as long as it takes" has to write that
+        duration down, where an operator can read it.
         """
-        return None
 
     def may_reopen(self) -> bool:
         """Whether a fresh session could answer what this one could not."""
@@ -351,21 +369,32 @@ class HostedMcpSession:
             self._host = None
             self._inbox = None
             inbox.close()
-            await _join(host)
-            self._phase = found
+            try:
+                await _join(host)
+            finally:
+                # In a finally, because the unwinding itself can be
+                # cancelled — a worker whose pass ran out of budget mid
+                # reopen — and a phase left at OPENING is a caller that
+                # refuses every later call and can never reopen: not
+                # CLOSED, so nobody is out of service, and not ENDED, so
+                # nothing reopens.
+                self._phase = found
             raise
         await self._log.ainfo(
             "mcp_session_opened",
             server_name=self._transport.server_name,
-            **self._transport.describe(),
+            address=self._transport.address(),
         )
 
-    async def close(self) -> bool:
-        """Close the host's inbox and join it, answering whether there was one.
+    async def close(self) -> None:
+        """Close the host's inbox and join it. Closing twice is a no-op.
 
         The inbox's end IS the shutdown message: the host reads it as the
         stream running out, so there is no sentinel value to keep in step
-        with the calls beside it.
+        with the calls beside it.  What the join then waits for is the
+        calls the session still owes, each bounded by the transport's own
+        ``call_timeout`` — which is why that bound is required rather than
+        defaulted (KOD-177).
 
         The caller is CLOSED whether or not there was a host to join.  A
         caller whose last reopen failed holds no host and is still in
@@ -379,14 +408,13 @@ class HostedMcpSession:
             self._inbox = None
             self._phase = _Phase.CLOSED
             if host is None or inbox is None:
-                return False
+                return
             inbox.close()
             await _join(host)
         await self._log.ainfo(
             "mcp_session_closed",
             server_name=self._transport.server_name,
         )
-        return True
 
     async def call_tool(
         self,
@@ -480,7 +508,12 @@ class HostedMcpSession:
                 await self._reopen(name)
             inbox = self._inbox
             if inbox is None or self._phase is not _Phase.SERVING:
-                raise self._transport.failure_not_serving(name)
+                # In service and holding no serving session — the fresh
+                # one ended between the handshake and this line.  That is
+                # the session ENDING, which is the class the record path
+                # routes on, and not the "nobody opened one" refusal that
+                # would send a reader looking for a boot that never ran.
+                raise self._transport.failure_unanswered(name, on_reopened=True)
             call = self._post(
                 inbox,
                 name=name,

@@ -1,7 +1,6 @@
 """Tests for RalphWorkflowEngine (outer pipeline) with fakes."""
 
 import asyncio
-import random
 import re
 import shutil
 import time
@@ -84,6 +83,7 @@ from tests.chains.test_dispatch_definitions import (
 )
 from tests.fakes import (
     FAKE_SESSION_TYPE,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeArtifactPersister,
@@ -100,6 +100,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     RecordingPromptProvider,
+    floor_under_a_rate_limit,
     make_dispatched_criteria,
     make_failing_evaluation,
     make_passing_evaluation,
@@ -2438,33 +2439,6 @@ async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
     assert wire.result_tail == "Claude AI usage limit reached"
 
 
-#: The floor a rate-limited attempt waits in the fixture below.  Long
-#: enough that only the floor can account for the gap between two
-#: attempts, short enough that the case costs the suite nothing to run.
-RATE_LIMIT_FLOOR_SECONDS = 0.15
-
-
-@pytest.fixture
-def unjittered_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Take the randomness out of the vendor's back-off for one case.
-
-    ``RetryPolicy`` sleeps ``interval + random.uniform(0, 1)`` between
-    attempts, so up to a second of the gap between two attempts is the
-    policy's own jitter and NOT the floor.  Measured 2026-09-04: with the
-    jitter live this case passed with all fifteen floored nodes unwrapped
-    — it was clocking the jitter and reading it as the floor.  Fixed at
-    zero, the policy contributes ``initial_interval`` and nothing else.
-    """
-    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
-
-
-def _floor_under_a_rate_limit(exc: Exception) -> float | None:
-    """A resolver of the shape ``composition.engine`` builds (KOD-195)."""
-    if isinstance(exc, RateLimitedSoftFailureError):
-        return RATE_LIMIT_FLOOR_SECONDS
-    return None
-
-
 @pytest.mark.usefixtures("unjittered_backoff")
 async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
     tmp_path: Path,
@@ -2486,7 +2460,7 @@ async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
         artifact_persister=persister,
         retry_initial_interval=0.001,
         retry_max_attempts=2,
-        delay_floor_for=_floor_under_a_rate_limit,
+        delay_floor_for=floor_under_a_rate_limit,
     )
 
     events = [

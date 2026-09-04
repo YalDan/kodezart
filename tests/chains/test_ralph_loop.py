@@ -2,7 +2,6 @@
 
 import ast
 import inspect
-import random
 import re
 import time
 from collections.abc import AsyncGenerator, Sequence
@@ -56,6 +55,8 @@ from kodezart.types.domain.trajectory import IterationRecord
 from tests.chains.test_dispatch_definitions import chain_source, dispatch_block
 from tests.fakes import (
     FAKE_SESSION_TYPE,
+    NEGLIGIBLE_BACKOFF_SECONDS,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeAgentRunner,
@@ -65,6 +66,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     RecordingPromptProvider,
     as_validated,
+    floor_under_a_rate_limit,
     make_criteria,
     make_minted_criteria,
     make_prompt_provider,
@@ -1914,39 +1916,6 @@ def test_every_loop_requires_a_delay_floor_of_its_caller() -> None:
 # ---------------------------------------------------------------------------
 
 
-#: The floor a rate-limited attempt waits in the cases below.  Long enough
-#: that only the floor can account for the gap between two attempts, short
-#: enough that the case costs the suite nothing to run.
-RATE_LIMIT_FLOOR_SECONDS = 0.15
-
-#: Two orders of magnitude under the floor, so the retry policy's own
-#: back-off cannot be the explanation for the gap the cases measure.
-NEGLIGIBLE_BACKOFF_SECONDS = 0.001
-
-
-@pytest.fixture
-def unjittered_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Take the randomness out of the vendor's back-off for one case.
-
-    ``RetryPolicy`` sleeps ``interval + random.uniform(0, 1)`` between
-    attempts, so up to a second of the gap between two attempts is the
-    policy's own jitter and NOT the floor.  A case that measures a floor
-    smaller than a second while the jitter is live is not measuring the
-    floor at all: it passes with the floor unwrapped, which is how the
-    wiring came to be unproven in the first place.  With the jitter fixed
-    at zero the policy contributes ``initial_interval`` and nothing else,
-    and the floor is the only thing the gap can be made of.
-    """
-    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
-
-
-def _floor_under_a_rate_limit(exc: Exception) -> float | None:
-    """A resolver of the shape ``composition.engine`` builds (KOD-195)."""
-    return (
-        RATE_LIMIT_FLOOR_SECONDS if getattr(exc, "rate_limit_rejected", False) else None
-    )
-
-
 def _asks_for_an_evaluation(output_format: dict[str, object] | None) -> bool:
     """Whether this dispatch is the evaluator's, by the schema it asks for."""
     if output_format is None:
@@ -2052,7 +2021,7 @@ async def test_a_rate_limited_evaluation_waits_the_floor_before_its_next_attempt
     loop = _make_loop(
         executor=executor,
         retry_initial_interval=NEGLIGIBLE_BACKOFF_SECONDS,
-        delay_floor_for=_floor_under_a_rate_limit,
+        delay_floor_for=floor_under_a_rate_limit,
     )
 
     events = [
