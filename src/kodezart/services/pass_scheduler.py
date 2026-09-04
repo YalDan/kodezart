@@ -33,9 +33,9 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from kodezart.core.errors import RunRecordWriteError
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import LogEmitter
+from kodezart.services.run_recorder import report_record_failure
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.run_records import RunOutcome
 
@@ -241,25 +241,10 @@ class PassScheduler:
             return
         try:
             await entry.report(outcome, duration_seconds, started_at)
-        except RunRecordWriteError as exc:
-            await self._log.aerror(
-                "run_record_write_failed",
-                kind=exc.kind,
-                name=entry.name,
-                outcome=outcome.value,
-                destination=exc.destination,
-                system=exc.system,
-                failure=exc.failure,
-                error_type=exc.cause_type,
-                error=str(exc),
-                exc_info=exc,
-            )
         except Exception as exc:
-            await self._log.aerror(
-                "run_record_reporter_failed",
+            await report_record_failure(
+                self._log,
                 name=entry.name,
-                outcome=outcome.value,
-                error_type=type(exc).__name__,
-                error=str(exc),
-                exc_info=exc,
+                outcome=outcome,
+                exc=exc,
             )
