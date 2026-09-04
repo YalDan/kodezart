@@ -114,6 +114,36 @@ async def test_has_changes_dirty(
     assert await git_service.has_changes(str(git_repo)) is True
 
 
+async def test_is_path_ignored_true_when_gitignore_matches(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """A path matched by .gitignore is reported as ignored."""
+    (git_repo / ".gitignore").write_text(".kodezart/\n")
+    (git_repo / ".kodezart").mkdir()
+    assert await git_service.is_path_ignored(str(git_repo), ".kodezart") is True
+
+
+async def test_is_path_ignored_false_when_not_matched(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """An unmatched path is reported as not ignored (exit 1, not an error)."""
+    (git_repo / ".kodezart").mkdir()
+    assert await git_service.is_path_ignored(str(git_repo), ".kodezart") is False
+
+
+async def test_is_path_ignored_false_when_path_is_tracked(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """A tracked path is not ignored even when a later rule matches it."""
+    artifact_dir = git_repo / ".kodezart"
+    artifact_dir.mkdir()
+    (artifact_dir / "ticket.json").write_text("{}")
+    await _run_git(["git", "add", "--all"], cwd=git_repo)
+    await _run_git(["git", "commit", "-m", "add artifacts"], cwd=git_repo)
+    (git_repo / ".gitignore").write_text(".kodezart/\n")
+    assert await git_service.is_path_ignored(str(git_repo), ".kodezart") is False
+
+
 async def test_add_all_and_commit(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:
