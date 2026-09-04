@@ -7,8 +7,13 @@ the loop, the run-record write first among them (KOD-170).
 
 One session for the process, opened at boot and closed at shutdown, for
 the same reason the HTTP caller holds one: a session per call re-runs the
-MCP initialise handshake every time.  Decoding is shared with every other
-transport in :mod:`kodezart.adapters.mcp_result_decoding`.
+MCP initialise handshake every time.  The hosting of that session — the
+task that owns it, the calls posted to it, the reopen a call takes once —
+is :mod:`kodezart.adapters.hosted_mcp_session`, shared with every other
+transport, and decoding is shared in
+:mod:`kodezart.adapters.mcp_result_decoding`.  What is stdio's own is
+here: how a server is spawned, what its failures are called, and what it
+said on its way out.
 
 One session for the process is not one session for the LIFE of the
 process.  A spawned server dies of its own accord — the measured boot lost
@@ -36,8 +41,8 @@ anybody reads.
 
 import os
 import tempfile
-from collections.abc import Mapping
-from contextlib import AsyncExitStack
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TextIO
 
@@ -45,9 +50,12 @@ import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.shared.exceptions import McpError
-from mcp.types import CONNECTION_CLOSED, CallToolResult
+from mcp.types import CONNECTION_CLOSED
 
-from kodezart.adapters.mcp_result_decoding import error_detail, structured_result
+from kodezart.adapters.hosted_mcp_session import (
+    HostedMcpSession,
+    HostedSessionTransport,
+)
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.errors import McpSessionClosedError, McpTransportError
 from kodezart.core.logging import BoundLogger, get_logger
@@ -131,8 +139,8 @@ def _tail_of(path: Path, *, limit: int) -> str:
         return stream.read().decode("utf-8", errors="replace").strip()
 
 
-class StdioMcpToolCaller:
-    """A single initialised MCP session over a spawned stdio server."""
+class _SpawnedServer(HostedSessionTransport):
+    """One spawned stdio server: how it is dialled and what it says."""
 
     def __init__(
         self,
@@ -144,216 +152,115 @@ class StdioMcpToolCaller:
         error_detail_limit: int,
         stderr_tail_limit: int,
     ) -> None:
+        super().__init__(
+            server_name=server_name,
+            error_detail_limit=error_detail_limit,
+        )
         self._command: str = command
         self._args: tuple[str, ...] = args
         self._env: dict[str, str] = dict(env)
-        self._server_name: str = server_name
-        self._error_detail_limit: int = error_detail_limit
         self._stderr_tail_limit: int = stderr_tail_limit
-        self._stack: AsyncExitStack | None = None
-        self._session: ClientSession | None = None
+        #: Where the LIVE session's server is writing its stderr, so a
+        #: failed call can quote it while the file is still there.  The
+        #: capture belongs to the session and is unlinked with it.
         self._stderr_path: Path | None = None
-        #: Whether this caller is IN SERVICE: opened, and not yet closed by
-        #: the shutdown that owns it.  Holding no session while in service
-        #: is a death to recover from; holding none outside it is a caller
-        #: nobody dialled, and the two may not read alike (KOD-287).
-        self._serving: bool = False
-        #: What closed the session this caller is missing, kept so a reopen
-        #: names the death it is answering rather than the moment it noticed.
-        self._closed_by: str | None = None
         self._log: BoundLogger = get_logger(__name__)
 
-    async def open(self) -> None:
-        """Spawn the server and complete the MCP initialise handshake."""
-        if self._session is not None:
-            raise McpTransportError(
-                "the MCP session is already open",
-                server_name=self._server_name,
-            )
-        await self._spawn()
-        self._serving = True
-        await self._log.ainfo(
-            "mcp_session_opened",
-            server_name=self._server_name,
-            command=self._command,
+    def describe(self) -> dict[str, object]:
+        """The command names this server, the way a URL names a remote one."""
+        return {"command": self._command}
+
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator[ClientSession]:
+        """Spawn the server, hand back its session, and reap it on the way out.
+
+        The subprocess, its stderr capture and the session over them are
+        entered TOGETHER and left together, by whichever task is hosting
+        — which is the one task that entered them.  The SDK drives the
+        process from a structured task group, and anyio refuses to exit a
+        cancel scope in a task other than the one that entered it, so a
+        session opened by the boot and torn down by a worker did not tear
+        down at all: the teardown raised, the dead server was never
+        reaped, and the scope the boot entered stayed on the boot's stack
+        (KOD-177).
+        """
+        path = _new_stderr_capture()
+        #: Which of the four moments the tail below belongs to.  A spawn
+        #: that never finished is not a session that ended, and a session
+        #: this process closed itself is not one that died under a call.
+        context = _OPEN_FAILED
+        try:
+            errlog: TextIO
+            with path.open("w", encoding="utf-8") as errlog:
+                async with (
+                    stdio_client(
+                        StdioServerParameters(
+                            command=self._command,
+                            args=list(self._args),
+                            env=self._env,
+                        ),
+                        errlog=errlog,
+                    ) as (read, write),
+                    ClientSession(read, write) as session,
+                ):
+                    await session.initialize()
+                    self._stderr_path = path
+                    try:
+                        yield session
+                    except BaseException:
+                        context = _SESSION_CLOSED
+                        raise
+                    else:
+                        context = _SESSION_CLOSING
+        finally:
+            self._stderr_path = None
+            await self._report_stderr(path=path, context=context)
+            path.unlink(missing_ok=True)
+
+    def failure_opening(self, exc: BaseException) -> Exception:
+        """A server that would not start is a session to reopen, not a bug.
+
+        The closed-session class, because that is what the record path
+        reads as a transport to try again rather than a payload to fix —
+        a spawn that failed at this instant is exactly the state the next
+        call's own reopen is for (KOD-287).
+        """
+        failure = McpSessionClosedError(
+            "the MCP session could not be opened",
+            server_name=self.server_name,
         )
+        failure.__cause__ = exc
+        return failure
 
-    async def close(self) -> None:
-        """Close the session. Closing a closed caller is a no-op."""
-        self._serving = False
-        if not await self._discard(context=_SESSION_CLOSING):
-            return
-        await self._log.ainfo("mcp_session_closed", server_name=self._server_name)
-
-    async def call_tool(
+    async def failure_calling(
         self,
+        exc: Exception,
+        tool_name: str,
         *,
-        name: str,
-        arguments: Mapping[str, object],
-    ) -> McpToolResult:
-        """Invoke the named tool and return its structured result.
-
-        A session that has CLOSED under this caller is reopened and the
-        call goes again — the whole of what the measured boot needed, and
-        the reason the reopen lives here rather than in every consumer of
-        the port (KOD-177).  A server that ANSWERED with an error reopens
-        nothing: the transport was never the problem.
-
-        A caller in service that holds no session is the same case one
-        call later: the death was met before, its reopen failed, and this
-        call attempts its own (KOD-287).  A caller nobody opened, or one
-        the shutdown already closed, is not that and refuses.
-        """
-        session = self._session
-        if session is None:
-            if not self._serving:
-                raise McpSessionClosedError(
-                    "the MCP session is not open",
-                    server_name=self._server_name,
-                    tool_name=name,
-                )
-            result = await self._call_on_a_reopened_session(
-                name=name,
-                arguments=arguments,
-            )
-            return self._decoded(result, name=name)
-        try:
-            result = await session.call_tool(name, dict(arguments))
-        except Exception as exc:
-            if not _is_closed_session(exc):
-                await self._report_stderr(path=self._stderr_path, context=_CALL_FAILED)
-                raise McpTransportError(
-                    "the MCP tool call failed in transport",
-                    server_name=self._server_name,
-                    tool_name=name,
-                ) from exc
-            self._closed_by = type(exc).__name__
-            await self._discard(context=_SESSION_CLOSED)
-            result = await self._call_on_a_reopened_session(
-                name=name,
-                arguments=arguments,
-            )
-        return self._decoded(result, name=name)
-
-    async def _call_on_a_reopened_session(
-        self,
-        *,
-        name: str,
-        arguments: Mapping[str, object],
-    ) -> CallToolResult:
-        """Spawn a fresh session, then make the call the closed one lost.
-
-        Once per call, and never in a loop within one.  A server that is
-        genuinely unreachable answers the second spawn exactly as it
-        answered the first, so a caller that retried inside one call would
-        spend a subprocess per attempt to learn what the first attempt
-        already said — and the failure it is hiding is the one an operator
-        has to see.  A reopen that fails therefore raises the open's own
-        typed refusal under the reopen's own words, and leaves the caller
-        in service so the NEXT call tries again.
-
-        The call on the fresh session is classified as any call is: a
-        death is the closed-session class, an answer is not.
-        """
-        try:
-            session = await self._spawn()
-        except McpSessionClosedError as exc:
-            raise McpSessionClosedError(
-                "the MCP session could not be reopened for the call",
-                server_name=self._server_name,
-                tool_name=name,
-            ) from exc
-        await self._log.awarning(
-            "mcp_session_reopened",
-            server_name=self._server_name,
-            tool_name=name,
-            closed_by=self._closed_by,
-        )
-        try:
-            return await session.call_tool(name, dict(arguments))
-        except Exception as exc:
-            await self._report_stderr(path=self._stderr_path, context=_CALL_FAILED)
-            raise _failure_of(exc)(
-                "the MCP tool call failed in transport on a reopened session",
-                server_name=self._server_name,
-                tool_name=name,
-            ) from exc
-
-    def _decoded(self, result: CallToolResult, *, name: str) -> McpToolResult:
-        """The server's answer, or its refusal raised with its own words."""
-        if result.isError:
-            detail = error_detail(result, limit=self._error_detail_limit)
-            raise McpTransportError(
-                f"the MCP server reported a tool error: {detail}",
-                server_name=self._server_name,
-                tool_name=name,
-            )
-        return structured_result(
-            result,
-            server_name=self._server_name,
-            tool_name=name,
+        on_reopened: bool,
+    ) -> Exception:
+        """The server's own last words, then the class its failure leaves as."""
+        await self._report_stderr(path=self._stderr_path, context=_CALL_FAILED)
+        return self.call_failed_as(
+            _failure_of(exc),
+            exc,
+            tool_name,
+            on_reopened=on_reopened,
         )
 
-    async def _spawn(self) -> ClientSession:
-        """Start one server process and hand back its initialised session."""
-        stack = AsyncExitStack()
-        stderr_path = _new_stderr_capture()
-        stack.callback(stderr_path.unlink, missing_ok=True)
-        errlog: TextIO = stack.enter_context(
-            stderr_path.open("w", encoding="utf-8"),
-        )
-        try:
-            read, write = await stack.enter_async_context(
-                stdio_client(
-                    StdioServerParameters(
-                        command=self._command,
-                        args=list(self._args),
-                        env=self._env,
-                    ),
-                    errlog=errlog,
-                ),
-            )
-            session = await stack.enter_async_context(ClientSession(read, write))
-            await session.initialize()
-        except Exception as exc:
-            await self._report_stderr(path=stderr_path, context=_OPEN_FAILED)
-            await stack.aclose()
-            raise McpSessionClosedError(
-                "the MCP session could not be opened",
-                server_name=self._server_name,
-            ) from exc
-        self._stack = stack
-        self._session = session
-        self._stderr_path = stderr_path
-        return session
+    def failure_not_serving(self, tool_name: str) -> Exception:
+        """A caller nobody opened refuses as the record path reads refusals.
 
-    async def _discard(self, *, context: str) -> bool:
-        """Report the server's last words and tear its session down.
-
-        Answers whether there was anything to tear down.  A teardown that
-        itself fails is its own named event rather than an exception: the
-        session being discarded is already dead in every case that reaches
-        here, and letting its unwinding raise would replace the failure an
-        operator is chasing with the failure of the cleanup.
+        The closed-session class throughout this transport: every consumer
+        of the record path routes on that one distinction, and a caller
+        that answered "not open" in a second class would be asking them to
+        route on two (KOD-192).
         """
-        stack = self._stack
-        path = self._stderr_path
-        self._stack = None
-        self._session = None
-        self._stderr_path = None
-        await self._report_stderr(path=path, context=context)
-        if stack is None:
-            return False
-        try:
-            await stack.aclose()
-        except Exception as exc:
-            await self._log.aerror(
-                "mcp_session_teardown_failed",
-                server_name=self._server_name,
-                error_type=type(exc).__name__,
-                error=redact_credentials(str(exc)),
-            )
-        return True
+        return McpSessionClosedError(
+            "the MCP session is not open",
+            server_name=self.server_name,
+            tool_name=tool_name,
+        )
 
     async def _report_stderr(self, *, path: Path | None, context: str) -> None:
         """Put the spawned server's own last words in the process log.
@@ -369,7 +276,55 @@ class StdioMcpToolCaller:
             return
         await self._log.awarning(
             "mcp_server_stderr",
-            server_name=self._server_name,
+            server_name=self.server_name,
             context=context,
             stderr_tail=redact_credentials(tail),
         )
+
+
+class StdioMcpToolCaller:
+    """A single initialised MCP session over a spawned stdio server."""
+
+    def __init__(
+        self,
+        *,
+        command: str,
+        args: tuple[str, ...],
+        env: Mapping[str, str],
+        server_name: str,
+        error_detail_limit: int,
+        stderr_tail_limit: int,
+    ) -> None:
+        self._server: _SpawnedServer = _SpawnedServer(
+            command=command,
+            args=args,
+            env=env,
+            server_name=server_name,
+            error_detail_limit=error_detail_limit,
+            stderr_tail_limit=stderr_tail_limit,
+        )
+        self._hosted: HostedMcpSession = HostedMcpSession(self._server)
+
+    async def open(self) -> None:
+        """Spawn the server and complete the MCP initialise handshake."""
+        await self._hosted.open()
+
+    async def close(self) -> None:
+        """Close the session. Closing a closed caller is a no-op."""
+        await self._hosted.close()
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        """Invoke the named tool and return its structured result.
+
+        A session that has CLOSED under this caller is reopened and the
+        call goes again — the whole of what the measured boot needed, and
+        the reason the reopen lives under the port rather than in every
+        consumer of it (KOD-177).  A server that ANSWERED with an error
+        reopens nothing: the transport was never the problem.
+        """
+        return await self._hosted.call_tool(name=name, arguments=arguments)

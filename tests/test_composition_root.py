@@ -597,7 +597,7 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
         caller = make_mcp_tool_caller(config=self._config(), token=self.FIXTURE_TOKEN)
 
         assert isinstance(caller, HttpMcpToolCaller)
-        assert caller._sse_read_timeout_seconds == self.TRACKER_BOUND
+        assert caller._server._sse_read_timeout_seconds == self.TRACKER_BOUND
 
     def test_the_knowledge_composition_passes_its_own(self) -> None:
         """The paired positive: two transports, two fields, no sharing.
@@ -608,7 +608,7 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
         caller = _knowledge_caller(self._config(), ["records.fire_prep"])
 
         assert isinstance(caller, HttpMcpToolCaller)
-        assert caller._sse_read_timeout_seconds == self.KNOWLEDGE_BOUND
+        assert caller._server._sse_read_timeout_seconds == self.KNOWLEDGE_BOUND
 
 
 def _executor_keywords() -> dict[str, str]:

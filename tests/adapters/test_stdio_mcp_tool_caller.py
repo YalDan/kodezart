@@ -389,3 +389,50 @@ async def test_an_unreachable_server_refuses_every_call_and_reopens_once_per_cal
     assert "reopened" in str(second.value)
     # One reopen per call, and no loop inside either.
     assert _spawns(spawn_log) == 3
+
+
+async def test_a_session_opened_by_the_boot_is_torn_down_without_touching_it(
+    tmp_path: Path,
+) -> None:
+    """The session's whole life belongs to ONE task (KOD-177).
+
+    The shape the process actually runs in: the lifespan opens the session
+    and stays alive holding it, and the workers that meet the server's
+    death are the pass scheduler's and the lifecycle watcher's, each in a
+    task of its own.  The SDK drives a session from a structured task
+    group, so the context a boot entered may only be exited by the boot —
+    a worker that tears it down exits a cancel scope in a different task,
+    which anyio refuses.
+
+    What that refusal costs is not one logged line: the dead server is
+    never reaped, and the cancel scope the boot entered stays on the
+    boot's stack with nothing left under it.
+    """
+    death = _Death.under(tmp_path)
+    caller, spawn_log = _caller(tmp_path, calls=1, death=death)
+    opened = asyncio.Event()
+    release = asyncio.Event()
+
+    async def lifespan() -> None:
+        """The task that opens the session and outlives every call on it."""
+        await caller.open()
+        opened.set()
+        await release.wait()
+        await caller.close()
+
+    with structlog.testing.capture_logs() as logs:
+        boot = asyncio.create_task(lifespan())
+        await opened.wait()
+        first = await caller.call_tool(name=TOOL, arguments={})
+        await death.strike()
+        second = await caller.call_tool(name=TOOL, arguments={})
+        release.set()
+        await boot
+
+    assert first == {"served": 1}
+    assert second == {"served": 1}, "the worker's call rode the reopened session"
+    assert _spawns(spawn_log) == 2
+    assert boot.done() and boot.exception() is None, "the boot task was not touched"
+    assert _named(logs, "mcp_session_teardown_failed") == [], (
+        "the dead session was torn down by whoever owns it"
+    )
