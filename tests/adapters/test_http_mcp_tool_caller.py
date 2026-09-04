@@ -214,7 +214,10 @@ async def serving(
     hosted._inbox = inbox
     hosted._phase = _Phase.SERVING
     async with posted:
-        host = asyncio.create_task(serve(session, posted))
+        # The serving loop is driven directly here, so it is handed the
+        # generation the caller is on — a host writes this object's state
+        # only while it is still the current session's (KOD-177).
+        host = asyncio.create_task(serve(session, posted, hosted._generation))
         try:
             yield
         finally:

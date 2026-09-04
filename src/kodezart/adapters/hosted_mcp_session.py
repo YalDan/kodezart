@@ -150,8 +150,22 @@ async def _join(host: asyncio.Task[None]) -> None:
     waiting for when the waiter is cancelled: a shutdown that ran out of
     time would reach into the host and cut its teardown in half, which is
     the one thing this module exists to keep whole.
+
+    But a joiner that is cancelled has already let go of this host — its
+    caller cleared the reference before it got here — so a host left
+    running is a host NOBODY can reach: it goes on owning a session, and
+    the calls it answers are answered onto a session the caller has since
+    replaced.  Measured 2026-09-04: one cancellation at this await orphans
+    the dead host, which then ends the NEXT session and fails the call in
+    flight on it.  Cancelling on the way out is not cutting the teardown
+    short — it is what makes the orphan end at all, and it ends in its own
+    task, which is the property that matters.
     """
-    await asyncio.wait({host})
+    try:
+        await asyncio.wait({host})
+    except BaseException:
+        host.cancel()
+        raise
 
 
 class HostedSessionTransport(ABC):
@@ -321,6 +335,15 @@ class HostedMcpSession:
         #: What ended the session this host is missing, kept so a reopen
         #: names the death it answers rather than the moment it noticed.
         self._ended_by: str | None = None
+        #: Which session is the caller's, counted up per host.  A host
+        #: carries the number it was started as and touches this object's
+        #: state only while that is still the current one: a host the
+        #: caller has LET GO of — cleared at :meth:`_discard_host`, then
+        #: cancelled before it could be joined — goes on unwinding, and
+        #: what it unwinds is no longer anybody's session.  Measured
+        #: 2026-09-04: the orphan's teardown ended the session opened
+        #: after it and failed the call in flight on that one (KOD-177).
+        self._generation: int = 0
         #: Held across every change of session: open, reopen and close.
         #: Calls on a serving session never take it.  Workers hit together
         #: by one dropped stream reopen through it one at a time, and the
@@ -361,7 +384,10 @@ class HostedMcpSession:
         )
         self._inbox = inbox
         self._phase = _Phase.OPENING
-        host = asyncio.create_task(self._host_session(ready, posted))
+        self._generation += 1
+        host = asyncio.create_task(
+            self._host_session(ready, posted, self._generation),
+        )
         self._host = host
         try:
             await ready
@@ -499,12 +525,26 @@ class HostedMcpSession:
         shutdown closed, before or while this call waited, refuses by
         name: there is nobody in service to reopen for.
         """
-        if self._phase is _Phase.CLOSED:
-            raise self._transport.failure_not_serving(name)
-        if not self._transport.may_reopen():
-            raise self._transport.failure_unanswered(name, on_reopened=False)
         async with self._lifetime:
-            if self._phase is _Phase.ENDED:
+            # Both of these are read UNDER the lock, because both are
+            # decisions about the session and the lock is what owns it.
+            # Read outside it, a caller that queued behind another's
+            # reopen acts on what was true before its turn came: it buys a
+            # handshake against a credential refused while it waited, or
+            # it is told a session ENDED when what happened is that the
+            # shutdown closed the caller underneath it.
+            # Read AFTER the wait, and ONLY after it.  A check made
+            # before the lock is a check on the phase this call queued
+            # behind rather than the one it woke up to, and acting on it
+            # is how a caller bought a handshake against a credential
+            # refused while it waited, and how one the shutdown closed
+            # underneath it was told its session had ENDED.
+            phase = self._phase
+            if phase is _Phase.CLOSED:
+                raise self._transport.failure_not_serving(name)
+            if not self._transport.may_reopen():
+                raise self._transport.failure_unanswered(name, on_reopened=False)
+            if phase is _Phase.ENDED:
                 await self._reopen(name)
             inbox = self._inbox
             if inbox is None or self._phase is not _Phase.SERVING:
@@ -568,6 +608,7 @@ class HostedMcpSession:
         self,
         ready: asyncio.Future[None],
         posted: MemoryObjectReceiveStream[_PendingCall],
+        generation: int,
     ) -> None:
         """Own one session for its whole life, and answer for its end.
 
@@ -584,13 +625,16 @@ class HostedMcpSession:
         """
         try:
             async with posted, self._transport.session() as session:
+                if not self._is_current(generation):
+                    return
                 self._phase = _Phase.SERVING
                 self._ended_by = None
                 if not ready.done():
                     ready.set_result(None)
-                await self._serve(session, posted)
+                await self._serve(session, posted, generation)
         except BaseException as exc:
-            self._ended_by = _died_of(exc)
+            if self._is_current(generation):
+                self._ended_by = _died_of(exc)
             if not ready.done():
                 ready.set_exception(self._transport.failure_opening(exc))
             else:
@@ -600,12 +644,13 @@ class HostedMcpSession:
                     exc_info=exc,
                 )
         finally:
-            self._end_service()
+            self._end_service(generation)
 
     async def _serve(
         self,
         session: ClientSession,
         posted: MemoryObjectReceiveStream[_PendingCall],
+        generation: int,
     ) -> None:
         """Answer calls until the inbox runs out, which is the close.
 
@@ -623,12 +668,17 @@ class HostedMcpSession:
         try:
             async with anyio.create_task_group() as answers:
                 async for call in posted:
-                    answers.start_soon(self._answer, call, session)
+                    answers.start_soon(self._answer, call, session, generation)
         except BaseException:
-            self._end_service()
+            self._end_service(generation)
             raise
 
-    async def _answer(self, call: _PendingCall, session: ClientSession) -> None:
+    async def _answer(
+        self,
+        call: _PendingCall,
+        session: ClientSession,
+        generation: int,
+    ) -> None:
         """Run one call and resolve its reply, however it went."""
         try:
             result = await session.call_tool(
@@ -650,7 +700,7 @@ class HostedMcpSession:
                 # first and ending after would wake it onto a session that
                 # still said SERVING, and its retried call would be posted
                 # to the very host now collapsing under it.
-                self._end_service()
+                self._end_service(generation)
                 raise _SessionGoneError(exc) from exc
         else:
             self._tell(call, self._transport.decode(result, call.name))
@@ -673,14 +723,24 @@ class HostedMcpSession:
         else:
             call.reply.set_result(outcome)
 
-    def _end_service(self) -> None:
+    def _is_current(self, generation: int) -> bool:
+        """Whether the host of *generation* is still the caller's session."""
+        return generation == self._generation
+
+    def _end_service(self, generation: int) -> None:
         """Mark the session ended and tell every caller still waiting.
 
         Idempotent, because the host's way out passes here twice: once
         the moment the serving loop collapses, so no worker waits on the
         SDK's unwinding, and once more when the task ends, for any call
         handed over in between.
+
+        Silent when the host has been let go of: what it is ending is a
+        session that is nobody's now, and the phase and the pending calls
+        it would reach for belong to whichever session took its place.
         """
+        if not self._is_current(generation):
+            return
         if self._phase is _Phase.SERVING:
             self._phase = _Phase.ENDED
         for call in list(self._pending):

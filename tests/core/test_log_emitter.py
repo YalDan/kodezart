@@ -176,8 +176,17 @@ def _literal_field_sets(scope: ast.AST) -> dict[str, frozenset[str]]:
         if len(keys) != len(value.keys):
             continue
         for target in targets:
-            if isinstance(target, ast.Name):
-                bound[target.id] = frozenset(keys)
+            if not isinstance(target, ast.Name):
+                continue
+            found = frozenset(keys)
+            if bound.get(target.id, found) != found:
+                # One name, two field sets, and no way to tell from a call
+                # site which one reached it.  That is precisely the state
+                # this census exists to refuse, so it is refused rather
+                # than resolved to whichever assignment was walked last.
+                bound[target.id] = frozenset({_SPREAD})
+            else:
+                bound[target.id] = found
     return bound
 
 
