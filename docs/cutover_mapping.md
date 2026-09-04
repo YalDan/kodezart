@@ -19,7 +19,7 @@ live with the cutover work itself.
 | What counts as a mention of the operation | `OperationConfig.agent_identities` |
 | Whose word creates a reply obligation | `OperationConfig.principals` |
 | Which initiatives receive a status update | `OperationConfig.initiatives` |
-| Where the scan-window marker lives | `OperationConfig.documents["checkpoint"]` |
+| Where the scan-window marker lives | `OperationConfig.records[<kind>]` — the most recent record row |
 | Reference material a pass reads | `OperationConfig.knowledge` |
 | Where escalations go | `OperationConfig.endpoints` |
 | How often a pass runs | Scheduler (cron) configuration only — never a prompt |
@@ -86,8 +86,8 @@ registries.
 | workflow_states.in_review | workflow_states |
 | workflow_states.done | workflow_states |
 | repos | repos |
-| documents.checkpoint.id | documents |
 | documents.constitution.id | documents |
+| records.fire_prep.id | records |
 | records.fire_prep.name | records |
 | records.grooming.name | records |
 | records.grooming.id | records |
@@ -110,7 +110,7 @@ registries.
   keys present, entries well-formed, internal cross-references consistent,
   exactly one approver. Resolving principals, teams and state mappings against
   the live workspace belongs to the tracker adapter.
-- **The checkpoint write.** `documents` is a read-side registry in this lane.
-  What this lane owes is a *stable key* for the checkpoint document so the
-  later writer addresses it by key rather than by name.
+- **The scan-window marker.** The record row a pass writes is the boundary
+  the next pass reads (KOD-245); no separate checkpoint document carries it,
+  in any prompt set (KOD-306). `documents` stays a read-side registry.
 - **Cutover execution.** Only the mapping.

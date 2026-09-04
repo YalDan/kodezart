@@ -21,6 +21,7 @@ from kodezart.core.errors import OperationConfigError
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.types.domain.operation import OperationConfig, PrincipalRole
 from kodezart.types.domain.prompts import PromptKey
+from tests.prompts.sets import PER_RUN
 from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -126,7 +127,7 @@ def test_both_identifiers_reach_a_rendered_pass() -> None:
     config = example_config()
     registry = load_registry()
     rendered = registry.template_for(PromptKey.FIRE_PREP_PASS).render(
-        {**operation_bindings(config), "skills_reference": ""},
+        {**operation_bindings(config), **PER_RUN, "skills_reference": ""},
     )
 
     obliging = [

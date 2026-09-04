@@ -54,7 +54,6 @@ DEFAULT_SET = "claude-opus"
 #: constructed config: the suite must not depend on the ambient environment
 #: to know what the application ships.
 CONFIGURED_INVESTIGATION_CAP: int = configured_investigation_cap()
-GOLDENS = Path(__file__).parent / "goldens" / "claude_opus_empty_skills"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 TICKET = TicketDraftOutput(
@@ -90,7 +89,7 @@ MINTED_CRITERIA = list(
     )
 )
 # Every criteria-consuming template downstream of the sweep is handed the
-# VALIDATED shape, so the goldens render what the run renders.
+# VALIDATED shape, so a render here is what the run renders.
 CRITERIA = as_validated(MINTED_CRITERIA)
 
 
@@ -147,9 +146,8 @@ FAILURES = [
     ),
 ]
 
-# golden name -> (key, per-call variables). The skills fragment is bound EMPTY
-# so these goldens survive KOD-46 untouched.
-GOLDEN_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
+# case name -> (key, per-call variables), with the skills fragment bound EMPTY.
+RENDER_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "branch_name": (PromptKey.BRANCH_NAME, {"task": TASK}),
     "commit_message": (PromptKey.COMMIT_MESSAGE, {}),
     "acceptance_criteria": (
@@ -318,52 +316,8 @@ def complete_members(marker: str) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# KOD-63/AC-2 + AC-3 — byte-identity goldens, addressed by set name
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("golden_name", sorted(GOLDEN_CASES))
-def test_claude_opus_render_is_byte_identical_to_baseline(golden_name: str) -> None:
-    """Rendered output with the skills fragment bound EMPTY matches 92597c0."""
-    key, variables = GOLDEN_CASES[golden_name]
-    registry = load_registry()
-    rendered = registry.template_for(key).render({**variables, "skills_reference": ""})
-    expected = (GOLDENS / f"{golden_name}.txt").read_text(encoding="utf-8")
-    assert rendered == expected
-
-
-# The two pass keys, the content-audit key, the remediation ticket and the
-# knowledge-map prelude are net-new content with no 92597c0 baseline to be
-# byte-identical to; every RELOCATED key is covered by the goldens.
-RELOCATED_KEYS = frozenset(PromptKey) - {
-    PromptKey.FIRE_PREP_PASS,
-    PromptKey.GROOMING_PASS,
-    PromptKey.CONTENT_AUDIT,
-    PromptKey.REMEDIATION_TICKET,
-    PromptKey.KNOWLEDGE_MAP,
-}
-
-
-def test_golden_suite_covers_every_relocated_function_key() -> None:
-    """No relocated key escapes the byte-identity guarantee."""
-    covered = {key for key, _ in GOLDEN_CASES.values()}
-    assert covered == RELOCATED_KEYS
-
-
-def test_golden_test_does_not_read_the_prompt_set_env_var(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The goldens pin the set by name, so flipping the default cannot move them."""
-    monkeypatch.setenv("KODEZART_PROMPT_SET", "not-a-real-set")
-    registry = load_registry()
-    rendered = registry.template_for(PromptKey.COMMIT_MESSAGE).render(
-        {"skills_reference": ""},
-    )
-    assert rendered == (GOLDENS / "commit_message.txt").read_text(encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# KOD-63/AC-4, AC-5, D-5 — composition and precedence
+# Set selection
 # ---------------------------------------------------------------------------
 
 

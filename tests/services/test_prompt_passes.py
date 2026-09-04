@@ -9,7 +9,9 @@ against a literal in the code, which is the one thing this has to catch.
 
 import ast
 from collections.abc import Callable
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
+from typing import Final
 
 import pytest
 import structlog.testing
@@ -21,6 +23,7 @@ from kodezart.composition.passes import (
     build_prompt_passes,
     verify_pass_preflight,
 )
+from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.composition.tracker import DialledTracker
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
@@ -30,7 +33,9 @@ from kodezart.core.errors import (
 )
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
+from kodezart.services import pass_scheduler as pass_scheduler_module
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
+from kodezart.services.prompt_pass import pass_render_bindings
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import (
@@ -42,6 +47,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import (
+    RunIdentity,
     RunOutcome,
     RunRecord,
     RunRecordResult,
@@ -56,7 +62,7 @@ from tests.fakes import (
     ManagedFakeLinearMcpServer,
     make_tracker_issue,
 )
-from tests.prompts.test_claude_opus_goldens import V5_SET
+from tests.prompts.sets import V5_SET
 from tests.prompts.test_minimal_floor import minimal_fixture
 from tests.prompts.test_operation_config import raw_example, write_toml
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
@@ -88,6 +94,35 @@ GROOMING_TIMEOUT = 809.0
 #: and a grant carries a credential.  Both are overridable, because the
 #: mismatch between the two halves is itself one of the cases below.
 KNOWLEDGE_TOKEN = "knowledge-credential"
+
+
+#: The instant every tick in this module begins at.  The scheduler stamps
+#: ``started_at`` from the wall clock and the pass binds the per-run record
+#: title from it (KOD-290), so a case that compares a sent prompt with a
+#: rendered one has to render the same instant the tick used.
+TICK: Final[datetime] = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+
+
+class _FrozenDatetime(datetime):
+    """``datetime`` whose ``now`` is the tick this module fires at."""
+
+    @classmethod
+    def now(cls, tz: tzinfo | None = None) -> datetime:
+        del tz
+        return TICK
+
+
+@pytest.fixture(autouse=True)
+def _ticks_at_a_known_instant(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pass_scheduler_module, "datetime", _FrozenDatetime)
+
+
+def per_run(key: PromptKey) -> dict[str, object]:
+    """What the service binds for *key*'s pass at the frozen tick."""
+    identity = RunIdentity(
+        kind=RECORD_KIND_BY_PASS[key], name=key.value, started_at=TICK
+    )
+    return pass_render_bindings(identity)
 
 
 def _config(tmp_path: Path, **overrides: object) -> AppConfig:
@@ -217,8 +252,12 @@ async def test_each_pass_sends_its_own_rendered_prompt_on_its_own_cadence(
 
     assert set(metronome.requested) == {FIRE_PREP_INTERVAL, GROOMING_INTERVAL}
     assert {call["prompt"] for call in runner.calls} == {
-        prompts.template_for(PromptKey.FIRE_PREP_PASS).render({}),
-        prompts.template_for(PromptKey.GROOMING_PASS).render({}),
+        prompts.template_for(PromptKey.FIRE_PREP_PASS).render(
+            per_run(PromptKey.FIRE_PREP_PASS)
+        ),
+        prompts.template_for(PromptKey.GROOMING_PASS).render(
+            per_run(PromptKey.GROOMING_PASS)
+        ),
     }
 
 
@@ -279,7 +318,9 @@ async def test_gating_is_per_pass_configuration_and_the_defaults_differ(
 
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
     assert [call["prompt"] for call in runner.calls] == [
-        prompts.template_for(PromptKey.GROOMING_PASS).render({}),
+        prompts.template_for(PromptKey.GROOMING_PASS).render(
+            per_run(PromptKey.GROOMING_PASS)
+        ),
     ], "grooming verifies the tree, which is work even when nothing changed"
     # Port calls and no session: fire-prep asked its questions, got
     # nothing, and never opened one. Every one of them named a board, and
@@ -308,7 +349,9 @@ async def test_an_operator_can_gate_or_ungate_any_pass(tmp_path: Path) -> None:
 
     prompts = load_registry(bindings=dict(bindings_for(example_config())))
     assert [call["prompt"] for call in gated_runner.calls] == [
-        prompts.template_for(PromptKey.FIRE_PREP_PASS).render({}),
+        prompts.template_for(PromptKey.FIRE_PREP_PASS).render(
+            per_run(PromptKey.FIRE_PREP_PASS)
+        ),
     ], "the defaults are a default, not the behaviour"
 
 

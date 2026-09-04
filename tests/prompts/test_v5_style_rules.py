@@ -22,6 +22,7 @@ import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.types.domain.prompts import PromptKey
+from tests.prompts.sets import V5_SET
 from tests.prompts.style_detectors import (
     COUNTED_DETECTORS,
     artifact_tag_names,
@@ -41,7 +42,6 @@ from tests.prompts.style_detectors import (
     ultrathink_placement_violations,
     unbalanced_artifact_tags,
 )
-from tests.prompts.test_claude_opus_goldens import V5_SET
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
 
 # ---------------------------------------------------------------------------

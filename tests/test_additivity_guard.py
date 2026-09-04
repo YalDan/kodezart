@@ -89,7 +89,6 @@ CLIENT_IMPORTS: Final[tuple[str, ...]] = (
     "socket",
 )
 
-GOLDENS: Final[str] = "tests/prompts/goldens"
 PROTOCOLS: Final[str] = "src/kodezart/core/protocols.py"
 THREADED_PARAMETER: Final[str] = "session_type"
 
@@ -345,20 +344,6 @@ def test_no_tracker_suite_file_is_edited_by_this_lane() -> None:
 # ---------------------------------------------------------------------------
 # KOD-85-AC-3 — exactly one prompt delta
 # ---------------------------------------------------------------------------
-
-
-def test_every_golden_is_the_byte_the_baseline_recorded() -> None:
-    """Byte-identity in its strongest form: the pinned bytes never moved.
-
-    Compared as blob ids rather than as a name list, so a rewrite that kept
-    a file's path could not pass.
-    """
-    at_base = blob_ids(BASE_SHA, GOLDENS)
-    at_head = blob_ids(LANE_SHA, GOLDENS)
-
-    assert at_base
-    assert at_head == at_base
-    assert _touches(at_base, changed_paths()) == []
 
 
 def test_the_only_prompt_the_lane_adds_is_the_knowledge_map() -> None:

@@ -9,10 +9,6 @@ import httpx
 import pytest
 
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.in_repo_prompt_registry import (
-    InRepoPromptRegistry,
-    default_sets_root,
-)
 from kodezart.adapters.linear_mcp_tracker import (
     ACCEPTED_CREDENTIAL_SHAPE,
     LinearMcpTracker,
@@ -22,13 +18,11 @@ from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     McpCredentialRefusedError,
-    PromptRenderError,
     TrackerBootValidationError,
     TrackerCredentialShapeError,
     TrackerEnsureConflictError,
 )
 from kodezart.core.logging import get_logger
-from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     McpToolResult,
@@ -58,8 +52,6 @@ from kodezart.types.domain.operation import (
     RepoEntry,
     TeamEntry,
 )
-from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     MappingKind,
@@ -73,7 +65,6 @@ from tests.fakes import (
     FakeTrackerPort,
     ManagedFakeLinearMcpServer,
 )
-from tests.prompt_census import configured_investigation_cap
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
@@ -520,56 +511,6 @@ class TestReconciledConfig:
             reconciliation.config.documents["house_rules"]
             == (config.documents["house_rules"])
         )
-
-    def test_a_registry_bound_before_reconciliation_cannot_render_a_pass(
-        self,
-    ) -> None:
-        """The ordering has a consequence, and this is it, stated as a failure.
-
-        Binding the declared copy is not merely untidy: the placeholder has
-        no value, so every pass prompt naming the checkpoint document
-        fails to render at all, and a scheduled tick becomes a typed
-        rendering failure once per interval.
-        """
-        registry = InRepoPromptRegistry.load(
-            sets_root=default_sets_root(),
-            default_set="claude-opus",
-            set_overrides={},
-            template_overrides={},
-            bindings=dict(bindings_for(self._fresh())),
-            investigation_cap=configured_investigation_cap(),
-            ticket_review_mode=TicketReviewMode.REVIEWED,
-        )
-
-        with pytest.raises(PromptRenderError) as caught:
-            registry.template_for(PromptKey.FIRE_PREP_PASS).render({})
-
-        assert "documents.checkpoint.id" in caught.value.missing
-
-    async def test_a_registry_bound_after_reconciliation_names_the_adopted_id(
-        self,
-    ) -> None:
-        """The paired positive: the same render, from the reconciled copy."""
-        config = self._fresh()
-        reconciliation = await reconcile_tracker_mappings(
-            tracker=self._workspace(config),
-            config=config,
-        )
-        registry = InRepoPromptRegistry.load(
-            sets_root=default_sets_root(),
-            default_set="claude-opus",
-            set_overrides={},
-            template_overrides={},
-            bindings=dict(bindings_for(reconciliation.config)),
-            investigation_cap=configured_investigation_cap(),
-            ticket_review_mode=TicketReviewMode.REVIEWED,
-        )
-
-        rendered = registry.template_for(PromptKey.FIRE_PREP_PASS).render({})
-
-        adopted = reconciliation.config.documents[CHECKPOINT_DOCUMENT_KEY].id
-        assert adopted is not None
-        assert adopted in rendered
 
 
 class TestQueueVocabularyPerDeclaredTeam:

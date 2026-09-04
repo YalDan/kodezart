@@ -16,7 +16,7 @@ from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.core.errors import PromptResolutionError
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompt_census import PROMPT_FUNCTION_COUNT
-from tests.prompts.test_claude_opus_goldens import V5_SET
+from tests.prompts.sets import V5_SET
 from tests.prompts.test_prompt_wiring import (
     DEFAULT_SET,
     complete_members,

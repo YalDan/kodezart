@@ -28,6 +28,7 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
+from tests.prompts.sets import PER_RUN
 from tests.prompts.test_operation_config import write_toml
 from tests.prompts.test_prompt_wiring import load_registry
 
@@ -57,7 +58,7 @@ def raw_example() -> dict[str, object]:
 def rendered_passes() -> dict[PromptKey, str]:
     """Both pass templates rendered from the example operation config."""
     registry = load_registry(bindings=dict(bindings_for(example_config())))
-    return {key: registry.template_for(key).render({}) for key in PASS_KEYS}
+    return {key: registry.template_for(key).render(PER_RUN) for key in PASS_KEYS}
 
 
 def sentences_containing(text: str, needle: str) -> list[str]:
@@ -122,20 +123,18 @@ def test_both_pass_templates_actually_emit_an_addressed_reference() -> None:
     A test that only checks "every occurrence carries its name" passes
     trivially when there are no occurrences, so the occurrences themselves
     are asserted present — per pass, as each routine actually addresses its
-    artifacts (KOD-60 R20(d)): the fire-prep routine reads the checkpoint
-    data source and writes the run log it names; the grooming routine's
-    checkpoint is the initiative status update, and what it addresses by id
-    is its own log destination.
+    artifacts (KOD-60 R20(d)): the fire-prep routine reads its own record
+    row for the window and writes the run log it names (KOD-245); the
+    grooming routine's checkpoint is the initiative status update, and what
+    it addresses by id is its own log destination.
     """
     config = example_config()
-    checkpoint = config.documents[CHECKPOINT_DOCUMENT_KEY]
     run_log = config.records[RunKind.FIRE_PREP.value]
     grooming_log = config.records[RunKind.GROOMING.value]
     rendered = rendered_passes()
     fire = rendered[PromptKey.FIRE_PREP_PASS]
     grooming = rendered[PromptKey.GROOMING_PASS]
-    assert checkpoint.id is not None
-    assert checkpoint.id in fire
+    assert run_log.id in fire
     assert run_log.name in fire
     assert grooming_log.id in grooming
     assert grooming_log.name in grooming

@@ -1,9 +1,0 @@
-What lives where in this operation's knowledge base:
-
-- run logs — Example — Run Log Index
-- cross-run memories — Example — Cross-Run Memories
-- personas — Example — Personas
-- private notes — Example — Private Notes
-
-Read from these when the task needs what they hold. Write to them only where the task
-says to, and never carry their contents onto a public surface.

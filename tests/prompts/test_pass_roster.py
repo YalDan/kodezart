@@ -30,7 +30,7 @@ from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.prompt_rendering import binding_names
 from kodezart.types.domain.prompts import PromptKey
 from tests.fakes import pass_render_variables
-from tests.prompts.test_claude_opus_goldens import V5_SET
+from tests.prompts.sets import V5_SET
 from tests.prompts.test_operation_config import raw_example, write_toml
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
 
@@ -47,9 +47,8 @@ ROSTER_SLOT = re.compile(rf"^({'|'.join(ROSTERS)})\.")
 
 #: Where a pass's scan window starts from: the checkpoint document, or the
 #: record destination whose most recent row IS the window boundary. Both
-#: are configuration paths, and a shipped set must address one of them —
-#: which one is the set's choice, and the CONFIGURED DEFAULT's choice is
-#: pinned separately below (KOD-245).
+#: are configuration paths; a shipped set must address one, and the one it
+#: must address is its own record row (KOD-245, KOD-306).
 CHECKPOINT_PREFIXES = ("documents.checkpoint.", "records.")
 
 #: Where a pass writes what it did.
@@ -138,9 +137,9 @@ def test_every_pass_template_iterates_both_rosters(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("key", PASS_KEYS)
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
 def test_the_window_and_the_record_resolve_from_one_declaration(
-    key: PromptKey,
+    case: tuple[str, PromptKey],
 ) -> None:
     """One window source, and it is the pass's own record row (KOD-245).
 
@@ -150,19 +149,15 @@ def test_the_window_and_the_record_resolve_from_one_declaration(
     the next pass READS.  Resolved from two declarations they can name two
     destinations — a checkpoint document for the window and a record
     destination for the row — and then the boundary is carried by a
-    document nothing writes.
-
-    Asserted over the configured default set only.  ``claude-opus`` is the
-    legacy corpus, byte-frozen as the rollback half (core/config.py), and
-    it addresses a checkpoint document by those frozen bytes; freezing it
-    is a recorded decision rather than a second opinion about this.
+    document nothing writes.  Every shipped set is held to it (KOD-306).
     """
+    set_name, key = case
     kind = RECORD_KIND_BY_PASS[key].value
-    referenced = references_under(pass_bodies()[(V5_SET, key)], CHECKPOINT_PREFIXES)
+    referenced = references_under(pass_bodies()[case], CHECKPOINT_PREFIXES)
 
-    assert referenced, f"{V5_SET}/{key.value} addresses no window at all"
+    assert referenced, f"{set_name}/{key.value} addresses no window at all"
     assert all(name.startswith(f"records.{kind}") for name in referenced), (
-        f"{V5_SET}/{key.value} resolves its window from something other than "
+        f"{set_name}/{key.value} resolves its window from something other than "
         f"its own record declaration records.{kind}: {referenced}"
     )
 

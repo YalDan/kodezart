@@ -116,7 +116,7 @@ Prove access before relying on it: notion-fetch with id "self" returns the works
 At step 3, alongside the initiative status updates, create one row in the {{records.grooming.name}}
 (data source {{records.grooming.id}}) for this pass:
 
-  Run                this pass's start time, as the title
+  Run                titled EXACTLY {{record_title}} — this run's identity and the string the runner looks your row up by
   Date               the same timestamp, as a date
   Scope              which initiatives were groomed — one of "all initiatives", "{{initiatives.0.id}}", "{{initiatives.1.id}}", "kodezart"
   Changes made       issues closed, reopened, relabelled, reprioritised, re-parented, re-ordered, rescoped — with keys

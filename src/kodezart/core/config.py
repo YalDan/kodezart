@@ -887,13 +887,10 @@ class AppConfig(BaseSettings):
         default="anthropic_v5",
         description=(
             "Default prompt set name (a directory under prompts/sets/). "
-            "Deliberately independent of the model knob. claude-opus is the "
-            "legacy set, kept complete and byte-frozen, and remains fully "
-            "selectable as the corpus half of the rollback. The freeze bars "
-            "a SILENT edit, not a recorded one: the 2026-08-31 roster ruling "
-            "amended both pass templates to enumerate every declared team "
-            "and repository instead of naming fixed slots, and what the "
-            "freeze now pins is the amended bytes."
+            "A set is a corpus authored for one model, and this selects the "
+            "one for the model in use; every shipped set is complete and "
+            "held to the same rendering rules, and a new engine is a new "
+            "directory, not a variant of an old one (KOD-306)."
         ),
     )
     investigation_cap: int = Field(

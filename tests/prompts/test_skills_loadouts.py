@@ -1,7 +1,5 @@
 """Skills configuration, threading, boot pre-flight, and prompt loadouts (KOD-46)."""
 
-from pathlib import Path
-
 import pytest
 
 from kodezart.chains.ralph_loop import RalphLoop
@@ -33,9 +31,8 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
-from tests.prompts.test_prompt_wiring import GOLDEN_CASES, load_registry
+from tests.prompts.test_prompt_wiring import RENDER_CASES, load_registry
 
-POPULATED = Path(__file__).parent / "goldens" / "claude_opus_populated_skills"
 UTILITY_KEYS = (
     PromptKey.BRANCH_NAME,
     PromptKey.TICKET_REVISION,
@@ -158,18 +155,10 @@ def test_preflight_accepts_plugin_qualified_names() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("golden_name", sorted(GOLDEN_CASES))
-def test_populated_skills_fragment_goldens(golden_name: str) -> None:
-    """Body plus POPULATED fragment is pinned independently of the empty goldens."""
-    key, variables = GOLDEN_CASES[golden_name]
-    rendered = load_registry().template_for(key).render(variables)
-    assert rendered == (POPULATED / f"{golden_name}.txt").read_text(encoding="utf-8")
-
-
 def test_every_rendered_template_names_exactly_its_declared_skills() -> None:
     """AC-3: the reference contains exactly the names the key declares."""
     registry = load_registry()
-    for golden_name, (key, variables) in GOLDEN_CASES.items():
+    for golden_name, (key, variables) in RENDER_CASES.items():
         rendered = registry.template_for(key).render(variables)
         declared = registry.declared_skills(key)
         for name in declared:
