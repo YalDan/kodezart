@@ -151,21 +151,17 @@ async def _join(host: asyncio.Task[None]) -> None:
     time would reach into the host and cut its teardown in half, which is
     the one thing this module exists to keep whole.
 
-    But a joiner that is cancelled has already let go of this host — its
-    caller cleared the reference before it got here — so a host left
-    running is a host NOBODY can reach: it goes on owning a session, and
-    the calls it answers are answered onto a session the caller has since
-    replaced.  Measured 2026-09-04: one cancellation at this await orphans
-    the dead host, which then ends the NEXT session and fails the call in
-    flight on it.  Cancelling on the way out is not cutting the teardown
-    short — it is what makes the orphan end at all, and it ends in its own
-    task, which is the property that matters.
+    A joiner that is cancelled has already let go of this host — its
+    caller cleared the reference before it got here — so what is left
+    running is a host NOBODY can reach.  That was answered by cancelling
+    it here, and cancelling was wrong: the joiner a shutdown cancels is
+    the one joining a session that is STILL TEARING DOWN, and cutting
+    that short strands the spawned process it was reaping.  What makes an
+    orphan harmless is that it cannot write this object's state — the
+    generation it carries is no longer the current one — and that costs
+    the teardown nothing.
     """
-    try:
-        await asyncio.wait({host})
-    except BaseException:
-        host.cancel()
-        raise
+    await asyncio.wait({host})
 
 
 class HostedSessionTransport(ABC):
@@ -526,19 +522,13 @@ class HostedMcpSession:
         name: there is nobody in service to reopen for.
         """
         async with self._lifetime:
-            # Both of these are read UNDER the lock, because both are
-            # decisions about the session and the lock is what owns it.
-            # Read outside it, a caller that queued behind another's
-            # reopen acts on what was true before its turn came: it buys a
-            # handshake against a credential refused while it waited, or
-            # it is told a session ENDED when what happened is that the
-            # shutdown closed the caller underneath it.
-            # Read AFTER the wait, and ONLY after it.  A check made
-            # before the lock is a check on the phase this call queued
-            # behind rather than the one it woke up to, and acting on it
-            # is how a caller bought a handshake against a credential
-            # refused while it waited, and how one the shutdown closed
-            # underneath it was told its session had ENDED.
+            # Every one of these is read UNDER the lock and only after
+            # it: they are decisions about the session, the lock is what
+            # owns the session, and a call that queued behind another's
+            # reopen would otherwise act on what was true before its turn
+            # came — buying a handshake against a credential refused while
+            # it waited, or being told a session ENDED when what happened
+            # is that the shutdown closed the caller underneath it.
             phase = self._phase
             if phase is _Phase.CLOSED:
                 raise self._transport.failure_not_serving(name)

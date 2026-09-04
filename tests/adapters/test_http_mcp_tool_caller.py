@@ -1311,14 +1311,18 @@ def test_no_private_vendor_module_is_imported_by_the_transport() -> None:
     used to be in would watch the wrong file.
     """
     transports = (hosted_mcp_session, http_mcp_tool_caller, stdio_mcp_tool_caller)
-    imported = {
-        node.module
-        for module in transports
-        for node in ast.walk(
-            ast.parse(Path(module.__file__ or "").read_text(encoding="utf-8")),
-        )
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
+    imported: set[str] = set()
+    for module in transports:
+        tree = ast.parse(Path(module.__file__ or "").read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            # BOTH statements reach a vendor's private module.  The guard
+            # read only ``from x import y`` and so was blind to the plain
+            # ``import mcp.shared._httpx_utils``, which is the very form
+            # the constant this test retired was imported by (KOD-299).
+            if isinstance(node, ast.ImportFrom) and node.module is not None:
+                imported.add(node.module)
+            elif isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
     private = {
         module
         for module in imported
