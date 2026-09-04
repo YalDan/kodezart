@@ -146,7 +146,8 @@ async def _generate_live(
                 "type": "json_schema",
                 "schema": GENERATED_CRITERIA_SCHEMA,
             },
-        )
+        ),
+        site="acceptance_criteria",
     )
 
     assert not rate_limit_rejected, "probe run was rate-limit rejected; not evidence"
@@ -281,7 +282,8 @@ async def _judge_live(
                 "type": "json_schema",
                 "schema": JUDGE_SCHEMA,
             },
-        )
+        ),
+        site="criteria_validation",
     )
 
     assert not rate_limit_rejected, "judge dispatch was rate-limit rejected"

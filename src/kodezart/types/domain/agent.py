@@ -25,6 +25,7 @@ from kodezart.types.domain.criteria import (
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
+from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.trajectory import LoopTrajectory
 
 # ---------------------------------------------------------------------------
@@ -48,6 +49,7 @@ RaiseSite = Literal[
     "post_merge_review",
     "pr_description",
     "commit_message",
+    "remediation_ticket",
 ]
 
 # ---------------------------------------------------------------------------
@@ -193,6 +195,30 @@ class TaskProgressEvent(AgentEvent):
     data: dict[str, object]
 
 
+class TaskUpdatedEvent(AgentEvent):
+    """Lifecycle state change of a background sub-task.
+
+    Distinct from ``task_notification`` because it is not interchangeable
+    with it: the SDK documents that a background task's terminal state
+    can arrive ONLY here, with the matching notification suppressed — a
+    task stopped externally reports ``killed`` on this message and
+    nothing else.  ``terminal`` is resolved at the adapter boundary
+    against the SDK's own terminal-status set, which spans both message
+    vocabularies, so a consumer tracking task ids clears them from
+    either message without importing the vendor's constant.
+    """
+
+    type: Literal["task_updated"] = "task_updated"
+    subtype: str
+    task_id: str
+    status: str | None = None
+    terminal: bool
+    patch: dict[str, object]
+    uuid: str | None = None
+    session_id: str | None = None
+    data: dict[str, object]
+
+
 class TaskNotificationEvent(AgentEvent):
     """Completion notification from a sub-task."""
 
@@ -266,6 +292,16 @@ class ErrorEvent(AgentEvent):
     rate_limit_rejected: bool | None = None
     exit_code: int | None = None
     stderr_tail: str | None = None
+    # The soft-failure variant slots.  Two recorded deaths reported the
+    # same wire event for two different failures — no result event at
+    # all, versus a result carrying no structured output — and the
+    # result text held the answer in plain words.  A reader holding only
+    # this frame can now tell them apart.
+    result_event_observed: bool | None = None
+    subtype: str | None = None
+    num_turns: int | None = None
+    duration_ms: int | None = None
+    result_tail: str | None = None
 
 
 class RateLimitWarningEvent(AgentEvent):
@@ -435,6 +471,22 @@ class WorkflowConsolidationEvent(AgentEvent):
     feature_branch: str = Field(min_length=1)
     source_branch: str = Field(min_length=1)
     feature_tip_sha: str = Field(min_length=40, max_length=40)
+
+
+class WorkflowRemediationEvent(AgentEvent):
+    """Emitted once per remediation round, when its ticket exists.
+
+    ``entry`` is on the event because three failure routes reach one
+    component: without it a reader watching the stream could not tell
+    which failure the round is answering, and the round would look the
+    same whichever way the run got there.
+    """
+
+    type: Literal["workflow_remediation"] = "workflow_remediation"
+    entry: RemediationEntry
+    round_index: int
+    ticket: TicketDraftOutput
+    base_ref: str
 
 
 class WorkflowArtifactsEvent(AgentEvent):

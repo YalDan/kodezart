@@ -54,3 +54,34 @@ def fold_trajectory(
         best_commit_sha=best_record.commit_sha,
         plateaued=plateaued,
     )
+
+
+def landable_commit(trajectory: LoopTrajectory) -> str | None:
+    """The commit holding the run's best reachable state, or ``None``.
+
+    An iteration that produced no commit changed no tree, so its state IS
+    the state of the last commit at or before it.  Each iteration is
+    therefore scored against that carried commit, and the highest-scoring
+    iteration that HAS one wins — earliest on a tie, so a run that peaks
+    and then ties its own peak still lands the peak rather than the tail.
+
+    One rule covers every shape: the best iteration's own commit when it
+    made one; the identical state from an earlier commit when it made
+    none; and the best-scoring later commit when nothing at or before the
+    best iteration committed at all — that run's only reachable states
+    are the later ones.
+
+    ``None`` therefore means one thing and nothing else: no record in the
+    trajectory carries a commit, so the run did no work.  That is the
+    literal zero-commit case and it is not reachable any other way.
+    """
+    best_sha: str | None = None
+    best_count = -1
+    carried: str | None = None
+    for record in trajectory.records:
+        if record.commit_sha is not None:
+            carried = record.commit_sha
+        if carried is not None and record.passed_count > best_count:
+            best_sha = carried
+            best_count = record.passed_count
+    return best_sha

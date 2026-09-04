@@ -52,6 +52,7 @@ from tests.fakes import (
     FakeChangePersister,
     FakeGitService,
     FakeQualityGate,
+    FakeRemediator,
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
@@ -394,7 +395,8 @@ def _mid_run_engine(
         skills=SUPPRESS_ALL_SKILLS,
         gate=PassThroughGate(),
         checkpointer=checkpointer,
-        max_fix_rounds=1,
+        remediator=FakeRemediator(),
+        remediation_max_rounds=1,
         artifact_persister=None,
     )
 
@@ -1029,7 +1031,7 @@ async def test_status_of_a_running_job_reports_checkpointed_progress(
     run = payload["run"]
     assert run["lastCompletedNode"] == "complete"
     assert run["totalIterations"] == 1
-    assert run["fixRoundsUsed"] == 0
+    assert run["remediationRoundsUsed"] == 0
     assert run["ciPassed"] is None
     assert run["ciSummary"] is None
     assert run["featureBranch"].startswith("kodezart/")
@@ -1041,8 +1043,8 @@ async def test_status_reports_progress_while_the_graph_is_paused_mid_run() -> No
     """A checkpoint read mid-graph names an intermediate node, not the last.
 
     The engine is a real ``RalphWorkflowEngine``; its quality gate blocks
-    on the fix round, so the graph is genuinely suspended inside
-    ``fix_code`` while the status endpoint answers.
+    on the remediation round's loop, so the graph is genuinely suspended
+    part-way through that round while the status endpoint answers.
     """
     saver = InMemorySaver()
     gate = GatedQualityGate(gate_on_call=2)
@@ -1053,8 +1055,9 @@ async def test_status_reports_progress_while_the_graph_is_paused_mid_run() -> No
         fired = await wired.client.post("/api/v1/agent/fire", json=_BODY)
         job_id = fired.json()["jobId"]
 
-        # Suspended inside fix_code: the loop and the failed review are
-        # committed, the fix round is not.
+        # Suspended inside the remediation round's loop: the first loop,
+        # the failed review and the round's fresh criteria are committed,
+        # the round's own loop is not.
         await _until(gate.entered.is_set)
 
         payload = (await wired.client.get(f"/api/v1/jobs/{job_id}")).json()
@@ -1063,24 +1066,29 @@ async def test_status_reports_progress_while_the_graph_is_paused_mid_run() -> No
         assert payload["runStateAvailable"] is True
         run = payload["run"]
         assert run is not None
-        assert run["lastCompletedNode"] == "review_against_ticket"
+        assert run["lastCompletedNode"] == "validate_criteria"
         assert run["lastCompletedNode"] != "complete"
         assert run["totalIterations"] == 1
-        assert run["fixRoundsUsed"] == 0
+        # The round is already OPEN — the counter advances when the
+        # remediation ticket is drafted, which happens before its loop.
+        assert run["remediationRoundsUsed"] == 1
         assert run["ciPassed"] is None
         assert run["reviewPassed"] is False
-        assert run["merged"] is True
+        # The round reset the consolidation verdict: the loop it is about
+        # to run has to earn a merge of its own.
+        assert run["merged"] is False
         assert run["featureBranch"].startswith("kodezart/")
 
-        # Releasing the gate advances exactly those counters, which is
-        # what proves the read above was mid-flight and not a final state.
+        # Releasing the gate advances the iteration total and flips the
+        # review, which is what proves the read above was mid-flight and
+        # not a final state.
         gate.release()
         await _wait_terminal(wired.queue, job_id)
 
         final = (await wired.client.get(f"/api/v1/jobs/{job_id}")).json()
         assert final["state"] == "terminal"
         assert final["run"]["lastCompletedNode"] == "complete"
-        assert final["run"]["fixRoundsUsed"] == 1
+        assert final["run"]["remediationRoundsUsed"] == 1
         assert final["run"]["totalIterations"] == 2
         assert final["run"]["reviewPassed"] is True
 

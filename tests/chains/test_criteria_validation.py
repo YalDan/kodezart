@@ -533,9 +533,13 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
     persister = FakeArtifactPersister()
     await _run(_engine(executor, max_rounds=1, artifact_persister=persister))
 
-    assert persister.persist_calls
+    # The criteria ride the write that carries them — the run persists
+    # the ticket alone before criteria generation, so an index would be
+    # a claim about the order rather than about the artifact.
+    criteria_writes = [w for w in persister.artifacts if "criteria.json" in w]
+    assert len(criteria_writes) == 1
     artifact = CriteriaArtifact.model_validate_json(
-        persister.artifacts[0]["criteria.json"],
+        criteria_writes[0]["criteria.json"],
     )
     assert [c.id for c in artifact.criteria] == ["AC-1", "AC-2"]
     assert artifact.criteria[0].criterion_class is CriterionClass.hard_gate

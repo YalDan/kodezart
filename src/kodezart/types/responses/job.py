@@ -31,7 +31,7 @@ class RunStateResponse(CamelCaseModel):
 
     last_completed_node: str | None = None
     total_iterations: int = 0
-    fix_rounds_used: int = 0
+    remediation_rounds_used: int = 0
     accept_verdict: AcceptVerdict | None = None
     merged: bool = False
     review_passed: bool = False

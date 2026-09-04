@@ -11,6 +11,7 @@ from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.git_artifact_persister import GitArtifactPersister
 from kodezart.adapters.git_branch_merger import GitBranchMerger
 from kodezart.adapters.git_change_persister import GitChangePersister
+from kodezart.adapters.git_ref_publisher import GitRefPublisher
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.adapters.github_token_auth import GitHubTokenAuth
@@ -28,6 +29,7 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
@@ -187,6 +189,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         gate=gate,
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote=config.git_remote)
+    ref_publisher = GitRefPublisher(git=git, workspace=workspace)
     artifact_persister = GitArtifactPersister(
         git=git,
         workspace=workspace,
@@ -226,6 +229,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             retry_max_attempts=config.retry_max_attempts,
             retry_initial_interval=config.retry_initial_interval,
         )
+        remediator = RemediationChain(
+            service=agent_service,
+            prompts=prompts,
+            skills=skills,
+        )
         workflow_engine = RalphWorkflowEngine(
             service=agent_service,
             quality_gate=ralph_loop,
@@ -244,7 +252,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             retry_initial_interval=config.retry_initial_interval,
             pr_creator=github_api,
             ci_monitor=github_api,
-            max_fix_rounds=config.max_fix_rounds,
+            ref_publisher=ref_publisher,
+            remediator=remediator,
+            remediation_max_rounds=config.remediation_max_rounds,
             criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
             artifact_persister=artifact_persister,
         )

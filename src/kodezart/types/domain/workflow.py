@@ -17,6 +17,7 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
 
@@ -79,6 +80,29 @@ class ExecutionContext(WorkflowContext):
         return self.base_spec.base_ref
 
 
+class RemediationRequest(CamelCaseModel):
+    """Everything one remediation round is given, and nothing else.
+
+    The three parts the component's contract names are separate fields
+    rather than one pre-rendered blob: the original ticket, the summary
+    of what has already been done, and the evidence of how it failed.
+    Kept apart, a caller that forgets one cannot construct the request.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    entry: RemediationEntry
+    round_index: int = Field(ge=0)
+    original_ticket: TicketDraftOutput
+    work_branch: str = Field(min_length=1)
+    work_base_ref: str = Field(min_length=1)
+    pr_url: str | None = None
+    total_iterations: int = Field(ge=0)
+    trajectory: LoopTrajectory | None = None
+    criteria: list[ValidatedCriterion]
+    failure_evidence: str = Field(min_length=1)
+
+
 class RalphLoopContext(ExecutionContext):
     """Context for the quality-gating ralph loop."""
 
@@ -102,8 +126,6 @@ class TicketGenerationState(TypedDict):
     review_feedback: str | None
     review_suggestions: list[str]
     approved: bool
-    creator_session_id: str | None
-    reviewer_session_id: str | None
 
 
 class RalphLoopState(TypedDict):
@@ -136,6 +158,12 @@ class WorkflowState(TypedDict):
     ``trajectory`` carries the most recent quality-gate invocation's
     ``LoopTrajectory``; ``None`` until the first gate invocation projects
     one.
+
+    ``best_iteration_sha`` is the best commit the run has produced across
+    every remediation round — recorded ON THE RUN rather than recomputed
+    from whichever trajectory happens to be last, because a round that
+    commits nothing would otherwise make a run that plainly did work look
+    as though it had done none.
     """
 
     feature_branch: str
@@ -156,7 +184,10 @@ class WorkflowState(TypedDict):
     merge_error: str | None
     review_passed: bool
     review_feedback: str | None
-    fix_rounds_used: int
+    remediation_rounds_used: int
+    remediation_ticket: TicketDraftOutput | None
+    remediation_entry: RemediationEntry | None
+    best_iteration_sha: str | None
     pr_url: str | None
     pr_number: int | None
     ci_passed: bool | None

@@ -231,9 +231,13 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
     source = [(c.id, c.text) for c in criteria_event.criteria]
     assert source == [("AC-1", CRITERION_ONE), ("AC-2", CRITERION_TWO)]
 
-    # (b) the persisted .kodezart/criteria.json
+    # (b) the persisted .kodezart/criteria.json — the write that carries
+    # them, not a position: the ticket is persisted alone before criteria
+    # generation, and this surface is about content.
+    criteria_writes = [w for w in persister.artifacts if "criteria.json" in w]
+    assert len(criteria_writes) == 1
     artifact = CriteriaArtifact.model_validate_json(
-        persister.artifacts[0]["criteria.json"],
+        criteria_writes[0]["criteria.json"],
     )
     assert [(c.id, c.text) for c in artifact.criteria] == source
 

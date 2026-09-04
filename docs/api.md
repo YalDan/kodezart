@@ -122,7 +122,7 @@ Every event type below is enumerated from the event models in
 holds this reference to them: a new event model, a removed one, a renamed
 field or a stale heading count reddens that test.
 
-### Streaming Events (12)
+### Streaming Events (13)
 
 | Event Type            | Key Fields                                                  |
 | --------------------- | ----------------------------------------------------------- |
@@ -135,11 +135,18 @@ field or a stale heading count reddens that test.
 | `task_started`        | `subtype`, `taskId`, `description`, `uuid`, `sessionId`     |
 | `task_progress`       | `subtype`, `taskId`, `description`, `usage`, `uuid`, `sessionId` |
 | `task_notification`   | `subtype`, `taskId`, `status`, `outputFile`, `summary`, `uuid`, `sessionId` |
+| `task_updated`        | `subtype`, `taskId`, `status`, `terminal`, `patch`, `uuid`, `sessionId` |
 | `result`              | `subtype`, `durationMs`, `durationApiMs`, `isError`, `numTurns`, `sessionId`, `stopReason`, `totalCostUsd`, `usage`, `result`, `branch`, `commitSha`, `structuredOutput` |
 | `stream_event`        | `sessionId`, `event`                                        |
 | `rate_limit_warning`  | `status`, `resetsAt`, `utilization`, `rateLimitType`        |
 
-### Workflow Events (14)
+A background task's terminal state can arrive as `task_updated` alone —
+the matching `task_notification` is sometimes suppressed, and a task
+stopped externally reports `killed` only here. `terminal` is resolved
+against the SDK's own terminal-status set, so a consumer tracking task
+ids clears them on `terminal` from either frame.
+
+### Workflow Events (15)
 
 | Event Type                     | Key Fields                                      |
 | ------------------------------ | ----------------------------------------------- |
@@ -154,6 +161,7 @@ field or a stale heading count reddens that test.
 | `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
 | `workflow_review`              | `passed`, `evaluation`, `fixRound`              |
+| `workflow_remediation`         | `entry`, `roundIndex`, `ticket`, `baseRef`      |
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
 | `workflow_ci`                  | `passed`, `summary`, `ref`                      |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `error` |
@@ -173,7 +181,14 @@ Leading frame of a queued `/workflow` stream; carries the reconnect handle.
 
 | Event Type | Key Fields |
 | ---------- | ---------- |
-| `error`    | `error`    |
+| `error`    | `error`, `errorKind`, `raiseSite`, `rateLimitRejected`, `resultEventObserved`, `subtype`, `numTurns`, `durationMs`, `resultTail` |
+
+A soft failure (`errorKind` `NoStructuredOutputError`, or
+`RateLimitedSoftFailureError` when the provider rejected the stream on a
+rate limit) is identified by this frame alone: `resultEventObserved`
+separates "no result arrived" from "a result arrived carrying no
+structured output", and `resultTail` carries the end of the agent's own
+result text, credential-redacted.
 
 ## Error Handling
 

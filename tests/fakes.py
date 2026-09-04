@@ -27,6 +27,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     TicketDraftOutput,
     WorkflowIterationEvent,
+    WorkflowRemediationEvent,
     WorkflowTicketEvent,
 )
 from kodezart.types.domain.base_spec import BaseSpec
@@ -54,6 +55,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
+from kodezart.types.domain.workflow import RemediationRequest
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
 DEFAULT_SETTING_SOURCES: list[SettingSource] = [
@@ -1189,6 +1191,61 @@ def make_ticket_draft(
         out_of_scope=[],
         open_questions=[],
     )
+
+
+class FakeRefPublisher:
+    """Fake RefPublisher recording every published (ref, commit) pair."""
+
+    def __init__(self, *, fail: Exception | None = None) -> None:
+        self._fail = fail
+        self.calls: list[dict[str, object]] = []
+
+    async def publish(
+        self,
+        *,
+        repo_path: str | None,
+        repo_url: str | None,
+        commit_sha: str,
+        ref: str,
+        cache_key: str | None = None,
+    ) -> None:
+        self.calls.append(
+            {
+                "repo_path": repo_path,
+                "repo_url": repo_url,
+                "commit_sha": commit_sha,
+                "ref": ref,
+                "cache_key": cache_key,
+            }
+        )
+        if self._fail is not None:
+            raise self._fail
+
+
+class FakeRemediator:
+    """Fake Remediator yielding one remediation ticket per round."""
+
+    def __init__(self, *, title: str = "Remediate the failure") -> None:
+        self._title = title
+        self.calls: list[RemediationRequest] = []
+
+    async def run(
+        self,
+        request: RemediationRequest,
+        *,
+        repo_path: str | None,
+        repo_url: str | None,
+        cache_key: str,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        self.calls.append(request)
+        yield WorkflowRemediationEvent(
+            entry=request.entry,
+            round_index=request.round_index,
+            ticket=make_ticket_draft(
+                title=f"{self._title} ({request.entry.value})",
+            ),
+            base_ref=request.work_base_ref,
+        )
 
 
 class FakePRCreator:

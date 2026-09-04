@@ -31,6 +31,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
     WorkflowPREvent,
+    WorkflowReviewEvent,
 )
 from kodezart.types.domain.base_spec import trunk_base
 from kodezart.types.domain.criteria import (
@@ -50,6 +51,7 @@ from tests.fakes import (
     FakeGitService,
     FakePRCreator,
     FakeQualityGate,
+    FakeRefPublisher,
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
@@ -325,6 +327,7 @@ def _engine(
     *,
     evaluation: AcceptanceCriteriaOutput,
     pr_creator: FakePRCreator | None = None,
+    ref_publisher: FakeRefPublisher | None = None,
 ) -> RalphWorkflowEngine:
     service = AgentService(
         executor=FakeAgentExecutor(events=[]),
@@ -349,6 +352,7 @@ def _engine(
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
+        ref_publisher=ref_publisher or FakeRefPublisher(),
     )
 
 
@@ -430,21 +434,24 @@ async def test_a_soft_signal_only_failure_reaches_open_pr_with_its_flags() -> No
 
 
 async def test_a_hard_failure_never_reaches_the_merge() -> None:
-    """The rejected arm keeps the existing failure route, unchanged."""
+    """The rejected arm keeps its failure route: no merge, no review.
+
+    "The forge was never called" used to stand in for "this did not
+    become an accepted run". KOD-40 lands a do-not-merge request on this
+    route, so the distinguishing facts are named directly instead.
+    """
     pr_creator = FakePRCreator()
     events = await _run(_engine(evaluation=_HARD_FAILURE, pr_creator=pr_creator))
 
     iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
     assert iteration.verdict is AcceptVerdict.rejected
-    assert [e for e in events if isinstance(e, WorkflowPREvent)] == []
-    assert pr_creator.calls == []
+    assert [e for e in events if isinstance(e, WorkflowReviewEvent)] == []
 
     complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
     assert complete.merged is False
-    assert complete.outcome in (
-        WorkflowOutcome.loop_not_accepted,
-        WorkflowOutcome.loop_plateaued,
-    )
+    assert complete.outcome is WorkflowOutcome.stalled_pr_opened
+    create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
+    assert str(create["title"]).startswith("[do-not-merge]")
 
 
 _FLAGS_CONTRADICTING_A_PASS = AcceptanceCriteriaOutput(
