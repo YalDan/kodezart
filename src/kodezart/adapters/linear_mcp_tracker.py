@@ -608,6 +608,18 @@ class LinearMcpTracker:
         self._self_writes.record(issue_key=issue.issue_key, updated_at=issue.updated_at)
         return issue
 
+    def _saved_issue(self, payload: McpToolResult) -> TrackerIssue:
+        """The stored issue a save_issue answer carries, recorded as a write.
+
+        The one tail every issue-write shares: validate the save_issue
+        envelope, read it as the stored issue, and record the stamp the
+        write left (:meth:`_wrote`).  One place, so a change to how a
+        write is read back cannot land on three of four call sites.
+        """
+        return self._wrote(
+            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
+        )
+
     async def _wrote_by_reading(self, issue_key: str) -> None:
         """Read the issue back to learn what this write left on it.
 
@@ -658,9 +670,7 @@ class LinearMcpTracker:
                 "priority": _RAW_BY_PRIORITY[priority],
             },
         )
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
-        )
+        return self._saved_issue(payload)
 
     async def update_issue(
         self,
@@ -676,9 +686,7 @@ class LinearMcpTracker:
         if body is not None:
             arguments["description"] = body
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
-        )
+        return self._saved_issue(payload)
 
     async def set_workflow_state(
         self,
@@ -711,9 +719,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},
         )
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
-        )
+        return self._saved_issue(payload)
 
     async def set_queue_state(
         self,
@@ -730,9 +736,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "labels": [*preserved, self._label_for(state)]},
         )
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
-        )
+        return self._saved_issue(payload)
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""

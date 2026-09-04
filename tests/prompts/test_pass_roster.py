@@ -133,6 +133,34 @@ def test_every_pass_template_iterates_both_rosters(
 
 
 # ---------------------------------------------------------------------------
+# KOD-290 / KOD-306 — every pass prescribes the row title the runner reads
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_every_pass_template_prescribes_the_record_title(
+    case: tuple[str, PromptKey],
+) -> None:
+    """The row a pass writes is found by a title only the pass can prescribe.
+
+    The runner verifies a run's record by the exact title its identity
+    spells (KOD-290), and the only place that title reaches the session is
+    the ``record_title`` binding the template consumes.  A template that
+    drops it renders green and runs green, and the row it writes carries
+    whatever title the session invents — a row about no run the runner can
+    find.  The 2026-09-04 KOD-275 sweep dropped the binding from the
+    legacy fire-prep template and nothing in the suite went red, because
+    the roster and window checks inspect other bindings.  Held on every
+    shipped set, because the legacy set writes a real row too (KOD-306).
+    """
+    body = pass_bodies()[case]
+    assert "record_title" in binding_names(body), (
+        f"{case[0]}/{case[1].value} does not consume the record_title binding, so "
+        "the runner's row-lookup title is never prescribed to the session"
+    )
+
+
+# ---------------------------------------------------------------------------
 # KOD-155 — every pass carries its window marker and its destination
 # ---------------------------------------------------------------------------
 
