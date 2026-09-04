@@ -1391,6 +1391,10 @@ class RalphWorkflowEngine:
             await self._log.awarning(
                 "fan_in_exhausted",
                 site="post_merge_review",
+                # No loop here, which is a STATE of this event and not a
+                # field to leave out: one event name reaching a reader in
+                # two shapes is two events wearing one name.
+                iteration=None,
                 attempts=attempts,
                 dispatched_count=grade.dispatched_count,
                 missing_ids=grade.missing_ids,

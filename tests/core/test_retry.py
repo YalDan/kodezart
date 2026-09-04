@@ -304,3 +304,35 @@ def test_the_floor_resolver_is_compositions_statement_not_this_modules() -> None
     assert resolve(RateLimitError("limited")) == config.retry_rate_limit_floor_seconds
     assert resolve(ConnectionError("reset")) is None
     assert resolve(TransientAPIError("blip")) is None
+
+
+async def test_one_rejection_waits_its_floor_once_however_many_nodes_re_raise_it() -> (
+    None
+):
+    """The floors used to compound with the nesting (KOD-195).
+
+    The graphs nest: the workflow engine wraps the node that runs the
+    ralph loop, whose own graph wraps the node that calls the provider.
+    One rejection climbing out of the leaf therefore passes through every
+    wrapper above it, and each of them used to sleep the whole floor —
+    measured twelve floors for a single standing rate limit, twelve
+    minutes of waiting that opened exactly the same nine sessions.
+
+    A rejection is one refusal by one provider.  It waits once.
+    """
+
+    async def leaf(state: str, config: RunnableConfig) -> str:
+        raise RateLimitError(state)
+
+    wrapped_leaf = cast("GraphNode[str, str]", RetryFloor(_floor_for_rate_limits)(leaf))
+
+    async def middle(state: str, config: RunnableConfig) -> str:
+        """A node whose own body is a floored graph — the nesting."""
+        return await wrapped_leaf(state, config)
+
+    elapsed = await _elapsed_of(
+        RetryFloor(_floor_for_rate_limits)(middle), RateLimitError
+    )
+
+    assert elapsed >= FLOOR_SECONDS
+    assert elapsed < 2 * FLOOR_SECONDS

@@ -438,7 +438,8 @@ service refreshes nothing, so pasting one buys a process that works until the
 token dies and then answers every tracker call with a refusal — the failure
 measured on 2026-09-01, fifty-one minutes into a boot. The access token is
 opaque and declares nothing a reader can inspect, so boot accepts exactly one
-shape — lin_api_ followed by 40 characters, which is what step 1 mints — and
+shape — lin_api_ followed by at least 40 characters, which is what step 1
+mints — and
 refuses everything else at startup with `TrackerCredentialShapeError`, naming
 both the variable it read and the shape it wanted, before the service dials
 anything. A key of the right shape is then **presented once** over plain HTTP

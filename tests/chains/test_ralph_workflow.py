@@ -83,6 +83,7 @@ from tests.chains.test_dispatch_definitions import (
 )
 from tests.fakes import (
     FAKE_SESSION_TYPE,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeArtifactPersister,
@@ -99,6 +100,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     RecordingPromptProvider,
+    floor_under_a_rate_limit,
     make_dispatched_criteria,
     make_failing_evaluation,
     make_passing_evaluation,
@@ -2437,19 +2439,7 @@ async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
     assert wire.result_tail == "Claude AI usage limit reached"
 
 
-#: The floor a rate-limited attempt waits in the fixture below.  Long
-#: enough that only the floor can account for the gap between two
-#: attempts, short enough that the case costs the suite nothing to run.
-RATE_LIMIT_FLOOR_SECONDS = 0.15
-
-
-def _floor_under_a_rate_limit(exc: Exception) -> float | None:
-    """A resolver of the shape ``composition.engine`` builds (KOD-195)."""
-    if isinstance(exc, RateLimitedSoftFailureError):
-        return RATE_LIMIT_FLOOR_SECONDS
-    return None
-
-
+@pytest.mark.usefixtures("unjittered_backoff")
 async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
     tmp_path: Path,
 ) -> None:
@@ -2470,7 +2460,7 @@ async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
         artifact_persister=persister,
         retry_initial_interval=0.001,
         retry_max_attempts=2,
-        delay_floor_for=_floor_under_a_rate_limit,
+        delay_floor_for=floor_under_a_rate_limit,
     )
 
     events = [

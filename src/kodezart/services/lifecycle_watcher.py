@@ -64,6 +64,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from traceback import format_exception
 from typing import Self
 
 from kodezart.core.errors import RunRecordWriteError
@@ -92,6 +93,15 @@ from kodezart.types.domain.run_records import (
 #: own outcome already travels — because a fire's end is the same kind of
 #: fact, and a second shape for it would be a second vocabulary to keep in
 #: parity with the first.
+#:
+#: A report CONTAINS ITS OWN FAILURES and never raises.  It is called
+#: after the put-back, the claim release and everything else the watch
+#: owes the run, so a hop that raised would unwind a watch whose work is
+#: done and lose the record that says the run is over — and the news it
+#: carries is an optimisation over the next tick, never the run's history
+#: (KOD-276).  The containment belongs to the implementation because only
+#: the implementation knows what failed: the composed report fans out
+#: over every dispatcher on the lane and names the one that refused.
 type FireReport = Callable[[str, RunOutcome, str | None], Awaitable[None]]
 
 
@@ -155,6 +165,14 @@ class LifecycleWatcher:
         #: being re-selected whole at the next tick (KOD-174).
         self._report: FireReport = report
         self._following: set[asyncio.Task[None]] = set()
+        #: Watches that ended by RAISING, captured off each task the
+        #: moment it finishes.  Retrieving the exception here is what
+        #: keeps a raising watch from ending as an unretrieved task
+        #: exception, and holding it for the drain is what keeps a
+        #: watch that finished — and so pruned itself from the
+        #: in-flight set — BEFORE the drain from being missed by a
+        #: drain that gathers only what is still in flight (KOD-303).
+        self._raised: list[BaseException] = []
         #: Every fire this process started, by job, until its watch has
         #: recorded it.  A watch records at its END, so a shutdown that
         #: arrives first — or a watch that raises on the way — leaves the
@@ -202,7 +220,25 @@ class LifecycleWatcher:
             ),
         )
         self._following.add(task)
-        task.add_done_callback(self._following.discard)
+        task.add_done_callback(self._on_watch_done)
+
+    def _on_watch_done(self, task: asyncio.Task[None]) -> None:
+        """Account for a finished watch: prune it, and keep what it raised.
+
+        The one place every watch passes through exactly once, whenever
+        it ends.  Retrieving the exception HERE is what keeps a raising
+        watch from ending as an unretrieved task exception, and holding
+        it for the drain is what keeps a watch that finished before the
+        drain — and so already pruned itself from the in-flight set —
+        from being lost to a drain that gathers only what is still in
+        flight (KOD-303).
+        """
+        self._following.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            self._raised.append(exc)
 
     def _remember_dequeue(self, job_id: str) -> None:
         """Note that this job's run began, for a sweep the stop has blinded.
@@ -231,17 +267,19 @@ class LifecycleWatcher:
 
         The watches are AWAITED, never cancelled.  Cancelling them is
         precisely what would skip the write-back and the release this
-        exists to let happen; a watch that raises is reported here rather
-        than ending the shutdown, which has other things to close.
+        exists to let happen.  What each watch raised is read off the
+        task as it finished, not off this gather, so a watch that ended
+        before the drain is reported here exactly as one still in flight
+        is: the gather only waits the rest out (KOD-303).
         """
-        outcomes = await asyncio.gather(*self._following, return_exceptions=True)
-        for outcome in outcomes:
-            if isinstance(outcome, BaseException):
-                await self._log.aerror(
-                    "lifecycle_watch_failed",
-                    error=str(outcome),
-                    error_kind=type(outcome).__name__,
-                )
+        await asyncio.gather(*self._following, return_exceptions=True)
+        for exc in self._raised:
+            await self._log.aerror(
+                "lifecycle_watch_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+            )
+        self._raised.clear()
 
     async def record_unfinished(self) -> None:
         """Give every fire this process started and did not finish its row.
@@ -379,27 +417,19 @@ class LifecycleWatcher:
         # nothing, and what it does with the news is decide whether the
         # next tick may select this issue again (KOD-174).
         #
-        # Contained exactly as the run record below is, and for the same
-        # reason: the put-back and the claim release have already
-        # happened, so a report hop that raises would unwind a watch whose
-        # work is done, lose the record that says the run is over, and
-        # report a finished run as a broken one.  The dispatcher's memory
-        # is an optimisation over the next tick; the record and the
-        # put-back are the run's own history (KOD-276).
-        try:
-            await self._report(
-                issue_key,
-                outcome,
-                None if failure is None else failure.error_kind,
-            )
-        except Exception as exc:
-            await self._log.aerror(
-                "fire_report_failed",
-                issue_key=issue_key,
-                outcome=outcome.value,
-                error_type=type(exc).__name__,
-                error=str(exc),
-            )
+        # Uncontained here, because the report contains itself: the hop
+        # fans out over N dispatchers and only the fan-out knows WHICH of
+        # them refused, so a second containment on this side could name
+        # the failure only as "the report", and did — two mechanisms
+        # emitting one event name with two field sets, the outer one dead
+        # in every composed system because the inner one never re-raises.
+        # The contract is stated on ``FireReport`` and kept by the only
+        # thing that can keep it (KOD-276).
+        await self._report(
+            issue_key,
+            outcome,
+            None if failure is None else failure.error_kind,
+        )
         started_at = await self._run_started_at(job_id)
         if started_at is None:
             # The same absence the sweep names, met at the other end: a run
@@ -489,6 +519,7 @@ class LifecycleWatcher:
                 failure=exc.failure,
                 error_type=exc.cause_type,
                 error=str(exc),
+                traceback="".join(format_exception(exc)),
             )
         except Exception as exc:
             await self._log.aerror(
@@ -497,6 +528,7 @@ class LifecycleWatcher:
                 outcome=outcome.value,
                 error_type=type(exc).__name__,
                 error=str(exc),
+                traceback="".join(format_exception(exc)),
             )
         return None
 

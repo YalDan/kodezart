@@ -1,5 +1,6 @@
 """Tests for TicketGenerationLoop (ticket draft + review sub-graph) with fakes."""
 
+import time
 from collections.abc import AsyncGenerator, Sequence
 
 import pytest
@@ -8,10 +9,12 @@ from pydantic import ValidationError
 
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.errors import NoStructuredOutputError, TicketReviewModeError
+from kodezart.core.retry import DelayFloor
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
     CritiqueFlag,
+    RateLimitWarningEvent,
     ResultEvent,
     WorkflowTicketDraftEvent,
     WorkflowTicketEvent,
@@ -38,9 +41,12 @@ from tests.chains.test_dispatch_definitions import (
 )
 from tests.fakes import (
     FAKE_SESSION_TYPE,
+    NEGLIGIBLE_BACKOFF_SECONDS,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeWorkspaceProvider,
+    floor_under_a_rate_limit,
     make_prompt_provider,
     no_delay_floor,
 )
@@ -50,6 +56,8 @@ def _make_loop(
     *,
     executor: FakeAgentExecutor | object,
     max_reviews: int = 2,
+    retry_initial_interval: float = 1.0,
+    delay_floor_for: DelayFloor = no_delay_floor,
 ) -> TicketGenerationLoop:
     service = AgentService(
         git_base_url="https://github.com",
@@ -65,8 +73,8 @@ def _make_loop(
         max_reviews=max_reviews,
         review_mode=TicketReviewMode.REVIEWED,
         retry_max_attempts=3,
-        retry_initial_interval=1.0,
-        delay_floor_for=no_delay_floor,
+        retry_initial_interval=retry_initial_interval,
+        delay_floor_for=delay_floor_for,
     )
 
 
@@ -1167,3 +1175,94 @@ async def test_the_critics_flags_ride_out_on_the_emitted_ticket() -> None:
             "reason": "no measured failure justifies it",
         },
     ]
+
+
+# ---------------------------------------------------------------------------
+# KOD-195: the floor reaches THIS loop's nodes, not only the engine's
+# ---------------------------------------------------------------------------
+
+
+class _RejectedThenDraftingExecutor(_ScriptedReviewExecutor):
+    """The drafter is rate-limit rejected once, then answers.
+
+    The rejection is the vendor's own shape: a rejection warning followed
+    by a result carrying no structured output, which is what the soft
+    failure is raised from.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(review_outcomes=[True])
+        self.draft_attempts = 0
+        #: When each draft attempt began, so the case can clock the gap
+        #: between two of them rather than the run around them.
+        self.draft_attempt_times: list[float] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if self._is_ticket_draft_schema(output_format):
+            self.draft_attempts += 1
+            self.draft_attempt_times.append(time.perf_counter())
+            if self.draft_attempts == 1:
+                yield RateLimitWarningEvent(status="rejected", utilization=1.0)
+                yield ResultEvent(
+                    subtype="result",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="rejected",
+                    structured_output=None,
+                )
+                return
+        async for event in super().stream(
+            prompt=prompt,
+            cwd=cwd,
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
+            skills=skills,
+            session_type=session_type,
+            agents=agents,
+            session_policy=session_policy,
+            session_id=session_id,
+            output_format=output_format,
+        ):
+            yield event
+
+
+@pytest.mark.usefixtures("unjittered_backoff")
+async def test_a_rate_limited_draft_waits_the_floor_before_its_next_attempt() -> None:
+    """KOD-195: the floor is wired into THIS loop, not only constructed on it.
+
+    The construction guard in the ralph-loop suite proves the resolver
+    cannot be omitted; it cannot prove the resolver reaches a node, and
+    unwrapping ``self._floor`` from this loop's two ``add_node`` calls left
+    the whole suite green.  The clock is read at the start of each draft
+    attempt, the policy's back-off is two orders of magnitude under the
+    floor and its jitter is fixed at zero, so the gap between the two
+    attempts has one explanation.
+    """
+    executor = _RejectedThenDraftingExecutor()
+    loop = _make_loop(
+        executor=executor,
+        retry_initial_interval=NEGLIGIBLE_BACKOFF_SECONDS,
+        delay_floor_for=floor_under_a_rate_limit,
+    )
+
+    events = [event async for event in loop.run(**_run_kwargs())]
+
+    assert executor.draft_attempts == 2, "the rejection was retried"
+    first_attempt, second_attempt = executor.draft_attempt_times
+    assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
+    assert [e for e in events if isinstance(e, WorkflowTicketEvent)]

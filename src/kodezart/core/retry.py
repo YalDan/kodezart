@@ -36,6 +36,12 @@ def should_retry(exc: Exception) -> bool:
 #: provider rejection that composition names.
 DelayFloor = Callable[[Exception], float | None]
 
+#: Set on a rejection by the wrapper that slept its floor, so the wrappers
+#: it climbs through on the way out do not sleep it again.  The mark rides
+#: the exception because the exception IS the rejection: one provider
+#: refusal, one wait (KOD-195).
+_FLOOR_PAID = "_kodezart_retry_floor_paid"
+
 _StateT = TypeVar("_StateT")
 _ReturnT = TypeVar("_ReturnT")
 _StateT_contra = TypeVar("_StateT_contra", contravariant=True)
@@ -75,6 +81,16 @@ class RetryFloor:
     failure" says so in a resolver that answers ``None``, which is a
     statement someone made; an absent resolver was the same silence
     KOD-282 removed from the three loops one layer up.
+
+    A floor is charged ONCE PER REJECTION, not once per node that
+    re-raises it.  The graphs nest — the workflow engine wraps the node
+    that runs the ralph loop, which wraps its own — so one rejection
+    climbing out of a leaf passed through every wrapper above it and slept
+    the floor at each: measured twelve floors, twelve minutes, for a
+    single standing rate limit that still opened the same nine sessions.
+    The exception carries the fact that it has already waited, and a
+    wrapper that meets a rejection carrying it re-raises without sleeping
+    again.
     """
 
     def __init__(self, delay_floor_for: DelayFloor) -> None:
@@ -92,9 +108,11 @@ class RetryFloor:
             try:
                 return await node(state, config)
             except Exception as exc:
-                floor = resolve(exc)
-                if floor is not None:
-                    await asyncio.sleep(floor)
+                if not getattr(exc, _FLOOR_PAID, False):
+                    floor = resolve(exc)
+                    if floor is not None:
+                        await asyncio.sleep(floor)
+                        setattr(exc, _FLOOR_PAID, True)
                 raise
 
         return guarded

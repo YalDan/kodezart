@@ -42,12 +42,15 @@ from mcp.server.lowlevel import Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult, ContentBlock, TextContent
 
-from kodezart.adapters import http_mcp_tool_caller
+from kodezart.adapters import (
+    hosted_mcp_session,
+    http_mcp_tool_caller,
+    stdio_mcp_tool_caller,
+)
+from kodezart.adapters.hosted_mcp_session import _INBOX_UNBOUNDED, _Phase
 from kodezart.adapters.http_mcp_tool_caller import (
-    _INBOX_UNBOUNDED,
     HttpMcpToolCaller,
     HttpxClientFactory,
-    _Phase,
     pooled_http_client,
 )
 from kodezart.core.errors import (
@@ -205,16 +208,17 @@ async def serving(
     because what these cases are about is this module's own decoding and
     classification rather than the SDK's wire (KOD-270).
     """
+    hosted = caller._hosted
     inbox, posted = anyio.create_memory_object_stream[Any](_INBOX_UNBOUNDED)
-    serve: Callable[..., Awaitable[None]] = caller._serve
-    caller._inbox = inbox
-    caller._phase = _Phase.SERVING
+    serve: Callable[..., Awaitable[None]] = hosted._serve
+    hosted._inbox = inbox
+    hosted._phase = _Phase.SERVING
     async with posted:
         host = asyncio.create_task(serve(session, posted))
         try:
             yield
         finally:
-            caller._phase = _Phase.CLOSED
+            hosted._phase = _Phase.CLOSED
             inbox.close()
             await host
 
@@ -254,7 +258,10 @@ async def answer_with(caller: HttpMcpToolCaller, status: HTTPStatus) -> None:
     client raises its status error inside the task group that drives the
     session, and this hook is the only place the status is still legible.
     """
-    async with caller._http_client(headers={}, timeout=httpx.Timeout(5.0)) as client:
+    async with caller._server.http_client(
+        headers={},
+        timeout=httpx.Timeout(5.0),
+    ) as client:
         for hook in client.event_hooks["response"]:
             await hook(httpx.Response(status_code=status))
 
@@ -1294,11 +1301,19 @@ def test_no_private_vendor_module_is_imported_by_the_transport() -> None:
     A module whose name begins with an underscore is the vendor's own
     business: it carries no compatibility promise, and the constant this
     one held is now a field an operator sets.
+
+    Over every module the transports are made of, not just this one: the
+    session hosting the two of them share is where an SDK internal would
+    now be reached for, and a guard that watched only the file the import
+    used to be in would watch the wrong file.
     """
-    source = Path(http_mcp_tool_caller.__file__).read_text(encoding="utf-8")
+    transports = (hosted_mcp_session, http_mcp_tool_caller, stdio_mcp_tool_caller)
     imported = {
         node.module
-        for node in ast.walk(ast.parse(source))
+        for module in transports
+        for node in ast.walk(
+            ast.parse(Path(module.__file__ or "").read_text(encoding="utf-8")),
+        )
         if isinstance(node, ast.ImportFrom) and node.module is not None
     }
     private = {

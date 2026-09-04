@@ -152,6 +152,27 @@ def no_delay_floor(_exc: Exception) -> float | None:
     return None
 
 
+#: The floor a rate-limited attempt waits in the cases that measure one.
+#: Long enough that only the floor can account for the gap between two
+#: attempts, short enough that the case costs the suite nothing to run.
+RATE_LIMIT_FLOOR_SECONDS: float = 0.15
+
+#: Two orders of magnitude under the floor, so the retry policy's own
+#: back-off cannot be the explanation for a gap a case measures.
+NEGLIGIBLE_BACKOFF_SECONDS: float = 0.001
+
+
+def floor_under_a_rate_limit(exc: Exception) -> float | None:
+    """A resolver of the shape ``composition.engine`` builds (KOD-195).
+
+    Keyed on the rejection itself rather than on a class, because that is
+    what composition's own resolver keys on: a provider that refused says
+    so on the failure, whichever soft-failure class carries it.
+    """
+    rejected = getattr(exc, "rate_limit_rejected", False)
+    return RATE_LIMIT_FLOOR_SECONDS if rejected else None
+
+
 def knowledge_grant_for(
     *granted: SessionType,
     knowledge_map: str = FIXTURE_KNOWLEDGE_MAP,

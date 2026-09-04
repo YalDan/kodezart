@@ -3,6 +3,7 @@
 import ast
 import inspect
 import re
+import time
 from collections.abc import AsyncGenerator, Sequence
 from itertools import pairwise
 from pathlib import Path
@@ -16,6 +17,7 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor
+from kodezart.core.retry import DelayFloor
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.errors import CriteriaFanInError
 from kodezart.domain.fan_in import require_permutation
@@ -26,6 +28,7 @@ from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
     AssistantTextEvent,
+    RateLimitWarningEvent,
     ResultEvent,
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
@@ -52,6 +55,8 @@ from kodezart.types.domain.trajectory import IterationRecord
 from tests.chains.test_dispatch_definitions import chain_source, dispatch_block
 from tests.fakes import (
     FAKE_SESSION_TYPE,
+    NEGLIGIBLE_BACKOFF_SECONDS,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeAgentRunner,
@@ -61,6 +66,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     RecordingPromptProvider,
     as_validated,
+    floor_under_a_rate_limit,
     make_criteria,
     make_minted_criteria,
     make_prompt_provider,
@@ -78,6 +84,8 @@ def _make_loop(
     git: FakeGitService | None = None,
     cache: FakeRepoCache | None = None,
     prompts: RecordingPromptProvider | None = None,
+    retry_initial_interval: float = 1.0,
+    delay_floor_for: DelayFloor = no_delay_floor,
 ) -> RalphLoop:
     service = AgentService(
         git_base_url="https://github.com",
@@ -94,9 +102,9 @@ def _make_loop(
         git=git or FakeGitService(),
         cache=cache or FakeRepoCache(),
         retry_max_attempts=3,
-        retry_initial_interval=1.0,
+        retry_initial_interval=retry_initial_interval,
         fan_in_max_attempts=2,
-        delay_floor_for=no_delay_floor,
+        delay_floor_for=delay_floor_for,
     )
 
 
@@ -1901,3 +1909,127 @@ def test_every_loop_requires_a_delay_floor_of_its_caller() -> None:
         parameter = inspect.signature(loop.__init__).parameters["delay_floor_for"]
         assert parameter.default is inspect.Parameter.empty, loop.__name__
         assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, loop.__name__
+
+
+# ---------------------------------------------------------------------------
+# KOD-195: the floor reaches THIS loop's nodes, not only the engine's
+# ---------------------------------------------------------------------------
+
+
+def _asks_for_an_evaluation(output_format: dict[str, object] | None) -> bool:
+    """Whether this dispatch is the evaluator's, by the schema it asks for."""
+    if output_format is None:
+        return False
+    schema = output_format.get("schema")
+    if not isinstance(schema, dict):
+        return False
+    properties = schema.get("properties")
+    return isinstance(properties, dict) and "criteriaResults" in properties
+
+
+class _RejectedThenEvaluatingExecutor:
+    """The evaluator is rate-limit rejected once, then answers.
+
+    The rejection is the vendor's own shape: a rejection warning followed
+    by a result carrying no structured output, which is what the soft
+    failure is raised from.
+    """
+
+    def __init__(self, criteria: list[ValidatedCriterion]) -> None:
+        self._criteria = criteria
+        self.evaluation_attempts = 0
+        #: When each evaluation attempt began, so a case can clock the gap
+        #: between two of them rather than the run around them.
+        self.evaluation_attempt_times: list[float] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if not _asks_for_an_evaluation(output_format):
+            yield ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="scripted",
+                commit_sha="a" * 40,
+            )
+            return
+        self.evaluation_attempts += 1
+        self.evaluation_attempt_times.append(time.perf_counter())
+        if self.evaluation_attempts == 1:
+            yield RateLimitWarningEvent(status="rejected", utilization=1.0)
+            yield ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="rejected",
+                structured_output=None,
+            )
+            return
+        yield ResultEvent(
+            subtype="result",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="scripted",
+            structured_output={
+                "criteriaResults": [
+                    {
+                        "criterionId": criterion.id,
+                        "criterion": criterion.text,
+                        "passed": True,
+                        "reasoning": "scripted",
+                    }
+                    for criterion in self._criteria
+                ],
+            },
+        )
+
+
+@pytest.mark.usefixtures("unjittered_backoff")
+async def test_a_rate_limited_evaluation_waits_the_floor_before_its_next_attempt() -> (
+    None
+):
+    """KOD-195: the floor is wired into THIS loop, not only constructed on it.
+
+    The construction guard above proves the resolver cannot be omitted; it
+    cannot prove the resolver reaches a node, and unwrapping ``self._floor``
+    from this loop's two ``add_node`` calls left the whole suite green.  So
+    the observation is the one the engine's own case makes: the clock is
+    read at the start of each evaluation attempt, the policy's back-off is
+    two orders of magnitude under the floor, and the gap between the two
+    attempts has one explanation.
+    """
+    criteria = as_validated(make_criteria("Criterion A"))
+    executor = _RejectedThenEvaluatingExecutor(criteria)
+    loop = _make_loop(
+        executor=executor,
+        retry_initial_interval=NEGLIGIBLE_BACKOFF_SECONDS,
+        delay_floor_for=floor_under_a_rate_limit,
+    )
+
+    events = [
+        event async for event in loop.run(**_run_kwargs(acceptance_criteria=criteria))
+    ]
+
+    assert executor.evaluation_attempts == 2, "the rejection was retried"
+    first_attempt, second_attempt = executor.evaluation_attempt_times
+    assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iterations) == 1, "the retried attempt finished the iteration"

@@ -50,6 +50,9 @@ async def boot_prompts(
             prompt_set=config.prompt_set,
             declared_engines=list(declared_engines),
             model=config.model,
+            # The default engine is what mismatched, so no override did:
+            # ``None`` is which of the two settings this note is about.
+            session_models=None,
         )
     undeclared_overrides = {
         key: model
@@ -63,6 +66,7 @@ async def boot_prompts(
             "prompt_set_engine_mismatch",
             prompt_set=config.prompt_set,
             declared_engines=list(declared_engines),
+            model=None,
             session_models=undeclared_overrides,
         )
     return prompts
