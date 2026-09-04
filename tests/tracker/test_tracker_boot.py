@@ -37,6 +37,7 @@ from kodezart.services.tracker_boot import (
     reconcile_tracker_mappings,
     validate_tracker_mappings,
 )
+from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import (
     CHECKPOINT_DOCUMENT_KEY,
     FIELD_OWNERSHIP,
@@ -627,6 +628,7 @@ class TestQueueVocabularyPerDeclaredTeam:
             team_identifiers=dict(self.TWO_TEAMS),
             max_retries=0,
             retry_backoff_factor=1.0,
+            ledger=SelfWriteLedger(),
         )
 
     def test_each_declared_team_gets_the_whole_vocabulary(self) -> None:
@@ -751,6 +753,7 @@ class TestWorkflowStatesResolvePerTeam:
             team_identifiers=dict(self.DECLARED_TEAMS),
             max_retries=0,
             retry_backoff_factor=1.0,
+            ledger=SelfWriteLedger(),
         )
 
     def _config(self) -> OperationConfig:
@@ -861,6 +864,12 @@ FOREIGN_TOKEN = "fixture-tracker-token"
 #: never minted and which a prefix test alone would wave through.
 TRUNCATED_KEY = "lin_api_" + "0" * 20
 
+#: A key LONGER than the one measured: what a vendor that lengthens its own
+#: format mints next.  It carries the prefix, so it carries the whole
+#: lifetime distinction the refusal exists for, and refusing it would brick
+#: every boot on a credential the server accepts (KOD-171).
+LENGTHENED_KEY = "lin_api_" + "0" * 64
+
 
 class TestTheCredentialShapeBootRefuses:
     """Only the shape that outlives a run boots; every other one is refused.
@@ -878,6 +887,26 @@ class TestTheCredentialShapeBootRefuses:
             refuse_foreign_credential(
                 backend=TrackerBackend.LINEAR,
                 token=LONG_LIVED_KEY,
+            )
+            is None
+        )
+
+    def test_a_key_longer_than_the_measured_one_is_still_a_long_lived_key(
+        self,
+    ) -> None:
+        """The length is a floor, because only the prefix carries lifetime.
+
+        An equality here reads the ONE key an operator happened to hold on
+        2026-09-01 as the format itself, so the day the vendor mints a
+        longer one every boot refuses a credential the server accepts, and
+        the refusal names a shape that no longer exists to mint.  What the
+        length is for is the truncated paste below it, and a floor refuses
+        that one just as well.
+        """
+        assert (
+            refuse_foreign_credential(
+                backend=TrackerBackend.LINEAR,
+                token=LENGTHENED_KEY,
             )
             is None
         )

@@ -14,7 +14,7 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.protocols import TrackerPort
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.tracker import IssueQuery, ReviewQuery
 from tests.fakes import (
@@ -206,6 +206,7 @@ def linear_over_fake_mcp(server: FakeLinearMcpServer) -> TrackerPort:
         max_retries=0,
         retry_backoff_factor=1.0,
         clock=lambda: FIXTURE_NOW,
+        ledger=SelfWriteLedger(),
     )
 
 

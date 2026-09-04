@@ -120,20 +120,27 @@ _SCOPE_PROBE_LIMIT = 1
 #: failure nobody made.
 _SCOPE_REFUSAL_MARKER = "auth_insufficient_scope"
 
-#: The vendor's long-lived personal key: prefix and total length.  Measured
-#: 2026-09-01 (KOD-171): the operator's live key is forty-eight characters
-#: beginning ``lin_api_`` and answered ``initialize`` with HTTP 200.  Wire
-#: format, not knobs — a deployment cannot choose what the vendor mints.
+#: The vendor's long-lived personal key: the prefix it is minted with, and
+#: the shortest body one has ever been measured at.  Measured 2026-09-01
+#: (KOD-171): the operator's live key is ``lin_api_`` followed by forty
+#: characters and answered ``initialize`` with HTTP 200.  Wire format, not
+#: knobs — a deployment cannot choose what the vendor mints.
+#:
+#: The length is a FLOOR and never an equality.  What the refusal is for is
+#: the lifetime split, and the prefix carries all of it: an OAuth access
+#: token expires and nothing in this process renews it, a personal key does
+#: not.  The length carries one thing more — that this is not a truncated
+#: paste — and a vendor lengthening its own key must not brick every boot
+#: on a credential that works.
 _PERSONAL_KEY_PREFIX = "lin_api_"
-_PERSONAL_KEY_LENGTH = 48
+_PERSONAL_KEY_MIN_BODY = 40
 
 #: What a refusal quotes back, so an operator reads what to mint rather
 #: than what was wrong with what they had.  Prose, because it is printed in
 #: an error and stated in the setup guide, and derived from the two
 #: constants above so the sentence cannot outlive the rule.
 ACCEPTED_CREDENTIAL_SHAPE: Final[str] = (
-    f"{_PERSONAL_KEY_PREFIX} followed by "
-    f"{_PERSONAL_KEY_LENGTH - len(_PERSONAL_KEY_PREFIX)} characters"
+    f"{_PERSONAL_KEY_PREFIX} followed by at least {_PERSONAL_KEY_MIN_BODY} characters"
 )
 
 _CLAIM_MARKER = re.compile(
@@ -288,7 +295,9 @@ def is_long_lived_credential(token: str) -> bool:
     something else entirely — is refused, so a boot cannot proceed on a
     credential whose lifetime this process cannot see or renew.
     """
-    return token.startswith(_PERSONAL_KEY_PREFIX) and len(token) == _PERSONAL_KEY_LENGTH
+    if not token.startswith(_PERSONAL_KEY_PREFIX):
+        return False
+    return len(token) - len(_PERSONAL_KEY_PREFIX) >= _PERSONAL_KEY_MIN_BODY
 
 
 def _utc_now() -> datetime:
@@ -406,7 +415,7 @@ class LinearMcpTracker:
         max_retries: int,
         retry_backoff_factor: float,
         clock: Callable[[], datetime] = _utc_now,
-        ledger: SelfWriteLedger | None = None,
+        ledger: SelfWriteLedger,
     ) -> None:
         self._caller: McpToolCaller = caller
         self._max_retries: int = max_retries
@@ -425,11 +434,12 @@ class LinearMcpTracker:
         #: on, so the pass gates can tell the operation's own churn from a
         #: principal's edit (KOD-175).  Handed in by the composition that
         #: also hands it to the gates — one process, one record of what it
-        #: wrote — and its own when nobody is reading, which is every
-        #: deployment that schedules no gated pass.
-        self._self_writes: SelfWriteLedger = (
-            SelfWriteLedger() if ledger is None else ledger
-        )
+        #: wrote.  Required: a tracker holding a ledger nobody else can
+        #: read is a tracker whose stamps reach no gate, and the pass that
+        #: waits on one would sleep through every edit it made itself
+        #: (KOD-175).  The caller that reads it is the caller that hands
+        #: it in.
+        self._self_writes: SelfWriteLedger = ledger
         self._log: BoundLogger = get_logger(__name__)
 
         known = {member.value for member in QueueState}
@@ -607,8 +617,28 @@ class LinearMcpTracker:
         with a comment.  The read is the only place that stamp exists, and
         without it the operation's own markers read as a principal's edit
         on the next tick.
+
+        The read is BOOKKEEPING about a write that has already landed, so
+        its failure is not the write's failure and is contained here
+        (KOD-172).  A caller told that ``post_comment`` failed does what a
+        caller does with a failed write — it writes again — and the second
+        marker is a duplicate of one the log already carries, from a call
+        whose comment the caller never saw.  What a missing entry costs is
+        stated where the ledger is defined: one extra wake-up on this
+        operation's own churn, which is the direction the gate is allowed
+        to be wrong in.
         """
-        self._wrote(self._to_issue(await self._read_issue_wire(issue_key)))
+        try:
+            issue = self._to_issue(await self._read_issue_wire(issue_key))
+        except Exception as exc:
+            await self._log.awarning(
+                "self_write_unrecorded",
+                issue_key=issue_key,
+                error=str(exc),
+                error_kind=type(exc).__name__,
+            )
+            return
+        self._wrote(issue)
 
     async def create_issue(
         self,

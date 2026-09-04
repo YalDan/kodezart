@@ -92,6 +92,15 @@ from kodezart.types.domain.run_records import (
 #: own outcome already travels — because a fire's end is the same kind of
 #: fact, and a second shape for it would be a second vocabulary to keep in
 #: parity with the first.
+#:
+#: A report CONTAINS ITS OWN FAILURES and never raises.  It is called
+#: after the put-back, the claim release and everything else the watch
+#: owes the run, so a hop that raised would unwind a watch whose work is
+#: done and lose the record that says the run is over — and the news it
+#: carries is an optimisation over the next tick, never the run's history
+#: (KOD-276).  The containment belongs to the implementation because only
+#: the implementation knows what failed: the composed report fans out
+#: over every dispatcher on the lane and names the one that refused.
 type FireReport = Callable[[str, RunOutcome, str | None], Awaitable[None]]
 
 
@@ -407,27 +416,19 @@ class LifecycleWatcher:
         # nothing, and what it does with the news is decide whether the
         # next tick may select this issue again (KOD-174).
         #
-        # Contained exactly as the run record below is, and for the same
-        # reason: the put-back and the claim release have already
-        # happened, so a report hop that raises would unwind a watch whose
-        # work is done, lose the record that says the run is over, and
-        # report a finished run as a broken one.  The dispatcher's memory
-        # is an optimisation over the next tick; the record and the
-        # put-back are the run's own history (KOD-276).
-        try:
-            await self._report(
-                issue_key,
-                outcome,
-                None if failure is None else failure.error_kind,
-            )
-        except Exception as exc:
-            await self._log.aerror(
-                "fire_report_failed",
-                issue_key=issue_key,
-                outcome=outcome.value,
-                error_type=type(exc).__name__,
-                error=str(exc),
-            )
+        # Uncontained here, because the report contains itself: the hop
+        # fans out over N dispatchers and only the fan-out knows WHICH of
+        # them refused, so a second containment on this side could name
+        # the failure only as "the report", and did — two mechanisms
+        # emitting one event name with two field sets, the outer one dead
+        # in every composed system because the inner one never re-raises.
+        # The contract is stated on ``FireReport`` and kept by the only
+        # thing that can keep it (KOD-276).
+        await self._report(
+            issue_key,
+            outcome,
+            None if failure is None else failure.error_kind,
+        )
         started_at = await self._run_started_at(job_id)
         if started_at is None:
             # The same absence the sweep names, met at the other end: a run

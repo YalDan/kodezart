@@ -26,7 +26,7 @@ from kodezart.core.errors import (
 )
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     ClaimStatus,
@@ -101,6 +101,7 @@ def tracker_over(server: FakeLinearMcpServer, **overrides: object) -> LinearMcpT
         "max_retries": 0,
         "retry_backoff_factor": 0.0,
         "clock": lambda: FIXTURE_NOW,
+        "ledger": SelfWriteLedger(),
     }
     kwargs.update(overrides)
     return LinearMcpTracker(**kwargs)  # type: ignore[arg-type]

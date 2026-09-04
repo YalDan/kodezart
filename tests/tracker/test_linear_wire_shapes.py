@@ -37,6 +37,7 @@ from pydantic import ValidationError
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
+from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
@@ -364,6 +365,7 @@ def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
         team_identifiers={"board": TEAM_NAME},
         max_retries=0,
         retry_backoff_factor=0.0,
+        ledger=SelfWriteLedger(),
     )
 
 

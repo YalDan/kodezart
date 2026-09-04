@@ -9,10 +9,14 @@ comment write comes back as a comment while moving the issue underneath
 it — which is the shape every claim, marker and base spec takes.
 """
 
+import inspect
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Final
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.errors import McpSessionClosedError
+from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -112,3 +116,78 @@ async def test_an_issue_this_adapter_never_wrote_to_is_not_in_the_ledger() -> No
     stored = await tracker.read_issue(issue_key=ISSUE)
 
     assert not ledger.wrote(issue_key=ISSUE, updated_at=stored.updated_at)
+
+
+def test_the_adapter_cannot_be_built_without_the_ledger_that_will_be_read() -> None:
+    """A defaulted ledger is a gate that never wakes (KOD-175).
+
+    The adapter used to make its own when none was handed in.  Nothing
+    failed and nothing warned: the writes were recorded faithfully into a
+    record no gate held a reference to, so every gated pass compared a
+    principal's edit against an empty ledger and slept through the
+    movement it had made itself.  A ledger nobody can read is not a
+    weaker ledger, it is the absence of one, and the constructor says so.
+    """
+    ledger = inspect.signature(LinearMcpTracker.__init__).parameters["ledger"]
+
+    assert ledger.default is inspect.Parameter.empty
+    assert ledger.kind is inspect.Parameter.KEYWORD_ONLY
+
+
+class _ReadBackGone:
+    """A caller that serves every write and refuses every issue read.
+
+    The shape a session takes when the server goes away between the write
+    and the bookkeeping read that follows it — the write landed, and
+    nothing that happens afterwards can un-land it.
+    """
+
+    def __init__(self, server: FakeLinearMcpServer) -> None:
+        self.server = server
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        if name == "get_issue":
+            msg = "the session went away after the write"
+            raise McpSessionClosedError(msg, server_name="linear", tool_name=name)
+        return await self.server.call_tool(name=name, arguments=arguments)
+
+
+async def test_a_read_back_that_fails_does_not_fail_the_write_it_recorded() -> None:
+    """The ledger entry is bookkeeping; the write already landed (KOD-172).
+
+    Every comment-shaped write reads the issue back to learn the stamp it
+    left.  That read used to be inside the write: a session that died in
+    between raised out of ``post_comment``, and a caller told its write
+    failed writes again — a second marker on a log that already carries
+    the first, from a call whose comment the caller never saw.
+
+    What the failure costs instead is one ledger entry, which is one extra
+    wake-up on this operation's own churn.
+    """
+    server = _server()
+    ledger = SelfWriteLedger()
+    tracker = LinearMcpTracker(
+        caller=_ReadBackGone(server),
+        queue_state_labels={
+            QueueState.APPROVED.value: APPROVED_LABEL,
+            QueueState.PROPOSED.value: PROPOSED_LABEL,
+        },
+        workflow_state_names={LifecycleStage.DONE: DONE_STATE},
+        team_identifiers={TEAM_KEY: TEAM},
+        max_retries=0,
+        retry_backoff_factor=1.0,
+        ledger=ledger,
+    )
+
+    comment = await tracker.post_comment(issue_key=ISSUE, body="a marker")
+
+    assert comment.body == "a marker"
+    assert len(server.comments) == 1
+    assert ledger.wrote(
+        issue_key=ISSUE, updated_at=server.issues[ISSUE].updated_at
+    ) is (False)
