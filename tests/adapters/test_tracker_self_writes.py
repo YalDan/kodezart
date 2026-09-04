@@ -10,16 +10,19 @@ it — which is the shape every claim, marker and base spec takes.
 """
 
 import inspect
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Final
+
+import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.errors import McpSessionClosedError
 from kodezart.core.protocols import McpToolResult
-from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.tracker import ClaimStatus
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
 
 ISSUE: Final[str] = "FIX-1"
@@ -191,3 +194,109 @@ async def test_a_read_back_that_fails_does_not_fail_the_write_it_recorded() -> N
     assert ledger.wrote(
         issue_key=ISSUE, updated_at=server.issues[ISSUE].updated_at
     ) is (False)
+
+
+# ---------------------------------------------------------------------------
+# KOD-197: every comment-shaped write path, over the SHIPPED adapter
+# ---------------------------------------------------------------------------
+
+
+#: One holder for the writes below, and a second for the claim the first
+#: one loses.  Both are pass identities of the shape the dispatcher mints.
+HOLDER: Final[str] = "dispatch-pass-a"
+RIVAL: Final[str] = "dispatch-pass-b"
+LEASE_SECONDS: Final[float] = 60.0
+
+Write = Callable[[LinearMcpTracker], Awaitable[None]]
+
+
+async def _claim_granted(tracker: LinearMcpTracker) -> None:
+    result = await tracker.claim_issue(
+        issue_key=ISSUE,
+        holder=HOLDER,
+        lease_seconds=LEASE_SECONDS,
+    )
+    assert result.status is ClaimStatus.GRANTED
+
+
+async def _claim_lost(tracker: LinearMcpTracker) -> None:
+    """The loser writes twice — it appends a marker and deletes it again.
+
+    Both moves land on the issue, so the loser's OWN last write is what the
+    ledger has to hold: a loser that recorded the winner's stamp, or
+    nothing at all, wakes the next tick on its own withdrawn marker.
+    """
+    await _claim_granted(tracker)
+    lost = await tracker.claim_issue(
+        issue_key=ISSUE,
+        holder=RIVAL,
+        lease_seconds=LEASE_SECONDS,
+    )
+    assert lost.status is ClaimStatus.LOST
+
+
+async def _renewal(tracker: LinearMcpTracker) -> None:
+    await _claim_granted(tracker)
+    renewed = await tracker.renew_claim(
+        issue_key=ISSUE,
+        holder=HOLDER,
+        lease_seconds=LEASE_SECONDS,
+    )
+    assert renewed is not None
+
+
+async def _release(tracker: LinearMcpTracker) -> None:
+    await _claim_granted(tracker)
+    await tracker.release_claim(issue_key=ISSUE, holder=HOLDER)
+
+
+async def _plain_comment(tracker: LinearMcpTracker) -> None:
+    await tracker.post_comment(issue_key=ISSUE, body="a note this operation left")
+
+
+async def _work_ref(tracker: LinearMcpTracker) -> None:
+    await tracker.record_work_ref(
+        ref=WorkRef(
+            issue_id=ISSUE,
+            role=WorkRefRole.DELIVERABLE,
+            branch="kodezart/fixture-deliverable",
+            pushed_head_sha="0" * 40,
+            recorded_at=STAMP,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        _claim_granted,
+        _claim_lost,
+        _renewal,
+        _release,
+        _plain_comment,
+        _work_ref,
+    ],
+    ids=["claim-granted", "claim-lost", "renew", "release", "comment", "work-ref"],
+)
+async def test_every_comment_shaped_write_records_the_stamp_it_left(
+    write: Write,
+) -> None:
+    """The paths the measured incident actually rode (KOD-175).
+
+    30 of 31 dispatch ticks on the measured boot found a delta of the
+    service's own making, and what made it was these writes: a claim, its
+    renewal, its release, the marker a lost claim withdraws, a recorded
+    work ref.  Proven here over the SHIPPED adapter against the fake MCP
+    server, because ``FakeTrackerPort`` records into its ledger
+    unconditionally — a double that cannot fail to record proves nothing
+    about the adapter that can.
+    """
+    ledger = SelfWriteLedger()
+    server = _server()
+    tracker = _tracker(server, ledger)
+
+    await write(tracker)
+
+    stored = await tracker.read_issue(issue_key=ISSUE)
+    assert stored.updated_at > STAMP, "the write moved the issue"
+    assert ledger.wrote(issue_key=ISSUE, updated_at=stored.updated_at)

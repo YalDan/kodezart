@@ -29,7 +29,11 @@ from kodezart.core.errors import (
 )
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import bindings_for
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import (
+    ManagedMcpToolCaller,
+    McpToolResult,
+    TrackerPort,
+)
 from kodezart.services.tracker_boot import (
     OWNED_REF_BUILDERS,
     configured_mappings,
@@ -1015,6 +1019,42 @@ def _caller_over(endpoint: _Endpoint, *, token: str) -> HttpMcpToolCaller:
     )
 
 
+class _CountingCaller:
+    """The caller boot is handed, counting the lifetime calls it receives.
+
+    The case's whole claim is an ORDER — the credential is presented
+    before a session exists — and the class of the error that comes out
+    cannot carry that claim: the HTTP caller latches a 401 met while
+    opening into the same ``McpCredentialRefusedError``, so boot with no
+    probe at all raises what boot with a probe raises.  What separates
+    them is whether ``open`` was ever reached.
+    """
+
+    def __init__(self, inner: HttpMcpToolCaller) -> None:
+        self._inner = inner
+        self.probes = 0
+        self.opens = 0
+
+    async def probe(self) -> None:
+        self.probes += 1
+        await self._inner.probe()
+
+    async def open(self) -> None:
+        self.opens += 1
+        await self._inner.open()
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        return await self._inner.call_tool(name=name, arguments=arguments)
+
+
 class TestBootPresentsTheCredentialBeforeTheSessionOpens:
     """A 401 at boot is the credential's refusal, named as such.
 
@@ -1030,13 +1070,19 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
     ) -> None:
         """Delete the probe call from boot and this case goes red.
 
-        Without it boot reaches ``open``, whose 401 leaves as the transport
-        failure — so the class asserted here is exactly what the probe buys.
+        On the ORDER, which is the only thing that separates the two
+        boots: the HTTP caller latches a 401 met while opening into the
+        same typed refusal the probe raises, so the error class alone
+        cannot tell whether a session was opened around it — measured
+        2026-09-04, this case passed with the probe call deleted. What the
+        probe buys is that ``open`` is never reached, and that is what is
+        asserted.
         """
         endpoint = _Endpoint(HTTPStatus.UNAUTHORIZED)
+        caller = _CountingCaller(_caller_over(endpoint, token=LONG_LIVED_KEY))
 
-        def factory(*, config: AppConfig, token: str) -> HttpMcpToolCaller:
-            return _caller_over(endpoint, token=token)
+        def factory(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+            return caller
 
         monkeypatch.setattr(
             "kodezart.composition.tracker.make_mcp_tool_caller",
@@ -1055,6 +1101,9 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
             )
 
         assert caught.value.server_name == "fixture-server"
+        assert (caller.probes, caller.opens) == (1, 0), (
+            "the credential was presented once, and no session was opened"
+        )
         assert len(endpoint.requests) == 1
         assert endpoint.requests[0].headers["Authorization"] == (
             f"Bearer {LONG_LIVED_KEY}"

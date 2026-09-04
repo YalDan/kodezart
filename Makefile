@@ -18,11 +18,15 @@ lint:
 lint-fix:
 	uv run ruff check --fix src/ tests/
 
-# tests/ is deliberately outside the type gate — measured 2026-08-31:
-# 149 strict-mode errors in 23 files, structural (invariance classes),
-# a workstream and not gate hygiene. The tests tree is exercised by
-# execution on every gate run; this line is the recorded decision
-# KOD-140 requires for anything the gate excludes.
+# tests/ is deliberately outside the type gate — the errors there are
+# structural (invariance classes), a workstream and not gate hygiene. The
+# tests tree is exercised by execution on every gate run; this is the
+# recorded decision KOD-140 requires for anything the gate excludes.
+# Ruled 2026-08-31, re-stated 2026-09-04. The SIZE of the excluded set is
+# deliberately not written here: a transcribed count is a number that goes
+# stale on the next commit and reads as a measurement long after it stops
+# being one (it said 149 in 23 files while the truth was near triple that).
+# `uv run mypy src tests` names the current set whenever anybody wants it.
 type-check:
 	uv run mypy src/
 
