@@ -2,8 +2,10 @@
 
 import asyncio
 import re
+import shutil
+import time
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
+from kodezart.core.error_egress import build_error_event
+from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.errors import StaleBaseError
@@ -22,7 +26,9 @@ from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
     AssistantTextEvent,
+    RateLimitWarningEvent,
     ResultEvent,
+    TicketDraftOutput,
     WorkflowArtifactsEvent,
     WorkflowCIEvent,
     WorkflowCompleteEvent,
@@ -100,6 +106,8 @@ def _make_engine(
     artifact_persister: FakeArtifactPersister | None = None,
     prompts: RecordingPromptProvider | None = None,
     git: FakeGitService | None = None,
+    retry_initial_interval: float = 1.0,
+    retry_max_attempts: int = 3,
 ) -> RalphWorkflowEngine:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -138,6 +146,8 @@ def _make_engine(
         remediator=remediator,
         remediation_max_rounds=remediation_max_rounds,
         artifact_persister=artifact_persister,
+        retry_initial_interval=retry_initial_interval,
+        retry_max_attempts=retry_max_attempts,
     )
 
 
@@ -1937,8 +1947,14 @@ async def test_route_after_ci_budget_remaining_routes_fix() -> None:
 # -- Artifact persistence tests -----------------------------------------------
 
 
-async def test_workflow_persists_artifacts_after_criteria() -> None:
-    """When artifact_persister is configured, persist_artifacts node runs."""
+async def test_workflow_persists_the_ticket_first_then_both_artifacts() -> None:
+    """A configured persister is reached twice, in that order, on the ralph branch.
+
+    The ticket write happens before criteria generation and carries the
+    ticket alone — the criteria do not exist yet.  The combined write
+    keeps both, because a remediation round replaces the working ticket
+    and this is the write that reaches the branch afterwards.
+    """
     persister = FakeArtifactPersister()
     engine = _make_engine(artifact_persister=persister)
 
@@ -1955,10 +1971,14 @@ async def test_workflow_persists_artifacts_after_criteria() -> None:
         )
     ]
 
-    assert len(persister.persist_calls) == 1
-    _, _, branch, _ = persister.persist_calls[0]
-    assert branch.startswith("kodezart/")
-    assert "-ralph-" in branch
+    assert len(persister.persist_calls) == 2
+    assert [sorted(written) for written in persister.artifacts] == [
+        ["ticket.json"],
+        ["criteria.json", "ticket.json"],
+    ]
+    for _, _, branch, _ in persister.persist_calls:
+        assert branch.startswith("kodezart/")
+        assert "-ralph-" in branch
 
     artifact_events = [e for e in events if isinstance(e, WorkflowArtifactsEvent)]
     assert len(artifact_events) == 1
@@ -2024,8 +2044,10 @@ async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
 ) -> None:
     """The persist call creates the ralph branch, so its base is load-bearing.
 
-    ``_persist_artifacts_node`` runs BEFORE the loop, and when a persister
-    is configured it is what first brings the ralph branch into existence.
+    The persist nodes run BEFORE the loop, and when a persister is
+    configured the first of them is what brings the ralph branch into
+    existence.  Asserted of EVERY persist call: a literal pinned at
+    either site is the same defect.
     Cut that branch from trunk for a lane whose recorded base is another
     lane's branch and everything inherited is simply not there — the
     failure the stacked fixtures exist to catch, on a path neither reaches
@@ -2062,9 +2084,279 @@ async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
         )
     ]
 
-    assert len(persister.persist_calls) == 1
-    *_, base_branch = persister.persist_calls[0]
-    assert base_branch == spec.base_ref
+    assert len(persister.persist_calls) == 2
+    assert [call[-1] for call in persister.persist_calls] == [spec.base_ref] * 2
+
+
+# ---------------------------------------------------------------------------
+# KOD-43 — the ticket survives a death at criteria generation, and a
+# rate-limit rejection is not a death
+# ---------------------------------------------------------------------------
+
+
+class _DiskArtifactPersister:
+    """Writes artifacts to a directory that outlives the run that wrote them.
+
+    The claim under test is durability and retrieval, so the double
+    cannot be a list in the dead process's memory: a fresh reader holding
+    only the branch name has to find the ticket after the run has raised.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        self.branches: list[str] = []
+
+    def ticket_at(self, branch: str) -> str:
+        return (self._root / branch / "ticket.json").read_text()
+
+    async def persist(
+        self,
+        *,
+        repo_path: str | None,
+        repo_url: str | None,
+        branch: str,
+        base_branch: str,
+        artifacts: Mapping[str, str],
+        cache_key: str | None = None,
+    ) -> ArtifactPersistStatus:
+        target = self._root / branch
+        target.mkdir(parents=True, exist_ok=True)
+        for name, content in artifacts.items():
+            (target / name).write_text(content)
+        self.branches.append(branch)
+        return ArtifactPersistStatus.PERSISTED
+
+    async def clean(
+        self,
+        *,
+        repo_path: str | None,
+        repo_url: str | None,
+        branch: str,
+        cache_key: str | None = None,
+    ) -> None:
+        shutil.rmtree(self._root / branch, ignore_errors=True)
+
+
+def _is_criteria_schema(output_format: dict[str, object] | None) -> bool:
+    if output_format is None:
+        return False
+    schema = output_format.get("schema")
+    if not isinstance(schema, dict):
+        return False
+    props = schema.get("properties", {})
+    return (
+        isinstance(props, dict)
+        and "criteria" in props
+        and "criteriaResults" not in props
+    )
+
+
+class _ScriptedCriteriaExecutor:
+    """The standard fake, except that criteria calls follow a script.
+
+    ``raise`` — a hard provider failure; ``rejected`` — a rate-limit
+    rejection with no structured output; ``empty`` — a deterministic
+    empty output with no rejection; ``ok`` — the real criteria.
+    """
+
+    def __init__(self, script: list[str]) -> None:
+        self._inner = FakeAgentExecutor(events=[])
+        self._script = list(script)
+        self.criteria_attempts = 0
+
+    @property
+    def calls(self) -> list[dict[str, object]]:
+        return self._inner.calls
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if not _is_criteria_schema(output_format):
+            async for event in self._inner.stream(
+                prompt=prompt,
+                cwd=cwd,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                skills=skills,
+                session_id=session_id,
+                output_format=output_format,
+            ):
+                yield event
+            return
+
+        step = self._script[min(self.criteria_attempts, len(self._script) - 1)]
+        self.criteria_attempts += 1
+        if step == "raise":
+            msg = "provider is down"
+            raise RuntimeError(msg)
+        if step == "ok":
+            async for event in self._inner.stream(
+                prompt=prompt,
+                cwd=cwd,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                skills=skills,
+                session_id=session_id,
+                output_format=output_format,
+            ):
+                yield event
+            return
+        if step == "rejected":
+            yield RateLimitWarningEvent(status="rejected", utilization=1.0)
+        yield ResultEvent(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="fake",
+            result="Claude AI usage limit reached",
+        )
+
+
+async def test_a_run_killed_at_criteria_leaves_the_ticket_retrievable(
+    tmp_path: Path,
+) -> None:
+    """KOD-43/AC-1: the finished ticket is durable before criteria are asked for.
+
+    The drafter's output — draft plus review rounds — used to live only
+    in graph state until a node downstream of the failing one wrote it,
+    so a transient failure here discarded it and a re-run redrafted from
+    scratch.
+    """
+    persister = _DiskArtifactPersister(tmp_path)
+    executor = _ScriptedCriteriaExecutor(script=["raise"])
+    engine = _make_engine(executor=executor, artifact_persister=persister)
+
+    events: list[AgentEvent] = []
+    with pytest.raises(RuntimeError, match="provider is down"):
+        async for event in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        ):
+            events.append(event)
+
+    # The run died where the issue says it dies: after a finished ticket,
+    # before any criteria exist.
+    ticket_events = [e for e in events if isinstance(e, WorkflowTicketEvent)]
+    assert len(ticket_events) == 1
+    assert [e for e in events if isinstance(e, WorkflowCriteriaEvent)] == []
+
+    # A fresh reader, holding only the branch name, gets the finished
+    # ticket back — not a fragment, and not the prompt it came from.
+    assert len(persister.branches) == 1
+    retrieved = TicketDraftOutput.model_validate_json(
+        persister.ticket_at(persister.branches[0]),
+    )
+    assert retrieved == ticket_events[0].ticket
+
+
+async def test_a_rate_limit_rejection_retries_the_node_instead_of_ending_the_run(
+    tmp_path: Path,
+) -> None:
+    """KOD-43/AC-2: the rejection waits and resumes; the run completes."""
+    persister = _DiskArtifactPersister(tmp_path)
+    executor = _ScriptedCriteriaExecutor(script=["rejected", "ok"])
+    engine = _make_engine(
+        executor=executor,
+        artifact_persister=persister,
+        retry_initial_interval=0.05,
+    )
+
+    started = time.perf_counter()
+    events = [
+        e
+        async for e in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+    elapsed = time.perf_counter() - started
+
+    assert executor.criteria_attempts == 2
+    assert elapsed >= 0.05
+    assert len([e for e in events if isinstance(e, WorkflowCriteriaEvent)]) == 1
+    assert len([e for e in events if isinstance(e, WorkflowCompleteEvent)]) == 1
+
+
+async def test_a_deterministic_empty_output_still_ends_the_run_on_one_attempt(
+    tmp_path: Path,
+) -> None:
+    """KOD-43/AC-3: the case the retry exclusion was written for is unchanged."""
+    persister = _DiskArtifactPersister(tmp_path)
+    executor = _ScriptedCriteriaExecutor(script=["empty"])
+    engine = _make_engine(
+        executor=executor,
+        artifact_persister=persister,
+        retry_initial_interval=0.05,
+    )
+
+    with pytest.raises(NoStructuredOutputError) as excinfo:
+        async for _ in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        ):
+            pass
+
+    assert executor.criteria_attempts == 1
+    assert excinfo.value.raise_site == "acceptance_criteria"
+    assert excinfo.value.rate_limit_rejected is False
+    assert not isinstance(excinfo.value, RateLimitedSoftFailureError)
+
+
+async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
+    tmp_path: Path,
+) -> None:
+    """KOD-43/AC-4: retries do run out, and the terminal frame still says why."""
+    persister = _DiskArtifactPersister(tmp_path)
+    executor = _ScriptedCriteriaExecutor(script=["rejected"])
+    engine = _make_engine(
+        executor=executor,
+        artifact_persister=persister,
+        retry_initial_interval=0.01,
+        retry_max_attempts=2,
+    )
+
+    with pytest.raises(RateLimitedSoftFailureError) as excinfo:
+        async for _ in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        ):
+            pass
+
+    assert executor.criteria_attempts == 2
+    wire = build_error_event(excinfo.value)
+    assert wire.raise_site == "acceptance_criteria"
+    assert wire.rate_limit_rejected is True
+    assert wire.result_tail == "Claude AI usage limit reached"
 
 
 async def test_workflow_cleans_artifacts_before_pr() -> None:
