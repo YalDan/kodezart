@@ -19,17 +19,24 @@ code that spawns them.
 import asyncio
 import sys
 from dataclasses import dataclass
+from http import HTTPStatus
 from pathlib import Path
 from typing import Final, Self
 
+import anyio
 import pytest
 import structlog.testing
 from mcp.shared.exceptions import McpError
-from mcp.types import INVALID_PARAMS
+from mcp.types import CONNECTION_CLOSED, INVALID_PARAMS, ErrorData
 
-from kodezart.adapters.stdio_mcp_tool_caller import StdioMcpToolCaller
-from kodezart.core.errors import McpSessionClosedError, McpTransportError
+from kodezart.adapters.stdio_mcp_tool_caller import StdioMcpToolCaller, _became_of
+from kodezart.core.errors import (
+    McpCallUnansweredError,
+    McpSessionClosedError,
+    McpTransportError,
+)
 from kodezart.types.domain.credentials import REDACTION_SENTINEL
+from kodezart.types.domain.transport import CallFailed, CallUnanswered, SessionGone
 from tests.fakes import write_stdio_fake_server
 
 SERVER_NAME: Final[str] = "fixture-knowledge"
@@ -93,6 +100,7 @@ def _caller(
     tool_error: str = "",
     rpc_error_spawns: str = "",
     death: _Death | None = None,
+    die_before_answering: Path | None = None,
 ) -> tuple[StdioMcpToolCaller, Path]:
     """A caller over the fake server, and the file counting its spawns."""
     script = write_stdio_fake_server(tmp_path)
@@ -110,6 +118,9 @@ def _caller(
             "FAKE_MCP_RPC_ERROR_SPAWNS": rpc_error_spawns,
             "FAKE_MCP_EXIT_TRIGGER": "" if death is None else str(death.trigger),
             "FAKE_MCP_EXIT_MARKER": "" if death is None else str(death.marker),
+            "FAKE_MCP_DIE_BEFORE_ANSWERING": (
+                "" if die_before_answering is None else str(die_before_answering)
+            ),
         },
         server_name=SERVER_NAME,
         call_timeout_seconds=CALL_TIMEOUT_SECONDS,
@@ -130,29 +141,34 @@ def _named(logs: list[dict[str, object]], event: str) -> list[dict[str, object]]
     return [record for record in logs if record["event"] == event]
 
 
-async def test_a_closed_session_is_reopened_once_and_the_call_succeeds(
+async def test_a_call_the_server_exits_on_is_unanswered_and_the_next_reopens(
     tmp_path: Path,
 ) -> None:
-    """The measured failure, repaired: the second call meets a dead pipe.
+    """The measured failure, repaired — and the call it lands on is not replayed.
 
-    The server serves exactly one call and exits, so the second call is
-    made on a session whose process is gone — the 18:22 condition. The
-    caller reopens once, the call goes through on the new session, and the
-    reopen is named in the log rather than being a silent second spawn.
+    The server serves exactly one call and exits on reading the second,
+    so the second's request was WRITTEN and no answer came.  From here
+    that is indistinguishable from a server that ran it and died before
+    acknowledging, so the call is not made again (KOD-305): it leaves as
+    the unanswered class, the session it died with is over, and the NEXT
+    call reopens once and rides the fresh process (KOD-187).
     """
     with structlog.testing.capture_logs() as logs:
         caller, spawn_log = _caller(tmp_path, calls=1)
         await caller.open()
         try:
             first = await caller.call_tool(name=TOOL, arguments={})
-            second = await caller.call_tool(name=TOOL, arguments={})
+            with pytest.raises(McpCallUnansweredError):
+                await caller.call_tool(name=TOOL, arguments={})
+            assert _spawns(spawn_log) == 1, "an unanswered call is not replayed"
+            third = await caller.call_tool(name=TOOL, arguments={})
         finally:
             await caller.close()
 
     assert first == {"served": 1}
     # The fresh process starts its own count: the reopen is a new server,
     # not the old one resurrected.
-    assert second == {"served": 1}
+    assert third == {"served": 1}
     assert _spawns(spawn_log) == 2
     (reopened,) = _named(logs, "mcp_session_reopened")
     assert reopened["server_name"] == SERVER_NAME
@@ -282,13 +298,16 @@ async def test_a_reopened_server_that_answers_with_a_protocol_error_is_there(
 ) -> None:
     """The same discriminator on the reopened session's own call.
 
-    The server dies under the first call and the fresh process answers
-    with a JSON-RPC error: the reopen is paid for once, and the answer
-    leaves as the plain transport error, never as a second death.
+    The server dies under the first call, which leaves unanswered; the
+    next call pays for one reopen, and the fresh process answers it with
+    a JSON-RPC error — which leaves as the plain transport error, never
+    as a second death.
     """
     caller, spawn_log = _caller(tmp_path, calls=0, rpc_error_spawns="2")
     await caller.open()
     try:
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name=TOOL, arguments={})
         with pytest.raises(McpTransportError) as caught:
             await caller.call_tool(name=TOOL, arguments={})
     finally:
@@ -303,16 +322,17 @@ async def test_a_reopened_server_that_answers_with_a_protocol_error_is_there(
 async def test_a_reopened_session_that_dies_again_is_a_death_and_not_a_loop(
     tmp_path: Path,
 ) -> None:
-    """The paired negative: the fresh process dies under the retried call.
+    """The paired negative: the fresh process dies under the next call too.
 
-    That is the closed-session class again — and it is raised, not
-    answered with a third spawn: one reopen per call, whatever the second
-    process does.
+    Unanswered again, on a reopened session — and raised, not answered
+    with a third spawn: one reopen per call, whatever the process does.
     """
     caller, spawn_log = _caller(tmp_path, calls=0)
     await caller.open()
     try:
-        with pytest.raises(McpSessionClosedError) as caught:
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name=TOOL, arguments={})
+        with pytest.raises(McpCallUnansweredError) as caught:
             await caller.call_tool(name=TOOL, arguments={})
     finally:
         await caller.close()
@@ -369,30 +389,110 @@ async def test_an_unreachable_server_refuses_every_call_and_reopens_once_per_cal
     """The paired negative: nothing is silent, and nothing is a loop.
 
     The server serves the handshake, dies on the first call, and refuses
-    every spawn after its first — a genuinely unreachable server. Each
-    call raises the typed transport failure, and each pays for exactly ONE
-    reopen: a caller that retried inside a call would spend a subprocess
-    per attempt to learn what the first one already said, and a caller
-    that stopped trying between calls would still be down when the server
-    came back (KOD-287).
+    every spawn after its first — a genuinely unreachable server.  The
+    first call leaves unanswered; each call after it pays for exactly ONE
+    reopen and is told the reopen failed.  A caller that retried inside a
+    call would spend a subprocess per attempt to learn what the first one
+    already said, and a caller that stopped trying between calls would
+    still be down when the server came back (KOD-287).
     """
     caller, spawn_log = _caller(tmp_path, calls=0, refuse_after="1")
     await caller.open()
     try:
-        with pytest.raises(McpSessionClosedError) as first:
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name=TOOL, arguments={})
+        assert _spawns(spawn_log) == 1
+
+        with pytest.raises(McpSessionClosedError) as second:
             await caller.call_tool(name=TOOL, arguments={})
         assert _spawns(spawn_log) == 2
 
-        with pytest.raises(McpSessionClosedError) as second:
+        with pytest.raises(McpSessionClosedError) as third:
             await caller.call_tool(name=TOOL, arguments={})
     finally:
         await caller.close()
 
-    assert first.value.server_name == SERVER_NAME
-    assert "reopened" in str(first.value)
+    assert second.value.server_name == SERVER_NAME
     assert "reopened" in str(second.value)
+    assert "reopened" in str(third.value)
     # One reopen per call, and no loop inside either.
     assert _spawns(spawn_log) == 3
+
+
+async def test_a_write_the_server_ran_and_never_acknowledged_is_not_run_again(
+    tmp_path: Path,
+) -> None:
+    """The ambiguous death, and the reason the arm was split (KOD-305).
+
+    The server EXECUTES the call and exits before answering.  The client
+    sees a request written and no answer, exactly as it would had the
+    server died before running it.  The old reopen made the call again on
+    the fresh process, which ran it a second time; a record row written
+    twice is what that costs, and nothing downstream can tell the second
+    row from the first.  Now the call leaves as unanswered and is left to
+    the verification that runs next, and the ledger of executions the
+    server kept shows one.
+    """
+    ran = tmp_path / "ran.log"
+    caller, spawn_log = _caller(tmp_path, calls=1, die_before_answering=ran)
+    await caller.open()
+    try:
+        with pytest.raises(McpCallUnansweredError) as caught:
+            await caller.call_tool(name=TOOL, arguments={})
+        assert _spawns(spawn_log) == 1, "the call was not replayed on a fresh process"
+        # The session died with it, so the next call reopens — once.
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name=TOOL, arguments={})
+    finally:
+        await caller.close()
+
+    assert not isinstance(caught.value, McpSessionClosedError)
+    assert ran.read_text(encoding="utf-8").splitlines() == ["1:1", "2:1"], (
+        "each process ran its own call exactly once; nothing was run twice"
+    )
+    assert _spawns(spawn_log) == 2
+
+
+@pytest.mark.parametrize(
+    ("raised", "became"),
+    [
+        (anyio.ClosedResourceError(), SessionGone()),
+        (anyio.BrokenResourceError(), SessionGone()),
+        (
+            McpError(ErrorData(code=CONNECTION_CLOSED, message="Connection closed")),
+            CallUnanswered(session_died=True),
+        ),
+        (
+            McpError(ErrorData(code=HTTPStatus.REQUEST_TIMEOUT, message="Timed out")),
+            CallUnanswered(session_died=False),
+        ),
+        (
+            McpError(ErrorData(code=INVALID_PARAMS, message="no such tool")),
+            CallFailed(),
+        ),
+        (ValueError("an answer that would not parse"), CallFailed()),
+    ],
+    ids=[
+        "stream-closed",
+        "stream-broken",
+        "connection-closed",
+        "read-timeout",
+        "server-composed",
+        "unparseable",
+    ],
+)
+def test_what_became_of_a_call_is_told_by_where_it_was(
+    raised: Exception,
+    became: SessionGone | CallUnanswered | CallFailed,
+) -> None:
+    """The three arms, and what each one decides (KOD-192, KOD-305).
+
+    Gone before the request was written: replay is safe and the session
+    is over.  Written and never answered: no replay, and only the
+    server's own exit takes the session with it — a read timeout leaves
+    it standing.  Answered, or unparseable: the server is there.
+    """
+    assert _became_of(raised) == became
 
 
 async def test_a_session_opened_by_the_boot_is_torn_down_without_touching_it(

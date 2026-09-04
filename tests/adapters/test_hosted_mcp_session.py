@@ -26,6 +26,7 @@ from kodezart.adapters.hosted_mcp_session import (
     _Phase,
 )
 from kodezart.core.errors import McpTransportError
+from kodezart.types.domain.transport import AnyCallFailure, CallFailed
 
 SERVER_NAME: Final[str] = "fixture-host"
 TOOL: Final[str] = "append-block"
@@ -80,6 +81,10 @@ class _SilentServer(HostedSessionTransport):
 
     def address(self) -> str:
         return "fixture://host"
+
+    def classify(self, exc: Exception) -> AnyCallFailure:
+        del exc
+        return CallFailed()
 
     def call_timeout(self) -> timedelta:
         return timedelta(seconds=CALL_BOUND_SECONDS)

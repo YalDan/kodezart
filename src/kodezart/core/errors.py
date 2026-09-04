@@ -354,6 +354,18 @@ class McpSessionClosedError(McpTransportError):
     """
 
 
+class McpCallUnansweredError(McpTransportError):
+    """Raised when the request was WRITTEN and no answer came.
+
+    Whether the server ran it is unknown, and that is the whole of what
+    this class says.  Not the closed-session class, deliberately: a caller
+    that meets that class makes the call again on a fresh session, and a
+    write the server performed before dying would be performed twice
+    (KOD-305).  A record path that meets this one leaves the row to the
+    verification that runs next, which finds it or does not.
+    """
+
+
 class McpCredentialRefusedError(Exception):
     """Raised when an MCP server refuses the CREDENTIAL rather than the call.
 

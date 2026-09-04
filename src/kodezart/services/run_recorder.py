@@ -47,6 +47,7 @@ an operator reading "verified" owes a row to go and look at.
 from collections.abc import Mapping
 
 from kodezart.core.errors import (
+    McpCallUnansweredError,
     McpCredentialRefusedError,
     McpSessionClosedError,
     McpTransportError,
@@ -75,6 +76,8 @@ def _failure_class(
     """
     if isinstance(exc, McpSessionClosedError):
         return RunRecordFailure.SESSION_CLOSED
+    if isinstance(exc, McpCallUnansweredError):
+        return RunRecordFailure.UNANSWERED
     return RunRecordFailure.VENDOR_REFUSED
 
 

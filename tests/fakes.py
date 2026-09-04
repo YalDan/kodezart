@@ -3590,6 +3590,11 @@ class BrokenRecordSink:
 #: * ``FAKE_MCP_REFUSE_SPAWNS`` — the individual spawn numbers that exit
 #:   before serving, so a server can be down for ONE reopen and back for
 #:   the next: the outage a caller must not turn into a boot-long one;
+#: * ``FAKE_MCP_DIE_BEFORE_ANSWERING`` — a file the server appends a line
+#:   to for every tool call it EXECUTES, then exits without answering: the
+#:   ambiguous death, where the request reached the server and the client
+#:   cannot know whether it ran (KOD-305).  Counting the lines is how a
+#:   replayed write is told from one performed once;
 #: * ``FAKE_MCP_EXIT_TRIGGER`` / ``FAKE_MCP_EXIT_MARKER`` — the pair that
 #:   kills the server BETWEEN calls rather than during one, which is the
 #:   measured shape (KOD-286).  Once its budget is spent the server waits
@@ -3683,6 +3688,7 @@ def main() -> int:
         int(number) for number in answering.split(",") if number
     }
     budget = int(os.environ.get("FAKE_MCP_CALLS", "0"))
+    die_before_answering = os.environ.get("FAKE_MCP_DIE_BEFORE_ANSWERING", "")
     exit_trigger = os.environ.get("FAKE_MCP_EXIT_TRIGGER", "")
     exit_marker = os.environ.get("FAKE_MCP_EXIT_MARKER", "")
     served = 0
@@ -3736,6 +3742,11 @@ def main() -> int:
             if served >= budget:
                 return 0
             served += 1
+            if die_before_answering:
+                with open(die_before_answering, "a", encoding="utf-8") as ran:
+                    ran.write(f"{spawns}:{served}\\n")
+                sys.stdout.close()
+                return 0
             _send(
                 {
                     "jsonrpc": "2.0",
