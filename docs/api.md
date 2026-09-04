@@ -150,7 +150,7 @@ field or a stale heading count reddens that test.
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
 | `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets` |
-| `workflow_artifacts`           | `status` (`persisted` \| `unchanged` \| `ignored_by_target`), `branch` |
+| `workflow_artifacts`           | `status`, `branch`                              |
 | `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
 | `workflow_review`              | `passed`, `evaluation`, `fixRound`              |

@@ -1963,7 +1963,7 @@ async def test_workflow_reports_artifacts_ignored_by_target() -> None:
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
-            base_branch="main",
+            base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
