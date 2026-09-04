@@ -369,7 +369,9 @@ class TestARenewalWriteThatFails:
         assert len(failed) == 1
         assert failed[0]["error_type"] == "TransientAPIError"
         assert failed[0]["issue_key"] == ISSUE
-        assert "TransientAPIError" in str(failed[0]["traceback"])
+        # The exception is handed to the chain, which renders its frames;
+        # what this case owes is that the event carries the one raised.
+        assert isinstance(failed[0]["exc_info"], TransientAPIError)
 
     async def test_renewals_that_never_succeed_end_in_the_lease_lapsing(self) -> None:
         """The degradation is exactly the behaviour before renewal existed."""

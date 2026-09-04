@@ -554,15 +554,17 @@ async def test_a_failure_event_carries_the_traceback_that_produced_it() -> None:
     (failure,) = [
         event for event in events if event["event"] == "scheduled_pass_failed"
     ]
-    rendered = failure["traceback"]
-    assert isinstance(rendered, str)
-    assert rendered.startswith("Traceback (most recent call last):")
-    # The frames the one-line summary could not name: the driver that
-    # caught it, and the collaborator whose source line actually raised.
-    assert "pass_scheduler.py" in rendered
-    assert "raise RuntimeError(msg)" in rendered
-    assert "RuntimeError: the pass could not reach the tracker" in rendered
-    # The summary fields stay: the traceback is an addition, not a swap.
+    # The exception itself is handed over, so the frames the one-line
+    # summary cannot name are the CHAIN's to render — under the one key
+    # every other logged exception in this service uses (KOD-250).  What
+    # this case owes is that the event carries the exception that was
+    # actually raised; that the chain renders its frames is asserted
+    # against the shipped chain in tests/core/test_logging_chain.py.
+    raised = failure["exc_info"]
+    assert isinstance(raised, RuntimeError)
+    assert str(raised) == "the pass could not reach the tracker"
+    assert "traceback" not in failure
+    # The summary fields stay: the exception is an addition, not a swap.
     assert failure["error_type"] == "RuntimeError"
     assert failure["error"] == "the pass could not reach the tracker"
 

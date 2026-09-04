@@ -32,7 +32,6 @@ import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from traceback import format_exception
 
 from kodezart.core.errors import RunRecordWriteError
 from kodezart.core.logging import get_logger
@@ -178,15 +177,19 @@ class PassScheduler:
                 )
                 await self._report(entry, RunOutcome.TIMED_OUT, duration, started_at)
                 return
-            # The traceback rides the event under this pass's own key,
-            # and no ``exc_info`` is passed, so it appears once.
+            # The exception goes to the CHAIN, which renders its frames
+            # under the one key every other logged exception uses.  It was
+            # formatted here instead, under a ``traceback`` key of this
+            # module's own (KOD-145) — which appeared exactly once, as
+            # that ruling required, but appeared somewhere a consumer
+            # filtering on the chain's key never looked (KOD-250).
             duration = loop.time() - started
             await self._log.aerror(
                 "scheduled_pass_failed",
                 name=entry.name,
                 error_type=type(exc).__name__,
                 error=str(exc),
-                traceback="".join(format_exception(exc)),
+                exc_info=exc,
                 duration_seconds=duration,
             )
             await self._report(entry, RunOutcome.FAILED, duration, started_at)
@@ -249,7 +252,7 @@ class PassScheduler:
                 failure=exc.failure,
                 error_type=exc.cause_type,
                 error=str(exc),
-                traceback="".join(format_exception(exc)),
+                exc_info=exc,
             )
         except Exception as exc:
             await self._log.aerror(
@@ -258,5 +261,5 @@ class PassScheduler:
                 outcome=outcome.value,
                 error_type=type(exc).__name__,
                 error=str(exc),
-                traceback="".join(format_exception(exc)),
+                exc_info=exc,
             )
