@@ -47,7 +47,9 @@ ROSTER_SLOT = re.compile(rf"^({'|'.join(ROSTERS)})\.")
 
 #: Where a pass's scan window starts from: the checkpoint document, or the
 #: record destination whose most recent row IS the window boundary. Both
-#: are configuration paths; which one a pass uses is the set's choice.
+#: are configuration paths, and a shipped set must address one of them —
+#: which one is the set's choice, and the CONFIGURED DEFAULT's choice is
+#: pinned separately below (KOD-245).
 CHECKPOINT_PREFIXES = ("documents.checkpoint.", "records.")
 
 #: Where a pass writes what it did.
@@ -134,6 +136,35 @@ def test_every_pass_template_iterates_both_rosters(
 # ---------------------------------------------------------------------------
 # KOD-155 — every pass carries its window marker and its destination
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("key", PASS_KEYS)
+def test_the_window_and_the_record_resolve_from_one_declaration(
+    key: PromptKey,
+) -> None:
+    """One window source, and it is the pass's own record row (KOD-245).
+
+    The window clause and the record obligation are two halves of one
+    fact: the most recent row in this pass's destination carries the start
+    of the last completed pass, so the row a pass WRITES is the boundary
+    the next pass READS.  Resolved from two declarations they can name two
+    destinations — a checkpoint document for the window and a record
+    destination for the row — and then the boundary is carried by a
+    document nothing writes.
+
+    Asserted over the configured default set only.  ``claude-opus`` is the
+    legacy corpus, byte-frozen as the rollback half (core/config.py), and
+    it addresses a checkpoint document by those frozen bytes; freezing it
+    is a recorded decision rather than a second opinion about this.
+    """
+    kind = RECORD_KIND_BY_PASS[key].value
+    referenced = references_under(pass_bodies()[(V5_SET, key)], CHECKPOINT_PREFIXES)
+
+    assert referenced, f"{V5_SET}/{key.value} addresses no window at all"
+    assert all(name.startswith(f"records.{kind}") for name in referenced), (
+        f"{V5_SET}/{key.value} resolves its window from something other than "
+        f"its own record declaration records.{kind}: {referenced}"
+    )
 
 
 @pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
