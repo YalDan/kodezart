@@ -40,7 +40,6 @@ holder may already be working is what the refusal exists to prevent.
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
-from traceback import format_exception
 
 from kodezart.core.errors import McpCredentialRefusedError
 from kodezart.core.logging import BoundLogger, get_logger
@@ -146,7 +145,7 @@ class ClaimHeartbeat:
                     holder=self._holder,
                     error_type=type(exc).__name__,
                     error=str(exc),
-                    traceback="".join(format_exception(exc)),
+                    exc_info=exc,
                 )
                 continue
             if renewed is None:

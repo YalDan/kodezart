@@ -187,13 +187,15 @@ async def test_the_queues_failure_event_carries_the_traceback() -> None:
 
 
 async def test_the_schedulers_failure_event_carries_the_traceback() -> None:
-    """The other site, over the same chain.
+    """The other site, over the SAME KEY, which is the point of the pair.
 
-    The scheduler formats into its own ``traceback`` key at the call site
-    (KOD-145) and passes no ``exc_info``, so its frames appear exactly
-    once; the queue's ride the chain processor added here.  Both events
-    reach a log consumer naming the frames that produced them, which is
-    the property this pair exists to hold.
+    Both events reach a log consumer naming the frames that produced
+    them, and they do it the same way: the chain renders what it is
+    handed under ``exception``.  The scheduler used to format into a
+    ``traceback`` key of its own at the call site (KOD-145) — once, as
+    that ruling required, but somewhere a consumer filtering on the
+    chain's key never looked, so this case asserted the key rather than
+    the property and could not tell the two apart (KOD-250).
     """
     exploder = Exploder()
     metronome = Metronome(limit=1)
@@ -217,7 +219,10 @@ async def test_the_schedulers_failure_event_carries_the_traceback() -> None:
         await scheduler.stop()
 
     (payload,) = json_events(buffer, event="scheduled_pass_failed")
-    assert_names_its_frames(payload["traceback"])
+    assert "traceback" not in payload, (
+        "the frames are the chain's to render, not this call site's"
+    )
+    assert_names_its_frames(payload["exception"])
 
 
 async def test_the_console_renderer_also_names_the_frames() -> None:
