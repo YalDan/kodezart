@@ -35,6 +35,7 @@ from structlog.typing import EventDict
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
+from kodezart.composition import engine as composition_engine
 from kodezart.composition.passes import (
     build_dispatch_runtime,
     build_gate,
@@ -648,3 +649,66 @@ def test_the_declared_output_style_reaches_the_executor_through_composition() ->
 def test_the_executor_keywords_are_read_off_a_real_call() -> None:
     """Non-vacuity: an empty parse would let the rule above pass over nothing."""
     assert _executor_keywords()["model"] == "config.model"
+
+
+#: The graphs composition builds, each of which takes the floor resolver as
+#: a required argument and none of which can say whether it got the real one.
+FLOORED_GRAPHS = ("RalphLoop", "TicketGenerationLoop", "RalphWorkflowEngine")
+
+
+def _engine_function() -> ast.FunctionDef:
+    """``build_workflow_engine``'s own syntax tree."""
+    source = Path(composition_engine.__file__).read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and node.name == "build_workflow_engine":
+            return node
+    msg = "composition/engine.py declares no build_workflow_engine"
+    raise AssertionError(msg)
+
+
+def test_composition_hands_every_graph_the_floor_it_built_from_the_config() -> None:
+    """The wiring no graph can see, and no graph's own test can (KOD-195).
+
+    Each of the three graphs takes its floor resolver as a required
+    argument, and the suite proves each one WAITS the floor it is given —
+    but every one of those cases builds its own resolver. Composition is
+    the only production site that reads the operator's configured floor,
+    and nothing held it there: hand all three ``no_delay_floor`` and the
+    whole suite stays green while the shipped service waits nothing at
+    all, which is the respawn storm KOD-174 measured.
+
+    Read off the syntax tree because it is a property of the wiring rather
+    than of anything a fixture can hold — the same reason the executor's
+    keywords are read here.
+    """
+    function = _engine_function()
+    built = [
+        target.id
+        for node in ast.walk(function)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "rate_limit_delay_floor"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    ]
+    assert len(built) == 1, (
+        f"composition builds the configured floor {len(built)} times: {built}"
+    )
+    resolver = built[0]
+
+    handed = {
+        node.func.id: keyword.value
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        for keyword in node.keywords
+        if keyword.arg == "delay_floor_for"
+    }
+    assert set(handed) == set(FLOORED_GRAPHS), (
+        f"not every graph is handed a floor here: {sorted(handed)}"
+    )
+    for graph, value in sorted(handed.items()):
+        assert isinstance(value, ast.Name) and value.id == resolver, (
+            f"{graph} is handed {ast.unparse(value)} rather than the "
+            f"configured floor {resolver}"
+        )
