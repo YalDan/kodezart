@@ -41,6 +41,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompt_census import PROMPT_FUNCTION_COUNT
+from tests.prompts.sets import PER_RUN
 from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -519,7 +520,7 @@ def test_pass_templates_resolve_through_the_port_and_render(
 ) -> None:
     """Both pass templates resolve by key and render from OperationConfig."""
     registry = load_registry(bindings=dict(bindings_for(example_config())))
-    rendered = registry.template_for(key).render({})
+    rendered = registry.template_for(key).render(PER_RUN)
     config = example_config()
     assert config.operation_name in rendered
     assert config.workspace in rendered

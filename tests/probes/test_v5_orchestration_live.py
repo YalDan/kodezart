@@ -42,7 +42,7 @@ from tests.probes.test_harness_capabilities import (
     observe,
     session_options,
 )
-from tests.prompts.test_claude_opus_goldens import V5_SET
+from tests.prompts.sets import V5_SET
 from tests.prompts.test_v5_orchestration import set_with_primitive
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

@@ -4793,10 +4793,9 @@ def test_house_rules_delivered_as_system_prompt_append() -> None:
     and still baked into every template.
     """
     from kodezart.types.domain.prompts import PromptKey
-    from tests.prompts.test_claude_opus_goldens import ALL_CASES, V5_SET
+    from tests.prompts.sets import ALL_CASES, V5_SET, render_v5_case
     from tests.prompts.test_prompt_wiring import load_registry
     from tests.prompts.test_session_policy import v5_metadata
-    from tests.prompts.test_v5_goldens import render_case
 
     house_rules = v5_metadata().fragments.house_rules
     assert house_rules is not None
@@ -4815,7 +4814,7 @@ def test_house_rules_delivered_as_system_prompt_append() -> None:
 
     sentence = house_rules.splitlines()[2]
     assert sentence.strip(), "non-vacuity: the fragment has a body to look for"
-    leaked = [name for name in sorted(ALL_CASES) if sentence in render_case(name)]
+    leaked = [name for name in sorted(ALL_CASES) if sentence in render_v5_case(name)]
     assert leaked == []
 
 

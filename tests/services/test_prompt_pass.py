@@ -18,8 +18,9 @@ counts, its error, its duration — or the log cannot tell them apart.
 
 import asyncio
 from collections.abc import AsyncGenerator, Mapping
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
+from typing import Final
 
 import pytest
 import structlog.testing
@@ -29,8 +30,9 @@ from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
+from kodezart.services import pass_scheduler as pass_scheduler_module
 from kodezart.services.pass_gate import PassGate
-from kodezart.services.prompt_pass import run_prompt_pass
+from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
@@ -41,6 +43,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.fakes import (
@@ -69,6 +72,35 @@ TRACKER_TOOL = "mcp__linear__save_issue"
 #: proves is the scheduler's own bound reaching a session mid-stream, and
 #: that bound is enforced by the event loop's timer and nothing else.
 CANCEL_TIMEOUT = 0.05
+
+
+#: The instant every tick in this module begins at.  The scheduler stamps
+#: ``started_at`` from the wall clock and the pass binds the per-run record
+#: title from it (KOD-290), so a case that compares a sent prompt with a
+#: rendered one renders the same instant the tick used.
+TICK: Final[datetime] = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+
+
+class _FrozenDatetime(datetime):
+    """``datetime`` whose ``now`` is the tick this module fires at."""
+
+    @classmethod
+    def now(cls, tz: tzinfo | None = None) -> datetime:
+        del tz
+        return TICK
+
+
+@pytest.fixture(autouse=True)
+def _ticks_at_a_known_instant(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pass_scheduler_module, "datetime", _FrozenDatetime)
+
+
+def per_run(key: PromptKey) -> dict[str, object]:
+    """What the service binds for *key*'s pass at the frozen tick."""
+    identity = RunIdentity(
+        kind=RECORD_KIND_BY_PASS[key], name=key.value, started_at=TICK
+    )
+    return pass_render_bindings(identity)
 
 
 class HangingRunner:
@@ -166,7 +198,7 @@ async def run(
     skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
 ) -> PassRun:
     return await run_prompt_pass(
-        FIXTURE_EPOCH,
+        TICK,
         kind=RECORD_KIND_BY_PASS[key],
         key=key,
         prompts=prompts,
@@ -183,7 +215,11 @@ async def run(
 def test_the_grooming_prompt_composes_through_the_registry() -> None:
     """The mirror of the fire-prep render: template plus operation config."""
     config = example_config()
-    rendered = bound_registry().template_for(PromptKey.GROOMING_PASS).render({})
+    rendered = (
+        bound_registry()
+        .template_for(PromptKey.GROOMING_PASS)
+        .render(per_run(PromptKey.GROOMING_PASS))
+    )
 
     assert rendered
     assert "{{" not in rendered
@@ -193,7 +229,9 @@ def test_the_grooming_prompt_composes_through_the_registry() -> None:
 def test_an_unbound_placeholder_is_a_typed_refusal_not_a_prompt() -> None:
     """No config value, no prompt, and the placeholder is named."""
     with pytest.raises(PromptRenderError) as excinfo:
-        load_registry().template_for(PromptKey.GROOMING_PASS).render({})
+        load_registry().template_for(PromptKey.GROOMING_PASS).render(
+            per_run(PromptKey.GROOMING_PASS)
+        )
 
     assert "operation_name" in excinfo.value.missing
 
@@ -201,7 +239,9 @@ def test_an_unbound_placeholder_is_a_typed_refusal_not_a_prompt() -> None:
 async def test_the_session_receives_the_rendered_prompt_and_its_grant() -> None:
     """What reaches the query path is what the registry rendered."""
     registry = bound_registry()
-    rendered = registry.template_for(PromptKey.GROOMING_PASS).render({})
+    rendered = registry.template_for(PromptKey.GROOMING_PASS).render(
+        per_run(PromptKey.GROOMING_PASS)
+    )
     runner = FakeAgentRunner(events=[])
 
     await run(prompts=registry, runner=runner)
@@ -283,8 +323,12 @@ async def test_each_pass_sends_its_own_prompt_and_never_the_other_one() -> None:
     sent = [call["prompt"] for call in runner.calls]
     assert len(sent) == 2
     assert sent[0] != sent[1]
-    assert sent[0] == registry.template_for(PromptKey.FIRE_PREP_PASS).render({})
-    assert sent[1] == registry.template_for(PromptKey.GROOMING_PASS).render({})
+    assert sent[0] == registry.template_for(PromptKey.FIRE_PREP_PASS).render(
+        per_run(PromptKey.FIRE_PREP_PASS)
+    )
+    assert sent[1] == registry.template_for(PromptKey.GROOMING_PASS).render(
+        per_run(PromptKey.GROOMING_PASS)
+    )
 
 
 async def test_an_ungated_pass_asks_nothing_and_always_runs() -> None:

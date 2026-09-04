@@ -43,7 +43,7 @@ from tests.fakes import (
     no_delay_floor,
 )
 from tests.prompt_census import configured_investigation_cap
-from tests.prompts.test_claude_opus_goldens import V5_SET
+from tests.prompts.sets import V5_SET
 
 LENS_NAMES = ("doc-verifier", "draft-critic", "explorer")
 

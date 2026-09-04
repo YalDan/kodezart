@@ -185,8 +185,8 @@ command = "make test"
 depends_on = "build"
 
 # Read-side document registry, addressed by stable key. The "checkpoint" key
-# is required: the scan-window marker is addressed by key rather than by name
-# so the later writer never has to match on a title.
+# is the tracker-owned document boot instates or adopts; the scan window
+# itself is carried by the record row a pass writes (KOD-245), not by this.
 #
 # `system` and `name` are REQUIRED. An id on its own renders into a prompt as
 # an opaque token, and a session given only that prompt cannot tell which

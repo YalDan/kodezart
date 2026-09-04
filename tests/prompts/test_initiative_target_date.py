@@ -62,6 +62,9 @@ def _render(config: OperationConfig) -> str:
     body = GROOMING.read_text(encoding="utf-8")
     bindings: dict[str, object] = dict(operation_bindings(config))
     bindings["skills_reference"] = ""
+    # Every pass template carries the per-run record title (KOD-290,
+    # KOD-306); this case is about the deadlines clause, so any title do.
+    bindings["record_title"] = "grooming — fixture @ the pass start"
     return render_template(body, bindings)
 
 

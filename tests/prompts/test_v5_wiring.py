@@ -26,14 +26,19 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import fixture_run_identity, pass_render_variables
+from tests.prompts.sets import (
+    ALL_CASES,
+    EXAMPLE_OPERATION,
+    V5_SET,
+    render_v5_case,
+    v5_registry,
+)
 from tests.prompts.style_detectors import (
     artifact_tag_names,
     data_boundary_sentences,
     unbalanced_artifact_tags,
 )
-from tests.prompts.test_claude_opus_goldens import ALL_CASES, EXAMPLE_OPERATION, V5_SET
 from tests.prompts.test_prompt_wiring import load_registry
-from tests.prompts.test_v5_goldens import render_case, v5_registry
 
 #: Which named tag each injected artifact must arrive inside. Keyed by the
 #: shared fixture case, so the expectation is stated per rendering rather
@@ -84,7 +89,7 @@ def test_every_injected_artifact_arrives_inside_its_declared_tag(
     golden_name: str,
 ) -> None:
     """The tags the rendered prompt opens are exactly the declared ones."""
-    rendered = render_case(golden_name)
+    rendered = render_v5_case(golden_name)
     assert artifact_tag_names(rendered) == ARTIFACT_TAGS[golden_name]
     assert unbalanced_artifact_tags(rendered) == ()
 
@@ -94,7 +99,7 @@ def test_exactly_one_boundary_sentence_per_artifact_carrying_render(
     golden_name: str,
 ) -> None:
     """One sentence where there are artifacts, none where there are not."""
-    rendered = render_case(golden_name)
+    rendered = render_v5_case(golden_name)
     expected = 1 if ARTIFACT_TAGS[golden_name] else 0
     assert len(data_boundary_sentences(rendered)) == expected
 
@@ -107,7 +112,7 @@ def test_the_injected_artifact_is_inside_the_tag_and_not_beside_it(
     golden_name: str,
 ) -> None:
     """A tag before the artifact and a tag after it are not the same thing."""
-    rendered = render_case(golden_name)
+    rendered = render_v5_case(golden_name)
     opening = rendered.index("<ticket>")
     closing = rendered.index("</ticket>")
     assert "Golden ticket" in rendered[opening:closing]
@@ -115,10 +120,10 @@ def test_the_injected_artifact_is_inside_the_tag_and_not_beside_it(
 
 def test_the_empty_changeset_escape_clause_renders() -> None:
     """Behaviour preserved: an empty digest says so rather than saying nothing."""
-    empty = render_case("evaluation__empty_changeset")
+    empty = render_v5_case("evaluation__empty_changeset")
     assert EMPTY_CHANGESET_CLAUSE in empty
 
-    populated = render_case("evaluation")
+    populated = render_v5_case("evaluation")
     assert EMPTY_CHANGESET_CLAUSE not in populated
     assert "Commits: 2" in populated
 
@@ -131,13 +136,13 @@ def test_the_orchestration_slot_is_declared_and_unfilled() -> None:
         assert "orchestration_block" in free_binding_names(
             registry.template_for(key).body
         )
-    assert "orchestration_block" not in render_case("acceptance_criteria")
-    assert "orchestration_block" not in render_case("ticket_create")
+    assert "orchestration_block" not in render_v5_case("acceptance_criteria")
+    assert "orchestration_block" not in render_v5_case("ticket_create")
 
 
 def test_the_rendered_evaluator_is_under_the_size_bound() -> None:
     """AC-7, informational: an upper bound, never an equality."""
-    assert len(render_case("evaluation").split()) < EVALUATION_WORD_BOUND
+    assert len(render_v5_case("evaluation").split()) < EVALUATION_WORD_BOUND
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +187,7 @@ def test_the_critique_is_composed_under_create_only_and_only_then() -> None:
     assert critique not in reviewed
     # The reviewed render is the frozen one: "absent" means unchanged, not
     # merely missing the string.
-    assert reviewed == render_case("ticket_create")
+    assert reviewed == render_v5_case("ticket_create")
     assert create_only.replace(f"{critique}\n\n", "", 1) == reviewed
 
 

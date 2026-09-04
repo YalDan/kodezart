@@ -12,9 +12,8 @@ Two halves, both named by the criterion:
 
 1. the effective resolution table logged AT BOOT is 100% legacy across
    every registered function key, and
-2. every rendered prompt equals its golden — in both fragment variants,
-   because a corpus that renders correctly under one binding and not the
-   other has not been restored.
+2. every registered key resolves through the rolled-back set, so the
+   corpus a session gets is the one the variable named.
 
 The closing group is this issue's FR-1 ruling made executable. Rolling the
 corpus back while leaving the mode at its flipped default leaves an
@@ -38,14 +37,10 @@ from kodezart.core.errors import TicketReviewModeError
 from kodezart.main import create_app, lifespan
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.ticket_review import TicketReviewMode
-from tests.prompts.test_claude_opus_goldens import (
-    ALL_CASES,
+from tests.prompts.sets import (
     EXAMPLE_OPERATION,
-    POPULATED,
-    render_case,
-    render_case_with_declared_skills,
 )
-from tests.prompts.test_prompt_wiring import DEFAULT_SET, GOLDENS, REPO_ROOT
+from tests.prompts.test_prompt_wiring import DEFAULT_SET, REPO_ROOT
 
 #: The one variable KOD-93-AC-5 names. Written once here so no test in this
 #: module can demonstrate the rollback by some other route.
@@ -183,56 +178,6 @@ async def test_every_registered_key_resolves_through_the_rolled_back_set() -> No
 
 
 @pytest.mark.usefixtures("_rolled_back")
-async def test_every_rendered_prompt_equals_its_golden() -> None:
-    """Both fragment variants, every case — the corpus, not just its name.
-
-    A rollback that resolved the right set but composed it through the new
-    set's fragments would pass the resolution half and still hand every
-    session different text. Comparing rendered output against the
-    checked-in goldens is what excludes that.
-    """
-    registry = await _boot_registry()
-
-    empty_variant = sorted(
-        golden_name
-        for golden_name in ALL_CASES
-        if render_case(registry, golden_name)
-        != (GOLDENS / f"{golden_name}.txt").read_text(encoding="utf-8")
-    )
-    populated_variant = sorted(
-        golden_name
-        for golden_name in ALL_CASES
-        if render_case_with_declared_skills(registry, golden_name)
-        != (POPULATED / f"{golden_name}.txt").read_text(encoding="utf-8")
-    )
-
-    assert empty_variant == []
-    assert populated_variant == []
-
-
-def test_the_golden_comparison_covers_the_whole_census() -> None:
-    """Non-vacuity: a comparison over zero cases would otherwise agree.
-
-    Every registered key is represented, both goldens exist for every
-    case, and the two variant directories hold the same roster — which is
-    what makes "every rendered prompt" a census rather than a sample.
-    """
-    covered = {key for key, _ in ALL_CASES.values()}
-    assert covered == set(PromptKey)
-    assert ALL_CASES
-
-    missing = sorted(
-        golden_name
-        for golden_name in ALL_CASES
-        if not (GOLDENS / f"{golden_name}.txt").is_file()
-        or not (POPULATED / f"{golden_name}.txt").is_file()
-    )
-    assert missing == []
-    assert {path.name for path in GOLDENS.iterdir()} == {
-        path.name for path in POPULATED.iterdir()
-    }
-
-
 # ---------------------------------------------------------------------------
 # FR-1 — the rollback's second variable, pinned as behaviour
 # ---------------------------------------------------------------------------

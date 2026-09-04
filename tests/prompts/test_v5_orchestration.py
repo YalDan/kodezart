@@ -19,7 +19,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
 )
 from kodezart.core.prompt_rendering import free_binding_names
 from kodezart.types.domain.prompts import OrchestrationPrimitive, PromptKey
-from tests.prompts.test_claude_opus_goldens import ALL_CASES, V5_SET
+from tests.prompts.sets import ALL_CASES, V5_SET
 from tests.prompts.test_prompt_wiring import (
     CONFIGURED_INVESTIGATION_CAP,
     load_registry,

@@ -18,7 +18,7 @@ from kodezart.types.domain.prompts import (
     SessionRole,
 )
 from kodezart.types.domain.subagents import SessionEffort
-from tests.prompts.test_claude_opus_goldens import V5_SET
+from tests.prompts.sets import V5_SET
 from tests.prompts.test_prompt_wiring import (
     DEFAULT_SET,
     complete_members,
