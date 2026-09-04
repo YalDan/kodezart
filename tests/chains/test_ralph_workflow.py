@@ -1,6 +1,7 @@
 """Tests for RalphWorkflowEngine (outer pipeline) with fakes."""
 
 import asyncio
+import random
 import re
 import shutil
 import time
@@ -2443,6 +2444,20 @@ async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
 RATE_LIMIT_FLOOR_SECONDS = 0.15
 
 
+@pytest.fixture
+def unjittered_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Take the randomness out of the vendor's back-off for one case.
+
+    ``RetryPolicy`` sleeps ``interval + random.uniform(0, 1)`` between
+    attempts, so up to a second of the gap between two attempts is the
+    policy's own jitter and NOT the floor.  Measured 2026-09-04: with the
+    jitter live this case passed with all fifteen floored nodes unwrapped
+    — it was clocking the jitter and reading it as the floor.  Fixed at
+    zero, the policy contributes ``initial_interval`` and nothing else.
+    """
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
+
+
 def _floor_under_a_rate_limit(exc: Exception) -> float | None:
     """A resolver of the shape ``composition.engine`` builds (KOD-195)."""
     if isinstance(exc, RateLimitedSoftFailureError):
@@ -2450,6 +2465,7 @@ def _floor_under_a_rate_limit(exc: Exception) -> float | None:
     return None
 
 
+@pytest.mark.usefixtures("unjittered_backoff")
 async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
     tmp_path: Path,
 ) -> None:
