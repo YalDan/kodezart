@@ -240,6 +240,22 @@ class LifecycleWatcher:
         if exc is not None:
             self._raised.append(exc)
 
+    async def _report_raised(self) -> None:
+        """Name every watch that ended by raising, and let go of it.
+
+        Called at the start of each watch and again at the drain, so the
+        list is a hand-off between one watch and the next rather than a
+        record kept for the life of the process.
+        """
+        raised = self._raised
+        self._raised = []
+        for exc in raised:
+            await self._log.aerror(
+                "lifecycle_watch_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+            )
+
     def _remember_dequeue(self, job_id: str) -> None:
         """Note that this job's run began, for a sweep the stop has blinded.
 
@@ -273,13 +289,7 @@ class LifecycleWatcher:
         is: the gather only waits the rest out (KOD-303).
         """
         await asyncio.gather(*self._following, return_exceptions=True)
-        for exc in self._raised:
-            await self._log.aerror(
-                "lifecycle_watch_failed",
-                error=str(exc),
-                error_kind=type(exc).__name__,
-            )
-        self._raised.clear()
+        await self._report_raised()
 
     async def record_unfinished(self) -> None:
         """Give every fire this process started and did not finish its row.
@@ -370,6 +380,12 @@ class LifecycleWatcher:
         lease lapses on its own there, exactly as it does for a process
         that died.
         """
+        # Whatever earlier watches left behind is reported HERE, at the
+        # start of the next one, rather than waiting for a shutdown that
+        # may be hours away: the drain is the only other reader, and a
+        # process that watches all day would hold every failed watch's
+        # exception — and the frames under it — until it stopped.
+        await self._report_raised()
         loop = asyncio.get_running_loop()
         watch_started = loop.time()
         started = False

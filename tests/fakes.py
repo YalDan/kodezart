@@ -21,6 +21,7 @@ from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.core.errors import (
     McpCredentialRefusedError,
     McpTransportError,
+    RateLimitedSoftFailureError,
     TrackerEnsureConflictError,
 )
 from kodezart.core.prompt_rendering import PromptTemplate
@@ -35,6 +36,7 @@ from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import (
     DuplicateWorkRefError,
     MergeConflictError,
+    RateLimitError,
     TransientAPIError,
     WorkspaceError,
 )
@@ -165,12 +167,14 @@ NEGLIGIBLE_BACKOFF_SECONDS: float = 0.001
 def floor_under_a_rate_limit(exc: Exception) -> float | None:
     """A resolver of the shape ``composition.engine`` builds (KOD-195).
 
-    Keyed on the rejection itself rather than on a class, because that is
-    what composition's own resolver keys on: a provider that refused says
-    so on the failure, whichever soft-failure class carries it.
+    Keyed on the CLASSES composition keys on, and not on a duck-typed
+    attribute that happens to be true of them: a stand-in that answers for
+    a wider set than the shipped resolver does is a case passing on a
+    floor production would never have paid.
     """
-    rejected = getattr(exc, "rate_limit_rejected", False)
-    return RATE_LIMIT_FLOOR_SECONDS if rejected else None
+    if not isinstance(exc, RateLimitedSoftFailureError | RateLimitError):
+        return None
+    return RATE_LIMIT_FLOOR_SECONDS
 
 
 def knowledge_grant_for(

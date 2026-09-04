@@ -16,12 +16,14 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+import structlog.testing
 from mcp.types import CallToolResult
 
 from kodezart.adapters import hosted_mcp_session
 from kodezart.adapters.hosted_mcp_session import (
     HostedMcpSession,
     HostedSessionTransport,
+    _Phase,
 )
 from kodezart.core.errors import McpTransportError
 
@@ -34,6 +36,13 @@ CALL_BOUND_SECONDS: Final[float] = 0.2
 
 #: Well past the bound: a shutdown still waiting here has not terminated.
 SHUTDOWN_PATIENCE_SECONDS: Final[float] = 5.0
+
+#: How long a session below takes to let go, and how long a caller is
+#: willing to wait for a host it has already let go of to be gone. The gap
+#: between them is the whole assertion: a host cancelled on the way out
+#: ends at once, and one left running does not.
+TEARDOWN_SECONDS: Final[float] = 0.2
+PROMPTLY_SECONDS: Final[float] = 0.5
 
 
 class _SilentSession:
@@ -139,9 +148,100 @@ def test_no_transport_dials_a_session_whose_handshake_is_unbounded() -> None:
                 continue
             if node.func.id != "ClientSession":
                 continue
-            if not any(k.arg == "read_timeout_seconds" for k in node.keywords):
+            bound = next(
+                (k.value for k in node.keywords if k.arg == "read_timeout_seconds"),
+                None,
+            )
+            # The keyword's PRESENCE is not the property: passing it
+            # ``None`` is exactly the unbounded dial this forbids, and the
+            # guard passed on it until 2026-09-04.  What is required is
+            # that the value be the transport's own stated bound.
+            states_its_bound = (
+                isinstance(bound, ast.Call)
+                and isinstance(bound.func, ast.Attribute)
+                and bound.func.attr == "call_timeout"
+            )
+            if not states_its_bound:
                 unbounded.append(f"{path.name}:{node.lineno}")
 
     assert unbounded == [], (
-        f"sessions dialled with no bound on the handshake: {unbounded}"
+        "sessions dialled without the transport's own bound on the "
+        f"handshake: {unbounded}"
     )
+
+
+class _SlowToLetGo(_SilentServer):
+    """A session whose teardown takes a moment, as a real one's does.
+
+    A spawned process is waited on; a stream is drained. The moment is
+    what makes the window in the case below observable at all.
+    """
+
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator[_SilentSession]:
+        try:
+            yield _SilentSession()
+        finally:
+            self.session_ended = True
+            await asyncio.sleep(TEARDOWN_SECONDS)
+
+
+async def test_a_host_let_go_of_cannot_end_the_session_that_replaced_it() -> None:
+    """An orphaned host is nobody's session, and touches nobody's (KOD-177).
+
+    ``_discard_host`` lets go of the host — clears the reference and the
+    inbox — and only then waits for it, so a caller cancelled at that wait
+    has already let go. Measured 2026-09-04: the dead host went on
+    unwinding, and its teardown called ``_end_service`` on state that by
+    then belonged to the session opened after it — ending a healthy
+    session and failing the call in flight on it.
+
+    A host carries the session it IS, and writes this object's state only
+    while that is still the current one.
+    """
+    transport = _SlowToLetGo()
+    hosted = HostedMcpSession(transport)
+    await hosted.open()
+    orphan = hosted._host
+    assert orphan is not None
+
+    letting_go = asyncio.create_task(hosted._discard_host())
+    await asyncio.sleep(0)
+    letting_go.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await letting_go
+
+    # The session that takes its place, opened while the old host is
+    # still unwinding — which is exactly the window the caller reopens in.
+    await hosted.open()
+    # Waited for rather than slept past: what the case is about is what
+    # the orphan does on its way out, so it is watched out, not timed.
+    async with asyncio.timeout(SHUTDOWN_PATIENCE_SECONDS):
+        await asyncio.wait({orphan})
+
+    assert orphan.done(), "the orphan finished its own teardown"
+    assert hosted._phase is _Phase.SERVING, (
+        "the session that replaced it is still serving"
+    )
+    await hosted.close()
+
+
+async def test_the_opened_event_names_the_server_it_dialled() -> None:
+    """The event says WHICH server opened, and the field is named here.
+
+    Before the hosting was shared, the HTTP caller emitted this event with
+    a ``url``; it now carries ``address``, which is a url on one transport
+    and a command on the other. Nothing named either field, so the rename
+    was silent and a log query built on ``url`` would have gone quiet
+    without anything going red (KOD-192).
+    """
+    transport = _SilentServer()
+    hosted = HostedMcpSession(transport)
+
+    with structlog.testing.capture_logs() as logs:
+        await hosted.open()
+        await hosted.close()
+
+    (opened,) = [entry for entry in logs if entry["event"] == "mcp_session_opened"]
+    assert opened["server_name"] == SERVER_NAME
+    assert opened["address"] == transport.address()
