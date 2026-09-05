@@ -19,6 +19,7 @@ import structlog
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.linear_mcp_tracker import _CLAIM_MARKER, LinearMcpTracker
 from kodezart.core.errors import (
+    McpCallUnansweredError,
     McpCredentialRefusedError,
     McpTransportError,
     TrackerEnsureConflictError,
@@ -591,9 +592,17 @@ class TestARefusedCredentialIsNeverRetried:
             transport_failures={"get_issue": 2},
         )
         tracker = tracker_over(server, max_retries=2, retry_backoff_factor=0.25)
-        await tracker.read_issue(issue_key="T-6")
+        with structlog.testing.capture_logs() as logs:
+            await tracker.read_issue(issue_key="T-6")
 
         assert [delay for delay in recorded if delay > 0] == [0.25, 0.5]
+        # The event the absence assertions elsewhere lean on: without a
+        # case that pins it PRESENT, a rename or a deletion of the emit
+        # would leave every `not in` assertion vacuously true.  One per
+        # retry, carrying the backoff it waited (KOD-275 sweep).
+        retries = [entry for entry in logs if entry["event"] == "tracker_mcp_retry"]
+        assert [entry["delay_seconds"] for entry in retries] == [0.25, 0.5]
+        assert all(entry["tool"] == "get_issue" for entry in retries)
 
 
 class TestClaimMechanism:
@@ -1362,9 +1371,10 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
     #: The credential shape boot accepts; the endpoint reads nothing off it.
     FIXTURE_TOKEN = "lin_api_" + "T" * 40
 
-    async def test_the_call_that_met_the_death_reaches_the_server_within_no_retries(
+    def _over_a_dying_endpoint(
         self,
-    ) -> None:
+    ) -> tuple[FakeLinearMcpServer, _StreamableEndpointOver, HttpMcpToolCaller]:
+        """The real HTTP caller over an endpoint that drops its first call."""
         workspace = FakeLinearMcpServer(
             issues=[FakeMcpIssue(id="T-9")],
             state_types=STATE_TYPES,
@@ -1382,10 +1392,25 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
             error_detail_limit=500,
             client_factory=client_over(endpoint.transport),
         )
+        return workspace, endpoint, caller
+
+    async def test_the_call_the_death_landed_under_is_told_and_the_next_call_reaches(
+        self,
+    ) -> None:
+        """Within no retries: the dropped call is unanswered, the next reopens.
+
+        The request had been written when the stream dropped, so it is not
+        made again on the reopened session (KOD-305); what KOD-300 holds is
+        that the caller is still in service — the next call reopens and
+        reaches the server without spending any budget.
+        """
+        workspace, endpoint, caller = self._over_a_dying_endpoint()
         await caller.open()
         try:
             tracker = tracker_over(workspace, caller=caller, max_retries=0)
             with structlog.testing.capture_logs() as logs:
+                with pytest.raises(McpCallUnansweredError):
+                    await tracker.read_issue(issue_key="T-9")
                 issue = await tracker.read_issue(issue_key="T-9")
         finally:
             await caller.close()
@@ -1396,3 +1421,45 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         events = [entry["event"] for entry in logs]
         assert events.count("mcp_session_reopened") == 1
         assert "tracker_mcp_retry" not in events, "the budget was spent"
+
+    async def test_an_unanswered_read_is_made_again_within_the_budget(self) -> None:
+        """A read performed twice is a read performed once: the budget buys it."""
+        workspace, endpoint, caller = self._over_a_dying_endpoint()
+        await caller.open()
+        try:
+            tracker = tracker_over(workspace, caller=caller, max_retries=1)
+            with structlog.testing.capture_logs() as logs:
+                issue = await tracker.read_issue(issue_key="T-9")
+        finally:
+            await caller.close()
+
+        assert issue.issue_key == "T-9"
+        assert endpoint.dropped, "the death was never met"
+        assert len(workspace.tool_calls("get_issue")) == 1
+        events = [entry["event"] for entry in logs]
+        assert events.count("tracker_mcp_retry") == 1
+        assert events.count("mcp_session_reopened") == 1
+
+    async def test_an_unanswered_write_is_not_made_again_within_any_budget(
+        self,
+    ) -> None:
+        """A write the server may have performed is not performed twice (KOD-305).
+
+        The transport's ruling — a request written and never answered is
+        not re-sent — would be undone one layer up if the tracker's own
+        retry loop sent it again.  Measured 2026-09-05: with the budget
+        alone deciding, an unanswered `save_issue` was re-sent and answered.
+        """
+        workspace, endpoint, caller = self._over_a_dying_endpoint()
+        await caller.open()
+        try:
+            tracker = tracker_over(workspace, caller=caller, max_retries=2)
+            with structlog.testing.capture_logs() as logs:
+                with pytest.raises(McpCallUnansweredError):
+                    await tracker.update_issue(issue_key="T-9", title="renamed")
+        finally:
+            await caller.close()
+
+        assert endpoint.dropped, "the death was never met"
+        assert workspace.tool_calls("save_issue") == []
+        assert "tracker_mcp_retry" not in [entry["event"] for entry in logs]

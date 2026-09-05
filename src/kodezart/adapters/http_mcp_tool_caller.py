@@ -167,6 +167,14 @@ class _RemoteServer(HostedSessionTransport):
         #: refusal.  Latched, because a credential does not heal: once it is
         #: refused every later failure of this session is that same refusal.
         self._credential_refused: bool = False
+        #: The status of the LAST response the session saw, when it was an
+        #: error.  A session whose stream collapses right after the server
+        #: answered with a status did not lose a request in flight — the
+        #: server received it and refused it, and nothing ran — so the call
+        #: may be made again; a collapse with no such answer is a request
+        #: written and never answered, which may not (KOD-305).  Cleared by
+        #: every response that is not an error, and at every dial.
+        self._last_error_status: int | None = None
         self._log: BoundLogger = get_logger(__name__)
 
     def address(self) -> str:
@@ -195,9 +203,10 @@ class _RemoteServer(HostedSessionTransport):
         )
 
     async def _observe_status(self, response: httpx.Response) -> None:
-        """Latch a refused credential off one server response."""
+        """Off one response: latch a refused credential, remember an error status."""
         if response.status_code == HTTPStatus.UNAUTHORIZED:
             self._credential_refused = True
+        self._last_error_status = response.status_code if response.is_error else None
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[ClientSession]:
@@ -221,6 +230,7 @@ class _RemoteServer(HostedSessionTransport):
                 read=self._sse_read_timeout_seconds,
             ),
         )
+        self._last_error_status = None
         async with (
             client,
             streamable_http_client(self._url, http_client=client) as (read, write, _),
@@ -356,14 +366,27 @@ class _RemoteServer(HostedSessionTransport):
             on_reopened=on_reopened,
         )
 
-    def failure_unanswered(self, tool_name: str, *, on_reopened: bool) -> Exception:
+    def failure_unanswered(
+        self,
+        tool_name: str,
+        *,
+        on_reopened: bool,
+        written: bool,
+    ) -> Exception:
         """Why a call went unanswered: the session ended under it.
 
         Unless the credential was refused, which no reopening clears.
         """
         if self._credential_refused:
             return self._refusal(tool_name)
-        return super().failure_unanswered(tool_name, on_reopened=on_reopened)
+        # A collapse right after the server ANSWERED with an error status
+        # lost nothing in flight: the request was received and refused,
+        # so the call may be made again.  Only a collapse with no answer
+        # behind it is a request whose fate is unknown.
+        answered = self._last_error_status is not None
+        return super().failure_unanswered(
+            tool_name, on_reopened=on_reopened, written=written and not answered
+        )
 
     def _refusal(self, tool_name: str | None = None) -> McpCredentialRefusedError:
         """The one thing a refused credential can leave as."""

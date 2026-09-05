@@ -54,6 +54,7 @@ from kodezart.adapters.http_mcp_tool_caller import (
     pooled_http_client,
 )
 from kodezart.core.errors import (
+    McpCallUnansweredError,
     McpCredentialRefusedError,
     McpSessionClosedError,
     McpTransportError,
@@ -896,7 +897,7 @@ class TestTheSessionIsHostedInOneTask:
         booting = asyncio.create_task(boot())
         await asyncio.wait_for(opened.wait(), timeout=_HANG_CEILING_SECONDS)
 
-        with pytest.raises(McpSessionClosedError) as excinfo:
+        with pytest.raises(McpCallUnansweredError) as excinfo:
             await asyncio.wait_for(
                 caller.call_tool(name="get_issue", arguments={}),
                 timeout=_HANG_CEILING_SECONDS,
@@ -926,9 +927,11 @@ class TestTheSessionIsHostedInOneTask:
             timeout=_HANG_CEILING_SECONDS,
         )
 
+        # Both requests had reached the server when the stream dropped:
+        # written, unanswered, and not re-sent (KOD-305).
         assert [type(outcome) for outcome in outcomes] == [
-            McpSessionClosedError,
-            McpSessionClosedError,
+            McpCallUnansweredError,
+            McpCallUnansweredError,
         ]
         await caller.close()
 
@@ -951,14 +954,16 @@ class TestTheSessionIsHostedInOneTask:
         await caller.open()
 
         with structlog.testing.capture_logs() as logs:
-            with pytest.raises(McpSessionClosedError):
+            with pytest.raises(McpCallUnansweredError):
                 await caller.call_tool(name="get_issue", arguments={})
-            with pytest.raises(McpSessionClosedError):
+            with pytest.raises(McpCallUnansweredError):
                 await caller.call_tool(name="list_issues", arguments={})
             await caller.close()
 
-        assert [log["event"] for log in logs].count("mcp_session_ended") == 3
-        assert server.calls == ["tools/call"] * 3
+        # Each call was written once and answered never: two sessions
+        # ended, two requests reached the server, nothing re-sent (KOD-305).
+        assert [log["event"] for log in logs].count("mcp_session_ended") == 2
+        assert server.calls == ["tools/call"] * 2
 
     async def test_calls_from_two_workers_are_in_flight_together(self) -> None:
         """KOD-273 — as they were over the session directly.
@@ -1341,14 +1346,26 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
     since KOD-187; this is the same policy on the same port.
     """
 
-    async def test_a_dropped_stream_is_reopened_and_the_call_goes_again(
+    async def test_a_call_the_stream_dropped_under_is_unanswered_and_the_next_reopens(
         self,
     ) -> None:
+        """The server RECEIVED the call before the stream dropped (KOD-305).
+
+        The fixture records the request and then drops, which is exactly
+        the state the client cannot see past: the request was written and
+        the server may have run it.  It used to be re-sent on the reopened
+        session — measured 2026-09-05, two ``tools/call`` for one call.
+        Now the call leaves as unanswered, the session it died with is
+        over, and the NEXT call reopens once and goes through.
+        """
         server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS_ONCE)
         caller = caller_fixture(client_factory=client_over(server.transport))
         await caller.open()
 
         with structlog.testing.capture_logs() as logs:
+            with pytest.raises(McpCallUnansweredError):
+                await caller.call_tool(name="get_issue", arguments={})
+            assert server.calls == ["tools/call"], "an unanswered call is not re-sent"
             result = await caller.call_tool(name="get_issue", arguments={})
 
         assert result == {"id": "K-1"}
@@ -1395,7 +1412,7 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
         caller = caller_fixture(client_factory=client_over(server.transport))
         await caller.open()
-        with pytest.raises(McpSessionClosedError):
+        with pytest.raises(McpCallUnansweredError):
             await caller.call_tool(name="get_issue", arguments={})
         server.initialize_status = HTTPStatus.BAD_GATEWAY
 
@@ -1416,6 +1433,8 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         server = _FakeStreamableServer(on_call=_CallBehaviour.DROPS)
         caller = caller_fixture(client_factory=client_over(server.transport))
         await caller.open()
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name="get_issue", arguments={})
         server.initialize_status = HTTPStatus.BAD_GATEWAY
         with pytest.raises(McpSessionClosedError, match="could not be reopened"):
             await caller.call_tool(name="get_issue", arguments={})
@@ -1441,6 +1460,8 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         caller = caller_fixture(client_factory=client_over(server.transport))
         before = asyncio.all_tasks()
         await caller.open()
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name="get_issue", arguments={})
         server.initialize_status = HTTPStatus.BAD_GATEWAY
         with pytest.raises(McpSessionClosedError, match="could not be reopened"):
             await caller.call_tool(name="get_issue", arguments={})
@@ -1467,6 +1488,8 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         caller = caller_fixture(client_factory=client_over(server.transport))
         before = asyncio.all_tasks()
         await caller.open()
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name="get_issue", arguments={})
         server.initialize_status = HTTPStatus.UNAUTHORIZED
         with pytest.raises(McpCredentialRefusedError):
             await caller.call_tool(name="get_issue", arguments={})
@@ -1502,6 +1525,8 @@ class TestASessionThatEndedIsReopenedForTheNextCall:
         caller = caller_fixture(client_factory=client_over(server.transport))
         before = asyncio.all_tasks()
         await caller.open()
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name="get_issue", arguments={})
         await caller.call_tool(name="get_issue", arguments={})
 
         await caller.close()
@@ -1527,11 +1552,23 @@ class TestWorkersHitByOneDropShareOneReopen:
         await caller.open()
 
         with structlog.testing.capture_logs() as logs:
+            dropped = await asyncio.gather(
+                caller.call_tool(name="get_issue", arguments={}),
+                caller.call_tool(name="list_issues", arguments={}),
+                return_exceptions=True,
+            )
             results = await asyncio.gather(
                 caller.call_tool(name="get_issue", arguments={}),
                 caller.call_tool(name="list_issues", arguments={}),
             )
 
+        # Both were written when the stream dropped, so both are told and
+        # neither is re-sent (KOD-305); the pair that follows shares ONE
+        # reopen.
+        assert [type(outcome) for outcome in dropped] == [
+            McpCallUnansweredError,
+            McpCallUnansweredError,
+        ]
         assert results == [{"id": "K-1"}, {"id": "K-1"}]
         assert server.requests.count("initialize") == 2, "one boot, one reopen"
         assert [log["event"] for log in logs].count("mcp_session_reopened") == 1
@@ -1552,6 +1589,10 @@ class TestWorkersHitByOneDropShareOneReopen:
         )
         caller = caller_fixture(client_factory=client_over(server.transport))
         await caller.open()
+        # The call the drop lands under is told, not re-sent (KOD-305); it
+        # is the NEXT one that pays for the reopen the sibling then meets.
+        with pytest.raises(McpCallUnansweredError):
+            await caller.call_tool(name="get_issue", arguments={})
         first = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
         async with asyncio.timeout(_HANG_CEILING_SECONDS):
             while server.requests.count("initialize") < 2:
@@ -1581,12 +1622,18 @@ class TestWorkersHitByOneDropShareOneReopen:
         await caller.open()
         server.initialize_status = HTTPStatus.BAD_GATEWAY
 
+        dropped = await asyncio.gather(
+            caller.call_tool(name="get_issue", arguments={}),
+            caller.call_tool(name="list_issues", arguments={}),
+            return_exceptions=True,
+        )
         results = await asyncio.gather(
             caller.call_tool(name="get_issue", arguments={}),
             caller.call_tool(name="list_issues", arguments={}),
             return_exceptions=True,
         )
 
+        assert all(isinstance(outcome, McpCallUnansweredError) for outcome in dropped)
         assert all(isinstance(result, McpSessionClosedError) for result in results)
         assert server.requests.count("initialize") == 3, "one boot, one dial per call"
         await caller.close()

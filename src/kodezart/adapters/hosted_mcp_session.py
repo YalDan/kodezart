@@ -76,6 +76,11 @@ class _PendingCall:
     arguments: dict[str, object]
     reply: asyncio.Future[McpToolResult] = field(repr=False)
     on_reopened: bool = False
+    #: Whether the host has handed this call to the session.  A call still
+    #: in the inbox when the session ends was never written and may be
+    #: made again; one the session had was written, and whether the
+    #: server ran it is unknown (KOD-305).
+    written: bool = False
 
 
 class _Phase(Enum):
@@ -294,16 +299,28 @@ class HostedSessionTransport(ABC):
         """
         return self.failure_for(failure, exc, tool_name, on_reopened=on_reopened)
 
-    def failure_unanswered(self, tool_name: str, *, on_reopened: bool) -> Exception:
+    def failure_unanswered(
+        self,
+        tool_name: str,
+        *,
+        on_reopened: bool,
+        written: bool,
+    ) -> Exception:
         """Why a call went unanswered: the session ended under it.
 
-        The closed-session subclass, which is what the record path reads
-        as a transport to reopen rather than a payload to fix (KOD-177).
+        Two arms, by whether the host had handed the call to the session.
+        Not yet: nothing reached the server, and the closed-session class
+        lets the caller make it again (KOD-177).  Already: the request was
+        written and the server may have run it, so it leaves as unanswered
+        and is not made again — on THIS transport too, which used to
+        re-send every call in flight when its stream dropped (KOD-305).
         """
-        return McpSessionClosedError(
-            f"the MCP session ended before the call was answered{_where(on_reopened)}",
-            server_name=self.server_name,
-            tool_name=tool_name,
+        ended = McpSessionClosedError("the session ended", server_name=self.server_name)
+        return self.failure_for(
+            CallUnanswered(session_died=True) if written else SessionGone(),
+            ended,
+            tool_name,
+            on_reopened=on_reopened,
         )
 
     def failure_not_serving(self, tool_name: str) -> Exception:
@@ -370,6 +387,12 @@ class HostedMcpSession:
         #: 2026-09-04: the orphan's teardown ended the session opened
         #: after it and failed the call in flight on that one (KOD-177).
         self._generation: int = 0
+        #: Hosts let go of but not yet joined — the join was cancelled
+        #: under the caller — so ``close`` can wait for them.  A host
+        #: nothing tracks is one the loop's shutdown finds still tearing
+        #: down and cancels mid-reap: measured 2026-09-05, a spawned server
+        #: left to exit on its own cost the shutdown 20.8 s against 4.9 s.
+        self._letting_go: set[asyncio.Task[None]] = set()
         #: Held across every change of session: open, reopen and close.
         #: Calls on a serving session never take it.  Workers hit together
         #: by one dropped stream reopen through it one at a time, and the
@@ -420,7 +443,26 @@ class HostedMcpSession:
         except BaseException:
             self._host = None
             self._inbox = None
+            # Retired HERE, not only when the next host starts: a host let
+            # go of while opening is still running, and a second
+            # cancellation at the join below would otherwise leave it
+            # current — it would then write SERVING over the phase this
+            # arm restores, with no inbox behind it, and every call after
+            # would be refused as a session that ended (measured
+            # 2026-09-05).
+            self._generation += 1
             inbox.close()
+            # A host still dialling is CANCELLED, unlike one let go of
+            # after it served: it has no session to keep whole, and a dial
+            # that never completes would otherwise hold a cancelled open
+            # forever (measured 2026-09-05).  A host that reported its own
+            # failure is already unwinding and is only waited for: a
+            # cancel landing in the SDK's teardown leaves its streams
+            # unclosed (measured 2026-09-05).  A cancelled open cancels the
+            # future it was awaiting, so "reported" is done AND not
+            # cancelled.
+            if ready.cancelled() or not ready.done():
+                host.cancel()
             try:
                 await _join(host)
             finally:
@@ -459,10 +501,16 @@ class HostedMcpSession:
             self._host = None
             self._inbox = None
             self._phase = _Phase.CLOSED
+            if host is not None and inbox is not None:
+                inbox.close()
+                await _join(host)
+            # Whatever was let go of and never joined is waited for too:
+            # a host still tearing down when the loop stops is one the
+            # loop cancels mid-reap.
+            if self._letting_go:
+                await asyncio.wait(set(self._letting_go))
             if host is None or inbox is None:
                 return
-            inbox.close()
-            await _join(host)
         await self._log.ainfo(
             "mcp_session_closed",
             server_name=self._transport.server_name,
@@ -563,7 +611,9 @@ class HostedMcpSession:
             if phase is _Phase.CLOSED:
                 raise self._transport.failure_not_serving(name)
             if not self._transport.may_reopen():
-                raise self._transport.failure_unanswered(name, on_reopened=False)
+                raise self._transport.failure_unanswered(
+                    name, on_reopened=False, written=False
+                )
             if phase is _Phase.ENDED:
                 await self._reopen(name)
             inbox = self._inbox
@@ -573,7 +623,9 @@ class HostedMcpSession:
                 # the session ENDING, which is the class the record path
                 # routes on, and not the "nobody opened one" refusal that
                 # would send a reader looking for a boot that never ran.
-                raise self._transport.failure_unanswered(name, on_reopened=True)
+                raise self._transport.failure_unanswered(
+                    name, on_reopened=True, written=False
+                )
             call = self._post(
                 inbox,
                 name=name,
@@ -622,6 +674,8 @@ class HostedMcpSession:
         if inbox is not None:
             inbox.close()
         if host is not None:
+            self._letting_go.add(host)
+            host.add_done_callback(self._letting_go.discard)
             await _join(host)
 
     async def _host_session(
@@ -653,7 +707,12 @@ class HostedMcpSession:
                     ready.set_result(None)
                 await self._serve(session, posted, generation)
         except BaseException as exc:
-            if self._is_current(generation):
+            # A host let go of and never joined still names its death, if
+            # nobody has: the reopen that follows reads the field straight
+            # after a discard that had nothing to join, and logged
+            # ``closed_by=None`` for a death that had a name (measured
+            # 2026-09-05).  It never overwrites a name a current host wrote.
+            if self._is_current(generation) or self._ended_by is None:
                 self._ended_by = _died_of(exc)
             if not ready.done():
                 ready.set_exception(self._transport.failure_opening(exc))
@@ -700,6 +759,7 @@ class HostedMcpSession:
         generation: int,
     ) -> None:
         """Run one call and resolve its reply, however it went."""
+        call.written = True
         try:
             result = await session.call_tool(
                 call.name,
@@ -778,5 +838,6 @@ class HostedMcpSession:
                 self._transport.failure_unanswered(
                     call.name,
                     on_reopened=call.on_reopened,
+                    written=call.written,
                 ),
             )

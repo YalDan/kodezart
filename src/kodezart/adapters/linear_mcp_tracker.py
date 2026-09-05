@@ -34,6 +34,7 @@ from typing import Final, assert_never
 from pydantic import ValidationError
 
 from kodezart.core.errors import (
+    McpCallUnansweredError,
     McpCredentialRefusedError,
     McpTransportError,
     TrackerBootValidationError,
@@ -105,6 +106,25 @@ _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
 _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
 _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
+
+#: The tools that change nothing on the board.  A call the server may have
+#: performed is made again only if performing it twice is the same as once
+#: (KOD-305): these are, and every other tool is a write.
+_READ_TOOLS: Final[frozenset[str]] = frozenset(
+    {
+        _TOOL_LIST_ISSUES,
+        _TOOL_LIST_DIFFS,
+        _TOOL_GET_ISSUE,
+        _TOOL_LIST_COMMENTS,
+        _TOOL_GET_DOCUMENT,
+        _TOOL_LIST_DOCUMENTS,
+        _TOOL_GET_PROJECT,
+        _TOOL_LIST_USERS,
+        _TOOL_LIST_TEAMS,
+        _TOOL_LIST_ISSUE_LABELS,
+        _TOOL_LIST_ISSUE_STATUSES,
+    },
+)
 
 #: The page a capability probe asks for: the smallest a listing tool takes.
 #: The probe is about reachability, so a second row would be paid for and
@@ -396,6 +416,20 @@ def _claim_marker_body(*, holder: str, expires_at: datetime) -> str:
     )
 
 
+def _may_resend(tool: str, exc: Exception) -> bool:
+    """Whether a call that failed this way may be made again.
+
+    The transport says when a request was written and never answered:
+    the server may have performed it, and a reopened session making it
+    again would perform it twice (KOD-305).  The retry budget therefore
+    buys a second attempt at a READ, which is harmless, and never at a
+    write; a failure the transport could tell apart from that — the
+    session gone before anything was written, or an answer that was a
+    refusal — is retried as it always was.
+    """
+    return not isinstance(exc, McpCallUnansweredError) or tool in _READ_TOOLS
+
+
 class LinearMcpTracker:
     """``TrackerPort`` over the Linear MCP server.
 
@@ -608,6 +642,18 @@ class LinearMcpTracker:
         self._self_writes.record(issue_key=issue.issue_key, updated_at=issue.updated_at)
         return issue
 
+    def _saved_issue(self, payload: McpToolResult) -> TrackerIssue:
+        """The stored issue a save_issue answer carries, recorded as a write.
+
+        The one tail every issue-write shares: validate the save_issue
+        envelope, read it as the stored issue, and record the stamp the
+        write left (:meth:`_wrote`).  One place, so a change to how a
+        write is read back cannot land on three of four call sites.
+        """
+        return self._wrote(
+            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
+        )
+
     async def _wrote_by_reading(self, issue_key: str) -> None:
         """Read the issue back to learn what this write left on it.
 
@@ -658,9 +704,7 @@ class LinearMcpTracker:
                 "priority": _RAW_BY_PRIORITY[priority],
             },
         )
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
-        )
+        return self._saved_issue(payload)
 
     async def update_issue(
         self,
@@ -676,9 +720,7 @@ class LinearMcpTracker:
         if body is not None:
             arguments["description"] = body
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
-        )
+        return self._saved_issue(payload)
 
     async def set_workflow_state(
         self,
@@ -711,9 +753,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},
         )
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
-        )
+        return self._saved_issue(payload)
 
     async def set_queue_state(
         self,
@@ -730,9 +770,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "labels": [*preserved, self._label_for(state)]},
         )
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
-        )
+        return self._saved_issue(payload)
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""
@@ -1570,8 +1608,8 @@ class LinearMcpTracker:
                     server_name=exc.server_name,
                 )
                 raise
-            except (McpTransportError, TransientAPIError):
-                if attempt >= self._max_retries:
+            except (McpTransportError, TransientAPIError) as exc:
+                if attempt >= self._max_retries or not _may_resend(tool, exc):
                     raise
                 delay = self._retry_backoff_factor * (_RETRY_BACKOFF_BASE**attempt)
                 await self._log.awarning(
