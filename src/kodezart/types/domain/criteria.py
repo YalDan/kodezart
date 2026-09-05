@@ -173,8 +173,13 @@ class BaseDemonstration(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    command: str = Field(min_length=1)
-    satisfied_at_base: bool
+    command: str = Field(
+        min_length=1,
+        description="The command you ran at the base ref to establish this.",
+    )
+    satisfied_at_base: bool = Field(
+        description="Whether the criterion already holds before any work is done.",
+    )
 
 
 class CostMeasurement(CamelCaseModel):
@@ -187,8 +192,13 @@ class CostMeasurement(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    observed: str = Field(min_length=1)
-    affordable: bool
+    observed: str = Field(
+        min_length=1,
+        description="What the measurement returned, quoted from the output you ran.",
+    )
+    affordable: bool = Field(
+        description="Whether the measured cost is one an implementer can pay.",
+    )
 
 
 class CostClaim(CamelCaseModel):
@@ -204,8 +214,16 @@ class CostClaim(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    assertion: str = Field(min_length=1)
-    measurement: CostMeasurement | None = None
+    assertion: str = Field(
+        min_length=1,
+        description="The cost the criterion is claimed to impose.",
+    )
+    measurement: CostMeasurement | None = Field(
+        default=None,
+        description=(
+            "The measurement backing the assertion; absent when none was taken."
+        ),
+    )
 
 
 class GeneratedCriterion(CamelCaseModel):
@@ -223,8 +241,16 @@ class DraftedCriterion(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    text: str = Field(min_length=1)
-    criterion_class: CriterionClass
+    text: str = Field(
+        min_length=1,
+        description=(
+            "The criterion, stated so a later reviewer who sees only this "
+            "text, the repository and a changeset can decide it."
+        ),
+    )
+    criterion_class: CriterionClass = Field(
+        description="Whether failing this criterion blocks the run or only flags it.",
+    )
 
 
 class CriterionFinding(CamelCaseModel):
@@ -240,16 +266,75 @@ class CriterionFinding(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
-    verdict: CriterionVerdict
-    smallest_repair: RepairKind
-    refutation: str | None = None
-    missing_resource: str | None = None
-    cost_claim: CostClaim | None = None
-    base_demonstration: BaseDemonstration | None = None
-    pinned_literals: list[str] = Field(default_factory=list)
-    forbidden_class: ForbiddenCriterionClass | None = None
-    undeclared_switch_arms: list[str] = Field(default_factory=list)
+    criterion_id: CriterionId = Field(
+        pattern=CRITERION_ID_PATTERN,
+        description=(
+            "The dispatched criterion's id, echoed exactly. Return one finding "
+            "per dispatched id and invent none."
+        ),
+    )
+    verdict: CriterionVerdict = Field(
+        description=(
+            "Feasible, infeasible, or unverifiable — never folded into each other."
+        ),
+    )
+    smallest_repair: RepairKind = Field(
+        description=(
+            "The smallest repair that would settle the criterion, bound to "
+            "the verdict: feasible names none, infeasible names "
+            "criterion_text (the criterion's own text must change), "
+            "unverifiable names environment_supply (something absent must "
+            "be supplied to the environment — not a text change). Any "
+            "other pairing is refused."
+        ),
+    )
+    refutation: str | None = Field(
+        default=None,
+        description=(
+            "Evidence an implementer could not overturn, for an infeasible "
+            "verdict. An unproven suspicion is not a refutation."
+        ),
+    )
+    missing_resource: str | None = Field(
+        default=None,
+        description=(
+            "The file, symbol, binding or rule that must be SUPPLIED before "
+            "the criterion can be decided. Its absence is a lack in the "
+            "environment, not a fault in the criterion's text: it pairs "
+            "with unverifiable and environment_supply, never with "
+            "infeasible."
+        ),
+    )
+    cost_claim: CostClaim | None = Field(
+        default=None,
+        description="A cost the criterion imposes, with the measurement behind it.",
+    )
+    base_demonstration: BaseDemonstration | None = Field(
+        default=None,
+        description="Evidence that the criterion already holds at the base ref.",
+    )
+    pinned_literals: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact counts, paths or formatting the criterion pins that a correct "
+            "refactor may change."
+        ),
+    )
+    forbidden_class: ForbiddenCriterionClass | None = Field(
+        default=None,
+        description="The forbidden criterion class this one falls into, when it does.",
+    )
+    undeclared_switch_arms: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Cases the criterion names that the declared type does not "
+            "have. Naming ANY arm here makes the criterion infeasible — "
+            "the fault is in the criterion's own text, and nothing "
+            "supplied to a runner makes an arm exist. A type that could "
+            "not be found at all is a missingResource, not an undeclared "
+            "arm."
+        ),
+    )
 
     @model_validator(mode="after")
     def _verdict_carries_its_grounds(self) -> Self:
@@ -289,15 +374,31 @@ class Contradiction(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_ids: list[CriterionIdItem] = Field(min_length=2)
-    explanation: str = Field(min_length=1)
+    criterion_ids: list[CriterionIdItem] = Field(
+        min_length=2,
+        description="The minimal subset of criterion ids that cannot all hold at once.",
+    )
+    explanation: str = Field(
+        min_length=1,
+        description="Why no single implementation satisfies that subset.",
+    )
 
 
 class CriteriaValidationOutput(CamelCaseModel):
     """Structured output of the validator agent."""
 
-    findings: list[CriterionFinding] = Field(min_length=1)
-    contradictions: list[Contradiction] = Field(default_factory=list)
+    findings: list[CriterionFinding] = Field(
+        min_length=1,
+        description=(
+            "Exactly one finding per dispatched criterion id, covering every id."
+        ),
+    )
+    contradictions: list[Contradiction] = Field(
+        default_factory=list,
+        description=(
+            "Subsets of individually feasible criteria that cannot hold together."
+        ),
+    )
 
 
 class CriterionFeasibility(CamelCaseModel):
@@ -399,3 +500,53 @@ class CriterionFailure(CamelCaseModel):
     criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
     text: str = Field(min_length=1)
     reasoning: str = Field(min_length=1)
+
+
+class FanInReport(CamelCaseModel):
+    """The non-permutation a bounded re-dispatch could not clear.
+
+    Carried on an emitted event ONLY when the guard's attempts were spent
+    and the run graded a set that does not correspond 1:1 to the
+    dispatched ids.  Absent means the returned set was a permutation.
+
+    Not a flag: "the guard cleared" and "the guard could not clear it" are
+    different facts, and the second one has to name WHICH ids were wrong
+    and what it cost to find out — a reader who only learns that grading
+    was fail-closed cannot tell a model that answered a different question
+    from criteria the work genuinely failed.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    missing_ids: list[CriterionIdItem] = Field(default_factory=list)
+    unknown_ids: list[CriterionIdItem] = Field(default_factory=list)
+    duplicate_ids: list[CriterionIdItem] = Field(default_factory=list)
+    dispatched_count: int = Field(ge=1)
+    attempts: int = Field(ge=1)
+
+
+class ContractBreach(CamelCaseModel):
+    """One refused response, named by the class that refused it."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    breach_class: str = Field(min_length=1)
+    detail: str = Field(min_length=1)
+
+
+class ContractCorrection(CamelCaseModel):
+    """A contract violation the node corrected in flight.
+
+    Carried on the criteria-validation event ONLY when a response was
+    refused and a later one conformed: absent means the first answer
+    conformed, and a refusal that never corrects raises instead of
+    reaching this event at all.  A run that had to argue with its
+    validator costs whole judgment sessions, and a reader who cannot see
+    WHICH rule was broken cannot tell a model that misread the contract
+    from criteria the sweep genuinely refuses.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    breaches: list[ContractBreach] = Field(min_length=1)
+    attempts: int = Field(ge=1)

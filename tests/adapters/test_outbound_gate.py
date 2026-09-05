@@ -6,7 +6,10 @@ from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.core.config import AppConfig
 from kodezart.types.domain.gating import (
+    PATTERNLESS_CATEGORIES,
+    ContentClass,
     GateVerdict,
+    OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     ScanHit,
@@ -34,47 +37,55 @@ def make_gate(
 # ---------------------------------------------------------------------------
 
 
-def test_no_hits_is_clean() -> None:
+async def test_no_hits_is_clean() -> None:
     """A payload with no matches is CLEAN and passes through unchanged."""
-    decision = make_gate(REDACT_PATTERNS).gate(
+    decision = await make_gate(REDACT_PATTERNS).gate(
         content="nothing to see",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == "nothing to see"
     assert decision.categories == ()
 
 
-def test_redact_category_hit_alone_yields_redacted() -> None:
+async def test_redact_category_hit_alone_yields_redacted() -> None:
     """A redact-category hit redacts, it does not block."""
-    decision = make_gate(REDACT_PATTERNS).gate(
+    decision = await make_gate(REDACT_PATTERNS).gate(
         content="see TRACKER-42 for context",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.REDACTED
     assert decision.categories == (RedactionCategory.TRACKER_URLS,)
 
 
-def test_block_category_hit_alone_yields_blocked() -> None:
+async def test_block_category_hit_alone_yields_blocked() -> None:
     """A block-category hit blocks and nothing survives to be written."""
-    decision = make_gate(BLOCK_PATTERNS).gate(
+    decision = await make_gate(BLOCK_PATTERNS).gate(
         content="ping infra.internal now",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.content == ""
     assert decision.categories == (RedactionCategory.INFRA_ENDPOINTS,)
 
 
-def test_both_categories_yield_blocked() -> None:
+async def test_both_categories_yield_blocked() -> None:
     """Max severity wins across the whole payload."""
-    decision = make_gate({**REDACT_PATTERNS, **BLOCK_PATTERNS}).gate(
+    decision = await make_gate({**REDACT_PATTERNS, **BLOCK_PATTERNS}).gate(
         content="TRACKER-1 and infra.internal",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert set(decision.categories) == {
@@ -90,12 +101,14 @@ def test_verdict_severity_ordering() -> None:
     assert max_verdict(GateVerdict.BLOCKED, GateVerdict.CLEAN) is GateVerdict.BLOCKED
 
 
-def test_identifier_writer_blocks_on_a_redact_category_hit() -> None:
+async def test_identifier_writer_blocks_on_a_redact_category_hit() -> None:
     """A git ref cannot carry a placeholder, so any hit blocks."""
-    decision = make_gate(REDACT_PATTERNS).gate(
+    decision = await make_gate(REDACT_PATTERNS).gate(
         content="fix-TRACKER-42-thing",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.IDENTIFIER,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert "[REDACTED:" not in decision.content
@@ -106,12 +119,14 @@ def test_identifier_writer_blocks_on_a_redact_category_hit() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_redacted_form_is_a_category_labelled_placeholder_per_span() -> None:
+async def test_redacted_form_is_a_category_labelled_placeholder_per_span() -> None:
     """Each matched span becomes exactly one [REDACTED:<category>] token."""
-    decision = make_gate(REDACT_PATTERNS).gate(
+    decision = await make_gate(REDACT_PATTERNS).gate(
         content="a TRACKER-1 b TRACKER-2 c",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.content == ("a [REDACTED:tracker_urls] b [REDACTED:tracker_urls] c")
 
@@ -129,21 +144,23 @@ def test_redacted_form_is_a_category_labelled_placeholder_per_span() -> None:
         (RepoVisibility.UNKNOWN, GateVerdict.REDACTED),
     ],
 )
-def test_gate_engages_on_public_and_unknown_only(
+async def test_gate_engages_on_public_and_unknown_only(
     visibility: RepoVisibility,
     expected: GateVerdict,
 ) -> None:
     """Private targets see no behavioral change; UNKNOWN takes the public path."""
-    decision = make_gate(REDACT_PATTERNS).gate(
+    decision = await make_gate(REDACT_PATTERNS).gate(
         content="see TRACKER-42",
         visibility=visibility,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is expected
 
 
 @pytest.mark.parametrize("visibility", list(RepoVisibility))
-def test_unconfigured_deployment_is_clean_on_every_visibility(
+async def test_unconfigured_deployment_is_clean_on_every_visibility(
     visibility: RepoVisibility,
 ) -> None:
     """AC-4: pattern sets ship empty except credentials, so ordinary text passes."""
@@ -152,15 +169,17 @@ def test_unconfigured_deployment_is_clean_on_every_visibility(
         scanners=[RegexContentScanner(patterns=config.deny_patterns)],
         verdicts=config.deny_pattern_verdicts,
     )
-    decision = gate.gate(
+    decision = await gate.gate(
         content="feat: add the widget\n\nCloses the reported gap.",
         visibility=visibility,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.CLEAN
 
 
-def test_shipped_credential_category_still_blocks() -> None:
+async def test_shipped_credential_category_still_blocks() -> None:
     """The one category that ships populated: a credential never leaves."""
     config = AppConfig()
     gate = PatternOutboundContentGate(
@@ -168,10 +187,35 @@ def test_shipped_credential_category_still_blocks() -> None:
         verdicts=config.deny_pattern_verdicts,
     )
     token = "ghp_" + "A" * 40
-    decision = gate.gate(
+    decision = await gate.gate(
         content=f"push failed for {token}",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.BLOCKED
+    assert decision.categories == (RedactionCategory.CREDENTIALS,)
+
+
+async def test_the_shipped_credential_category_blocks_the_knowledge_token() -> None:
+    """Egress redaction and the gate are two surfaces over one credential class.
+
+    A pattern added to only the redaction helper would leave this surface
+    blind to the credential the knowledge layer introduces.
+    """
+    config = AppConfig()
+    gate = PatternOutboundContentGate(
+        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
+        verdicts=config.deny_pattern_verdicts,
+    )
+    token = "ntn_" + "A" * 44
+    decision = await gate.gate(
+        content=f"knowledge call failed for {token}",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.categories == (RedactionCategory.CREDENTIALS,)
@@ -182,16 +226,20 @@ def test_shipped_credential_category_still_blocks() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_second_pattern_set_runs_through_the_same_engine() -> None:
+async def test_a_second_pattern_set_runs_through_the_same_engine() -> None:
     """Reusability: only the configured pattern set changes, not the engine."""
     scanner = RegexContentScanner(
         patterns={RedactionCategory.CROSS_REPO_NAMES: [r"acme/[a-z-]+"]},
     )
-    hits = scanner.scan("mirror of acme/other-repo here")
+    result = await scanner.scan(
+        content="mirror of acme/other-repo here",
+        destination=OutboundDestination.PR_BODY,
+    )
+    hits = result.hits
     assert [hit.category for hit in hits] == [RedactionCategory.CROSS_REPO_NAMES]
 
 
-def test_a_second_registered_scanner_participates_with_no_gate_change() -> None:
+async def test_a_second_registered_scanner_participates_with_no_gate_change() -> None:
     """The ordered scanner list is the zero-change seam for a later auditor."""
     extra = FakeContentScanner(
         [ScanHit(category=RedactionCategory.INFRA_ENDPOINTS, start=0, end=4)],
@@ -200,16 +248,18 @@ def test_a_second_registered_scanner_participates_with_no_gate_change() -> None:
         scanners=[RegexContentScanner(patterns=REDACT_PATTERNS), extra],
         verdicts=AppConfig().deny_pattern_verdicts,
     )
-    decision = gate.gate(
+    decision = await gate.gate(
         content="host and TRACKER-9",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
     assert extra.calls == ["host and TRACKER-9"]
     assert decision.verdict is GateVerdict.BLOCKED
 
 
-def test_scanner_hits_are_returned_in_payload_order() -> None:
+async def test_scanner_hits_are_returned_in_payload_order() -> None:
     """Ordered hits make the redaction rewrite deterministic."""
     scanner = RegexContentScanner(
         patterns={
@@ -217,7 +267,11 @@ def test_scanner_hits_are_returned_in_payload_order() -> None:
             RedactionCategory.CROSS_REPO_NAMES: [r"acme/[a-z-]+"],
         },
     )
-    hits = scanner.scan("acme/one then TRACKER-3")
+    result = await scanner.scan(
+        content="acme/one then TRACKER-3",
+        destination=OutboundDestination.PR_BODY,
+    )
+    hits = result.hits
     assert [hit.start for hit in hits] == sorted(hit.start for hit in hits)
 
 
@@ -229,7 +283,10 @@ def test_scanner_hits_are_returned_in_payload_order() -> None:
 def test_default_pattern_sets_ship_empty_except_credentials() -> None:
     """No deny-pattern literal in code beyond the shipped credential category."""
     patterns = AppConfig().deny_patterns
-    assert set(patterns) == set(RedactionCategory)
+    # ORG_PRIVATE is absent BY CONSTRUCTION, not by omission: a pattern
+    # describing an organisation contains the string it describes, so the
+    # category is rejected as a deny_patterns key at boot (KOD-106 d.3).
+    assert set(patterns) == set(RedactionCategory) - PATTERNLESS_CATEGORIES
     for category, entries in patterns.items():
         if category is RedactionCategory.CREDENTIALS:
             assert entries

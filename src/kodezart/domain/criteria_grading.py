@@ -15,24 +15,21 @@ dispatched count, so:
   echoed whitespace or backslash mutation changes neither the keying nor
   the criterion anybody downstream reads.
 
-The missing / unknown / duplicate DETECTION above is a KOD-91 workaround
-rather than architecture — here and at the sweep's ``reconcile``, which
-points at this statement rather than repeating it.  Server-side strict
-enforcement does not engage for any schema kodezart ships — every one uses
-keywords outside the strict allowlist — so nothing upstream rejects a
-partial or padded result set.
+The missing / unknown / duplicate DETECTION above is what the permutation
+guard reads: :func:`kodezart.domain.fan_in.require_permutation` turns it
+into the retryable error, and the node re-dispatches within its bound
+before this grading is allowed to stand.  Both fan-in channels answer to
+that one definition of correspondence — the sweep's ``reconcile`` raises
+the same error from the same construction site.
 Measured, not feared: ``criteria_results`` is ``Field(min_length=1)`` and
-acceptance is ``all(...)`` over whatever returned, so three results for ten
-criteria yielded acceptance over the partial set.
+acceptance was once ``all(...)`` over whatever returned, so three results
+for ten criteria yielded acceptance over the partial set.
 
-KOD-91 is the expiry, and its deliverable 4 covers BOTH fan-in channels in
-terms — "The identical guard applies to the KOD-66 validator's verdict
-set: one verdict per dispatched id".  What KOD-91 retires is the detection
-half, by retrying a conforming result set into existence.  What survives it
-is the fail-closed GRADING arm, because deliverable 4 "falls through to
-KOD-11's fail-closed grading" once the retries are exhausted.  The
-detection half is retained TODAY on a scope boundary — KOD-11 assigns the
-retrying guard to KOD-91 — and not on a mechanism gap.
+The guard does NOT retire this arm; it sits in front of it.  A model that
+answers the same wrong shape every time exhausts the bound, and what runs
+then is exactly what runs here: the dispatched denominator, a missing id
+graded failed and named, and the holes reported on the emitted event so
+the fail-closed verdict is legible as one rather than as a quiet loss.
 
 ``results`` carries a row for every dispatched id.  The ARITHMETIC is
 narrower: an ``unverifiable`` criterion seats in neither ``passed_count``

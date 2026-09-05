@@ -47,7 +47,7 @@ REF_WORDS = ("base", "branch", "ref")
 #: would actually be spent.
 SCOPE_SURFACES = (
     "src/kodezart/domain/base_scope.py",
-    "src/kodezart/types/domain/base_spec.py",
+    "src/kodezart/types/domain/branch.py",
     "src/kodezart/chains/ralph_loop.py",
     "src/kodezart/chains/ralph_workflow.py",
 )

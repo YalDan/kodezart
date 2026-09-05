@@ -17,10 +17,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The additivity guard measures "unchanged" against a recorded base
+          # commit and a trunk anchor.  Under the default depth-1 checkout
+          # neither is an object in the runner's clone, so every merge-base,
+          # show and ls-tree against them dies and the guard cannot grade.
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+
+        # The workflow-script fan-in guard executes the shipped
+        # .claude/workflows JavaScript under Node.  That test fails rather
+        # than skips when no interpreter is present, so the dependency is
+        # declared here instead of resting on whatever the runner image
+        # happens to ship.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - run: make install
 

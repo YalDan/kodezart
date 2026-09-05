@@ -222,9 +222,314 @@ class OperationConfigError(Exception):
         self.failures: tuple[str, ...] = tuple(failures)
 
 
+class TrackerBootValidationError(Exception):
+    """Raised at boot when a configured tracker mapping does not resolve.
+
+    Lists EVERY unresolvable entry at once, each described by kind, semantic
+    name and configured identifier.  There is no partial operation: a
+    mapping the workspace cannot resolve would otherwise surface as a
+    mis-targeted write hours later, so the process refuses to start.
+    """
+
+    def __init__(self, message: str, *, unresolved: Sequence[str]) -> None:
+        super().__init__(f"{message} ({'; '.join(unresolved)})")
+        self.unresolved: tuple[str, ...] = tuple(unresolved)
+
+
+class PassGateScopeError(Exception):
+    """Raised at construction when a container cannot serve a gate's signal.
+
+    The other half of the container partition, and not the same failure as
+    an absent one: this container is DECLARED and cannot answer the
+    question anyway.  Refused where the containers meet the signal rather
+    than on the tick that reaches one, because a gate built over such a
+    container raises on every tick forever and the pass it guards never
+    runs again.
+    """
+
+    def __init__(self, message: str, *, signal: str, container: str) -> None:
+        super().__init__(f"{message} (signal: {signal}; container: {container})")
+        self.signal: str = signal
+        self.container: str = container
+
+
+class PassGateCapabilityError(Exception):
+    """Raised at boot when the credential cannot answer a wired gate's signal.
+
+    Lists EVERY refused signal at once, each carrying the pass it gates and
+    the backend's own diagnosis, so one boot failure names the whole gap.
+    The alternative is what this replaces: a gate whose scan the credential
+    is not scoped for reports "nothing moved" on every tick, which is
+    indistinguishable from a quiet board — the pass it guards never runs
+    again and nothing anywhere says so.
+    """
+
+    def __init__(self, message: str, *, refusals: Sequence[str]) -> None:
+        super().__init__(f"{message} ({'; '.join(refusals)})")
+        self.refusals: tuple[str, ...] = tuple(refusals)
+
+
+class PassKnowledgeCapabilityError(Exception):
+    """Raised at boot when a pass is told to reach a store it holds no grant to.
+
+    Lists EVERY affected entry at once, so one boot failure names the whole
+    gap rather than one registry entry per boot cycle.  The two halves of
+    the mismatch are declared in different files and neither one is wrong
+    on its own: an operation may name a knowledge destination and a
+    deployment may grant the knowledge server to no session type.  Together
+    they instruct a scheduled pass to write where its session cannot
+    reach — an instruction that can only fail inside the session, on a
+    board nobody is watching, with the pass reporting an ordinary run.
+    """
+
+    def __init__(self, message: str, *, destinations: Sequence[str]) -> None:
+        super().__init__(f"{message} ({'; '.join(destinations)})")
+        self.destinations: tuple[str, ...] = tuple(destinations)
+
+
+class TrackerEnsureConflictError(Exception):
+    """Raised when instating an OWNED value would ALTER an existing definition.
+
+    Ensuring is creates-only.  A rename, a recolour, a re-scope or two
+    declared members claiming one backend value is this error and performs
+    no write: adopting the wrong definition silently would repurpose a
+    value another part of the workspace already means something by.
+    """
+
+    def __init__(self, message: str, *, entry: str) -> None:
+        super().__init__(f"{message} ({entry})")
+        self.entry: str = entry
+
+
+class TrackerProtocolError(Exception):
+    """Raised when a tracker backend's response cannot be read as its shape.
+
+    The adapter refuses to guess.  A field that is absent, of the wrong
+    type, or carries an unmappable value is this error and never a
+    substituted default — a silently defaulted priority or state would
+    reorder the dispatch queue with nothing to falsify.
+    """
+
+    def __init__(self, message: str, *, tool: str, detail: str) -> None:
+        super().__init__(f"{message} (tool: {tool}; {detail})")
+        self.tool: str = tool
+        self.detail: str = detail
+
+
+class McpTransportError(Exception):
+    """Raised when an MCP session cannot be opened or a tool call cannot answer.
+
+    The transport refuses to guess in either direction: a server that
+    reports a tool error, returns no structured content, or is not dialled
+    at all is this error, never an empty result a caller would read as "no
+    such issue".
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        server_name: str,
+        tool_name: str | None = None,
+    ) -> None:
+        described = server_name if tool_name is None else f"{server_name}/{tool_name}"
+        super().__init__(f"{message} ({described})")
+        self.server_name: str = server_name
+        self.tool_name: str | None = tool_name
+
+
+class McpSessionClosedError(McpTransportError):
+    """Raised when the SESSION is gone or could not be brought up.
+
+    The discriminator the record path reads (KOD-177): a server that
+    ANSWERED — with a result or with a tool error — is a server that is
+    there, and the remedy is the payload or the destination; a session
+    that is gone is a transport to reopen or a process to diagnose, and
+    the measured boot spent nine minutes writing nothing because the two
+    reached the log as one indistinguishable event.
+
+    A subclass rather than a peer, because every existing handler of a
+    transport failure treats this as one: what is new is only that the
+    class SAYS which of the two it was.
+    """
+
+
+class McpCallUnansweredError(McpTransportError):
+    """Raised when the request was WRITTEN and no answer came.
+
+    Whether the server ran it is unknown, and that is the whole of what
+    this class says.  Not the closed-session class, deliberately: a caller
+    that meets that class makes the call again on a fresh session, and a
+    write the server performed before dying would be performed twice
+    (KOD-305).  A record path that meets this one leaves the row to the
+    verification that runs next, which finds it or does not.
+    """
+
+
+class McpCredentialRefusedError(Exception):
+    """Raised when an MCP server refuses the CREDENTIAL rather than the call.
+
+    Deliberately not an ``McpTransportError`` and deliberately outside every
+    class the tracker adapter retries.  A transport failure is a blip that a
+    second attempt may clear; a refused credential answers every attempt the
+    same way, so retrying one spends a whole budget of sleeps to learn what
+    the first answer already said.
+
+    Measured 2026-09-01 (KOD-171): fifty-one minutes into a live boot the
+    tracker began answering HTTP 401, and claim renewals, gate scans and
+    dispatch ticks each burned their full retry budget on it.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        server_name: str,
+        tool_name: str | None = None,
+    ) -> None:
+        described = server_name if tool_name is None else f"{server_name}/{tool_name}"
+        super().__init__(f"{message} ({described})")
+        self.server_name: str = server_name
+        self.tool_name: str | None = tool_name
+
+
+class TrackerCredentialShapeError(Exception):
+    """Raised at boot when the tracker credential is not the accepted shape.
+
+    Names the FIELD it was read from and the SHAPE that backend accepts,
+    because between them those are the whole of what an operator can act
+    on: mint this, put it there.  A refusal that named only what was wrong
+    would leave the next paste to guesswork.
+
+    The backend takes one credential that outlives a run and one that does
+    not, and nothing in this process refreshes anything, so a boot that
+    accepted the second would serve until the token died and then answer
+    every tracker call with a refusal, hours later, on a board nobody is
+    watching — measured 2026-09-01 (KOD-171).
+    """
+
+    def __init__(self, message: str, *, field: str, accepted_shape: str) -> None:
+        super().__init__(f"{message} ({field} must hold {accepted_shape})")
+        self.field: str = field
+        self.accepted_shape: str = accepted_shape
+
+
 class PromptNamespaceCollisionError(Exception):
     """Raised at boot when the three binding namespaces are not disjoint."""
 
     def __init__(self, message: str, *, colliding: Sequence[str]) -> None:
         super().__init__(f"{message} ({', '.join(colliding)})")
         self.colliding: tuple[str, ...] = tuple(colliding)
+
+
+class TicketReviewModeError(Exception):
+    """Raised at construction when the ticket loop's mode cannot be honoured.
+
+    Two shapes, one class, because they are one defect: a knob is
+    configured whose guarantee this composition cannot deliver.  An
+    explicit review budget under a mode that compiles no review arm would
+    be silently ignored, and a create-only mode over a prompt set that
+    declares no draft critic would run the single creator session with
+    nothing checking it at all.  Both name EVERY setting involved — a
+    message naming only the one that raised leaves an operator to guess
+    which pair disagreed.
+    """
+
+    def __init__(self, message: str, *, settings: Sequence[str]) -> None:
+        super().__init__(f"{message} ({', '.join(settings)})")
+        self.settings: tuple[str, ...] = tuple(settings)
+
+
+class ContentScannerBootError(Exception):
+    """Raised at boot when the judgment scanner is enabled with nothing to judge.
+
+    The third state of the enable knob, made loud.  Enabled with no
+    private-surface description would leave a registered scanner whose every
+    scan is ``NOT_CONFIGURED`` — a gate that blocks every authored write, or
+    worse, one an operator disables to get work done.  The process refuses
+    to start instead.
+    """
+
+    def __init__(self, message: str, *, missing: str) -> None:
+        super().__init__(f"{message} ({missing})")
+        self.missing: str = missing
+
+
+class UnmappedAgentMessageError(Exception):
+    """Raised when the SDK streams a message type the mapping does not name.
+
+    Only a version bump that widened the vendor's message union without
+    widening the mapping reaches this.  It is loud because the arm it
+    replaced returned an empty list: a session that had absorbed a new
+    kind of message and said nothing about it read, from the outside,
+    exactly like a session with nothing to say.
+    """
+
+    def __init__(self, message_type: str) -> None:
+        super().__init__(
+            f"the agent stream carried an unmapped message type: {message_type}"
+        )
+        self.message_type: str = message_type
+
+
+class OutputStyleNotConfirmedError(Exception):
+    """Raised when a session's opening message does not confirm the declared style.
+
+    An output style is a system-prompt modification, so a session running
+    under a style the operator did not declare is doing DIFFERENT work,
+    not slightly worse work.  The session fails here rather than carrying
+    on under whatever the CLI loaded, because carrying on is precisely
+    what makes the declaration unobservable — the state this class exists
+    to make impossible.
+    """
+
+    def __init__(self, *, declared: str, reported: str | None) -> None:
+        super().__init__(
+            f"the session declared output style {declared!r} and its opening "
+            f"message reported {reported!r}"
+        )
+        self.declared: str = declared
+        self.reported: str | None = reported
+
+
+class RunRecordWriteError(Exception):
+    """Raised when a run's declared destination did not take its record.
+
+    The one class the two record producers catch, and the reason they can
+    log ONE field set: which kind ran, which destination it was owed to,
+    whose system holds it, and which of the three failure classes it was.
+    The measured boot logged a bare error string per failed write, so a
+    dead knowledge session and a refused page read identically and neither
+    named the log that went unwritten (KOD-177).
+
+    The fields are plain strings — the enum VALUES their producers carry —
+    because this module is under the domain vocabulary rather than over
+    it, and an event's fields are strings by the time they are read.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str,
+        destination: str,
+        system: str,
+        failure: str,
+    ) -> None:
+        super().__init__(f"{message} ({kind} → {system}/{destination}: {failure})")
+        self.kind: str = kind
+        self.destination: str = destination
+        self.system: str = system
+        self.failure: str = failure
+
+    @property
+    def cause_type(self) -> str:
+        """The class that actually failed, for the producers' one event.
+
+        This class itself when nothing else raised — a wiring defect is
+        raised here rather than caught from anywhere — and the underlying
+        class in every other case, because "RunRecordWriteError" alone
+        tells an operator only that a record failed to land.
+        """
+        cause = self.__cause__
+        return type(self if cause is None else cause).__name__

@@ -108,7 +108,11 @@ def _probe_service(tmp_path: Path) -> AgentService:
         model=config.model,
         setting_sources=config.setting_sources,
     )
-    return AgentService(executor=executor, workspace=workspace)
+    return AgentService(
+        executor=executor,
+        workspace=workspace,
+        git_base_url="https://github.com",
+    )
 
 
 def _render_generation_prompt(ticket: str, base_ref: str) -> str:

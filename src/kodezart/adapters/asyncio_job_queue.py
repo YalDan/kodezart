@@ -24,7 +24,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import WorkflowEngine
 from kodezart.domain.errors import QueueFullError
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.requests.agent import WorkflowRequest
@@ -156,7 +156,11 @@ class AsyncioJobQueue:
         """Stop accepting, cancel workers, mark in-flight jobs TERMINAL.
 
         Jobs still queued at shutdown are dropped — the documented
-        durability stance, made observable.
+        durability stance, made observable.  The sweep writes
+        ``shutdown_abandoned`` on every record it moves, in flight or
+        still waiting: both leave nothing to resume, and this is the one
+        path that publishes no event at all, so the record is the only
+        place the fate can be read.
         """
         self._accepting = False
         workers = [worker for lane in self._lanes.values() for worker in lane.workers]
@@ -178,15 +182,26 @@ class AsyncioJobQueue:
         for lane in self._lanes.values():
             lane.workers.clear()
             lane.pending.clear()
+        abandoned: list[str] = []
         for job_id, record in list(self._records.items()):
             if record.state is not JobState.TERMINAL:
                 self._records[job_id] = record.model_copy(
-                    update={"state": JobState.TERMINAL, "queue_position": None},
+                    update={
+                        "state": JobState.TERMINAL,
+                        "queue_position": None,
+                        "outcome": WorkflowOutcome.shutdown_abandoned,
+                    },
                 )
+                abandoned.append(job_id)
                 stream = self._streams.get(job_id)
                 if stream is not None:
                     stream.close()
-        await self._log.ainfo("job_queue_stopped", lanes=len(self._lanes))
+        await self._log.ainfo(
+            "job_queue_stopped",
+            lanes=len(self._lanes),
+            abandoned=len(abandoned),
+            outcome=WorkflowOutcome.shutdown_abandoned.value,
+        )
 
     # -- JobQueue ------------------------------------------------------------
 
@@ -293,6 +308,12 @@ class AsyncioJobQueue:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            # The run raised before it could classify itself, so the
+            # queue names the fate it observed.  Without this the record
+            # reaches TERMINAL with a null outcome, which is also what a
+            # shutdown sweep and a clean-but-silent run leave behind —
+            # three different fates read as one absence.
+            outcome = WorkflowOutcome.engine_error
             await self._log.aexception(
                 "job_failed",
                 job_id=job_id,

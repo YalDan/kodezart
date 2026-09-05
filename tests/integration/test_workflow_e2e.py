@@ -1,38 +1,65 @@
 """E2E workflow tests — real git repos, real components, scripted agent."""
 
 import asyncio
+import os
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
 
 import pytest
+import structlog
 
 from kodezart.adapters.git_branch_merger import GitBranchMerger
 from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
+from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.prompts import boot_prompts
 from kodezart.core.config import AppConfig
 from kodezart.services.agent_service import AgentService
-from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.agent import (
+    AgentEvent,
+    AssistantTextEvent,
+    ResultEvent,
+    WorkflowCompleteEvent,
+    WorkflowConsolidationEvent,
+    WorkflowTicketEvent,
+    WorkflowTicketReviewEvent,
+)
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistSource
+from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
+from kodezart.types.domain.ticket_review import (
+    DRAFT_CRITIC_LENS,
+    TicketApproval,
+    TicketReviewMode,
+)
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeBranchMerger,
     FakeChangePersister,
     FakeGitService,
     FakeQualityGate,
+    FakeRemediator,
     FakeRepoCache,
     FakeTicketGenerator,
     FakeWorkspaceProvider,
@@ -41,6 +68,7 @@ from tests.fakes import (
     attached_job_queue,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -178,6 +206,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -190,6 +219,10 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         plateau_window=2,
         git=git,
         cache=cache,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -197,6 +230,10 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         service=service,
         workspace=workspace,
         max_reviews=2,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -211,6 +248,12 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -314,6 +357,7 @@ async def test_workflow_e2e_exhausts_iterations(
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -326,6 +370,10 @@ async def test_workflow_e2e_exhausts_iterations(
         plateau_window=2,
         git=git,
         cache=cache,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -333,6 +381,10 @@ async def test_workflow_e2e_exhausts_iterations(
         service=service,
         workspace=workspace,
         max_reviews=2,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -347,6 +399,12 @@ async def test_workflow_e2e_exhausts_iterations(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -407,6 +465,9 @@ class _MarkerCapturingExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -501,6 +562,7 @@ async def test_workflow_e2e_divergent_base_branch(
     executor = _MarkerCapturingExecutor(inner)
     merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -513,6 +575,10 @@ async def test_workflow_e2e_divergent_base_branch(
         plateau_window=2,
         git=git,
         cache=cache,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -520,6 +586,10 @@ async def test_workflow_e2e_divergent_base_branch(
         service=service,
         workspace=workspace,
         max_reviews=2,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -534,6 +604,12 @@ async def test_workflow_e2e_divergent_base_branch(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -786,6 +862,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote=remote_name)
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
         persister=persister,
@@ -798,6 +875,10 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         plateau_window=2,
         git=git,
         cache=cache,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     ticket_generator = TicketGenerationLoop(
         skills=SUPPRESS_ALL_SKILLS,
@@ -805,6 +886,10 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         service=service,
         workspace=workspace,
         max_reviews=2,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -819,6 +904,12 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         git=git,
         cache=cache,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1053,6 +1144,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=AgentService(
+            git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
             persister=FakeChangePersister(),
@@ -1076,6 +1168,12 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
         git_remote=remote_name,
         git=FakeGitService(remote_branch_shas={"main": None}),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     with pytest.raises(RuntimeError) as excinfo:
@@ -1179,6 +1277,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
     fault_git = FaultInjectingGitService()
     merger = GitBranchMerger(git=fault_git, workspace=workspace, remote="origin")
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=workspace,
         persister=FakeChangePersister(),
@@ -1202,6 +1301,12 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         git=fault_git,
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = service
@@ -1251,3 +1356,458 @@ def test_consolidation_status_unchanged_no_exit_128_value_added() -> None:
         "divergent",
         "source_missing",
     }
+
+
+# ---------------------------------------------------------------------------
+# KOD-93-AC-6 — the whole workflow under the FLIPPED DEFAULTS
+#
+# The tests above build their components from named arguments, which is what
+# makes them tests of the workflow. This one builds them from AppConfig with
+# nothing configured, through the same composition helpers the application
+# boots with, which is what makes it a test of the DEFAULTS: if either flipped
+# value stopped reaching the graph, the assertions below could not hold.
+# ---------------------------------------------------------------------------
+
+
+async def _registry_from_shipped_defaults(config: AppConfig) -> InRepoPromptRegistry:
+    """The prompt registry a deployment gets when it configures nothing."""
+    return await boot_prompts(
+        config=config,
+        operation=None,
+        log=structlog.get_logger(__name__),
+    )
+
+
+async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End to end on real git, real components, scripted executor, zero config.
+
+    Three things are asserted together on purpose. The corpus serving every
+    dispatch is the flipped set; the ticket half compiled the create-only
+    shape, which is visible as an absent reviewer rather than an unvisited
+    one; and the run still reaches a merged, accepted terminal event. A
+    flip that shipped a set the graph could not actually run would satisfy
+    the first and fail the third.
+    """
+    for name in list(os.environ):
+        if name.startswith("KODEZART_"):
+            monkeypatch.delenv(name)
+
+    repo, bare = git_env
+    config = AppConfig()
+    prompts = await _registry_from_shipped_defaults(config)
+
+    assert config.prompt_set == "anthropic_v5"
+    assert config.ticket_review_mode is TicketReviewMode.CREATE_ONLY
+    assert set(prompts.resolution_table().values()) == {config.prompt_set}
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    persister = GitChangePersister(
+        gate=PassThroughGate(),
+        prompts=prompts,
+        git=git,
+        committer_name="test",
+        committer_email="t@t.dev",
+        remote="origin",
+    )
+    passing_sweep = {
+        "criteriaResults": [
+            {
+                "criterionId": f"AC-{index}",
+                "criterion": criterion,
+                "passed": True,
+                "reasoning": "Scripted pass.",
+            }
+            for index, criterion in enumerate(
+                (
+                    "The fix compiles without errors",
+                    "All existing tests pass",
+                    "Linting passes with no new warnings",
+                ),
+                start=1,
+            )
+        ],
+    }
+    executor = ScriptedFakeExecutor(eval_results=[passing_sweep, passing_sweep])
+    service = AgentService(
+        git_base_url="https://github.com",
+        executor=executor,
+        workspace=workspace,
+        persister=persister,
+    )
+    engine = RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=prompts,
+        service=service,
+        quality_gate=RalphLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=prompts,
+            service=service,
+            max_iterations=config.max_iterations,
+            plateau_window=config.loop_plateau_window,
+            git=git,
+            cache=cache,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            fan_in_max_attempts=2,
+            delay_floor_for=no_delay_floor,
+        ),
+        ticket_generator=TicketGenerationLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=prompts,
+            service=service,
+            workspace=workspace,
+            review_mode=config.ticket_review_mode,
+            max_reviews=config.explicit_max_reviews(),
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            delay_floor_for=no_delay_floor,
+        ),
+        merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=git,
+        cache=cache,
+        artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
+    )
+
+    events = [
+        e
+        async for e in engine.run(
+            prompt="fix",
+            repo_path=str(repo),
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    ticket_events = [e for e in events if isinstance(e, WorkflowTicketEvent)]
+    assert len(ticket_events) == 1
+    assert ticket_events[0].mode is TicketReviewMode.CREATE_ONLY
+    assert ticket_events[0].approved is TicketApproval.NOT_REVIEWED
+    assert ticket_events[0].review_rounds == 0
+    assert [e for e in events if isinstance(e, WorkflowTicketReviewEvent)] == []
+
+    complete = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
+    assert len(complete) == 1
+    assert complete[0].accepted is True
+    assert complete[0].merged is True
+    assert complete[0].final_commit_sha is not None
+
+    branches = await _git_output(["git", "branch", "--list"], cwd=bare)
+    assert "kodezart/" in branches
+
+
+async def test_the_flipped_defaults_attach_the_sets_lenses_to_the_creator(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-vacuity for the run above: create-only ships WITH its critic.
+
+    Without this, a create-only run that dispatched no lens at all would
+    pass every assertion in the previous test while shipping exactly the
+    unreviewed ticket the mode's refusal exists to prevent.
+    """
+    for name in list(os.environ):
+        if name.startswith("KODEZART_"):
+            monkeypatch.delenv(name)
+
+    repo, _bare = git_env
+    config = AppConfig()
+    prompts = await _registry_from_shipped_defaults(config)
+
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    executor = ScriptedFakeExecutor(eval_results=[])
+    loop = TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=prompts,
+        service=AgentService(
+            git_base_url="https://github.com",
+            executor=executor,
+            workspace=workspace,
+            persister=None,
+        ),
+        workspace=workspace,
+        review_mode=config.ticket_review_mode,
+        max_reviews=config.explicit_max_reviews(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
+    )
+
+    events = [
+        e
+        async for e in loop.run(
+            prompt="fix",
+            repo_path=str(repo),
+            repo_url=None,
+            cache_key=uuid.uuid4().hex,
+            base_branch="main",
+        )
+    ]
+
+    assert [e for e in events if isinstance(e, WorkflowTicketEvent)]
+    assert len(executor.calls) == 1
+    assert DRAFT_CRITIC_LENS in {
+        definition.name for definition in prompts.definitions()
+    }
+
+
+# ---------------------------------------------------------------------------
+# KOD-165 — a remediation round is built ON the work it was opened to fix
+# ---------------------------------------------------------------------------
+
+DELIVERABLE_FILE = "deliverable.txt"
+
+
+class _RoundStackingExecutor:
+    """Scripted executor whose implementation calls APPEND, never overwrite.
+
+    Each round writes one line and keeps whatever the tree already had.
+    The file on the branch afterwards is therefore a direct reading of
+    what the round's loop was built on: a round cut from the run's
+    original base carries only its own line, a round cut from the
+    consolidated feature branch carries both.
+
+    Everything with a schema is delegated to ``ScriptedFakeExecutor`` —
+    branch name, ticket, criteria, sweep, commit message and the graded
+    evaluations — so only the one behaviour under test differs.
+    """
+
+    def __init__(self, eval_results: list[dict[str, object]]) -> None:
+        self._inner = ScriptedFakeExecutor(eval_results=eval_results)
+        self.rounds: int = 0
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            async for event in self._inner.stream(
+                prompt=prompt,
+                cwd=cwd,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                skills=skills,
+                session_type=session_type,
+                agents=agents,
+                session_policy=session_policy,
+                session_id=session_id,
+                output_format=output_format,
+            ):
+                yield event
+            return
+
+        target = Path(cwd) / DELIVERABLE_FILE
+        existing = target.read_text(encoding="utf-8") if target.exists() else ""
+        target.write_text(f"{existing}round-{self.rounds}\n", encoding="utf-8")
+        self.rounds += 1
+        yield AssistantTextEvent(text="stacked change", model="scripted")
+        yield ResultEvent(
+            subtype="result",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="scripted",
+        )
+
+
+def _graded(*, passed: bool) -> dict[str, object]:
+    """One evaluation over the three criteria the scripted generator mints."""
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": f"AC-{n}",
+                "criterion": f"criterion {n}",
+                "passed": passed,
+                "reasoning": "scripted",
+            }
+            for n in (1, 2, 3)
+        ],
+    }
+
+
+def _remediation_engine(
+    repo: Path,
+    tmp_path: Path,
+    *,
+    executor: _RoundStackingExecutor,
+    remediator: FakeRemediator,
+) -> RalphWorkflowEngine:
+    """The real engine over real git, with only the model scripted."""
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    service = AgentService(
+        git_base_url="https://github.com",
+        executor=executor,
+        workspace=workspace,
+        persister=GitChangePersister(
+            gate=PassThroughGate(),
+            prompts=make_prompt_provider(),
+            git=git,
+            committer_name="test",
+            committer_email="t@t.dev",
+            remote="origin",
+        ),
+    )
+    return RalphWorkflowEngine(
+        gate=PassThroughGate(),
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=make_prompt_provider(),
+        service=service,
+        quality_gate=RalphLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=make_prompt_provider(),
+            service=service,
+            max_iterations=1,
+            plateau_window=2,
+            git=git,
+            cache=cache,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            fan_in_max_attempts=2,
+            delay_floor_for=no_delay_floor,
+        ),
+        ticket_generator=TicketGenerationLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=make_prompt_provider(),
+            service=service,
+            workspace=workspace,
+            max_reviews=1,
+            review_mode=TicketReviewMode.REVIEWED,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            delay_floor_for=no_delay_floor,
+        ),
+        merger=GitBranchMerger(git=git, workspace=workspace, remote="origin"),
+        git_base_url="https://github.com",
+        git_remote="origin",
+        git=git,
+        cache=cache,
+        remediator=remediator,
+        remediation_max_rounds=1,
+        artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
+    )
+
+
+async def test_a_review_entry_round_is_built_on_the_consolidated_work(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """The round's loop starts where the first round's work was landed.
+
+    The first round is accepted and fast-forwarded onto the feature
+    branch; the post-merge review then rejects it, which is the entry
+    that opens a remediation round.  That round must run ON the branch
+    carrying the work it was opened to fix — anywhere else and it fixes
+    a tree that does not contain the defect, and the REAL merger reads
+    its result as ``DIVERGENT`` because neither ref is an ancestor of
+    the other.  Nothing but real git can decide that, so this runs the
+    real merger over a real repository.
+    """
+    repo, bare = git_env
+    await _git(["git", "config", "user.email", "t@t.dev"], cwd=repo)
+    await _git(["git", "config", "user.name", "test"], cwd=repo)
+    executor = _RoundStackingExecutor(
+        eval_results=[
+            _graded(passed=True),  # round 0: the loop is accepted
+            _graded(passed=False),  # round 0: the post-merge review rejects
+            _graded(passed=True),  # round 1: the fix loop is accepted
+            _graded(passed=True),  # round 1: the review accepts
+        ],
+    )
+    remediator = FakeRemediator()
+
+    events = [
+        e
+        async for e in _remediation_engine(
+            repo,
+            tmp_path,
+            executor=executor,
+            remediator=remediator,
+        ).run(
+            prompt="fix",
+            repo_path=str(repo),
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    feature = complete.feature_branch
+    assert complete.merged is True
+
+    # The round the review opened, and the ref it was told it stands on.
+    assert [call.entry for call in remediator.calls] == [
+        RemediationEntry.review_failure
+    ]
+    assert remediator.calls[0].work_base_ref == feature
+
+    # Two rounds, two consolidations, neither divergent — by construction,
+    # because the second round's branch descends from the first's result.
+    consolidations = [e for e in events if isinstance(e, WorkflowConsolidationEvent)]
+    assert [e.status for e in consolidations] == [
+        ConsolidationStatus.FAST_FORWARDED,
+        ConsolidationStatus.FAST_FORWARDED,
+    ]
+
+    # And the first round's line is still there, under the second's.
+    landed = await _git_output(
+        ["git", "show", f"{feature}:{DELIVERABLE_FILE}"],
+        cwd=bare,
+    )
+    assert landed.splitlines() == ["round-0", "round-1"]
+    assert executor.rounds == 2

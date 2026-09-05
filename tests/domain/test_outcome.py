@@ -1,9 +1,13 @@
 """Tests for the terminal-outcome classifier — one assertion per route."""
 
+import inspect
+
 import pytest
 
+from kodezart.domain import outcome as outcome_module
 from kodezart.domain.outcome import classify_outcome
 from kodezart.types.domain.accept import AcceptVerdict
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
@@ -20,7 +24,7 @@ def _state(
     review_passed: bool = False,
     pr_url: str | None = None,
     pr_number: int | None = None,
-    ci_passed: bool | None = None,
+    ci_status: CIStatus = CIStatus.not_monitored,
     ci_summary: str | None = None,
     trajectory: LoopTrajectory | None = None,
     criteria_infeasible: bool = False,
@@ -51,7 +55,7 @@ def _state(
         best_iteration_sha=best_iteration_sha,
         pr_url=pr_url,
         pr_number=pr_number,
-        ci_passed=ci_passed,
+        ci_status=ci_status,
         ci_summary=ci_summary,
         repo_url=None,
         trajectory=trajectory,
@@ -85,11 +89,12 @@ def _trajectory(
 
 
 def test_wire_values_are_pinned_verbatim() -> None:
-    """The fourteen values are a wire contract — a re-point must break the build.
+    """The sixteen values are a wire contract — a re-point must break the build.
 
     The order is the module's stated extension convention: later work
-    APPENDS, so ``criteria_infeasible`` sits last rather than first and
-    KOD-40's two members sit after it.
+    APPENDS, so ``criteria_infeasible`` sits last rather than first,
+    KOD-40's two members sit after it, and KOD-120's queue-assigned pair
+    sits at the end.
     """
     assert [member.value for member in WorkflowOutcome] == [
         "merge_divergent",
@@ -106,7 +111,37 @@ def test_wire_values_are_pinned_verbatim() -> None:
         "stalled_pr_opened",
         "zero_commit_no_pr",
         "remediation_budget_exhausted",
+        "engine_error",
+        "shutdown_abandoned",
     ]
+
+
+#: The members no state can produce, because the runs they name have no state.
+QUEUE_ASSIGNED = (
+    WorkflowOutcome.engine_error,
+    WorkflowOutcome.shutdown_abandoned,
+)
+
+
+def test_the_classifier_never_produces_the_queue_assigned_members() -> None:
+    """KOD-120/AC-2: totality of the classifier and completeness of the job
+    record are two different guarantees.
+
+    ``classify_outcome`` is total over the states it CAN see, and a run
+    that raised mid-node or was killed by shutdown never produced one.
+    Swept from the source rather than sampled from fixtures: a battery of
+    states can only show that the branches it happened to reach do not
+    return these, while the module naming neither member at all is the
+    whole claim.
+    """
+    source = inspect.getsource(outcome_module)
+
+    for member in QUEUE_ASSIGNED:
+        assert member.name not in source
+
+    # And the classifier still has no default arm to fall into.
+    assert "return WorkflowOutcome" in source
+    assert "raise ValueError" in source
 
 
 def test_merge_divergent() -> None:
@@ -237,7 +272,7 @@ def test_pr_opened() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=None,
+        ci_status=CIStatus.not_monitored,
         ci_summary=None,
     )
     assert classify_outcome(state) is WorkflowOutcome.pr_opened
@@ -250,7 +285,7 @@ def test_ci_passed() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=True,
+        ci_status=CIStatus.passed,
         ci_summary="All CI checks passed.",
     )
     assert classify_outcome(state) is WorkflowOutcome.ci_passed
@@ -263,7 +298,7 @@ def test_ci_not_configured() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=None,
+        ci_status=CIStatus.not_configured,
         ci_summary="No CI checks are configured for this repository.",
     )
     assert classify_outcome(state) is WorkflowOutcome.ci_not_configured
@@ -276,14 +311,14 @@ def test_ci_failed_fix_budget_exhausted() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=False,
+        ci_status=CIStatus.failed,
         ci_summary="CI failed: ci/test",
     )
     assert classify_outcome(state) is WorkflowOutcome.ci_failed_fix_budget_exhausted
 
 
 def test_review_failure_after_pr_with_failing_ci_is_a_ci_failure() -> None:
-    """The withdrawn disambiguation: pr_url set + ci_passed False wins.
+    """The withdrawn disambiguation: pr_url set + a failed CI status wins.
 
     A review-failure exit that already opened a PR whose CI failed
     classifies as ci_failed_fix_budget_exhausted — the outcome that
@@ -297,7 +332,7 @@ def test_review_failure_after_pr_with_failing_ci_is_a_ci_failure() -> None:
         review_passed=False,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=False,
+        ci_status=CIStatus.failed,
         ci_summary="CI failed: ci/test",
     )
     assert classify_outcome(state) is WorkflowOutcome.ci_failed_fix_budget_exhausted
@@ -318,7 +353,7 @@ def test_divergent_fix_after_failed_ci_is_a_fix_consolidation_failure() -> None:
         review_passed=True,
         pr_url="https://github.com/o/r/pull/1",
         pr_number=1,
-        ci_passed=False,
+        ci_status=CIStatus.failed,
         ci_summary="CI failed: ci/test",
     )
     assert classify_outcome(state) is WorkflowOutcome.fix_consolidation_failed

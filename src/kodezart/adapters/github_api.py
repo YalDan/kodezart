@@ -1,22 +1,68 @@
-"""GitHub REST API adapter — implements PRCreator and CIMonitor protocols."""
+"""GitHub REST API adapter — implements PRCreator and CIMonitor protocols.
+
+``httpx`` and this forge's wire shapes are the module's private business.
+No NON-DOMAIN exception leaves a port method: every request goes through
+``_request_with_retry``, whose arms are total over the exception types
+httpx publishes, and every body read goes through ``_parsed_with_retry``,
+whose arm is total over the ways a payload can fail to become a wire
+model.  What comes out is ``RateLimitError`` / ``TransientAPIError`` for
+the retry-eligible failures and ``ForgeAPIError`` for the rest.
+
+The one deliberate exception is ``extract_owner_repo``'s ``ValueError``
+on an origin this forge does not own.  That is a domain refusal rather
+than a vendor leak, it is raised before any request, and the composition
+root routes such origins to another adapter rather than here (KOD-148).
+"""
 
 import asyncio
+import re
 import secrets
+from collections.abc import Callable
 from enum import StrEnum
+from typing import Final, TypeVar
 
 import httpx
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.domain.errors import RateLimitError, TransientAPIError
+from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.github import (
+    CheckRun,
     CheckRunsResponse,
     PullRequestResponse,
+    PullRequestSummary,
     RepositoryResponse,
     WorkflowsResponse,
 )
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
+
+#: Every root httpx derives an exception from.  ``HTTPError`` covers the
+#: request and status families; the other three are its siblings, not its
+#: subclasses, so naming the union is what makes the translation total.
+#: A bare ``Exception`` here would swallow this adapter's own defects.
+_VENDOR_FAILURE: Final[tuple[type[Exception], ...]] = (
+    httpx.HTTPError,
+    httpx.InvalidURL,
+    httpx.CookieConflict,
+    httpx.StreamError,
+)
+
+_WireT = TypeVar("_WireT")
+
+
+def _pull_request_listing(payload: object) -> tuple[PullRequestSummary, ...]:
+    """The open pull requests, which arrive as a BARE JSON array.
+
+    No envelope to unwrap, so there is no wrapper model to validate and
+    the array shape is checked here.  A payload that is not an array is
+    refused as a ``ValueError``, the same class the wire model raises on
+    an entry it cannot accept, so both reach one translation.
+    """
+    if not isinstance(payload, list):
+        msg = f"expected a pull request array, got {type(payload).__name__}"
+        raise ValueError(msg)
+    return tuple(PullRequestSummary.model_validate(entry) for entry in payload)
 
 
 class WorkflowsProbeResult(StrEnum):
@@ -51,6 +97,7 @@ class GitHubAPIClient:
     _ACTIVE_WORKFLOW_STATE = "active"
     _NOT_FOUND_STATUS = 404
     _PAGE_SIZE = 100
+    _OPEN_STATE = "open"
     _NO_WORKFLOWS_SUMMARY = (
         "No CI checks configured: repository has no active workflows."
     )
@@ -66,6 +113,7 @@ class GitHubAPIClient:
         ci_no_workflows_grace_polls: int,
         ci_grace_poll_interval_seconds: float,
         ci_ref_not_found_grace_polls: int,
+        ci_check_runs_max_pages: int,
         timeout_seconds: float,
         max_retries: int,
         retry_backoff_factor: float,
@@ -77,6 +125,7 @@ class GitHubAPIClient:
         self._ci_no_workflows_grace_polls: int = ci_no_workflows_grace_polls
         self._ci_grace_poll_interval: float = ci_grace_poll_interval_seconds
         self._ci_ref_not_found_grace_polls: int = ci_ref_not_found_grace_polls
+        self._ci_check_runs_max_pages: int = ci_check_runs_max_pages
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._rng: secrets.SystemRandom = secrets.SystemRandom()
@@ -101,7 +150,21 @@ class GitHubAPIClient:
         json: dict[str, object] | None = None,
         params: dict[str, str | int] | None = None,
     ) -> httpx.Response:
-        """HTTP request with exponential backoff + 10% jitter."""
+        """HTTP request with exponential backoff + 10% jitter.
+
+        Raises ``RateLimitError`` / ``TransientAPIError`` once the retry
+        budget is spent and ``ForgeAPIError`` on a failure no retry would
+        change.  No ``httpx`` exception leaves this method, because the
+        ports above it speak the domain taxonomy.
+
+        Three arms, total over ``_VENDOR_FAILURE``: a status the server
+        answered with, a transport failure worth another attempt, and
+        everything else httpx can raise — a body that would not decode, a
+        redirect loop, a URL the client would not build.  The third arm
+        is NOT retried, because none of those is a condition a second
+        identical request finds changed, and it carries no status
+        because none was ever received.
+        """
         for attempt in range(self._max_retries + 1):
             try:
                 response = await self._client.request(
@@ -165,7 +228,11 @@ class GitHubAPIClient:
                     await asyncio.sleep(wait)
                     continue
 
-                raise
+                raise ForgeAPIError(
+                    "Forge refused the request",
+                    status_code=status,
+                    detail=f"{method} {url}",
+                ) from exc
 
             except httpx.TransportError as exc:
                 is_last = attempt == self._max_retries
@@ -191,9 +258,54 @@ class GitHubAPIClient:
 
                 await asyncio.sleep(wait)
 
+            except _VENDOR_FAILURE as exc:
+                raise ForgeAPIError(
+                    f"Forge request failed: {type(exc).__name__}",
+                    status_code=None,
+                    detail=f"{method} {url}",
+                ) from exc
+
         raise TransientAPIError(
             f"Request failed after retries: {url}",
         )
+
+    async def _parsed_with_retry(
+        self,
+        method: str,
+        url: str,
+        parse: Callable[[object], _WireT],
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str | int] | None = None,
+    ) -> _WireT:
+        """One request, with its body decoded and validated.
+
+        The single seam every body read goes through, so the translation
+        below is stated ONCE rather than at each reader.  Both ways a
+        payload fails to become a wire model are ``ValueError``: the JSON
+        decoder raises one on bytes that are not JSON, and pydantic's
+        ``ValidationError`` IS one.  Catching the superset is exact here
+        and keeps the two from needing separate arms that could drift.
+
+        A body this adapter cannot read is a forge failure like any
+        other, and it carries the status the response really had — the
+        request was answered, and what came back was unusable.
+        """
+        response = await self._request_with_retry(
+            method,
+            url,
+            json=json,
+            params=params,
+        )
+        try:
+            return parse(response.json())
+        except ValueError as exc:
+            raise ForgeAPIError(
+                f"Forge answered with a body this adapter cannot read: "
+                f"{type(exc).__name__}",
+                status_code=response.status_code,
+                detail=f"{method} {url}",
+            ) from exc
 
     # -- RepoVisibilityResolver ---------------------------------------------
 
@@ -205,11 +317,11 @@ class GitHubAPIClient:
         """
         try:
             owner, repo = extract_owner_repo(repo_url)
-            response = await self._request_with_retry(
+            result = await self._parsed_with_retry(
                 "GET",
                 f"/repos/{owner}/{repo}",
+                RepositoryResponse.model_validate,
             )
-            result = RepositoryResponse.model_validate(response.json())
         except Exception as exc:
             await self._log.awarning(
                 "repo_visibility_resolution_failed",
@@ -232,18 +344,16 @@ class GitHubAPIClient:
     ) -> tuple[str, int]:
         """Open a pull request. Returns (html_url, number)."""
         owner, repo = extract_owner_repo(repo_url)
-        response = await self._request_with_retry(
+        result = await self._parsed_with_retry(
             "POST",
             f"/repos/{owner}/{repo}/pulls",
+            PullRequestResponse.model_validate,
             json={
                 "title": title,
                 "body": body,
                 "head": head,
                 "base": base,
             },
-        )
-        result = PullRequestResponse.model_validate(
-            response.json(),
         )
         return (result.html_url, result.number)
 
@@ -261,6 +371,35 @@ class GitHubAPIClient:
             f"/repos/{owner}/{repo}/issues/{pr_number}/comments",
             json={"body": body},
         )
+
+    # -- DeliveryProbe -------------------------------------------------------
+
+    async def open_delivery_exists(
+        self,
+        *,
+        repo_url: str,
+        issue_key: str,
+    ) -> bool:
+        """True iff an OPEN pull request references *issue_key*.
+
+        Matching lives here, not in the caller: the reference convention is
+        a property of this forge's pull requests.  The key is matched as a
+        whole token in the title or body, so ``KOD-5`` never matches
+        ``KOD-58``.  A branch name is never parsed — an issue identity is
+        not derivable from one.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        listing = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            _pull_request_listing,
+            params={"state": self._OPEN_STATE, "per_page": self._PAGE_SIZE},
+        )
+        pattern = re.compile(rf"(?<![\w-]){re.escape(issue_key)}(?![\w-])")
+        for summary in listing:
+            if pattern.search(summary.title) or pattern.search(summary.body or ""):
+                return True
+        return False
 
     # -- CIMonitor -----------------------------------------------------------
 
@@ -281,8 +420,18 @@ class GitHubAPIClient:
         return f"No CI checks appeared for this ref after {grace_polls} polls."
 
     def _verdict(self, page: CheckRunsResponse) -> tuple[bool, str] | None:
-        """Terminal pass/fail verdict for a page, or None while pending."""
+        """Terminal pass/fail verdict for the run set, or None while pending.
+
+        A run set shorter than its own ``total_count`` is never terminal,
+        and that single rule covers both ways the listing comes up short: a
+        page the walk could not reach, and a ``total_count`` the API
+        reported but did not enumerate.  Either way the adapter is holding
+        less evidence than the ref has, and a verdict drawn from it would
+        report a pass nobody verified.
+        """
         if page.total_count == 0:
+            return None
+        if len(page.check_runs) != page.total_count:
             return None
         if any(run.status != "completed" for run in page.check_runs):
             return None
@@ -303,25 +452,54 @@ class GitHubAPIClient:
         repo: str,
         ref: str,
     ) -> CheckRunsResponse | None:
-        """Fetch one check-runs page, or ``None`` when the ref 404s.
+        """Fetch every check-runs page for *ref*, or ``None`` when it 404s.
 
-        One poll is one request.  A 404 means the ref is not yet visible
-        to the checks API — a transient condition on a freshly pushed
-        commit.  Every other status error propagates.
+        Walks pages until the collected runs reach the reported
+        ``total_count``, so the verdict is drawn from the whole run set
+        rather than from the first hundred runs.
+
+        One logical poll, however many pages it takes, costs exactly ONE
+        ``ci_poll_max_attempts`` unit: the walk answers a single question —
+        what are this ref's check runs right now — and the caller counts it
+        once.
+
+        The walk is bounded by ``ci_check_runs_max_pages``.  Hitting the cap
+        returns what was collected, which is necessarily shorter than
+        ``total_count`` and therefore PENDING by ``_verdict``'s rule — never
+        a timeout, and never a ``TransientAPIError``.  A bounded cap is an
+        incomplete observation, not an error: the next poll re-reads the ref
+        from page one, and either the run set fits within the bound or the
+        poll budget expires with the ref honestly never verified.
+
+        A page carrying no runs ends the walk under the same rule: the
+        reported count is then larger than what the API enumerated, which is
+        short, which is pending.
+
+        A 404 means the ref is not yet visible to the checks API — a
+        transient condition on a freshly pushed commit.  Every other forge
+        failure propagates, an unreadable page included: a walk that
+        skipped one would draw a verdict from a run set it knows is
+        incomplete.
         """
-        try:
-            response = await self._request_with_retry(
-                "GET",
-                f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
-                params={"per_page": self._PAGE_SIZE},
-            )
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == self._NOT_FOUND_STATUS:
-                return None
-            raise
-        return CheckRunsResponse.model_validate(
-            response.json(),
-        )
+        collected: list[CheckRun] = []
+        reported_total = 0
+        for page_number in range(1, self._ci_check_runs_max_pages + 1):
+            try:
+                page = await self._parsed_with_retry(
+                    "GET",
+                    f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
+                    CheckRunsResponse.model_validate,
+                    params={"per_page": self._PAGE_SIZE, "page": page_number},
+                )
+            except ForgeAPIError as exc:
+                if exc.status_code == self._NOT_FOUND_STATUS:
+                    return None
+                raise
+            reported_total = page.total_count
+            collected.extend(page.check_runs)
+            if not page.check_runs or len(collected) >= reported_total:
+                break
+        return CheckRunsResponse(total_count=reported_total, check_runs=collected)
 
     async def _probe_workflows(
         self,
@@ -333,18 +511,22 @@ class GitHubAPIClient:
         A listing carrying more workflows than the page returned errs
         toward ``ACTIVE`` — the longer grace window.
 
-        Every request failure degrades to ``INDETERMINATE``, including a
+        Every failure degrades to ``INDETERMINATE``, including a
         retry-exhausted rate limit (``RateLimitError`` is a
-        ``TransientAPIError``): the probe only ever selects a grace
-        window, and no probe failure may end the call.
+        ``TransientAPIError``) and a listing that will not parse: the
+        probe only ever selects a grace window, and no probe failure may
+        end the call.  The read is INSIDE the guard for that reason —
+        an unreadable listing is a listing this probe could not classify,
+        which is what ``INDETERMINATE`` means.
         """
         try:
-            response = await self._request_with_retry(
+            result = await self._parsed_with_retry(
                 "GET",
                 f"/repos/{owner}/{repo}/actions/workflows",
+                WorkflowsResponse.model_validate,
                 params={"per_page": self._PAGE_SIZE},
             )
-        except (httpx.HTTPStatusError, TransientAPIError) as exc:
+        except (ForgeAPIError, TransientAPIError) as exc:
             await self._log.awarning(
                 "ci_workflows_probe_failed",
                 error=str(exc),
@@ -352,9 +534,6 @@ class GitHubAPIClient:
             )
             return WorkflowsProbeResult.INDETERMINATE
 
-        result = WorkflowsResponse.model_validate(
-            response.json(),
-        )
         has_active = any(
             workflow.state == self._ACTIVE_WORKFLOW_STATE
             for workflow in result.workflows

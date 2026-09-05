@@ -1,16 +1,17 @@
 """Skills configuration, threading, boot pre-flight, and prompt loadouts (KOD-46)."""
 
-from pathlib import Path
-
 import pytest
 
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.composition.preflight import (
+    preflight_prompt_skill_loadouts,
+    preflight_skills,
+)
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError, SkillPreflightError
-from kodezart.main import preflight_prompt_skill_loadouts, preflight_skills
 from kodezart.services.agent_service import AgentService
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
@@ -28,10 +29,10 @@ from tests.fakes import (
     make_criteria,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
-from tests.prompts.test_prompt_wiring import GOLDEN_CASES, load_registry
+from tests.prompts.test_prompt_wiring import RENDER_CASES, load_registry
 
-POPULATED = Path(__file__).parent / "goldens" / "claude_opus_populated_skills"
 UTILITY_KEYS = (
     PromptKey.BRANCH_NAME,
     PromptKey.TICKET_REVISION,
@@ -39,6 +40,8 @@ UTILITY_KEYS = (
     PromptKey.PR_DESCRIPTION,
     PromptKey.FIRE_PREP_PASS,
     PromptKey.GROOMING_PASS,
+    PromptKey.CONTENT_AUDIT,
+    PromptKey.KNOWLEDGE_MAP,
 )
 
 
@@ -152,18 +155,10 @@ def test_preflight_accepts_plugin_qualified_names() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("golden_name", sorted(GOLDEN_CASES))
-def test_populated_skills_fragment_goldens(golden_name: str) -> None:
-    """Body plus POPULATED fragment is pinned independently of the empty goldens."""
-    key, variables = GOLDEN_CASES[golden_name]
-    rendered = load_registry().template_for(key).render(variables)
-    assert rendered == (POPULATED / f"{golden_name}.txt").read_text(encoding="utf-8")
-
-
 def test_every_rendered_template_names_exactly_its_declared_skills() -> None:
     """AC-3: the reference contains exactly the names the key declares."""
     registry = load_registry()
-    for golden_name, (key, variables) in GOLDEN_CASES.items():
+    for golden_name, (key, variables) in RENDER_CASES.items():
         rendered = registry.template_for(key).render(variables)
         declared = registry.declared_skills(key)
         for name in declared:
@@ -224,6 +219,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
     selection = SkillsSelection(mode=SkillsMode.EXPLICIT, allowlist=("code-review",))
     executor = FakeAgentExecutor(events=[])
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -244,6 +240,12 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         cache=FakeRepoCache(),
         prompts=make_prompt_provider(),
         skills=selection,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -275,6 +277,10 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
         cache=FakeRepoCache(),
         prompts=make_prompt_provider(),
         skills=selection,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     with pytest.raises(NoStructuredOutputError):
         _ = [
@@ -286,6 +292,7 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
                 feature_branch="kodezart/f",
                 ralph_branch="kodezart/f-ralph",
                 base_spec=trunk_base("main"),
+                work_base_ref="main",
                 permission_mode="bypassPermissions",
                 allowed_tools=["Bash"],
                 acceptance_criteria=make_criteria("Tests pass"),

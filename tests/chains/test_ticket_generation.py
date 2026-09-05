@@ -1,27 +1,54 @@
 """Tests for TicketGenerationLoop (ticket draft + review sub-graph) with fakes."""
 
-from collections.abc import AsyncGenerator
+import time
+from collections.abc import AsyncGenerator, Sequence
 
 import pytest
 import structlog
 from pydantic import ValidationError
 
 from kodezart.chains.ticket_generation import TicketGenerationLoop
-from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.errors import NoStructuredOutputError, TicketReviewModeError
+from kodezart.core.retry import DelayFloor
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
+    CritiqueFlag,
+    RateLimitWarningEvent,
     ResultEvent,
     WorkflowTicketDraftEvent,
     WorkflowTicketEvent,
     WorkflowTicketReviewEvent,
 )
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
+from kodezart.types.domain.ticket_review import (
+    DRAFT_CRITIC_LENS,
+    TicketApproval,
+    TicketReviewMode,
+)
+from tests.chains.test_dispatch_definitions import (
+    LENS_NAMES,
+    chain_source,
+    dispatch_block,
+    v5_provider,
+)
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
+    NEGLIGIBLE_BACKOFF_SECONDS,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeWorkspaceProvider,
+    floor_under_a_rate_limit,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -29,8 +56,11 @@ def _make_loop(
     *,
     executor: FakeAgentExecutor | object,
     max_reviews: int = 2,
+    retry_initial_interval: float = 1.0,
+    delay_floor_for: DelayFloor = no_delay_floor,
 ) -> TicketGenerationLoop:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=None,
@@ -41,6 +71,10 @@ def _make_loop(
         service=service,
         workspace=FakeWorkspaceProvider(),
         max_reviews=max_reviews,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=retry_initial_interval,
+        delay_floor_for=delay_floor_for,
     )
 
 
@@ -73,11 +107,13 @@ class _ScriptedReviewExecutor:
         *,
         reviewer_feedback: str = "Needs improvement.",
         reviewer_suggestions: list[str] | None = None,
+        draft_flags: list[dict[str, str]] | None = None,
     ) -> None:
         self._review_outcomes = list(review_outcomes)
         self._review_index = 0
         self._reviewer_feedback = reviewer_feedback
         self._reviewer_suggestions = reviewer_suggestions or []
+        self._draft_flags = draft_flags
         self.calls: list[dict[str, object]] = []
 
     def _is_ticket_draft_schema(self, output_format: dict[str, object] | None) -> bool:
@@ -113,6 +149,9 @@ class _ScriptedReviewExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -124,6 +163,7 @@ class _ScriptedReviewExecutor:
                 "allowed_tools": allowed_tools,
                 "session_id": session_id,
                 "permission_mode": permission_mode,
+                "agents": tuple(definition.name for definition in agents),
             }
         )
         if self._is_ticket_draft_schema(output_format):
@@ -135,6 +175,11 @@ class _ScriptedReviewExecutor:
                 num_turns=1,
                 session_id="draft-session",
                 structured_output={
+                    **(
+                        {}
+                        if self._draft_flags is None
+                        else {"sherlockFlags": self._draft_flags}
+                    ),
                     "title": "Test ticket",
                     "summary": "Test summary",
                     "context": "Test context",
@@ -199,7 +244,7 @@ async def test_approved_on_first_review() -> None:
     assert len(review_events) == 1
     assert len(ticket_events) == 1
     assert ticket_events[0].review_rounds == 1
-    assert ticket_events[0].approved is True
+    assert ticket_events[0].approved is TicketApproval.APPROVED
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +267,7 @@ async def test_approved_on_second_review() -> None:
     assert len(review_events) == 2
     assert len(ticket_events) == 1
     assert ticket_events[0].review_rounds == 2
-    assert ticket_events[0].approved is True
+    assert ticket_events[0].approved is TicketApproval.APPROVED
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +276,7 @@ async def test_approved_on_second_review() -> None:
 
 
 async def test_max_reviews_exhausted() -> None:
-    """Script: both reviews reject -> finalize with approved=False."""
+    """Script: both reviews reject -> finalize unapproved."""
     executor = _ScriptedReviewExecutor(review_outcomes=[False, False])
     loop = _make_loop(executor=executor, max_reviews=2)
 
@@ -244,7 +289,7 @@ async def test_max_reviews_exhausted() -> None:
     assert len(draft_events) == 2
     assert len(review_events) == 2
     assert len(ticket_events) == 1
-    assert ticket_events[0].approved is False
+    assert ticket_events[0].approved is TicketApproval.UNAPPROVED
     assert ticket_events[0].review_rounds == 2
 
     # CRITICAL: no third draft — loop stops after 2nd review
@@ -469,6 +514,9 @@ async def test_no_structured_output_from_creator_raises() -> None:
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -561,6 +609,9 @@ async def test_no_structured_output_from_reviewer_raises() -> None:
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -635,6 +686,7 @@ def _make_loop_with_workspace(
     max_reviews: int = 2,
 ) -> TicketGenerationLoop:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=None,
@@ -645,6 +697,10 @@ def _make_loop_with_workspace(
         service=service,
         workspace=workspace,
         max_reviews=max_reviews,
+        review_mode=TicketReviewMode.REVIEWED,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -692,6 +748,9 @@ async def test_workspace_released_on_node_error() -> None:
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -736,3 +795,474 @@ async def test_run_forwards_base_branch_to_acquire() -> None:
 
     acquire_calls = [c for c in workspace.calls if c[0] == "acquire"]
     assert acquire_calls == [("acquire", "/tmp/fake", "develop")]
+
+
+def test_the_create_dispatch_passes_exactly_the_sets_three_definitions() -> None:
+    """KOD-87-AC-6 — the creator is the generative site of this loop."""
+    block = dispatch_block(chain_source("ticket_generation.py"), "TICKET_DRAFT_SCHEMA")
+    assert "agents=self._prompts.definitions()" in block
+    assert tuple(d.name for d in v5_provider().definitions()) == LENS_NAMES
+
+
+# ---------------------------------------------------------------------------
+# KOD-92-AC-2 and AC-5 — the ticket loop's two roles, observed at dispatch
+# ---------------------------------------------------------------------------
+
+
+async def test_the_creator_dispatch_carries_the_generative_roles_policy() -> None:
+    """The create session is authoring, so it runs at the authoring level."""
+    from kodezart.types.domain.prompts import SessionRole
+    from tests.chains.test_dispatch_definitions import creator_dispatches, v5_provider
+    from tests.prompts.test_session_policy import v5_metadata
+
+    runner = await creator_dispatches(v5_provider())
+    generative = v5_metadata().session_roles[SessionRole.GENERATIVE]
+
+    assert runner.dispatches[0].policy.effort is generative.effort
+    assert runner.dispatches[0].policy.system_prompt_append is not None
+
+
+async def test_the_creator_dispatch_names_no_skill_of_another_role() -> None:
+    """A skill declared for the judgment role never reaches the author."""
+    from kodezart.types.domain.prompts import SessionRole
+    from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+    from tests.chains.test_dispatch_definitions import creator_dispatches, v5_provider
+    from tests.prompts.test_session_policy import v5_metadata
+
+    provider = v5_provider()
+    runner = await creator_dispatches(provider)
+    roles = v5_metadata().session_roles
+    foreign = set(roles[SessionRole.EVALUATIVE].skills) - set(
+        roles[SessionRole.GENERATIVE].skills,
+    )
+    assert foreign, "non-vacuity: the two roles declare different loadouts"
+
+    # The dispatch runs under whatever the deployment allows, and the
+    # recording fixture suppresses everything — so the narrowing is
+    # exercised against a deployment that allows all of them, which is the
+    # only configuration where a foreign skill COULD leak through.
+    available = SkillsSelection(mode=SkillsMode.ALL)
+    from kodezart.types.domain.prompts import PromptKey
+
+    creator = provider.session_skills(PromptKey.TICKET_CREATE, available)
+    reviewer = provider.session_skills(PromptKey.TICKET_REVIEW, available)
+
+    assert set(creator.allowlist) == set(roles[SessionRole.GENERATIVE].skills)
+    assert set(reviewer.allowlist) == set(roles[SessionRole.EVALUATIVE].skills)
+    for skill in foreign:
+        assert skill not in creator.allowlist
+    assert runner.dispatches[0].skills == SUPPRESS_ALL_SKILLS
+
+
+# ---------------------------------------------------------------------------
+# KOD-90 — the create-only mode: which graph exists, and what it emits
+#
+# Every loop below resolves the set that ACTUALLY declares the three lenses.
+# A create-only guarantee measured against a set with no critic to attach
+# would be a guarantee about the fixture.
+# ---------------------------------------------------------------------------
+
+
+def _v5_loop(
+    *,
+    executor: FakeAgentExecutor | object,
+    review_mode: TicketReviewMode,
+    max_reviews: int | None = None,
+) -> TicketGenerationLoop:
+    """A loop over the lens-declaring set, compiled in *review_mode*."""
+    service = AgentService(
+        git_base_url="https://github.com",
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        persister=None,
+    )
+    return TicketGenerationLoop(
+        skills=SUPPRESS_ALL_SKILLS,
+        prompts=v5_provider(review_mode),
+        service=service,
+        workspace=FakeWorkspaceProvider(),
+        review_mode=review_mode,
+        max_reviews=max_reviews,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        delay_floor_for=no_delay_floor,
+    )
+
+
+def _graph_nodes(loop: TicketGenerationLoop) -> set[str]:
+    """The compiled node set, without LangGraph's start/end sentinels."""
+    return {
+        name for name in loop._compiled.get_graph().nodes if not name.startswith("__")
+    }
+
+
+def _terminal_ticket_event(events: list[AgentEvent]) -> WorkflowTicketEvent:
+    ticket_events = [e for e in events if isinstance(e, WorkflowTicketEvent)]
+    assert len(ticket_events) == 1
+    return ticket_events[0]
+
+
+# --- AC-1 -----------------------------------------------------------------
+
+
+def test_create_only_graph_has_no_review_node() -> None:
+    """The reviewer is unreachable, not merely unvisited."""
+    create_only = _v5_loop(
+        executor=FakeAgentExecutor(events=[]),
+        review_mode=TicketReviewMode.CREATE_ONLY,
+    )
+    reviewed = _v5_loop(
+        executor=FakeAgentExecutor(events=[]),
+        review_mode=TicketReviewMode.REVIEWED,
+    )
+
+    assert _graph_nodes(create_only) == {"create", "finalize"}
+    assert _graph_nodes(reviewed) == {"create", "review", "finalize"}
+
+
+def test_create_only_wires_the_creator_straight_to_finalize() -> None:
+    """No conditional edge either: the branch itself is gone."""
+    graph = _v5_loop(
+        executor=FakeAgentExecutor(events=[]),
+        review_mode=TicketReviewMode.CREATE_ONLY,
+    )._compiled.get_graph()
+    edges = {(edge.source, edge.target) for edge in graph.edges}
+
+    assert ("create", "finalize") in edges
+    assert not [edge for edge in edges if "review" in edge]
+
+
+# --- AC-2 -----------------------------------------------------------------
+
+
+async def test_create_only_runs_exactly_one_creator_session() -> None:
+    """One dispatch, and a terminal event that says no reviewer ran.
+
+    The criterion names ``review_count``; that is the STATE key, which the
+    finalize node emits as ``review_rounds`` on the event. Same number,
+    asserted where the criterion asserts it — on the emitted event.
+    """
+    executor = _ScriptedReviewExecutor(review_outcomes=[])
+    loop = _v5_loop(executor=executor, review_mode=TicketReviewMode.CREATE_ONLY)
+
+    events = [e async for e in loop.run(**_run_kwargs())]
+    terminal = _terminal_ticket_event(events)
+
+    assert len(executor.calls) == 1
+    assert [e for e in events if isinstance(e, WorkflowTicketReviewEvent)] == []
+    assert terminal.approved is TicketApproval.NOT_REVIEWED
+    assert terminal.review_rounds == 0
+    assert terminal.mode is TicketReviewMode.CREATE_ONLY
+
+
+# --- AC-3 -----------------------------------------------------------------
+
+
+async def test_reviewed_mode_unchanged() -> None:
+    """The whole reviewed sequence, end to end, and its exhaustion arm.
+
+    Asserted here rather than inferred from the module's other tests
+    passing: the mode work must leave create -> review -> revise ->
+    finalize and the budget stop exactly as they were.
+    """
+    accepted = _ScriptedReviewExecutor(review_outcomes=[False, True])
+    loop = _v5_loop(executor=accepted, review_mode=TicketReviewMode.REVIEWED)
+    events = [e async for e in loop.run(**_run_kwargs())]
+
+    drafts = [e for e in events if isinstance(e, WorkflowTicketDraftEvent)]
+    reviews = [e for e in events if isinstance(e, WorkflowTicketReviewEvent)]
+    assert [d.iteration for d in drafts] == [1, 2]
+    assert [r.iteration for r in reviews] == [1, 2]
+    assert [r.approved for r in reviews] == [False, True]
+    terminal = _terminal_ticket_event(events)
+    assert terminal.approved is TicketApproval.APPROVED
+    assert terminal.review_rounds == 2
+    assert terminal.mode is TicketReviewMode.REVIEWED
+
+    exhausted = _ScriptedReviewExecutor(review_outcomes=[False, False])
+    stopped = _v5_loop(
+        executor=exhausted,
+        review_mode=TicketReviewMode.REVIEWED,
+        max_reviews=2,
+    )
+    stopped_events = [e async for e in stopped.run(**_run_kwargs())]
+
+    assert (
+        len([e for e in stopped_events if isinstance(e, WorkflowTicketDraftEvent)]) == 2
+    )
+    assert _terminal_ticket_event(stopped_events).review_rounds == 2
+
+
+# --- AC-4 -----------------------------------------------------------------
+
+
+def test_explicit_max_reviews_under_create_only_raises() -> None:
+    """A configured knob the mode compiles nothing for is refused, not ignored."""
+    with pytest.raises(TicketReviewModeError) as excinfo:
+        _v5_loop(
+            executor=FakeAgentExecutor(events=[]),
+            review_mode=TicketReviewMode.CREATE_ONLY,
+            max_reviews=3,
+        )
+
+    assert excinfo.value.settings == (
+        "ticket_review_mode=create_only",
+        "max_reviews=3",
+    )
+
+
+def test_an_unconfigured_max_reviews_under_create_only_constructs() -> None:
+    """A default sitting where nobody put it is not a configuration."""
+    loop = _v5_loop(
+        executor=FakeAgentExecutor(events=[]),
+        review_mode=TicketReviewMode.CREATE_ONLY,
+    )
+
+    assert _graph_nodes(loop) == {"create", "finalize"}
+
+
+def test_the_configured_budget_still_binds_under_the_reviewed_mode() -> None:
+    """Non-vacuity: the refusal is the mode's, not the parameter's."""
+    loop = _v5_loop(
+        executor=FakeAgentExecutor(events=[]),
+        review_mode=TicketReviewMode.REVIEWED,
+        max_reviews=3,
+    )
+
+    assert _graph_nodes(loop) == {"create", "review", "finalize"}
+
+
+# --- AC-5: one test per value of the three-state, on the emitted event -----
+
+
+async def test_a_rejected_draft_ships_unapproved() -> None:
+    """The reviewer read it and said no — one round, unapproved."""
+    executor = _ScriptedReviewExecutor(review_outcomes=[False])
+    loop = _v5_loop(
+        executor=executor,
+        review_mode=TicketReviewMode.REVIEWED,
+        max_reviews=1,
+    )
+
+    terminal = _terminal_ticket_event([e async for e in loop.run(**_run_kwargs())])
+
+    assert terminal.approved is TicketApproval.UNAPPROVED
+    assert terminal.review_rounds == 1
+    assert terminal.mode is TicketReviewMode.REVIEWED
+
+
+async def test_an_exhausted_budget_ships_unapproved_with_its_rounds() -> None:
+    """Same value, different fact — the rounds are what tell them apart."""
+    executor = _ScriptedReviewExecutor(review_outcomes=[False, False])
+    loop = _v5_loop(
+        executor=executor,
+        review_mode=TicketReviewMode.REVIEWED,
+        max_reviews=2,
+    )
+
+    terminal = _terminal_ticket_event([e async for e in loop.run(**_run_kwargs())])
+
+    assert terminal.approved is TicketApproval.UNAPPROVED
+    assert terminal.review_rounds == 2
+    assert terminal.mode is TicketReviewMode.REVIEWED
+
+
+async def test_an_approved_draft_ships_approved() -> None:
+    executor = _ScriptedReviewExecutor(review_outcomes=[True])
+    loop = _v5_loop(executor=executor, review_mode=TicketReviewMode.REVIEWED)
+
+    terminal = _terminal_ticket_event([e async for e in loop.run(**_run_kwargs())])
+
+    assert terminal.approved is TicketApproval.APPROVED
+    assert terminal.review_rounds == 1
+    assert terminal.mode is TicketReviewMode.REVIEWED
+
+
+async def test_an_unreviewed_draft_ships_not_reviewed() -> None:
+    executor = _ScriptedReviewExecutor(review_outcomes=[])
+    loop = _v5_loop(executor=executor, review_mode=TicketReviewMode.CREATE_ONLY)
+
+    terminal = _terminal_ticket_event([e async for e in loop.run(**_run_kwargs())])
+
+    assert terminal.approved is TicketApproval.NOT_REVIEWED
+    assert terminal.review_rounds == 0
+    assert terminal.mode is TicketReviewMode.CREATE_ONLY
+
+
+# --- AC-7 -----------------------------------------------------------------
+
+
+async def test_create_only_attaches_draft_critic() -> None:
+    """The lens the mode depends on is on the create dispatch, with the fragment."""
+    executor = _ScriptedReviewExecutor(review_outcomes=[])
+    loop = _v5_loop(executor=executor, review_mode=TicketReviewMode.CREATE_ONLY)
+
+    _ = [e async for e in loop.run(**_run_kwargs())]
+
+    create_call = executor.calls[0]
+    assert DRAFT_CRITIC_LENS in create_call["agents"]
+    assert "dispatch a draft-critic agent" in str(create_call["prompt"])
+
+
+async def test_the_reviewed_create_dispatch_carries_no_critique_fragment() -> None:
+    """Under reviewed the definitions are the set's and the fragment is absent."""
+    executor = _ScriptedReviewExecutor(review_outcomes=[True])
+    loop = _v5_loop(executor=executor, review_mode=TicketReviewMode.REVIEWED)
+
+    _ = [e async for e in loop.run(**_run_kwargs())]
+
+    create_call = executor.calls[0]
+    assert create_call["agents"] == tuple(
+        definition.name for definition in v5_provider().definitions()
+    )
+    assert "dispatch a draft-critic agent" not in str(create_call["prompt"])
+
+
+def test_create_only_refuses_a_set_that_declares_no_critic() -> None:
+    """The mandate is code-enforced: a set with no critic cannot run this mode."""
+    service = AgentService(
+        git_base_url="https://github.com",
+        executor=FakeAgentExecutor(events=[]),
+        workspace=FakeWorkspaceProvider(),
+        persister=None,
+    )
+
+    with pytest.raises(TicketReviewModeError) as excinfo:
+        TicketGenerationLoop(
+            skills=SUPPRESS_ALL_SKILLS,
+            prompts=make_prompt_provider(),
+            service=service,
+            workspace=FakeWorkspaceProvider(),
+            review_mode=TicketReviewMode.CREATE_ONLY,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            delay_floor_for=no_delay_floor,
+        )
+
+    assert excinfo.value.settings == (
+        "ticket_review_mode=create_only",
+        "prompt_set declares no lens at all",
+    )
+
+
+# --- the critic's flag channel, consumed (fire-ruling FR-3) ---------------
+
+
+async def test_the_critics_flags_ride_out_on_the_emitted_ticket() -> None:
+    """A typed channel nothing reads is the silence the persona left behind."""
+    executor = _ScriptedReviewExecutor(
+        review_outcomes=[],
+        draft_flags=[
+            {
+                "subject": "the retry wrapper around the parser",
+                "reason": "no measured failure justifies it",
+            },
+        ],
+    )
+    loop = _v5_loop(executor=executor, review_mode=TicketReviewMode.CREATE_ONLY)
+
+    terminal = _terminal_ticket_event([e async for e in loop.run(**_run_kwargs())])
+
+    assert terminal.ticket.sherlock_flags == [
+        CritiqueFlag(
+            subject="the retry wrapper around the parser",
+            reason="no measured failure justifies it",
+        ),
+    ]
+    assert terminal.ticket.model_dump(by_alias=True)["sherlockFlags"] == [
+        {
+            "subject": "the retry wrapper around the parser",
+            "reason": "no measured failure justifies it",
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
+# KOD-195: the floor reaches THIS loop's nodes, not only the engine's
+# ---------------------------------------------------------------------------
+
+
+class _RejectedThenDraftingExecutor(_ScriptedReviewExecutor):
+    """The drafter is rate-limit rejected once, then answers.
+
+    The rejection is the vendor's own shape: a rejection warning followed
+    by a result carrying no structured output, which is what the soft
+    failure is raised from.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(review_outcomes=[True])
+        self.draft_attempts = 0
+        #: When each draft attempt began, so the case can clock the gap
+        #: between two of them rather than the run around them.
+        self.draft_attempt_times: list[float] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if self._is_ticket_draft_schema(output_format):
+            self.draft_attempts += 1
+            self.draft_attempt_times.append(time.perf_counter())
+            if self.draft_attempts == 1:
+                yield RateLimitWarningEvent(status="rejected", utilization=1.0)
+                yield ResultEvent(
+                    subtype="result",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="rejected",
+                    structured_output=None,
+                )
+                return
+        async for event in super().stream(
+            prompt=prompt,
+            cwd=cwd,
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
+            skills=skills,
+            session_type=session_type,
+            agents=agents,
+            session_policy=session_policy,
+            session_id=session_id,
+            output_format=output_format,
+        ):
+            yield event
+
+
+@pytest.mark.usefixtures("unjittered_backoff")
+async def test_a_rate_limited_draft_waits_the_floor_before_its_next_attempt() -> None:
+    """KOD-195: the floor is wired into THIS loop, not only constructed on it.
+
+    The construction guard in the ralph-loop suite proves the resolver
+    cannot be omitted; it cannot prove the resolver reaches a node, and
+    unwrapping ``self._floor`` from this loop's two ``add_node`` calls left
+    the whole suite green.  The clock is read at the start of each draft
+    attempt, the policy's back-off is two orders of magnitude under the
+    floor and its jitter is fixed at zero, so the gap between the two
+    attempts has one explanation.
+    """
+    executor = _RejectedThenDraftingExecutor()
+    loop = _make_loop(
+        executor=executor,
+        retry_initial_interval=NEGLIGIBLE_BACKOFF_SECONDS,
+        delay_floor_for=floor_under_a_rate_limit,
+    )
+
+    events = [event async for event in loop.run(**_run_kwargs())]
+
+    assert executor.draft_attempts == 2, "the rejection was retried"
+    first_attempt, second_attempt = executor.draft_attempt_times
+    assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
+    assert [e for e in events if isinstance(e, WorkflowTicketEvent)]

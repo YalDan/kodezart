@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 
 from kodezart.adapters.git_branch_merger import GitBranchMerger
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.core.config import AppConfig
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
@@ -16,6 +17,17 @@ from tests.fakes import (
     FakeAgentExecutor,
     FakeWorkspaceProvider,
 )
+
+# The suite is HERMETIC: it never reads the developer's environment or a
+# working-directory .env. Either one carrying a real deployment turned
+# green runs red — a configured operator could not run the gate beside
+# their own service, which is the opposite of the fresh-environment
+# requirement (KOD-168). Applied at import, before any test constructs a
+# config; a test that needs a value sets it itself, and the env-file
+# behaviour tests pass their own file explicitly.
+for _ambient in [name for name in os.environ if name.startswith("KODEZART_")]:
+    del os.environ[_ambient]
+AppConfig.model_config["env_file"] = None
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -99,6 +111,7 @@ async def agent_client() -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
     app.state.skills = SUPPRESS_ALL_SKILLS
     app.state.agent_service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(
             events=[
                 AssistantTextEvent(text="analysis complete", model="test-model"),

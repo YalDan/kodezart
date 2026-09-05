@@ -5,35 +5,79 @@ from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
-from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
 from kodezart.types.domain.criteria import ValidatedCriterion
+from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateDecision,
+    OutboundDestination,
     RepoVisibility,
-    ScanHit,
+    ScannerRouting,
+    ScanResult,
     WriterShape,
 )
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    QueueState,
+    RecordDestination,
+)
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.run_records import RunRecord
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
+from kodezart.types.domain.tracker import (
+    ClaimResult,
+    IssuePriority,
+    IssueQuery,
+    MappingOutcome,
+    MappingRef,
+    ReviewQuery,
+    TrackerAsset,
+    TrackerComment,
+    TrackerIssue,
+    TrackerReview,
+)
 from kodezart.types.domain.workflow import RemediationRequest
 from kodezart.types.requests.agent import WorkflowRequest
 
 
 @runtime_checkable
 class LogEmitter(Protocol):
-    """Structured logging port — structlog.stdlib.BoundLogger satisfies this."""
+    """Structured logging port — structlog's stdlib BoundLogger satisfies it.
+
+    The five methods are the five this codebase actually awaits, and a test
+    derives that set from the syntax tree rather than from a reading, so the
+    port cannot drift from its callers in either direction: a method called
+    but not declared fails, and a method declared but never called fails too.
+
+    Values are ``object`` rather than ``Any`` because the renderer accepts
+    whatever it is handed and the strict-mode ban on explicit ``Any`` holds
+    here as everywhere else.
+    """
 
     async def ainfo(self, event: str, **kwargs: object) -> None: ...
+
     async def adebug(self, event: str, **kwargs: object) -> None: ...
+
     async def awarning(self, event: str, **kwargs: object) -> None: ...
+
     async def aerror(self, event: str, **kwargs: object) -> None: ...
+
+    async def aexception(self, event: str, **kwargs: object) -> None: ...
 
 
 @runtime_checkable
@@ -211,10 +255,25 @@ class AgentExecutor(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Stream events by executing a prompt in *cwd*."""
+        """Stream events by executing a prompt in *cwd*.
+
+        *session_type* names what the session is for.  It carries no
+        default: every caller states its kind, because the kind is what
+        the knowledge grant is resolved against.
+
+        *agents* and *session_policy* are what makes a session role
+        expressible at the port instead of around it.  An empty *agents*
+        sequence is a guarantee that the session spawns nothing; an
+        unconfigured *session_policy* leaves construction-time
+        configuration in force and constructs the same options this port
+        constructed before it widened.
+        """
         ...
 
 
@@ -349,7 +408,21 @@ class PRCreator(Protocol):
         repo_url: str,
         pr_number: int,
         body: str,
-    ) -> None: ...
+    ) -> None:
+        """Post *body* on the pull request, or raise the forge's refusal.
+
+        Refusals are typed — ``ForgeAPIError`` for a status no retry
+        changes, ``TransientAPIError`` once the adapter's own budget is
+        spent — and NEVER the transport's own exception types, so a
+        consumer contains them without importing an adapter's vendor.
+
+        A failure-report comment is the one write whose failure is
+        logged rather than fatal: it reports an outcome the run reports
+        again terminally, so crashing here would lose more than it
+        reports.  That containment is the CALLER's (see
+        ``_comment_failure_node``); this port always raises.
+        """
+        ...
 
 
 @runtime_checkable
@@ -362,6 +435,398 @@ class CIMonitor(Protocol):
         repo_url: str,
         ref: str,
     ) -> tuple[bool | None, str]: ...
+
+
+@runtime_checkable
+class DeliveryProbe(Protocol):
+    """Answers whether an open pull request already delivers an issue.
+
+    The forge side of the delivered-in-review / crashed discrimination:
+    workflow state alone conflates the two, and the open pull request is
+    the mechanical discriminator.  Matching a pull request to an issue is
+    adapter-owned — no consumer parses a branch name or a body.
+    """
+
+    async def open_delivery_exists(
+        self,
+        *,
+        repo_url: str,
+        issue_key: str,
+    ) -> bool:
+        """True iff an OPEN pull request on *repo_url* delivers *issue_key*."""
+        ...
+
+
+#: What a tool call answers with.  A JSON object OR a JSON array: the MCP
+#: spec constrains a tool result to neither shape, and a measured server
+#: answered some of its tools with a bare array carrying no envelope at
+#: all (KOD-143).  Narrowing this to an object would put those payloads
+#: out of reach of every adapter above the transport.  WHICH server and
+#: which tool is an adapter's knowledge; this seam holds only the fact
+#: that both shapes are legal.
+type McpToolResult = Mapping[str, object] | Sequence[object]
+
+
+@runtime_checkable
+class RunRecordSink(Protocol):
+    """Verifies and writes structural run records in one declared destination.
+
+    One implementation per backing system (`RecordDestination.system`),
+    because WHERE a row lands is vendor knowledge — a data-source page on
+    one backend, a document append on another — while WHAT is written is
+    the domain's one line.  The recorder service routes by the declared
+    system and never learns either vendor's shape (KOD-170).
+
+    Verification is part of the same vendor knowledge, and it is asked
+    PER RUN: whether THIS run's row is there, never whether the
+    destination has been written to lately.  "Any row since" made every
+    run after the first in a window a duplicate of its neighbour — two
+    unfinished fires swept at one shutdown produced one row, because the
+    first row answered for the second (KOD-288).
+    """
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        """Whether *destination* already holds a row about *record*'s run.
+
+        Identity is the run's NAME inside its window — the issue a fire
+        ran on, the pass a scheduled run is — so a row about another run
+        in the same window answers nothing about this one.  Answered from
+        the backend's own state, or raised naming what refused: a guessed
+        ``False`` would double every record and a guessed ``True`` would
+        silently skip one.
+        """
+        ...
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        """Land *record* in *destination*, or raise naming what refused."""
+        ...
+
+
+@runtime_checkable
+class McpToolCaller(Protocol):
+    """Speaks MCP to one server: a tool name plus arguments, in, result out.
+
+    The transport seam under every MCP-backed adapter.  No model is in
+    this loop — the caller names the tool, so the deterministic path stays
+    deterministic.  An in-process fake server satisfies this protocol,
+    which is what keeps CI free of live-workspace access.
+    """
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        """Invoke the named tool and return its structured result."""
+        ...
+
+
+@runtime_checkable
+class ManagedMcpToolCaller(McpToolCaller, Protocol):
+    """An ``McpToolCaller`` whose connection has a lifetime the host owns.
+
+    The composition root probes and opens one at boot and closes it at
+    shutdown, so a session handshake is not re-run per tool call.  Separate
+    from ``McpToolCaller`` because a consumer never opens or closes
+    anything — it names a tool and reads a result.
+    """
+
+    async def probe(self) -> None:
+        """Present the credential once, before any session exists.
+
+        Silence means accepted.  A refused credential leaves as the typed
+        credential error and anything else as the transport error, so boot
+        can name a refusal — the status is legible here and not once a
+        session is being opened around it (KOD-268).
+        """
+        ...
+
+    async def open(self) -> None:
+        """Establish the session. Opening an open caller is an error."""
+        ...
+
+    async def close(self) -> None:
+        """Close the session. Closing a closed caller is a no-op."""
+        ...
+
+
+@runtime_checkable
+class TrackerPort(Protocol):
+    """The whole capability surface the passes and the runner need.
+
+    Vendor-neutral by construction: every parameter and every return type
+    is domain vocabulary.  Substitutability is total — an adapter
+    implements ALL of this or it is not an adapter.  There are no
+    capability flags and no feature detection, so no consumer ever
+    branches on which backend is configured.
+    """
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        """Issues matching *query*, in backend order."""
+        ...
+
+    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
+        """Reviews matching *query*, newest first.
+
+        A separate call rather than a flag on :meth:`scan_issues` because
+        a review is a separate object class: no issue scan reaches one at
+        any page size, so a consumer asking "did anything move?" over
+        issues alone is answering a narrower question than it thinks.
+
+        Newest first is part of the contract, not an accident of a
+        backend: it is what lets a recency question be answered from one
+        page instead of walking the whole set.
+        """
+        ...
+
+    async def verify_scan_capability(
+        self,
+        *,
+        signals: Sequence[PassSignal],
+    ) -> Mapping[PassSignal, str]:
+        """Which of *signals* this credential cannot scan for, and why.
+
+        Answered by CALLING each signal's scan, never by reading a roster
+        of what the backend offers: a scan a credential holds no scope for
+        is offered like any other, so a listing check passes and changes
+        nothing.  One minimal call per distinct scan — two signals served
+        by the same one cost one call.
+
+        The port speaks signals; which scan answers a signal is the
+        adapter's own business and never crosses this surface.
+
+        One entry per REFUSED signal, carrying the backend's own diagnosis
+        of the refusal.  A signal the credential can scan has no entry, so
+        an empty mapping means every one of them is answerable.  Every
+        other failure RAISES: a transport that could not answer at all has
+        said nothing about scope, and reporting it as a refusal would take
+        a pass off the air for the length of an outage.
+        """
+        ...
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        """The full issue — body, state, relations, parent, assignee."""
+        ...
+
+    async def create_issue(
+        self,
+        *,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        """Create an issue on *team_key* and return it as stored."""
+        ...
+
+    async def update_issue(
+        self,
+        *,
+        issue_key: str,
+        title: str | None = None,
+        body: str | None = None,
+    ) -> TrackerIssue:
+        """Update the given fields; ``None`` leaves a field untouched."""
+        ...
+
+    async def set_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        stage: LifecycleStage,
+    ) -> TrackerIssue:
+        """Move the issue to the state the configuration binds *stage* to."""
+        ...
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        """Put the issue back in the state a reader found it in.
+
+        The undo of ``set_workflow_state``, and the only write naming a
+        backend state directly.  It has to: the operation's mapping binds
+        three lifecycle stages, and the state a fire finds its issue in is
+        almost never one of them — a claimed issue comes from the backlog,
+        which the mapping never named and no ``LifecycleStage`` can
+        express.  ``state_name`` is not vendor vocabulary leaking inward:
+        it is the value this port already reports on every
+        ``TrackerIssue``, handed straight back.
+        """
+        ...
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        """Set the semantic queue state, replacing any other member."""
+        ...
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        """Post a comment and return it as stored."""
+        ...
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
+        ...
+
+    async def claim_issue(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult:
+        """Attempt an exactly-once claim.
+
+        Concurrent claimants on one issue produce exactly one
+        ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
+        value, never an exception.
+        """
+        ...
+
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        """Extend a claim *holder* already holds, so it outlives its lease.
+
+        Returns the claim as it now stands — expiring no earlier than
+        *lease_seconds* from now — when *holder* holds a live claim on the
+        issue.  Returns ``None``, writing NOTHING, when it does not.
+
+        Renewal EXTENDS and never acquires.  A claim that has already
+        lapsed stays lapsed and the issue stays claimable: the lapse is how
+        a process that died mid-run hands its work back, and a renewal that
+        could resurrect one would take that recovery away.
+        """
+        ...
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        """Release a claim held by *holder*. A claim it does not hold is a no-op."""
+        ...
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        """The unexpired claim on the issue, or ``None`` when unclaimed.
+
+        ``expires_at`` is when the CLAIM lapses, not when any one write
+        that carried it does: a holder that renewed holds until the last of
+        its renewals runs out.
+        """
+        ...
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        ...
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
+        ...
+
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
+        """Record *ref* against its issue; ``work_refs`` is the read.
+
+        At most one ``DELIVERABLE`` ref exists per issue: a second raises
+        ``DuplicateWorkRefError`` and is never a silent replacement.
+        Recording the same ref twice is idempotent.
+        """
+        ...
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        """Every ref recorded against the issue, oldest first.
+
+        This is the read D2 requires: *which refs deliver issue X, in which
+        roles, at which shas* is answerable through the port, so no code
+        anywhere derives an issue identity, a role or a parent from a
+        branch name.
+        """
+        ...
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        """Record the base *issue_key*'s lane was dispatched on.
+
+        KOD-67 R3: the spec is written THROUGH the port, on the dependent
+        issue.  Staleness compares a recorded spec against the one the
+        blockers imply now, and with nothing recorded there is nothing to
+        compare — the arithmetic would only ever compare a value with
+        itself.  Recording the same spec twice is idempotent; recording a
+        different one supersedes, because a lane dispatched again was
+        dispatched on the base of that dispatch.
+        """
+        ...
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        """The base most recently recorded for *issue_key*, or ``None``.
+
+        ``None`` means no dispatch ever recorded one — a first dispatch,
+        not a stale base.  The two are different states and no caller may
+        conflate them.
+        """
+        ...
+
+    async def recorded_repository(self, *, issue_key: str) -> str | None:
+        """The target repository most recently recorded on *issue_key*.
+
+        Judgment records it when staging a fire on a team bound to no
+        repository; the deterministic dispatch reads it and refuses by
+        name when it is missing (KOD-169).  ``None`` means no route was
+        ever recorded — an exclusion the report names, never a claim by
+        whichever pass's tick arrives first.
+        """
+        ...
+
+    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
+        """Every name and id of every initiative *project_id* belongs to.
+
+        Read for a team's declared scope: a scope entry may name an
+        initiative in either spelling, and issue placement only carries
+        the project (KOD-169).
+        """
+        ...
+
+    async def resolve_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingRef]:
+        """The subset of *refs* that does NOT resolve in the workspace.
+
+        Empty means every configured mapping exists.  The adapter resolves;
+        deciding what an unresolvable entry means is the caller's.
+        """
+        ...
+
+    async def ensure_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingOutcome]:
+        """Instate every ref the operation OWNS, and say what that did.
+
+        Creates only.  A value already present is adopted unchanged and
+        never renamed, recoloured or repurposed; an ensure that would alter
+        an existing definition raises ``TrackerEnsureConflictError`` and
+        performs no write.  One outcome per ref, in the order given.
+        """
+        ...
 
 
 @runtime_checkable
@@ -418,6 +883,9 @@ class AgentRunner(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -437,7 +905,10 @@ class AgentRunner(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         visibility: RepoVisibility,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -452,6 +923,9 @@ class AgentRunner(Protocol):
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -474,7 +948,13 @@ class GitAuth(Protocol):
 
 @runtime_checkable
 class QualityGate(Protocol):
-    """Iterates agent work until acceptance criteria pass or max iterations."""
+    """Iterates agent work until acceptance criteria pass or max iterations.
+
+    ``work_base_ref`` and ``base_spec`` answer two different questions:
+    the first is where the loop's first iteration cuts its branch, the
+    second is what the work is diffed against.  A round built on top of
+    an earlier round's consolidated work has them name different refs.
+    """
 
     def run(
         self,
@@ -485,6 +965,7 @@ class QualityGate(Protocol):
         feature_branch: str,
         ralph_branch: str,
         base_spec: BaseSpec,
+        work_base_ref: str,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -618,6 +1099,48 @@ class PromptProvider(Protocol):
 
 
 @runtime_checkable
+class PromptSetProvider(PromptProvider, Protocol):
+    """A prompt provider whose set also contributes SESSION content.
+
+    Templates are keyed by function; a set additionally carries content
+    that belongs to no single key — the lens definitions its generative
+    roles dispatch and the house rules every session is appended.  Both
+    are set data, so they are served by the same adapter, and both are
+    read by dispatch sites that already hold the provider.
+    """
+
+    def definitions(self) -> Sequence[AgentDefinition]:
+        """Typed lens definitions the resolved set declares. Empty is legal."""
+        ...
+
+    def system_prompt_append(self) -> str | None:
+        """The set's system-prompt append, or ``None`` when it declares none."""
+        ...
+
+    def session_skills(
+        self,
+        key: PromptKey,
+        configured: SkillsSelection,
+    ) -> SkillsSelection:
+        """*configured*, narrowed to what *key*'s role declares.
+
+        The deployment decides what is available and the set decides what
+        each role reaches for; what a dispatch gets is the intersection.
+        """
+        ...
+
+    def session_policy(self, key: PromptKey) -> SessionPolicy:
+        """What *key*'s dispatch declares about its session.
+
+        Read from the set, never decided at the call site: a dispatch site
+        asks the provider what this role runs at and passes the answer on.
+        Set content, so it lives on the extending port beside the lens
+        definitions and the house rules rather than on the keyed one.
+        """
+        ...
+
+
+@runtime_checkable
 class SkillInventory(Protocol):
     """The skill names the host exposes at user scope."""
 
@@ -637,10 +1160,32 @@ class RepoVisibilityResolver(Protocol):
 
 @runtime_checkable
 class ContentScanner(Protocol):
-    """Finds deny-pattern matches in an outbound payload."""
+    """Finds outbound-content findings in one payload.
 
-    def scan(self, content: str) -> Sequence[ScanHit]:
-        """Every match, with its category and span."""
+    ``async`` because a judgment scanner cannot answer behind a ``def``; a
+    scanner that needs no I/O conforms with an ``async def`` awaiting
+    nothing, which is the honest shape rather than a concession.
+
+    ``destination`` is an input because the same string can be unremarkable
+    on one surface and a leak on another — a verdict that depends on where
+    the payload is going cannot be computed from the payload alone.
+
+    Returns a :class:`ScanResult`: hits or a typed failure, never an
+    exception crossing the port and never ``None``.
+    """
+
+    @property
+    def routing(self) -> ScannerRouting:
+        """When this scanner must be consulted."""
+        ...
+
+    async def scan(
+        self,
+        *,
+        content: str,
+        destination: OutboundDestination,
+    ) -> ScanResult:
+        """Every finding, or the typed reason there is no answer."""
         ...
 
 
@@ -648,12 +1193,20 @@ class ContentScanner(Protocol):
 class OutboundContentGate(Protocol):
     """Assigns an explicit, observable verdict to every outbound payload."""
 
-    def gate(
+    async def gate(
         self,
         *,
         content: str,
         visibility: RepoVisibility,
         shape: WriterShape,
+        destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
-        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted."""
+        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted.
+
+        ``content_class`` is declared by the caller and has no default: the
+        writer is the only party that knows where its bytes came from, and a
+        default would let a payload take the cheap path without anyone
+        saying so.
+        """
         ...

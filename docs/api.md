@@ -22,7 +22,7 @@ Health check endpoint.
   "timestamp": "2026-01-01T00:00:00Z",
   "data": {
     "healthy": true,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "service": "kodezart"
   },
   "error": null
@@ -90,7 +90,69 @@ curl -N http://localhost:8000/api/v1/agent/workflow \
   -d '{"prompt": "Add input validation", "repoUrl": "owner/repo", "baseBranch": "main"}'
 ```
 
+## POST /api/v1/agent/fire
+
+Queue a workflow run and return immediately. Same request body as
+`POST /api/v1/agent/workflow` (`WorkflowRequest`); no stream is opened.
+
+### Response — `202 Accepted` (`FireAcceptedResponse`)
+
+```json
+{
+  "jobId": "job_01H...",
+  "lane": "default",
+  "state": "queued",
+  "queuePosition": 0,
+  "submittedAt": "2026-01-01T00:00:00Z",
+  "statusUrl": "/api/v1/jobs/job_01H...",
+  "streamUrl": "/api/v1/jobs/job_01H.../stream"
+}
+```
+
+`queuePosition` is `null` once the run has left the queue. A lane at
+`KODEZART_QUEUE_MAX_DEPTH_PER_LANE` rejects the submission with `429`.
+
+### Example
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agent/fire \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Add input validation", "repoUrl": "owner/repo"}'
+```
+
+## GET /api/v1/jobs/{jobId}
+
+Registry facts for a queued or running job, plus the checkpointed run state.
+`404` with a `BaseResponse` error body when the job id is unknown or its
+record has been released (`KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS`).
+
+### Example
+
+```bash
+curl http://localhost:8000/api/v1/jobs/job_01H...
+```
+
+## GET /api/v1/jobs/{jobId}/stream
+
+Attach to a job's event stream. Replays the job's bounded event buffer
+(`KODEZART_QUEUE_EVENT_BUFFER_CAPACITY`) and then goes live, in the same SSE
+format as `/agent/query` and `/agent/workflow`. `404` when the job id is
+unknown. A job whose buffer has been released
+(`KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS`) is marked `truncated` on its
+record and replays nothing.
+
+### Example
+
+```bash
+curl -N http://localhost:8000/api/v1/jobs/job_01H.../stream
+```
+
 ## SSE Event Types
+
+Every frame type the stream can carry is in one of the tables below.
+A test compares them against `types/domain/agent.py` in both directions, so an
+event added to the code with no row fails the suite, and each heading's count
+is checked against the rows beneath it rather than being trusted.
 
 All responses from `/query` and `/workflow` are Server-Sent Event streams.
 Each frame follows the format:
@@ -131,7 +193,7 @@ field or a stale heading count reddens that test.
 | `assistant_thinking`  | `thinking`, `model`                                         |
 | `tool_use`            | `name`, `input`, `id`, `model`                              |
 | `tool_result`         | `content`, `toolUseId`, `isError`                           |
-| `system`              | `subtype`, `data`                                           |
+| `system`              | `subtype`, `data`, `outputStyle`                            |
 | `task_started`        | `subtype`, `taskId`, `description`, `uuid`, `sessionId`     |
 | `task_progress`       | `subtype`, `taskId`, `description`, `usage`, `uuid`, `sessionId` |
 | `task_notification`   | `subtype`, `taskId`, `status`, `outputFile`, `summary`, `uuid`, `sessionId` |
@@ -152,22 +214,40 @@ ids clears them on `terminal` from either frame.
 | ------------------------------ | ----------------------------------------------- |
 | `workflow_ticket_draft`        | `iteration`, `draft`                            |
 | `workflow_ticket_review`       | `iteration`, `approved`, `feedback`, `suggestions` |
-| `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`            |
-| `workflow_scope_base`          | `baseRef`, `role`, `inputs`                     |
+| `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`, `mode`    |
+| `workflow_scope_base`          | `baseBranch`, `baseRole`, `inputs`              |
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
-| `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets` |
+| `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets`, `correction` (present only when a refused response was re-dispatched) |
 | `workflow_artifacts`           | `status`, `branch`                              |
 | `workflow_iteration`           | `iteration`, `branch`, `commitSha`, `verdict`, `evaluation`, `trajectory` |
 | `workflow_consolidation`       | `status`, `featureBranch`, `sourceBranch`, `featureTipSha` |
-| `workflow_review`              | `passed`, `evaluation`, `fixRound`              |
+| `workflow_review`              | `passed`, `evaluation`, `fixRoundsUsed`         |
 | `workflow_remediation`         | `entry`, `roundIndex`, `ticket`, `baseRef`      |
-| `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch` |
-| `workflow_ci`                  | `passed`, `summary`, `ref`                      |
-| `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `error` |
+| `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
+| `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
+| `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.
+
+`workflow_ticket.approved` is three-state (`approved`, `unapproved`,
+`not_reviewed`) and rides beside `mode`. `not_reviewed` says no reviewer ran
+at all, which under the `create_only` mode is the compiled shape of the loop
+rather than a failure: a draft its reviewer rejected, a draft whose review
+budget ran out, and a draft nobody reviewed are three different facts.
+
+`workflow_artifacts.status` is three-state (`persisted`, `unchanged`,
+`ignored_by_target`). `ignored_by_target` is not a variant of success: the
+target repository's ignore rules match the artifact directory, so no run
+lands artifacts there until they change.
+
+`workflow_pr.delivered` says which of the two pull-request paths opened it.
+`true` is the accepted path's delivery, and it is what the tracker
+write-back records as the issue's deliverable work ref. `false` is the
+stall exit's do-not-merge best-iteration branch, opened over a run its own
+acceptance gate rejected: it is reported and commented on, and no work ref
+is recorded for it.
 
 ### Job Events (1)
 

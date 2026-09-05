@@ -15,7 +15,6 @@ import pytest
 import structlog
 
 from kodezart.core.constants import RESULT_TAIL_CHARS
-from kodezart.core.error_egress import _REDACTION_SENTINEL
 from kodezart.core.stream_drain import drain
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -24,6 +23,7 @@ from kodezart.types.domain.agent import (
     RateLimitWarningEvent,
     ResultEvent,
 )
+from kodezart.types.domain.credentials import REDACTION_SENTINEL
 
 _FAKE_GHP_BODY: Final[str] = "A" * 40
 
@@ -206,4 +206,4 @@ async def test_the_tail_is_redacted_before_it_reaches_a_log() -> None:
     tail = _drained(logs)["result_tail"]
     assert isinstance(tail, str)
     assert _FAKE_GHP_BODY not in tail
-    assert _REDACTION_SENTINEL in tail
+    assert REDACTION_SENTINEL in tail

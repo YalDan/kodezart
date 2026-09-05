@@ -6,13 +6,16 @@ to it, how many regeneration rounds were spent, and what the completion
 event says happened.
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 
 import pytest
+from pydantic import ValidationError
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.config import AppConfig
-from kodezart.domain.errors import CriteriaFanInError
+from kodezart.core.error_egress import build_error_event
+from kodezart.core.redispatch import CORRECTION_HEADER
+from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
@@ -23,20 +26,29 @@ from kodezart.types.domain.agent import (
     WorkflowCriteriaValidationEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
 from kodezart.types.domain.criteria import (
+    CRITERION_ID_PATTERN,
     CriteriaArtifact,
     CriterionClass,
     CriterionVerdict,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeArtifactPersister,
     FakeBranchMerger,
@@ -51,6 +63,7 @@ from tests.fakes import (
     make_passing_evaluation,
     make_passing_evaluation_over,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 INFEASIBLE_A = {
@@ -94,6 +107,9 @@ class ValidatorScriptExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -180,6 +196,7 @@ def _engine(
     pr_creator: FakePRCreator | None = None,
 ) -> RalphWorkflowEngine:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -204,6 +221,11 @@ def _engine(
         criteria_max_regeneration_rounds=max_rounds,
         artifact_persister=artifact_persister,
         pr_creator=pr_creator,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -501,24 +523,30 @@ async def test_an_unsatisfiable_conjunction_regenerates_then_halts() -> None:
 
 
 async def test_a_missing_validator_finding_fails_the_run_closed() -> None:
-    """A verdict nobody produced never defaults to a pass."""
-    executor = ValidatorScriptExecutor(
-        sweeps=[{"findings": [FEASIBLE_A], "contradictions": []}],
-    )
+    """A verdict nobody produced never defaults to a pass.
+
+    The sweep is scripted for every attempt KOD-91's permutation guard
+    spends: the run is asked again before it halts, and a model that
+    repeats its answer halts it on the same fail-closed error.
+    """
+    incomplete = {"findings": [FEASIBLE_A], "contradictions": []}
+    executor = ValidatorScriptExecutor(sweeps=[incomplete, incomplete])
     with pytest.raises(CriteriaFanInError) as excinfo:
         await _run(_engine(executor, max_rounds=1))
     assert excinfo.value.missing_ids == ("AC-2",)
+    assert executor.sweep_calls == AppConfig().fan_in_max_attempts
 
 
 async def test_a_duplicate_validator_finding_fails_the_run_closed() -> None:
-    executor = ValidatorScriptExecutor(
-        sweeps=[
-            {"findings": [FEASIBLE_A, FEASIBLE_A, FEASIBLE_B], "contradictions": []},
-        ],
-    )
+    duplicated = {
+        "findings": [FEASIBLE_A, FEASIBLE_A, FEASIBLE_B],
+        "contradictions": [],
+    }
+    executor = ValidatorScriptExecutor(sweeps=[duplicated, duplicated])
     with pytest.raises(CriteriaFanInError) as excinfo:
         await _run(_engine(executor, max_rounds=1))
     assert excinfo.value.duplicate_ids == ("AC-1",)
+    assert executor.sweep_calls == AppConfig().fan_in_max_attempts
 
 
 # ---------------------------------------------------------------------------
@@ -564,8 +592,8 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
 
 
 STACKED_BASE = BaseSpec(
-    base_ref="kodezart/blocker-a-11111111",
-    role=BaseRefRole.deliverable,
+    base_branch="kodezart/blocker-a-11111111",
+    base_role=WorkRefRole.DELIVERABLE,
     inputs=(
         BaseInput(
             blocker_issue_id="KOD-101",
@@ -656,13 +684,13 @@ async def test_a_scope_criterion_with_no_stated_base_is_regenerated() -> None:
     # the run. What the run supplies is this line.
     regeneration = [p for p in executor.prompts if "<validation_findings>" in p]
     assert len(regeneration) == 1
-    assert _base_line(STACKED_BASE.base_ref) in regeneration[0]
+    assert _base_line(STACKED_BASE.base_branch) in regeneration[0]
 
 
 @pytest.mark.parametrize(
     ("spec", "other_base"),
     [
-        (trunk_base("main"), STACKED_BASE.base_ref),
+        (trunk_base("main"), STACKED_BASE.base_branch),
         (STACKED_BASE, "main"),
     ],
     ids=["trunk-fired", "stacked"],
@@ -688,7 +716,7 @@ async def test_the_drafter_is_told_which_base_the_lane_is_measured_against(
         p for p in executor.prompts if "SCOPE CRITERIA NAME THEIR BASE" in p
     ]
     assert len(drafter_prompts) == 1
-    assert _base_line(spec.base_ref) in drafter_prompts[0]
+    assert _base_line(spec.base_branch) in drafter_prompts[0]
     assert _base_line(other_base) not in drafter_prompts[0]
     assert "Never write `main` or `trunk` as the base" in drafter_prompts[0]
 
@@ -708,8 +736,9 @@ async def test_the_refuter_reads_scope_against_the_drafter_s_base() -> None:
 
     drafter = next(p for p in executor.prompts if "SCOPE CRITERIA NAME THEIR BASE" in p)
     refuter = next(p for p in executor.prompts if "ADVERSARIAL REFUTER" in p)
-    assert _base_line(STACKED_BASE.base_ref) in drafter
-    assert f"you hold the repository at base ref `{STACKED_BASE.base_ref}`" in refuter
+    assert _base_line(STACKED_BASE.base_branch) in drafter
+    stacked = STACKED_BASE.base_branch
+    assert f"you hold the repository at base ref `{stacked}`" in refuter
     assert _base_line("main") not in drafter
     assert "repository at base ref `main`" not in refuter
 
@@ -819,3 +848,253 @@ async def test_an_ungraded_criterion_clamps_the_run_and_names_its_resource() -> 
     body = str(create["body"])
     assert "AC-2" in body
     assert "a PostgreSQL server reachable from the runner" in body
+
+
+# ---------------------------------------------------------------------------
+# KOD-132 — a contract violation is corrected in flight, not fatal
+#
+# Two refusals used to escape the node's bounded re-dispatch and end the run
+# with zero retries: the response model's own refusal, raised inside the
+# dispatch closure, and the sweep's ungrounded-verdict refusal, raised after
+# the guard had already returned.  Both are now inside the checked region and
+# both are re-dispatched with the refusal's text as correction.
+#
+# Every fixture asserts the DISPATCH COUNT.  A final-state assertion alone
+# passes whether or not the re-dispatch fired, which is the measurement this
+# issue exists to make.
+# ---------------------------------------------------------------------------
+
+# A response the model can produce and the response model refuses: `feasible`
+# names `none` as its smallest repair, and this one names a text edit.
+INCONSISTENT_A = {
+    "criterionId": "AC-1",
+    "verdict": "feasible",
+    "smallestRepair": "criterion_text",
+}
+
+# A response that parses and whose stated verdict its own evidence refutes:
+# naming an undeclared arm derives `infeasible`, never `feasible`.
+UNGROUNDED_A = {
+    "criterionId": "AC-1",
+    "verdict": "feasible",
+    "smallestRepair": "none",
+    "undeclaredSwitchArms": ["the timeout arm", "the retry arm"],
+}
+
+# A response violating a constraint the schema keyword-stripper used to
+# remove before any schema reached a model: the criterion-id `pattern`.
+OFF_PATTERN_A = {"criterionId": "AC-0", "verdict": "feasible", "smallestRepair": "none"}
+
+_COMPLETE = {"findings": [FEASIBLE_A, FEASIBLE_B], "contradictions": []}
+
+
+def _corrections(executor: ValidatorScriptExecutor) -> list[str]:
+    """Every prompt this run re-dispatched carrying a refusal to correct."""
+    return [p for p in executor.prompts if CORRECTION_HEADER in p]
+
+
+async def test_an_inconsistent_verdict_and_repair_is_corrected_in_flight() -> None:
+    """The response model's refusal re-dispatches; the correction completes it.
+
+    The dispatch count is the assertion: at one dispatch the node would
+    have died on the same ValidationError that ended a 1,723-second run.
+    """
+    executor = ValidatorScriptExecutor(
+        sweeps=[
+            {"findings": [INCONSISTENT_A, FEASIBLE_B], "contradictions": []},
+            _COMPLETE,
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    assert executor.sweep_calls == 2, "the refusal bought a second dispatch"
+    assert executor.criteria_calls == 1, "no regeneration round was spent"
+    assert len(gate.calls) == 1, "the corrected response completed the node"
+
+    corrections = _corrections(executor)
+    assert len(corrections) == 1
+    assert "names none as its smallest repair, not criterion_text" in corrections[0]
+
+
+async def test_an_ungrounded_feasible_verdict_is_corrected_in_flight() -> None:
+    """The sweep's refusal re-dispatches too, now that the sweep is inside.
+
+    `sweep` ran AFTER the guard returned, so this class could not be
+    caught at all.  A feasible verdict beside a non-empty undeclared-arms
+    list is the exact shape that ended the recorded run.
+    """
+    executor = ValidatorScriptExecutor(
+        sweeps=[
+            {"findings": [UNGROUNDED_A, FEASIBLE_B], "contradictions": []},
+            _COMPLETE,
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    assert executor.sweep_calls == 2
+    assert len(gate.calls) == 1
+
+    corrections = _corrections(executor)
+    assert len(corrections) == 1
+    assert "not derivable from its own evidence" in corrections[0]
+
+    sweep_event = next(
+        e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
+    )
+    assert sweep_event.correction is not None
+    assert sweep_event.correction.attempts == 2
+    assert [b.breach_class for b in sweep_event.correction.breaches] == [
+        "UngroundedVerdictError",
+    ]
+
+
+async def test_a_response_off_the_id_pattern_is_corrected_and_named() -> None:
+    """KOD-134's transferred check, the corrected-in-flight half.
+
+    `AC-0` violates the criterion-id `pattern` — one of the keywords the
+    schema filter deleted before any schema reached a model.  The response
+    is refused, corrected in flight, and the correction is named on the
+    wire rather than raising out of the node.
+    """
+    executor = ValidatorScriptExecutor(
+        sweeps=[
+            {"findings": [OFF_PATTERN_A, FEASIBLE_B], "contradictions": []},
+            _COMPLETE,
+        ],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    assert executor.sweep_calls == 2
+    assert len(gate.calls) == 1
+
+    corrections = _corrections(executor)
+    assert len(corrections) == 1
+    assert CRITERION_ID_PATTERN in corrections[0]
+
+    sweep_event = next(
+        e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
+    )
+    assert sweep_event.correction is not None
+    assert [b.breach_class for b in sweep_event.correction.breaches] == [
+        "ValidationError",
+    ]
+    frame = sweep_event.model_dump(by_alias=True, exclude_none=True)
+    assert frame["correction"]["breaches"][0]["breachClass"] == "ValidationError"
+
+
+async def test_a_response_off_the_id_pattern_that_never_corrects_is_rejected() -> None:
+    """KOD-134's transferred check, the rejected half.
+
+    A response the correction never fixes never reaches the caller: the
+    refusal propagates, and the wire frame egress builds names the rule
+    the response broke rather than a bare class name.
+    """
+    off_pattern = {"findings": [OFF_PATTERN_A, FEASIBLE_B], "contradictions": []}
+    executor = ValidatorScriptExecutor(sweeps=[off_pattern, off_pattern])
+
+    with pytest.raises(ValidationError) as excinfo:
+        await _run(_engine(executor, max_rounds=1))
+
+    assert executor.sweep_calls == AppConfig().fan_in_max_attempts
+    named = build_error_event(excinfo.value)
+    assert named.error_kind == "ValidationError"
+    assert CRITERION_ID_PATTERN in named.error
+
+
+async def test_an_inconsistent_response_that_never_corrects_terminates() -> None:
+    """Exhaustion on the schema class still halts, with the rule named.
+
+    Nothing parsed on the spent attempt, so there is no derivation to fall
+    through to and none is invented: the refusal is the run's terminal
+    event and it names the field rule it broke.
+    """
+    inconsistent = {"findings": [INCONSISTENT_A, FEASIBLE_B], "contradictions": []}
+    executor = ValidatorScriptExecutor(sweeps=[inconsistent, inconsistent])
+
+    with pytest.raises(ValidationError) as excinfo:
+        await _run(_engine(executor, max_rounds=1))
+
+    assert executor.sweep_calls == AppConfig().fan_in_max_attempts
+    assert len(_corrections(executor)) == 1
+    named = build_error_event(excinfo.value)
+    assert "names none as its smallest repair, not criterion_text" in named.error
+
+
+async def test_an_ungrounded_verdict_that_never_corrects_terminates() -> None:
+    """Exhaustion on the ungrounded class still halts, with the refusal named.
+
+    The bound buys recovery, not tolerance: a stated verdict its own
+    evidence never grounds is still standing when the bound is spent, and
+    it is the run's terminal event — named on the wire, not absorbed.
+    """
+    ungrounded = {"findings": [UNGROUNDED_A, FEASIBLE_B], "contradictions": []}
+    executor = ValidatorScriptExecutor(sweeps=[ungrounded, ungrounded])
+
+    with pytest.raises(UngroundedVerdictError) as excinfo:
+        await _run(_engine(executor, max_rounds=1))
+
+    assert executor.sweep_calls == AppConfig().fan_in_max_attempts
+    assert len(_corrections(executor)) == 1
+    named = build_error_event(excinfo.value)
+    assert named.error_kind == "UngroundedVerdictError"
+    assert "not derivable from its own evidence" in named.error
+
+
+async def test_the_permutation_guard_re_dispatches_without_restating_itself() -> None:
+    """The fan-in channel's re-dispatch is unchanged: the identical prompt.
+
+    A non-permutation names ids the prompt already carries, so nothing is
+    restated to the session and the widened guard did not quietly change
+    what that channel sends.
+    """
+    executor = ValidatorScriptExecutor(
+        sweeps=[{"findings": [FEASIBLE_A], "contradictions": []}, _COMPLETE],
+    )
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        last_commit_sha="a" * 40,
+    )
+    events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
+
+    assert executor.sweep_calls == 2
+    assert len(gate.calls) == 1
+    assert _corrections(executor) == []
+
+    sweep_event = next(
+        e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
+    )
+    assert sweep_event.correction is not None
+    assert [b.breach_class for b in sweep_event.correction.breaches] == [
+        "CriteriaFanInError",
+    ]
+
+
+async def test_a_conforming_first_answer_carries_no_correction() -> None:
+    """Non-vacuity: the record is absent when nothing was refused."""
+    executor = ValidatorScriptExecutor(sweeps=[_COMPLETE])
+
+    events = await _run(_engine(executor, max_rounds=1))
+
+    assert executor.sweep_calls == 1
+    sweep_event = next(
+        e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)
+    )
+    assert sweep_event.correction is None
+    frame = sweep_event.model_dump(by_alias=True, exclude_none=True)
+    assert "correction" not in frame

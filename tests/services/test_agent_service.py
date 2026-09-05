@@ -7,6 +7,7 @@ from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeChangePersister,
@@ -25,6 +26,7 @@ async def test_stream_workflow_persists_changes() -> None:
         ),
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(
             events=[
                 AssistantTextEvent(text="done", model="m"),
@@ -45,6 +47,7 @@ async def test_stream_workflow_persists_changes() -> None:
         e
         async for e in service.stream_workflow(
             skills=SUPPRESS_ALL_SKILLS,
+            session_type=FAKE_SESSION_TYPE,
             prompt="fix it",
             repo_path="/tmp/fake",
             branch_name="kodezart/test-branch-abc12345",
@@ -73,6 +76,7 @@ async def test_stream_passes_output_format() -> None:
         ]
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
     )
@@ -84,6 +88,7 @@ async def test_stream_passes_output_format() -> None:
         e
         async for e in service.stream(
             skills=SUPPRESS_ALL_SKILLS,
+            session_type=FAKE_SESSION_TYPE,
             prompt="x",
             repo_path="/tmp/fake",
             permission_mode="plan",
@@ -96,6 +101,7 @@ async def test_stream_passes_output_format() -> None:
 
 async def test_stream_propagates_executor_error() -> None:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeRaisingExecutor(RuntimeError("network error")),
         workspace=FakeWorkspaceProvider(),
     )
@@ -104,6 +110,7 @@ async def test_stream_propagates_executor_error() -> None:
             e
             async for e in service.stream(
                 skills=SUPPRESS_ALL_SKILLS,
+                session_type=FAKE_SESSION_TYPE,
                 prompt="x",
                 repo_path="/tmp/fake",
                 permission_mode="plan",

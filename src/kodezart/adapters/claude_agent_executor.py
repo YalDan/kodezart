@@ -1,6 +1,6 @@
 """Claude Agent SDK adapter — wraps query(), yields AgentEvent stream."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -10,6 +10,18 @@ from claude_agent_sdk import (
     query,
 )
 
+from kodezart.adapters._agents_mapping import (
+    map_agents,
+    map_effort,
+    map_model,
+    map_settings,
+    map_system_prompt,
+    map_workflow_env,
+)
+from kodezart.adapters._mcp_mapping import (
+    map_knowledge_mcp,
+    prompt_with_knowledge_map,
+)
 from kodezart.adapters._permission_modes import _validate_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
@@ -17,7 +29,14 @@ from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 
 
 class ClaudeAgentExecutor:
@@ -28,8 +47,14 @@ class ClaudeAgentExecutor:
     production default.
     """
 
-    def __init__(self, *, setting_sources: list[SettingSource]) -> None:
+    def __init__(
+        self,
+        *,
+        setting_sources: list[SettingSource],
+        knowledge_grant: KnowledgeGrant,
+    ) -> None:
         self._setting_sources = setting_sources
+        self._knowledge_grant = knowledge_grant
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -40,6 +65,9 @@ class ClaudeAgentExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -51,7 +79,10 @@ class ClaudeAgentExecutor:
             permission_mode=permission_mode,
             has_output_format=output_format is not None,
             skills_mode=skills.mode.value,
+            session_type=session_type.value,
+            agent_count=len(agents),
         )
+        knowledge = map_knowledge_mcp(self._knowledge_grant, session_type)
         options = ClaudeAgentOptions(
             cwd=cwd,
             permission_mode=_validate_permission_mode(permission_mode),
@@ -60,6 +91,19 @@ class ClaudeAgentExecutor:
             output_format=output_format,
             skills=map_skills(skills),
             setting_sources=map_setting_sources(self._setting_sources),
+            agents=map_agents(agents),
+            system_prompt=map_system_prompt(session_policy),
+            effort=map_effort(session_policy.effort),
+            model=map_model(session_policy, None),
+            fallback_model=session_policy.fallback_model,
+            env=map_workflow_env(session_policy.workflow_access),
+            settings=map_settings(session_policy.workflow_access, None),
+            **knowledge,
+        )
+        session_prompt = prompt_with_knowledge_map(
+            prompt,
+            grant=self._knowledge_grant,
+            attached=knowledge,
         )
         # TODO: symmetric ProcessError/CLIConnectionError/ClaudeSDKError
         # detail preservation (exit_code, stderr_tail) matching
@@ -70,7 +114,7 @@ class ClaudeAgentExecutor:
         # default).  Adding the parallel change here costs CI time on a
         # code path no production deployment exercises.
         try:
-            async for message in query(prompt=prompt, options=options):
+            async for message in query(prompt=session_prompt, options=options):
                 for event in map_message(message):
                     yield event
         except ProcessError as exc:

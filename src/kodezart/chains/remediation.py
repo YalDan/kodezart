@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS_WITH_AGENT
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, PromptProvider
+from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.core.stream_drain import drain
 from kodezart.domain.remediation import done_work_summary
 from kodezart.domain.ticket import format_ticket_as_task
@@ -24,6 +24,7 @@ from kodezart.types.domain.agent import (
     WorkflowRemediationEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RemediationRequest
 
@@ -43,11 +44,11 @@ class RemediationChain:
         self,
         service: AgentRunner,
         *,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         skills: SkillsSelection,
     ) -> None:
         self._service: AgentRunner = service
-        self._prompts: PromptProvider = prompts
+        self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._log: BoundLogger = get_logger(__name__)
 
@@ -76,7 +77,13 @@ class RemediationChain:
                 branch=request.work_base_ref,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.REMEDIATION_TICKET, self._skills
+                ),
+                session_type=SessionType.TICKET_FIRE,
+                session_policy=self._prompts.session_policy(
+                    PromptKey.REMEDIATION_TICKET,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": TICKET_DRAFT_SCHEMA,

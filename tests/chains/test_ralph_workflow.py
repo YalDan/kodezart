@@ -5,23 +5,32 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from pathlib import Path
 
 import pytest
+import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 
+from kodezart.chains import ralph_workflow as ralph_workflow_module
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.core.protocols import AgentExecutor, TicketGenerator
+from kodezart.core.retry import DelayFloor
 from kodezart.domain.accept_gate import accept_verdict
-from kodezart.domain.errors import StaleBaseError
+from kodezart.domain.errors import (
+    CriteriaFanInError,
+    ForgeAPIError,
+    StaleBaseError,
+    TransientAPIError,
+)
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -41,12 +50,13 @@ from kodezart.types.domain.agent import (
     WorkflowScopeBaseEvent,
     WorkflowTicketEvent,
 )
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
@@ -56,10 +66,24 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
+from tests.chains.test_dispatch_definitions import (
+    chain_source,
+    dispatch_block,
+    v5_provider,
+)
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeArtifactPersister,
@@ -76,10 +100,13 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     RecordingPromptProvider,
+    floor_under_a_rate_limit,
     make_dispatched_criteria,
     make_failing_evaluation,
     make_passing_evaluation,
+    make_passing_evaluation_over,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -108,6 +135,7 @@ def _make_engine(
     git: FakeGitService | None = None,
     retry_initial_interval: float = 1.0,
     retry_max_attempts: int = 3,
+    delay_floor_for: DelayFloor = no_delay_floor,
 ) -> RalphWorkflowEngine:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -118,6 +146,7 @@ def _make_engine(
             last_commit_sha="a" * 40,
         )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor or FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -148,6 +177,9 @@ def _make_engine(
         artifact_persister=artifact_persister,
         retry_initial_interval=retry_initial_interval,
         retry_max_attempts=retry_max_attempts,
+        delay_floor_for=delay_floor_for,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
     )
 
 
@@ -317,8 +349,8 @@ async def test_workflow_merge_failure_reports_error() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is False
-    assert complete_events[0].error is not None
-    assert "diverged" in complete_events[0].error
+    assert complete_events[0].merge_error is not None
+    assert "diverged" in complete_events[0].merge_error
 
 
 async def test_workflow_merge_success_has_no_error() -> None:
@@ -348,7 +380,7 @@ async def test_workflow_merge_success_has_no_error() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
-    assert complete_events[0].error is None
+    assert complete_events[0].merge_error is None
 
 
 async def test_workflow_rejected_does_not_merge() -> None:
@@ -597,6 +629,9 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -633,6 +668,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
 
     executor = FailingCriteriaExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -656,6 +692,12 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     from kodezart.core.errors import NoStructuredOutputError
@@ -803,7 +845,7 @@ async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
-    assert complete_events[0].error is None
+    assert complete_events[0].merge_error is None
 
 
 # ---------------------------------------------------------------------------
@@ -869,6 +911,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
     (containing 'Test ticket') and NOT the raw user prompt ('fix it')."""
     executor = FakeAgentExecutor(events=[])
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -892,6 +935,12 @@ async def test_criteria_receives_formatted_ticket() -> None:
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -1050,6 +1099,9 @@ class _SequentialReviewExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -1197,7 +1249,7 @@ async def test_workflow_review_passes_opens_pr() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is not None
-    assert complete_events[0].ci_passed is True
+    assert complete_events[0].ci_status is CIStatus.passed
 
 
 async def test_workflow_review_fails_triggers_fix() -> None:
@@ -1242,6 +1294,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         review_results=[failing_review, passing_review],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -1271,6 +1324,11 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         remediator=FakeRemediator(),
         remediation_max_rounds=2,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1294,11 +1352,11 @@ async def test_workflow_review_fails_triggers_fix() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is not None
-    assert complete_events[0].ci_passed is True
+    assert complete_events[0].ci_status is CIStatus.passed
 
 
 async def test_workflow_ci_passes_completes() -> None:
-    """CI passing leads to complete with ci_passed=True."""
+    """CI passing leads to complete with a passed status."""
     ci_monitor = FakeCIMonitor(passed=True)
     pr_creator = FakePRCreator()
     gate = FakeQualityGate(
@@ -1328,7 +1386,7 @@ async def test_workflow_ci_passes_completes() -> None:
 
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
-    assert complete_events[0].ci_passed is True
+    assert complete_events[0].ci_status is CIStatus.passed
 
 
 async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
@@ -1400,14 +1458,14 @@ async def test_workflow_no_pr_creator_skips_pr() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is None
-    assert complete_events[0].ci_passed is None
+    assert complete_events[0].ci_status is CIStatus.not_monitored
 
     ci_events = [e for e in events if isinstance(e, WorkflowCIEvent)]
     assert len(ci_events) == 0
 
 
 async def test_workflow_no_ci_monitor_skips_ci() -> None:
-    """No ci_monitor: routing guard skips monitor_ci, ci_passed stays None."""
+    """No ci_monitor: routing guard skips monitor_ci, the status stays not_monitored."""
     pr_creator = FakePRCreator()
     gate = FakeQualityGate(
         events=[],
@@ -1439,7 +1497,7 @@ async def test_workflow_no_ci_monitor_skips_ci() -> None:
 
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
-    assert complete_events[0].ci_passed is None
+    assert complete_events[0].ci_status is CIStatus.not_monitored
 
 
 async def test_workflow_rejected_skips_review() -> None:
@@ -1485,7 +1543,7 @@ async def test_workflow_rejected_skips_review() -> None:
 
 
 async def test_workflow_complete_event_includes_pr_fields() -> None:
-    """WorkflowCompleteEvent carries pr_url, pr_number, ci_passed."""
+    """WorkflowCompleteEvent carries pr_url, pr_number, ci_status."""
     pr_creator = FakePRCreator(
         pr_url="https://github.com/o/r/pull/99",
         pr_number=99,
@@ -1521,7 +1579,7 @@ async def test_workflow_complete_event_includes_pr_fields() -> None:
     ce = complete_events[0]
     assert ce.pr_url == "https://github.com/o/r/pull/99"
     assert ce.pr_number == 99
-    assert ce.ci_passed is True
+    assert ce.ci_status is CIStatus.passed
 
 
 async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
@@ -1549,6 +1607,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
     }
     executor = _SequentialReviewExecutor(review_results=[failing_review])
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -1575,6 +1634,12 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         ci_monitor=None,
         remediator=None,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1700,6 +1765,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         review_results=[passing_review, failing_review],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -1729,6 +1795,11 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         remediator=FakeRemediator(),
         remediation_max_rounds=1,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -1796,7 +1867,7 @@ async def test_workflow_repo_url_none_with_protocols_skips_pr() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is None
-    assert complete_events[0].ci_passed is None
+    assert complete_events[0].ci_status is CIStatus.not_monitored
 
     create_calls = [c for c in pr_creator.calls if c.get("method") == "create_pr"]
     assert len(create_calls) == 0
@@ -1872,7 +1943,7 @@ async def test_route_after_review_no_repo_url_routes_complete() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].pr_url is None
-    assert complete_events[0].ci_passed is None
+    assert complete_events[0].ci_status is CIStatus.not_monitored
 
 
 def test_route_after_ci_no_pr_number_routes_complete() -> None:
@@ -1899,7 +1970,7 @@ def test_route_after_ci_no_pr_number_routes_complete() -> None:
         "fix_rounds_used": 0,
         "pr_url": None,
         "pr_number": None,
-        "ci_passed": False,
+        "ci_status": CIStatus.failed,
         "ci_summary": "CI failed: ci/test",
         "repo_url": "https://github.com/owner/repo",
     }
@@ -2022,8 +2093,8 @@ async def test_workflow_reports_artifacts_ignored_by_target() -> None:
 #: the point the ralph branch is cut from when a persister is configured, which
 #: is why a trunk literal there deletes a stacked lane's inherited work.
 ARTIFACT_STACKED_BASE = BaseSpec(
-    base_ref="kodezart/blocker-a-11111111",
-    role=BaseRefRole.deliverable,
+    base_branch="kodezart/blocker-a-11111111",
+    base_role=WorkRefRole.DELIVERABLE,
     inputs=(
         BaseInput(
             blocker_issue_id="KOD-A",
@@ -2066,7 +2137,7 @@ async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
         git=FakeGitService(
             remote_branch_shas={
                 "main": "b" * 40,
-                ARTIFACT_STACKED_BASE.base_ref: "c" * 40,
+                ARTIFACT_STACKED_BASE.base_branch: "c" * 40,
             },
         ),
     )
@@ -2085,7 +2156,7 @@ async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
     ]
 
     assert len(persister.persist_calls) == 2
-    assert [call[-1] for call in persister.persist_calls] == [spec.base_ref] * 2
+    assert [call[-1] for call in persister.persist_calls] == [spec.base_branch] * 2
 
 
 # ---------------------------------------------------------------------------
@@ -2163,6 +2234,9 @@ class _ScriptedCriteriaExecutor:
         self._inner = FakeAgentExecutor(events=[])
         self._script = list(script)
         self.criteria_attempts = 0
+        #: When each criteria attempt began, so a case can clock the gap
+        #: between two of them rather than the run around them.
+        self.criteria_attempt_times: list[float] = []
 
     @property
     def calls(self) -> list[dict[str, object]]:
@@ -2176,6 +2250,9 @@ class _ScriptedCriteriaExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -2186,6 +2263,7 @@ class _ScriptedCriteriaExecutor:
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
                 skills=skills,
+                session_type=session_type,
                 session_id=session_id,
                 output_format=output_format,
             ):
@@ -2194,6 +2272,7 @@ class _ScriptedCriteriaExecutor:
 
         step = self._script[min(self.criteria_attempts, len(self._script) - 1)]
         self.criteria_attempts += 1
+        self.criteria_attempt_times.append(time.perf_counter())
         if step == "raise":
             msg = "provider is down"
             raise RuntimeError(msg)
@@ -2204,6 +2283,7 @@ class _ScriptedCriteriaExecutor:
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
                 skills=skills,
+                session_type=session_type,
                 session_id=session_id,
                 output_format=output_format,
             ):
@@ -2357,6 +2437,49 @@ async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
     assert wire.raise_site == "acceptance_criteria"
     assert wire.rate_limit_rejected is True
     assert wire.result_tail == "Claude AI usage limit reached"
+
+
+@pytest.mark.usefixtures("unjittered_backoff")
+async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
+    tmp_path: Path,
+) -> None:
+    """KOD-195: the floor reaches the graph's nodes, not just the wrapper.
+
+    The rejection is retried — KOD-43 stands, and the budget is untouched
+    — but the second attempt cannot begin until the floor has passed.  The
+    clock is read at the start of each criteria attempt, and the back-off
+    interval is two orders of magnitude smaller than the floor, so the gap
+    between the two attempts has one explanation.  The run around them is
+    not the observable: a whole run takes longer than the floor with no
+    floor at all.
+    """
+    persister = _DiskArtifactPersister(tmp_path)
+    executor = _ScriptedCriteriaExecutor(script=["rejected", "ok"])
+    engine = _make_engine(
+        executor=executor,
+        artifact_persister=persister,
+        retry_initial_interval=0.001,
+        retry_max_attempts=2,
+        delay_floor_for=floor_under_a_rate_limit,
+    )
+
+    events = [
+        event
+        async for event in engine.run(
+            prompt="build feature",
+            repo_path="/repo",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+    assert executor.criteria_attempts == 2
+    first_attempt, second_attempt = executor.criteria_attempt_times
+    assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
+    assert len([e for e in events if isinstance(e, WorkflowCompleteEvent)]) == 1
 
 
 async def test_workflow_cleans_artifacts_before_pr() -> None:
@@ -2513,7 +2636,7 @@ async def test_backup_cleanup_failure_does_not_block_complete() -> None:
     assert complete_events[0].accepted is True
     assert complete_events[0].merged is True
     # The event emitted before cleanup — cleanup failure does not affect it
-    assert complete_events[0].error is None
+    assert complete_events[0].merge_error is None
 
 
 # -- CI fix loop happy-path tests --------------------------------------------
@@ -2651,7 +2774,7 @@ async def test_merge_to_feature_already_integrated_proceeds_to_review() -> None:
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is True
-    assert complete_events[0].error is None
+    assert complete_events[0].merge_error is None
     review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
     assert len(review_events) >= 1
 
@@ -2688,8 +2811,8 @@ async def test_merge_to_feature_divergent_routes_to_complete_with_merge_error() 
     complete_events = [e for e in events if isinstance(e, WorkflowCompleteEvent)]
     assert len(complete_events) == 1
     assert complete_events[0].merged is False
-    assert complete_events[0].error is not None
-    assert "diverged" in complete_events[0].error
+    assert complete_events[0].merge_error is not None
+    assert "diverged" in complete_events[0].merge_error
 
 
 async def test_merge_to_feature_source_missing_raises() -> None:
@@ -2777,6 +2900,7 @@ def _make_engine_with_executor(
 ) -> RalphWorkflowEngine:
     """Build an engine wired to a pre-configured executor (e.g. _Sequential)."""
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -2803,6 +2927,11 @@ def _make_engine_with_executor(
         ci_monitor=ci_monitor,
         remediation_max_rounds=remediation_max_rounds,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -2836,6 +2965,7 @@ class _SequentialQualityGate:
         feature_branch: str,
         ralph_branch: str,
         base_spec: BaseSpec,
+        work_base_ref: str,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[str],
@@ -2849,7 +2979,8 @@ class _SequentialQualityGate:
                 "repo_url": repo_url,
                 "feature_branch": feature_branch,
                 "ralph_branch": ralph_branch,
-                "base_branch": base_spec.base_ref,
+                "base_branch": base_spec.base_branch,
+                "work_base_ref": work_base_ref,
                 "permission_mode": permission_mode,
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
@@ -2902,6 +3033,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         ],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -2925,6 +3057,12 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         git=git,
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -2976,6 +3114,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         ],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -2998,6 +3137,12 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         git=git,
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -3007,8 +3152,8 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=BaseSpec(
-                base_ref=blocker_ref,
-                role=BaseRefRole.deliverable,
+                base_branch=blocker_ref,
+                base_role=WorkRefRole.DELIVERABLE,
                 inputs=(
                     BaseInput(
                         blocker_issue_id="KOD-A",
@@ -3041,8 +3186,8 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
     there is no verdict anywhere about a tree that has moved.
     """
     recorded = BaseSpec(
-        base_ref="kodezart/blocker-a-11111111",
-        role=BaseRefRole.deliverable,
+        base_branch="kodezart/blocker-a-11111111",
+        base_role=WorkRefRole.DELIVERABLE,
         inputs=(
             BaseInput(
                 blocker_issue_id="KOD-A",
@@ -3066,6 +3211,7 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=AgentService(
+            git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
             persister=FakeChangePersister(),
@@ -3078,6 +3224,12 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         git=git,
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events: list[AgentEvent] = []
@@ -3094,7 +3246,7 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         ):
             events.append(event)
 
-    assert excinfo.value.recorded_ref == recorded.base_ref
+    assert excinfo.value.recorded_ref == recorded.base_branch
     assert events == []
     assert [e for e in events if isinstance(e, WorkflowScopeBaseEvent)] == []
     assert [c for c in git.calls if c[0] == "diff_summary"] == []
@@ -3129,7 +3281,7 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
         "fix_rounds_used": 0,
         "pr_url": None,
         "pr_number": None,
-        "ci_passed": None,
+        "ci_status": CIStatus.not_monitored,
         "ci_summary": None,
         "repo_url": None,
     }
@@ -3146,6 +3298,187 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
     }
     with pytest.raises(RuntimeError, match="review_base_sha"):
         await engine._review_against_ticket_node(state, config)
+
+
+# ---------------------------------------------------------------------------
+# Forge-node preconditions: the three nodes that need an adapter all say so
+# the same way.  Held as a class rather than as one test on the node the
+# defect was reported against, because a soft skip on one of them is the
+# same defect wherever it reappears.
+# ---------------------------------------------------------------------------
+
+
+class TestForgeNodePreconditions:
+    """A forge node without its adapter RAISES — it never returns an empty result.
+
+    ``_open_pr_node`` used to log a warning and answer
+    ``{"pr_url": None, "pr_number": None}``, which is indistinguishable
+    from a pull request that was opened and produced nothing: the run
+    completes, reports no pull request, and nothing says the delivery
+    step was skipped rather than attempted.  Its two siblings raised on
+    the identical precondition, so the soft arm was also the odd one out.
+
+    The routing guards (``_route_after_review``, ``_route_after_ci``)
+    only ever send these nodes work when the adapter is present, so
+    these raises are unreachable by the graph and that is the point:
+    reaching one means a router stopped agreeing with its node, which is
+    a defect and must not be absorbed.
+    """
+
+    def _config(self) -> RunnableConfig:
+        return {
+            "configurable": {
+                "prompt": "fix it",
+                "repo_path": "/tmp/fake",
+                "repo_url": "https://github.com/owner/repo",
+                "cache_key": "test-cache",
+                "base_spec": trunk_base("main"),
+                "permission_mode": "bypassPermissions",
+                "allowed_tools": ["Bash"],
+            }
+        }
+
+    def _state(self) -> WorkflowState:
+        state: WorkflowState = {
+            "feature_branch": "kodezart/test",
+            "ralph_branch": "kodezart/test-ralph-abc",
+            "feature_tip_sha": "a" * 40,
+            "pr_url": None,
+            "pr_number": 1,
+            "remediation_rounds_used": 1,
+            "review_feedback": None,
+            "ci_summary": None,
+            "repo_visibility": RepoVisibility.PRIVATE,
+        }
+        return state
+
+    def _writer(self, monkeypatch: pytest.MonkeyPatch) -> list[AgentEvent]:
+        """The stream writer these nodes take before reaching their guard.
+
+        Outside a compiled graph there is no runnable context to take one
+        from, so it is supplied here — and it records, so a node that
+        emitted something on its way to the raise would be visible.
+        """
+        written: list[AgentEvent] = []
+        monkeypatch.setattr(
+            ralph_workflow_module,
+            "get_stream_writer",
+            lambda: written.append,
+        )
+        return written
+
+    async def test_the_open_pr_node_raises_without_a_pr_creator(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """No soft skip: the node names the missing adapter and stops."""
+        written = self._writer(monkeypatch)
+        engine = _make_engine(pr_creator=None)
+
+        with pytest.raises(RuntimeError, match="open_pr requires pr_creator"):
+            await engine._open_pr_node(self._state(), self._config())
+
+        assert written == []
+
+    async def test_the_monitor_ci_node_raises_without_a_ci_monitor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The sibling this node's raise is modelled on."""
+        written = self._writer(monkeypatch)
+        engine = _make_engine(ci_monitor=None)
+
+        with pytest.raises(RuntimeError, match="monitor_ci requires ci_monitor"):
+            await engine._monitor_ci_node(self._state(), self._config())
+
+        assert written == []
+
+    async def test_the_comment_failure_node_raises_without_a_pr_creator(self) -> None:
+        """The other sibling, on the same precondition as ``_open_pr_node``."""
+        engine = _make_engine(pr_creator=None)
+
+        with pytest.raises(RuntimeError, match="comment_failure requires pr_creator"):
+            await engine._comment_failure_node(self._state(), self._config())
+
+
+# ---------------------------------------------------------------------------
+# What a failed failure-report is allowed to cost.
+# ---------------------------------------------------------------------------
+
+
+class TestCommentFailureContainment:
+    """The forge's refusal is contained; anything else is a defect and escapes.
+
+    The node used to catch bare ``Exception``, which absorbed its own
+    programming errors along with the forge's refusals and reported both
+    as the same log line.  The containment is now exactly the forge
+    taxonomy the port raises, so a run that crashes here crashes for a
+    reason worth seeing.
+    """
+
+    async def _run(self, pr_creator: FakePRCreator) -> list[AgentEvent]:
+        engine = _make_engine(
+            quality_gate=FakeQualityGate(
+                events=[],
+                evaluation=make_passing_evaluation(),
+                total_iterations=1,
+                last_commit_sha="a" * 40,
+            ),
+            pr_creator=pr_creator,
+            ci_monitor=FakeCIMonitor(passed=False, summary="CI failed: ci/test"),
+            remediator=FakeRemediator(),
+            remediation_max_rounds=1,
+        )
+        return [
+            event
+            async for event in engine.run(
+                prompt="fix it",
+                repo_path="/tmp/fake",
+                repo_url="https://github.com/owner/repo",
+                base_spec=trunk_base("main"),
+                permission_mode="bypassPermissions",
+                allowed_tools=["Bash"],
+                cache_key=uuid.uuid4().hex,
+            )
+        ]
+
+    @pytest.mark.parametrize(
+        "refusal",
+        [
+            ForgeAPIError(
+                "refused",
+                status_code=403,
+                detail="POST /repos/owner/repo/issues/1/comments",
+            ),
+            TransientAPIError("Server error 502 on /comments"),
+        ],
+    )
+    async def test_a_forge_refusal_is_logged_and_the_run_still_terminates(
+        self,
+        refusal: Exception,
+    ) -> None:
+        """The comment is lost, the outcome is not.
+
+        The comment reports a failure the terminal event reports again,
+        so a crash here would trade the whole outcome for the one line
+        of it that did not post.
+        """
+        pr_creator = FakePRCreator(fail_comment=refusal)
+
+        with structlog.testing.capture_logs() as logs:
+            events = await self._run(pr_creator)
+
+        failed = [e for e in logs if e["event"] == "comment_failure_failed"]
+        assert len(failed) == 1
+        assert failed[0]["error_kind"] == type(refusal).__name__
+        assert len([e for e in events if isinstance(e, WorkflowCompleteEvent)]) == 1
+
+    async def test_a_non_forge_exception_propagates_out_of_the_run(self) -> None:
+        """A defect in this node is not a forge refusal and is not filed as one."""
+        pr_creator = FakePRCreator(fail_comment=ValueError("not a forge refusal"))
+
+        with pytest.raises(ValueError, match="not a forge refusal"):
+            await self._run(pr_creator)
 
 
 # ---------------------------------------------------------------------------
@@ -3184,6 +3517,9 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -3209,6 +3545,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
 
     executor = NullBranchNameExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -3231,6 +3568,12 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     with pytest.raises(NoStructuredOutputError, match="branch name") as excinfo:
@@ -3456,7 +3799,7 @@ async def test_plateaued_run_reports_loop_plateaued_with_actionable_payload() ->
     assert "-ralph-" in complete.ralph_branch
     # No second discriminator: the never-passing criteria are not folded
     # into the free-text error field.
-    assert complete.error is None
+    assert complete.merge_error is None
 
 
 async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
@@ -3489,8 +3832,8 @@ async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
     assert complete.trajectory == _plateaued_trajectory()
 
 
-async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
-    """FAST_FORWARDED / ALREADY_INTEGRATED no longer stamp ci_passed False.
+async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
+    """FAST_FORWARDED / ALREADY_INTEGRATED no longer stamp a failed CI status.
 
     The fix round is reached from a review failure, so monitor_ci never
     ran and the three-state value must still be None at complete.
@@ -3531,6 +3874,7 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
         review_results=[failing_review, passing_review],
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -3557,6 +3901,11 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
         remediator=FakeRemediator(),
         remediation_max_rounds=2,
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -3573,7 +3922,7 @@ async def test_fix_round_success_leaves_ci_passed_unchanged() -> None:
     ]
 
     complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
-    assert complete.ci_passed is None
+    assert complete.ci_status is CIStatus.not_monitored
     assert complete.outcome is WorkflowOutcome.review_passed_no_pr_adapter
 
 
@@ -3799,6 +4148,7 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=AgentService(
+            git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
             workspace=FakeWorkspaceProvider(),
             persister=FakeChangePersister(),
@@ -3811,6 +4161,12 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=FakePRCreator(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     with pytest.raises(RuntimeError, match="requires ref_publisher"):
@@ -3898,7 +4254,10 @@ async def test_a_loop_that_never_accepts_opens_a_round_with_loop_evidence() -> N
     request = remediator.calls[0]
     assert request.entry is RemediationEntry.loop_not_accepted
     assert "ended without acceptance" in request.failure_evidence
-    assert request.work_base_ref.endswith("-best")
+    # Nothing was consolidated, so the run still stands on its own base.
+    # The best-iteration ref is published by the stall-exit node this arm
+    # bypasses, so naming it here would name a ref that does not exist.
+    assert request.work_base_ref == "main"
     remediation = next(e for e in events if isinstance(e, WorkflowRemediationEvent))
     assert remediation.entry is RemediationEntry.loop_not_accepted
 
@@ -4036,5 +4395,673 @@ def test_the_round_budget_is_config_read_with_no_literal_in_routing(
     ).read_text(encoding="utf-8")
     assert re.search(r"_remediation_max_rounds\s*[<>=]+\s*\d", engine_source) is None
     assert "remediation_max_rounds=config.remediation_max_rounds" in (
-        Path(__file__).resolve().parents[2] / "src" / "kodezart" / "main.py"
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "kodezart"
+        / "composition"
+        / "engine.py"
     ).read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# KOD-91/AC-8, AC-9 — the same guard on the validator and the review call site
+# ---------------------------------------------------------------------------
+
+_TWO_DISPATCHED = ("AC-1", "AC-2")
+
+
+def _finding(criterion_id: str) -> dict[str, object]:
+    return {
+        "criterionId": criterion_id,
+        "verdict": "feasible",
+        "smallestRepair": "none",
+    }
+
+
+def _validation(*criterion_ids: str) -> dict[str, object]:
+    return {
+        "findings": [_finding(criterion_id) for criterion_id in criterion_ids],
+        "contradictions": [],
+    }
+
+
+_VERDICTS_MISSING_ONE = _validation("AC-1")
+_VERDICTS_WITH_AN_UNKNOWN = _validation("AC-1", "AC-2", "AC-99")
+_VERDICTS_WITH_A_DUPLICATE = _validation("AC-1", "AC-2", "AC-2")
+_VERDICTS_COMPLETE = _validation(*_TWO_DISPATCHED)
+
+
+class _ScriptedValidatorExecutor:
+    """Scripts one sweep payload per criteria-validation dispatch.
+
+    Everything else answers as the sequential review double does; only the
+    validator's channel is scripted, and its dispatches are counted so a
+    re-run is observable rather than inferred.
+    """
+
+    def __init__(self, validations: list[dict[str, object]]) -> None:
+        self._validations = list(validations)
+        self.validations: list[dict[str, object]] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            schema = output_format.get("schema")
+            if isinstance(schema, dict):
+                props = schema.get("properties", {})
+                if isinstance(props, dict):
+                    if "slug" in props:
+                        yield _scripted_result({"slug": "test-branch"})
+                        return
+                    if "criteria" in props and "criteriaResults" not in props:
+                        yield _scripted_result(
+                            {
+                                "criteria": [
+                                    {
+                                        "text": "Tests pass",
+                                        "criterionClass": "hard_gate",
+                                    },
+                                    {
+                                        "text": "No lint errors",
+                                        "criterionClass": "soft_signal",
+                                    },
+                                ],
+                                "reasoning": "Generated.",
+                            },
+                        )
+                        return
+                    if "findings" in props:
+                        payload = self._validations[len(self.validations)]
+                        self.validations.append(payload)
+                        yield _scripted_result(payload)
+                        return
+                    if "criteriaResults" in props:
+                        yield _scripted_result(
+                            make_passing_evaluation_over(*_TWO_DISPATCHED).model_dump(
+                                by_alias=True,
+                            ),
+                        )
+                        return
+                    if "title" in props and "description" in props:
+                        yield _scripted_result(
+                            {
+                                "title": "feat: test PR",
+                                "description": "Test PR description.",
+                            },
+                        )
+                        return
+        yield _scripted_result(None)
+
+
+def _scripted_result(structured_output: dict[str, object] | None) -> ResultEvent:
+    return ResultEvent(
+        subtype="result",
+        duration_ms=1,
+        duration_api_ms=1,
+        is_error=False,
+        num_turns=1,
+        session_id="scripted",
+        structured_output=structured_output,
+    )
+
+
+async def _run_engine(executor: AgentExecutor) -> list[AgentEvent]:
+    engine = _make_engine_with_executor(
+        executor=executor,
+        merger=FakeBranchMerger(),
+    )
+    return [
+        event
+        async for event in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+
+async def _validator_breach(
+    payload: dict[str, object],
+) -> tuple[CriteriaFanInError, _ScriptedValidatorExecutor]:
+    """Run a workflow whose validator never conforms; return the halt it raised."""
+    executor = _ScriptedValidatorExecutor([payload, payload])
+    with pytest.raises(CriteriaFanInError) as raised:
+        await _run_engine(executor)
+    return raised.value, executor
+
+
+async def test_validator_missing_verdict_retries_then_halts() -> None:
+    """KOD-91/AC-8: one verdict per dispatched id, first of the three shapes.
+
+    The validator's channel gets the identical guard: a verdict set short
+    of the dispatched list re-dispatches, and the spent bound halts the
+    run on the same typed error rather than sweeping a set nobody graded.
+    A fail-closed arm is deliberately absent here — a feasibility verdict
+    nothing derived is exactly what this sweep refuses.
+    """
+    breach, executor = await _validator_breach(_VERDICTS_MISSING_ONE)
+
+    assert len(executor.validations) == 2
+    assert breach.missing_ids == ("AC-2",)
+    assert breach.unknown_ids == ()
+    assert breach.duplicate_ids == ()
+
+
+async def test_validator_unknown_verdict_retries_then_halts() -> None:
+    """KOD-91/AC-8: second shape — a verdict about a criterion nobody sent.
+
+    Not cosmetic on this channel: an unreconciled id reaches the
+    conjunction verdict, the regeneration targets and the pre-loop halt,
+    so a hallucinated one can end a run over criteria never asked about.
+    """
+    breach, executor = await _validator_breach(_VERDICTS_WITH_AN_UNKNOWN)
+
+    assert len(executor.validations) == 2
+    assert breach.unknown_ids == ("AC-99",)
+    assert breach.missing_ids == ()
+    assert breach.duplicate_ids == ()
+
+
+async def test_validator_duplicate_verdict_retries_then_halts() -> None:
+    """KOD-91/AC-8: third shape — one criterion given two feasibility verdicts."""
+    breach, executor = await _validator_breach(_VERDICTS_WITH_A_DUPLICATE)
+
+    assert len(executor.validations) == 2
+    assert breach.duplicate_ids == ("AC-2",)
+    assert breach.missing_ids == ()
+    assert breach.unknown_ids == ()
+
+
+async def test_validator_retry_that_conforms_lets_the_run_proceed() -> None:
+    """Non-vacuity: the guard re-dispatches, it does not merely refuse.
+
+    A second answer covering every dispatched id is swept normally and the
+    run reaches its terminal event — so the three tests above are about a
+    spent bound, not about a channel that refuses everything.
+    """
+    executor = _ScriptedValidatorExecutor([_VERDICTS_MISSING_ONE, _VERDICTS_COMPLETE])
+
+    events = await _run_engine(executor)
+
+    assert len(executor.validations) == 2
+    assert [e for e in events if isinstance(e, WorkflowCriteriaValidationEvent)] != []
+    assert [e for e in events if isinstance(e, WorkflowCompleteEvent)] != []
+
+
+class _ScriptedReviewExecutor:
+    """Scripts one payload per POST-MERGE REVIEW dispatch, counting them.
+
+    The review is a separate call site from the loop's evaluator — a
+    different node, a different prompt, its own dispatch — so it is wired
+    and asserted separately rather than assumed to inherit the guard.
+    """
+
+    def __init__(self, reviews: list[dict[str, object]]) -> None:
+        self._reviews = list(reviews)
+        self.reviews: list[dict[str, object]] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            schema = output_format.get("schema")
+            if isinstance(schema, dict):
+                props = schema.get("properties", {})
+                if isinstance(props, dict):
+                    if "slug" in props:
+                        yield _scripted_result({"slug": "test-branch"})
+                        return
+                    if "criteria" in props and "criteriaResults" not in props:
+                        yield _scripted_result(
+                            {
+                                "criteria": [
+                                    {
+                                        "text": "Tests pass",
+                                        "criterionClass": "hard_gate",
+                                    },
+                                    {
+                                        "text": "No lint errors",
+                                        "criterionClass": "soft_signal",
+                                    },
+                                ],
+                                "reasoning": "Generated.",
+                            },
+                        )
+                        return
+                    if "findings" in props:
+                        yield _scripted_result(_VERDICTS_COMPLETE)
+                        return
+                    if "criteriaResults" in props:
+                        payload = self._reviews[len(self.reviews)]
+                        self.reviews.append(payload)
+                        yield _scripted_result(payload)
+                        return
+                    if "title" in props and "description" in props:
+                        yield _scripted_result(
+                            {
+                                "title": "feat: test PR",
+                                "description": "Test PR description.",
+                            },
+                        )
+                        return
+        yield _scripted_result(None)
+
+
+def _review_results(*rows: tuple[str, bool]) -> dict[str, object]:
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": criterion_id,
+                "criterion": "echoed text",
+                "passed": passed,
+                "reasoning": "scripted",
+            }
+            for criterion_id, passed in rows
+        ],
+    }
+
+
+async def test_post_merge_review_is_guarded_identically_to_the_evaluator() -> None:
+    """KOD-91/AC-9: the review's own call site retries, then grades fail-closed.
+
+    Same model, same guard, asserted here because the review dispatches
+    from its own node: the partial answer re-runs the session, the spent
+    bound grades the DISPATCHED set — the id that never arrived fails —
+    and the holes ride the review event exactly as they ride the loop's
+    iteration event.
+    """
+    # The answered id is the SOFT signal, so the id that never arrives is
+    # the hard gate — otherwise the fail-closed grading would be invisible
+    # behind a verdict that ships with flags.
+    partial = _review_results(("AC-2", True))
+    executor = _ScriptedReviewExecutor([partial, partial])
+
+    events = await _run_engine(executor)
+
+    assert len(executor.reviews) == 2
+    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
+    assert len(review_events) == 1
+    review = review_events[0]
+    assert review.passed is False
+    assert review.fan_in is not None
+    assert review.fan_in.missing_ids == ["AC-1"]
+    assert review.fan_in.dispatched_count == len(_TWO_DISPATCHED)
+    assert review.fan_in.attempts == 2
+    assert len(review.evaluation.criteria_results) == len(_TWO_DISPATCHED)
+
+
+async def test_a_conforming_review_is_dispatched_once_and_carries_no_report() -> None:
+    """Non-vacuity for the review call site: no breach, no re-dispatch, no report."""
+    complete = _review_results(("AC-1", True), ("AC-2", True))
+    executor = _ScriptedReviewExecutor([complete])
+
+    events = await _run_engine(executor)
+
+    assert len(executor.reviews) == 1
+    review_events = [e for e in events if isinstance(e, WorkflowReviewEvent)]
+    assert len(review_events) == 1
+    assert review_events[0].passed is True
+    assert review_events[0].fan_in is None
+
+
+def test_the_post_merge_review_dispatch_passes_an_empty_definition_set() -> None:
+    """KOD-87-AC-5, first half — the second evaluative site, asserted here."""
+    source = chain_source("ralph_workflow.py")
+    review = source.index('site="post_merge_review"')
+    start = source.rindex("self._service.stream", 0, review)
+    assert "agents=NO_SUBAGENTS" in source[start:review]
+    assert "self._prompts.definitions()" not in source[start:review]
+
+
+def test_the_criteria_dispatch_passes_exactly_the_sets_three_definitions() -> None:
+    """KOD-87-AC-5, second half — the lenses come from the set, not from code."""
+    block = dispatch_block(
+        chain_source("ralph_workflow.py"), "GENERATED_CRITERIA_SCHEMA"
+    )
+    assert "agents=self._prompts.definitions()" in block
+    assert len(v5_provider().definitions()) == 3
+
+
+# ---------------------------------------------------------------------------
+# KOD-92-AC-3 — the house rules move to the session, and leave the templates
+# ---------------------------------------------------------------------------
+
+
+def _dispatch_sites() -> list[tuple[str, str]]:
+    """Every dispatch that serves a PROMPT KEY, as (file, block).
+
+    Scoped to the modules that resolve a template, because a role is a
+    property of a key: the query endpoint dispatches a caller's own prompt
+    under no key at all, and inventing a role for it would be this suite
+    deciding policy the set never declared.
+    """
+    import kodezart
+
+    root = Path(kodezart.__file__).resolve().parent
+    sites: list[tuple[str, str]] = []
+    for path in sorted(root.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if "template_for(PromptKey." not in source:
+            continue
+        for opener in (".stream(", ".stream_in_workspace(", ".stream_workflow("):
+            start = 0
+            while (found := source.find(opener, start)) != -1:
+                start = found + 1
+                sites.append((path.name, source[found : source.find(")\n", found)]))
+    return sites
+
+
+#: The dispatch census this suite expects to find, so a site that stops
+#: resolving a template cannot silently leave the check.
+KEYED_DISPATCH_COUNT = 12
+
+
+def test_house_rules_delivered_as_system_prompt_append() -> None:
+    """The paired assertion: moving the rules can neither drop nor duplicate them.
+
+    One half is mechanical over the shipped source — every dispatch reads
+    its session policy from the set, so none can quietly opt out — and the
+    other is the rendered corpus, where the text must now be absent.  A
+    check on only one half would pass while the rules were both appended
+    and still baked into every template.
+    """
+    from kodezart.types.domain.prompts import PromptKey
+    from tests.prompts.sets import ALL_CASES, V5_SET, render_v5_case
+    from tests.prompts.test_prompt_wiring import load_registry
+    from tests.prompts.test_session_policy import v5_metadata
+
+    house_rules = v5_metadata().fragments.house_rules
+    assert house_rules is not None
+
+    registry = load_registry(default_set=V5_SET)
+    for key in PromptKey:
+        assert registry.session_policy(key).system_prompt_append == house_rules
+
+    sites = _dispatch_sites()
+    assert len(sites) == KEYED_DISPATCH_COUNT, [name for name, _ in sites]
+
+    carriers = [
+        (name, block) for name, block in sites if "session_policy=" not in block
+    ]
+    assert carriers == [], f"dispatch sites that declare no session policy: {carriers}"
+
+    sentence = house_rules.splitlines()[2]
+    assert sentence.strip(), "non-vacuity: the fragment has a body to look for"
+    leaked = [name for name in sorted(ALL_CASES) if sentence in render_v5_case(name)]
+    assert leaked == []
+
+
+# ---------------------------------------------------------------------------
+# KOD-165: the ref a round's loop is built on
+# ---------------------------------------------------------------------------
+
+
+def _failing_criteria_results() -> list[dict[str, object]]:
+    return [
+        {
+            "criterionId": "AC-1",
+            "criterion": "Tests pass",
+            "passed": False,
+            "reasoning": "Tests fail.",
+        },
+        {
+            "criterionId": "AC-2",
+            "criterion": "No lint errors",
+            "passed": False,
+            "reasoning": "Tests fail.",
+        },
+    ]
+
+
+def _passing_criteria_results() -> list[dict[str, object]]:
+    return [
+        {
+            "criterionId": "AC-1",
+            "criterion": "Tests pass",
+            "passed": True,
+            "reasoning": "Tests pass now.",
+        },
+        {
+            "criterionId": "AC-2",
+            "criterion": "No lint errors",
+            "passed": True,
+            "reasoning": "Tests pass now.",
+        },
+    ]
+
+
+async def _review_failure_round(
+    *,
+    remediator: FakeRemediator,
+    gate: FakeQualityGate,
+    artifact_persister: FakeArtifactPersister | None = None,
+) -> list[AgentEvent]:
+    """A run whose first post-merge review rejects, opening one round."""
+    engine = _make_engine(
+        quality_gate=gate,
+        executor=_SequentialReviewExecutor(
+            review_results=[
+                {"criteriaResults": _failing_criteria_results()},
+                {"criteriaResults": _passing_criteria_results()},
+            ],
+        ),
+        remediator=remediator,
+        remediation_max_rounds=1,
+        artifact_persister=artifact_persister,
+    )
+    return [
+        e
+        async for e in engine.run(
+            prompt="fix it",
+            repo_path="/tmp/fake",
+            repo_url=None,
+            base_spec=trunk_base("main"),
+            permission_mode="bypassPermissions",
+            allowed_tools=["Bash"],
+            cache_key=uuid.uuid4().hex,
+        )
+    ]
+
+
+async def test_a_review_entry_round_runs_its_loop_on_the_consolidated_branch() -> None:
+    """The round's loop is handed the feature branch, not the run's base.
+
+    The first round consolidated onto the feature branch, so that branch
+    IS the tree the review rejected.  A round cut from anywhere else
+    fixes a tree that does not contain what it was opened to fix.
+    """
+    remediator = FakeRemediator()
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+
+    await _review_failure_round(remediator=remediator, gate=gate)
+
+    assert len(gate.calls) == 2
+    first, second = gate.calls
+    assert first["work_base_ref"] == "main"
+    assert second["work_base_ref"] == second["feature_branch"]
+
+
+async def test_the_round_is_told_the_ref_its_loop_will_actually_be_cut_from() -> None:
+    """One value, two readers: the request cannot state a different base.
+
+    The remediation prompt names the ref the round is based on and the
+    drafting session reads the repository at it, so a request naming a
+    ref the loop does not use is a document that contradicts the run.
+    """
+    remediator = FakeRemediator()
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+
+    await _review_failure_round(remediator=remediator, gate=gate)
+
+    assert len(remediator.calls) == 1
+    request = remediator.calls[0]
+    assert request.entry is RemediationEntry.review_failure
+    assert request.work_base_ref == gate.calls[1]["work_base_ref"]
+
+
+async def test_the_rounds_artifact_write_cuts_the_branch_from_the_same_ref() -> None:
+    """The artifact write CREATES the round's branch, so it shares the rule.
+
+    A branch cut here from the run's base is the base the loop inherits
+    when it asks for a branch that already exists, which would undo the
+    threading without touching the loop at all.
+    """
+    persister = FakeArtifactPersister()
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation(),
+        total_iterations=1,
+        last_commit_sha="a" * 40,
+    )
+
+    await _review_failure_round(
+        remediator=FakeRemediator(),
+        gate=gate,
+        artifact_persister=persister,
+    )
+
+    round_branch = gate.calls[1]["ralph_branch"]
+    bases = [
+        base
+        for (_, _, branch, base) in persister.persist_calls
+        if branch == round_branch
+    ]
+    assert bases == [gate.calls[1]["feature_branch"]]
+
+
+class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
+    """Only an integrating consolidation moves the ref a round stands on.
+
+    Keyed on what happened to the branch, never on which entry opened the
+    round: a round entered from a loop that was never accepted still
+    stands on whatever an EARLIER round consolidated, and an entry-keyed
+    rule would send it back to the run's base and diverge there.
+    """
+
+    def _config(self) -> RunnableConfig:
+        return {
+            "configurable": {
+                "prompt": "fix it",
+                "repo_path": "/tmp/fake",
+                "repo_url": None,
+                "cache_key": "test-cache",
+                "base_spec": trunk_base("main"),
+                "permission_mode": "bypassPermissions",
+                "allowed_tools": ["Bash"],
+            }
+        }
+
+    def _state(self, *, accepted: bool) -> WorkflowState:
+        state: WorkflowState = {
+            "feature_branch": "kodezart/test-12345678",
+            "ralph_branch": "kodezart/test-12345678-ralph-abcdef01",
+            "work_base_ref": "main",
+            "accept_verdict": (
+                AcceptVerdict.accepted if accepted else AcceptVerdict.rejected
+            ),
+            "trajectory": None,
+        }
+        return state
+
+    def _engine(self, merger: FakeBranchMerger) -> RalphWorkflowEngine:
+        return _make_engine(
+            merger=merger,
+            git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        )
+
+    async def _consolidate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        accepted: bool,
+        merger: FakeBranchMerger,
+    ) -> dict[str, object]:
+        monkeypatch.setattr(
+            ralph_workflow_module,
+            "get_stream_writer",
+            lambda: lambda _event: None,
+        )
+        return await self._engine(merger)._merge_to_feature_node(
+            self._state(accepted=accepted),
+            self._config(),
+        )
+
+    async def test_an_integrating_consolidation_moves_it_to_the_feature_branch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        result = await self._consolidate(
+            monkeypatch,
+            accepted=True,
+            merger=FakeBranchMerger(),
+        )
+
+        assert result["work_base_ref"] == "kodezart/test-12345678"
+
+    async def test_a_loop_that_never_cleared_the_gate_leaves_it_alone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        result = await self._consolidate(
+            monkeypatch,
+            accepted=False,
+            merger=FakeBranchMerger(),
+        )
+
+        assert "work_base_ref" not in result
+
+    async def test_a_divergent_consolidation_leaves_it_alone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        result = await self._consolidate(
+            monkeypatch,
+            accepted=True,
+            merger=FakeBranchMerger(
+                consolidation_outcomes=[
+                    ConsolidationOutcome(
+                        status=ConsolidationStatus.DIVERGENT,
+                        feature_tip_sha="c" * 40,
+                    ),
+                ],
+            ),
+        )
+
+        assert "work_base_ref" not in result
