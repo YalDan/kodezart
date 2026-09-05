@@ -579,6 +579,12 @@ not, so configuring them "to be safe" is how a first setup breaks itself.
   rule that applies if you do use it: a document declared with
   `system = "knowledge"` must carry an `id`, because nothing in this process
   can create one there.
+  To turn it on with Notion, use the self-hosted server over stdio — the
+  hosted `mcp.notion.com` endpoint is OAuth-only and refuses a static `ntn_`
+  integration token — and set `KODEZART_KNOWLEDGE_SESSION_GRANTS` to the
+  session kinds that read it. The ready-to-use block is in `.env.example`, and
+  `docs/configuration.md` carries the recipe and the tracker-instead-of-Notion
+  alternative.
 - **`private_surface` is required only if you turn the judgment scanner on.**
   `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` ships disabled, and leaving it
   disabled needs no prose. Enabling it without a `private_surface` description

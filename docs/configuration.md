@@ -205,6 +205,34 @@ dials nothing, so it needs no endpoint and nothing about it is dead. The two
 working static-credential routes are a self-hosted HTTP server (with the
 gateway token) and the stdio transport spawning an absolute command path.
 
+### Recipe: the knowledge layer with a Notion integration token
+
+A Notion **internal integration token** (`ntn_…`) is a static credential, and
+the hosted `mcp.notion.com` server does not accept one — it authenticates
+interactively (OAuth), so it appears in `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS`
+and a grant pointing there aborts boot. Run the vendor's self-hosted server
+over `stdio` instead:
+
+```
+KODEZART_KNOWLEDGE_SESSION_GRANTS=["scheduled_pass","ticket_fire"]
+KODEZART_KNOWLEDGE_MCP_TRANSPORT=stdio
+KODEZART_KNOWLEDGE_MCP_COMMAND=/opt/homebrew/bin/notion-mcp-server
+KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV=NOTION_TOKEN
+KODEZART_KNOWLEDGE_MCP_TOKEN=ntn_your_integration_token
+```
+
+`@notionhq/notion-mcp-server` is the binary (`npm i -g @notionhq/notion-mcp-server`);
+the command must be its absolute path. The token is handed to the spawned
+server as `NOTION_TOKEN`; the grant names the session kinds that receive the
+server. All three record logs in the operation config are `system = "knowledge"`,
+so both session kinds must be granted or boot refuses naming the surface each
+reader lacks.
+
+**To drop Notion entirely**, set each `[records.*]` `system = "tracker"` in the
+operation config: the run-record rows then land on the tracker, the knowledge
+grant may be empty, and no knowledge server is dialled.
+
+
 ## Private knowledge base — the knowledge credential
 
 `KODEZART_KNOWLEDGE_MCP_TOKEN` is a credential, and it is configured **only**
