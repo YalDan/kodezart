@@ -89,11 +89,9 @@ def test_every_retrying_node_is_floored(module: ModuleType) -> None:
     up here as a retrying node that is not floored.
     """
     source = _module_source(module)
-    unfloored = [
-        _node_name(call)
-        for call in _add_node_calls(source)
-        if _carries_retry_policy(call) and not _is_floored(call)
-    ]
+    retrying = [call for call in _add_node_calls(source) if _carries_retry_policy(call)]
+    assert retrying, f"{module.__name__}: no node is registered with a retry policy"
+    unfloored = [_node_name(call) for call in retrying if not _is_floored(call)]
     assert unfloored == [], (
         f"{module.__name__.rsplit('.', 1)[-1]}: these nodes are registered with a "
         f"retry policy but their node is not wrapped in self._floor, so a rejection "

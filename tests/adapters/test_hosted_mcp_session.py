@@ -250,3 +250,73 @@ async def test_the_opened_event_names_the_server_it_dialled() -> None:
     (opened,) = [entry for entry in logs if entry["event"] == "mcp_session_opened"]
     assert opened["server_name"] == SERVER_NAME
     assert opened["address"] == transport.address()
+
+
+class _HeldAtTheHandshake(_SilentServer):
+    """A session whose handshake completes only when the case says so."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.may_finish: asyncio.Event = asyncio.Event()
+
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator[_SilentSession]:
+        await self.may_finish.wait()
+        try:
+            yield _SilentSession()
+        finally:
+            self.session_ended = True
+
+
+async def test_a_host_let_go_of_while_opening_cannot_declare_itself_serving() -> None:
+    """A cancelled open retires its host; a late handshake changes nothing.
+
+    Measured 2026-09-05: the open's failure arm cleared the host and
+    restored the phase, but the host it let go of was still current, so
+    when its handshake finally completed it wrote SERVING over the restored
+    phase with no inbox behind it — and every call after was refused as a
+    session that had ended.
+    """
+    transport = _HeldAtTheHandshake()
+    hosted = HostedMcpSession(transport)
+
+    opening = asyncio.create_task(hosted.open())
+    await asyncio.sleep(0)
+    opening.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await opening
+
+    transport.may_finish.set()
+    await asyncio.sleep(0.05)
+
+    assert hosted._phase is _Phase.CLOSED, (
+        "a late handshake on a let-go host is nobody's"
+    )
+    assert hosted._host is None and hosted._inbox is None
+
+
+async def test_close_waits_for_a_host_it_let_go_of() -> None:
+    """A host nothing tracks is one the loop's shutdown cancels mid-reap.
+
+    Measured 2026-09-05 on the real spawned server: the orphan's reap was
+    cancelled by loop shutdown, the SIGTERM path skipped, and the child
+    left to exit on its own — 20.8 s against 4.9 s.  ``close`` returns
+    only when every host it ever let go of is gone.
+    """
+    transport = _SlowToLetGo()
+    hosted = HostedMcpSession(transport)
+    await hosted.open()
+    orphan = hosted._host
+    assert orphan is not None
+
+    letting_go = asyncio.create_task(hosted._discard_host())
+    await asyncio.sleep(0)
+    letting_go.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await letting_go
+    assert not orphan.done(), "the orphan is still tearing down when close begins"
+
+    async with asyncio.timeout(SHUTDOWN_PATIENCE_SECONDS):
+        await hosted.close()
+
+    assert orphan.done(), "close returned only once the let-go host was gone"
