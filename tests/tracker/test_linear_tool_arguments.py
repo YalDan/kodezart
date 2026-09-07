@@ -337,6 +337,12 @@ async def sent_arguments() -> Mapping[str, set[str]]:
     )
     await tracker.set_queue_state(issue_key=CLAIMED_ISSUE, state=QueueState.DONE)
     await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="hi")
+    await tracker.upsert_comment(
+        target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="first"
+    )
+    await tracker.upsert_comment(
+        target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="changed"
+    )
     await tracker.list_comments(issue_key=CLAIMED_ISSUE)
     await tracker.claim_issue(
         issue_key=CLAIMED_ISSUE,

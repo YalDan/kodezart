@@ -6,9 +6,9 @@ adapter joins the suite by adding one entry to ``TRACKER_ADAPTERS`` — no
 test is copied, which is the whole point of a port-level suite.
 """
 
-import asyncio
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
+from inspect import isawaitable
 
 import pytest
 
@@ -254,17 +254,17 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
     return port
 
 
-def fake_port_over_fixture(server: FakeLinearMcpServer) -> TrackerPort:
+async def fake_port_over_fixture(server: FakeLinearMcpServer) -> TrackerPort:
     """The consumer double, seeded from the SAME fixture workspace.
 
     Seeded by reading through the adapter rather than by restating the
     workspace in domain vocabulary: a hand-written second statement of the
     fixture is a place for the two to disagree, and the disagreement would
     show up as the double being wrong about the thing consumers trust it
-    for.  ``asyncio.run`` is safe here because the workspace is pure
-    in-memory state with nothing bound to a loop.
+    for. Use pytest's loop: an ``asyncio.run`` here displaces its current
+    loop and can leak that loop's selector sockets between cases.
     """
-    return asyncio.run(_snapshot(linear_over_fake_mcp(server)))
+    return await _snapshot(linear_over_fake_mcp(server))
 
 
 #: Real adapters — every one must serve the fixture workspace unchanged.
@@ -275,11 +275,13 @@ TRACKER_ADAPTERS: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
 #: Test doubles that consumers are tested on.  They run the SAME suite, per
 #: the ruling that this is what keeps them honest: a double that drifts from
 #: the contract fails exactly where a non-conforming vendor adapter would.
-TRACKER_DOUBLES: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
+TRACKER_DOUBLES: dict[str, Callable[[FakeLinearMcpServer], Awaitable[TrackerPort]]] = {
     "fake-port": fake_port_over_fixture,
 }
 
-TRACKER_IMPLEMENTATIONS: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
+TRACKER_IMPLEMENTATIONS: dict[
+    str, Callable[[FakeLinearMcpServer], TrackerPort | Awaitable[TrackerPort]]
+] = {
     **TRACKER_ADAPTERS,
     **TRACKER_DOUBLES,
 }
@@ -309,13 +311,14 @@ def server(refused_signals: tuple[PassSignal, ...]) -> FakeLinearMcpServer:
 
 
 @pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
-def tracker(
+async def tracker(
     request: pytest.FixtureRequest,
     server: FakeLinearMcpServer,
 ) -> TrackerPort:
     """Every registered adapter AND double, over one fixture workspace."""
     factory = TRACKER_IMPLEMENTATIONS[request.param]
-    return factory(server)
+    port = factory(server)
+    return await port if isawaitable(port) else port
 
 
 @pytest.fixture(params=sorted(TRACKER_ADAPTERS))
@@ -326,3 +329,20 @@ def adapter(
     """Registered ADAPTERS only — for rules about backend substitutability."""
     factory = TRACKER_ADAPTERS[request.param]
     return factory(server)
+
+
+@pytest.fixture
+def tracker_writes(
+    tracker: TrackerPort, server: FakeLinearMcpServer
+) -> Callable[[], tuple[object, ...]]:
+    """Observe actual mutation calls independently of the port's return values."""
+    if isinstance(tracker, FakeTrackerPort):
+        return lambda: (
+            *tracker.comment_writes,
+            *tracker.workflow_writes,
+            *tracker.restored_states,
+            *tracker.queue_writes,
+        )
+    return lambda: tuple(
+        call for call in server.calls if call[0] in {"save_comment", "save_issue"}
+    )

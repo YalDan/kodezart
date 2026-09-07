@@ -730,6 +730,18 @@ class TrackerPort(Protocol):
         """Post a comment and return it as stored."""
         ...
 
+    async def upsert_comment(
+        self, *, target: str, marker: str, body: str
+    ) -> TrackerComment:
+        """Create or edit the issue comment with *marker* as its first line.
+
+        *body* is the content following that line. An identical replay
+        writes nothing. Several comments under the marker raise
+        ``DuplicateCommentMarkerError`` before any write. Callers compose
+        the marker and serialize concurrent writers to the same target.
+        """
+        ...
+
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         """Every comment on the issue, oldest first."""
         ...

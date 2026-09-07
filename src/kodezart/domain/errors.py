@@ -39,6 +39,20 @@ class SurfaceLeaseError(Exception):
         self.marker: str | None = surface.marker
         self.current_holder: str | None = current_holder
 
+class DuplicateCommentMarkerError(Exception):
+    """Several comments claim the same first-line marker on one target."""
+
+    def __init__(
+        self, *, target: str, marker: str, comment_keys: Sequence[str]
+    ) -> None:
+        super().__init__(
+            f"duplicate comment marker {marker!r} on {target!r}: "
+            f"{', '.join(comment_keys)}"
+        )
+        self.target = target
+        self.marker = marker
+        self.comment_keys = tuple(comment_keys)
+
 
 class ScopeReadError(Exception):
     """A scope cannot be resolved without inventing membership or metadata."""

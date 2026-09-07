@@ -41,6 +41,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WorkspaceError,
 )
+from kodezart.domain.tracker_writes import comment_under_marker, marked_comment_body
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.prompt_pass import pass_render_bindings
 from kodezart.types.domain.agent import (
@@ -2945,6 +2946,7 @@ class FakeTrackerPort:
         #: heartbeat still ticking against a claim it no longer holds.
         self.renewals: list[tuple[str, str]] = []
         self.comments: list[TrackerComment] = []
+        self.comment_writes: list[tuple[str, str]] = []
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
         #: Every put-back the failure arm made, as (issue, state name).
         #: Kept apart from ``workflow_writes`` because a restore names a
@@ -3236,8 +3238,28 @@ class FakeTrackerPort:
             created_at=self._clock(),
         )
         self.comments.append(comment)
+        self.comment_writes.append((comment.comment_key, body))
         self._wrote(issue_key)
         return comment
+
+    async def upsert_comment(
+        self, *, target: str, marker: str, body: str
+    ) -> TrackerComment:
+        content = marked_comment_body(marker=marker, body=body)
+        existing = comment_under_marker(
+            target=target,
+            marker=marker,
+            comments=await self.list_comments(issue_key=target),
+        )
+        if existing is None:
+            return await self.post_comment(issue_key=target, body=content)
+        if existing.body == content:
+            return existing
+        updated = existing.model_copy(update={"body": content})
+        self.comments[self.comments.index(existing)] = updated
+        self.comment_writes.append((existing.comment_key, content))
+        self._wrote(target)
+        return updated
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         return tuple(c for c in self.comments if c.issue_key == issue_key)

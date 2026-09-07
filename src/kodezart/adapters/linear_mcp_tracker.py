@@ -46,6 +46,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.tracker_writes import comment_under_marker, marked_comment_body
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.linear_mcp import (
@@ -822,6 +823,30 @@ class LinearMcpTracker:
             self._to_comment(wire, issue_key=issue_key)
             for wire in await self._comment_wires(issue_key)
         )
+
+    async def upsert_comment(
+        self, *, target: str, marker: str, body: str
+    ) -> TrackerComment:
+        """Resolve the marker across the whole log before creating or editing."""
+        content = marked_comment_body(marker=marker, body=body)
+        existing = comment_under_marker(
+            target=target,
+            marker=marker,
+            comments=await self.list_comments(issue_key=target),
+        )
+        if existing is None:
+            return await self.post_comment(issue_key=target, body=content)
+        if existing.body == content:
+            return existing
+        payload = await self._call(
+            _TOOL_SAVE_COMMENT, {"id": existing.comment_key, "body": content}
+        )
+        comment = self._to_comment(
+            self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT),
+            issue_key=target,
+        )
+        await self._wrote_by_reading(target)
+        return comment
 
     async def claim_issue(
         self,
@@ -1716,9 +1741,27 @@ class LinearMcpTracker:
         return self._validate(LinearIssueDetailWire, payload, _TOOL_GET_ISSUE)
 
     async def _comment_wires(self, issue_key: str) -> Sequence[LinearCommentWire]:
-        payload = await self._call(_TOOL_LIST_COMMENTS, {"issueId": issue_key})
-        listing = self._validate(LinearCommentListWire, payload, _TOOL_LIST_COMMENTS)
-        return listing.comments
+        arguments: dict[str, object] = {"issueId": issue_key}
+        seen_cursors: set[str] = set()
+        comments: dict[str, LinearCommentWire] = {}
+        while True:
+            payload = await self._call(_TOOL_LIST_COMMENTS, arguments)
+            listing = self._validate(
+                LinearCommentListWire, payload, _TOOL_LIST_COMMENTS
+            )
+            comments.update((comment.id, comment) for comment in listing.comments)
+            if not listing.has_next_page:
+                return tuple(
+                    sorted(comments.values(), key=lambda c: (c.created_at, c.id))
+                )
+            if not listing.cursor or listing.cursor in seen_cursors:
+                raise TrackerProtocolError(
+                    "comment listing cannot advance to its next page",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=f"target={issue_key}; cursor={listing.cursor!r}",
+                )
+            seen_cursors.add(listing.cursor)
+            arguments["cursor"] = listing.cursor
 
     async def _call(
         self,

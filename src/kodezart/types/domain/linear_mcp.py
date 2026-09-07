@@ -252,9 +252,11 @@ class LinearCommentWire(LinearWireModel):
 
 
 class LinearCommentListWire(LinearWireModel):
-    """The ``list_comments`` envelope."""
+    """Comment pages, including the connected-app cursor measured 2026-09-07."""
 
     comments: list[LinearCommentWire]
+    has_next_page: bool
+    cursor: str | None = None
 
 
 class LinearNamedWire(LinearWireModel):
