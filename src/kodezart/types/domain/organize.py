@@ -35,8 +35,8 @@ class AdmissionRoute(StrEnum):
     ESCALATE = "escalate"
 
 
-class AdmissionResult(CamelCaseModel):
-    """One issue's finding, with the evidence needed to act on a refusal."""
+class AdmissionJudgment(CamelCaseModel):
+    """Session-authored finding, without caller-owned revision metadata."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -79,6 +79,12 @@ class AdmissionResult(CamelCaseModel):
             if self.pending_blocker_id is None or not self.pending_blocker_id.strip():
                 raise ValueError("UNVERIFIABLE requires a nonempty pending_blocker_id")
         return self
+
+
+class AdmissionResult(AdmissionJudgment):
+    """A judgment bound by its caller to the exact body revision examined."""
+
+    admitted_body_digest: str = Field(min_length=1, pattern=r"\S")
 
 
 class DefectRole(StrEnum):

@@ -108,6 +108,16 @@ issue to probe it: the shared adapter conformance suite verifies the required
 read/write invariants. Consumers receive no optional capability flag or weaker
 revision read.
 
+Admission sessions return an `AdmissionJudgment`. The caller creates the
+`AdmissionResult` by attaching the body digest from the revision supplied to
+that session; the agent never supplies that metadata. A body changed while
+the session runs therefore leaves a result about the earlier body.
+`OrganizeAdmission.is_live` reads the surface's current revision and calls the
+pure two-digest comparison. It starts no session and never restamps a result.
+An issue body and each criterion body are graded and checked independently.
+Persistence, phase markers and issue readiness orchestration remain separate
+consumers of those results.
+
 ## Workflow Pipeline
 
 The outer workflow runs as a LangGraph StateGraph defined in
