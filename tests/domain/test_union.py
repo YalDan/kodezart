@@ -11,14 +11,14 @@ def head(key="z", sha="a" * 40):
 
 
 def observation(**changes):
-    data = dict(
-        scope_key="scope",
-        repository_url="file:///repo",
-        base_sha="b" * 40,
-        lane_heads=(head(), head("a", "c" * 40)),
-        scratch_path="/scratch/discarded",
-        scratch_sha="d" * 40,
-    )
+    data = {
+        "scope_key": "scope",
+        "repository_url": "file:///repo",
+        "base_sha": "b" * 40,
+        "lane_heads": (head(), head("a", "c" * 40)),
+        "scratch_path": "/scratch/discarded",
+        "scratch_sha": "d" * 40,
+    }
     data.update(changes)
     return UnionScratchObservation(**data)
 
