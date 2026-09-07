@@ -76,6 +76,16 @@ class RedactionCategory(StrEnum):
     ORG_PRIVATE = "org_private"
 
 
+class DurabilityCategory(StrEnum):
+    """Aggregate claims always block; redacting one would preserve the claim."""
+
+    OBJECT_COUNT = "object_count"
+    IDENTIFIER_ROSTER = "identifier_roster"
+
+
+type ScanCategory = RedactionCategory | DurabilityCategory
+
+
 #: The one category that carries NO pattern list, by construction.  A pattern
 #: describing an organisation contains the string it describes, so it cannot
 #: live in a public repository; AppConfig rejects it as a ``deny_patterns``
@@ -229,7 +239,7 @@ class ScanHit(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    category: RedactionCategory
+    category: ScanCategory
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)
     rationale: str | None = None
@@ -279,7 +289,7 @@ class GateDecision(CamelCaseModel):
 
     verdict: GateVerdict
     content: str
-    categories: tuple[RedactionCategory, ...] = ()
+    categories: tuple[ScanCategory, ...] = ()
     hits: tuple[ScanHit, ...] = ()
     failure: ScanFailureKind | None = None
 

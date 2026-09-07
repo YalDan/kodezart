@@ -1006,6 +1006,22 @@ class AppConfig(BaseSettings):
             "in that category yields. A payload takes the max severity."
         ),
     )
+    aggregate_count_token_distance: int = Field(
+        default=2,
+        ge=0,
+        description=(
+            "Maximum intervening tokens between a numeral and a tracker-object "
+            "noun in a durable aggregate claim."
+        ),
+    )
+    aggregate_identifier_roster_min_length: int = Field(
+        default=3,
+        ge=2,
+        description=(
+            "Minimum separated run of tracker issue identifiers that constitutes "
+            "a roster on a durable surface. A single reference is not a roster."
+        ),
+    )
     operation_config: str | None = Field(
         default=None,
         description=(
