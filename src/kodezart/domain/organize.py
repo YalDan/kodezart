@@ -1,13 +1,20 @@
 """Admission actions computed from verdict data before any tracker write."""
 
+from collections.abc import Sequence
+
 from kodezart.domain.dispatch import blocker_keys
 from kodezart.types.domain.organize import (
     AdmissionResult,
     AdmissionRoute,
     AdmissionVerdict,
     RefusalKind,
+    SpecFinding,
 )
-from kodezart.types.domain.tracker import TrackerIssue
+from kodezart.types.domain.tracker import (
+    TrackerIssue,
+    TrackerIssueRevision,
+    WorkflowStateKind,
+)
 
 
 def is_admission_live(*, admitted_body_digest: str, current_body_digest: str) -> bool:
@@ -53,3 +60,61 @@ def admission_route(
     if result.refusal_kind is RefusalKind.HUMAN_DECISION:
         return AdmissionRoute.ESCALATE
     return AdmissionRoute.REAUTHOR
+
+
+def organize_gap(
+    *,
+    revisions: Sequence[TrackerIssueRevision],
+    admissions: Sequence[AdmissionResult],
+    open_findings: Sequence[SpecFinding],
+    body_marker_key: str,
+) -> tuple[TrackerIssue, ...]:
+    """Return the exact issue records whose specifications need organize work.
+
+    The caller supplies a complete scope snapshot, including full criterion
+    child revisions, and only findings that remain open. Label values are
+    configured semantic issue-label keys. A missing admission is not live.
+    Record-shaped members and criterion children are never work targets.
+
+    This function reads no tracker, judges no text and dispatches no author.
+    Criterion execution state only answers whether a non-Canceled child
+    exists; a code-only regression cannot put a specification in the gap.
+    """
+    if not body_marker_key.strip():
+        raise ValueError("organize gap requires a body phase marker key")
+    by_key = {revision.issue.issue_key: revision for revision in revisions}
+    if len(by_key) != len(revisions):
+        raise ValueError("organize gap requires one revision per issue")
+    admitted = {result.issue_id: result for result in admissions}
+    if len(admitted) != len(admissions):
+        raise ValueError("organize gap requires one admission per surface")
+    children: dict[str, list[TrackerIssueRevision]] = {}
+    for revision in revisions:
+        issue = revision.issue
+        if "criterion" in issue.issue_labels:
+            if issue.parent_key not in by_key:
+                raise ValueError("organize gap requires each criterion's parent")
+            children.setdefault(issue.parent_key, []).append(revision)
+    finding_keys = {finding.issue_id for finding in open_findings}
+    gap: list[TrackerIssue] = []
+    for revision in revisions:
+        issue = revision.issue
+        if issue.issue_labels & {"criterion", "tracker", "decision"}:
+            continue
+        result = admitted.get(issue.issue_key)
+        has_criterion = any(
+            child.issue.state_kind is not WorkflowStateKind.CANCELED
+            for child in children.get(issue.issue_key, ())
+        )
+        if (
+            body_marker_key not in issue.issue_labels
+            or result is None
+            or not is_admission_live(
+                admitted_body_digest=result.admitted_body_digest,
+                current_body_digest=revision.body_digest,
+            )
+            or not has_criterion
+            or issue.issue_key in finding_keys
+        ):
+            gap.append(issue)
+    return tuple(gap)
