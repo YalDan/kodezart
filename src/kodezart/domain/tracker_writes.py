@@ -18,7 +18,7 @@ def comment_under_marker(
 ) -> TrackerComment | None:
     """Resolve a marker without guessing among duplicate identities."""
     matches = [
-        comment for comment in comments if comment.body.split("\n", 1)[0] == marker
+        comment for comment in comments if comment.body.splitlines()[:1] == [marker]
     ]
     if len(matches) > 1:
         raise DuplicateCommentMarkerError(

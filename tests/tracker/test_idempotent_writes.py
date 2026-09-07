@@ -14,6 +14,19 @@ MARKER = "[fixture:lane:decision-1]"
 
 
 class TestCommentUpsert:
+    @pytest.mark.parametrize("newline", ["\r\n", "\r", "\u2028"])
+    async def test_existing_first_line_matches_across_line_endings(
+        self, tracker: TrackerPort, newline: str
+    ):
+        original = await tracker.post_comment(
+            issue_key=APPROVED_ISSUE, body=f"{MARKER}{newline}old"
+        )
+        updated = await tracker.upsert_comment(
+            target=APPROVED_ISSUE, marker=MARKER, body="new"
+        )
+        assert updated.comment_key == original.comment_key
+        assert await tracker.list_comments(issue_key=APPROVED_ISSUE) == (updated,)
+
     async def test_changed_body_edits_existing_comment(self, tracker: TrackerPort):
         original = await tracker.upsert_comment(
             target=APPROVED_ISSUE, marker=MARKER, body="first body"
