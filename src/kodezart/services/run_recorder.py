@@ -1,0 +1,217 @@
+"""The run recorder — one component, every run kind, every backing system.
+
+A run record is an obligation of the RUNNER, not a courtesy of the session:
+the measured grooming pass read a clean board and skipped its row, leaving
+the next window nothing to start from, and a fire had no destination at all
+(KOD-170).  Both producers — the pass scheduler and the lifecycle watcher —
+report every run here, and this service resolves what that means for the
+declared configuration:
+
+- a kind with a declared destination routes to the sink registered for
+  that destination's SYSTEM — which vendor answers is composition's
+  wiring, never this module's knowledge;
+- a kind with no declared destination is a NAMED absence, logged once per
+  run and written nowhere, because an operation that records a kind
+  nowhere said so in its config;
+- a destination whose system has no registered sink is a wiring defect
+  and raises — the config promised a write this process cannot perform,
+  and absorbing that would be the silent skip this service exists to end.
+
+Every way the DESTINATION can refuse leaves here as ONE class carrying
+what the producers cannot know — which destination, whose system, and
+which of the three failure classes it was — because the measured boot
+logged a bare error string per failed write and a dead knowledge session
+read exactly like a refused page (KOD-177).  A sink failing outside the
+transport's own vocabulary is the record path's own defect, not a
+destination refusing, and it propagates as itself for the producers to
+name apart: filed under either class, it would send an operator to the
+wrong remedy.
+
+The obligation is that ONE record exists per run, not that the runner
+writes one: a session's rich row through the rendered mechanism IS the
+record when present (two rows per run made every log read as two runs —
+KOD-170, amended), so the recorder VERIFIES the destination for THIS
+run's row and backfills the structural minimum only on absence.
+
+Per run, and never "has anything been written lately": the question is
+asked with the record in hand, and what a sink matches a row by is that
+record's own TITLE — its kind, its name and the instant it began, spelled
+once on the record itself and read by both sinks.  A destination-wide
+answer made every run after the first in a window a duplicate of its
+neighbour (two fires swept at one shutdown produced one row), and a
+name-shaped answer made every run whose name another one's prefixes a
+duplicate of it (KOD-288).  The title rides both outcome events, because
+an operator reading "verified" owes a row to go and look at.
+"""
+
+from collections.abc import Mapping
+
+from kodezart.core.errors import (
+    McpCallUnansweredError,
+    McpCredentialRefusedError,
+    McpSessionClosedError,
+    McpTransportError,
+    RunRecordWriteError,
+)
+from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.protocols import RunRecordSink
+from kodezart.types.domain.operation import DocumentSystem, RecordDestination
+from kodezart.types.domain.run_records import (
+    RunOutcome,
+    RunRecord,
+    RunRecordFailure,
+    RunRecordResult,
+)
+
+
+def _failure_class(
+    exc: McpTransportError | McpCredentialRefusedError,
+) -> RunRecordFailure:
+    """Which failure the destination hop met, for the producer's event.
+
+    The transport is the only component that can tell the two apart, and
+    it says so by class: a session that is GONE is one to reopen or a
+    process to diagnose, and a vendor's own refusal — of the call or of
+    the credential — is the destination's answer to fix (KOD-177).
+    """
+    if isinstance(exc, McpSessionClosedError):
+        return RunRecordFailure.SESSION_CLOSED
+    if isinstance(exc, McpCallUnansweredError):
+        return RunRecordFailure.UNANSWERED
+    return RunRecordFailure.VENDOR_REFUSED
+
+
+async def report_record_failure(
+    log: BoundLogger,
+    *,
+    name: str,
+    outcome: RunOutcome,
+    exc: Exception,
+) -> None:
+    """Name a record that did not land, and which of two things refused.
+
+    ONE containment, shared by every producer of a run record, because
+    the two producers used to carry it verbatim each and drifted — one
+    gained a traceback field the other lacked, and a reader filtering on
+    the event could not tell a field that was absent from one that was
+    empty (KOD-192).  A destination that refused is named with what it
+    refused: the kind owed a row, the destination, its system, and the
+    class of refusal, all read off the failure rather than guessed here.
+    Anything else that raised is a defect in the record path's own wiring
+    rather than a destination refusing, and it is named apart: half a
+    field set under the record event is the muddle this exists to end.
+
+    Contained rather than raised, because both producers are past the
+    point where a raise could mean anything: the put-back and the claim
+    release have happened, or a driver task would stop its pass for the
+    life of the boot (KOD-170).
+    """
+    if isinstance(exc, RunRecordWriteError):
+        await log.aerror(
+            "run_record_write_failed",
+            kind=exc.kind,
+            name=name,
+            outcome=outcome.value,
+            destination=exc.destination,
+            system=exc.system,
+            failure=exc.failure,
+            error_type=exc.cause_type,
+            error=str(exc),
+            exc_info=exc,
+        )
+        return
+    await log.aerror(
+        "run_record_reporter_failed",
+        name=name,
+        outcome=outcome.value,
+        error_type=type(exc).__name__,
+        error=str(exc),
+        exc_info=exc,
+    )
+
+
+class RunRecorder:
+    """Routes one structural record per run to its kind's declared log."""
+
+    def __init__(
+        self,
+        *,
+        records: Mapping[str, RecordDestination],
+        sinks: Mapping[DocumentSystem, RunRecordSink],
+    ) -> None:
+        self._records: dict[str, RecordDestination] = dict(records)
+        self._sinks: dict[DocumentSystem, RunRecordSink] = dict(sinks)
+        self._log: BoundLogger = get_logger(__name__)
+
+    async def record(self, record: RunRecord) -> RunRecordResult:
+        """See that *record*'s run is recorded once, or name why not.
+
+        The session's own row, when the destination already holds one for
+        this run, discharges the obligation; the structural minimum is
+        written only into a genuine absence.
+
+        What it did is ANSWERED, because a caller announcing the rows it
+        placed may not announce the ones it only found: the shutdown
+        sweep logged a fire as recorded beside the recorder's own
+        "verified", for a row nothing had written (KOD-178).
+        """
+        destination = self._records.get(record.kind.value)
+        if destination is None:
+            await self._log.ainfo(
+                "run_record_destination_undeclared",
+                kind=record.kind.value,
+                name=record.name,
+                outcome=record.outcome.value,
+            )
+            return RunRecordResult.UNDECLARED
+        sink = self._sinks.get(destination.system)
+        if sink is None:
+            msg = (
+                f"records[{record.kind.value!r}] declares the "
+                f"{destination.system.value} system but no sink for it is "
+                f"wired; the composition owes one for every system the "
+                f"config declares"
+            )
+            raise RunRecordWriteError(
+                msg,
+                kind=record.kind.value,
+                destination=destination.id,
+                system=destination.system.value,
+                failure=RunRecordFailure.SINK_UNWIRED.value,
+            )
+        try:
+            present = await sink.holds_record(
+                destination=destination,
+                record=record,
+            )
+            if not present:
+                await sink.write_record(destination=destination, record=record)
+        except (McpTransportError, McpCredentialRefusedError) as exc:
+            raise RunRecordWriteError(
+                "the run's declared destination did not take its record",
+                kind=record.kind.value,
+                destination=destination.id,
+                system=destination.system.value,
+                failure=_failure_class(exc).value,
+            ) from exc
+        if present:
+            await self._log.ainfo(
+                "run_record_verified",
+                kind=record.kind.value,
+                name=record.name,
+                title=record.title(),
+                outcome=record.outcome.value,
+                destination=destination.id,
+                system=destination.system.value,
+            )
+            return RunRecordResult.VERIFIED
+        await self._log.ainfo(
+            "run_record_written",
+            kind=record.kind.value,
+            name=record.name,
+            title=record.title(),
+            outcome=record.outcome.value,
+            destination=destination.id,
+            system=destination.system.value,
+        )
+        return RunRecordResult.WRITTEN

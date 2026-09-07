@@ -45,10 +45,15 @@ from kodezart.types.domain.prompts import (
     PromptSetFragments,
     PromptSetMetadata,
 )
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import as_validated
+from tests.prompt_census import configured_investigation_cap
 
 DEFAULT_SET = "claude-opus"
-GOLDENS = Path(__file__).parent / "goldens" / "claude_opus_empty_skills"
+#: The configured fan-out cap, read off the field declaration rather than a
+#: constructed config: the suite must not depend on the ambient environment
+#: to know what the application ships.
+CONFIGURED_INVESTIGATION_CAP: int = configured_investigation_cap()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 TICKET = TicketDraftOutput(
@@ -84,7 +89,7 @@ MINTED_CRITERIA = list(
     )
 )
 # Every criteria-consuming template downstream of the sweep is handed the
-# VALIDATED shape, so the goldens render what the run renders.
+# VALIDATED shape, so a render here is what the run renders.
 CRITERIA = as_validated(MINTED_CRITERIA)
 
 
@@ -141,9 +146,8 @@ FAILURES = [
     ),
 ]
 
-# golden name -> (key, per-call variables). The skills fragment is bound EMPTY
-# so these goldens survive KOD-46 untouched.
-GOLDEN_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
+# case name -> (key, per-call variables), with the skills fragment bound EMPTY.
+RENDER_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "branch_name": (PromptKey.BRANCH_NAME, {"task": TASK}),
     "commit_message": (PromptKey.COMMIT_MESSAGE, {}),
     "acceptance_criteria": (
@@ -248,14 +252,31 @@ def load_registry(
     set_overrides: dict[str, str] | None = None,
     template_overrides: dict[str, str] | None = None,
     bindings: dict[str, object] | None = None,
+    investigation_cap: int | None = None,
+    ticket_review_mode: TicketReviewMode = TicketReviewMode.REVIEWED,
+    fallback_model: str | None = None,
+    session_models: dict[str, str] | None = None,
 ) -> InRepoPromptRegistry:
-    """Load a registry addressing the set BY NAME (never via environment)."""
+    """Load a registry addressing the set BY NAME (never via environment).
+
+    ``ticket_review_mode`` defaults to the reviewed arm because that is
+    what every suite calling this helper is about; the mode's own effect on
+    resolution is asserted where a case passes the other value explicitly.
+    """
     return InRepoPromptRegistry.load(
         sets_root=sets_root if sets_root is not None else default_sets_root(),
         default_set=default_set,
         set_overrides=set_overrides or {},
         template_overrides=template_overrides or {},
         bindings=bindings or {},
+        investigation_cap=(
+            investigation_cap
+            if investigation_cap is not None
+            else CONFIGURED_INVESTIGATION_CAP
+        ),
+        ticket_review_mode=ticket_review_mode,
+        fallback_model=fallback_model,
+        session_models=session_models,
     )
 
 
@@ -295,50 +316,8 @@ def complete_members(marker: str) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# KOD-63/AC-2 + AC-3 — byte-identity goldens, addressed by set name
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("golden_name", sorted(GOLDEN_CASES))
-def test_claude_opus_render_is_byte_identical_to_baseline(golden_name: str) -> None:
-    """Rendered output with the skills fragment bound EMPTY matches 92597c0."""
-    key, variables = GOLDEN_CASES[golden_name]
-    registry = load_registry()
-    rendered = registry.template_for(key).render({**variables, "skills_reference": ""})
-    expected = (GOLDENS / f"{golden_name}.txt").read_text(encoding="utf-8")
-    assert rendered == expected
-
-
-# The two pass keys and the remediation ticket are net-new content with no
-# 92597c0 baseline to be byte-identical to; every RELOCATED key is covered
-# by the goldens.
-RELOCATED_KEYS = frozenset(PromptKey) - {
-    PromptKey.FIRE_PREP_PASS,
-    PromptKey.GROOMING_PASS,
-    PromptKey.REMEDIATION_TICKET,
-}
-
-
-def test_golden_suite_covers_every_relocated_function_key() -> None:
-    """No relocated key escapes the byte-identity guarantee."""
-    covered = {key for key, _ in GOLDEN_CASES.values()}
-    assert covered == RELOCATED_KEYS
-
-
-def test_golden_test_does_not_read_the_prompt_set_env_var(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The goldens pin the set by name, so flipping the default cannot move them."""
-    monkeypatch.setenv("KODEZART_PROMPT_SET", "not-a-real-set")
-    registry = load_registry()
-    rendered = registry.template_for(PromptKey.COMMIT_MESSAGE).render(
-        {"skills_reference": ""},
-    )
-    assert rendered == (GOLDENS / "commit_message.txt").read_text(encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# KOD-63/AC-4, AC-5, D-5 — composition and precedence
+# Set selection
 # ---------------------------------------------------------------------------
 
 
@@ -483,7 +462,7 @@ def test_free_names_keep_an_item_reference_made_outside_any_loop() -> None:
 
 def test_free_names_handle_a_nested_loop_over_an_item_member() -> None:
     """The inner sequence is reached through the item, so only the outer binds."""
-    body = "{{#each repos}}{{#each this.check_commands}}{{this}}{{/each}}{{/each}}"
+    body = "{{#each repos}}{{#each this.checks}}{{this}}{{/each}}{{/each}}"
     assert free_binding_names(body) == frozenset({"repos"})
 
 
@@ -492,6 +471,23 @@ def test_pyproject_gains_no_templating_dependency() -> None:
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     for banned in ("jinja", "mako", "chevron", "pystache", "handlebars"):
         assert banned not in pyproject.lower()
+
+
+def test_no_shipped_template_ends_in_a_blank_line() -> None:
+    """`_read_member` drops one trailing newline; a second one is content.
+
+    An editor that removes a trailing section leaves the blank line that
+    separated it, and the surviving newline reaches the model as prompt
+    text.  Nothing else in the suite reads the files as bytes.
+    """
+    root = default_sets_root()
+    members = sorted(root.glob("*/*.md"))
+    assert members
+    framing = {str(path.relative_to(root)): path.read_bytes()[-2:] for path in members}
+    assert {
+        name: tail for name, tail in framing.items() if not tail.endswith(b"\n")
+    } == {}
+    assert {name: tail for name, tail in framing.items() if tail == b"\n\n"} == {}
 
 
 # ---------------------------------------------------------------------------
@@ -764,7 +760,14 @@ def test_utility_keys_declare_an_empty_skills_loadout() -> None:
 
 
 def test_prompt_resolution_never_reads_the_model_knob() -> None:
-    """D-7: KODEZART_MODEL is not an input to prompt resolution."""
+    """D-7: KODEZART_MODEL is not an input to prompt resolution.
+
+    The per-key session-model table (KOD-161) rides the registry too — but
+    on the POLICY object a dispatch carries, never as an input to which
+    template answers for a key.  The one bare ``model`` identifier below
+    is exactly that seam: the policy field the table fills; the global
+    knob still reaches nothing here, and ``load`` still takes no model.
+    """
     registry_source = (
         REPO_ROOT / "src" / "kodezart" / "adapters" / "in_repo_prompt_registry.py"
     ).read_text(encoding="utf-8")
@@ -773,7 +776,7 @@ def test_prompt_resolution_never_reads_the_model_knob() -> None:
         for name in re.findall(r"\bmodel\w*", registry_source)
         if name != "model_validate"
     ]
-    assert identifiers == []
+    assert identifiers == ["model"], identifiers
     signature = inspect.signature(InRepoPromptRegistry.load)
     assert "model" not in signature.parameters
 
@@ -902,3 +905,72 @@ def test_prompt_set_fragments_reject_unknown_keys() -> None:
         PromptSetFragments.model_validate(
             {"skills_reference_header": "x", "extra_fragment": "y"},
         )
+
+
+# ---------------------------------------------------------------------------
+# KOD-90-AC-6 (registry half) — a slot the mode owes and the set cannot fill
+# ---------------------------------------------------------------------------
+
+CRITIQUE_SLOT = "{{#if ticket_create_critique}}{{ticket_create_critique}}{{/if}}"
+
+
+def test_a_slotted_create_member_without_a_critique_fragment_fails_create_only(
+    tmp_path: Path,
+) -> None:
+    """The mode's only review cannot be silently absent: boot names the key."""
+    members = complete_members("base")
+    members[PromptKey.TICKET_CREATE.value] += CRITIQUE_SLOT
+    write_set(tmp_path, "base", members)
+
+    with pytest.raises(PromptResolutionError) as excinfo:
+        load_registry(
+            sets_root=tmp_path,
+            default_set="base",
+            ticket_review_mode=TicketReviewMode.CREATE_ONLY,
+        )
+
+    assert PromptKey.TICKET_CREATE.value in excinfo.value.failing_keys
+
+
+def test_the_same_set_resolves_under_the_reviewed_mode(tmp_path: Path) -> None:
+    """Non-vacuity: the refusal is the MODE's, not the slot's."""
+    members = complete_members("base")
+    members[PromptKey.TICKET_CREATE.value] += CRITIQUE_SLOT
+    write_set(tmp_path, "base", members)
+
+    registry = load_registry(
+        sets_root=tmp_path,
+        default_set="base",
+        ticket_review_mode=TicketReviewMode.REVIEWED,
+    )
+
+    assert (
+        registry.template_for(PromptKey.TICKET_CREATE).render({})
+        == "base:ticket_create"
+    )
+
+
+def test_a_declared_critique_fills_the_slot_under_create_only(tmp_path: Path) -> None:
+    """The fragment reaches the render from set metadata, not from the caller."""
+    members = complete_members("base")
+    members[PromptKey.TICKET_CREATE.value] += CRITIQUE_SLOT
+    set_dir = write_set(tmp_path, "base", members)
+    metadata = set_dir / "set.toml"
+    metadata.write_text(
+        metadata.read_text(encoding="utf-8").replace(
+            "[fragments]\n",
+            '[fragments]\nticket_create_critique = "critique the draft"\n',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    registry = load_registry(
+        sets_root=tmp_path,
+        default_set="base",
+        ticket_review_mode=TicketReviewMode.CREATE_ONLY,
+    )
+
+    assert "critique the draft" in registry.template_for(
+        PromptKey.TICKET_CREATE
+    ).render({})

@@ -13,7 +13,11 @@ defined meaning.  Boot asserts it rather than discovering it at render time.
 from collections.abc import Mapping, Sequence
 
 from kodezart.core.errors import PromptNamespaceCollisionError
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import (
+    OperationConfig,
+    PrincipalRole,
+    RunKind,
+)
 
 SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 
@@ -48,8 +52,33 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "commit_subjects",
         "changeset_is_empty",
         "changeset_has_commits",
+        "content",
+        "destination",
+        # The row title a scheduled pass's own record must carry: per call
+        # because it spells the instant that run began (KOD-290).
+        "record_title",
     }
 )
+
+
+def _bind_absentable(
+    bindings: dict[str, object],
+    name: str,
+    value: object,
+    *,
+    absent: bool,
+) -> None:
+    """The mutually exclusive ``name`` / ``name_absent`` pair.
+
+    ``{{#if}}`` treats ``None`` as absent, so the two renderings are
+    selected by two mutually exclusive bindings rather than by an
+    else-branch the renderer does not have: exactly one of the pair is
+    ever non-``None``.  An UNGUARDED reference over the absent state then
+    fails loudly as an unbound placeholder — the one outcome no state
+    produces is a blank render.
+    """
+    bindings[name] = None if absent else value
+    bindings[f"{name}_absent"] = True if absent else None
 
 
 def operation_bindings(config: OperationConfig) -> dict[str, object]:
@@ -57,32 +86,262 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
 
     Bare names for the two scalars, dotted namespaces for the mappings.
     Nothing here is a per-call value and nothing here is a fragment.
+
+    Every binding that can be absent — the eleven collections, the
+    private-surface prose, a principal's forge handle, an unadopted
+    document id, a gate step's dependency — is three-state: the value, or
+    the paired absent marker, never a hole.
+
+    Two shapes, chosen by how a template addresses the collection.
+
+    A collection a pass ENUMERATES is a LIST, iterated with ``{{#each}}``:
+    ``teams`` and ``repos`` are the operation's declared roster, and a pass
+    renders every member of it.  Whatever the config declares renders, in
+    declaration order, so a third team or a third repository reaches the
+    prompt without a template edit.  The enumeration-with-a-conjunction
+    concern that ruled these into flat positions (KOD-60 R16) dissolves
+    with the prose it was about: the rewritten roster passages enumerate as
+    lines, one member per line, and a line list needs no separator
+    construct the renderer does not have.
+
+    A collection a pass addresses SINGLY stays keyed, because a role or a
+    position is what the template names: ``principals.approver``,
+    ``principals.assignee`` and ``principals.1`` by role and position,
+    ``agent_identities.0`` and ``initiatives.1`` by position, and
+    ``documents``, ``records``, ``knowledge``, ``queue_states``,
+    ``workflow_states`` and ``endpoints`` by their configured key.  A role,
+    position or key the config does not declare is an unbound placeholder
+    and the render refuses, naming it — the refusal at the point of need.
     """
-    return {
+    bindings: dict[str, object] = {
         "operation_name": config.operation_name,
         "workspace": config.workspace,
-        "queue_states": dict(config.queue_states),
-        "workflow_states": {
-            stage.value: label for stage, label in config.workflow_states.items()
+    }
+    _bind_absentable(
+        bindings,
+        "queue_states",
+        dict(config.queue_states),
+        absent=not config.queue_states,
+    )
+    _bind_absentable(
+        bindings,
+        "workflow_states",
+        {stage.value: label for stage, label in config.workflow_states.items()},
+        absent=not config.workflow_states,
+    )
+    # The roster a pass enumerates. ``repository`` splits three ways per
+    # entry, exactly one marker non-``None``: bound to a declared url;
+    # unbound with ONE repository declared, where the binding is implicit
+    # and total ("the only declared repository"); unbound with several,
+    # where the route is RECORDED per staged issue by the fire-prep pass
+    # and read by dispatch (KOD-169).  ``scope`` is the house pair: the
+    # declared narrowing joined for prose, or the absent marker for the
+    # whole-board default — which renders nothing new, so an unscoped
+    # config's roster is byte-identical to before the field existed.
+    several_repos = len(config.repos) > 1
+    _bind_absentable(
+        bindings,
+        "teams",
+        [
+            {
+                "name": entry.name,
+                "key": entry.key,
+                "repository": entry.repository,
+                "repository_absent": (
+                    True if entry.repository is None and not several_repos else None
+                ),
+                "repository_recorded": (
+                    True if entry.repository is None and several_repos else None
+                ),
+                "scope": ", ".join(entry.scope) if entry.scope else None,
+                "scope_absent": None if entry.scope else True,
+            }
+            for entry in config.teams.values()
+        ],
+        absent=not config.teams,
+    )
+    # Present exactly when some pass must RECORD routes: an unbound team
+    # beside a real repository choice.  The fire-prep template renders its
+    # marker-writing instruction under this pair, so a single-repository
+    # operation's prompt carries no instruction about a case it cannot
+    # reach.
+    _bind_absentable(
+        bindings,
+        "recorded_routing",
+        True,
+        absent=not (
+            several_repos
+            and any(entry.repository is None for entry in config.teams.values())
+        ),
+    )
+    # An id alone renders as an opaque token no reader can resolve, so
+    # every document and record reference carries its system beside it.
+    # A TRACKER document's id is three-state on the model — absent means
+    # "not adopted yet" — and the binding says so rather than rendering a
+    # hole.
+    _bind_absentable(
+        bindings,
+        "documents",
+        {
+            key: {
+                "system": entry.system.value,
+                "id": entry.id,
+                "id_absent": True if entry.id is None else None,
+            }
+            for key, entry in config.documents.items()
         },
-        "teams": dict(config.teams),
-        "documents": {key: entry.id for key, entry in config.documents.items()},
-        "knowledge": dict(config.knowledge),
-        "endpoints": dict(config.endpoints),
-        "initiatives": [
-            {"id": item.id, "target_date": item.target_date.isoformat()}
-            for item in config.initiatives
-        ],
-        "principals": [
-            {"tracker_user": p.tracker_user, "role": p.role.value}
-            for p in config.principals
-        ],
-        "agent_identities": list(config.agent_identities),
-        "repos": [
-            {"url": repo.url, "check_commands": repo.check_commands}
+        absent=not config.documents,
+    )
+    # The record registry is a TOTAL per-kind namespace: its legal keys are
+    # exactly the run kinds (refused otherwise at load, KOD-170), so every
+    # kind binds the house pair — the declared destination, or the named
+    # absence a pass renders its record-nothing arm from.  No whole-registry
+    # marker exists: an empty [records] table IS three named absences, and
+    # the RunRecorder routes off the same declaration this binds.
+    records_namespace: dict[str, object] = {}
+    for kind in RunKind:
+        entry = config.records.get(kind.value)
+        records_namespace[kind.value] = (
+            None
+            if entry is None
+            else {
+                "system": entry.system.value,
+                "name": entry.name,
+                "id": entry.id,
+                "append_only": entry.append_only,
+            }
+        )
+        records_namespace[f"{kind.value}_absent"] = True if entry is None else None
+    bindings["records"] = records_namespace
+    _bind_absentable(
+        bindings,
+        "knowledge",
+        dict(config.knowledge),
+        absent=not config.knowledge,
+    )
+    _bind_absentable(
+        bindings,
+        "private_surface",
+        config.private_surface,
+        absent=config.private_surface is None,
+    )
+    _bind_absentable(
+        bindings,
+        "endpoints",
+        dict(config.endpoints),
+        absent=not config.endpoints,
+    )
+    # ``target_date`` is absent on a real initiative more often than not.
+    _bind_absentable(
+        bindings,
+        "initiatives",
+        {
+            str(index): {
+                "id": item.id,
+                "target_date": (
+                    None if item.target_date is None else item.target_date.isoformat()
+                ),
+                "target_date_absent": True if item.target_date is None else None,
+            }
+            for index, item in enumerate(config.initiatives)
+        },
+        absent=not config.initiatives,
+    )
+    # ``handle`` is the identifier a MENTION is recognised by and
+    # ``tracker_user`` the display identity the tracker names the principal
+    # by — what its user listing reports and what an authored act comes
+    # back attributed to, never an authority check (KOD-144). A sweep
+    # given only the second has nothing to match on.  ``forge_handle`` is
+    # the same principal's name on the forge; a principal who never
+    # appears there has none, and the absent case is named.  Beside the
+    # positions, the two roles the routines address singly are keyed by
+    # role: ``approver`` exists whenever principals do (exactly one is
+    # validated at load), ``assignee`` only when a principal carries the
+    # role — an unbound ``principals.assignee`` reference is the typed
+    # refusal for an operation that declares none.
+    principal_views = [
+        {
+            "tracker_user": p.tracker_user,
+            "roles": ", ".join(sorted(role.value for role in p.roles)),
+            "handle": p.handle,
+            "forge_handle": p.forge_handle,
+            "forge_handle_absent": True if p.forge_handle is None else None,
+        }
+        for p in config.principals
+    ]
+    principals_namespace: dict[str, object] = {
+        str(index): view for index, view in enumerate(principal_views)
+    }
+    for index, principal in enumerate(config.principals):
+        if PrincipalRole.APPROVER in principal.roles:
+            principals_namespace["approver"] = principal_views[index]
+        if PrincipalRole.ASSIGNEE in principal.roles:
+            principals_namespace["assignee"] = principal_views[index]
+    _bind_absentable(
+        bindings,
+        "principals",
+        principals_namespace,
+        absent=not config.principals,
+    )
+    _bind_absentable(
+        bindings,
+        "agent_identities",
+        {
+            str(index): identity
+            for index, identity in enumerate(config.agent_identities)
+        },
+        absent=not config.agent_identities,
+    )
+    # A step naming no dependency is a GATE; the absent marker is what a
+    # template says "a gate" with, rather than rendering a hole where the
+    # ancestor's name would be.  ``name`` and ``slug`` are the display
+    # forms the routines write a repository with — the short name and the
+    # owner/name form — derived from the one declared ``url`` so the three
+    # can never drift apart.
+    _bind_absentable(
+        bindings,
+        "repos",
+        [
+            {
+                "url": repo.url,
+                "name": _repo_display(repo.url)[0],
+                "slug": _repo_display(repo.url)[1],
+                "trunk": repo.trunk,
+                # Empty is a named absence (founder ruling 2026-09-01):
+                # the repository's own CI defines its gate, and the
+                # absent marker is what a template says "discover and run
+                # the repo's own chain" with.
+                "checks": (
+                    [
+                        {
+                            "name": step.name,
+                            "command": step.command,
+                            "depends_on": step.depends_on,
+                            "depends_on_absent": (
+                                True if step.depends_on is None else None
+                            ),
+                        }
+                        for step in repo.checks
+                    ]
+                    if repo.checks
+                    else None
+                ),
+                "checks_absent": None if repo.checks else True,
+            }
             for repo in config.repos
         ],
-    }
+        absent=not config.repos,
+    )
+    return bindings
+
+
+def _repo_display(url: str) -> tuple[str, str]:
+    """``(name, slug)`` — the short and owner/name forms of a repository URL."""
+    trimmed = url.rstrip("/")
+    if trimmed.endswith(".git"):
+        trimmed = trimmed.removesuffix(".git")
+    segments = [segment for segment in trimmed.split("/") if segment]
+    return segments[-1], "/".join(segments[-2:])
 
 
 def assert_namespaces_disjoint(operation_names: Sequence[str]) -> None:

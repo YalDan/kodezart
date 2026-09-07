@@ -29,7 +29,7 @@ _RUN_STATE_CHANNELS: tuple[str, ...] = (
     "accept_verdict",
     "merged",
     "review_passed",
-    "ci_passed",
+    "ci_status",
     "ci_summary",
     "pr_url",
     "pr_number",

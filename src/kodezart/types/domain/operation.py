@@ -1,24 +1,123 @@
-"""Operation configuration — the org-shaped runtime config, tracker-agnostic.
+"""Operation configuration — the org-shaped runtime config.
 
 Nothing deployment-shaped lives here (that is AppConfig) and no secret ever
-does: ``extra="forbid"`` makes a stray token key a load-time failure.
+does: ``extra="forbid"`` makes a stray token key a load-time failure, and
+``hide_input_in_errors`` keeps that failure from printing the value it
+rejected.
 Authority binds to a ROLE, never to a name in code or in a template.
+
+This model is NOT tracker-agnostic, and said so for longer than it was
+true.  Several of its fields are one tracker's vocabulary — named for
+concepts the port deliberately does not carry, and read by the adapter
+rather than by the operation.  Which fields those are, and what the model
+becomes once they are separated, is KOD-139; naming the property here
+keeps the claim honest until that lands.
 """
 
+from collections.abc import Sequence
 from datetime import date
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kodezart.types.domain.gating import RepoVisibility
+
+#: The one stable document key the structure validators below and the pass
+#: templates address by name; it carries no accessor that refuses on absence,
+#: because an absent entry is answered by the three-state render — a bootstrap
+#: census and a record-nothing-outside-the-tracker instruction — and a declared
+#: one no session can reach is refused at boot, where both halves of that
+#: mismatch are visible at once.  Record keys are not free names beside it:
+#: they are the run-kind vocabulary below, one destination per kind (KOD-170).
 CHECKPOINT_DOCUMENT_KEY = "checkpoint"
 
 
+class OperationMemberAbsentError(Exception):
+    """Raised at the point of need when an absent config member is required.
+
+    Absence is legal at load — an empty board boots — so nothing about an
+    empty collection fails until a consumer actually needs a member of it.
+    The refusal then happens at the call site that needed the member, and
+    it carries two facts: ``missing`` names the role or key the config does
+    not declare, and ``stops`` names what cannot work without it.  A boot
+    error would blame the config for a decision it legitimately made; a
+    blank render or an exhausted iterator would report nothing at all.
+    """
+
+    def __init__(self, *, missing: str, stops: str) -> None:
+        super().__init__(f"operation config declares no {missing}; {stops}")
+        self.missing: str = missing
+        self.stops: str = stops
+
+
+class DocumentSystem(StrEnum):
+    """The system a document or record id belongs to.
+
+    An enum rather than a free string: a free string reintroduces the
+    unresolvable-identifier problem one level up, which is the defect this
+    vocabulary exists to close.  Two members because two systems exist.
+    """
+
+    TRACKER = "tracker"
+    KNOWLEDGE = "knowledge"
+
+
+class RunKind(StrEnum):
+    """Every kind of run the operation records — the record registry's keys.
+
+    Three members because the operation runs three kinds of thing worth a
+    record row: the two scheduled judgment passes and the fire a dispatch
+    starts.  ``records`` is keyed by these values, one declared destination
+    per kind, so which log a run reports to is configuration rather than a
+    name a session invents — and a key outside this vocabulary is a typo
+    refused at load, not a destination nothing will ever write to
+    (KOD-170).
+    """
+
+    FIRE_PREP = "fire_prep"
+    GROOMING = "grooming"
+    FIRE = "fire"
+
+
+class ConfigOwnership(StrEnum):
+    """Who is authoritative for a declared value, and therefore what boot does.
+
+    Three classes, not two, because the fields do not split in two.  A
+    boolean would force ``operation_name`` and ``endpoints`` into one of two
+    behaviours neither of which applies to them.
+    """
+
+    #: The operation owns it and can create it: ensured at boot, created if
+    #: absent, adopted unchanged if present.
+    OWNED = "owned"
+    #: Another system is authoritative: resolved at boot, and a failure
+    #: aborts with a typed error naming the entry.  A principal cannot be
+    #: conjured.
+    EXTERNAL = "external"
+    #: Nothing exists in the workspace to resolve against; structural
+    #: validation only.
+    LOCAL = "local"
+
+
 class PrincipalRole(StrEnum):
-    """Authority is enforced via roles. Exactly one APPROVER exists."""
+    """Authority is enforced via roles. Exactly one APPROVER exists.
+
+    Three members because the passes route three things differently and a
+    two-valued enum collapses two of them.  ``APPROVER`` holds the approval
+    flip; ``PRINCIPAL``'s word creates a reply obligation the queue does
+    not otherwise record; ``ASSIGNEE`` is what prepared fires, triage
+    filings and decision flags are assigned to.
+
+    Held as a SET rather than singly, because one principal demonstrably
+    holds two: the routines assign every prepared fire and every triage
+    filing to the same principal who holds the approval act, so a singular
+    field forces either a duplicate entry or a lost routing.
+    """
 
     APPROVER = "approver"
     PRINCIPAL = "principal"
+    ASSIGNEE = "assignee"
 
 
 class QueueState(StrEnum):
@@ -47,86 +146,412 @@ class LifecycleStage(StrEnum):
 class OperationModel(BaseModel):
     """Base for operation-config models: closed, frozen."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        hide_input_in_errors=True,
+    )
 
 
 class Principal(OperationModel):
-    """A tracker user and the role that grants their authority."""
+    """A tracker user, the role granting their authority, and how they are named.
+
+    ``tracker_user`` is the DISPLAY identity the tracker attributes acts
+    and mentions to: the value the workspace's user listing reports, which
+    boot resolves this principal against, and the name an authored comment
+    comes back under.  It checks no authority — nothing on the measured
+    tracker surface attests who set a state, so the dispatch predicate
+    turns on a state's presence rather than on its author (KOD-144).
+
+    ``handle`` is the identifier a mention is RECOGNISED by: the string a
+    person writes when addressing this principal in a body or a comment.
+    The two are routinely different, and a model carrying only the first
+    cannot express the mention sweep at all — that sweep is text matching,
+    and it has no identifier to match on.
+    """
 
     tracker_user: str
-    role: PrincipalRole
+    roles: frozenset[PrincipalRole]
+    handle: str
+    #: The identifier this principal is recognised by on the FORGE, when it
+    #: differs from the tracker one.  Two surfaces name one person, and
+    #: review-borne mentions are answered on the forge, so recognising one
+    #: principal across both needs two identifiers.  ``None`` for a
+    #: principal who never appears there.
+    #:
+    #: Read in production: the principals namespace binds it beside
+    #: ``forge_handle_absent``, and the restored fire-prep routine (KOD-60)
+    #: renders it — the operation's approver is one principal written one
+    #: way on the tracker and another on the forge, and that sentence is
+    #: derived from configuration rather than carried as a literal.  The
+    #: field spent a stretch unreferenced after ``a43e5df`` reverted its
+    #: first binding, and survived a sweep on the strength of the reader
+    #: that was coming; the reader arrived, so the case for keeping it is
+    #: now simply that things read it.
+    forge_handle: str | None = None
+
+
+class TeamEntry(OperationModel):
+    """A tracker team: its display name, its short key, and where it fires.
+
+    Two identifiers because the routines use both, in one sentence: the
+    display name is what a human reads and what boot resolves against the
+    live workspace; the key is the short identifier the SAME team is
+    written with where a display name is too long, and a rendered prompt
+    that names the first cannot derive the second.  Added under KOD-60 R17
+    — the verbatim routine texts carry the key as its own token, and a
+    mapping of key -> name had no home for it.
+
+    What that short identifier IS belongs to the tracker: one prefixes
+    every issue key with it, another has no such notion at all, so nothing
+    may read an issue key expecting to find it.  Whether a per-vendor
+    vocabulary belongs on this model is KOD-139.
+
+    The key this entry is registered UNDER — the ``teams`` mapping key — is
+    a third identifier and the operation's own: it is what ``IssueQuery``
+    scopes by and what a dispatch candidate is judged against, and it is
+    the one spelling in this triple that no backend assigns.
+    """
+
+    name: str = Field(min_length=1)
+    key: str = Field(min_length=1)
+    #: The url of the ``repos`` entry this team's issues are fired into.
+    #:
+    #: Optional, and the states are different operations.  One declared
+    #: repository is a TOTAL binding with nothing to declare — every team
+    #: fires into the only candidate there is.  With several repositories
+    #: a bound team routes by its binding, and an UNBOUND team routes per
+    #: issue: the fire-prep pass records each staged issue's target
+    #: repository on the issue itself, and dispatch reads that record and
+    #: refuses by name when it is missing (KOD-169) — never a claim by
+    #: whichever tick arrives first, which is the KOD-157 defect the
+    #: recorded route closes.
+    repository: str | None = None
+    #: The declared narrowing of this team's board, when the operator
+    #: passes one.  Empty — the default — is the ENTIRE board in scope
+    #: (ruled 2026-09-01: "everything in the team is in scope unless
+    #: otherwise specified").  Non-empty entries name tracker projects or
+    #: initiatives, by display name or id; membership is answered from the
+    #: tracker at scan time, never enumerated here (KOD-169).
+    scope: tuple[str, ...] = ()
+    #: The visibility posture of THIS board, in the vocabulary every other
+    #: outbound decision is already made in.
+    #:
+    #: Per board rather than per operation, because the operation's own
+    #: rule is per board: one that mirrors publicly and one that syncs to
+    #: a private surface are both declared here, and a single posture over
+    #: both either scrubs a private board's write-backs for a public it
+    #: never reaches or exempts a public board's from the gate.
+    #:
+    #: Absent is the third state and it INHERITS: the coordination surface
+    #: mirrors publicly by the definition of its own surface class, so a
+    #: board that declares no posture of its own is treated as public.
+    #: That is also where every unresolvable case lands — ``PRIVATE`` is
+    #: what exempts a payload from the outbound gate, so a posture nobody
+    #: resolved must over-scrub rather than under-scrub (KOD-157).
+    visibility: RepoVisibility | None = None
+
+
+class CheckStep(OperationModel):
+    """One command in a repository's check chain, and what gates it.
+
+    ``depends_on`` names the step whose success this one is conditional on.
+    A step naming none is a GATE: its failure is a root cause.  A step whose
+    named ancestor failed is a CASCADE and carries no independent
+    information.
+
+    The distinction is the whole point of the type.  The passes carry an
+    honesty rule — report one root failure plus its cascades, never a list
+    of independent-looking reds — and a flat list of command strings cannot
+    say which command that rule is about.
+    """
+
+    name: str
+    command: str
+    depends_on: str | None = None
 
 
 class RepoEntry(OperationModel):
-    """A repository the operation acts on plus its verification commands."""
+    """A repository the operation acts on plus its verification chain.
+
+    ``trunk`` is the branch a lane with no blockers is based on.  It lives
+    here, on the repository, because a trunk name is a property OF a
+    repository: any other home makes one value stand for N repositories
+    that may not share a default branch.  It has no default, because the
+    only plausible default is the literal the base resolver is required to
+    prove it never reads.
+
+    ``checks`` is consumed by prompt rendering alone — no deterministic
+    path executes these commands — and EMPTY is a named absence, not a
+    hole (founder ruling 2026-09-01): the repository's own CI defines its
+    gate, and copying that structure here would be a second surface for
+    facts the repository owns, drifting the day its CI changes.  Declare
+    a chain only when the operator wants the rendered prompts to carry a
+    pinned gate-vs-cascade classification; leave it empty and the
+    sessions discover and run the repository's own chain in-repo.
+    """
 
     url: str
-    check_commands: list[str]
+    trunk: str = Field(min_length=1)
+    checks: tuple[CheckStep, ...] = ()
 
 
 class DocumentEntry(OperationModel):
-    """A read-side document reference addressed by a stable key."""
+    """A read-side document reference addressed by a stable key.
 
+    ``system`` is required because an id alone is unresolvable: a rendered
+    prompt saying "the marker in <opaque-id>" names no system a session can
+    open, and a session given only the rendered prompt cannot recover one.
+
+    ``name`` is what an ensure keys on, and it is what makes this field
+    OWNED rather than EXTERNAL (KOD-57 R2, amendment 3, and R9).  A
+    document's id is assigned by the system that holds it, so a config
+    could never declare the id of a document that does not exist yet — the
+    reason the whole field was classed EXTERNAL and a first boot needed the
+    checkpoint document made by hand.  Naming it instead closes that: boot
+    creates the document by name when the workspace has none and ADOPTS the
+    id it is given.
+
+    ``id`` is therefore three-state and each state is a different fact.
+    Absent means "not adopted yet"; present means "this exact document",
+    and boot refuses rather than creating a second one when the workspace
+    does not hold it.  A document in the KNOWLEDGE system must declare its
+    id at load, because nothing in this process can create one there and an
+    unadopted id would render as a placeholder no session can open.
+
+    ``container`` is the declared team the CREATE arm files the document
+    under, addressed by its key in ``teams``.  The live backend refuses a
+    container-less document outright (KOD-166), and which container is not
+    the code's to pick — an operation may declare several teams and none of
+    them is "first".  Read only when creation is needed: an adopted
+    document already lives where it lives, so a declared id never consults
+    this field.
+    """
+
+    system: DocumentSystem
+    name: str = Field(min_length=1)
+    id: str | None = None
+    container: str | None = None
+
+    @model_validator(mode="after")
+    def _knowledge_documents_declare_an_id(self) -> Self:
+        if self.system is DocumentSystem.KNOWLEDGE and self.id is None:
+            msg = (
+                f"document {self.name!r} lives in the "
+                f"{DocumentSystem.KNOWLEDGE.value} system, which this operation "
+                f"cannot instate, so its id must be declared"
+            )
+            raise ValueError(msg)
+        return self
+
+
+class RecordDestination(OperationModel):
+    """A WRITE-side destination a pass records a row to.
+
+    Deliberately not a flag on :class:`DocumentEntry`: ``documents`` is a
+    read-side registry, and a boolean there would make it silently
+    write-capable while still not saying what is written.
+
+    ``name`` is the destination's display title — what a routine addresses
+    its log by in prose.  Added under KOD-60 R17: the verbatim routine
+    texts carry the title as its own token, and rendering ``id`` where the
+    text carries a name is the substitution error the byte-identity gate
+    caught.
+    """
+
+    system: DocumentSystem
+    name: str = Field(min_length=1)
     id: str
+    append_only: bool
 
 
 class Initiative(OperationModel):
-    """An initiative the operation is steering toward."""
+    """An initiative the operation is steering toward.
+
+    ``target_date`` is optional because a real initiative frequently has
+    none.  A required field forced every config to invent one, and a pass
+    rendered from an invented date reports a distance to a commitment the
+    tracker does not hold — an assertion about the operation manufactured
+    by its own configuration model.
+    """
 
     id: str
-    target_date: date
+    target_date: date | None = None
+
+
+def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
+    """Every structural failure in one repository's check chain.
+
+    A chain that names a step twice, depends on a step that is not in it,
+    or closes a cycle cannot be classified into roots and cascades at all,
+    so it is rejected at load rather than mis-reported at run time.
+    """
+    failures: list[str] = []
+    seen: set[str] = set()
+    for step in steps:
+        if step.name in seen:
+            failures.append(f"duplicate step name {step.name!r}")
+        seen.add(step.name)
+
+    by_name = {step.name: step for step in steps}
+    for step in steps:
+        if step.depends_on is None:
+            continue
+        if step.depends_on not in by_name:
+            failures.append(
+                f"step {step.name!r} depends on unknown step {step.depends_on!r}",
+            )
+            continue
+        walked: set[str] = {step.name}
+        cursor: str | None = step.depends_on
+        while cursor is not None:
+            if cursor in walked:
+                failures.append(f"step {step.name!r} closes a dependency cycle")
+                break
+            walked.add(cursor)
+            cursor = by_name[cursor].depends_on
+    return failures
 
 
 class OperationConfig(OperationModel):
-    """The whole operation configuration, validated structurally at load."""
+    """The whole operation configuration, validated structurally at load.
+
+    Two scalars are required — a config that names no operation and no
+    workspace describes nothing.  Every collection defaults empty, because
+    each one's absence is a real operation: an empty board boots.  What an
+    empty collection costs is paid at the point of need — the consumer that
+    requires a member refuses with :class:`OperationMemberAbsentError`
+    naming the missing role or key and what stops working — never at load.
+    Structural validation applies to what IS present: a populated registry
+    missing the member code addresses by name is a typo and fails loudly,
+    while an empty one is a decision and loads.
+
+    Loading is always legitimate; what the deployment can SCHEDULE over the
+    result is a separate question.  The scheduled passes enumerate ``teams``
+    and ``repos``, so a config declaring neither wires none of them — named
+    in the boot log, never a refusal at load and never a pass rendering a
+    hole one silent interval at a time.
+    """
 
     operation_name: str
     workspace: str
-    principals: list[Principal]
-    agent_identities: list[str]
-    teams: dict[str, str]
-    queue_states: dict[str, str]
-    workflow_states: dict[LifecycleStage, str]
-    repos: list[RepoEntry]
-    documents: dict[str, DocumentEntry]
-    knowledge: dict[str, str]
-    endpoints: dict[str, str]
-    initiatives: list[Initiative]
+    principals: list[Principal] = Field(default_factory=list)
+    agent_identities: list[str] = Field(default_factory=list)
+    teams: dict[str, TeamEntry] = Field(default_factory=dict)
+    queue_states: dict[str, str] = Field(default_factory=dict)
+    workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
+    repos: list[RepoEntry] = Field(default_factory=list)
+    documents: dict[str, DocumentEntry] = Field(default_factory=dict)
+    records: dict[str, RecordDestination] = Field(default_factory=dict)
+    knowledge: dict[str, str] = Field(default_factory=dict)
+    endpoints: dict[str, str] = Field(default_factory=dict)
+    initiatives: list[Initiative] = Field(default_factory=list)
+    # Prose describing the CLASS of thing this operation treats as private,
+    # never a list of instances. Prose generalizes to instances the operator
+    # never enumerated, and it lives operator-side, which together is the
+    # whole reason this is not a pattern list. ``None`` means the operator
+    # has not supplied one; the judgment scanner then refuses to register
+    # rather than registering with nothing to judge against.
+    private_surface: str | None = None
 
     @model_validator(mode="after")
     def _check_structure(self) -> Self:
         """Collect EVERY structural failure into one error, never the first."""
         failures: list[str] = []
 
-        approvers = [p for p in self.principals if p.role is PrincipalRole.APPROVER]
-        if len(approvers) != 1:
-            failures.append(
-                f"exactly one APPROVER principal is required, found {len(approvers)}",
-            )
-
-        for member in QueueState:
-            if member.value not in self.queue_states:
+        if self.principals:
+            approvers = [
+                p for p in self.principals if PrincipalRole.APPROVER in p.roles
+            ]
+            if len(approvers) != 1:
                 failures.append(
-                    f"queue_states is missing required key {member.value!r}"
+                    f"exactly one APPROVER principal is required, "
+                    f"found {len(approvers)}",
                 )
-
-        for stage in LifecycleStage:
-            if stage not in self.workflow_states:
+            assignees = [
+                p for p in self.principals if PrincipalRole.ASSIGNEE in p.roles
+            ]
+            if len(assignees) > 1:
                 failures.append(
-                    f"workflow_states is missing required stage {stage.value!r}",
+                    f"at most one ASSIGNEE principal may be declared, "
+                    f"found {len(assignees)}",
                 )
+        failures.extend(
+            f"principals[{index}] must carry the PRINCIPAL role"
+            for index, principal in enumerate(self.principals)
+            if PrincipalRole.PRINCIPAL not in principal.roles
+        )
 
-        if CHECKPOINT_DOCUMENT_KEY not in self.documents:
+        # Two keys naming one team is not a synonym, it is an ambiguity: the
+        # adapter resolves an issue's team back onto the key a scan was
+        # scoped by, and with two candidates that answer is a coin toss.
+        names = [entry.name for entry in self.teams.values()]
+        failures.extend(
+            f"teams[{key!r}].name {entry.name!r} is not unique"
+            for key, entry in self.teams.items()
+            if names.count(entry.name) > 1
+        )
+
+        # The repository binding: one naming a repository the config does
+        # not declare routes issues nowhere and is refused.  A team
+        # carrying NO binding is legal in both shapes — with one declared
+        # repository the binding is implicit and total, and with several
+        # the team's issues route per issue by the repository the
+        # fire-prep pass records on each staged one (KOD-169).
+        declared_repos = {repo.url for repo in self.repos}
+        failures.extend(
+            f"teams[{key!r}].repository {entry.repository!r} names no declared "
+            f"repository"
+            for key, entry in self.teams.items()
+            if entry.repository is not None and entry.repository not in declared_repos
+        )
+
+        if self.queue_states:
+            for member in QueueState:
+                if member.value not in self.queue_states:
+                    failures.append(
+                        f"queue_states is missing required key {member.value!r}"
+                    )
+
+        if self.workflow_states:
+            for stage in LifecycleStage:
+                if stage not in self.workflow_states:
+                    failures.append(
+                        f"workflow_states is missing required stage {stage.value!r}",
+                    )
+
+        if self.documents and CHECKPOINT_DOCUMENT_KEY not in self.documents:
             failures.append(
                 f"documents is missing the stable checkpoint key "
                 f"{CHECKPOINT_DOCUMENT_KEY!r}",
             )
 
+        # A container names the declared team the create arm files the
+        # document under, so a key outside ``teams`` routes creation
+        # nowhere and is refused at load rather than at the vendor.
         failures.extend(
-            f"repos[{index}].check_commands must not be empty"
-            for index, repo in enumerate(self.repos)
-            if not repo.check_commands
+            f"documents[{key!r}].container {entry.container!r} names no declared team"
+            for key, entry in self.documents.items()
+            if entry.container is not None and entry.container not in self.teams
         )
+
+        # Record keys ARE the run-kind vocabulary: each declares the one
+        # destination its kind reports to, so a free name here would be a
+        # log nothing ever writes (KOD-170).  Absence of a kind is legal —
+        # a named absence the recorder reports — but an unknown key is not.
+        valid_record_keys = {kind.value for kind in RunKind}
+        failures.extend(
+            f"records[{key!r}] is not a run kind; declare one of "
+            f"{sorted(valid_record_keys)}"
+            for key in self.records
+            if key not in valid_record_keys
+        )
+
+        for index, repo in enumerate(self.repos):
+            failures.extend(
+                f"repos[{index}].checks: {failure}"
+                for failure in _check_chain_failures(repo.checks)
+            )
 
         known_users = {p.tracker_user for p in self.principals}
         failures.extend(
@@ -135,10 +560,204 @@ class OperationConfig(OperationModel):
             if identity in known_users
         )
 
+        handles = [p.handle for p in self.principals]
+        failures.extend(
+            f"principals[{index}].handle must not be empty"
+            for index, handle in enumerate(handles)
+            if not handle.strip()
+        )
+        failures.extend(
+            f"principals[{index}].handle {handle!r} is not unique"
+            for index, handle in enumerate(handles)
+            if handles.count(handle) > 1
+        )
+        failures.extend(
+            f"principals[{index}].handle {handle!r} collides with an agent identity"
+            for index, handle in enumerate(handles)
+            if handle in set(self.agent_identities)
+        )
+
         if failures:
             raise ValueError("; ".join(failures))
         return self
 
     def approver(self) -> Principal:
-        """The single principal holding APPROVER authority."""
-        return next(p for p in self.principals if p.role is PrincipalRole.APPROVER)
+        """The single principal holding APPROVER authority.
+
+        Refuses when no principal carries the role — an empty board loads,
+        and the cost lands here, on the consumer that needs the approving
+        role named.
+        """
+        for principal in self.principals:
+            if PrincipalRole.APPROVER in principal.roles:
+                return principal
+        raise OperationMemberAbsentError(
+            missing="principal carrying the APPROVER role",
+            stops=(
+                "the operation cannot state who may promote work into the "
+                "queue, so nothing can be dispatched"
+            ),
+        )
+
+    def assignee(self) -> Principal:
+        """The single principal prepared work is assigned to.
+
+        Refuses when no principal carries the role.  Its reader is the
+        reinstated pass path (KOD-60): a fire-prep pass that assigns
+        prepared fires, triage filings and decision flags calls this at
+        the point of assignment and refuses to run on the error, rather
+        than failing boot for an operation that never prepares fires.
+        Defined here because this model file has exactly one writer in the
+        lane (KOD-56 R3) and it is not the pass reinstatement.
+        """
+        for principal in self.principals:
+            if PrincipalRole.ASSIGNEE in principal.roles:
+                return principal
+        raise OperationMemberAbsentError(
+            missing="principal carrying the ASSIGNEE role",
+            stops=(
+                "prepared fires, triage filings and decision flags have "
+                "no target, so a pass that assigns them refuses to run"
+            ),
+        )
+
+    def team_keys(self) -> tuple[str, ...]:
+        """Every team key this operation declares, in declaration order.
+
+        The container boundary a dispatch scan is narrowed to and every
+        candidate is judged against.  Refuses when the config declares no
+        team: a workspace holds more than one operation's board, so an
+        unbounded scan is not "the whole operation" — it is somebody else's
+        work, reachable by an approval act this operation does not own.
+        """
+        if not self.teams:
+            raise OperationMemberAbsentError(
+                missing="teams entry",
+                stops=(
+                    "a dispatch scan has no container to be bounded by, so "
+                    "nothing distinguishes this operation's board from any "
+                    "other in the workspace and no issue can be selected"
+                ),
+            )
+        return tuple(self.teams)
+
+    def teams_bound_to(self, repo_url: str) -> tuple[str, ...]:
+        """Every team key bound to the repository at *repo_url*.
+
+        The binding rule, in one place.  An operation acting on ONE
+        repository binds every team to it implicitly — there is no second
+        candidate to choose between — and one acting on several binds
+        explicitly, with load refusing a team that named none.
+
+        An empty answer is legal and is a NAMED state: a repository no
+        team fires into gets no dispatch pass scheduled for it, rather
+        than a tick that scans nothing every interval forever.
+        """
+        implicit = len(self.repos) == 1 and self.repos[0].url == repo_url
+        return tuple(
+            key
+            for key, entry in self.teams.items()
+            if entry.repository == repo_url or (entry.repository is None and implicit)
+        )
+
+    def teams_scanned_by(self, repo_url: str) -> tuple[str, ...]:
+        """Every team key whose issues *repo_url*'s dispatch pass may claim.
+
+        The bound teams, plus — when the operation declares several
+        repositories — every UNBOUND team: an unbound board's issues are
+        partitioned between the repository passes by the repository
+        recorded on each staged issue, so every such pass scans the board
+        and the recorded-repository clause keeps the claims disjoint
+        (KOD-169).  With one repository there is no unbound team to add:
+        the single binding is implicit and total, and
+        :meth:`teams_bound_to` already answers with every team.
+        """
+        if len(self.repos) <= 1:
+            return self.teams_bound_to(repo_url)
+        bound = set(self.teams_bound_to(repo_url))
+        return tuple(
+            key
+            for key, entry in self.teams.items()
+            if key in bound or entry.repository is None
+        )
+
+    def team_keys_for_repo(self, repo_url: str) -> tuple[str, ...]:
+        """The container boundary a dispatch scan over *repo_url* is narrowed to.
+
+        :meth:`teams_scanned_by` under the refusal :meth:`team_keys`
+        carries, narrowed to one repository.  A pass whose repository no
+        team's issues can reach — neither by binding nor by a recorded
+        route — has no container to be bounded by, and composition builds
+        no such pass; one built any other way refuses here rather than
+        scanning.
+        """
+        scanned = self.teams_scanned_by(repo_url)
+        if not scanned:
+            raise OperationMemberAbsentError(
+                missing=f"teams entry scanned by {repo_url}",
+                stops=(
+                    "a dispatch scan has no container to be bounded by, so "
+                    "nothing distinguishes this operation's board from any "
+                    "other in the workspace and no issue can be selected"
+                ),
+            )
+        return scanned
+
+    def board_visibility(self, team_key: str | None) -> RepoVisibility:
+        """The visibility posture of the board *team_key* names — fail-closed.
+
+        ``PRIVATE`` only where a declared team says so.  Everything else is
+        ``PUBLIC``, and the cases are not equivalent to each other but they
+        are equivalent HERE: an issue carrying no team, a team this
+        operation does not declare, a team declaring no posture of its own.
+        ``PRIVATE`` is the value that exempts a payload from the outbound
+        gate, so an unresolved posture over-scrubs rather than publishing
+        what a private board holds (KOD-157).
+        """
+        entry = None if team_key is None else self.teams.get(team_key)
+        if entry is not None and entry.visibility is RepoVisibility.PRIVATE:
+            return RepoVisibility.PRIVATE
+        return RepoVisibility.PUBLIC
+
+
+#: Which class every declared field belongs to, and therefore what boot does
+#: with it.  A fixed partition in the MODEL rather than a per-field flag,
+#: because a flag makes ownership operator-editable data: an operator could
+#: mark ``principals`` ensurable and the adapter would try to create a user.
+#:
+#: ``documents`` is OWNED, as KOD-57 R2 ruled and amendment 3 deferred:
+#: :class:`DocumentEntry` now carries the declared ``name`` an ensure keys
+#: on, with the id ADOPTED rather than declared, so "create it if absent"
+#: has an implementation that leaves the config true.  A document in the
+#: KNOWLEDGE system is not this operation's to create and produces no ref;
+#: it declares its id at load instead, so nothing about it is silent.
+#:
+#: ``records`` stays EXTERNAL, and the writer the earlier ground denied now
+#: exists: the pass-mechanisms fragment rides every scheduled pass and tells
+#: each one to append its row to the declared run log.  EXTERNAL is what
+#: that writer needs, not what it refutes — a destination whose id another
+#: system assigned is resolved at boot, and one tracker-side is resolved
+#: exactly like a document, so a typo aborts naming the entry instead of
+#: failing inside an unattended session.  A KNOWLEDGE-side id is the arm no
+#: boot can check headlessly: this process holds no client for that store,
+#: so its guard is session REACHABILITY — a declared knowledge surface with
+#: the scheduled-pass grant absent refuses at the composition root.
+#:
+#: Totality over ``OperationConfig.model_fields`` is asserted by a test
+#: derived from ``model_fields``, never from a hand-written list.
+FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
+    "operation_name": ConfigOwnership.LOCAL,
+    "workspace": ConfigOwnership.EXTERNAL,
+    "principals": ConfigOwnership.EXTERNAL,
+    "agent_identities": ConfigOwnership.EXTERNAL,
+    "teams": ConfigOwnership.EXTERNAL,
+    "queue_states": ConfigOwnership.OWNED,
+    "workflow_states": ConfigOwnership.EXTERNAL,
+    "repos": ConfigOwnership.LOCAL,
+    "documents": ConfigOwnership.OWNED,
+    "records": ConfigOwnership.EXTERNAL,
+    "knowledge": ConfigOwnership.LOCAL,
+    "endpoints": ConfigOwnership.LOCAL,
+    "initiatives": ConfigOwnership.EXTERNAL,
+    "private_surface": ConfigOwnership.LOCAL,
+}

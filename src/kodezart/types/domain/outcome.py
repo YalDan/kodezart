@@ -15,7 +15,13 @@ from enum import StrEnum
 
 
 class WorkflowOutcome(StrEnum):
-    """Fourteen-way partition of the terminal routes reaching ``complete``.
+    """Sixteen-way partition of how a run ended.
+
+    Fourteen of the members classify a run that reached ``complete`` and
+    reported.  The last two classify a run that did NOT: they are
+    assigned at the queue boundary, where the failure is observed, and
+    ``classify_outcome`` never produces them — it classifies a
+    ``WorkflowState``, and neither of these runs has one to classify.
 
     ``criteria_infeasible`` is the pre-loop halt: the feasibility sweep
     exhausted its regeneration bound, so the run terminates BEFORE the
@@ -32,6 +38,14 @@ class WorkflowOutcome(StrEnum):
     which are consequently unreachable at any valid configuration.  They
     stay: a member is a wire contract and events already carry those
     values, so a consumer must still be able to parse what it has seen.
+
+    ``engine_error`` and ``shutdown_abandoned`` close the one gap the
+    other fourteen cannot: a terminal job record whose outcome is null
+    used to mean three different things — a run that ended before the
+    outcome was written, a run killed by a hard failure, and a run swept
+    up by shutdown — and a consumer reading absence read all three as
+    benign.  They are facts about the JOB, written where the job's fate
+    is known, and they never claim a classification of a run's state.
     """
 
     merge_divergent = "merge_divergent"
@@ -48,3 +62,5 @@ class WorkflowOutcome(StrEnum):
     stalled_pr_opened = "stalled_pr_opened"
     zero_commit_no_pr = "zero_commit_no_pr"
     remediation_budget_exhausted = "remediation_budget_exhausted"
+    engine_error = "engine_error"
+    shutdown_abandoned = "shutdown_abandoned"

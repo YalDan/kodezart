@@ -2,12 +2,14 @@
 
 import uuid
 from collections.abc import AsyncIterator
+from typing import Final
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
+from pydantic import ValidationError
 
 from kodezart.core.constants import (
     EVAL_PERMISSION_MODE,
@@ -16,6 +18,7 @@ from kodezart.core.constants import (
 )
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
@@ -24,7 +27,7 @@ from kodezart.core.protocols import (
     GitService,
     OutboundContentGate,
     PRCreator,
-    PromptProvider,
+    PromptSetProvider,
     QualityGate,
     RefPublisher,
     Remediator,
@@ -32,7 +35,13 @@ from kodezart.core.protocols import (
     RepoVisibilityResolver,
     TicketGenerator,
 )
-from kodezart.core.retry import should_retry
+from kodezart.core.redispatch import (
+    correction_notice,
+    correction_report,
+    until_conforming,
+    until_permutation,
+)
+from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import (
     flagged_items,
@@ -41,6 +50,7 @@ from kodezart.domain.accept_gate import (
 )
 from kodezart.domain.agent import best_iteration_ref, generate_ralph_branch_name
 from kodezart.domain.base_scope import scope_base
+from kodezart.domain.ci import ci_status_of
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
@@ -49,7 +59,13 @@ from kodezart.domain.criteria_feasibility import (
 )
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criteria_prompt import render_validation_findings
-from kodezart.domain.errors import OutboundContentBlockedError
+from kodezart.domain.errors import (
+    CriteriaFanInError,
+    ForgeAPIError,
+    TransientAPIError,
+    UngroundedVerdictError,
+)
+from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.pr_body import append_flagged_section
@@ -91,24 +107,41 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
     WorkflowVisibilityEvent,
 )
-from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
+    FanInReport,
     ValidatedCriterion,
 )
 from kodezart.types.domain.gating import (
-    GateVerdict,
+    ContentClass,
+    OutboundDestination,
     RepoVisibility,
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.workflow import (
     ExecutionContext,
     RemediationRequest,
     WorkflowState,
+)
+
+#: The refusals the criteria-validation guard answers with a re-dispatch.
+#:
+#: All three are refusals of a response the model can correct once it is
+#: told what was refused, and none is transient — the graph's retry
+#: predicate returns False for every one of them, which is why a node
+#: retry re-runs the session and then ends the run.
+CORRECTABLE_VALIDATION_BREACHES: Final[tuple[type[Exception], ...]] = (
+    ValidationError,
+    UngroundedVerdictError,
+    CriteriaFanInError,
 )
 
 
@@ -130,19 +163,21 @@ class RalphWorkflowEngine:
         git_remote: str,
         git: GitService,
         cache: RepoCache,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         skills: SkillsSelection,
         gate: OutboundContentGate,
         visibility_resolver: RepoVisibilityResolver | None = None,
         checkpointer: BaseCheckpointSaver[str] | None = None,
-        retry_max_attempts: int = 3,
-        retry_initial_interval: float = 1.0,
+        retry_max_attempts: int,
+        retry_initial_interval: float,
+        delay_floor_for: DelayFloor,
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
         ref_publisher: RefPublisher | None = None,
         remediator: Remediator | None = None,
-        remediation_max_rounds: int = 1,
-        criteria_max_regeneration_rounds: int = 1,
+        remediation_max_rounds: int,
+        criteria_max_regeneration_rounds: int,
+        fan_in_max_attempts: int,
         artifact_persister: ArtifactPersister | None = None,
     ) -> None:
         self._service: AgentRunner = service
@@ -156,7 +191,7 @@ class RalphWorkflowEngine:
         # query canonical SHAs without leaking shell into the workflow body.
         self._git: GitService = git
         self._cache: RepoCache = cache
-        self._prompts: PromptProvider = prompts
+        self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._gate: OutboundContentGate = gate
         self._visibility_resolver: RepoVisibilityResolver | None = visibility_resolver
@@ -166,12 +201,14 @@ class RalphWorkflowEngine:
         self._remediator: Remediator | None = remediator
         self._remediation_max_rounds: int = remediation_max_rounds
         self._criteria_max_regeneration_rounds: int = criteria_max_regeneration_rounds
+        self._fan_in_max_attempts: int = fan_in_max_attempts
         self._artifact_persister: ArtifactPersister | None = artifact_persister
         self._retry: RetryPolicy = RetryPolicy(
             max_attempts=retry_max_attempts,
             initial_interval=retry_initial_interval,
             retry_on=should_retry,
         )
+        self._floor: RetryFloor = RetryFloor(delay_floor_for)
         self._log: BoundLogger = get_logger(__name__)
         self._checkpointer: BaseCheckpointSaver[str] | None = checkpointer
         self._compiled = self._build_graph().compile(
@@ -238,6 +275,7 @@ class RalphWorkflowEngine:
         initial_state: WorkflowState = {
             "feature_branch": "",
             "ralph_branch": "",
+            "work_base_ref": base_spec.base_branch,
             "ticket": None,
             "acceptance_criteria": [],
             "criteria_artifact": None,
@@ -260,7 +298,7 @@ class RalphWorkflowEngine:
             "best_iteration_sha": None,
             "pr_url": None,
             "pr_number": None,
-            "ci_passed": None,
+            "ci_status": CIStatus.not_monitored,
             "ci_summary": None,
             "repo_url": resolved_url,
             "repo_visibility": RepoVisibility.UNKNOWN,
@@ -287,67 +325,67 @@ class RalphWorkflowEngine:
         )
         graph.add_node(
             "resolve_visibility",
-            self._resolve_visibility_node,
+            self._floor(self._resolve_visibility_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "generate_branch",
-            self._generate_branch_node,
+            self._floor(self._generate_branch_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "generate_ticket",
-            self._generate_ticket_node,
+            self._floor(self._generate_ticket_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "generate_criteria",
-            self._generate_criteria_node,
+            self._floor(self._generate_criteria_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "validate_criteria",
-            self._validate_criteria_node,
+            self._floor(self._validate_criteria_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "run_ralph_loop",
-            self._run_ralph_loop_node,
+            self._floor(self._run_ralph_loop_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "merge_to_feature",
-            self._merge_to_feature_node,
+            self._floor(self._merge_to_feature_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "land_best_iteration",
-            self._land_best_iteration_node,
+            self._floor(self._land_best_iteration_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "review_against_ticket",
-            self._review_against_ticket_node,
+            self._floor(self._review_against_ticket_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "remediate",
-            self._remediate_node,
+            self._floor(self._remediate_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "open_pr",
-            self._open_pr_node,
+            self._floor(self._open_pr_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "monitor_ci",
-            self._monitor_ci_node,
+            self._floor(self._monitor_ci_node),
             retry_policy=self._retry,
         )
         graph.add_node(
             "comment_failure",
-            self._comment_failure_node,
+            self._floor(self._comment_failure_node),
             retry_policy=self._retry,
         )
         graph.add_node("complete", self._complete_node)
@@ -355,12 +393,12 @@ class RalphWorkflowEngine:
         if self._artifact_persister is not None:
             graph.add_node(
                 "persist_ticket",
-                self._persist_ticket_node,
+                self._floor(self._persist_ticket_node),
                 retry_policy=self._retry,
             )
             graph.add_node(
                 "persist_artifacts",
-                self._persist_artifacts_node,
+                self._floor(self._persist_artifacts_node),
                 retry_policy=self._retry,
             )
 
@@ -468,15 +506,19 @@ class RalphWorkflowEngine:
         # Stated once, before any surface compares anything against it.
         writer(
             WorkflowScopeBaseEvent(
-                base_ref=ctx.base_spec.base_ref,
-                role=ctx.base_spec.role,
+                base_branch=ctx.base_spec.base_branch,
+                base_role=ctx.base_spec.base_role,
                 inputs=list(ctx.base_spec.inputs),
             )
         )
         await self._log.ainfo(
             "scope_base_resolved",
-            base_ref=ctx.base_spec.base_ref,
-            role=ctx.base_spec.role.value,
+            base_branch=ctx.base_spec.base_branch,
+            base_role=(
+                None
+                if ctx.base_spec.base_role is None
+                else ctx.base_spec.base_role.value
+            ),
             input_count=len(ctx.base_spec.inputs),
         )
         return {"repo_visibility": visibility}
@@ -487,29 +529,19 @@ class RalphWorkflowEngine:
         content: str,
         visibility: RepoVisibility,
         shape: WriterShape,
-        writer_name: str,
+        destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> str:
-        """Route one outbound payload through the gate. BLOCKED raises."""
-        decision = self._gate.gate(
+        """Route one outbound payload through the one gated-write path."""
+        return await gated_write(
+            gate=self._gate,
+            log=self._log,
             content=content,
             visibility=visibility,
             shape=shape,
+            destination=destination,
+            content_class=content_class,
         )
-        await self._log.ainfo(
-            "outbound_content_gated",
-            writer=writer_name,
-            verdict=decision.verdict.value,
-            visibility=visibility.value,
-            categories=[c.value for c in decision.categories],
-        )
-        if decision.verdict is GateVerdict.BLOCKED:
-            msg = "Outbound content blocked before write"
-            raise OutboundContentBlockedError(
-                msg,
-                writer=writer_name,
-                categories=[c.value for c in decision.categories],
-            )
-        return decision.content
 
     async def _generate_branch_node(
         self,
@@ -528,7 +560,11 @@ class RalphWorkflowEngine:
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.BRANCH_NAME, self._skills
+                ),
+                session_type=SessionType.TICKET_FIRE,
+                session_policy=self._prompts.session_policy(PromptKey.BRANCH_NAME),
                 output_format={
                     "type": "json_schema",
                     "schema": BRANCH_NAME_SCHEMA,
@@ -548,11 +584,14 @@ class RalphWorkflowEngine:
             )
 
         output = BranchNameOutput.model_validate(result_event.structured_output)
+        # AUTHORED: a model's summary of the raw task text. BRANCH_NAME is a
+        # mandatory destination, so the class does not change the routing.
         slug = await self._gated(
             content=output.slug,
             visibility=state["repo_visibility"],
             shape=WriterShape.IDENTIFIER,
-            writer_name="branch_name",
+            destination=OutboundDestination.BRANCH_NAME,
+            content_class=ContentClass.AUTHORED,
         )
         feature_branch = f"kodezart/{slug}-{uuid.uuid4().hex[:8]}"
         ralph_branch = generate_ralph_branch_name(feature_branch)
@@ -616,7 +655,15 @@ class RalphWorkflowEngine:
                 branch=ctx.base_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=EVAL_TOOLS_WITH_AGENT,
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.ACCEPTANCE_CRITERIA, self._skills
+                ),
+                session_type=SessionType.TICKET_FIRE,
+                # Generative: the set's lenses are dispatchable from here.
+                agents=self._prompts.definitions(),
+                session_policy=self._prompts.session_policy(
+                    PromptKey.ACCEPTANCE_CRITERIA,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": GENERATED_CRITERIA_SCHEMA,
@@ -657,9 +704,18 @@ class RalphWorkflowEngine:
         """Sweep the generated criteria for feasibility against the base ref.
 
         The refuter reports a verdict per criterion with its evidence;
-        :func:`sweep` reconciles the report against the dispatched ids.
-        A set that still demands regeneration once the bound is spent halts
-        the run here — before the loop, with the sweep as its report.
+        :func:`sweep` reconciles the report against the dispatched ids and
+        grounds every stated verdict in the evidence beside it.  A set that
+        still demands regeneration once the regeneration bound is spent
+        halts the run here — before the loop, with the sweep as its report.
+
+        The whole sweep is inside the re-dispatch guard, so a refusal it
+        raises is answerable rather than fatal: the session is told what
+        was refused and asked again under the same bound.  A refusal still
+        standing when the bound is spent ends the run on that refusal.
+        This channel has no fail-closed arm and none is invented here — a
+        feasibility verdict nothing derived is exactly what the sweep
+        refuses, so the refusal is what reaches the wire.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -675,37 +731,58 @@ class RalphWorkflowEngine:
             },
         )
 
-        result_event, rate_limit_rejected = await drain(
-            self._service.stream(
-                prompt=prompt,
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                branch=ctx.base_branch,
-                permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS,
-                skills=self._skills,
-                output_format={
-                    "type": "json_schema",
-                    "schema": CRITERIA_VALIDATION_SCHEMA,
-                },
-                cache_key=ctx.cache_key,
-            ),
-            site="criteria_validation",
-        )
-
-        if result_event is None or result_event.structured_output is None:
-            msg = "Agent did not produce structured output for criteria validation"
-            raise soft_failure(
-                msg,
-                raise_site="criteria_validation",
-                result_event=result_event,
-                rate_limit_rejected=rate_limit_rejected,
+        async def validate(breach: Exception | None) -> CriteriaValidationOutput:
+            notice = None if breach is None else correction_notice(breach)
+            result_event, rate_limit_rejected = await drain(
+                self._service.stream(
+                    prompt=prompt if notice is None else f"{prompt}\n\n{notice}",
+                    repo_path=ctx.repo_path,
+                    repo_url=ctx.repo_url,
+                    branch=ctx.base_branch,
+                    permission_mode=EVAL_PERMISSION_MODE,
+                    allowed_tools=EVAL_TOOLS,
+                    skills=self._prompts.session_skills(
+                        PromptKey.CRITERIA_VALIDATION, self._skills
+                    ),
+                    session_type=SessionType.TICKET_FIRE,
+                    agents=NO_SUBAGENTS,
+                    session_policy=self._prompts.session_policy(
+                        PromptKey.CRITERIA_VALIDATION,
+                    ),
+                    output_format={
+                        "type": "json_schema",
+                        "schema": CRITERIA_VALIDATION_SCHEMA,
+                    },
+                    cache_key=ctx.cache_key,
+                ),
+                site="criteria_validation",
             )
 
-        validation = sweep(
-            criteria,
-            CriteriaValidationOutput.model_validate(result_event.structured_output),
+            if result_event is None or result_event.structured_output is None:
+                msg = "Agent did not produce structured output for criteria validation"
+                raise soft_failure(
+                    msg,
+                    raise_site="criteria_validation",
+                    result_event=result_event,
+                    rate_limit_rejected=rate_limit_rejected,
+                )
+
+            return CriteriaValidationOutput.model_validate(
+                result_event.structured_output,
+            )
+
+        redispatched = await until_conforming(
+            dispatch=validate,
+            check=lambda candidate: sweep(criteria, candidate),
+            correctable=CORRECTABLE_VALIDATION_BREACHES,
+            max_attempts=self._fan_in_max_attempts,
+            site="criteria_validation",
+            log=self._log,
         )
+        if redispatched.unresolved is not None:
+            raise redispatched.unresolved
+        validation = sweep(criteria, redispatched.output)
+        correction = correction_report(redispatched)
         targets = regeneration_targets(validation)
         rounds_used = state["criteria_regeneration_rounds"]
         bound_exhausted = (
@@ -717,8 +794,16 @@ class RalphWorkflowEngine:
                 regeneration_round=rounds_used,
                 validation=validation,
                 regeneration_targets=list(targets),
+                correction=correction,
             )
         )
+        if correction is not None:
+            await self._log.awarning(
+                "criteria_contract_correction",
+                site="criteria_validation",
+                attempts=correction.attempts,
+                breach_classes=[b.breach_class for b in correction.breaches],
+            )
         await self._log.ainfo(
             "criteria_sweep_complete",
             regeneration_round=rounds_used,
@@ -758,6 +843,7 @@ class RalphWorkflowEngine:
         feature_branch: str,
         ralph_branch: str,
         base_spec: BaseSpec,
+        work_base_ref: str,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -774,6 +860,7 @@ class RalphWorkflowEngine:
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
             base_spec=base_spec,
+            work_base_ref=work_base_ref,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
@@ -795,7 +882,12 @@ class RalphWorkflowEngine:
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Delegate to the quality gate for iterative execution."""
+        """Delegate to the quality gate for iterative execution.
+
+        The round's ticket and the ref its branch is cut from arrive the
+        same way — off the state a remediation round wrote — so a round
+        implementing a fix is built on the tree that fix is about.
+        """
         ctx = ExecutionContext.from_configurable(config)
 
         ticket = current_ticket(state)
@@ -811,6 +903,7 @@ class RalphWorkflowEngine:
             feature_branch=state["feature_branch"],
             ralph_branch=state["ralph_branch"],
             base_spec=ctx.base_spec,
+            work_base_ref=state["work_base_ref"],
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=validated_criteria(state),
@@ -867,13 +960,14 @@ class RalphWorkflowEngine:
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             branch=state["ralph_branch"],
-            base_branch=ctx.base_branch,
+            base_branch=state["work_base_ref"],
             artifacts={
                 "ticket.json": await self._gated(
                     content=ticket.model_dump_json(indent=2, by_alias=True),
                     visibility=state["repo_visibility"],
                     shape=WriterShape.PROSE,
-                    writer_name="artifact_ticket_json",
+                    destination=OutboundDestination.ARTIFACT_TICKET_JSON,
+                    content_class=ContentClass.AUTHORED,
                 ),
             },
             cache_key=ctx.cache_key,
@@ -897,6 +991,11 @@ class RalphWorkflowEngine:
         the write that reaches the branch after that happens.  A branch
         carrying the original ticket while the loop implements the
         remediation one would be a document that contradicts the work.
+
+        This node CREATES the round's ralph branch when it runs, before
+        the loop's first iteration ever asks for it, so it cuts from the
+        run's work base for the same reason the loop does — a branch cut
+        here from anywhere else is the base the loop would inherit.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -909,18 +1008,22 @@ class RalphWorkflowEngine:
 
         criteria_artifact = validated_artifact(state)
 
+        # AUTHORED, both: a JSON container does not make its leaves derived,
+        # and every leaf here was written by the model.
         artifacts: dict[str, str] = {
             "ticket.json": await self._gated(
                 content=ticket.model_dump_json(indent=2, by_alias=True),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="artifact_ticket_json",
+                destination=OutboundDestination.ARTIFACT_TICKET_JSON,
+                content_class=ContentClass.AUTHORED,
             ),
             "criteria.json": await self._gated(
                 content=criteria_artifact.model_dump_json(indent=2, by_alias=True),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="artifact_criteria_json",
+                destination=OutboundDestination.ARTIFACT_CRITERIA_JSON,
+                content_class=ContentClass.AUTHORED,
             ),
         }
 
@@ -928,7 +1031,7 @@ class RalphWorkflowEngine:
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             branch=state["ralph_branch"],
-            base_branch=ctx.base_branch,
+            base_branch=state["work_base_ref"],
             artifacts=artifacts,
             cache_key=ctx.cache_key,
         )
@@ -956,6 +1059,11 @@ class RalphWorkflowEngine:
         outcome.  Never catches exceptions around the merger — the merger
         is a total function over the four statuses.  ``SOURCE_MISSING`` is
         a programming error (the loop must have pushed) and raises.
+
+        This is the ONLY writer of ``work_base_ref``, and it writes it on
+        exactly the two statuses that put work on the feature branch.
+        Every other arm omits the key, leaving the ref a later round
+        stands on where the last integration left it.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -1034,6 +1142,7 @@ class RalphWorkflowEngine:
             "feature_tip_sha": outcome.feature_tip_sha,
             "review_base_sha": base_tip,
             "review_head_sha": outcome.feature_tip_sha,
+            "work_base_ref": state["feature_branch"],
         }
 
     def _route_after_merge(self, state: WorkflowState) -> str:
@@ -1143,7 +1252,8 @@ class RalphWorkflowEngine:
                 content=stall_pr_title(ticket.title),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="stall_pr_title",
+                destination=OutboundDestination.PR_TITLE,
+                content_class=ContentClass.AUTHORED,
             ),
             body=await self._gated(
                 content=stall_pr_body(
@@ -1153,7 +1263,8 @@ class RalphWorkflowEngine:
                 ),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="stall_pr_body",
+                destination=OutboundDestination.PR_BODY,
+                content_class=ContentClass.AUTHORED,
             ),
             head=head,
             base=ctx.base_branch,
@@ -1164,6 +1275,10 @@ class RalphWorkflowEngine:
                 pr_number=pr_number,
                 feature_branch=head,
                 base_branch=ctx.base_branch,
+                feature_tip_sha=outcome.feature_tip_sha if integrated else best_sha,
+                # The acceptance gate rejected this branch: the pull request
+                # asks a human to read a stall, it does not deliver the issue.
+                delivered=False,
             )
         )
         await self._log.ainfo(
@@ -1217,40 +1332,70 @@ class RalphWorkflowEngine:
             },
         )
 
-        result_event, rate_limit_rejected = await drain(
-            self._service.stream(
-                prompt=prompt,
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                branch=state["feature_branch"],
-                permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS,
-                skills=self._skills,
-                output_format={
-                    "type": "json_schema",
-                    "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-                },
-                cache_key=ctx.cache_key,
-            ),
-            site="post_merge_review",
-        )
-
-        if result_event is None or result_event.structured_output is None:
-            msg = "Agent did not produce structured output for review"
-            raise soft_failure(
-                msg,
-                raise_site="post_merge_review",
-                result_event=result_event,
-                rate_limit_rejected=rate_limit_rejected,
+        async def review() -> AcceptanceCriteriaOutput:
+            result_event, rate_limit_rejected = await drain(
+                self._service.stream(
+                    prompt=prompt,
+                    repo_path=ctx.repo_path,
+                    repo_url=ctx.repo_url,
+                    branch=state["feature_branch"],
+                    permission_mode=EVAL_PERMISSION_MODE,
+                    allowed_tools=EVAL_TOOLS,
+                    skills=self._prompts.session_skills(
+                        PromptKey.POST_MERGE_REVIEW, self._skills
+                    ),
+                    session_type=SessionType.TICKET_FIRE,
+                    agents=NO_SUBAGENTS,
+                    session_policy=self._prompts.session_policy(
+                        PromptKey.POST_MERGE_REVIEW,
+                    ),
+                    output_format={
+                        "type": "json_schema",
+                        "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                    },
+                    cache_key=ctx.cache_key,
+                ),
+                site="post_merge_review",
             )
 
-        grade = grade_iteration(
-            validated_criteria(state),
-            AcceptanceCriteriaOutput.model_validate(result_event.structured_output),
+            if result_event is None or result_event.structured_output is None:
+                msg = "Agent did not produce structured output for review"
+                raise soft_failure(
+                    msg,
+                    raise_site="post_merge_review",
+                    result_event=result_event,
+                    rate_limit_rejected=rate_limit_rejected,
+                )
+
+            return AcceptanceCriteriaOutput.model_validate(
+                result_event.structured_output,
+            )
+
+        criteria = validated_criteria(state)
+        output, unresolved, attempts = await until_permutation(
+            dispatch=review,
+            check=lambda candidate: require_permutation(
+                grade_iteration(criteria, candidate),
+            ),
+            max_attempts=self._fan_in_max_attempts,
+            site="post_merge_review",
+            log=self._log,
         )
-        if grade.missing_ids or grade.unknown_ids or grade.duplicate_ids:
+        grade = grade_iteration(criteria, output)
+        fan_in: FanInReport | None = None
+        if unresolved is not None:
+            # Same guard, same exhaustion arm as the loop's evaluator —
+            # a separate call site, so it is wired and asserted separately
+            # rather than assumed to inherit anything.
+            fan_in = fan_in_report(grade, attempts=attempts)
             await self._log.awarning(
-                "review_result_reconciliation",
+                "fan_in_exhausted",
+                site="post_merge_review",
+                # No loop here, which is a STATE of this event and not a
+                # field to leave out: one event name reaching a reader in
+                # two shapes is two events wearing one name.
+                iteration=None,
+                attempts=attempts,
                 dispatched_count=grade.dispatched_count,
                 missing_ids=grade.missing_ids,
                 unknown_ids=grade.unknown_ids,
@@ -1268,7 +1413,8 @@ class RalphWorkflowEngine:
             WorkflowReviewEvent(
                 passed=passed,
                 evaluation=AcceptanceCriteriaOutput(criteria_results=grade.results),
-                fix_round=state["remediation_rounds_used"],
+                fix_rounds_used=state["remediation_rounds_used"],
+                fan_in=fan_in,
             )
         )
 
@@ -1339,6 +1485,11 @@ class RalphWorkflowEngine:
         and the validation gate that already exist, which is what keeps
         the gate un-bypassable: there is no second criteria path to
         remember to route through.
+
+        ``work_base_ref`` is READ, never derived: the request states the
+        ref the round's loop will actually be cut from, because it is the
+        same value the loop node reads, and the drafting session reads
+        the repository at that ref.
         """
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
@@ -1349,7 +1500,7 @@ class RalphWorkflowEngine:
             raise RuntimeError(msg)
 
         entry = self._remediation_entry(state)
-        work_base_ref = self._remediation_base_ref(state, entry)
+        work_base_ref = state["work_base_ref"]
         request = RemediationRequest(
             entry=entry,
             round_index=state["remediation_rounds_used"],
@@ -1410,27 +1561,11 @@ class RalphWorkflowEngine:
         the same reason the terminal outcome is computed rather than
         judged from routing provenance.
         """
-        if state["ci_passed"] is False:
+        if state["ci_status"] is CIStatus.failed:
             return RemediationEntry.ci_failure
         if state["merged"] and state["review_passed"] is False:
             return RemediationEntry.review_failure
         return RemediationEntry.loop_not_accepted
-
-    def _remediation_base_ref(
-        self,
-        state: WorkflowState,
-        entry: RemediationEntry,
-    ) -> str:
-        """The ref the round's loop is built on top of.
-
-        The CI and review entries have their work consolidated onto the
-        feature branch already.  The loop entry does not — its feature
-        branch was never fast-forwarded — so the round builds on the ref
-        carrying the run's best iteration instead.
-        """
-        if entry is RemediationEntry.loop_not_accepted:
-            return best_iteration_ref(state["feature_branch"])
-        return state["feature_branch"]
 
     def _failure_evidence(
         self,
@@ -1467,21 +1602,22 @@ class RalphWorkflowEngine:
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
-        if self._pr_creator is None:
-            await self._log.awarning("pr_creator_not_configured")
-            return {"pr_url": None, "pr_number": None}
+        pr_creator = self._pr_creator
+        if pr_creator is None:
+            msg = "open_pr requires pr_creator but self._pr_creator is None"
+            raise RuntimeError(msg)
 
         repo_url = ctx.repo_url
         if repo_url is None:
             msg = "open_pr requires repo_url but ctx.repo_url is None"
             raise RuntimeError(msg)
 
-        pr_creator = self._pr_creator
-        if pr_creator is None:
-            msg = "open_pr requires pr_creator but self._pr_creator is None"
-            raise RuntimeError(msg)
-
         ticket = current_ticket(state)
+
+        feature_tip_sha = state["feature_tip_sha"]
+        if feature_tip_sha is None:
+            msg = "open_pr requires feature_tip_sha to be set."
+            raise RuntimeError(msg)
 
         if self._artifact_persister is not None:
             await self._artifact_persister.clean(
@@ -1506,7 +1642,13 @@ class RalphWorkflowEngine:
                 repo_url=ctx.repo_url,
                 permission_mode=EVAL_PERMISSION_MODE,
                 allowed_tools=[],
-                skills=self._skills,
+                skills=self._prompts.session_skills(
+                    PromptKey.PR_DESCRIPTION, self._skills
+                ),
+                session_type=SessionType.TICKET_FIRE,
+                session_policy=self._prompts.session_policy(
+                    PromptKey.PR_DESCRIPTION,
+                ),
                 output_format={
                     "type": "json_schema",
                     "schema": PR_DESCRIPTION_SCHEMA,
@@ -1535,7 +1677,8 @@ class RalphWorkflowEngine:
                 content=pr_output.title,
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="pr_title",
+                destination=OutboundDestination.PR_TITLE,
+                content_class=ContentClass.AUTHORED,
             ),
             body=await self._gated(
                 content=append_flagged_section(
@@ -1544,7 +1687,8 @@ class RalphWorkflowEngine:
                 ),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
-                writer_name="pr_body",
+                destination=OutboundDestination.PR_BODY,
+                content_class=ContentClass.AUTHORED,
             ),
             head=state["feature_branch"],
             base=ctx.base_branch,
@@ -1556,6 +1700,9 @@ class RalphWorkflowEngine:
                 pr_number=pr_number,
                 feature_branch=state["feature_branch"],
                 base_branch=ctx.base_branch,
+                feature_tip_sha=feature_tip_sha,
+                # The accepted path: this branch is what the run delivered.
+                delivered=True,
             )
         )
 
@@ -1585,22 +1732,21 @@ class RalphWorkflowEngine:
             repo_url=repo_url,
             ref=ref,
         )
+        ci_status = ci_status_of(passed)
 
         writer(
             WorkflowCIEvent(
-                passed=passed,
+                ci_status=ci_status,
                 summary=summary,
                 ref=ref,
             )
         )
 
-        return {"ci_passed": passed, "ci_summary": summary}
+        return {"ci_status": ci_status, "ci_summary": summary}
 
     def _route_after_ci(self, state: WorkflowState) -> str:
         """Route based on CI result, fix budget, and adapter preconditions."""
-        if state["ci_passed"] is True:
-            return "complete"
-        if state["ci_passed"] is None:
+        if state["ci_status"] is not CIStatus.failed:
             return "complete"
         if self._rounds_remain(state):
             return "remediate"
@@ -1618,7 +1764,17 @@ class RalphWorkflowEngine:
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Post a comment on the PR about exhausted fix budget."""
+        """Post a comment on the PR about exhausted fix budget.
+
+        A forge refusal on this last write is LOGGED and the run continues
+        to its terminal event: the comment reports a failure the terminal
+        event also reports, so crashing here would lose the whole outcome
+        in order to report that one line of it did not post.  The
+        containment is exactly the forge taxonomy — ``ForgeAPIError`` and
+        ``TransientAPIError`` — and every other exception propagates,
+        because a defect in this node is not a forge refusal and must not
+        be filed as one.
+        """
         ctx = ExecutionContext.from_configurable(config)
 
         pr_creator = self._pr_creator
@@ -1648,11 +1804,15 @@ class RalphWorkflowEngine:
         if state["ci_summary"] is not None:
             comment_parts.append(f"\n### CI Summary\n{state['ci_summary']}\n")
 
+        # AUTHORED: the counters above are derived, but review_feedback is
+        # the evaluator's own reasoning per failed criterion. One authored
+        # part makes the assembled body authored.
         comment_body = await self._gated(
             content="".join(comment_parts),
             visibility=state["repo_visibility"],
             shape=WriterShape.PROSE,
-            writer_name="pr_comment",
+            destination=OutboundDestination.PR_COMMENT,
+            content_class=ContentClass.AUTHORED,
         )
 
         try:
@@ -1661,10 +1821,11 @@ class RalphWorkflowEngine:
                 pr_number=pr_number,
                 body=comment_body,
             )
-        except Exception as exc:
+        except (ForgeAPIError, TransientAPIError) as exc:
             await self._log.aerror(
                 "comment_failure_failed",
                 error=str(exc),
+                error_kind=type(exc).__name__,
             )
 
         return {}
@@ -1686,10 +1847,10 @@ class RalphWorkflowEngine:
                 outcome=classify_outcome(state),
                 merged=state["merged"],
                 final_commit_sha=state["feature_tip_sha"],
-                error=state["merge_error"],
+                merge_error=state["merge_error"],
                 pr_url=state["pr_url"],
                 pr_number=state["pr_number"],
-                ci_passed=state["ci_passed"],
+                ci_status=state["ci_status"],
                 trajectory=state["trajectory"],
                 criteria_validation=state["criteria_validation"],
             )

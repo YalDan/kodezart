@@ -14,13 +14,15 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
-    PromptProvider,
+    PromptSetProvider,
     RepoCache,
 )
-from kodezart.core.retry import should_retry
+from kodezart.core.redispatch import until_permutation
+from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
@@ -32,11 +34,13 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import BaseSpec
-from kodezart.types.domain.criteria import ValidatedCriterion
+from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.trajectory import IterationRecord
 from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
 
@@ -55,28 +59,32 @@ class RalphLoop:
         plateau_window: int,
         git: GitService,
         cache: RepoCache,
-        prompts: PromptProvider,
+        prompts: PromptSetProvider,
         skills: SkillsSelection,
         checkpointer: BaseCheckpointSaver[str] | None = None,
-        retry_max_attempts: int = 3,
-        retry_initial_interval: float = 1.0,
+        retry_max_attempts: int,
+        retry_initial_interval: float,
+        delay_floor_for: DelayFloor,
+        fan_in_max_attempts: int,
     ) -> None:
         self._service = service
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
+        self._fan_in_max_attempts = fan_in_max_attempts
         # git/cache are injected solely so _evaluate_node can pre-compute
         # the ChangesetDigest passed to evaluation.build_prompt — the loop
         # does NOT take on canonical-tip bookkeeping (the outer engine's
         # merger does that internally).
         self._git: GitService = git
         self._cache: RepoCache = cache
-        self._prompts: PromptProvider = prompts
+        self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._retry = RetryPolicy(
             max_attempts=retry_max_attempts,
             initial_interval=retry_initial_interval,
             retry_on=should_retry,
         )
+        self._floor: RetryFloor = RetryFloor(delay_floor_for)
         self._log: BoundLogger = get_logger(__name__)
         self._checkpointer = checkpointer
         self._compiled = self._build_graph().compile(
@@ -92,6 +100,7 @@ class RalphLoop:
         feature_branch: str,
         ralph_branch: str,
         base_spec: BaseSpec,
+        work_base_ref: str,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -113,6 +122,7 @@ class RalphLoop:
             allowed_tools=allowed_tools,
             feature_branch=feature_branch,
             ralph_branch=ralph_branch,
+            work_base_ref=work_base_ref,
             acceptance_criteria=acceptance_criteria,
             repo_visibility=repo_visibility,
         )
@@ -157,8 +167,16 @@ class RalphLoop:
         graph: StateGraph[RalphLoopState, None, RalphLoopState, RalphLoopState] = (
             StateGraph(RalphLoopState)
         )
-        graph.add_node("execute", self._execute_node, retry_policy=self._retry)
-        graph.add_node("evaluate", self._evaluate_node, retry_policy=self._retry)
+        graph.add_node(
+            "execute",
+            self._floor(self._execute_node),
+            retry_policy=self._retry,
+        )
+        graph.add_node(
+            "evaluate",
+            self._floor(self._evaluate_node),
+            retry_policy=self._retry,
+        )
         graph.add_edge(START, "execute")
         graph.add_edge("execute", "evaluate")
         graph.add_conditional_edges(
@@ -192,12 +210,14 @@ class RalphLoop:
             prompt=prompt,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
-            base_branch=(ctx.base_branch if is_first else ctx.ralph_branch),
+            base_branch=(ctx.work_base_ref if is_first else ctx.ralph_branch),
             branch_name=ctx.feature_branch,
             ralph_branch=ctx.ralph_branch,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            skills=self._skills,
+            skills=self._prompts.session_skills(PromptKey.IMPLEMENTATION, self._skills),
+            session_type=SessionType.TICKET_FIRE,
+            session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
             create_branch=is_first,
             cache_key=ctx.cache_key,
@@ -238,41 +258,70 @@ class RalphLoop:
             },
         )
 
-        result_event, rate_limit_rejected = await drain(
-            self._service.stream(
-                prompt=eval_prompt,
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                branch=ctx.ralph_branch,
-                permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS,
-                skills=self._skills,
-                output_format={
-                    "type": "json_schema",
-                    "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-                },
-                cache_key=ctx.cache_key,
-            ),
-            site="ralph_evaluator",
-        )
-
-        if result_event is None or result_event.structured_output is None:
-            msg = "Evaluator produced no structured output."
-            raise soft_failure(
-                msg,
-                raise_site="ralph_evaluator",
-                result_event=result_event,
-                rate_limit_rejected=rate_limit_rejected,
+        async def evaluate() -> AcceptanceCriteriaOutput:
+            result_event, rate_limit_rejected = await drain(
+                self._service.stream(
+                    prompt=eval_prompt,
+                    repo_path=ctx.repo_path,
+                    repo_url=ctx.repo_url,
+                    branch=ctx.ralph_branch,
+                    permission_mode=EVAL_PERMISSION_MODE,
+                    allowed_tools=EVAL_TOOLS,
+                    skills=self._prompts.session_skills(
+                        PromptKey.EVALUATION, self._skills
+                    ),
+                    session_type=SessionType.TICKET_FIRE,
+                    # Evaluative: no lens is dispatched from here. Asking a
+                    # template not to fan out is a request; an empty
+                    # definition list is a guarantee.
+                    agents=NO_SUBAGENTS,
+                    session_policy=self._prompts.session_policy(
+                        PromptKey.EVALUATION,
+                    ),
+                    output_format={
+                        "type": "json_schema",
+                        "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                    },
+                    cache_key=ctx.cache_key,
+                ),
+                site="ralph_evaluator",
             )
 
-        output = AcceptanceCriteriaOutput.model_validate(
-            result_event.structured_output,
+            if result_event is None or result_event.structured_output is None:
+                msg = "Evaluator produced no structured output."
+                raise soft_failure(
+                    msg,
+                    raise_site="ralph_evaluator",
+                    result_event=result_event,
+                    rate_limit_rejected=rate_limit_rejected,
+                )
+
+            return AcceptanceCriteriaOutput.model_validate(
+                result_event.structured_output,
+            )
+
+        output, unresolved, attempts = await until_permutation(
+            dispatch=evaluate,
+            check=lambda candidate: require_permutation(
+                grade_iteration(ctx.acceptance_criteria, candidate),
+            ),
+            max_attempts=self._fan_in_max_attempts,
+            site="ralph_evaluator",
+            log=self._log,
         )
         grade = grade_iteration(ctx.acceptance_criteria, output)
-        if grade.missing_ids or grade.unknown_ids or grade.duplicate_ids:
+        fan_in: FanInReport | None = None
+        if unresolved is not None:
+            # The bound is spent: grade what came back against the
+            # DISPATCHED set anyway — a missing id fails and the
+            # denominator stands — and put the holes on the wire so the
+            # fail-closed verdict is legible as one.
+            fan_in = fan_in_report(grade, attempts=attempts)
             await self._log.awarning(
-                "evaluator_result_reconciliation",
+                "fan_in_exhausted",
+                site="ralph_evaluator",
                 iteration=state["iteration"],
+                attempts=attempts,
                 dispatched_count=grade.dispatched_count,
                 missing_ids=grade.missing_ids,
                 unknown_ids=grade.unknown_ids,
@@ -302,6 +351,7 @@ class RalphLoop:
                 verdict=verdict,
                 evaluation=reconciled,
                 trajectory=trajectory,
+                fan_in=fan_in,
             )
         )
         if (

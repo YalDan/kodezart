@@ -15,7 +15,7 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
     WorkflowVisibilityEvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import (
     RedactionCategory,
     RepoVisibility,
@@ -38,6 +38,7 @@ from tests.fakes import (
     PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -52,6 +53,7 @@ def make_engine(
 ) -> RalphWorkflowEngine:
     """Build a workflow engine wired to fakes, with a real gate."""
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor or FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -76,6 +78,12 @@ def make_engine(
         pr_creator=pr_creator,
         ci_monitor=ci_monitor,
         artifact_persister=artifact_persister,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -195,9 +203,15 @@ async def test_every_workflow_writer_routes_through_the_gate() -> None:
     seen: list[str] = []
 
     class RecordingGate(PassThroughGate):
-        def gate(self, *, content, visibility, shape):
+        async def gate(self, *, content, visibility, shape, destination, content_class):
             seen.append(content)
-            return super().gate(content=content, visibility=visibility, shape=shape)
+            return await super().gate(
+                content=content,
+                visibility=visibility,
+                shape=shape,
+                destination=destination,
+                content_class=content_class,
+            )
 
     engine = make_engine(
         gate=RecordingGate(),

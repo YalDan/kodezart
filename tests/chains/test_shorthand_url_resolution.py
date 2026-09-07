@@ -22,7 +22,7 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     WorkflowCompleteEvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
@@ -36,6 +36,7 @@ from tests.fakes import (
     PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -70,6 +71,12 @@ def _make_engine(
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=None,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 

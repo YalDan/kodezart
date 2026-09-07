@@ -1,7 +1,7 @@
 """Agent service — orchestrates agent execution as SSE event streams."""
 
 import sys
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
@@ -11,7 +11,14 @@ from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 
 
 class AgentService:
@@ -24,8 +31,8 @@ class AgentService:
         self,
         executor: AgentExecutor,
         workspace: WorkspaceProvider,
+        git_base_url: str,
         persister: ChangePersister | None = None,
-        git_base_url: str = "https://github.com",
     ) -> None:
         self._executor: AgentExecutor = executor
         self._workspace: WorkspaceProvider = workspace
@@ -43,6 +50,9 @@ class AgentService:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
@@ -62,6 +72,9 @@ class AgentService:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             skills=skills,
+            session_type=session_type,
+            agents=agents,
+            session_policy=session_policy,
             session_id=session_id,
             output_format=output_format,
             cache_key=cache_key,
@@ -76,6 +89,9 @@ class AgentService:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -86,6 +102,9 @@ class AgentService:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             skills=skills,
+            session_type=session_type,
+            agents=agents,
+            session_policy=session_policy,
             session_id=session_id,
             output_format=output_format,
         ):
@@ -103,7 +122,10 @@ class AgentService:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
         visibility: RepoVisibility,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -120,6 +142,9 @@ class AgentService:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             skills=skills,
+            session_type=session_type,
+            agents=agents,
+            session_policy=session_policy,
             visibility=visibility,
             persist_branch=effective_ralph,
             cache_key=cache_key,
@@ -142,6 +167,9 @@ class AgentService:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection,
+        session_type: SessionType,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
@@ -185,6 +213,9 @@ class AgentService:
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
                 skills=skills,
+                session_type=session_type,
+                agents=agents,
+                session_policy=session_policy,
                 session_id=session_id,
                 output_format=output_format,
             ):

@@ -231,6 +231,12 @@ async def test_consolidate_fast_forwarded_deletes_source_internally(
     """FAST_FORWARDED consolidation deletes the source branch on remote.
 
     Cleanup is now internal to consolidate: callers no longer invoke it.
+
+    Against real git, so it also exercises the SHA guard end to end: the
+    source branch here is genuinely unchanged, so the remote tip and the
+    post-merge HEAD must compare equal and the delete must fire.  See
+    ``test_an_unchanged_source_branch_is_deleted_against_real_git`` for why
+    that comparison is the thing worth pinning.
     """
     repo, bare = git_env
 
@@ -497,3 +503,124 @@ async def test_fast_forward_delete_failure_logs_error_without_raising() -> None:
     assert len(failures) == 1
     assert failures[0]["branch"] == "ralph-source"
     assert failures[0]["log_level"] == "error"
+
+
+# -- SHA-guarded source cleanup (KOD-100) ------------------------------------
+
+
+async def test_fast_forward_leaves_an_advanced_source_branch_alone() -> None:
+    """A source branch that moved after the fetch keeps its commits.
+
+    The merge integrated the tip observed at fetch time.  If someone pushed
+    to the source branch while this consolidation was in flight, the remote
+    now carries commits the feature branch does not, and the old
+    presence-only re-probe deleted them anyway.  The guard declines, loudly,
+    and the integration itself still stands.
+    """
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
+
+    merged = "a" * 40  # what FakeGitService.current_sha reports post-merge
+    advanced = "d" * 40  # what the remote moved on to in the meantime
+
+    fake_git = FakeGitService(
+        remote_branch_sha_sequences={"ralph-source": [merged, advanced]},
+        ancestor_pairs={("HEAD", "origin/ralph-source")},
+    )
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await merger.consolidate(
+            repo_path="/tmp/repo",
+            repo_url=None,
+            base_branch="main",
+            feature_branch="feat/x",
+            source_branch="ralph-source",
+        )
+
+    # The integration happened; only the housekeeping declined.
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    assert [c for c in fake_git.calls if c[0] == "delete_remote_branch"] == []
+
+    advanced_events = [
+        e for e in logs if e["event"] == "branch_cleanup_source_advanced"
+    ]
+    assert len(advanced_events) == 1
+    assert advanced_events[0]["branch"] == "ralph-source"
+    assert advanced_events[0]["merged_sha"] == merged
+    assert advanced_events[0]["remote_sha"] == advanced
+    assert advanced_events[0]["log_level"] == "warning"
+
+    # Distinguishable from the absent arm, and not an error.
+    assert [e for e in logs if e["event"] == "branch_cleanup_skipped"] == []
+    assert [e for e in logs if e["event"] == "branch_cleanup_failed"] == []
+
+
+async def test_an_unchanged_source_branch_is_deleted_against_real_git(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """The two SHAs the guard compares must stay byte-comparable.
+
+    ``merged_sha`` comes from ``git rev-parse HEAD``; the re-probe comes
+    from ``git ls-remote``.  Nothing but convention keeps those two outputs
+    in the same shape — an abbreviation, a ``refs/heads/`` prefix or a stray
+    tab on either side would make every comparison unequal.
+
+    That failure mode is silent and fails CLOSED: cleanup would simply stop
+    happening on every run, no exception, no error log, and a suite driven
+    only by fakes would stay green because the fakes agree with themselves
+    by construction.  So this runs real git, asserts the two sources agree
+    on the very commit the guard compares, and then asserts the delete that
+    agreement is supposed to authorise.
+    """
+    repo, bare = git_env
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="test",
+        committer_email="test@test.dev",
+    )
+
+    # The comparison itself, over one real commit: what ls-remote reports
+    # for the source branch is exactly what rev-parse reports for it.
+    source_tip_via_ls_remote = await git.remote_branch_sha(
+        str(repo),
+        "origin",
+        "ralph-source",
+    )
+    source_tip_via_rev_parse = await _git_output(
+        ["git", "rev-parse", "ralph-source"],
+        cwd=repo,
+    )
+    assert source_tip_via_ls_remote == source_tip_via_rev_parse
+    assert source_tip_via_ls_remote is not None
+    # Full hex, nothing else: the shape the equality check depends on.
+    assert len(source_tip_via_ls_remote) == 40
+    assert source_tip_via_ls_remote.strip() == source_tip_via_ls_remote
+
+    merger = GitBranchMerger(git=git, workspace=workspace, remote="origin")
+    with structlog.testing.capture_logs() as logs:
+        outcome = await merger.consolidate(
+            repo_path=str(repo),
+            repo_url=None,
+            base_branch="main",
+            feature_branch="feat/sha-guard",
+            source_branch="ralph-source",
+        )
+
+    assert outcome.status is ConsolidationStatus.FAST_FORWARDED
+    # The feature branch ended up on the very commit the source pointed at,
+    # which is what makes deleting the source safe.
+    assert outcome.feature_tip_sha == source_tip_via_ls_remote
+
+    branches_after = await _git_output(["git", "branch", "--list"], cwd=bare)
+    assert "ralph-source" not in branches_after
+
+    # Deleted on the strength of an equal comparison — not skipped, not
+    # declined as advanced, and not swallowed as a failure.
+    assert [e for e in logs if e["event"] == "branch_cleanup_skipped"] == []
+    assert [e for e in logs if e["event"] == "branch_cleanup_source_advanced"] == []
+    assert [e for e in logs if e["event"] == "branch_cleanup_failed"] == []

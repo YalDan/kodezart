@@ -3,7 +3,8 @@
 import ast
 import inspect
 import re
-from collections.abc import AsyncGenerator
+import time
+from collections.abc import AsyncGenerator, Sequence
 from itertools import pairwise
 from pathlib import Path
 from typing import TypedDict
@@ -12,8 +13,14 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.ralph_loop import RalphLoop
+from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor
+from kodezart.core.retry import DelayFloor
+from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.errors import CriteriaFanInError
+from kodezart.domain.fan_in import require_permutation
 from kodezart.domain.trajectory import fold_trajectory, landable_commit
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
@@ -21,23 +28,35 @@ from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
     AssistantTextEvent,
+    RateLimitWarningEvent,
     ResultEvent,
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
 from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from kodezart.types.domain.trajectory import IterationRecord
+from tests.chains.test_dispatch_definitions import chain_source, dispatch_block
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
+    NEGLIGIBLE_BACKOFF_SECONDS,
+    RATE_LIMIT_FLOOR_SECONDS,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeAgentRunner,
@@ -47,9 +66,11 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     RecordingPromptProvider,
     as_validated,
+    floor_under_a_rate_limit,
     make_criteria,
     make_minted_criteria,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 
@@ -63,8 +84,11 @@ def _make_loop(
     git: FakeGitService | None = None,
     cache: FakeRepoCache | None = None,
     prompts: RecordingPromptProvider | None = None,
+    retry_initial_interval: float = 1.0,
+    delay_floor_for: DelayFloor = no_delay_floor,
 ) -> RalphLoop:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=workspace or FakeWorkspaceProvider(),
         persister=persister,
@@ -77,6 +101,10 @@ def _make_loop(
         plateau_window=plateau_window,
         git=git or FakeGitService(),
         cache=cache or FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=retry_initial_interval,
+        fan_in_max_attempts=2,
+        delay_floor_for=delay_floor_for,
     )
 
 
@@ -87,6 +115,7 @@ class _RunKwargs(TypedDict):
     feature_branch: str
     ralph_branch: str
     base_spec: BaseSpec
+    work_base_ref: str
     permission_mode: str
     allowed_tools: list[str]
     acceptance_criteria: list[ValidatedCriterion]
@@ -98,14 +127,19 @@ def _run_kwargs(
     *,
     acceptance_criteria: list[ValidatedCriterion] | None = None,
     base_spec: BaseSpec | None = None,
+    work_base_ref: str | None = None,
 ) -> _RunKwargs:
+    spec = base_spec if base_spec is not None else trunk_base("main")
     return _RunKwargs(
         prompt="fix it",
         repo_path="/tmp/fake",
         repo_url=None,
         feature_branch="kodezart/test-12345678",
         ralph_branch="kodezart/test-12345678-ralph-abcdef01",
-        base_spec=base_spec if base_spec is not None else trunk_base("main"),
+        base_spec=spec,
+        # A first round cuts its branch from the base it is scoped
+        # against; only a remediation round is handed a different ref.
+        work_base_ref=work_base_ref if work_base_ref is not None else spec.base_branch,
         permission_mode="bypassPermissions",
         allowed_tools=["Bash"],
         acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),
@@ -222,6 +256,9 @@ async def test_loop_second_iteration_succeeds() -> None:
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -291,6 +328,7 @@ async def test_loop_second_iteration_succeeds() -> None:
         ),
     )
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=persister,
@@ -303,6 +341,10 @@ async def test_loop_second_iteration_succeeds() -> None:
         plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [e async for e in loop.run(**_run_kwargs())]
@@ -528,6 +570,9 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -675,6 +720,9 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -729,6 +777,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
 
     executor = TwoIterTracker()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -741,6 +790,10 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
         plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [e async for e in loop.run(**_run_kwargs())]
@@ -791,8 +844,8 @@ async def test_evaluate_node_calls_git_diff_summary_with_base_and_ralph_branch()
 # ---------------------------------------------------------------------------
 
 _STACKED = BaseSpec(
-    base_ref="kodezart/blocker-a-11111111",
-    role=BaseRefRole.deliverable,
+    base_branch="kodezart/blocker-a-11111111",
+    base_role=WorkRefRole.DELIVERABLE,
     inputs=(
         BaseInput(
             blocker_issue_id="KOD-A",
@@ -842,7 +895,7 @@ async def test_the_digest_of_a_stacked_lane_uses_its_recorded_base() -> None:
 
     diff_calls = [c for c in git.calls if c[0] == "diff_summary"]
     assert len(diff_calls) >= 1
-    assert diff_calls[0][2] == _STACKED.base_ref
+    assert diff_calls[0][2] == _STACKED.base_branch
     assert diff_calls[0][2] != "main"
 
 
@@ -864,6 +917,10 @@ async def test_the_first_iteration_is_dispatched_with_the_recorded_base() -> Non
         plateau_window=2,
         git=FakeGitService(),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     with pytest.raises(NoStructuredOutputError):
@@ -871,7 +928,7 @@ async def test_the_first_iteration_is_dispatched_with_the_recorded_base() -> Non
 
     dispatches = [c for c in runner.calls if c["method"] == "stream_workflow"]
     assert dispatches, "the execute node never dispatched"
-    assert dispatches[0]["base_branch"] == _STACKED.base_ref
+    assert dispatches[0]["base_branch"] == _STACKED.base_branch
     service_default = inspect.signature(
         AgentService.stream_workflow,
     ).parameters["base_branch"]
@@ -982,6 +1039,9 @@ async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> 
             permission_mode: str,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+            session_type: SessionType = FAKE_SESSION_TYPE,
+            agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+            session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
             output_format: dict[str, object] | None = None,
         ) -> AsyncGenerator[AgentEvent, None]:
@@ -1046,6 +1106,9 @@ class _ScriptedLoopExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -1478,8 +1541,8 @@ def test_the_stall_threshold_is_an_app_config_knob_with_no_literal_in_loop_code(
     loop_source = _module_source("kodezart.chains.ralph_loop")
     assert re.search(r"plateau_window\s*=\s*\d", loop_source) is None
     assert loop_source.count("plateau_window=self._plateau_window") == 2
-    root = _module_source("kodezart.main")
-    assert "plateau_window=config.loop_plateau_window" in root
+    wiring = _module_source("kodezart.composition.engine")
+    assert "plateau_window=config.loop_plateau_window" in wiring
 
 
 async def test_the_three_stops_stay_distinct_and_none_shadows_another() -> None:
@@ -1533,3 +1596,440 @@ async def test_the_three_stops_stay_distinct_and_none_shadows_another() -> None:
     assert stalled[-1].verdict is AcceptVerdict.rejected
     assert stalled[-1].iteration == 3 < 5
     assert stalled[-1].trajectory.plateaued is True
+
+
+# ---------------------------------------------------------------------------
+# KOD-91/AC-5, AC-6, AC-7 — the permutation guard in front of the grading
+# ---------------------------------------------------------------------------
+
+_TEN_CRITERIA = make_criteria(*(f"Criterion {n} holds" for n in range(1, 11)))
+
+
+def _results(*rows: tuple[str, bool]) -> dict[str, object]:
+    """An evaluator payload naming exactly *rows*, in the order given."""
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": criterion_id,
+                "criterion": "echoed text",
+                "passed": passed,
+                "reasoning": "scripted",
+            }
+            for criterion_id, passed in rows
+        ],
+    }
+
+
+_THREE_OF_TEN = _results(*((f"AC-{n}", True) for n in (1, 2, 3)))
+_ALL_TEN_WITH_AN_UNKNOWN = _results(
+    *((f"AC-{n}", True) for n in range(1, 11)),
+    ("AC-99", True),
+)
+_ALL_TEN_WITH_A_DUPLICATE = _results(
+    *((f"AC-{n}", True) for n in range(1, 11)),
+    ("AC-4", False),
+)
+_ALL_TEN_PASSING = _results(*((f"AC-{n}", True) for n in range(1, 11)))
+
+
+class _NonPermutationExecutor:
+    """Scripts one evaluator payload per evaluation dispatch.
+
+    Counting dispatches is the point: a guard that re-runs the session
+    shows up here as a second entry, and one that silently accepts the
+    first answer shows up as one.
+    """
+
+    def __init__(self, payloads: list[dict[str, object]]) -> None:
+        self._payloads = list(payloads)
+        self.evaluations: list[dict[str, object]] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if output_format is not None:
+            schema = output_format.get("schema")
+            if isinstance(schema, dict):
+                props = schema.get("properties", {})
+                if isinstance(props, dict) and "criteriaResults" in props:
+                    payload = self._payloads[len(self.evaluations)]
+                    self.evaluations.append(payload)
+                    yield ResultEvent(
+                        subtype="result",
+                        duration_ms=1,
+                        duration_api_ms=1,
+                        is_error=False,
+                        num_turns=1,
+                        session_id="scripted",
+                        structured_output=payload,
+                    )
+                    return
+        yield ResultEvent(
+            subtype="result",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="scripted",
+            commit_sha="a" * 40,
+        )
+
+
+def _guard_error(payload: dict[str, object]) -> CriteriaFanInError:
+    """The error the shared guard raises for *payload*, as the node runs it."""
+    with pytest.raises(CriteriaFanInError) as raised:
+        require_permutation(
+            grade_iteration(
+                _TEN_CRITERIA,
+                AcceptanceCriteriaOutput.model_validate(payload),
+            ),
+        )
+    return raised.value
+
+
+async def _iterations(
+    executor: _NonPermutationExecutor,
+    *,
+    max_iterations: int = 1,
+) -> list[WorkflowIterationEvent]:
+    loop = _make_loop(executor=executor, max_iterations=max_iterations)
+    return [
+        event
+        async for event in loop.run(**_run_kwargs(acceptance_criteria=_TEN_CRITERIA))
+        if isinstance(event, WorkflowIterationEvent)
+    ]
+
+
+async def test_partial_results_trigger_retry() -> None:
+    """KOD-91/AC-5: three of ten dispatched ids is not an evaluation.
+
+    The shape that motivated the guard: ``criteria_results`` is
+    ``min_length=1`` and acceptance used to be ``all(...)`` over whatever
+    returned, so three passing results for ten dispatched criteria read as
+    a clean run.  Now the id set is checked against the dispatched one,
+    the retryable error names the seven that never arrived, and the
+    session runs again instead of the loop accepting the partial set.
+    """
+    breach = _guard_error(_THREE_OF_TEN)
+    assert breach.missing_ids == tuple(f"AC-{n}" for n in range(4, 11))
+    assert breach.unknown_ids == ()
+    assert breach.duplicate_ids == ()
+
+    executor = _NonPermutationExecutor([_THREE_OF_TEN, _ALL_TEN_PASSING])
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 2
+    assert executor.evaluations[0] is _THREE_OF_TEN
+    assert len(iterations) == 1
+    assert iterations[0].fan_in is None
+    assert len(iterations[0].evaluation.criteria_results) == len(_TEN_CRITERIA)
+
+
+async def test_permutation_exhaustion_falls_through_to_fail_closed() -> None:
+    """KOD-91/AC-6: the bound is spent, the run grades — it never dies.
+
+    The graph's retry policy could not do this: it propagates once its
+    attempts are gone, which ends the run.  Here the last answer is graded
+    against the DISPATCHED set — every id that never arrived fails, the
+    denominator is ten, not three — and the holes ride the iteration event
+    so the fail-closed verdict is legible as one.
+    """
+    executor = _NonPermutationExecutor([_THREE_OF_TEN, _THREE_OF_TEN])
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 2
+    assert len(iterations) == 1
+    event = iterations[0]
+    assert event.verdict is AcceptVerdict.rejected
+    assert event.fan_in is not None
+    assert event.fan_in.dispatched_count == len(_TEN_CRITERIA)
+    assert event.fan_in.attempts == 2
+    assert event.fan_in.missing_ids == [f"AC-{n}" for n in range(4, 11)]
+    assert event.fan_in.unknown_ids == []
+    assert event.fan_in.duplicate_ids == []
+    graded = {
+        result.criterion_id: result for result in event.evaluation.criteria_results
+    }
+    assert len(graded) == len(_TEN_CRITERIA)
+    assert graded["AC-7"].passed is False
+
+
+async def test_unknown_ids_trigger_retry() -> None:
+    """KOD-91/AC-7: an id nobody dispatched is the same breach as a hole.
+
+    Second of the three non-permutation shapes, and it is not benign: the
+    invented id is discarded, so a set that looks complete is one result
+    short of the dispatched list without saying so.
+    """
+    breach = _guard_error(_ALL_TEN_WITH_AN_UNKNOWN)
+    assert isinstance(breach, CriteriaFanInError)
+    assert breach.unknown_ids == ("AC-99",)
+    assert breach.missing_ids == ()
+    assert breach.duplicate_ids == ()
+
+    executor = _NonPermutationExecutor(
+        [_ALL_TEN_WITH_AN_UNKNOWN, _ALL_TEN_WITH_AN_UNKNOWN],
+    )
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 2
+    assert iterations[0].fan_in is not None
+    assert iterations[0].fan_in.unknown_ids == ["AC-99"]
+
+
+async def test_duplicate_ids_trigger_retry() -> None:
+    """KOD-91/AC-7: one id answered twice is a criterion with no verdict.
+
+    Third shape.  Two answers contradict each other, so the criterion is
+    ungraded rather than graded by whichever arrived first — and the guard
+    asks for the set again before the fail-closed arm takes it.
+    """
+    breach = _guard_error(_ALL_TEN_WITH_A_DUPLICATE)
+    assert isinstance(breach, CriteriaFanInError)
+    assert breach.duplicate_ids == ("AC-4",)
+    assert breach.missing_ids == ()
+    assert breach.unknown_ids == ()
+
+    executor = _NonPermutationExecutor(
+        [_ALL_TEN_WITH_A_DUPLICATE, _ALL_TEN_WITH_A_DUPLICATE],
+    )
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 2
+    assert iterations[0].fan_in is not None
+    assert iterations[0].fan_in.duplicate_ids == ["AC-4"]
+    assert iterations[0].verdict is AcceptVerdict.rejected
+
+
+async def test_the_guard_costs_nothing_when_the_set_is_a_permutation() -> None:
+    """Non-vacuity: a conforming return is dispatched once and accepted.
+
+    Without this the three tests above would pass against a node that
+    re-dispatched unconditionally, and the bound would be a per-iteration
+    tax rather than a guard.
+    """
+    executor = _NonPermutationExecutor([_ALL_TEN_PASSING])
+    iterations = await _iterations(executor)
+
+    assert len(executor.evaluations) == 1
+    assert iterations[0].verdict is AcceptVerdict.accepted
+    assert iterations[0].fan_in is None
+
+
+def test_the_evaluate_dispatch_passes_an_empty_definition_set() -> None:
+    """KOD-87-AC-4 — the evaluative guarantee, at the site it binds.
+
+    Injecting definitions into this path is what fails: the site names
+    the empty sequence, so a set that declares three lenses reaches the
+    evaluator with none of them. The whole-set proof is in
+    ``tests/chains/test_dispatch_definitions.py``; this is its assertion
+    on the module the criterion names.
+    """
+    block = dispatch_block(chain_source("ralph_loop.py"), "ACCEPTANCE_CRITERIA_SCHEMA")
+    assert "agents=NO_SUBAGENTS" in block
+    assert "self._prompts.definitions()" not in block
+
+
+# ---------------------------------------------------------------------------
+# KOD-92-AC-2 — the effort each dispatch carries is its role's, in one run
+# ---------------------------------------------------------------------------
+
+
+async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -> None:
+    """Both tiers in a single run: implementation authors, evaluation grades.
+
+    The ralph loop dispatches both, so the relation the policy exists to
+    express — judgment strictly below authoring — is observable in one
+    run rather than inferred across two.
+    """
+    from kodezart.types.domain.prompts import PromptKey, SessionRole
+    from kodezart.types.domain.subagents import SessionEffort
+    from tests.chains.test_dispatch_definitions import evaluator_dispatches, v5_provider
+    from tests.prompts.test_session_policy import rank, v5_metadata
+
+    provider = v5_provider()
+    runner = await evaluator_dispatches(provider)
+    metadata = v5_metadata()
+
+    efforts = {
+        dispatch.method: dispatch.policy.effort for dispatch in runner.dispatches
+    }
+    assert (
+        efforts["stream_workflow"]
+        is metadata.session_roles[SessionRole.IMPLEMENTATION].effort
+    )
+    assert efforts["stream"] is metadata.session_roles[SessionRole.EVALUATIVE].effort
+
+    evaluative = efforts["stream"]
+    generative = efforts["stream_workflow"]
+    assert isinstance(evaluative, SessionEffort)
+    assert isinstance(generative, SessionEffort)
+    assert rank(evaluative) < rank(generative)
+
+    assert provider.session_policy(PromptKey.EVALUATION).effort is evaluative
+
+
+async def test_a_legacy_run_carries_no_effort_at_any_dispatch() -> None:
+    """The mechanism is opt-in per set: the legacy set dispatches as before."""
+    from tests.chains.test_dispatch_definitions import (
+        evaluator_dispatches,
+        legacy_provider,
+    )
+
+    runner = await evaluator_dispatches(legacy_provider())
+
+    assert runner.dispatches
+    for dispatch in runner.dispatches:
+        assert dispatch.policy.effort is None
+        assert dispatch.policy.system_prompt_append is None
+
+
+def test_every_loop_requires_a_delay_floor_of_its_caller() -> None:
+    """No default resolver on any of the three loops (KOD-282).
+
+    Measured at ``6e98499``: ``delay_floor_for`` defaulted to ``None`` on
+    ``RalphLoop``, ``TicketGenerationLoop`` and ``RalphWorkflowEngine``, so
+    an engine assembled without one silently retried a provider rate limit
+    at the graph's own speed — the respawns KOD-174 measured, with the
+    remedy wired but not reaching the object.  A caller that means "no
+    floor" now has to pass a resolver saying so.
+    """
+    for loop in (RalphLoop, TicketGenerationLoop, RalphWorkflowEngine):
+        parameter = inspect.signature(loop.__init__).parameters["delay_floor_for"]
+        assert parameter.default is inspect.Parameter.empty, loop.__name__
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, loop.__name__
+
+
+# ---------------------------------------------------------------------------
+# KOD-195: the floor reaches THIS loop's nodes, not only the engine's
+# ---------------------------------------------------------------------------
+
+
+def _asks_for_an_evaluation(output_format: dict[str, object] | None) -> bool:
+    """Whether this dispatch is the evaluator's, by the schema it asks for."""
+    if output_format is None:
+        return False
+    schema = output_format.get("schema")
+    if not isinstance(schema, dict):
+        return False
+    properties = schema.get("properties")
+    return isinstance(properties, dict) and "criteriaResults" in properties
+
+
+class _RejectedThenEvaluatingExecutor:
+    """The evaluator is rate-limit rejected once, then answers.
+
+    The rejection is the vendor's own shape: a rejection warning followed
+    by a result carrying no structured output, which is what the soft
+    failure is raised from.
+    """
+
+    def __init__(self, criteria: list[ValidatedCriterion]) -> None:
+        self._criteria = criteria
+        self.evaluation_attempts = 0
+        #: When each evaluation attempt began, so a case can clock the gap
+        #: between two of them rather than the run around them.
+        self.evaluation_attempt_times: list[float] = []
+
+    async def stream(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        permission_mode: str,
+        allowed_tools: list[str],
+        skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if not _asks_for_an_evaluation(output_format):
+            yield ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="scripted",
+                commit_sha="a" * 40,
+            )
+            return
+        self.evaluation_attempts += 1
+        self.evaluation_attempt_times.append(time.perf_counter())
+        if self.evaluation_attempts == 1:
+            yield RateLimitWarningEvent(status="rejected", utilization=1.0)
+            yield ResultEvent(
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="rejected",
+                structured_output=None,
+            )
+            return
+        yield ResultEvent(
+            subtype="result",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="scripted",
+            structured_output={
+                "criteriaResults": [
+                    {
+                        "criterionId": criterion.id,
+                        "criterion": criterion.text,
+                        "passed": True,
+                        "reasoning": "scripted",
+                    }
+                    for criterion in self._criteria
+                ],
+            },
+        )
+
+
+@pytest.mark.usefixtures("unjittered_backoff")
+async def test_a_rate_limited_evaluation_waits_the_floor_before_its_next_attempt() -> (
+    None
+):
+    """KOD-195: the floor is wired into THIS loop, not only constructed on it.
+
+    The construction guard above proves the resolver cannot be omitted; it
+    cannot prove the resolver reaches a node, and unwrapping ``self._floor``
+    from this loop's two ``add_node`` calls left the whole suite green.  So
+    the observation is the one the engine's own case makes: the clock is
+    read at the start of each evaluation attempt, the policy's back-off is
+    two orders of magnitude under the floor, and the gap between the two
+    attempts has one explanation.
+    """
+    criteria = as_validated(make_criteria("Criterion A"))
+    executor = _RejectedThenEvaluatingExecutor(criteria)
+    loop = _make_loop(
+        executor=executor,
+        retry_initial_interval=NEGLIGIBLE_BACKOFF_SECONDS,
+        delay_floor_for=floor_under_a_rate_limit,
+    )
+
+    events = [
+        event async for event in loop.run(**_run_kwargs(acceptance_criteria=criteria))
+    ]
+
+    assert executor.evaluation_attempts == 2, "the rejection was retried"
+    first_attempt, second_attempt = executor.evaluation_attempt_times
+    assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert len(iterations) == 1, "the retried attempt finished the iteration"

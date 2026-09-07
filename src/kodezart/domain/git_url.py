@@ -35,6 +35,20 @@ def resolve_repo_url(raw: str, base_url: str) -> str:
     raise ValueError(msg)
 
 
+def is_forge_less_origin(url: str) -> bool:
+    """Whether *url* names an origin with no forge behind it to ask.
+
+    A predicate and deliberately not a taxonomy: what a caller needs to
+    know is whether a forge API can be asked about this origin AT ALL, and
+    origin "kinds" would be a classification nothing here has measured.
+    ``file://`` is the one forge-less scheme this deployment uses — a
+    local bare repository, the sanctioned smoke shape — and every other
+    URL is treated as forge-shaped and left to the adapter that owns it,
+    which raises on the ones it does not (KOD-145).
+    """
+    return url.startswith("file://")
+
+
 def extract_owner_repo(url: str) -> tuple[str, str]:
     """Extract (owner, repo) from a git URL or owner/repo shorthand.
 

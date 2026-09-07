@@ -1,23 +1,47 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
-from collections.abc import AsyncGenerator, Mapping, Sequence
+import asyncio
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.adapters.claude_agent_executor import ClaudeAgentExecutor
+from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.composition.records import RECORD_KIND_BY_PASS
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    McpTransportError,
+    RateLimitedSoftFailureError,
+    TrackerEnsureConflictError,
+)
 from kodezart.core.prompt_rendering import PromptTemplate
-from kodezart.core.protocols import AgentExecutor, PromptProvider, WorkflowEngine
+from kodezart.core.protocols import (
+    AgentExecutor,
+    McpToolResult,
+    PromptSetProvider,
+    WorkflowEngine,
+)
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
-from kodezart.domain.errors import WorkspaceError
+from kodezart.domain.errors import (
+    DuplicateWorkRefError,
+    MergeConflictError,
+    RateLimitError,
+    TransientAPIError,
+    WorkspaceError,
+)
 from kodezart.domain.trajectory import fold_trajectory
+from kodezart.services.prompt_pass import pass_render_bindings
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
@@ -30,7 +54,7 @@ from kodezart.types.domain.agent import (
     WorkflowRemediationEvent,
     WorkflowTicketEvent,
 )
-from kodezart.types.domain.base_spec import BaseSpec
+from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -44,25 +68,313 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
     ValidatedCriterion,
 )
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.gating import (
+    JUDGMENT_ROUTING,
+    ContentClass,
     GateDecision,
     GateVerdict,
+    OutboundDestination,
     RepoVisibility,
+    ScanFailureKind,
     ScanHit,
+    ScannerRouting,
+    ScanResult,
     WriterShape,
+)
+from kodezart.types.domain.job import JobRecord, JobState
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    QueueState,
+    RecordDestination,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
+from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
+from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
+from kodezart.types.domain.tracker import (
+    INSTATABLE_MAPPING_KINDS,
+    ClaimResult,
+    ClaimStatus,
+    EnsureAction,
+    IssuePriority,
+    IssueQuery,
+    IssueRelation,
+    IssueRelationKind,
+    MappingKind,
+    MappingOutcome,
+    MappingRef,
+    ReviewQuery,
+    TrackerAsset,
+    TrackerComment,
+    TrackerIssue,
+    TrackerReview,
+    WorkflowStateKind,
+)
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest
+from kodezart.types.requests.agent import WorkflowRequest
+from tests.prompt_census import configured_investigation_cap
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
+#: The kind a fake session reports when a test does not care which kind it
+#: is.  Deliberately NOT the kind the shipped grant names, so a test that
+#: means "granted" has to say so.
+FAKE_SESSION_TYPE: SessionType = SessionType.API_QUERY
+#: A knowledge server declared HERE, in the fixtures, never dialled.  Every
+#: assertion about which servers a session is configured with is therefore
+#: answered offline: what is under test is this codebase's own grant wiring,
+#: not what a vendor's server offers.
+FIXTURE_KNOWLEDGE_SERVER: str = "fixture-knowledge"
+_FIXTURE_KNOWLEDGE_CREDENTIAL: str = "ntn_" + ("K" * 44)
+#: A stand-in for the rendered what-lives-where map.  Deliberately not the
+#: shipped fragment: a test asserting the map reached a prompt must fail for
+#: a reason other than "some prose happens to match".
+FIXTURE_KNOWLEDGE_MAP: str = "── FIXTURE MAP ── where the fixture things live"
+
+
+def no_delay_floor(_exc: Exception) -> float | None:
+    """The fixture retry floor: no failure carries one, and it is SAID.
+
+    The three loops take their floor resolver as a required argument, so a
+    fixture that wants its retries to run at the graph's own speed states
+    that here rather than by leaving the argument off — an absent floor
+    once meant an engine built without one silently had no floor at all
+    (KOD-282).  Every test construction site passes this one object, so a
+    fixture that means something else has to say so too.
+    """
+    return None
+
+
+#: The floor a rate-limited attempt waits in the cases that measure one.
+#: Long enough that only the floor can account for the gap between two
+#: attempts, short enough that the case costs the suite nothing to run.
+RATE_LIMIT_FLOOR_SECONDS: float = 0.15
+
+#: Two orders of magnitude under the floor, so the retry policy's own
+#: back-off cannot be the explanation for a gap a case measures.
+NEGLIGIBLE_BACKOFF_SECONDS: float = 0.001
+
+
+def floor_under_a_rate_limit(exc: Exception) -> float | None:
+    """A resolver of the shape ``composition.engine`` builds (KOD-195).
+
+    Keyed on the CLASSES composition keys on, and not on a duck-typed
+    attribute that happens to be true of them: a stand-in that answers for
+    a wider set than the shipped resolver does is a case passing on a
+    floor production would never have paid.
+    """
+    if not isinstance(exc, RateLimitedSoftFailureError | RateLimitError):
+        return None
+    return RATE_LIMIT_FLOOR_SECONDS
+
+
+def knowledge_grant_for(
+    *granted: SessionType,
+    knowledge_map: str = FIXTURE_KNOWLEDGE_MAP,
+) -> KnowledgeGrant:
+    """The fixture knowledge server, granted to *granted* and nothing else.
+
+    The map rides with the grant exactly as the model requires: a grant
+    naming no session type carries none, because nothing would render it.
+    """
+    return KnowledgeGrant(
+        granted=granted,
+        server_name=FIXTURE_KNOWLEDGE_SERVER,
+        server_url="https://knowledge.invalid/mcp",
+        auth_header="Authorization",
+        auth_scheme="Bearer",
+        credential=_FIXTURE_KNOWLEDGE_CREDENTIAL,
+        knowledge_map=knowledge_map if granted else "",
+    )
+
+
+#: The shipped shape: no session type is granted, so no session is configured
+#: with a knowledge server at all.
+NO_KNOWLEDGE_GRANT: KnowledgeGrant = knowledge_grant_for()
+FIXTURE_EPOCH: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def fixture_run_identity(key: PromptKey) -> RunIdentity:
+    """Which run a fixture render of *key*'s pass template is FOR.
+
+    A pass template's Record clause prescribes the row title the runner
+    verifies by, and that title spells the run's own identity — so a case
+    rendering one of these templates supplies the identity exactly as the
+    tick does, off the same key-to-kind map composition reads (KOD-290).
+    """
+    return RunIdentity(
+        kind=RECORD_KIND_BY_PASS[key],
+        name=key.value,
+        started_at=FIXTURE_EPOCH,
+    )
+
+
+def pass_render_variables(key: PromptKey) -> dict[str, object]:
+    """The per-call namespace a render of *key*'s pass template binds."""
+    return pass_render_bindings(fixture_run_identity(key))
+
+
+#: How far a write on the fake workspace moves an issue's stamp past
+#: whatever it carried: strictly forward, as the vendor's does (KOD-175).
+FIXTURE_WRITE_STEP: timedelta = timedelta(seconds=1)
+#: The configured team key every fixture issue belongs to, and the one a
+#: fixture operation declares.  A test reaching for an issue OUTSIDE the
+#: declared containers passes its own key — or ``None`` for one whose team
+#: the configuration does not name at all.
+FIXTURE_TEAM_KEY: str = "engineering"
 DEFAULT_SETTING_SOURCES: list[SettingSource] = [
     SettingSource.USER,
     SettingSource.PROJECT,
     SettingSource.LOCAL,
 ]
+
+#: Both adapters implementing the executor protocol, including the one the
+#: default composition root does not wire.  Absence from the composition root
+#: is never absence from a guarantee, so every executor-level assertion runs
+#: over this list rather than over the default.
+EXECUTOR_MODULES: list[str] = [
+    "kodezart.adapters.claude_client_executor",
+    "kodezart.adapters.claude_agent_executor",
+]
+
+
+def executor_for(
+    module: str,
+    grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT,
+    *,
+    model: str | None = None,
+    output_style: str | None = None,
+):
+    """Build the adapter that lives in *module* with configured setting sources."""
+    if module.endswith("claude_client_executor"):
+        return ClaudeClientExecutor(
+            model=model,
+            setting_sources=DEFAULT_SETTING_SOURCES,
+            knowledge_grant=grant,
+            output_style=output_style,
+        )
+    return ClaudeAgentExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES,
+        knowledge_grant=grant,
+    )
+
+
+@dataclass(frozen=True)
+class RecordedSession:
+    """Everything one session exchanged with the SDK.
+
+    The prompt is recorded beside the options because they are two
+    consequences of one decision, and an assertion that can only see the
+    options cannot tell whether the other consequence agreed with it.
+    ``events`` is the other direction: what the executor made of the
+    messages the transport streamed back, which is where a session's
+    reading of its own opening frame becomes visible.
+    """
+
+    options: object
+    prompt: str
+    events: tuple[AgentEvent, ...] = ()
+
+
+def _streaming(
+    messages: Sequence[object],
+) -> Callable[[], AsyncGenerator[object, None]]:
+    """A transport that accepts a session and streams *messages* back."""
+
+    async def stream() -> AsyncGenerator[object, None]:
+        for message in messages:
+            yield message
+
+    return stream
+
+
+def _recording_client(
+    recorded: list[RecordedSession],
+    messages: Sequence[object],
+) -> Callable[..., object]:
+    """Stand-in for the persistent SDK client that records what it was given."""
+
+    class _Client:
+        def __init__(self, *, options: object) -> None:
+            self._options = options
+
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *exc: object) -> bool:
+            return False
+
+        async def query(self, prompt: str) -> None:
+            recorded.append(RecordedSession(options=self._options, prompt=prompt))
+
+        def receive_response(self) -> AsyncGenerator[object, None]:
+            return _streaming(messages)()
+
+    return _Client
+
+
+def _recording_query(
+    recorded: list[RecordedSession],
+    messages: Sequence[object],
+) -> Callable[..., object]:
+    """Stand-in for the one-shot SDK entry point, same recording contract."""
+
+    def query(*, prompt: str, options: object) -> AsyncGenerator[object, None]:
+        recorded.append(RecordedSession(options=options, prompt=prompt))
+        return _streaming(messages)()
+
+    return query
+
+
+async def recorded_session(
+    module: str,
+    *,
+    grant: KnowledgeGrant = NO_KNOWLEDGE_GRANT,
+    session_type: SessionType = FAKE_SESSION_TYPE,
+    prompt: str = "p",
+    cwd: str = "/tmp/fake",
+    skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+    agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+    session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+    model: str | None = None,
+    output_style: str | None = None,
+    messages: Sequence[object] = (),
+) -> RecordedSession:
+    """Run one session through *module*'s adapter against a recording transport."""
+    recorded: list[RecordedSession] = []
+    target = "ClaudeSDKClient" if module.endswith("claude_client_executor") else "query"
+    replacement = (
+        _recording_client(recorded, messages)
+        if target == "ClaudeSDKClient"
+        else _recording_query(recorded, messages)
+    )
+    executor = executor_for(module, grant, model=model, output_style=output_style)
+    events: list[AgentEvent] = []
+
+    with patch(f"{module}.{target}", replacement):
+        async for event in executor.stream(
+            prompt=prompt,
+            cwd=cwd,
+            permission_mode="plan",
+            allowed_tools=[],
+            skills=skills,
+            session_type=session_type,
+            agents=agents,
+            session_policy=session_policy,
+        ):
+            events.append(event)
+
+    assert len(recorded) == 1
+    return replace(recorded[0], events=tuple(events))
 
 
 class FakeGitService:
@@ -82,8 +394,10 @@ class FakeGitService:
         trees: dict[str, str] | None = None,
         commit_tree_result: str = "c" * 40,
         push_error: Exception | None = None,
+        merge_conflicts: dict[str, tuple[str, ...]] | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
+        self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
         self.has_changes_result: bool = has_changes_result
         self._is_path_ignored_result: bool = is_path_ignored_result
         self._remote_branches: list[str] = remote_branches or []
@@ -165,6 +479,13 @@ class FakeGitService:
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None:
         self.calls.append(("merge_branch", cwd, source_branch))
+        paths = self._merge_conflicts.get(source_branch)
+        if paths is not None:
+            raise MergeConflictError(
+                f"merge of {source_branch} could not be completed",
+                source_branch=source_branch,
+                paths=paths,
+            )
 
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
@@ -364,6 +685,9 @@ class FakeAgentExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -376,6 +700,7 @@ class FakeAgentExecutor:
                 "session_id": session_id,
                 "permission_mode": permission_mode,
                 "skills": skills,
+                "session_type": session_type,
             }
         )
         if self._is_branch_name_schema(output_format):
@@ -530,6 +855,9 @@ class FakeRaisingExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -594,6 +922,9 @@ class FakeChangePersister:
         executor: AgentExecutor,
         backup_ref_id_prefix: str,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> PersistResult | None:
         self.calls.append(
@@ -688,11 +1019,21 @@ class FakeAgentRunner:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
         cache_key: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
-        self.calls.append({"method": "stream", "prompt": prompt, "skills": skills})
+        self.calls.append(
+            {
+                "method": "stream",
+                "prompt": prompt,
+                "skills": skills,
+                "session_type": session_type,
+            }
+        )
         for event in self._events:
             yield event
 
@@ -708,6 +1049,9 @@ class FakeAgentRunner:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         create_branch: bool = True,
         cache_key: str | None = None,
@@ -732,6 +1076,9 @@ class FakeAgentRunner:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -741,6 +1088,9 @@ class FakeAgentRunner:
                 "prompt": prompt,
                 "workspace_path": workspace_path,
                 "session_id": session_id,
+                "session_type": session_type,
+                "skills": skills,
+                "session_policy": session_policy,
             }
         )
         for event in self._events:
@@ -779,6 +1129,9 @@ class ScriptedFakeExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -791,6 +1144,7 @@ class ScriptedFakeExecutor:
                 "session_id": session_id,
                 "permission_mode": permission_mode,
                 "skills": skills,
+                "session_type": session_type,
             }
         )
         if output_format is None:
@@ -1121,6 +1475,7 @@ class FakeQualityGate:
         feature_branch: str,
         ralph_branch: str,
         base_spec: BaseSpec,
+        work_base_ref: str,
         permission_mode: str,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
@@ -1136,7 +1491,8 @@ class FakeQualityGate:
                 "feature_branch": feature_branch,
                 "ralph_branch": ralph_branch,
                 "base_spec": base_spec,
-                "base_branch": base_spec.base_ref,
+                "base_branch": base_spec.base_branch,
+                "work_base_ref": work_base_ref,
                 "permission_mode": permission_mode,
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
@@ -1364,9 +1720,17 @@ class SequentialCIMonitor:
 class FakeTicketGenerator:
     """Fake TicketGenerator for testing the outer workflow pipeline."""
 
-    def __init__(self, ticket: TicketDraftOutput | None = None) -> None:
+    def __init__(
+        self,
+        ticket: TicketDraftOutput | None = None,
+        *,
+        approved: TicketApproval = TicketApproval.APPROVED,
+        mode: TicketReviewMode = TicketReviewMode.REVIEWED,
+    ) -> None:
         self.calls: list[dict[str, object]] = []
         self._ticket = ticket or make_ticket_draft()
+        self._approved = approved
+        self._mode = mode
 
     async def run(
         self,
@@ -1389,7 +1753,8 @@ class FakeTicketGenerator:
         yield WorkflowTicketEvent(
             ticket=self._ticket,
             review_rounds=1,
-            approved=True,
+            approved=self._approved,
+            mode=self._mode,
         )
 
 
@@ -1442,7 +1807,55 @@ def make_prompt_provider() -> InRepoPromptRegistry:
         set_overrides={},
         template_overrides={},
         bindings={},
+        investigation_cap=configured_investigation_cap(),
+        ticket_review_mode=TicketReviewMode.REVIEWED,
     )
+
+
+@dataclass(frozen=True)
+class RecordedLogEvent:
+    """One emission: the level it was sent at, its name, and its fields."""
+
+    level: str
+    event: str
+    fields: Mapping[str, object]
+
+
+class RecordingLogger:
+    """A LogEmitter double that keeps what it was told.
+
+    Injecting this is how a test reads emitted events without touching
+    structlog's global configuration — no ``configure``, no
+    ``reset_defaults``, so nothing has to be restored and no other test in
+    the suite can be disturbed by this one.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[RecordedLogEvent] = []
+
+    async def ainfo(self, event: str, **kwargs: object) -> None:
+        self._record("info", event, kwargs)
+
+    async def adebug(self, event: str, **kwargs: object) -> None:
+        self._record("debug", event, kwargs)
+
+    async def awarning(self, event: str, **kwargs: object) -> None:
+        self._record("warning", event, kwargs)
+
+    async def aerror(self, event: str, **kwargs: object) -> None:
+        self._record("error", event, kwargs)
+
+    async def aexception(self, event: str, **kwargs: object) -> None:
+        self._record("exception", event, kwargs)
+
+    def _record(self, level: str, event: str, fields: Mapping[str, object]) -> None:
+        self.events.append(
+            RecordedLogEvent(level=level, event=event, fields=dict(fields))
+        )
+
+    def named(self, event: str) -> list[RecordedLogEvent]:
+        """Every recorded emission carrying *event* as its name."""
+        return [entry for entry in self.events if entry.event == event]
 
 
 @dataclass(frozen=True)
@@ -1457,10 +1870,10 @@ class _RecordingTemplate(PromptTemplate):
 
 
 class RecordingPromptProvider:
-    """PromptProvider that records the key and variables of every render."""
+    """PromptSetProvider that records the key and variables of every render."""
 
-    def __init__(self, inner: PromptProvider) -> None:
-        self._inner = inner
+    def __init__(self, inner: PromptSetProvider) -> None:
+        self._inner: PromptSetProvider = inner
         self.renders: list[tuple[PromptKey, dict[str, object]]] = []
 
     def template_for(self, key: PromptKey) -> PromptTemplate:
@@ -1479,6 +1892,22 @@ class RecordingPromptProvider:
     def declared_skills(self, key: PromptKey) -> Sequence[str]:
         return self._inner.declared_skills(key)
 
+    def definitions(self) -> Sequence[AgentDefinition]:
+        return self._inner.definitions()
+
+    def system_prompt_append(self) -> str | None:
+        return self._inner.system_prompt_append()
+
+    def session_policy(self, key: PromptKey) -> SessionPolicy:
+        return self._inner.session_policy(key)
+
+    def session_skills(
+        self,
+        key: PromptKey,
+        configured: SkillsSelection,
+    ) -> SkillsSelection:
+        return self._inner.session_skills(key, configured)
+
     def variables_for(self, key: PromptKey) -> list[dict[str, object]]:
         """Every recorded variable mapping rendered under *key*."""
         return [variables for recorded, variables in self.renders if recorded is key]
@@ -1489,15 +1918,21 @@ class PassThroughGate:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, RepoVisibility, WriterShape]] = []
+        self.destinations: list[OutboundDestination] = []
+        self.content_classes: list[ContentClass] = []
 
-    def gate(
+    async def gate(
         self,
         *,
         content: str,
         visibility: RepoVisibility,
         shape: WriterShape,
+        destination: OutboundDestination,
+        content_class: ContentClass,
     ) -> GateDecision:
         self.calls.append((content, visibility, shape))
+        self.destinations.append(destination)
+        self.content_classes.append(content_class)
         return GateDecision(verdict=GateVerdict.CLEAN, content=content)
 
 
@@ -1522,15 +1957,50 @@ class FakeVisibilityResolver:
 
 
 class FakeContentScanner:
-    """ContentScanner that reports scripted hits, for scanner-ordering tests."""
+    """ContentScanner that reports a scripted result, and counts its calls.
 
-    def __init__(self, hits: list[ScanHit]) -> None:
-        self._hits = hits
+    Scripted rather than intelligent on purpose: what the corpus measures
+    under this double is the MECHANISM around a verdict — that a reported
+    hit reaches the fold, is applied at its reported span, and resolves to
+    the right verdict for its destination.  The model itself is measured by
+    the separately-marked live target, never here.
+    """
+
+    def __init__(
+        self,
+        hits: list[ScanHit] | None = None,
+        *,
+        failure: ScanFailureKind | None = None,
+        routing: ScannerRouting | None = None,
+        hits_by_destination: dict[OutboundDestination, list[ScanHit]] | None = None,
+    ) -> None:
+        self._hits = list(hits or [])
+        self._failure = failure
+        self._hits_by_destination = hits_by_destination
+        self._routing = routing or JUDGMENT_ROUTING
         self.calls: list[str] = []
+        self.destinations: list[OutboundDestination] = []
 
-    def scan(self, content: str) -> list[ScanHit]:
+    @property
+    def routing(self) -> ScannerRouting:
+        """The routing this double declares to the gate."""
+        return self._routing
+
+    async def scan(
+        self,
+        *,
+        content: str,
+        destination: OutboundDestination,
+    ) -> ScanResult:
         self.calls.append(content)
-        return list(self._hits)
+        self.destinations.append(destination)
+        if self._failure is not None:
+            return ScanResult(failure=self._failure)
+        if self._hits_by_destination is not None:
+            return ScanResult(
+                hits=tuple(self._hits_by_destination.get(destination, [])),
+            )
+        return ScanResult(hits=tuple(self._hits))
 
 
 @asynccontextmanager
@@ -1564,3 +2034,1750 @@ async def attached_job_queue(
         yield queue
     finally:
         await queue.stop()
+
+
+# --------------------------------------------------------------------------
+# Tracker test doubles
+#
+# Two levels, deliberately.  ``FakeLinearMcpServer`` is an in-process MCP
+# SERVER: it satisfies ``McpToolCaller`` and serves the vendor tool contract,
+# so the real Linear adapter runs against it unmodified and the conformance
+# suite needs no live workspace.  ``FakeTrackerPort`` satisfies ``TrackerPort``
+# directly and is what consumers of the port (the dispatcher, the passes) are
+# tested against — a consumer test that had to know the vendor's tool names
+# would have a vendor dependency the port exists to remove.
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class FakeMcpAsset:
+    """One attachment or document reference the fake server serves.
+
+    Four keys, because four keys were measured: every captured asset array
+    carries ``id``, ``title``, ``subtitle`` and ``url`` and nothing else.
+    ``contentType`` and ``size`` were served here and are gone — a fake
+    that sends what the vendor never sends lets a consumer be tested over
+    an input production cannot produce (KOD-143 fire-ruling, 2026-08-25).
+    The wire model keeps both as optional: ``TrackerAsset`` owns what
+    their absence means, and the day the vendor sends one it flows through
+    unchanged.
+    """
+
+    id: str
+    title: str
+    url: str
+
+    def wire(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "subtitle": None,
+            "url": self.url,
+        }
+
+
+@dataclass
+class FakeMcpDocument:
+    """One document the fake workspace holds: server id, title, body.
+
+    Three fields rather than an id-to-body mapping, because the ensure
+    path addresses a document by TITLE and the read path by id, and a
+    registry that carried only one of them would make one of the two
+    untestable.
+    """
+
+    id: str
+    title: str
+    content: str
+
+    def summary(self) -> dict[str, object]:
+        return {"id": self.id, "title": self.title}
+
+
+@dataclass
+class FakeMcpDiff:
+    """One review in the fake workspace, in the vendor's own shape.
+
+    The owner and repository are held beside the payload rather than in
+    it: the listing tool takes them as ARGUMENTS and the entries it
+    answers with carry neither, so a fixture that put them on the wire
+    would let a scan read a field the vendor never sends.
+    """
+
+    full_identifier: str
+    owner: str
+    repo: str
+    updated_at: datetime = FIXTURE_EPOCH
+
+    def entry(self) -> dict[str, object]:
+        return {
+            "fullIdentifier": self.full_identifier,
+            "updatedAt": self.updated_at.isoformat(),
+        }
+
+
+@dataclass
+class FakeMcpIssue:
+    """One issue in the fake workspace, in the vendor's own shape."""
+
+    id: str
+    title: str = "fixture issue"
+    description: str = ""
+    priority_raw: int = 0
+    status: str = "Backlog"
+    status_type: str = "backlog"
+    team: str = "fixture-team"
+    labels: list[str] = field(default_factory=list)
+    relations: list[tuple[str, str]] = field(default_factory=list)
+    attachments: list[FakeMcpAsset] = field(default_factory=list)
+    documents: list[FakeMcpAsset] = field(default_factory=list)
+    parent_id: str | None = None
+    assignee: str | None = None
+    created_at: datetime = FIXTURE_EPOCH
+    updated_at: datetime = FIXTURE_EPOCH
+    url: str = ""
+
+    def entry(self) -> dict[str, object]:
+        """The issue as a ``list_issues`` ENTRY reports it.
+
+        No relations, no attachments, no documents: the live listing
+        carries none of the three, and a fake that sent them would let the
+        adapter read a field the vendor never fills (KOD-143).
+        """
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "priority": {"value": self.priority_raw, "name": "fixture"},
+            "status": self.status,
+            "statusType": self.status_type,
+            "team": self.team,
+            "teamId": f"{self.team}-id",
+            "labels": list(self.labels),
+            "parentId": self.parent_id,
+            "assignee": self.assignee,
+            "createdAt": self.created_at.isoformat(),
+            "updatedAt": self.updated_at.isoformat(),
+            "url": self.url or f"https://tracker.invalid/issue/{self.id}",
+        }
+
+    def wire(self) -> dict[str, object]:
+        """The issue as ``get_issue`` reports it, relations included.
+
+        The relations object is keyed by relation kind — three arrays and
+        one nullable single — exactly as the vendor answers a read that
+        passed ``includeRelations``.
+        """
+        return {
+            **self.entry(),
+            "relations": self.relations_wire(),
+            "attachments": [asset.wire() for asset in self.attachments],
+            "documents": [asset.wire() for asset in self.documents],
+        }
+
+    def relations_wire(self) -> dict[str, object]:
+        """The relations object, with every arm present as measured.
+
+        An arm the live vendor does not have is refused rather than
+        served: a fixture that invented one would let a test pass on a
+        payload the workspace can never send.
+        """
+        arms: dict[str, list[dict[str, object]]] = {
+            "blocks": [],
+            "blockedBy": [],
+            "relatedTo": [],
+        }
+        duplicate_of: dict[str, object] | None = None
+        for kind, key in self.relations:
+            edge: dict[str, object] = {"id": key, "title": f"issue {key}"}
+            if kind == "duplicateOf":
+                duplicate_of = edge
+            elif kind in arms:
+                arms[kind].append(edge)
+            else:
+                msg = f"the vendor's relations object has no arm named {kind!r}"
+                raise LookupError(msg)
+        return {**arms, "duplicateOf": duplicate_of}
+
+
+@dataclass
+class FakeMcpComment:
+    """One comment in the fake workspace's append-only log.
+
+    ``issue_id`` is workspace state — which issue the log entry belongs to
+    — and is deliberately NOT on the wire: the vendor's comment entry
+    names no issue, so a reader learns that from the call it made.
+
+    ``author`` is ``None`` for the arm measured on 2026-09-01 (KOD-172): a
+    removed user or an integration leaves the key in place carrying
+    ``null``, and the tick that read such a log died on it.
+    """
+
+    id: str
+    issue_id: str
+    author: str | None
+    body: str
+    created_at: datetime
+
+    def wire(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "author": (
+                None
+                if self.author is None
+                else {"id": f"{self.author}-id", "name": self.author}
+            ),
+            "body": self.body,
+            "createdAt": self.created_at.isoformat(),
+            "parentId": None,
+            "resolvedAt": None,
+            "quotedText": None,
+            "onBehalfOf": None,
+        }
+
+
+class FakeLinearMcpServer:
+    """In-process MCP server satisfying ``McpToolCaller``.
+
+    Serves the exact tool contract ``LinearMcpTracker`` speaks.  Comment
+    creation is append-only with server-assigned identifiers and timestamps,
+    which is what the adapter's atomic claim is built on: ``comment_instants``
+    can be set to a repeated value to force the same-instant tie-break path.
+    """
+
+    def __init__(
+        self,
+        *,
+        issues: Sequence[FakeMcpIssue] = (),
+        diffs: Sequence[FakeMcpDiff] = (),
+        documents: Sequence[FakeMcpDocument] = (),
+        users: Sequence[str] = (),
+        teams: Sequence[str] = (),
+        labels: Sequence[str] = (),
+        team_labels: Mapping[str, Sequence[str]] | None = None,
+        statuses: Mapping[str, Sequence[str]] | None = None,
+        state_types: Mapping[str, str] | None = None,
+        actor: str = "fixture-actor",
+        comment_instants: Sequence[datetime] = (),
+        projects: Mapping[str, Mapping[str, object]] | None = None,
+        transient_failures: Mapping[str, int] | None = None,
+        transport_failures: Mapping[str, int] | None = None,
+        tool_errors: Mapping[str, str] | None = None,
+        credential_refused_after: Mapping[str, int] | None = None,
+    ) -> None:
+        self.issues: dict[str, FakeMcpIssue] = {issue.id: issue for issue in issues}
+        self.diffs: list[FakeMcpDiff] = list(diffs)
+        self.comments: list[FakeMcpComment] = []
+        self.documents: dict[str, FakeMcpDocument] = {
+            document.id: document for document in documents
+        }
+        self.users: list[str] = list(users)
+        self.teams: list[str] = list(teams)
+        #: The WORKSPACE-level labels, which is the only set the unscoped
+        #: listing answers with.  A team's labels are held apart, keyed by
+        #: the container id the vendor addresses that team by, because a
+        #: name is unique per CONTAINER and not per workspace: two boards
+        #: routinely carry their own copy of one queue member (KOD-167).
+        self.labels: list[str] = list(labels)
+        self.team_labels: dict[str, list[str]] = {
+            container: list(names) for container, names in (team_labels or {}).items()
+        }
+        #: The workflow-state vocabulary each team offers, keyed by team.
+        #: Per team rather than per workspace because that is what the
+        #: backend holds: the listing tool takes a team and answers for it
+        #: alone, and two teams' vocabularies routinely differ.
+        self.statuses: dict[str, list[str]] = {
+            team: list(names) for team, names in (statuses or {}).items()
+        }
+        self.state_types: dict[str, str] = dict(state_types or {})
+        #: ``get_project`` answers, keyed by the query the caller asks
+        #: with (a project id).  Raw payloads, because the shape is the
+        #: vendor's own (KOD-169).
+        self.projects: dict[str, Mapping[str, object]] = dict(projects or {})
+        self.actor: str = actor
+        self.calls: list[tuple[str, Mapping[str, object]]] = []
+        self.comment_instants: list[datetime] = list(comment_instants)
+        self._transient_failures: dict[str, int] = dict(transient_failures or {})
+        self._transport_failures: dict[str, int] = dict(transport_failures or {})
+        #: Tools that answer with an error RESULT, and the diagnosis each
+        #: answers with.  Standing rather than counted, unlike the two
+        #: failure knobs above: what this expresses is a tool that answers
+        #: the same way every time, a refused scope among them.
+        self._tool_errors: dict[str, str] = dict(tool_errors or {})
+        #: Tools whose credential is refused once they have answered that
+        #: many calls, and refused on EVERY call after.  The measured shape
+        #: (KOD-171): the token worked for fifty-one minutes and then
+        #: answered 401 for the rest of the boot, so a knob that heals is
+        #: not one this failure has.
+        self._credential_refused_after: dict[str, int] = dict(
+            credential_refused_after or {},
+        )
+        self._sequence: int = 0
+
+    async def call_tool(
+        self,
+        *,
+        name: str,
+        arguments: Mapping[str, object],
+    ) -> McpToolResult:
+        # Yield to the scheduler at every tool boundary so concurrent callers
+        # genuinely interleave: a claim race that never interleaves proves
+        # nothing about exactly-once semantics.
+        await asyncio.sleep(0)
+        self.calls.append((name, dict(arguments)))
+        served = self._credential_refused_after.get(name)
+        if served is not None and len(self.tool_calls(name)) > served:
+            raise McpCredentialRefusedError(
+                "the MCP server refused the configured credential",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        remaining = self._transient_failures.get(name, 0)
+        if remaining > 0:
+            self._transient_failures[name] = remaining - 1
+            raise TransientAPIError(f"fake transient failure on {name}")
+        failing = self._transport_failures.get(name, 0)
+        if failing > 0:
+            self._transport_failures[name] = failing - 1
+            raise McpTransportError(
+                "fake transport failure",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        reported = self._tool_errors.get(name)
+        if reported is not None:
+            # The shape a real tool error arrives in: an error RESULT, which
+            # the transport turns into this exception carrying the server's
+            # own words. A caller cannot tell a refused scope from an outage
+            # by type — only those words distinguish them.
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {reported}",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        handler = getattr(self, f"_tool_{name}", None)
+        if handler is None:
+            msg = f"fake MCP server exposes no tool named {name!r}"
+            raise LookupError(msg)
+        result: McpToolResult = handler(arguments)
+        return result
+
+    def tool_calls(self, name: str) -> list[Mapping[str, object]]:
+        """Every argument mapping the named tool was invoked with."""
+        return [args for tool, args in self.calls if tool == name]
+
+    def _next_instant(self) -> datetime:
+        if self.comment_instants:
+            return self.comment_instants[
+                min(self._sequence, len(self.comment_instants) - 1)
+            ]
+        return FIXTURE_EPOCH + timedelta(seconds=self._sequence)
+
+    def _issue(self, arguments: Mapping[str, object], key: str) -> FakeMcpIssue:
+        issue_key = str(arguments[key])
+        issue = self.issues.get(issue_key)
+        if issue is None:
+            msg = f"fake workspace has no issue {issue_key!r}"
+            raise LookupError(msg)
+        return issue
+
+    def _moved(self, issue_key: str) -> None:
+        """A write moves the issue's stamp strictly forward, as the vendor's does.
+
+        Every issue save and every entry on its comment log — created,
+        edited or deleted — lands on ``updatedAt``.  That movement is what
+        the pass gates read and what the adapter records after its own
+        writes, so a fake that left the stamp where it was could not tell
+        a post-write read from a pre-write one (KOD-175).  An issue the
+        fixture never seeded has no stamp to move.
+        """
+        issue = self.issues.get(issue_key)
+        if issue is None:
+            return
+        issue.updated_at = (
+            max(issue.updated_at, self._next_instant()) + FIXTURE_WRITE_STEP
+        )
+
+    def _tool_list_issues(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        label = arguments.get("label")
+        team = arguments.get("team")
+        selected = [
+            issue
+            for issue in self.issues.values()
+            if (label is None or label in issue.labels)
+            and (team is None or issue.team == team)
+        ]
+        limit = int(str(arguments.get("limit", len(selected))))
+        return {
+            "issues": [issue.entry() for issue in selected[:limit]],
+            "hasNextPage": len(selected) > limit,
+        }
+
+    def _tool_list_diffs(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        owner = arguments.get("owner")
+        repo = arguments.get("repo")
+        selected = [
+            diff
+            for diff in self.diffs
+            if (owner is None or diff.owner == owner)
+            and (repo is None or diff.repo == repo)
+        ]
+        selected.sort(key=lambda diff: diff.updated_at, reverse=True)
+        limit = int(str(arguments.get("limit", len(selected))))
+        return {"diffs": [diff.entry() for diff in selected[:limit]]}
+
+    def _tool_get_issue(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._issue(arguments, "id").wire()
+
+    def _tool_save_issue(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        if "id" not in arguments:
+            self._sequence += 1
+            created = FakeMcpIssue(
+                id=f"NEW-{self._sequence}",
+                title=str(arguments.get("title", "")),
+                description=str(arguments.get("description", "")),
+                priority_raw=int(str(arguments.get("priority", 0))),
+            )
+            self.issues[created.id] = created
+            return created.wire()
+        issue = self._issue(arguments, "id")
+        if "title" in arguments:
+            issue.title = str(arguments["title"])
+        if "description" in arguments:
+            issue.description = str(arguments["description"])
+        if "state" in arguments:
+            issue.status = str(arguments["state"])
+            issue.status_type = self.state_types[issue.status]
+        if "labels" in arguments:
+            raw_labels = arguments["labels"]
+            assert isinstance(raw_labels, list)
+            new_labels = [str(entry) for entry in raw_labels]
+            issue.labels = new_labels
+        self._moved(issue.id)
+        return issue.wire()
+
+    def _tool_save_comment(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        # The vendor's tool is save, not create: an ``id`` updates that
+        # comment in place and its parent reference is ignored. Modelling
+        # only the create arm would let an adapter that edits pass here and
+        # fail against the real server.
+        if "id" in arguments:
+            comment_id = str(arguments["id"])
+            for existing in self.comments:
+                if existing.id == comment_id:
+                    # ``created_at`` survives an edit, which is the whole
+                    # property the claim order depends on.
+                    existing.body = str(arguments["body"])
+                    self._moved(existing.issue_id)
+                    return existing.wire()
+            raise KeyError(f"no comment {comment_id} to update")
+        created_at = self._next_instant()
+        self._sequence += 1
+        comment = FakeMcpComment(
+            id=f"comment-{self._sequence:04d}",
+            issue_id=str(arguments["issueId"]),
+            author=self.actor,
+            body=str(arguments["body"]),
+            created_at=created_at,
+        )
+        self.comments.append(comment)
+        self._moved(comment.issue_id)
+        return comment.wire()
+
+    def _tool_get_project(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        query = str(arguments["query"])
+        project = self.projects.get(query)
+        if project is None:
+            msg = f"fake workspace has no project {query!r}"
+            raise LookupError(msg)
+        return project
+
+    def _tool_list_comments(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        issue_id = str(arguments["issueId"])
+        return {
+            "comments": [
+                comment.wire()
+                for comment in self.comments
+                if comment.issue_id == issue_id
+            ],
+            "hasNextPage": False,
+        }
+
+    def _tool_delete_comment(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        comment_id = str(arguments["id"])
+        deleted = [c for c in self.comments if c.id == comment_id]
+        self.comments = [c for c in self.comments if c.id != comment_id]
+        for comment in deleted:
+            self._moved(comment.issue_id)
+        return {}
+
+    def _tool_get_document(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        document_id = str(arguments["id"])
+        document = self.documents[document_id]
+        return {"id": document.id, "content": document.content}
+
+    def _tool_list_documents(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return {
+            "documents": [document.summary() for document in self.documents.values()],
+            "hasNextPage": False,
+        }
+
+    def _tool_save_document(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Create a document under the given title, with a server id.
+
+        Creation only, because that is the whole of what the adapter asks
+        for: a call naming an existing id would be an update, and an
+        ensure that updated a document would be the rename the refusal
+        exists to prevent.
+
+        A create naming no container is refused with the live server's own
+        words: the vendor files every document in a container, and a fake
+        accepting the bare call is how the broken create arm stayed
+        certified until a live boot reached it (KOD-166).
+        """
+        if not any(
+            container in arguments
+            for container in ("project", "issue", "initiative", "cycle", "team")
+        ):
+            raise McpTransportError(
+                "the MCP server reported a tool error: Error: One of "
+                "project, issue, initiative, cycle, or team must be "
+                "specified",
+                server_name="fake-linear",
+                tool_name="save_document",
+            )
+        title = str(arguments["title"])
+        self._sequence += 1
+        document = FakeMcpDocument(
+            id=f"fake-document-{self._sequence:04d}",
+            title=title,
+            content="",
+        )
+        self.documents[document.id] = document
+        return document.summary()
+
+    def _named(self, key: str, names: Sequence[str]) -> Mapping[str, object]:
+        """A list envelope under the key the TOOL names, never a shared one.
+
+        Each list tool keys its array after itself — ``users``, ``teams``,
+        ``labels`` — which is what the live server does and what the wire
+        models declare (KOD-143).
+        """
+        return {
+            key: [{"id": f"{name}-id", "name": name} for name in names],
+            "hasNextPage": False,
+        }
+
+    def display_name(self, name: str) -> str:
+        """The handle a mention addresses *name* by — never *name* itself."""
+        return name.replace("-", ".")
+
+    def _tool_list_users(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Users under BOTH identities the workspace answers to.
+
+        Every measured entry carries a ``displayName`` — the handle a
+        mention addresses — and on no measured entry does it equal the
+        account name.  The fake holds them distinct for that reason: a
+        reader that knows only one of the two is then visibly reading half
+        the listing (KOD-143 addendum 3).
+        """
+        return {
+            "users": [
+                {
+                    "id": f"{name}-id",
+                    "name": name,
+                    "displayName": self.display_name(name),
+                }
+                for name in self.users
+            ],
+            "hasNextPage": False,
+        }
+
+    def _tool_list_teams(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._named("teams", self.teams)
+
+    def _tool_list_issue_labels(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """One label listing, answering for a team or for the workspace.
+
+        Unscoped, this answers with the workspace-level labels ALONE — a
+        team's labels are invisible to it, which is the fact boot five
+        measured and the label addendum ruled on (KOD-143).  Sent a
+        ``team``, it answers with that team's own labels AND the
+        workspace-level ones, which is what the live listing does: measured
+        2026-09-01, one workspace label came back from both boards' calls
+        and from the unscoped one, so the answers are not a partition and a
+        fake omitting the echo certifies a classification the backend
+        refutes (KOD-167).
+
+        Neither answer carries a container field, because the live listing
+        carries none.  The ID is what distinguishes a workspace label
+        reaching a board from that board's own copy of the name, so every
+        entry carries one and it is distinct per container.
+        """
+        team = arguments.get("team")
+        entries = [self._label_entry(name, None) for name in self.labels]
+        if team is not None:
+            container = self._team_id(str(team))
+            entries.extend(
+                self._label_entry(name, container)
+                for name in self.team_labels.get(container, [])
+            )
+        return {"labels": entries, "hasNextPage": False}
+
+    def _label_entry(self, name: str, container: str | None) -> Mapping[str, object]:
+        """One label entry, its id distinct per CONTAINER rather than per name.
+
+        Two boards' own copies of one member are two labels with two ids,
+        and a workspace label echoed into a board's answer keeps the id it
+        has at workspace level — which is the whole of what tells a reader
+        those two shapes apart.
+        """
+        identity = name if container is None else f"{container}-{name}"
+        return {"id": f"{identity}-id", "name": name, "color": "#000000"}
+
+    def _team_id(self, team: str) -> str:
+        """The id the fake addresses *team* by; ``team`` takes a name or an id."""
+        if team in self.teams:
+            return f"{team}-id"
+        if team in {f"{name}-id" for name in self.teams}:
+            return team
+        msg = f"fake workspace holds no team {team!r}"
+        raise LookupError(msg)
+
+    def _tool_create_issue_label(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Create one label, refusing a name its CONTAINER already carries.
+
+        Tightened to the live vendor's shape per KOD-167: the measured
+        refusal was a boot re-creating its own team-scoped label in the
+        same team, which a per-container rule refuses exactly as a
+        per-workspace one would — and the live workspace that motivated
+        KOD-167 carries two boards' own copies of every queue member at
+        once, which only the per-container rule permits.  Refusing by name
+        alone would leave this fake certifying a single-container world the
+        backend does not have.
+        """
+        name = str(arguments["name"])
+        team = arguments.get("teamId")
+        held = (
+            self.labels if team is None else self.team_labels.setdefault(str(team), [])
+        )
+        if name in held:
+            msg = f"fake workspace already carries the label {name!r} here"
+            raise LookupError(msg)
+        held.append(name)
+        return {"name": name}
+
+    def _tool_list_issue_statuses(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Sequence[Mapping[str, object]]:
+        """One team's vocabulary, as a BARE ARRAY — no envelope, measured.
+
+        ``team`` is required by the tool's declared input schema, so a
+        call without one is a refusal here as it is there.  The ids are
+        scoped to the team that answered: a status is a per-team entity on
+        this backend and two teams never share one.
+        """
+        team = str(arguments["team"])
+        names = self.statuses.get(team)
+        if names is None:
+            msg = f"fake workspace holds no team {team!r}"
+            raise LookupError(msg)
+        return [
+            {
+                "id": f"{team}-{name}-id",
+                "type": self.state_types.get(name, "backlog"),
+                "name": name,
+            }
+            for name in names
+        ]
+
+
+class ManagedFakeLinearMcpServer(FakeLinearMcpServer):
+    """The fake MCP server plus the session lifetime the composition root drives.
+
+    Satisfies ``ManagedMcpToolCaller``, so the lifespan opens and closes it
+    exactly as it opens and closes the real HTTP transport, and the real
+    adapter runs above it.  Counts rather than flags: an unbalanced
+    open/close is visible.
+    """
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self.opens: int = 0
+        self.closes: int = 0
+        #: Every lifecycle act in the order boot performed it, so a case can
+        #: state that the credential was checked BEFORE a session existed
+        #: rather than only that both happened (KOD-268).
+        self.lifecycle: list[str] = []
+
+    async def probe(self) -> None:
+        await asyncio.sleep(0)
+        self.lifecycle.append("probe")
+
+    async def open(self) -> None:
+        await asyncio.sleep(0)
+        self.opens += 1
+        self.lifecycle.append("open")
+
+    async def close(self) -> None:
+        await asyncio.sleep(0)
+        self.closes += 1
+        self.lifecycle.append("close")
+
+
+#: What a lifecycle stage means as a workflow-state KIND.  The fake owns the
+#: mapping because the conformance suite asks the port what the write did,
+#: and a double that recorded the write without applying it would answer for
+#: a state the issue is not in.
+_STAGE_KIND: Mapping[LifecycleStage, WorkflowStateKind] = {
+    LifecycleStage.IN_PROGRESS: WorkflowStateKind.STARTED,
+    LifecycleStage.IN_REVIEW: WorkflowStateKind.STARTED,
+    LifecycleStage.DONE: WorkflowStateKind.COMPLETED,
+}
+
+
+class FakeTrackerPort:
+    """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
+
+    Holds domain objects directly, so a consumer test states its fixture in
+    the same vocabulary the consumer reads.  The claim is genuinely
+    first-writer-wins: concurrent claimants on one issue produce exactly one
+    ``GRANTED``.
+    """
+
+    def __init__(
+        self,
+        *,
+        issues: Sequence[TrackerIssue] = (),
+        assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
+        documents: Mapping[str, str] | None = None,
+        document_titles: Mapping[str, str] | None = None,
+        known_identifiers: Sequence[str] = (),
+        recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
+        recorded_base_specs: Mapping[str, BaseSpec] | None = None,
+        recorded_repositories: Mapping[str, str] | None = None,
+        initiative_identifiers: Mapping[str, frozenset[str]] | None = None,
+        scan_refusals: Mapping[PassSignal, str] | None = None,
+        clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
+    ) -> None:
+        self.issues: dict[str, TrackerIssue] = {
+            issue.issue_key: issue for issue in issues
+        }
+        self.recorded_work_refs: dict[str, list[WorkRef]] = {
+            key: list(value) for key, value in (recorded_work_refs or {}).items()
+        }
+        self.recorded_base_specs: dict[str, BaseSpec] = dict(recorded_base_specs or {})
+        #: The kodezart-repo marker per issue, as the port reads it back:
+        #: the recorded target repository for a staged fire (KOD-169).
+        self.recorded_repositories: dict[str, str] = dict(recorded_repositories or {})
+        #: Initiative names-and-ids per project id, for the scope clause.
+        #: A project the fixture does not seed belongs to no initiative,
+        #: which is a real tracker answer.
+        self.initiative_identifiers_by_project: dict[str, frozenset[str]] = dict(
+            initiative_identifiers or {},
+        )
+        self.claims: dict[str, ClaimResult] = {}
+        #: Every renewal ATTEMPT, granted or refused, as (issue, holder).
+        #: A heartbeat that has stopped is observed as a count that stopped
+        #: growing, which a record of grants alone cannot tell from a
+        #: heartbeat still ticking against a claim it no longer holds.
+        self.renewals: list[tuple[str, str]] = []
+        self.comments: list[TrackerComment] = []
+        self.workflow_writes: list[tuple[str, LifecycleStage]] = []
+        #: Every put-back the failure arm made, as (issue, state name).
+        #: Kept apart from ``workflow_writes`` because a restore names a
+        #: backend state and a stage write names a mapped one.
+        self.restored_states: list[tuple[str, str]] = []
+        #: The kind of every state this fake has seen, so a put-back can
+        #: answer with the state's own kind rather than inventing one.
+        self._state_kinds: dict[str, WorkflowStateKind] = {
+            issue.state_name: issue.state_kind for issue in issues
+        }
+        self.queue_writes: list[tuple[str, QueueState]] = []
+        self.scans: list[IssueQuery] = []
+        #: Every issue this double was asked to READ, in order.  A scan is
+        #: one call whatever it returns and a read is one call per issue,
+        #: so what a consumer spends on reads is only visible as a list of
+        #: them (KOD-173).
+        self.issue_reads: list[str] = []
+        #: Every claim this double GRANTED, in order — kept past the release
+        #: that deletes the claim itself, so a claim/release pair spent and
+        #: undone is still visible as the write it was (KOD-173).
+        self.claim_writes: list[str] = []
+        #: Reviews this double reports, keyed by the repository they belong
+        #: to, and the queries it was asked.  Separate from ``issues``
+        #: because a review is a separate object class: seeding one must not
+        #: make an issue scan see it.  Keyed rather than pooled because a
+        #: review lives in a repository the way an issue lives on a team, so
+        #: a scan scoped to one must not answer with another's.
+        self.reviews: dict[str, list[TrackerReview]] = {}
+        self.review_scans: list[ReviewQuery] = []
+        #: The signals whose scan this credential is refused scope for, and
+        #: the diagnosis each refusal answers with.
+        self.scan_refusals: dict[PassSignal, str] = dict(scan_refusals or {})
+        #: Every capability sweep this double was asked, in order.
+        self.capability_probes: list[tuple[PassSignal, ...]] = []
+        self._assets: dict[str, tuple[TrackerAsset, ...]] = {
+            key: tuple(value) for key, value in (assets or {}).items()
+        }
+        self._documents: dict[str, str] = dict(documents or {})
+        #: Title per document id, for the ensure path.  Separate from the
+        #: body registry above because a consumer reads a document by key
+        #: and an ensure addresses it by title; a fixture that seeded only
+        #: one of them would leave the other untestable.
+        self.document_titles: dict[str, str] = dict(document_titles or {})
+        self.known_identifiers: set[str] = set(known_identifiers)
+        #: Every container each INSTATED value is defined in, ``None`` being
+        #: the workspace itself.  A SET per value, because one name is
+        #: defined once per container and a two-board operation carries its
+        #: queue vocabulary on both (KOD-167).  A value the fixture merely
+        #: knows about is workspace-level, which is what a listing carrying
+        #: no container field reports.
+        self.mapping_containers: dict[str, set[str | None]] = {
+            identifier: {None} for identifier in self.known_identifiers
+        }
+        self._clock: Callable[[], datetime] = clock
+        self._sequence: int = 0
+        #: What THIS double's own writes left on each issue, exactly as the
+        #: shipped adapter keeps it: a write moves the issue's stamp and
+        #: records the stamp it left, so a consumer's gate can tell the
+        #: operation's own churn from a principal's edit (KOD-175).
+        self.self_writes: SelfWriteLedger = SelfWriteLedger()
+
+    def _wrote(self, issue_key: str) -> None:
+        """Stamp the issue as a backend would, and remember our own write.
+
+        Forward only, because a clock never runs backwards: a fixture that
+        seeded a stamp later than this double's clock keeps it, and what
+        goes into the ledger is the stamp the issue actually carries after
+        the write — which is what a scan will report.
+        """
+        issue = self.issues.get(issue_key)
+        if issue is None:
+            return
+        stamp = max(self._clock(), issue.updated_at)
+        self.issues[issue_key] = issue.model_copy(update={"updated_at": stamp})
+        self.self_writes.record(issue_key=issue_key, updated_at=stamp)
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        await asyncio.sleep(0)
+        self.scans.append(query)
+        matched = [
+            issue
+            for issue in self.issues.values()
+            if (query.queue_state is None or query.queue_state in issue.queue_states)
+            and (query.team_key is None or issue.team_key == query.team_key)
+            and (query.updated_since is None or issue.updated_at > query.updated_since)
+        ]
+        return tuple(matched[: query.page_size])
+
+    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
+        await asyncio.sleep(0)
+        self.review_scans.append(query)
+        pools = (
+            list(self.reviews.values())
+            if query.repo_url is None
+            else [self.reviews.get(query.repo_url, [])]
+        )
+        matched = [
+            review
+            for pool in pools
+            for review in pool
+            if query.updated_since is None or review.updated_at > query.updated_since
+        ]
+        # Newest first, which is the port's contract rather than this
+        # double's convenience: a consumer that reads only the head of the
+        # page must get the same answer here as it does from an adapter.
+        matched.sort(key=lambda review: review.updated_at, reverse=True)
+        return tuple(matched[: query.page_size])
+
+    async def verify_scan_capability(
+        self,
+        *,
+        signals: Sequence[PassSignal],
+    ) -> Mapping[PassSignal, str]:
+        await asyncio.sleep(0)
+        self.capability_probes.append(tuple(signals))
+        return {
+            signal: diagnosis
+            for signal in signals
+            if (diagnosis := self.scan_refusals.get(signal)) is not None
+        }
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        await asyncio.sleep(0)
+        self.issue_reads.append(issue_key)
+        return self.issues[issue_key]
+
+    async def create_issue(
+        self,
+        *,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        self._sequence += 1
+        issue = TrackerIssue(
+            issue_key=f"FAKE-{self._sequence}",
+            title=title,
+            body=body,
+            priority=priority,
+            state_name="Backlog",
+            state_kind=WorkflowStateKind.BACKLOG,
+            queue_states=frozenset(),
+            team_key=team_key,
+            created_at=self._clock(),
+            updated_at=self._clock(),
+            url=f"https://tracker.invalid/issue/FAKE-{self._sequence}",
+        )
+        self.issues[issue.issue_key] = issue
+        return issue
+
+    async def update_issue(
+        self,
+        *,
+        issue_key: str,
+        title: str | None = None,
+        body: str | None = None,
+    ) -> TrackerIssue:
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(
+            update={
+                "title": issue.title if title is None else title,
+                "body": issue.body if body is None else body,
+            }
+        )
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
+    async def set_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        stage: LifecycleStage,
+    ) -> TrackerIssue:
+        self.workflow_writes.append((issue_key, stage))
+        issue = self.issues[issue_key]
+        self._state_kinds[issue.state_name] = issue.state_kind
+        self._state_kinds[stage.value] = _STAGE_KIND[stage]
+        updated = issue.model_copy(
+            update={
+                "state_name": stage.value,
+                "state_kind": _STAGE_KIND[stage],
+            },
+        )
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        # A backend knows the kind of every state it defines, so the fake
+        # does too: seeded from the fixture's issues and extended by every
+        # write. An unknown name is a state no backend defined, and it
+        # raises rather than inventing a kind for it.
+        kind = self._state_kinds[state_name]
+        self.restored_states.append((issue_key, state_name))
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(
+            update={"state_name": state_name, "state_kind": kind},
+        )
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        self.queue_writes.append((issue_key, state))
+        issue = self.issues[issue_key]
+        updated = issue.model_copy(update={"queue_states": frozenset({state})})
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        self._sequence += 1
+        comment = TrackerComment(
+            comment_key=f"comment-{self._sequence:04d}",
+            issue_key=issue_key,
+            author_key="kodezart",
+            body=body,
+            created_at=self._clock(),
+        )
+        self.comments.append(comment)
+        self._wrote(issue_key)
+        return comment
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        return tuple(c for c in self.comments if c.issue_key == issue_key)
+
+    async def claim_issue(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult:
+        # The scheduling point is BEFORE the check-and-set, never inside it:
+        # a fake whose claim is not genuinely atomic proves nothing about
+        # exactly-once semantics.
+        await asyncio.sleep(0)
+        expires_at = self._clock() + timedelta(seconds=lease_seconds)
+        held = self.claims.get(issue_key)
+        if held is not None and held.expires_at > self._clock():
+            return ClaimResult(
+                issue_key=issue_key,
+                status=ClaimStatus.LOST,
+                holder=holder,
+                expires_at=expires_at,
+            )
+        granted = ClaimResult(
+            issue_key=issue_key,
+            status=ClaimStatus.GRANTED,
+            holder=holder,
+            expires_at=expires_at,
+        )
+        self.claims[issue_key] = granted
+        self.claim_writes.append(issue_key)
+        self._wrote(issue_key)
+        return granted
+
+    async def renew_claim(
+        self,
+        *,
+        issue_key: str,
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        await asyncio.sleep(0)
+        self.renewals.append((issue_key, holder))
+        held = self.claims.get(issue_key)
+        if held is None or held.holder != holder or held.expires_at <= self._clock():
+            return None
+        renewed = held.model_copy(
+            update={
+                "expires_at": max(
+                    self._clock() + timedelta(seconds=lease_seconds),
+                    held.expires_at,
+                ),
+            },
+        )
+        self.claims[issue_key] = renewed
+        self._wrote(issue_key)
+        return renewed
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        held = self.claims.get(issue_key)
+        if held is not None and held.holder == holder:
+            del self.claims[issue_key]
+            self._wrote(issue_key)
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        await asyncio.sleep(0)
+        held = self.claims.get(issue_key)
+        if held is None or held.expires_at <= self._clock():
+            return None
+        return held
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        return self._assets.get(issue_key, ())
+
+    async def read_document(self, *, document_key: str) -> str:
+        return self._documents[document_key]
+
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
+        await asyncio.sleep(0)
+        held = self.recorded_work_refs.setdefault(ref.issue_id, [])
+        for existing in held:
+            if existing.identity() == ref.identity():
+                return
+            if existing.role is WorkRefRole.DELIVERABLE is ref.role:
+                raise DuplicateWorkRefError(
+                    "an issue carries at most one deliverable ref",
+                    issue_id=ref.issue_id,
+                    role=ref.role.value,
+                    existing_branch=existing.branch,
+                    offered_branch=ref.branch,
+                )
+        held.append(ref)
+        self._wrote(ref.issue_id)
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        await asyncio.sleep(0)
+        return tuple(self.recorded_work_refs.get(issue_key, ()))
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        await asyncio.sleep(0)
+        self.recorded_base_specs[issue_key] = spec
+        self._wrote(issue_key)
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        await asyncio.sleep(0)
+        return self.recorded_base_specs.get(issue_key)
+
+    async def recorded_repository(self, *, issue_key: str) -> str | None:
+        await asyncio.sleep(0)
+        return self.recorded_repositories.get(issue_key)
+
+    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
+        await asyncio.sleep(0)
+        return self.initiative_identifiers_by_project.get(project_id, frozenset())
+
+    async def resolve_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingRef]:
+        await asyncio.sleep(0)
+        return tuple(
+            ref for ref in refs if ref.identifier not in self.known_identifiers
+        )
+
+    async def ensure_mappings(
+        self,
+        *,
+        refs: Sequence[MappingRef],
+    ) -> Sequence[MappingOutcome]:
+        """The port's ensure contract, held to the same rule the adapter is.
+
+        The double refused nothing before this: it accepted every kind and
+        created every ref, so a consumer could pass over behaviour the port
+        does not have.  R8's rule is the domain's, not a vendor's, so it
+        lives here identically — kinds outside ``INSTATABLE_MAPPING_KINDS``
+        raise, a value resolves WITHIN the container its ref declares, and
+        the two undecidable shapes raise and write nothing (KOD-167).
+        """
+        await asyncio.sleep(0)
+        outcomes: list[MappingOutcome] = []
+        for ref in refs:
+            if ref.kind not in INSTATABLE_MAPPING_KINDS:
+                raise TrackerEnsureConflictError(
+                    "this kind belongs to no field the operation owns",
+                    entry=ref.describe(),
+                )
+            if ref.kind is MappingKind.DOCUMENT:
+                outcomes.append(self._ensure_document(ref))
+                continue
+            identifier = ref.identifier
+            if identifier is None:
+                raise TrackerEnsureConflictError(
+                    "this kind is declared by its own identifier and this ref "
+                    "carries none",
+                    entry=ref.describe(),
+                )
+            containers: set[str | None] = self.mapping_containers.get(identifier, set())
+            held = sorted(
+                repr(container) for container in containers if container is not None
+            )
+            if None in containers and held:
+                raise TrackerEnsureConflictError(
+                    "the workspace defines this value at workspace level AND "
+                    f"inside a container; declared {ref.scope!r}, found the "
+                    f"workspace and {', '.join(held)}",
+                    entry=ref.describe(),
+                )
+            if None in containers or ref.scope in containers:
+                outcomes.append(
+                    MappingOutcome(
+                        ref=ref,
+                        action=EnsureAction.ADOPTED,
+                        identifier=identifier,
+                    ),
+                )
+                continue
+            if ref.scope is None and held:
+                raise TrackerEnsureConflictError(
+                    "this ref belongs to the workspace and the value is "
+                    f"defined inside a container; declared {ref.scope!r}, "
+                    f"found {', '.join(held)}",
+                    entry=ref.describe(),
+                )
+            self.known_identifiers.add(identifier)
+            self.mapping_containers.setdefault(identifier, set()).add(ref.scope)
+            outcomes.append(
+                MappingOutcome(
+                    ref=ref,
+                    action=EnsureAction.CREATED,
+                    identifier=identifier,
+                ),
+            )
+        return tuple(outcomes)
+
+    def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
+        """The document arm of the ensure contract, held identically here.
+
+        Same four refusals as the adapter, for the same reasons: an id the
+        workspace does not hold, an id whose document carries another
+        title, a title two documents share, and a create with no declared
+        container (the backend files every document in one; KOD-166).
+        """
+        if ref.identifier is not None:
+            title = self.document_titles.get(ref.identifier)
+            if title is None:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds no document with this identifier",
+                    entry=ref.describe(),
+                )
+            if title != ref.name:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds this document under another title; "
+                    f"declared {ref.name!r}, found {title!r}",
+                    entry=ref.describe(),
+                )
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=ref.identifier,
+            )
+        held = sorted(
+            identifier
+            for identifier, title in self.document_titles.items()
+            if title == ref.name
+        )
+        if len(held) > 1:
+            raise TrackerEnsureConflictError(
+                "the workspace holds several documents under this title",
+                entry=ref.describe(),
+            )
+        if held:
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=held[0],
+            )
+        if ref.scope is None:
+            raise TrackerEnsureConflictError(
+                "creating this document needs a container: the backend files "
+                "every document in one and refuses a create naming none "
+                "(KOD-166); declare the entry's container (a declared team) "
+                "or pre-create the document and declare its id",
+                entry=ref.describe(),
+            )
+        self._sequence += 1
+        identifier = f"fake-document-{self._sequence:04d}"
+        self.document_titles[identifier] = ref.name
+        self._documents[identifier] = ""
+        self.known_identifiers.add(identifier)
+        return MappingOutcome(
+            ref=ref,
+            action=EnsureAction.CREATED,
+            identifier=identifier,
+        )
+
+
+class FakeDeliveryProbe:
+    """``DeliveryProbe`` over a fixed set of issue keys with an open delivery."""
+
+    def __init__(self, *, delivered: Sequence[str] = ()) -> None:
+        self.delivered: set[str] = set(delivered)
+        self.calls: list[str] = []
+
+    async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
+        self.calls.append(issue_key)
+        return issue_key in self.delivered
+
+
+def make_tracker_review(
+    review_key: str,
+    *,
+    updated_at: datetime = FIXTURE_EPOCH,
+) -> TrackerReview:
+    """A domain review for gate fixtures — identity and recency, nothing else."""
+    return TrackerReview(review_key=review_key, updated_at=updated_at)
+
+
+def make_tracker_issue(
+    issue_key: str,
+    *,
+    priority: IssuePriority = IssuePriority.NONE,
+    state_name: str = "Todo",
+    state_kind: WorkflowStateKind = WorkflowStateKind.UNSTARTED,
+    queue_states: Sequence[QueueState] = (QueueState.APPROVED,),
+    blocked_by: Sequence[str] = (),
+    parent_key: str | None = None,
+    team_key: str | None = FIXTURE_TEAM_KEY,
+    created_at: datetime = FIXTURE_EPOCH,
+    updated_at: datetime | None = None,
+    project: str | None = None,
+    project_id: str | None = None,
+    body: str = "fixture body",
+) -> TrackerIssue:
+    """A domain issue for port-consumer fixtures."""
+    return TrackerIssue(
+        issue_key=issue_key,
+        parent_key=parent_key,
+        title=issue_key,
+        body=body,
+        priority=priority,
+        state_name=state_name,
+        state_kind=state_kind,
+        queue_states=frozenset(queue_states),
+        team_key=team_key,
+        project=project,
+        project_id=project_id,
+        relations=tuple(
+            IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=key)
+            for key in blocked_by
+        ),
+        created_at=created_at,
+        updated_at=created_at if updated_at is None else updated_at,
+        url=f"https://tracker.invalid/issue/{issue_key}",
+    )
+
+
+class FakeJobQueue:
+    """``JobQueue`` and ``JobRegistry`` over an in-memory submission list.
+
+    One queue, two producers: this double is what proves the dispatcher
+    enqueues onto the same surface HTTP submissions use.
+    """
+
+    def __init__(
+        self,
+        *,
+        states: Mapping[str, JobState] | None = None,
+        events: Sequence[AgentEvent] = (),
+    ) -> None:
+        self.submissions: list[tuple[str, WorkflowRequest]] = []
+        self.records: dict[str, JobRecord] = {}
+        self.attached: list[str] = []
+        self._states: dict[str, JobState] = dict(states or {})
+        self._events: tuple[AgentEvent, ...] = tuple(events)
+        self._sequence: int = 0
+
+    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+        await asyncio.sleep(0)
+        self._sequence += 1
+        job_id = f"job-{self._sequence:04d}"
+        record = JobRecord(
+            job_id=job_id,
+            lane=lane,
+            state=self._states.get(job_id, JobState.QUEUED),
+            queue_position=len(self.submissions) + 1,
+            submitted_at=FIXTURE_EPOCH,
+        )
+        self.submissions.append((lane, request))
+        self.records[job_id] = record
+        return record
+
+    def attach(self, *, job_id: str) -> AsyncGenerator[AgentEvent, None]:
+        """Replay the scripted run, exactly as the real queue's stream does.
+
+        The frames the real queue publishes begin only once the worker has
+        dequeued the job, so a scripted stream that starts empty and then
+        yields is the same shape a consumer sees in production.
+        """
+        self.attached.append(job_id)
+        scripted = self._events
+
+        async def _replay() -> AsyncGenerator[AgentEvent, None]:
+            for event in scripted:
+                await asyncio.sleep(0)
+                yield event
+
+        return _replay()
+
+    async def get(self, *, job_id: str) -> JobRecord | None:
+        await asyncio.sleep(0)
+        return self.records.get(job_id)
+
+    def mark(self, job_id: str, state: JobState) -> None:
+        """Move a submitted job to *state*, as the dispatcher would observe."""
+        self.records[job_id] = self.records[job_id].model_copy(
+            update={"state": state},
+        )
+
+
+class FakeFireReport:
+    """``FireReport`` as a record: every finished fire the watch reported."""
+
+    def __init__(self) -> None:
+        self.reported: list[tuple[str, RunOutcome, str | None]] = []
+
+    async def __call__(
+        self,
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        self.reported.append((issue_key, outcome, failure_class))
+
+
+class RecordingLogSink:
+    """A ``RunRecordSink`` that behaves like the log it stands for.
+
+    It holds the rows written to it and answers the verify question the
+    way a destination does: by the record's own TITLE, which carries the
+    kind, the name and the instant the run began — so a neighbour's row in
+    the same window answers nothing about it, a row for a longer name this
+    one prefixes answers nothing either, and a second call for the same run
+    finds the first (KOD-288).
+    """
+
+    def __init__(self) -> None:
+        self.writes: list[RunRecord] = []
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        return any(row.title() == record.title() for row in self.writes)
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        self.writes.append(record)
+
+
+class RefusingRecordSink:
+    """A ``RunRecordSink`` whose destination never takes the row.
+
+    The CLASS it raises is the whole of it: the transport says a session
+    died by raising ``McpSessionClosedError``, and a destination that
+    answered and refused raises the plain transport error, which is how
+    the recorder tells a server to diagnose from a payload to fix
+    (KOD-177).  It refuses at the verification, so the write hop behind it
+    is never reached and the refusal cannot be mistaken for a half-written
+    row.
+    """
+
+    def __init__(self, failure: type[McpTransportError]) -> None:
+        self.failure: type[McpTransportError] = failure
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        raise self.failure(
+            "the record destination could not be read",
+            server_name="fixture-knowledge",
+            tool_name="API-query-data-source",
+        )
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        raise self.failure(
+            "the record destination refused the row",
+            server_name="fixture-knowledge",
+            tool_name="API-post-page",
+        )
+
+
+class BrokenRecordSink:
+    """A ``RunRecordSink`` whose own code fails, outside the transport's words.
+
+    Neither a dead session nor a vendor's answer: the class it raises is
+    one no destination produces, which is how the tests hold the recorder
+    to classifying nothing it cannot tell apart, and the producers to
+    naming such a failure apart from a record the destination refused
+    (KOD-192).
+    """
+
+    async def holds_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> bool:
+        msg = "the sink's own payload builder reads a field the record has not got"
+        raise KeyError(msg)
+
+    async def write_record(
+        self,
+        *,
+        destination: RecordDestination,
+        record: RunRecord,
+    ) -> None:
+        msg = "the sink's own payload builder reads a field the record has not got"
+        raise KeyError(msg)
+
+
+# ---------------------------------------------------------------------------
+# The stdio MCP server fakes: a REAL subprocess, scripted to die (KOD-177)
+# ---------------------------------------------------------------------------
+
+#: One MCP server over stdio, in as little as speaks the protocol.
+#:
+#: A real process rather than a substituted session, because what is under
+#: test is what happens when the process on the other end of the pipe GOES
+#: AWAY — a stubbed session can be told to raise, but only a spawned server
+#: that exits mid-conversation produces the closed transport the measured
+#: boot met (KOD-177).
+#:
+#: Scripted entirely through the environment the caller passes down:
+#:
+#: * ``FAKE_MCP_SPAWN_LOG`` — a file it appends one line to per spawn, so a
+#:   test can count the spawns a single call cost;
+#: * ``FAKE_MCP_CALLS`` — how many tool calls it serves before exiting,
+#:   which is how a session closes under a live caller;
+#: * ``FAKE_MCP_STDERR`` — a line it writes to its own stderr at startup;
+#: * ``FAKE_MCP_TOOL_ERROR`` — the message it ANSWERS every tool call with,
+#:   as the vendor's own refusal: a server that is there and says no;
+#: * ``FAKE_MCP_RPC_ERROR_SPAWNS`` — the spawn numbers that ANSWER every
+#:   tool call with a JSON-RPC error naming the tool, as a server composes
+#:   one for a tool it has not got: the client raises it as the very class
+#:   a dead pipe arrives in, under a different code, and it must never be
+#:   read as a closed session (KOD-192);
+#: * ``FAKE_MCP_REFUSE_AFTER`` — the spawn number after which it exits
+#:   before serving anything at all: a server that cannot be brought back;
+#: * ``FAKE_MCP_REFUSE_SPAWNS`` — the individual spawn numbers that exit
+#:   before serving, so a server can be down for ONE reopen and back for
+#:   the next: the outage a caller must not turn into a boot-long one;
+#: * ``FAKE_MCP_DIE_BEFORE_ANSWERING`` — a file the server appends a line
+#:   to for every tool call it EXECUTES, then exits without answering: the
+#:   ambiguous death, where the request reached the server and the client
+#:   cannot know whether it ran (KOD-305).  Counting the lines is how a
+#:   replayed write is told from one performed once;
+#: * ``FAKE_MCP_EXIT_TRIGGER`` / ``FAKE_MCP_EXIT_MARKER`` — the pair that
+#:   kills the server BETWEEN calls rather than during one, which is the
+#:   measured shape (KOD-286).  Once its budget is spent the server waits
+#:   for the trigger file, then closes its stdout and touches the marker.
+#:   The wait is what makes the last answer safe: a server that closed
+#:   stdout in the same breath as its reply raced the client's own reader
+#:   and the reply was lost as ``CONNECTION_CLOSED`` — measured here.  The
+#:   test triggers the death only after the call it made has RETURNED, and
+#:   the marker (written after the close) says the pipe is shut at the
+#:   operating system's end, so both halves wait on facts rather than on
+#:   durations.  The waiting is done by a thread while the main loop keeps
+#:   answering, because a tool call is not over when its result lands: the
+#:   client reads the server's tool list afterwards to validate structured
+#:   content, and a server that shut its pipe in the same breath as the
+#:   reply took its own call down with it (measured here).  Only the FIRST
+#:   spawn dies this way: a server brought back by a reopen is the one
+#:   whose survival the test is about, and it serves on until the caller
+#:   closes its stdin.
+STDIO_FAKE_SERVER_SOURCE = '''\
+"""A minimal MCP server over stdio, scripted by its environment."""
+
+import json
+import os
+import sys
+import threading
+import time
+
+#: How the death wait is paced, and how long it may last before the
+#: server gives up on a trigger no test is going to write.
+POLL_SECONDS = 0.01
+WAIT_LIMIT_SECONDS = 30.0
+
+#: The spawn that dies between calls: the boot session, never a reopened
+#: one, whose survival is what the reopen tests are about.
+FIRST_SPAWN = 1
+
+#: JSON-RPC 2.0's own code for a request the server understood and would
+#: not serve: an error the server COMPOSES, as distinct from the one the
+#: client synthesises when the pipe dies under a request.
+INVALID_PARAMS = -32602
+
+
+def _send(payload: dict[str, object]) -> None:
+    sys.stdout.write(json.dumps(payload) + "\\n")
+    sys.stdout.flush()
+
+
+def _spawns() -> int:
+    path = os.environ["FAKE_MCP_SPAWN_LOG"]
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("spawn\\n")
+    with open(path, encoding="utf-8") as handle:
+        return len(handle.readlines())
+
+
+def _arm_the_death(trigger: str, marker: str) -> None:
+    """Watch for the word in a thread, and die on it while idle.
+
+    The main loop keeps answering meanwhile: a call is not over when its
+    result lands, and a server that shut its pipe in the same breath took
+    the client's follow-up schema read down with it.
+    """
+
+    def watch() -> None:
+        waited = 0.0
+        while not os.path.exists(trigger) and waited < WAIT_LIMIT_SECONDS:
+            time.sleep(POLL_SECONDS)
+            waited += POLL_SECONDS
+        sys.stdout.close()
+        with open(marker, "w", encoding="utf-8") as handle:
+            handle.write("exited\\n")
+        os._exit(0)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def main() -> int:
+    spawns = _spawns()
+    noise = os.environ.get("FAKE_MCP_STDERR", "")
+    if noise:
+        sys.stderr.write(noise + "\\n")
+        sys.stderr.flush()
+    refuse_after = os.environ.get("FAKE_MCP_REFUSE_AFTER", "")
+    if refuse_after and spawns > int(refuse_after):
+        return 1
+    refused = os.environ.get("FAKE_MCP_REFUSE_SPAWNS", "")
+    if spawns in {int(number) for number in refused.split(",") if number}:
+        return 1
+    answering = os.environ.get("FAKE_MCP_RPC_ERROR_SPAWNS", "")
+    composes_errors = spawns in {
+        int(number) for number in answering.split(",") if number
+    }
+    budget = int(os.environ.get("FAKE_MCP_CALLS", "0"))
+    die_before_answering = os.environ.get("FAKE_MCP_DIE_BEFORE_ANSWERING", "")
+    exit_trigger = os.environ.get("FAKE_MCP_EXIT_TRIGGER", "")
+    exit_marker = os.environ.get("FAKE_MCP_EXIT_MARKER", "")
+    served = 0
+    for line in sys.stdin:
+        text = line.strip()
+        if not text:
+            continue
+        message = json.loads(text)
+        identifier = message.get("id")
+        method = message.get("method")
+        if method == "initialize":
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "result": {
+                        "protocolVersion": message["params"]["protocolVersion"],
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "fake-knowledge", "version": "1"},
+                    },
+                },
+            )
+        elif method == "tools/list":
+            _send({"jsonrpc": "2.0", "id": identifier, "result": {"tools": []}})
+        elif method == "tools/call":
+            if composes_errors:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": identifier,
+                        "error": {
+                            "code": INVALID_PARAMS,
+                            "message": "unknown tool: " + message["params"]["name"],
+                        },
+                    },
+                )
+                continue
+            refusal = os.environ.get("FAKE_MCP_TOOL_ERROR", "")
+            if refusal:
+                _send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": identifier,
+                        "result": {
+                            "content": [{"type": "text", "text": refusal}],
+                            "isError": True,
+                        },
+                    },
+                )
+                continue
+            if served >= budget:
+                return 0
+            served += 1
+            if die_before_answering:
+                with open(die_before_answering, "a", encoding="utf-8") as ran:
+                    ran.write(f"{spawns}:{served}\\n")
+                sys.stdout.close()
+                return 0
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "result": {
+                        "content": [{"type": "text", "text": "recorded"}],
+                        "structuredContent": {"served": served},
+                        "isError": False,
+                    },
+                },
+            )
+            if served >= budget and exit_marker and spawns == FIRST_SPAWN:
+                _arm_the_death(exit_trigger, exit_marker)
+        elif identifier is not None:
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": identifier,
+                    "error": {"code": -32601, "message": "no such method"},
+                },
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def write_stdio_fake_server(directory: Path) -> Path:
+    """Put the fake server on disk under *directory* and name its path."""
+    script = directory / "fake_mcp_server.py"
+    script.write_text(STDIO_FAKE_SERVER_SOURCE, encoding="utf-8")
+    return script

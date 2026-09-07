@@ -10,10 +10,10 @@ import pytest
 
 from kodezart.domain.base_scope import changed_inputs, scope_base
 from kodezart.domain.errors import StaleBaseError
-from kodezart.types.domain.base_spec import (
+from kodezart.types.domain.branch import (
     BaseInput,
-    BaseRefRole,
     BaseSpec,
+    WorkRefRole,
     trunk_base,
 )
 from kodezart.types.domain.workflow import ExecutionContext
@@ -30,13 +30,13 @@ BLOCKER_B = BaseInput(
 )
 
 STACKED = BaseSpec(
-    base_ref="kodezart/blocker-a-11111111",
-    role=BaseRefRole.deliverable,
+    base_branch="kodezart/blocker-a-11111111",
+    base_role=WorkRefRole.DELIVERABLE,
     inputs=(BLOCKER_A,),
 )
 COMBINED = BaseSpec(
-    base_ref="kodezart/integration-33333333",
-    role=BaseRefRole.integration,
+    base_branch="kodezart/integration-33333333",
+    base_role=WorkRefRole.INTEGRATION,
     inputs=(BLOCKER_A, BLOCKER_B),
 )
 
@@ -72,7 +72,7 @@ def test_a_combined_base_is_read_exactly_like_a_single_one() -> None:
     """The role is carried so it can be REPORTED, never so it can branch."""
     assert scope_base(COMBINED, None) == "kodezart/integration-33333333"
     assert _context(COMBINED).base_branch == "kodezart/integration-33333333"
-    assert COMBINED.role is BaseRefRole.integration
+    assert COMBINED.base_role is WorkRefRole.INTEGRATION
 
 
 def test_the_context_holds_no_base_of_its_own() -> None:
@@ -103,7 +103,7 @@ def test_the_context_holds_no_base_of_its_own() -> None:
 
 def test_a_live_base_produces_a_verdict() -> None:
     """The paired negative: recomputing the same spec changes nothing."""
-    assert scope_base(STACKED, STACKED.model_copy(deep=True)) == STACKED.base_ref
+    assert scope_base(STACKED, STACKED.model_copy(deep=True)) == STACKED.base_branch
 
 
 @pytest.mark.parametrize(
@@ -112,16 +112,16 @@ def test_a_live_base_produces_a_verdict() -> None:
         (
             "a blocker was added",
             BaseSpec(
-                base_ref="kodezart/integration-33333333",
-                role=BaseRefRole.integration,
+                base_branch="kodezart/integration-33333333",
+                base_role=WorkRefRole.INTEGRATION,
                 inputs=(BLOCKER_A, BLOCKER_B),
             ),
         ),
         (
             "the blocker's deliverable ref was replaced",
             BaseSpec(
-                base_ref="kodezart/blocker-a-99999999",
-                role=BaseRefRole.deliverable,
+                base_branch="kodezart/blocker-a-99999999",
+                base_role=WorkRefRole.DELIVERABLE,
                 inputs=(
                     BLOCKER_A.model_copy(
                         update={"branch": "kodezart/blocker-a-99999999"},
@@ -132,8 +132,8 @@ def test_a_live_base_produces_a_verdict() -> None:
         (
             "an input ref advanced",
             BaseSpec(
-                base_ref="kodezart/blocker-a-11111111",
-                role=BaseRefRole.deliverable,
+                base_branch="kodezart/blocker-a-11111111",
+                base_role=WorkRefRole.DELIVERABLE,
                 inputs=(BLOCKER_A.model_copy(update={"sha": "c" * 40}),),
             ),
         ),
@@ -148,8 +148,8 @@ def test_a_moved_base_refuses_instead_of_grading(
     """No scope verdict at all — never one graded against the stale ref."""
     with pytest.raises(StaleBaseError) as excinfo:
         scope_base(STACKED, implied)
-    assert excinfo.value.recorded_ref == STACKED.base_ref, label
-    assert excinfo.value.implied_ref == implied.base_ref, label
+    assert excinfo.value.recorded_ref == STACKED.base_branch, label
+    assert excinfo.value.implied_ref == implied.base_branch, label
 
 
 def test_the_refusal_names_what_moved() -> None:

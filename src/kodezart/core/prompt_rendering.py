@@ -206,6 +206,33 @@ class PromptTemplate:
         return render_template(self.body, merged)
 
 
+def compose_set_member(
+    body: str,
+    *,
+    substitutions: Mapping[str, str],
+    appendix: str | None,
+) -> str:
+    """Assemble one set member from *body* plus its set's own fragment content.
+
+    Set ASSEMBLY, not rendering.  A fragment is constant prose the set
+    contributes to a member and is resolved when the set is resolved; the
+    renderer above substitutes per-call typed variables and is the only
+    thing that parses.  Assembly is an exact-token swap plus an optional
+    final block — no conditionals, no dotted paths, no iteration — and it
+    lives here because this module owns the tag syntax both steps share.
+
+    Empty *substitutions* and an absent *appendix* return *body*
+    unchanged, which is how a set that declares no fragments composes
+    exactly as it did before this existed.
+    """
+    composed = body
+    for name, text in substitutions.items():
+        composed = composed.replace("{{" + name + "}}", text)
+    if appendix is None:
+        return composed
+    return f"{composed.rstrip()}\n\n{appendix}\n"
+
+
 def binding_names(body: str) -> frozenset[str]:
     """Every distinct name referenced by *body*, blocks included."""
     names: set[str] = set()

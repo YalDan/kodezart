@@ -37,7 +37,8 @@ regeneration round and reach no halt; their consequence is the forced
 
 from collections.abc import Sequence
 
-from kodezart.domain.errors import CriteriaFanInError, UngroundedVerdictError
+from kodezart.domain.errors import UngroundedVerdictError
+from kodezart.domain.fan_in import fan_in_breach
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     Contradiction,
@@ -267,10 +268,11 @@ def reconcile(
     two rounds of a hallucinated one end a run over criteria that were
     never asked about.
 
-    This is one of the two fan-in channels KOD-91 deliverable 4 covers;
-    why the detection is a workaround rather than architecture, what KOD-91
-    retires and what survives it, is stated once in
-    :mod:`kodezart.domain.criteria_grading`.
+    This is one of the two fan-in channels KOD-91 deliverable 4 covers,
+    and it is the CHECK the node's bounded re-dispatch runs between
+    sessions: the error it raises is the shared one, built at the single
+    site in :mod:`kodezart.domain.fan_in`.  A pure fold cannot re-run a
+    session, so the bound lives in the node and the refusal lives here.
     """
     dispatched = [c.id for c in criteria]
     dispatched_set = set(dispatched)
@@ -289,15 +291,14 @@ def reconcile(
         for id_ in contradiction.criterion_ids:
             if id_ not in dispatched_set and id_ not in unknown:
                 unknown.append(id_)
-    missing = [id_ for id_ in dispatched if id_ not in seen]
-    if missing or duplicates or unknown:
-        msg = "Validator output does not correspond 1:1 to the dispatched criteria"
-        raise CriteriaFanInError(
-            msg,
-            missing_ids=missing,
-            duplicate_ids=duplicates,
-            unknown_ids=unknown,
-        )
+    missing: list[str] = [id_ for id_ in dispatched if id_ not in seen]
+    breach = fan_in_breach(
+        missing_ids=missing,
+        duplicate_ids=duplicates,
+        unknown_ids=unknown,
+    )
+    if breach is not None:
+        raise breach
     return tuple(seen[id_] for id_ in dispatched)
 
 

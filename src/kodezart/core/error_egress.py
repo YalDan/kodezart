@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Final
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import ErrorEvent
+from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 
 if TYPE_CHECKING:
     # Type-only import — keeps RaiseSite out of this module's runtime namespace
@@ -15,30 +16,26 @@ if TYPE_CHECKING:
     from kodezart.types.domain.agent import RaiseSite
 
 
-# GitHub token taxonomy (prefixes per the published format spec):
-#   ghp_ classic PAT, gho_ OAuth, ghu_ user-to-server, ghs_ server-to-server
-#   github_pat_ fine-grained PAT.
-# Body lower-bounds anchor on documented lengths so short-suffix prose
-# matches (e.g. "ghp_abc") are not scrubbed.  No upper bound — the literal
-# prefix anchors prevent runaway backtracking.
-_REDACTION_SENTINEL: Final[str] = "***REDACTED***"
-_CREDENTIAL_URL_PATTERN: re.Pattern[str] = re.compile(
-    r"(https?://x-access-token:)[^@\s/]+(@)"
-)
-_GH_TOKEN_PATTERN: re.Pattern[str] = re.compile(r"\bgh[posu]_[A-Za-z0-9]{36,}")
-_GH_FINEGRAINED_PAT_PATTERN: re.Pattern[str] = re.compile(
-    r"\bgithub_pat_[A-Za-z0-9_]{20,}"
+#: The shared credential table, compiled once with each shape's replacement
+#: template beside it.  The outbound gate compiles the same patterns to find
+#: spans; this surface substitutes, so it is the one that needs the
+#: templates.
+_COMPILED_CREDENTIAL_SHAPES: Final[tuple[tuple[re.Pattern[str], str], ...]] = tuple(
+    (re.compile(shape.pattern), shape.replacement) for shape in CREDENTIAL_SHAPES
 )
 
 
 def redact_credentials(s: str) -> str:
-    """Replace GitHub credential patterns with the redaction sentinel.
+    """Replace vendor credential patterns with the redaction sentinel.
 
     Applied at the two ErrorEvent egress fields below and at both
     Claude-SDK adapter ``claude_sdk_process_error`` log calls.  Patterns
-    are tightly scoped to the credential URL form and the five published
-    GitHub token prefixes — wider matches risk scrubbing non-secret
-    operator text, which the ticket explicitly forbids.
+    are tightly scoped to the shapes each vendor publishes — wider matches
+    risk scrubbing non-secret operator text, which the ticket explicitly
+    forbids.  A vendor's taxonomy is one entry in ``CREDENTIAL_SHAPES``,
+    the same table the outbound gate's shipped credential patterns come
+    from, so covering the next one adds an entry rather than editing this
+    function — and cannot cover one surface while leaving the other blind.
 
     LEAK ORIGIN vs. egress redaction: the upstream LEAK ORIGIN is
     ``adapters/subprocess_git_service.py`` — specifically ``_run``,
@@ -56,9 +53,8 @@ def redact_credentials(s: str) -> str:
     future hardening pass MAY scrub at the source as defense-in-depth
     but is not required for the wire-visible fields to be safe.
     """
-    s = _CREDENTIAL_URL_PATTERN.sub(rf"\1{_REDACTION_SENTINEL}\2", s)
-    s = _GH_TOKEN_PATTERN.sub(_REDACTION_SENTINEL, s)
-    s = _GH_FINEGRAINED_PAT_PATTERN.sub(_REDACTION_SENTINEL, s)
+    for pattern, replacement in _COMPILED_CREDENTIAL_SHAPES:
+        s = pattern.sub(replacement, s)
     return s
 
 

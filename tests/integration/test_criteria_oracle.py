@@ -9,7 +9,7 @@ observed failure mode — and asserts all four still agree byte for byte,
 with identity carried by the ``AC-n`` id.
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
@@ -23,15 +23,23 @@ from kodezart.types.domain.agent import (
     WorkflowCriteriaEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriterionClass,
     DraftedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeArtifactPersister,
     FakeBranchMerger,
@@ -43,6 +51,7 @@ from tests.fakes import (
     PassThroughGate,
     as_validated,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 # Two criteria chosen for the exact shapes the incident report names: a
@@ -77,6 +86,9 @@ class MutatingEchoExecutor:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -178,6 +190,7 @@ def _result(structured: dict[str, object]) -> ResultEvent:
 async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
     executor = MutatingEchoExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -192,6 +205,10 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         cache=FakeRepoCache(),
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -206,6 +223,12 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         artifact_persister=persister,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     events = [
@@ -260,6 +283,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
     """KOD-53/AC-20 — re-injection renders the harness's own text, by id."""
     executor = MutatingEchoExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -273,6 +297,10 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         cache=FakeRepoCache(),
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
     engine = RalphWorkflowEngine(
         gate=PassThroughGate(),
@@ -286,6 +314,12 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         git_remote="origin",
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -314,6 +348,7 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
     """The evaluator prompt names every id, every iteration."""
     executor = MutatingEchoExecutor()
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -327,6 +362,10 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
         cache=FakeRepoCache(),
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
     _ = [
@@ -338,6 +377,7 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
             feature_branch="kodezart/oracle-12345678",
             ralph_branch="kodezart/oracle-12345678-ralph-abcdef01",
             base_spec=trunk_base("main"),
+            work_base_ref="main",
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             acceptance_criteria=as_validated(

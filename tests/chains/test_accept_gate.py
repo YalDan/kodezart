@@ -6,7 +6,7 @@ result takes, and no test asks a model anything.
 """
 
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from inspect import signature
 
 import pytest
@@ -33,7 +33,7 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
     WorkflowReviewEvent,
 )
-from kodezart.types.domain.base_spec import trunk_base
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import (
     CriterionClass,
     CriterionFeasibility,
@@ -41,9 +41,17 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import (
+    NO_SUBAGENTS,
+    UNCONFIGURED_SESSION_POLICY,
+    AgentDefinition,
+    SessionPolicy,
+)
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from tests.fakes import (
+    FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
     FakeBranchMerger,
@@ -58,6 +66,7 @@ from tests.fakes import (
     PassThroughGate,
     make_criteria,
     make_prompt_provider,
+    no_delay_floor,
 )
 
 HARD = CriterionClass.hard_gate
@@ -330,6 +339,7 @@ def _engine(
     ref_publisher: FakeRefPublisher | None = None,
 ) -> RalphWorkflowEngine:
     service = AgentService(
+        git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -353,6 +363,12 @@ def _engine(
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
         ref_publisher=ref_publisher or FakeRefPublisher(),
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 
@@ -559,6 +575,9 @@ class FlaggingEvaluator:
         permission_mode: str,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
+        session_type: SessionType = FAKE_SESSION_TYPE,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -652,6 +671,7 @@ def _engine_over_a_real_loop(
 ) -> RalphWorkflowEngine:
     """The workflow with the REAL ralph loop, so grading actually happens."""
     service = AgentService(
+        git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
@@ -670,6 +690,10 @@ def _engine_over_a_real_loop(
             cache=FakeRepoCache(),
             prompts=prompts,
             skills=SUPPRESS_ALL_SKILLS,
+            retry_max_attempts=3,
+            retry_initial_interval=1.0,
+            fan_in_max_attempts=2,
+            delay_floor_for=no_delay_floor,
         ),
         ticket_generator=FakeTicketGenerator(),
         merger=FakeBranchMerger(),
@@ -678,6 +702,12 @@ def _engine_over_a_real_loop(
         git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
         cache=FakeRepoCache(),
         pr_creator=pr_creator,
+        retry_max_attempts=3,
+        retry_initial_interval=1.0,
+        remediation_max_rounds=1,
+        criteria_max_regeneration_rounds=1,
+        fan_in_max_attempts=2,
+        delay_floor_for=no_delay_floor,
     )
 
 

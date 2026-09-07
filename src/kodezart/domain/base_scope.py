@@ -10,7 +10,7 @@ what that base should be.
 from collections.abc import Sequence
 
 from kodezart.domain.errors import StaleBaseError
-from kodezart.types.domain.base_spec import BaseInput, BaseSpec
+from kodezart.types.domain.branch import BaseInput, BaseSpec
 
 
 def _named(inputs: Sequence[BaseInput]) -> list[str]:
@@ -45,8 +45,8 @@ def scope_base(recorded: BaseSpec, implied: BaseSpec | None) -> str:
         )
         raise StaleBaseError(
             msg,
-            recorded_ref=recorded.base_ref,
-            implied_ref=implied.base_ref,
+            recorded_ref=recorded.base_branch,
+            implied_ref=implied.base_branch,
             changed_inputs=changed_inputs(recorded, implied),
         )
-    return recorded.base_ref
+    return recorded.base_branch

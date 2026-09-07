@@ -1,0 +1,442 @@
+"""The pass templates render the declared roster, and carry their mechanisms.
+
+Two static rules over the template FILES of both shipped sets, and the
+renders that show what the rules buy:
+
+* no template names a team or a repository by a literal key or position, so
+  a third team or a third repository reaches the prompt without a template
+  edit and a later template cannot reintroduce a fixed slot (KOD-150,
+  KOD-157);
+* every shipped PASS template addresses, through configuration bindings, the
+  marker its scan window starts from and the destination it records to
+  (KOD-155).
+
+Both rules are pattern-matched against BINDING NAMES rather than prose: the
+prose is the set's to author, and a rule that reads it would be a rule about
+authoring style.
+"""
+
+import re
+import tomllib
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+from kodezart.adapters.in_repo_prompt_registry import default_sets_root
+from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.composition.records import RECORD_KIND_BY_PASS
+from kodezart.core.prompt_namespaces import bindings_for
+from kodezart.core.prompt_rendering import binding_names
+from kodezart.types.domain.prompts import PromptKey
+from tests.fakes import pass_render_variables
+from tests.prompts.sets import V5_SET
+from tests.prompts.test_operation_config import raw_example, write_toml
+from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
+
+SHIPPED_SETS = (DEFAULT_SET, V5_SET)
+PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+
+#: The two roster collections a pass enumerates rather than addresses.
+ROSTERS = ("teams", "repos")
+
+#: A reference under a roster: the roster name, a dot, and anything. Every
+#: one of them is a fixed slot, whether the segment is a mapping key
+#: (``teams.primary``) or a decimal position (``repos.0``).
+ROSTER_SLOT = re.compile(rf"^({'|'.join(ROSTERS)})\.")
+
+#: Where a pass's scan window starts from: the checkpoint document, or the
+#: record destination whose most recent row IS the window boundary. Both
+#: are configuration paths; a shipped set must address one, and the one it
+#: must address is its own record row (KOD-245, KOD-306).
+CHECKPOINT_PREFIXES = ("documents.checkpoint.", "records.")
+
+#: Where a pass writes what it did.
+DESTINATION_PREFIXES = ("records.", "knowledge.")
+
+#: One edit to the parsed example, applied before it is written back.
+Mutation = Callable[[dict[str, object]], None]
+
+
+def member_files() -> dict[tuple[str, str], str]:
+    """Every shipped member file's text, keyed by ``(set name, stem)``."""
+    root = default_sets_root()
+    return {
+        (set_name, path.stem): path.read_text(encoding="utf-8")
+        for set_name in SHIPPED_SETS
+        for path in sorted((root / set_name).glob("*.md"))
+    }
+
+
+def roster_slots(body: str) -> tuple[str, ...]:
+    """Every fixed team or repository slot *body* references."""
+    return tuple(
+        sorted(name for name in binding_names(body) if ROSTER_SLOT.match(name))
+    )
+
+
+def pass_bodies() -> dict[tuple[str, PromptKey], str]:
+    """The RESOLVED body of every shipped pass template.
+
+    Resolved rather than raw, because a set may contribute its mechanisms
+    as a fragment: the file is what an author edits, the composed body is
+    what a session is sent, and the mechanism rule is about the latter.
+    """
+    return {
+        (set_name, key): load_registry(default_set=set_name).template_for(key).body
+        for set_name in SHIPPED_SETS
+        for key in PASS_KEYS
+    }
+
+
+def references_under(body: str, prefixes: tuple[str, ...]) -> tuple[str, ...]:
+    """Every binding name of *body* rooted at one of *prefixes*."""
+    return tuple(
+        sorted(name for name in binding_names(body) if name.startswith(prefixes))
+    )
+
+
+# ---------------------------------------------------------------------------
+# KOD-150 / KOD-157 — the roster is iterated, never slotted
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("member", sorted(member_files()))
+def test_no_shipped_template_names_a_team_or_repository_slot(
+    member: tuple[str, str],
+) -> None:
+    """A literal key or position under either roster is the defect itself."""
+    found = roster_slots(member_files()[member])
+    assert found == (), f"{member[0]}/{member[1]} names fixed roster slots: {found}"
+
+
+def test_the_slot_rule_fires_on_the_shape_it_retired() -> None:
+    """Non-vacuity: the detector reports the slots the passes used to carry."""
+    fixture = "{{teams.primary.name}} {{teams.agent.key}} {{repos.0.checks.1.name}}"
+    assert roster_slots(fixture) == (
+        "repos.0.checks.1.name",
+        "teams.agent.key",
+        "teams.primary.name",
+    )
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_every_pass_template_iterates_both_rosters(
+    case: tuple[str, PromptKey],
+) -> None:
+    """The other half: absent slots plus absent loops would also pass above."""
+    body = pass_bodies()[case]
+    for roster in ROSTERS:
+        assert f"{{{{#each {roster}}}}}" in body, (
+            f"{case[0]}/{case[1].value} does not enumerate {roster}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# KOD-290 / KOD-306 — every pass prescribes the row title the runner reads
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_every_pass_template_prescribes_the_record_title(
+    case: tuple[str, PromptKey],
+) -> None:
+    """The row a pass writes is found by a title only the pass can prescribe.
+
+    The runner verifies a run's record by the exact title its identity
+    spells (KOD-290), and the only place that title reaches the session is
+    the ``record_title`` binding the template consumes.  A template that
+    drops it renders green and runs green, and the row it writes carries
+    whatever title the session invents — a row about no run the runner can
+    find.  The 2026-09-04 KOD-275 sweep dropped the binding from the
+    legacy fire-prep template and nothing in the suite went red, because
+    the roster and window checks inspect other bindings.  Held on every
+    shipped set, because the legacy set writes a real row too (KOD-306).
+    """
+    body = pass_bodies()[case]
+    assert "record_title" in binding_names(body), (
+        f"{case[0]}/{case[1].value} does not consume the record_title binding, so "
+        "the runner's row-lookup title is never prescribed to the session"
+    )
+
+
+# ---------------------------------------------------------------------------
+# KOD-155 — every pass carries its window marker and its destination
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_the_window_and_the_record_resolve_from_one_declaration(
+    case: tuple[str, PromptKey],
+) -> None:
+    """One window source, and it is the pass's own record row (KOD-245).
+
+    The window clause and the record obligation are two halves of one
+    fact: the most recent row in this pass's destination carries the start
+    of the last completed pass, so the row a pass WRITES is the boundary
+    the next pass READS.  Resolved from two declarations they can name two
+    destinations — a checkpoint document for the window and a record
+    destination for the row — and then the boundary is carried by a
+    document nothing writes.  Every shipped set is held to it (KOD-306).
+    """
+    set_name, key = case
+    kind = RECORD_KIND_BY_PASS[key].value
+    referenced = references_under(pass_bodies()[case], CHECKPOINT_PREFIXES)
+
+    assert referenced, f"{set_name}/{key.value} addresses no window at all"
+    assert all(name.startswith(f"records.{kind}") for name in referenced), (
+        f"{set_name}/{key.value} resolves its window from something other than "
+        f"its own record declaration records.{kind}: {referenced}"
+    )
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_every_pass_template_addresses_a_checkpoint(
+    case: tuple[str, PromptKey],
+) -> None:
+    """A pass with no configured window marker re-reads the board forever."""
+    found = references_under(pass_bodies()[case], CHECKPOINT_PREFIXES)
+    assert found, f"{case[0]}/{case[1].value} addresses no checkpoint"
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_every_pass_template_addresses_a_destination(
+    case: tuple[str, PromptKey],
+) -> None:
+    """A pass that records nowhere leaves the next one nothing to read."""
+    found = references_under(pass_bodies()[case], DESTINATION_PREFIXES)
+    assert found, f"{case[0]}/{case[1].value} addresses no destination"
+
+
+def test_the_v5_mechanisms_are_declared_once_and_carried_by_no_member_file() -> None:
+    """One source, N passes: a member carrying the text is the second copy.
+
+    Counted over the member FILES, because resolution is what puts the
+    clause into a body — the same rule the suppression proxy is held to.
+    """
+    fragments = tomllib.loads(
+        (default_sets_root() / V5_SET / "set.toml").read_text(encoding="utf-8"),
+    )["fragments"]
+    assert isinstance(fragments, dict)
+    first_line = str(fragments["pass_mechanisms"]).splitlines()[0]
+
+    carriers = [
+        name for (set_name, name), body in member_files().items() if first_line in body
+    ]
+    assert carriers == []
+
+
+def test_the_v5_mechanisms_reach_exactly_the_pass_members() -> None:
+    """The other half: declared once and composed into nothing is worse."""
+    registry = load_registry(default_set=V5_SET)
+    fragments = tomllib.loads(
+        (default_sets_root() / V5_SET / "set.toml").read_text(encoding="utf-8"),
+    )["fragments"]
+    assert isinstance(fragments, dict)
+    mechanisms = str(fragments["pass_mechanisms"])
+
+    carriers = {
+        key for key in PromptKey if mechanisms in registry.template_for(key).body
+    }
+    assert carriers == set(PASS_KEYS)
+
+
+def test_the_mechanism_rules_fire_on_a_template_that_carries_neither() -> None:
+    """Non-vacuity: a roster-only template satisfies neither rule."""
+    fixture = (
+        "{{#each teams}}{{this.name}}{{/each}}{{#each repos}}{{this.slug}}{{/each}}"
+    )
+    assert references_under(fixture, CHECKPOINT_PREFIXES) == ()
+    assert references_under(fixture, DESTINATION_PREFIXES) == ()
+
+
+# ---------------------------------------------------------------------------
+# What the rules buy: the renders
+# ---------------------------------------------------------------------------
+
+
+def rendered(config_path: Path, set_name: str, key: PromptKey) -> str:
+    """One pass template, rendered against the config at *config_path*."""
+    bindings = dict(bindings_for(load_operation_config(config_path)))
+    registry = load_registry(default_set=set_name, bindings=bindings)
+    return registry.template_for(key).render(
+        {"skills_reference": "", **pass_render_variables(key)},
+    )
+
+
+def written(tmp_path: Path, mutate: Mutation | None = None) -> Path:
+    """The annotated example, mutated by *mutate*, written back as TOML.
+
+    No mutation is the control case: the same round trip, so a difference
+    between two renders is a difference of configuration and not of the
+    serialiser this helper writes through.
+    """
+    raw = raw_example()
+    if mutate is not None:
+        mutate(raw)
+    return write_toml(tmp_path, raw)
+
+
+def rename_teams(raw: dict[str, object]) -> None:
+    """Re-key every team, so no mapping key the templates once used survives.
+
+    Document containers reference teams BY KEY (KOD-166), so re-keying the
+    roster moves those references with it — the declared graph stays
+    consistent, which is itself the property a rename exercises.
+    """
+    teams = raw["teams"]
+    assert isinstance(teams, dict)
+    raw["teams"] = {f"board_{name}": entry for name, entry in teams.items()}
+    documents = raw.get("documents")
+    if isinstance(documents, dict):
+        for entry in documents.values():
+            if isinstance(entry, dict) and "container" in entry:
+                entry["container"] = f"board_{entry['container']}"
+
+
+def three_of_each(raw: dict[str, object]) -> None:
+    """A third team and a third repository, explicitly bound to each other."""
+    repos = raw["repos"]
+    teams = raw["teams"]
+    assert isinstance(repos, list)
+    assert isinstance(teams, dict)
+    third_url = "https://example.invalid/example-org/third-repo"
+    repos.append(
+        {
+            "url": third_url,
+            "trunk": "trunk-three",
+            "checks": [{"name": "verify", "command": "make verify"}],
+        },
+    )
+    teams["third"] = {
+        "name": "Third Team",
+        "key": "THR",
+        "repository": third_url,
+        "visibility": "public",
+    }
+
+
+def without_records_or_knowledge(raw: dict[str, object]) -> None:
+    """The M1 deployment: a tracker, and no store or record beside it."""
+    for field in ("records", "knowledge", "documents"):
+        del raw[field]
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_a_roster_keyed_other_than_primary_still_renders(
+    case: tuple[str, PromptKey],
+    tmp_path: Path,
+) -> None:
+    """KOD-150: the mapping key was never a name a template may depend on."""
+    output = rendered(written(tmp_path, rename_teams), case[0], case[1])
+    assert "{{" not in output
+    assert "Example Team" in output
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_a_third_team_and_repository_render_by_name(
+    case: tuple[str, PromptKey],
+    tmp_path: Path,
+) -> None:
+    """KOD-157: configuration widens the roster; the template does not move."""
+    output = rendered(written(tmp_path, three_of_each), case[0], case[1])
+    assert "{{" not in output
+    for team in ("Example Team", "example-agent-team", "Third Team"):
+        assert team in output, team
+    for repo in ("example-repo", "second-repo", "third-repo"):
+        assert repo in output, repo
+    assert "trunk-three" in output
+
+
+@pytest.mark.parametrize("case", [(s, k) for s in SHIPPED_SETS for k in PASS_KEYS])
+def test_every_pass_addresses_its_own_kind_and_no_other(
+    case: tuple[str, PromptKey],
+) -> None:
+    """Each pass's record references name exactly ITS run kind.
+
+    The pin that keeps the prompt half and the runner half on one
+    declaration: the kind map here is the composition's own, the same one
+    the scheduler reports through, so a template addressing another
+    pass's log fails against the map rather than in production (KOD-170).
+    """
+    body = pass_bodies()[case]
+    kind = RECORD_KIND_BY_PASS[case[1]].value
+    referenced = {
+        name.split(".")[1].removesuffix("_absent")
+        for name in binding_names(body)
+        if name.startswith("records.")
+    }
+    assert referenced == {kind}, referenced
+
+
+@pytest.mark.parametrize("key", PASS_KEYS)
+def test_a_deployment_with_no_store_renders_the_absence_instruction(
+    key: PromptKey,
+    tmp_path: Path,
+) -> None:
+    """M1: no record and no store is a deployment, not a render failure.
+
+    The v5 set is the one that must serve it — the legacy set addresses a
+    knowledge document unconditionally and says so.  What is asserted is
+    that the absent state produces an INSTRUCTION, never a hole.
+    """
+    output = rendered(written(tmp_path, without_records_or_knowledge), V5_SET, key)
+
+    assert "{{" not in output
+    assert "}}" not in output
+    assert "No record destination\nis declared for this pass's kind" in output
+    assert "No store is configured beside the tracker" in output
+    # No separate checkpoint surface exists (founder ruling 2026-09-01):
+    # the window rides the record log, so its absence arm is the window's.
+    assert "so no window\ncarries between passes" in output
+
+
+@pytest.mark.parametrize("key", PASS_KEYS)
+def test_the_configured_deployment_renders_the_present_arm_instead(
+    key: PromptKey,
+    tmp_path: Path,
+) -> None:
+    """The pair is mutually exclusive, so neither arm can be vacuous."""
+    output = rendered(written(tmp_path), V5_SET, key)
+
+    assert "No record destination" not in output
+    expected = {
+        PromptKey.FIRE_PREP_PASS: "Example Run Log",
+        PromptKey.GROOMING_PASS: "Example Grooming Log",
+    }[key]
+    assert expected in output
+
+
+def scoped_and_unbound(raw: dict[str, object]) -> None:
+    """A scoped team plus an unbound board, beside several repositories.
+
+    The founder's live shape (KOD-169): scope narrows one board by name,
+    and the unbound board's issues route by the repository fire-prep
+    records on each staged one.
+    """
+    teams = raw["teams"]
+    assert isinstance(teams, dict)
+    first = next(iter(teams.values()))
+    assert isinstance(first, dict)
+    first["scope"] = ["a delivery project"]
+    teams["duck"] = {"name": "Duck Board", "key": "DUC", "visibility": "private"}
+
+
+@pytest.mark.parametrize("key", PASS_KEYS)
+def test_scope_and_recorded_routing_render_into_the_roster(
+    key: PromptKey,
+    tmp_path: Path,
+) -> None:
+    """KOD-169 D2/D3: the roster says what narrows and how routes record.
+
+    The marker-writing instruction is fire-prep's alone — staging is its
+    act — while both passes read the same scope and routing facts.
+    """
+    output = rendered(written(tmp_path, scoped_and_unbound), V5_SET, key)
+
+    assert "in scope: only issues in a delivery project" in output
+    assert "the repository recorded on each staged issue" in output
+    if key is PromptKey.FIRE_PREP_PASS:
+        assert '<!-- kodezart-repo url="..." -->' in output
+    else:
+        assert "kodezart-repo" not in output

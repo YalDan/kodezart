@@ -16,14 +16,17 @@ Three facts, each catching a different way the tables rot:
 
 What is NOT asserted: that a row names every field.  ``Key Fields`` is a
 reader's shortlist by design, and demanding completeness would make the
-tables unreadable without catching a defect the second fact misses.
+tables unreadable without catching a defect the second fact misses.  One
+entry of one shortlist is pinned on its own: the ``system`` row's output
+style (KOD-292), the field that says which system prompt a session's work
+was produced under.
 """
 
 import re
 from pathlib import Path
 
 from kodezart.types.domain import agent as agent_module
-from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.agent import AgentEvent, SystemEvent
 
 API_DOC = Path(__file__).resolve().parents[2] / "docs" / "api.md"
 
@@ -111,3 +114,17 @@ def test_each_heading_count_equals_its_rows() -> None:
         for heading, declared, rows in documented_sections()
         if declared != len(rows)
     } == {}
+
+
+def test_the_system_row_names_the_style_the_session_runs_under() -> None:
+    """KOD-292: a reader who cannot find the style cannot tell one run from another.
+
+    The second fact above only holds a named field to the model; it lets
+    the row drop this one in silence.  The shortlist stays a shortlist —
+    this pins the single entry the operation's declaration is confirmed by.
+    """
+    event = str(SystemEvent.model_fields["type"].default)
+    style = SystemEvent.model_fields["output_style"].alias
+
+    assert style is not None
+    assert style in documented_events()[event]
