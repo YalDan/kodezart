@@ -3,7 +3,9 @@
 import ast
 import asyncio
 import inspect
+import os
 import shlex
+import signal
 import sys
 from pathlib import Path
 
@@ -113,14 +115,24 @@ async def test_cancel_during_spawn_reaps_the_eventual_process(
             cwd=str(tmp_path), steps=[CheckStep(name="slow", command="sleep 30")]
         )
     )
-    await asyncio.wait_for(spawned.wait(), timeout=3)
-    for _ in range(cancellation_count):
-        task.cancel()
-        await asyncio.sleep(0)
-    release.set()
-    with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(task, timeout=3)
-    assert processes[0].returncode is not None
+    try:
+        await asyncio.wait_for(spawned.wait(), timeout=3)
+        for _ in range(cancellation_count):
+            task.cancel()
+            await asyncio.sleep(0)
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=3)
+        assert processes[0].returncode is not None
+    finally:
+        release.set()
+        for process in processes:
+            if process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await process.communicate()
 
 
 async def test_cancel_during_communication_never_runs_next_step(tmp_path: Path) -> None:
