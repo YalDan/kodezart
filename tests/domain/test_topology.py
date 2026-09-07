@@ -1,4 +1,4 @@
-"""Scope ready-set ranking over the tracker graph (KOD-418)."""
+"""Scope ready-set ranking over the tracker graph."""
 
 import sys
 from datetime import timedelta

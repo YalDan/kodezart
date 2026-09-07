@@ -1,4 +1,4 @@
-"""Writable addresses preserve the tracker surface's full identity (KOD-383).
+"""Writable addresses preserve the tracker surface's full identity.
 
 These are value-contract cases. Acquisition and write enforcement require
 adapter conformance; equality of addresses alone does not demonstrate them.

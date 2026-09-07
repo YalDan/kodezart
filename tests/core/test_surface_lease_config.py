@@ -1,4 +1,4 @@
-"""The configured write-lease duration stays distinct from fire claims (KOD-387)."""
+"""The configured write-lease duration stays distinct from fire claims."""
 
 import pytest
 from pydantic import ValidationError

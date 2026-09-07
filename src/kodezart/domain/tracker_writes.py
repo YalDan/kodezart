@@ -36,7 +36,7 @@ def description_replacement(
 
     ``None`` means the expected text is absent and replacement is present.
     This rule cannot make overlapping anchors replay-safe: if replacement
-    contains expected, another call still takes the edit arm (KOD-644).
+    contains expected, another call still takes the edit arm.
     """
     if expected in body:
         return body.replace(expected, replacement)

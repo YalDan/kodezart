@@ -1,4 +1,4 @@
-"""Every scope cycle is refused before a ready ranking is returned (KOD-422)."""
+"""Every scope cycle is refused before a ready ranking is returned."""
 
 import sys
 

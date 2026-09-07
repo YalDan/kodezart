@@ -1,4 +1,4 @@
-"""The write-lease error carries an address and truthful holder metadata (KOD-386)."""
+"""The write-lease error carries an address and truthful holder metadata."""
 
 import pytest
 

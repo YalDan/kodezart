@@ -182,7 +182,7 @@ class TestDescriptionEdit:
     async def test_overlapping_anchor_is_a_counterexample_to_universal_replay(
         self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
     ):
-        """KOD-644 expected-present precedence conflicts with KOD-641 replay."""
+        """Expected-present precedence conflicts with universal replay."""
         first = await tracker.edit_description(
             target=APPROVED_ISSUE, expected="body", replacement="new body"
         )
