@@ -62,11 +62,11 @@ def test_silence_and_empty_gaps_have_distinct_complete_payloads() -> None:
     assert [r.model_dump_json() for r in silent] != [r.model_dump_json() for r in clean]
 
 
-@pytest.mark.parametrize("order", list(permutations(("a", "b", "c"))))
+@pytest.mark.parametrize("order", list(permutations(("z", "b", "a"))))
 def test_result_arrival_order_never_changes_dispatch_order(
     order: tuple[str, ...],
 ) -> None:
-    dispatched = {key: f"ISS-{key}" for key in ("a", "b", "c")}
+    dispatched = {key: f"ISS-{key}" for key in ("z", "b", "a")}
     collection = LaneReportCollection(dispatched=dispatched)
     dispatched.clear()
     before = collection.snapshot()
@@ -78,7 +78,7 @@ def test_result_arrival_order_never_changes_dispatch_order(
                 lane_key=key, issue_id=f"ISS-{key}", state=LaneReportState.IN_GAP
             ),
         )
-    assert tuple(r.lane_key for r in collection.snapshot()) == ("a", "b", "c")
+    assert tuple(r.lane_key for r in collection.snapshot()) == ("z", "b", "a")
     collection.record(lane_key="b", report=None)
     after = collection.snapshot()
     assert len(after) == 3
