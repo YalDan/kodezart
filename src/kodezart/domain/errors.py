@@ -11,6 +11,16 @@ class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
 
+class CheckObservationError(Exception):
+    """A completed watch cannot establish one immutable check-set identity."""
+
+    def __init__(self, *, repo_url: str, ref: str, reason: str) -> None:
+        self.repo_url = repo_url
+        self.ref = ref
+        self.reason = reason
+        super().__init__(f"Cannot read watched checks for {repo_url}@{ref}: {reason}")
+
+
 class PRContentConflictError(Exception):
     """An open PR cannot be identified or edited from the observed content."""
 

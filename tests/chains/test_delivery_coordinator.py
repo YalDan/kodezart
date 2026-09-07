@@ -46,6 +46,9 @@ async def classify(ci, repository=None, bound=1):
         repository=repository or repo(),
         final_commit_sha="immutable-sha",
         initial_summary=ci.summary,
+        initial_failed_names=await ci.failed_check_names(
+            repo_url=(repository or repo()).url, ref="immutable-sha"
+        ),
         config=AppConfig(delivery_red_rerun_max_attempts=bound),
     )
 

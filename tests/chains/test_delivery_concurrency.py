@@ -111,3 +111,65 @@ async def test_watch_failure_or_cancellation_releases_its_slot(cancel):
         await first
     result = await asyncio.wait_for(second, timeout=2)
     assert result.head_branch == "lane/second"
+
+
+@pytest.mark.parametrize("bound", [1, 2])
+async def test_rerun_watches_keep_the_original_lane_slot(bound):
+    branches = [f"recover/{index}" for index in range(bound + 1)]
+
+    class HeldReruns(FakeCIMonitor):
+        def __init__(self):
+            super().__init__(
+                passed=False,
+                failed_names=frozenset({"unit"}),
+                observed_sha_by_ref=dict.fromkeys(branches, SHA),
+                rerun_results=[(True, "Recovered", frozenset())] * len(branches),
+            )
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+            self.active = 0
+            self.maximum = 0
+
+        async def wait_for_checks(self, *, repo_url, ref):
+            if ref != SHA:
+                return await super().wait_for_checks(repo_url=repo_url, ref=ref)
+            self.active += 1
+            self.maximum = max(self.maximum, self.active)
+            if self.active >= bound:
+                self.entered.set()
+            try:
+                await self.release.wait()
+                return await super().wait_for_checks(repo_url=repo_url, ref=ref)
+            finally:
+                self.active -= 1
+
+    monitor = HeldReruns()
+    fixture = setup(
+        monitor=monitor,
+        git=FakeGitService(
+            remote_branch_shas={BASE: "b" * 40, **dict.fromkeys(branches, SHA)}
+        ),
+        config=AppConfig(delivery_max_concurrent_watches=bound),
+    )
+    tasks = [
+        asyncio.create_task(
+            fixture.coordinator.deliver(
+                dispatch(lane_key=branch, head_branch=branch),
+                feature_branch=branch,
+                final_commit_sha=SHA,
+                context=context(),
+            )
+        )
+        for branch in branches
+    ]
+    try:
+        await asyncio.wait_for(monitor.entered.wait(), timeout=2)
+        await asyncio.sleep(0)
+        assert monitor.maximum == bound
+        assert len(monitor.calls) == bound
+    finally:
+        monitor.release.set()
+        results = await asyncio.gather(*tasks)
+    assert len(results) == len(branches)
+    assert all(result.checks_passed is True for result in results)
+    assert monitor.maximum == bound and monitor.active == 0

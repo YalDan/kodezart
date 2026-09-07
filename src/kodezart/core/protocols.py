@@ -7,6 +7,7 @@ from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.check_chain import CheckChainResult
+from kodezart.types.domain.check_observation import ObservedChecks
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -480,6 +481,20 @@ class PRContentEditor(Protocol):
 
         Missing, ambiguous or changed content raises PRContentConflictError.
         This optimistic read and update do not claim atomic exclusion.
+        """
+        ...
+
+
+@runtime_checkable
+class CIObservationReader(Protocol):
+    """Read the completed watch's evidence without widening CIMonitor."""
+
+    async def observed_checks(self, *, repo_url: str, ref: str) -> ObservedChecks:
+        """Require this task's latest completed watch to name one commit.
+
+        Missing, pending, failed or identity-incomplete watches raise
+        CheckObservationError. Reading never starts another forge observation.
+        A later watch clears the earlier result before it can fail or cancel.
         """
         ...
 

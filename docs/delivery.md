@@ -83,6 +83,37 @@ The coordinator creates or edits the PR and calls `wait_for_checks` with its hea
 One semaphore per coordinator limits concurrent watches using
 `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES`. A failed or canceled watch releases
 its slot. The existing CI poll budgets remain adapter configuration.
+
+A completed red now reaches the existing structural classifier. The separate
+`CIObservationReader` returns the original watch's commit SHA, verdict and
+failing names, using the native check run's `head_sha` from the
+[GitHub Checks response](https://docs.github.com/en/rest/checks/runs#list-check-runs-for-a-git-reference).
+It performs no second query: a moving branch cannot replace the original
+failing set. Missing or mixed commit identities, incomplete or nonterminal
+sets, and absent observations raise `CheckObservationError`. Each async task
+owns its observations; starting another watch clears the previous result
+before that new watch can fail or be canceled. The normal monitor retains its
+four methods and its existing timeout/no-CI behavior; a timeout cannot supply
+the completed red evidence this reader requires.
+
+The observed commit must match the delivered remote head, including a cleanup
+commit when present. The classifier receives that observed SHA and failing
+set, then follows the declared prerequisite and bounded rerun order. Its
+repository declarations come from the required `OperationConfig`, resolved
+against the delivered URL using the existing clone URL resolver. Missing or
+ambiguous repository declarations refuse classification; an undeclared
+environment prerequisite never establishes that it is unmet.
+After recovery the coordinator re-reads the remote head and refuses if it
+moved away from the commit that was checked. These are observations, not an
+atomic lock on a branch another writer can move.
+
+A not-red rerun establishes `RUNNER_FLAKE`. Green returns through the ordinary
+successful PR validation; `None` still needs a successful declaration read
+establishing no CI. Rerun watches retain the same semaphore slot and create no
+remediation session. Other red classes remain typed unavailable routes with
+their observed check facts. The per-origin `ci_observation_reader_for_origin`
+selector supplies no capability for a `file://` origin or an absent client.
+
 Before returning success it re-observes the same unique open PR, its recorded
 base and its fixed issue line. Closure, ambiguity or a changed identity/base
 during watching cannot produce a stale successful result.
@@ -91,7 +122,8 @@ during watching cannot produce a stale successful result.
 | --- | --- |
 | Checks pass | Open PR and `ci_passed` |
 | No checks, and the adapter confirms no active workflow declaration | Open PR and `ci_not_configured`, retaining `checks_passed=None` |
-| Red checks, or no checks despite an active declaration | `DeliveryRouteUnavailableError` carrying the observed PR and check facts |
+| Red checks that recover at the same commit | Ordinary green/no-CI result after bounded rerun |
+| Reproduced, prerequisite-unmet or unclassified red, or no checks despite an active declaration | `DeliveryRouteUnavailableError` carrying the observed PR and check facts |
 | Any other fire outcome | `DeliveryRouteUnavailableError` before writes |
 | Failed forge or declaration read | The adapter's typed refusal propagates |
 
@@ -102,10 +134,8 @@ a residual was published.
 This boundary is callable independently; scope-walker dispatch and application
 composition are not connected yet. The legacy fire graph still owns its prior
 PR/check nodes until that extraction is completed. Stalled-fire handoff,
-same-SHA linkage between the initial branch watch
-and red re-observation, the shared remediation loop, durable residual
-publication, and declared-no-run exemption/close-out remain unfinished. The
-existing pure red classifier is not invoked by this common route.
+the shared remediation loop, durable residual publication, and declared-no-run
+exemption/close-out remain unfinished.
 Tracker fire entry, approval/state eligibility, per-iteration criterion queries
 and the write-only artifact projection remain separate integration work. This
 delivery input path does not establish any of those producer behaviors.

@@ -32,7 +32,7 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     ScanFailureKind,
 )
-from kodezart.types.domain.operation import RunKind
+from kodezart.types.domain.operation import OperationConfig, RepoEntry, RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
@@ -43,6 +43,7 @@ from tests.fakes import (
     FakeAgentRunner,
     FakeArtifactPersister,
     FakeCIMonitor,
+    FakeCIObservationReader,
     FakeForgeQuery,
     FakeGitService,
     FakePRContentEditor,
@@ -143,12 +144,20 @@ def setup(
     git=None,
     cache=None,
     config=None,
+    observations=None,
+    operation=None,
 ):
     runner = runner if runner is not None else FakeAgentRunner([description()])
     editor = editor if editor is not None else FakePRContentEditor()
     forge = forge if forge is not None else FakePRCreator(content_store=editor.records)
     query = query if query is not None else FakeForgeQuery()
     monitor = monitor if monitor is not None else FakeCIMonitor()
+    observations = (
+        observations if observations is not None else FakeCIObservationReader()
+    )
+    if isinstance(monitor, FakeCIMonitor):
+        monitor.observation_reader = observations
+        monitor.observed_sha_by_ref.setdefault(HEAD, SHA)
     gate = gate if gate is not None else PassThroughGate()
     prompts = RecordingPromptProvider(load_registry(default_set=family))
     return Setup(
@@ -161,6 +170,14 @@ def setup(
             forge_query=query,
             pr_editor=editor,
             ci=monitor,
+            ci_observations=observations,
+            operation=operation
+            if operation is not None
+            else OperationConfig(
+                operation_name="fixture",
+                workspace="fixture",
+                repos=[RepoEntry(url=REPOSITORY, trunk=BASE)],
+            ),
             git=git
             if git is not None
             else FakeGitService(remote_branch_shas={HEAD: SHA, BASE: "b" * 40}),
@@ -514,8 +531,15 @@ async def test_no_checks_and_no_declarations_preserves_explicit_none():
 
 @pytest.mark.parametrize("passed", [False, None])
 async def test_unconnected_check_routes_refuse_with_observed_pr_facts(passed):
-    monitor = FakeCIMonitor(passed=passed, declared=True, summary="Observed evidence.")
-    fixture = setup(monitor=monitor)
+    monitor = FakeCIMonitor(
+        passed=passed,
+        declared=True,
+        summary="Observed evidence.",
+        failed_names=frozenset({"test"}) if passed is False else frozenset(),
+    )
+    fixture = setup(
+        monitor=monitor, config=AppConfig(delivery_red_rerun_max_attempts=0)
+    )
     with pytest.raises(DeliveryRouteUnavailableError) as error:
         await deliver(fixture.coordinator)
     assert error.value.pr_url == "https://github.com/o/r/pull/1"

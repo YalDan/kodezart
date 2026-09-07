@@ -32,6 +32,7 @@ from kodezart.composition.engine import (
 )
 from kodezart.composition.forge import (
     build_forge_client,
+    ci_observation_reader_for_origin,
     forge_query_for_origin,
     pr_content_editor_for_origin,
 )
@@ -41,6 +42,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import (
     CIMonitor,
+    CIObservationReader,
     DeliveryProbe,
     ForgeQuery,
     PRContentEditor,
@@ -119,6 +121,7 @@ COVERED_BY_ORIGIN: dict[type, str] = {
     DeliveryProbe: "delivery",
     ForgeQuery: "query",
     PRContentEditor: "pr_content",
+    CIObservationReader: "ci_observations",
 }
 
 
@@ -661,3 +664,36 @@ async def test_content_capability_is_absent_for_local_origin_despite_client(repo
 
 def test_content_capability_is_absent_without_configured_client():
     assert pr_content_editor_for_origin(client=None, repo_url=FORGE_ORIGIN) is None
+
+
+async def test_native_watch_observation_reader_is_selected_by_origin():
+    from tests.adapters.test_github_api import _completed_run, _make_client
+
+    requests = []
+    payload = _completed_run("failure").json()
+    payload["check_runs"][0]["head_sha"] = "a" * 40
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload)
+
+    client = _make_client(handler)
+    try:
+        assert (
+            ci_observation_reader_for_origin(client=None, repo_url=FORGE_ORIGIN) is None
+        )
+        assert (
+            ci_observation_reader_for_origin(client=client, repo_url=FILE_ORIGIN)
+            is None
+        )
+        selected = ci_observation_reader_for_origin(
+            client=client, repo_url=FORGE_ORIGIN
+        )
+        assert selected is client
+        await client.wait_for_checks(repo_url=FORGE_ORIGIN, ref="feature")
+        count = len(requests)
+        observed = await selected.observed_checks(repo_url=FORGE_ORIGIN, ref="feature")
+        assert observed.commit_sha == "a" * 40 and observed.checks_passed is False
+        assert len(requests) == count
+    finally:
+        await client.close()
