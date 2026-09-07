@@ -135,6 +135,18 @@ class QueueState(StrEnum):
     DECISION = "decision"
 
 
+class ScopeLabel(StrEnum):
+    """Scope admission vocabulary, resolved separately from the issue queue.
+
+    The operation maps each semantic member to its tracker label. Queue
+    writes continue to address only ``QueueState`` and its own mapping.
+    """
+
+    TRIAGE = "triage"
+    PROPOSED = "proposed"
+    APPROVED = "approved"
+
+
 class LifecycleStage(StrEnum):
     """Lifecycle stages resolved through the workflow_states mapping."""
 
