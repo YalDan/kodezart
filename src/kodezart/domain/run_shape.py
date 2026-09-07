@@ -16,13 +16,16 @@ from kodezart.types.domain.run_alarm import (
     AlarmSubject,
     AlarmSubjectKind,
     RunAlarm,
+    surface_alarm_member_id,
 )
 from kodezart.types.domain.run_state import LaneEscalation
+from kodezart.types.domain.surface import WritableSurface
 
 ESCALATION_COMMITS_BOUND = "run_alarm_escalation_age_max_commits"
 ESCALATION_TICKS_BOUND = "run_alarm_escalation_age_max_ticks"
 BARREN_FILES_BOUND = "run_alarm_barren_tick_max_files_changed"
 BARREN_COMMITS_BOUND = "run_alarm_barren_tick_max_commits_ahead"
+SURFACE_HOLDERS_BOUND = "run_alarm_max_surface_holders"
 
 _ESCALATION = TypeAdapter(LaneEscalation)
 _RESOLUTION = TypeAdapter(EscalationResolution)
@@ -31,6 +34,7 @@ _COUNT = TypeAdapter(NonNegativeInt)
 _REFERENCES = TypeAdapter(
     tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...]
 )
+_SURFACE = TypeAdapter(WritableSurface)
 
 
 def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeReadError:
@@ -134,6 +138,67 @@ def escalation_ageing(
                 raised_at_sha=raised_at_sha,
                 raised_by=raised_by,
             )
+    return None
+
+
+def surface_contended(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Count explicit run-holder identities for one complete surface address.
+
+    Three JSON readings, in order: the WritableSurface address, its ordered
+    holder history, and the configured distinct-holder limit. Address and
+    history must name the same provenance source. Holder identities are
+    opaque job identities supplied by the provenance reader; this function
+    cannot infer them from account authors, timestamps or text.
+
+    Repeated writes by one holder count once. Different runs holding the
+    same address remain in that address's history, so they use this same
+    signal arm. Original readings, including their order, survive replay.
+    """
+    signal = AlarmSignal.SURFACE_CONTENDED
+    try:
+        surface, history, max_holders = readings
+    except ValueError as exc:
+        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+    address = _decode(surface, _SURFACE, signal)
+    if (
+        subject.kind is not AlarmSubjectKind.SURFACE
+        or subject.member_id != surface_alarm_member_id(address)
+    ):
+        raise _unreadable(
+            signal, surface.source_ref, "subject identifies another surface"
+        )
+    if surface.source_ref != history.source_ref:
+        raise _unreadable(
+            signal, history.source_ref, "holder history identifies another source"
+        )
+    if max_holders.source_ref != SURFACE_HOLDERS_BOUND:
+        raise _unreadable(
+            signal,
+            max_holders.source_ref,
+            "holder bound does not name its AppConfig field",
+        )
+    holders = _decode(history, _REFERENCES, signal)
+    configured = _decode(max_holders, _COUNT, signal)
+    observed = len(set(holders))
+    if observed > configured:
+        return RunAlarm(
+            subject=subject,
+            signal=signal,
+            readings=readings,
+            bound=AlarmBound(
+                config_field=max_holders.source_ref,
+                configured_value=configured,
+                observed_value=observed,
+            ),
+            raised_at_sha=raised_at_sha,
+            raised_by=raised_by,
+        )
     return None
 
 

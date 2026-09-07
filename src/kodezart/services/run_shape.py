@@ -13,8 +13,10 @@ from kodezart.domain.run_shape import (
     BARREN_FILES_BOUND,
     ESCALATION_COMMITS_BOUND,
     ESCALATION_TICKS_BOUND,
+    SURFACE_HOLDERS_BOUND,
     barren_tick_with_diff_growth,
     escalation_ageing,
+    surface_contended,
 )
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
@@ -26,6 +28,36 @@ from kodezart.types.domain.run_alarm import (
 from kodezart.types.domain.run_state import LaneEscalation
 
 _REFERENCE_JSON = TypeAdapter(tuple[str, ...])
+
+
+def observe_surface_contention(
+    *,
+    config: AppConfig,
+    subject: AlarmSubject,
+    surface: AlarmReading,
+    holder_history: AlarmReading,
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Supply the configured limit to explicitly provided provenance readings.
+
+    This assembly does not read provenance. Its caller must provide both the
+    full address and the ordered run-holder identities from a trustworthy
+    source. The universal provenance producer is a separate prerequisite.
+    """
+    return surface_contended(
+        subject=subject,
+        readings=(
+            surface,
+            holder_history,
+            AlarmReading(
+                source_ref=SURFACE_HOLDERS_BOUND,
+                value=str(config.run_alarm_max_surface_holders),
+            ),
+        ),
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
 
 
 async def observe_escalation_ageing(

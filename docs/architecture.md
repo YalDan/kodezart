@@ -443,3 +443,19 @@ for replay and makes no tracker writes or version-control calls. The prior
 open identities and both diff counts must already be recorded inputs with
 explicit source references. Their collectors, supervisor scheduling and
 leased alarm persistence remain separate work.
+
+`surface_contended` counts distinct opaque run-holder identities for one
+complete `WritableSurface` address. Three readings carry that address, its
+ordered holder history and the configured limit (one holder by default).
+The address must match the alarm subject, and address/history references
+must name the same provenance source. Repeated writes by one holder count
+once; different runs writing the same address remain in its whole history.
+Different issue/marker/surface addresses are evaluated independently.
+
+`observe_surface_contention` only supplies the AppConfig limit to explicit
+provenance inputs. It does not provide a tracker provenance reader: ordered
+successful-write history carrying run identities across all six surface
+kinds still depends on the universal holder-aware writer foundation. Vendor
+account authors and change timestamps cannot supply those run identities.
+The pure count and replay tests do not establish that producer, its port
+conformance, or a supervisor's leased alarm writer.

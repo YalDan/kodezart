@@ -156,6 +156,14 @@ class AppConfig(BaseSettings):
             "that closes no previously-open reference."
         ),
     )
+    run_alarm_max_surface_holders: int = Field(
+        default=1,
+        ge=0,
+        description=(
+            "Distinct recorded run holders allowed on one writable surface "
+            "before a contention observation fires."
+        ),
+    )
     organize_max_admission_rounds: int = Field(
         default=3,
         ge=1,

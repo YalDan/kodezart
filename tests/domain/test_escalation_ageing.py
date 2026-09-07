@@ -280,6 +280,7 @@ def test_signal_module_is_pure_and_count_comparisons_have_no_literal_bound():
         "kodezart.types.domain.escalation",
         "kodezart.types.domain.run_alarm",
         "kodezart.types.domain.run_state",
+        "kodezart.types.domain.surface",
     }
     imports = {
         node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
