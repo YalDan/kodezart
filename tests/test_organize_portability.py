@@ -287,3 +287,8 @@ def test_real_source_gate_rejects_an_injected_offending_tree(tmp_path, monkeypat
     monkeypatch.setattr(sys.modules[__name__], "SOURCE", tmp_path)
     with pytest.raises(AssertionError):
         test_source_and_prompt_data_have_no_literal_phase_labels()
+
+
+def test_fstring_folding_handles_formatted_prefix_and_suffix():
+    source = '''label = f"{'scope'}:{'approved'}"'''
+    assert _python_labels(ast.parse(source)) == {"scope:approved"}
