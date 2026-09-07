@@ -457,3 +457,40 @@ async def test_malformed_chain_refuses_before_git_or_classifier(steps):
             ),
         )
     assert adapter.calls == []
+
+
+async def test_pinned_heads_survive_branch_movement_and_caller_list_mutation(
+    repository,
+):
+    from kodezart.types.domain.union import UnionOutcome
+
+    repo, base, heads = repository
+    supplied = list(heads)
+
+    class MovingRefs(ObservedGit):
+        async def create_worktree(self, *args, **kwargs):
+            await super().create_worktree(*args, **kwargs)
+            for head in supplied:
+                await git(repo, "update-ref", "refs/heads/" + head.branch, base)
+            supplied.clear()
+
+    adapter = MovingRefs()
+    result = await service(adapter).verify(
+        scope_key="scope",
+        repo_path=str(repo),
+        repo=entry(),
+        base_sha=base,
+        lane_heads=supplied,
+    )
+    assert result.outcome is UnionOutcome.GREEN
+    assert result.lane_heads == heads
+    assert adapter.merged == [head.head_sha for head in heads]
+    for head in heads:
+        assert await git(repo, "rev-parse", head.branch) == base
+        assert (
+            await git(
+                repo, "merge-base", "--is-ancestor", head.head_sha, result.scratch_sha
+            )
+            == ""
+        )
+    assert not Path(result.scratch_path).exists()
