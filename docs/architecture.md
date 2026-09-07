@@ -470,3 +470,21 @@ group while retaining partial output. Repeated cancellation cannot interrupt
 eventual-process cleanup; cancellation propagates after the attempt is reaped. Empty or ambiguous step identities refuse before execution.
 The runner returns failed names and ordered outputs without classifying roots
 or cascades. Union composition and its result publication are separate consumers.
+
+`UnionComposition.verify` consumes the planner's ordered lane-head snapshot
+and an immutable selected base. It creates a detached Git worktree, merges
+those exact commit IDs in planner order, runs `RepoEntry.checks`, and removes
+the tree on return, refusal, exception, or cancellation. Scratch merges have
+a separate Git operation; normal branch consolidation remains fast-forward
+only. Named branches and forge pull requests are untouched.
+
+The shared `UnionCompositionResult` retains scope and repository identity,
+ordered branch/head pairs, the selected base, and the discarded scratch
+path and commit. A conflict reports only its successfully merged prefix;
+infrastructure errors remain errors. Executed checks use the restored
+historical root/cascade classifier, and a red check result carries one
+`UnionRemediationEntry` naming those roots and cascades. This scope outcome
+is independent of lane outcomes. The result is available to any caller;
+it does not itself publish a tracker remediation record or scope terminal.
+Walker tick scheduling, stale-head re-entry, and terminal residual
+publication remain separate integration work.
