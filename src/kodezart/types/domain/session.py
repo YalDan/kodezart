@@ -28,6 +28,7 @@ class SessionType(StrEnum):
     API_QUERY = "api_query"
     COMMIT_MESSAGE = "commit_message"
     CONTENT_AUDIT = "content_audit"
+    ORGANIZE_PASS = "organize_pass"
     #: The passes the scheduler fires on their configured cadence. One
     #: member for both of them: they differ in what their prompt says, not
     #: in what kind of session runs it, and nothing distinguishes the two

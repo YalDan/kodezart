@@ -189,6 +189,7 @@ the `SessionType` enum, and it is closed:
 | `api_query` | the direct one-shot query a caller drives over HTTP |
 | `commit_message` | the change persister's utility session |
 | `content_audit` | the outbound gate's judgment session |
+| `organize_pass` | organize assessment, authoring and independent verification |
 | `scheduled_pass` | the passes the scheduler fires on their configured cadence |
 
 Three rules, each enforced at boot rather than documented and hoped for:

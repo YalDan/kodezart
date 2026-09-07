@@ -190,6 +190,7 @@ def map_knowledge_mcp(
             | SessionType.COMMIT_MESSAGE
             | SessionType.CONTENT_AUDIT
             | SessionType.SCHEDULED_PASS
+            | SessionType.ORGANIZE_PASS
         ):
             return McpSessionOptions(
                 mcp_servers=_described_servers(grant, session_type),

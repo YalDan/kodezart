@@ -11,6 +11,7 @@ from typing import Final
 import pytest
 from pydantic import ValidationError
 
+from kodezart.adapters._mcp_mapping import map_knowledge_mcp
 from kodezart.core.config import AppConfig
 from kodezart.main import create_app, lifespan
 from kodezart.types.domain.session import SessionType
@@ -137,3 +138,28 @@ async def test_the_shipped_grant_boots_clean_with_no_credential(
     app = create_app()
     async with lifespan(app):
         assert app.state.workflow_engine is not None
+
+
+def test_organize_is_a_named_session_kind_with_an_explicit_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert SessionType.ORGANIZE_PASS.value == "organize_pass"
+    assert (
+        not AppConfig()
+        .knowledge_grant(knowledge_map="")
+        .grants(SessionType.ORGANIZE_PASS)
+    )
+    monkeypatch.setenv(_GRANTS_VAR, '["organize_pass"]')
+    monkeypatch.setenv(_TOKEN_VAR, _CREDENTIAL)
+    monkeypatch.setenv(_URL_VAR, _SELF_HOSTED_URL)
+    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+    assert grant.granted == (SessionType.ORGANIZE_PASS,)
+    assert grant.grants(SessionType.ORGANIZE_PASS)
+    assert not grant.grants(SessionType.TICKET_FIRE)
+
+
+def test_ungranted_organize_uses_strict_mcp_configuration() -> None:
+    grant = AppConfig().knowledge_grant(knowledge_map="")
+    options = map_knowledge_mcp(grant, SessionType.ORGANIZE_PASS)
+    assert options["strict_mcp_config"] is True
+    assert options["mcp_servers"] == {}
