@@ -3,7 +3,13 @@
 from enum import StrEnum
 from typing import Literal, Self
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    SerializationInfo,
+    model_serializer,
+    model_validator,
+)
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -80,6 +86,14 @@ class ScopeResidual(CamelCaseModel):
 
     items: tuple[ScopeResidualItem, ...]
     stopping_rule: ScopeStoppingRule | None
+
+    @model_serializer
+    def _wire_fields(self, info: SerializationInfo[object]) -> dict[str, object]:
+        """Absence of either fact must never stand in for convergence."""
+        return {
+            "items": self.items,
+            "stoppingRule" if info.by_alias else "stopping_rule": self.stopping_rule,
+        }
 
 
 class ScopeTerminalEvent(CamelCaseModel):

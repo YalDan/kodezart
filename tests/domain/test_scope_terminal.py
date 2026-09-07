@@ -1,5 +1,7 @@
 """Scope terminal values preserve the facts a wire consumer must inspect."""
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -208,3 +210,55 @@ def test_terminal_cannot_be_changed_after_validation() -> None:
             configured_value=4,
             rounds_used=4,
         )
+
+
+@pytest.mark.parametrize("by_alias", [False, True])
+@pytest.mark.parametrize("exclude_none", [False, True])
+@pytest.mark.parametrize("exclude_unset", [False, True])
+@pytest.mark.parametrize("exclude_defaults", [False, True])
+def test_converged_wire_contains_empty_items_and_explicit_null_stopping_rule(
+    by_alias: bool,
+    exclude_none: bool,
+    exclude_unset: bool,
+    exclude_defaults: bool,
+) -> None:
+    event = ScopeTerminalEvent(
+        outcome=WorkflowOutcome.scope_converged,
+        residual=ScopeResidual(items=(), stopping_rule=None),
+    )
+    options = {
+        "by_alias": by_alias,
+        "exclude_none": exclude_none,
+        "exclude_unset": exclude_unset,
+        "exclude_defaults": exclude_defaults,
+    }
+    wire = event.model_dump(mode="json", **options)
+    expected = {"items": [], "stoppingRule" if by_alias else "stopping_rule": None}
+    assert wire["outcome"] == "scope_converged"
+    assert wire["residual"] == expected
+    assert json.loads(event.model_dump_json(**options))["residual"] == expected
+    assert ScopeTerminalEvent.model_validate(wire) == event
+
+
+def test_residual_wire_does_not_erase_handoff_facts_when_forcing_keys() -> None:
+    residual = ScopeResidual(
+        items=(_item(),),
+        stopping_rule=ScopeStoppingRule(
+            config_field="organize_max_convergence_rounds",
+            configured_value=3,
+            rounds_used=3,
+        ),
+    )
+    event = ScopeTerminalEvent(
+        outcome=WorkflowOutcome.scope_converged_with_residual, residual=residual
+    )
+    wire = event.model_dump(mode="json", by_alias=True, exclude_none=True)
+    assert wire["residual"] == {
+        "items": [_item().model_dump(mode="json", by_alias=True)],
+        "stoppingRule": {
+            "configField": "organize_max_convergence_rounds",
+            "configuredValue": 3,
+            "roundsUsed": 3,
+        },
+    }
+    assert ScopeTerminalEvent.model_validate(wire) == event
