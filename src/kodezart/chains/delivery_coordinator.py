@@ -1,8 +1,11 @@
 """Delivery check classification from declarations and same-commit evidence.
 
-PR delivery and residual publication will consume this one classifier. No
+The common coordinator owns PR creation and check watching. Residual
+publication and remediation remain explicit unfinished routes. No
 classification reads summary or log text; summaries are carried as evidence.
 """
+
+import asyncio
 
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE
@@ -70,6 +73,7 @@ class DeliveryCoordinator:
         git: GitService,
         cache: RepoCache,
         git_remote: str,
+        config: AppConfig,
         artifact_persister: ArtifactPersister | None,
     ) -> None:
         self._runner = runner
@@ -81,6 +85,7 @@ class DeliveryCoordinator:
         self._git = git
         self._cache = cache
         self._git_remote = git_remote
+        self._watch_slots = asyncio.Semaphore(config.delivery_max_concurrent_watches)
         self._artifact_persister = artifact_persister
         self._log = get_logger(__name__)
 
@@ -148,9 +153,10 @@ class DeliveryCoordinator:
             head=feature_branch,
             base=dispatch.resolved_base.base_branch,
         )
-        passed, summary = await self._ci.wait_for_checks(
-            repo_url=execution.repo_url, ref=feature_branch
-        )
+        async with self._watch_slots:
+            passed, summary = await self._ci.wait_for_checks(
+                repo_url=execution.repo_url, ref=feature_branch
+            )
         if passed is True:
             outcome = WorkflowOutcome.ci_passed
         elif passed is None and not await self._ci.checks_declared(

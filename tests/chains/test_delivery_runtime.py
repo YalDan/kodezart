@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.chains.delivery_coordinator import DeliveryCoordinator
+from kodezart.core.config import AppConfig
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import (
     BaseResolutionError,
@@ -134,6 +135,7 @@ def setup(
     family=V5_SET,
     git=None,
     cache=None,
+    config=None,
 ):
     runner = runner if runner is not None else FakeAgentRunner([description()])
     forge = forge if forge is not None else FakePRCreator()
@@ -153,6 +155,7 @@ def setup(
             else FakeGitService(remote_branch_shas={HEAD: SHA, BASE: "b" * 40}),
             cache=cache if cache is not None else FakeRepoCache(),
             git_remote="upstream",
+            config=config if config is not None else AppConfig(),
             artifact_persister=cleaner,
         ),
         runner=runner,
