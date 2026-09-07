@@ -11,6 +11,17 @@ class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
 
+class PRTrackerIdentityError(Exception):
+    """The publishable PR body lost its required tracker identity."""
+
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(
+            "gated PR body does not retain the fixed tracker issue identity "
+            f"{issue_key!r}"
+        )
+
+
 class DeliveryContextError(Exception):
     """A delivery handoff does not identify one consistent execution."""
 

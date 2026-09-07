@@ -69,7 +69,11 @@ from kodezart.domain.errors import (
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
-from kodezart.domain.pr_body import append_flagged_section, append_tracker_issue
+from kodezart.domain.pr_body import (
+    append_flagged_section,
+    append_tracker_issue,
+    require_tracker_issue,
+)
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.stall_report import stall_pr_body, stall_pr_title
 from kodezart.domain.thread_id import workflow_thread_id
@@ -1273,19 +1277,22 @@ class RalphWorkflowEngine:
                 destination=OutboundDestination.PR_TITLE,
                 content_class=ContentClass.AUTHORED,
             ),
-            body=await self._gated(
-                content=append_tracker_issue(
-                    stall_pr_body(
-                        trajectory,
-                        validated_criteria(state),
-                        landed_commit=best_sha,
+            body=require_tracker_issue(
+                await self._gated(
+                    content=append_tracker_issue(
+                        stall_pr_body(
+                            trajectory,
+                            validated_criteria(state),
+                            landed_commit=best_sha,
+                        ),
+                        state["issue_key"],
                     ),
-                    state["issue_key"],
+                    visibility=state["repo_visibility"],
+                    shape=WriterShape.PROSE,
+                    destination=OutboundDestination.PR_BODY,
+                    content_class=ContentClass.AUTHORED,
                 ),
-                visibility=state["repo_visibility"],
-                shape=WriterShape.PROSE,
-                destination=OutboundDestination.PR_BODY,
-                content_class=ContentClass.AUTHORED,
+                state["issue_key"],
             ),
             head=head,
             base=ctx.base_branch,
@@ -1708,12 +1715,15 @@ class RalphWorkflowEngine:
                 destination=OutboundDestination.PR_TITLE,
                 content_class=ContentClass.AUTHORED,
             ),
-            body=await self._gated(
-                content=body,
-                visibility=state["repo_visibility"],
-                shape=WriterShape.PROSE,
-                destination=OutboundDestination.PR_BODY,
-                content_class=ContentClass.AUTHORED,
+            body=require_tracker_issue(
+                await self._gated(
+                    content=body,
+                    visibility=state["repo_visibility"],
+                    shape=WriterShape.PROSE,
+                    destination=OutboundDestination.PR_BODY,
+                    content_class=ContentClass.AUTHORED,
+                ),
+                state["issue_key"],
             ),
             head=state["feature_branch"],
             base=ctx.base_branch,

@@ -28,7 +28,11 @@ from kodezart.domain.errors import (
     DeliveryContextError,
     DeliveryRouteUnavailableError,
 )
-from kodezart.domain.pr_body import append_flagged_section, append_tracker_issue
+from kodezart.domain.pr_body import (
+    append_flagged_section,
+    append_tracker_issue,
+    require_tracker_issue,
+)
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.types.domain.agent import PR_DESCRIPTION_SCHEMA, PRDescriptionOutput
 from kodezart.types.domain.delivery import (
@@ -157,6 +161,7 @@ class DeliveryCoordinator:
             description.title, context.visibility, OutboundDestination.PR_TITLE
         )
         body = await self._gated(body, context.visibility, OutboundDestination.PR_BODY)
+        require_tracker_issue(body, dispatch.issue_id)
         url, number = await self._pr_creator.create_pr(
             repo_url=execution.repo_url,
             title=title,
