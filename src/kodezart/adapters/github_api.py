@@ -1098,14 +1098,25 @@ class GitHubAPIClient:
         )
 
     async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
-        """Read failing names from a complete terminal check observation."""
+        """Read one failing-set interpretation from the pinned watch or API.
+
+        A rerun selects its own attempt first. Otherwise a completed watch
+        in this task owns the original ref's bytes, so a branch move cannot
+        replace the original failing set between watching and classifying.
+        """
         owner, repo = extract_owner_repo(repo_url)
         batch = self._rerun_context().get((owner, repo, ref))
-        page = (
-            await self._fetch_check_runs(owner, repo, ref, require_stable_total=True)
-            if batch is None
-            else await self._rerun_observation(owner, repo, batch)
-        )
+        watched = self._watch_context().get((owner.casefold(), repo.casefold(), ref))
+        if batch is not None:
+            page = await self._rerun_observation(owner, repo, batch)
+        elif watched is not None:
+            page = CheckRunsResponse(
+                total_count=watched.total_count, check_runs=list(watched.checks)
+            )
+        else:
+            page = await self._fetch_check_runs(
+                owner, repo, ref, require_stable_total=True
+            )
         if page is None or len(page.check_runs) != page.total_count:
             raise ForgeAPIError(
                 "Failed check names were not completely observable",
@@ -1196,11 +1207,6 @@ class GitHubAPIClient:
         return ObservedChecks(
             commit_sha=sha,
             checks_passed=watched.passed,
-            failed_names=frozenset(
-                check.name
-                for check in watched.checks
-                if check.conclusion in self._FAILURE_CONCLUSIONS
-            ),
         )
 
     async def wait_for_checks(

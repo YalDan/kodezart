@@ -262,7 +262,9 @@ class DeliveryCoordinator:
                     repository=self._repository(execution.repo_url),
                     final_commit_sha=observation.commit_sha,
                     initial_summary=summary,
-                    initial_failed_names=observation.failed_names,
+                    initial_failed_names=await self._ci.failed_check_names(
+                        repo_url=execution.repo_url, ref=feature_branch
+                    ),
                     config=self._config,
                 )
                 if classified.red_class is not CheckRedClass.RUNNER_FLAKE:

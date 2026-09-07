@@ -63,9 +63,9 @@ async def test_real_coordinator_recovers_nonred_rerun_without_another_session(pa
         {"repo_url": REPOSITORY, "ref": HEAD},
         {"repo_url": REPOSITORY, "ref": SHA},
     ]
-    # Original failing names come from the original watch, not a second read
-    # that could replace that set before classification.
-    assert fixture.monitor.failed_name_calls == []
+    # Both comparison sets use the one ruled reader. Its original ref is
+    # pinned to the completed watch, so it cannot replace the original set.
+    assert fixture.monitor.failed_name_calls == [(REPOSITORY, HEAD)]
     assert len(fixture.runner.calls) == len(fixture.forge.calls) == 1
     assert result.pr.state == "open"
 

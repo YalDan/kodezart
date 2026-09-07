@@ -67,12 +67,20 @@ async def test_original_watch_is_read_without_another_forge_request(boundary):
     passed, _ = await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
     assert passed is False
     count = len(requests)
-    expected = ObservedChecks(
-        commit_sha=SHA, checks_passed=False, failed_names=frozenset({"unit"})
-    )
+    expected = ObservedChecks(commit_sha=SHA, checks_passed=False)
     assert await reader.observed_checks(repo_url=REPO, ref=BRANCH) == expected
     assert await reader.observed_checks(repo_url=REPO, ref=BRANCH) == expected
+    assert await monitor.failed_check_names(repo_url=REPO, ref=BRANCH) == {"unit"}
     assert len(requests) == count
+
+
+async def test_fake_original_failing_set_survives_changed_unwatched_state():
+    monitor = FakeCIMonitor(passed=False, failed_names=frozenset({"original"}))
+    await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
+    monitor._failed_names = frozenset({"later"})
+    assert await monitor.failed_check_names(repo_url=REPO, ref=BRANCH) == {"original"}
+    await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
+    assert await monitor.failed_check_names(repo_url=REPO, ref=BRANCH) == {"later"}
 
 
 @pytest.mark.parametrize("repo,ref", [(REPO + "-other", BRANCH), (REPO, "other")])

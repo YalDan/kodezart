@@ -1907,6 +1907,9 @@ class FakeCIMonitor:
         self._attempts: ContextVar[
             tuple[object, dict[tuple[str, str], _FakeCIObservation]] | None
         ] = ContextVar("fake_ci_attempts", default=None)
+        self._watches: ContextVar[
+            tuple[object, dict[tuple[str, str], _FakeCIObservation]] | None
+        ] = ContextVar("fake_ci_watches", default=None)
         self.rerun_calls: list[tuple[str, str]] = []
         self.declaration_calls: list[str] = []
         self.failed_name_calls: list[tuple[str, str]] = []
@@ -1922,6 +1925,12 @@ class FakeCIMonitor:
         return self._attempt_context().get(
             (repo_url, ref), (self._passed, self._summary, self._failed_names)
         )
+
+    def _watch_context(self) -> dict[tuple[str, str], _FakeCIObservation]:
+        context = self._watches.get()
+        if context is None or context[0] is not asyncio.current_task():
+            return {}
+        return dict(context[1])
 
     async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
         self.rerun_calls.append((repo_url, ref))
@@ -1946,7 +1955,11 @@ class FakeCIMonitor:
         self.failed_name_calls.append((repo_url, ref))
         if self._fail is not None:
             raise self._fail
-        return self._observation(repo_url, ref)[2]
+        attempt = self._attempt_context().get((repo_url, ref))
+        if attempt is not None:
+            return attempt[2]
+        watched = self._watch_context().get((repo_url, ref))
+        return self._failed_names if watched is None else watched[2]
 
     async def wait_for_checks(
         self,
@@ -1962,9 +1975,15 @@ class FakeCIMonitor:
         )
         if self.observation_reader is not None:
             self.observation_reader._record(repo_url, ref, None)
+        watches = self._watch_context()
+        watches.pop((repo_url, ref), None)
+        self._watches.set((asyncio.current_task(), watches))
         if self._fail is not None:
             raise self._fail
         passed, summary, names = self._observation(repo_url, ref)
+        if passed is not None and passed != bool(names):
+            watches[(repo_url, ref)] = (passed, summary, names)
+            self._watches.set((asyncio.current_task(), watches))
         sha = self.observed_sha_by_ref.get(ref)
         if (
             self.observation_reader is not None
@@ -1975,9 +1994,7 @@ class FakeCIMonitor:
             self.observation_reader._record(
                 repo_url,
                 ref,
-                ObservedChecks(
-                    commit_sha=sha, checks_passed=passed, failed_names=names
-                ),
+                ObservedChecks(commit_sha=sha, checks_passed=passed),
             )
         return (passed, summary)
 
