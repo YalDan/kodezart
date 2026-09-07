@@ -246,6 +246,10 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
         ],
         clock=lambda: FIXTURE_NOW,
     )
+    port.issue_state_changes = {
+        key: (await source.read_issue_state_change(issue_key=key)).state_changed_at
+        for key in keys
+    }
     # A credential refused the review scan cannot read one, so the double it
     # seeds holds none — the same state the workspace behind it presents.
     if PassSignal.reviews_changed not in refusals:

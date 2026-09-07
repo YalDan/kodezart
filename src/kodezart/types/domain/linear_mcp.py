@@ -22,7 +22,7 @@ without a fresh capture behind it is a guess wearing a type.
 from collections.abc import Sequence
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 
 
@@ -175,6 +175,28 @@ class LinearIssueDetailWire(LinearIssueWire):
 
     attachments: list[LinearAssetWire]
     documents: list[LinearAssetWire]
+
+
+class LinearHistoryStateWire(LinearWireModel):
+    """State identity reported by get_issue's native stateHistory entries."""
+
+    id: str
+    name: str
+    type: str
+
+
+class LinearStateHistoryEntryWire(LinearWireModel):
+    """A measured state interval; omission is not an open endedAt."""
+
+    state: LinearHistoryStateWire
+    started_at: AwareDatetime
+    ended_at: AwareDatetime | None
+
+
+class LinearIssueStateHistoryWire(LinearIssueDetailWire):
+    """Full issue plus native stateHistory, measured on KOD-537 in September."""
+
+    state_history: list[LinearStateHistoryEntryWire] = Field(min_length=1)
 
 
 class LinearCriterionIssueWire(LinearIssueDetailWire):

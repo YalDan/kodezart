@@ -136,6 +136,7 @@ from kodezart.types.domain.tracker import (
     TrackerComment,
     TrackerIssue,
     TrackerIssueRevision,
+    TrackerIssueStateChange,
     TrackerReview,
     WorkflowStateKind,
 )
@@ -2365,6 +2366,7 @@ class FakeMcpIssue:
     assignee: str | None = None
     created_at: datetime = FIXTURE_EPOCH
     updated_at: datetime = FIXTURE_EPOCH
+    state_changed_at: datetime | None = None
     url: str = ""
 
     def entry(self) -> dict[str, object]:
@@ -2403,6 +2405,17 @@ class FakeMcpIssue:
             "relations": self.relations_wire(),
             "attachments": [asset.wire() for asset in self.attachments],
             "documents": [asset.wire() for asset in self.documents],
+            "stateHistory": [
+                {
+                    "state": {
+                        "id": f"state-{self.status}",
+                        "name": self.status,
+                        "type": self.status_type,
+                    },
+                    "startedAt": (self.state_changed_at or self.created_at).isoformat(),
+                    "endedAt": None,
+                }
+            ],
         }
 
     def relations_wire(self) -> dict[str, object]:
@@ -2718,6 +2731,8 @@ class FakeLinearMcpServer:
             assert isinstance(additions, list)
             issue.labels = list(dict.fromkeys([*issue.labels, *map(str, additions)]))
         self._moved(issue.id)
+        if "state" in arguments:
+            issue.state_changed_at = issue.updated_at
         return issue.wire()
 
     def _tool_save_comment(
@@ -3194,6 +3209,9 @@ class FakeTrackerPort:
         #: so what a consumer spends on reads is only visible as a list of
         #: them (KOD-173).
         self.issue_reads: list[str] = []
+        self.issue_state_changes: dict[str, datetime] = {
+            issue.issue_key: issue.created_at for issue in issues
+        }
         #: Every claim this double GRANTED, in order — kept past the release
         #: that deletes the claim itself, so a claim/release pair spent and
         #: undone is still visible as the write it was (KOD-173).
@@ -3313,6 +3331,14 @@ class FakeTrackerPort:
     def require_body_digest_stability(self) -> None:
         """The fake's revision reads derive their digest from the body alone."""
 
+    async def read_issue_state_change(
+        self, *, issue_key: str
+    ) -> TrackerIssueStateChange:
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueStateChange(
+            issue=issue, state_changed_at=self.issue_state_changes[issue_key]
+        )
+
     async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
         issue = await self.read_issue(issue_key=issue_key)
         return TrackerIssueRevision(
@@ -3401,6 +3427,7 @@ class FakeTrackerPort:
         )
         self.issues[issue.issue_key] = issue
         self.issue_creations.append(issue.issue_key)
+        self.issue_state_changes[issue.issue_key] = issue.created_at
         return issue
 
     async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
@@ -3519,6 +3546,7 @@ class FakeTrackerPort:
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
+        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
         return updated
 
     async def restore_workflow_state(
@@ -3541,6 +3569,7 @@ class FakeTrackerPort:
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
+        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
         return updated
 
     async def set_queue_state(

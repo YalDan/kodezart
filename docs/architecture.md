@@ -102,6 +102,15 @@ hashes those exact UTF-8 body bytes; timestamps, comments, labels and workflow
 state do not participate. Each surface changes independently, and replaying
 an unchanged body preserves its digest.
 
+`read_issue_state_change` requires native state history from the same complete
+issue read. Exactly one current interval must agree with the issue state and
+its timestamps; absent, ambiguous or inconsistent history is a typed refusal.
+General issue edits do not stand in for state transitions. The audit collector
+reads complete scope and criterion membership before and after detail reads,
+refusing changed snapshots or duplicate native members before coverage begins.
+These are checked observations, not an atomic vendor snapshot; scheduled audit
+sessions remain a separate consumer.
+
 Tracker boot first requires `require_criterion_reads`. An adapter declaring
 that criterion-child reads are unavailable raises `CriterionReadCapabilityError`
 with its adapter identity and the `criterion_reads` capability. Boot closes

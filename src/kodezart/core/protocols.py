@@ -57,6 +57,7 @@ from kodezart.types.domain.tracker import (
     TrackerComment,
     TrackerIssue,
     TrackerIssueRevision,
+    TrackerIssueStateChange,
     TrackerReview,
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
@@ -722,6 +723,17 @@ class TrackerPort(Protocol):
         stable body digests. This is a required contract, not feature
         negotiation: consumers never select a weaker read. Conformance
         tests prove the guarantee without mutating the live board at boot.
+        """
+        ...
+
+    async def read_issue_state_change(
+        self, *, issue_key: str
+    ) -> TrackerIssueStateChange:
+        """Read the current state-entry time with that same full issue snapshot.
+
+        Missing or inconsistent state history raises, never substitutes a
+        general update time, creation time, or a timestamp from another read.
+        This is read-only and acquires no write lease.
         """
         ...
 
