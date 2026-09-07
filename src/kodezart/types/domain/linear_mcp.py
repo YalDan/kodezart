@@ -194,7 +194,7 @@ class LinearStateHistoryEntryWire(LinearWireModel):
 
 
 class LinearIssueStateHistoryWire(LinearIssueDetailWire):
-    """Full issue plus native stateHistory, measured on KOD-537 in September."""
+    """Full issue plus the native stateHistory intervals."""
 
     state_history: list[LinearStateHistoryEntryWire] = Field(min_length=1)
 
