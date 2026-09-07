@@ -90,14 +90,14 @@ def _trajectory(
 
 
 def test_wire_values_are_pinned_verbatim() -> None:
-    """The sixteen values are a wire contract — a re-point must break the build.
+    """The original names, values and order survive later vocabulary appends.
 
     The order is the module's stated extension convention: later work
     APPENDS, so ``criteria_infeasible`` sits last rather than first,
     KOD-40's two members sit after it, and KOD-120's queue-assigned pair
-    sits at the end.
+    follows them. Later scope members append after this fire vocabulary.
     """
-    assert [member.value for member in WorkflowOutcome] == [
+    expected = [
         "merge_divergent",
         "fix_consolidation_failed",
         "loop_plateaued",
@@ -115,6 +115,9 @@ def test_wire_values_are_pinned_verbatim() -> None:
         "engine_error",
         "shutdown_abandoned",
     ]
+    assert list(WorkflowOutcome.__members__)[: len(expected)] == expected
+    for name in expected:
+        assert WorkflowOutcome[name].value == name
 
 
 #: The members no state can produce, because the runs they name have no state.

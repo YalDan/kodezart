@@ -15,11 +15,11 @@ from enum import StrEnum
 
 
 class WorkflowOutcome(StrEnum):
-    """Sixteen-way partition of how a run ended.
+    """Terminal dispositions of fire jobs and scope runs.
 
-    Fourteen of the members classify a run that reached ``complete`` and
-    reported.  The last two classify a run that did NOT: they are
-    assigned at the queue boundary, where the failure is observed, and
+    Fire outcomes classify a run that reached ``complete`` and reported.
+    ``engine_error`` and ``shutdown_abandoned`` classify a run that did NOT:
+    they are assigned at the queue boundary, where the failure is observed, and
     ``classify_outcome`` never produces them — it classifies a
     ``WorkflowState``, and neither of these runs has one to classify.
 
@@ -40,12 +40,15 @@ class WorkflowOutcome(StrEnum):
     values, so a consumer must still be able to parse what it has seen.
 
     ``engine_error`` and ``shutdown_abandoned`` close the one gap the
-    other fourteen cannot: a terminal job record whose outcome is null
+    fire outcomes cannot: a terminal job record whose outcome is null
     used to mean three different things — a run that ended before the
     outcome was written, a run killed by a hard failure, and a run swept
     up by shutdown — and a consumer reading absence read all three as
     benign.  They are facts about the JOB, written where the job's fate
     is known, and they never claim a classification of a run's state.
+
+    The ``scope_`` outcomes classify convergence of a scope. They extend
+    this same vocabulary so wire consumers never switch between enums.
     """
 
     merge_divergent = "merge_divergent"
@@ -64,3 +67,6 @@ class WorkflowOutcome(StrEnum):
     remediation_budget_exhausted = "remediation_budget_exhausted"
     engine_error = "engine_error"
     shutdown_abandoned = "shutdown_abandoned"
+    scope_converged = "scope_converged"
+    scope_converged_with_residual = "scope_converged_with_residual"
+    scope_stopped_short = "scope_stopped_short"
