@@ -691,7 +691,7 @@ MCP server on a session. That registration is host configuration, made where a
 session started in `KODEZART_SCHEDULED_PASS_WORKING_DIR` can see it, and
 nothing here performs or verifies it — do not read a machine-local MCP
 registration you happen to have as a property of the deployment. Attaching the
-tracker to sessions from configuration is v0.3 work (KOD-312).
+tracker to sessions from configuration is planned.
 
 ## Development
 
