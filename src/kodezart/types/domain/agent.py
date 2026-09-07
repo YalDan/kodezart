@@ -25,6 +25,7 @@ from kodezart.types.domain.criteria import (
     DraftedCriterion,
     FanInReport,
     GeneratedCriterion,
+    TrackerCriteriaValidationOutput,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.organize import AdmissionJudgment
@@ -1017,6 +1018,9 @@ GENERATED_CRITERIA_SCHEMA: dict[str, object] = (
 CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
     CriteriaValidationOutput.model_json_schema()
 )
+TRACKER_CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
+    TrackerCriteriaValidationOutput.model_json_schema()
+)
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
 # Schema for structured ticket review output
@@ -1042,6 +1046,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
+    "TRACKER_CRITERIA_VALIDATION_SCHEMA": TRACKER_CRITERIA_VALIDATION_SCHEMA,
     "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,

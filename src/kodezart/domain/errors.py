@@ -631,3 +631,7 @@ class AuditClaimReadError(ValueError):
 
 class WriteBackReadError(ValueError):
     """An addressed artifact cannot be re-read completely for verification."""
+
+
+class TrackerFeasibilityReadError(Exception):
+    """The selected tracker family or repository changed before judgment settled."""

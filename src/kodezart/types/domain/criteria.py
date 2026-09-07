@@ -253,18 +253,8 @@ class DraftedCriterion(CamelCaseModel):
     )
 
 
-class CriterionFinding(CamelCaseModel):
-    """One refuter finding about one criterion — the validator's raw output.
-
-    The refuter states the ``verdict`` and the evidence behind it: the
-    smallest repair that would settle the criterion, and what it
-    established.  Evidence is carried so a human can audit "supply a
-    Postgres instance", and so the sweep can ground the statement:
-    ``classify_finding`` derives its own verdict from the evidence alone,
-    and a stated verdict the evidence does not derive is refused.
-    """
-
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+class _AuthoredFindingIdentity(CamelCaseModel):
+    """The authored identity field precedes its evidence on the existing wire."""
 
     criterion_id: CriterionId = Field(
         pattern=CRITERION_ID_PATTERN,
@@ -273,6 +263,13 @@ class CriterionFinding(CamelCaseModel):
             "per dispatched id and invent none."
         ),
     )
+
+
+class FindingEvidence(CamelCaseModel):
+    """The shared stated verdict and its evidence, independent of identity."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
     verdict: CriterionVerdict = Field(
         description=(
             "Feasible, infeasible, or unverifiable — never folded into each other."
@@ -369,6 +366,18 @@ class CriterionFinding(CamelCaseModel):
         return self
 
 
+class CriterionFinding(FindingEvidence, _AuthoredFindingIdentity):
+    """One refuter finding about one criterion — the validator's raw output.
+
+    The refuter states the ``verdict`` and the evidence behind it: the
+    smallest repair that would settle the criterion, and what it
+    established.  Evidence is carried so a human can audit "supply a
+    Postgres instance", and so the sweep can ground the statement:
+    ``classify_finding`` derives its own verdict from the evidence alone,
+    and a stated verdict the evidence does not derive is refused.
+    """
+
+
 class Contradiction(CamelCaseModel):
     """A subset of criterion ids whose conjunction admits no implementation."""
 
@@ -398,6 +407,45 @@ class CriteriaValidationOutput(CamelCaseModel):
         description=(
             "Subsets of individually feasible criteria that cannot hold together."
         ),
+    )
+
+
+class TrackerCriterionFinding(FindingEvidence):
+    """A feasibility finding addressed by the criterion sub-issue's own key."""
+
+    criterion_id: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="The dispatched criterion sub-issue key, echoed exactly.",
+    )
+
+
+class TrackerContradiction(CamelCaseModel):
+    """A conflicting subset addressed by native criterion keys."""
+
+    model_config = ConfigDict(frozen=True)
+
+    criterion_ids: list[Annotated[str, Field(min_length=1, pattern=r"\S")]] = Field(
+        min_length=2,
+        description="The smallest subset of native criterion keys that conflicts.",
+    )
+    explanation: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="Why no single implementation can satisfy that subset.",
+    )
+
+
+class TrackerCriteriaValidationOutput(CamelCaseModel):
+    """The native-key answer from a tracker feasibility session."""
+
+    findings: list[TrackerCriterionFinding] = Field(
+        min_length=1,
+        description="Exactly one grounded finding per dispatched native criterion key.",
+    )
+    contradictions: list[TrackerContradiction] = Field(
+        default_factory=list,
+        description="Minimal conflicting subsets of the supplied criterion keys.",
     )
 
 

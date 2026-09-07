@@ -657,3 +657,35 @@ record, workspace or remote head refuses the observation; workspace release
 also runs on errors and cancellation. This is a repeat-read observation, not an
 atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
 report publication, write-back and scheduler registration remain separate work.
+
+
+`TrackerFeasibilityValidator.validate` is the read-only criterion-validation
+consumer for a tracker subject. It accepts an issue key and a previously
+resolved dispatch SHA, obtains the subject once through `read_fire_spec`,
+and matches a fresh full criterion-family read to that captured identity set.
+Only the backend's unstarted (Todo) children enter its feasibility session;
+other criterion states are retained in the observation without re-authoring.
+The session receives the captured subject and current Check fields, with native
+sub-issue keys and no recorded Evidence or criterion-author rationale.
+
+The validator uses the existing evidence classifier and permutation/conjunction
+arithmetic. A native schema carries those same grounded three-state findings
+without constructing authored AC-n identities or a ticket draft. The authored
+schemas and rendered prompt bytes remain unchanged. Flags remain observations;
+they cannot remove a tracker criterion from its obligations. The existing
+`fan_in_max_attempts` bounds fresh corrective sessions. A missing, foreign,
+duplicate or ungrounded response refuses on exhaustion.
+
+The selected SHA is checked in a detached workspace before each session and
+after validation. Ordinary tracked, staged or untracked changes refuse through
+`GitService.has_changes`; ignored test outputs follow Git's existing ignore
+behavior. The full criterion family is read again before returning, and any
+observed change refuses. This is optimistic source coherence, not an atomic
+tracker snapshot or an immutable-filesystem claim. Owned acquisition and
+release settle through repeated cancellation. An empty Todo subset opens no
+session and leaves every state untouched.
+
+This consumer returns a source-addressed observation. It does not apply
+amendments, cancellations or state transitions, authorize dispatch, persist an
+artifact, or supply the missing full FIRE composition. Approval eligibility,
+leased authoring and the live iteration-exit path remain separate consumers.
