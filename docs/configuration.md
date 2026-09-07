@@ -326,3 +326,15 @@ and `psycopg[binary]`); without it boot raises
 ```bash
 uv sync --all-groups --extra postgres
 ```
+
+### Durable aggregate scanning
+
+These settings configure the aggregate scanner on the existing outbound gate. Durable public or unknown-visibility surfaces are checked; appended event surfaces skip aggregate matching. The gate's existing private-repository bypass still applies.
+
+| Variable | Type | Default | Constraint | Meaning |
+| --- | --- | --- | --- | --- |
+| `KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE` | `int` | `0` | >= 0 | Maximum intervening tokens between a numeral and a tracker-object noun. |
+| `KODEZART_AGGREGATE_IDENTIFIER_ROSTER_MIN_LENGTH` | `int` | `3` | >= 2 | Minimum consecutive tracker references forming a roster. |
+| `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS` | `list[str]` | Issue, ticket, lane, project, milestone, sub-issue, PR and pull-request nouns, singular and plural | Nonempty list | JSON list of object nouns; each is matched literally, without case sensitivity. |
+| `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` | `str` | Uppercase issue prefix followed by a hyphen and digits | Nonempty regex | Identifier grammar used by roster matching. |
+| `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` | `str` | Whitespace and punctuation separators, or “and” | Nonempty regex | Grammar separating consecutive references in a roster. |
