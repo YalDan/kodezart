@@ -178,11 +178,14 @@ class LinearIssueDetailWire(LinearIssueWire):
 
 
 class LinearCriterionIssueWire(LinearIssueDetailWire):
-    """A child's reported membership and full description cannot be omitted."""
+    """A child's reported membership cannot be omitted.
+
+    Description absence retains the ordinary issue read's normalization;
+    a criterion can have an empty body without disappearing from the set.
+    """
 
     labels: list[str]
     parent_id: str | None
-    description: str | None
 
 
 class LinearIssueListWire(LinearWireModel):

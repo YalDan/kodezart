@@ -92,8 +92,8 @@ async def test_failed_listing_retains_the_typed_read_boundary():
     assert raised.value.__cause__ is not None
 
 
-@pytest.mark.parametrize("field", ["labels", "parentId", "description"])
-async def test_missing_child_membership_or_body_fields_are_not_defaulted(field):
+@pytest.mark.parametrize("field", ["labels", "parentId"])
+async def test_missing_child_membership_fields_are_not_defaulted(field):
     class IncompleteChildServer(FakeLinearMcpServer):
         def _tool_get_issue(self, arguments):
             payload = dict(super()._tool_get_issue(arguments))
@@ -109,6 +109,33 @@ async def test_missing_child_membership_or_body_fields_are_not_defaulted(field):
     )
     with pytest.raises(CriterionReadError):
         await tracker_over(server).read_criteria(issue_key=PARENT)
+
+
+@pytest.mark.parametrize("description", [None, "", "omitted"])
+async def test_descriptionless_criteria_keep_the_ordinary_issue_read_contract(
+    description,
+):
+    class DescriptionlessServer(FakeLinearMcpServer):
+        def _tool_get_issue(self, arguments):
+            payload = dict(super()._tool_get_issue(arguments))
+            if arguments["id"] == CHILD:
+                if description == "omitted":
+                    del payload["description"]
+                else:
+                    payload["description"] = description
+            return payload
+
+    server = DescriptionlessServer(
+        issues=[
+            FakeMcpIssue(id=PARENT),
+            FakeMcpIssue(id=CHILD, parent_id=PARENT, labels=[LABEL]),
+        ]
+    )
+    tracker = tracker_over(server)
+    criteria = await tracker.read_criteria(issue_key=PARENT)
+    assert len(criteria) == 1
+    assert criteria[0].body == ""
+    assert criteria[0] == await tracker.read_issue(issue_key=CHILD)
 
 
 async def test_composition_injects_the_declared_criterion_label_spelling():

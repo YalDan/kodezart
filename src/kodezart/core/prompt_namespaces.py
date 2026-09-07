@@ -131,6 +131,12 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     )
     _bind_absentable(
         bindings,
+        "issue_labels",
+        dict(config.issue_labels),
+        absent=not config.issue_labels,
+    )
+    _bind_absentable(
+        bindings,
         "workflow_states",
         {stage.value: label for stage, label in config.workflow_states.items()},
         absent=not config.workflow_states,

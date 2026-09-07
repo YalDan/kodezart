@@ -1,5 +1,7 @@
 Groom the backlog of operation {{operation_name}}.
 
+{{#if issue_labels.criterion}}Read an issue's criteria from its direct sub-issues carrying `{{issue_labels.criterion}}`. Each sub-issue's own key identifies it; its body and workflow state carry its evidence and satisfaction.
+{{/if}}
 The teams this operation declares, and the repository each one's issues are fired into:
 {{#each teams}}- {{this.name}} ({{this.key}}){{#if this.repository}} — {{this.repository}}{{/if}}{{#if this.repository_absent}} — the only repository this operation declares{{/if}}{{#if this.repository_recorded}} — the repository recorded on each staged issue{{/if}}{{#if this.scope}} — in scope: only issues in {{this.scope}}{{/if}}
 {{/each}}
