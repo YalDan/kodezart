@@ -113,6 +113,12 @@ class LinearAssetWire(LinearWireModel):
     size: int | None = None
 
 
+class LinearProjectMilestoneWire(LinearWireModel):
+    """The milestone identity on a full issue or unfiltered listing entry."""
+
+    id: str
+
+
 class LinearIssueWire(LinearWireModel):
     """A Linear issue, in the fields EVERY issue-bearing payload carries.
 
@@ -140,6 +146,9 @@ class LinearIssueWire(LinearWireModel):
     #: membership is answered from these, never by a per-issue read.
     project: str | None = None
     project_id: str | None = None
+    #: Present for a milestone member, omitted or null for no milestone
+    #: in the connected tool's full get_issue/list_issues payloads.
+    project_milestone: LinearProjectMilestoneWire | None = None
     labels: list[str] = Field(default_factory=list)
     #: ``None`` means the payload did not REPORT relations — which is what
     #: every ``list_issues`` entry does, and what a ``get_issue`` read that

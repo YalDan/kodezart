@@ -31,6 +31,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunRecord
+from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -627,6 +628,23 @@ class TrackerPort(Protocol):
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
+        ...
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        """All issues in the scope, with their relations and parent fields.
+
+        Container scopes resolve by membership; issue scopes resolve to
+        the issue and its descendant issues. No bounded scan substitutes
+        for the complete scope.
+        """
+        ...
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        """The container's ref, name, description, url and optional parent.
+
+        An issue-kind ref raises a typed domain error: an issue is read
+        through ``read_issue``, never returned as an empty container.
+        """
         ...
 
     async def create_issue(

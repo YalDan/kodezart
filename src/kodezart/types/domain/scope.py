@@ -23,3 +23,16 @@ class ScopeRef(CamelCaseModel):
 
     kind: ScopeKind
     key: str = Field(min_length=1)
+
+
+class ScopeContainer(CamelCaseModel):
+    """A container's own metadata and optional containing scope."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ref: ScopeRef
+    name: str
+    description: str
+    url: str
+    parent: ScopeRef | None = None
+

@@ -37,6 +37,7 @@ from kodezart.domain.errors import (
     DuplicateWorkRefError,
     MergeConflictError,
     RateLimitError,
+    ScopeReadError,
     TransientAPIError,
     WorkspaceError,
 )
@@ -91,6 +92,7 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -2870,6 +2872,8 @@ class FakeTrackerPort:
         self,
         *,
         issues: Sequence[TrackerIssue] = (),
+        scope_containers: Sequence[ScopeContainer] = (),
+        scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         document_titles: Mapping[str, str] | None = None,
@@ -2884,6 +2888,12 @@ class FakeTrackerPort:
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
             issue.issue_key: issue for issue in issues
+        }
+        self.scope_containers: dict[ScopeRef, ScopeContainer] = {
+            container.ref: container for container in scope_containers
+        }
+        self.scope_memberships: dict[ScopeRef, tuple[str, ...]] = {
+            ref: tuple(keys) for ref, keys in (scope_memberships or {}).items()
         }
         self.recorded_work_refs: dict[str, list[WorkRef]] = {
             key: list(value) for key, value in (recorded_work_refs or {}).items()
@@ -3034,6 +3044,61 @@ class FakeTrackerPort:
         await asyncio.sleep(0)
         self.issue_reads.append(issue_key)
         return self.issues[issue_key]
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        if ref.kind is ScopeKind.ISSUE:
+            keys = [ref.key]
+            selected: dict[str, TrackerIssue] = {}
+            for key in keys:
+                if key in selected:
+                    continue
+                if key not in self.issues:
+                    raise ScopeReadError("issue is missing", ref=ref)
+                selected[key] = await self.read_issue(issue_key=key)
+                keys.extend(
+                    issue.issue_key
+                    for issue in self.issues.values()
+                    if issue.parent_key == key
+                )
+        else:
+            if ref not in self.scope_containers and ref not in self.scope_memberships:
+                raise ScopeReadError("container is missing", ref=ref)
+            selected = {}
+            for key in self.scope_memberships.get(ref, ()):
+                if key not in self.issues:
+                    raise ScopeReadError("scope member is missing", ref=ref)
+                if key not in selected:
+                    selected[key] = await self.read_issue(issue_key=key)
+        for start in selected:
+            path: set[str] = set()
+            current: str | None = start
+            while current is not None and current in selected:
+                if current in path:
+                    raise ScopeReadError("issue parent cycle", ref=ref)
+                path.add(current)
+                current = selected[current].parent_key
+        return tuple(selected.values())
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        if ref.kind is ScopeKind.ISSUE:
+            raise ScopeReadError(
+                "issue metadata must be read through read_issue", ref=ref
+            )
+        if ref not in self.scope_containers:
+            raise ScopeReadError("container metadata is missing", ref=ref)
+        seen: set[ScopeRef] = set()
+        ancestor: ScopeRef | None = ref
+        while ancestor is not None:
+            if ancestor in seen:
+                raise ScopeReadError("container parent cycle", ref=ref)
+            seen.add(ancestor)
+            if ancestor not in self.scope_containers:
+                raise ScopeReadError("container parent is missing", ref=ref)
+            ancestor = self.scope_containers[ancestor].parent
+        container = self.scope_containers[ref]
+        if not container.url:
+            raise ScopeReadError("container URL was not reported", ref=ref)
+        return container
 
     async def create_issue(
         self,

@@ -33,6 +33,7 @@ from typing import Final, assert_never
 
 from pydantic import ValidationError
 
+from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpCredentialRefusedError,
@@ -69,6 +70,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearWireModel,
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -123,7 +125,7 @@ _SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
 #: The tools that change nothing on the board.  A call the server may have
 #: performed is made again only if performing it twice is the same as once
 #: (KOD-305): these are, and every other tool is a write.
-_READ_TOOLS: Final[frozenset[str]] = frozenset(
+_READ_TOOLS: Final[frozenset[str]] = SCOPE_READ_TOOLS | frozenset(
     {
         _TOOL_LIST_ISSUES,
         _TOOL_LIST_DIFFS,
@@ -645,6 +647,20 @@ class LinearMcpTracker:
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
         return self._to_issue(await self._read_issue_wire(issue_key))
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        """Resolve live container membership or an issue's whole subtree."""
+        return await LinearScopeReader(
+            call=self._call,
+            read_issue=self.read_issue,
+        ).scope_issues(ref=ref)
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        """Read a container without fabricating a URL or choosing a parent."""
+        return await LinearScopeReader(
+            call=self._call,
+            read_issue=self.read_issue,
+        ).container_metadata(ref=ref)
 
     def _wrote(self, issue: TrackerIssue) -> TrackerIssue:
         """Record what this write left on the issue, and hand it back.
@@ -1834,6 +1850,11 @@ class LinearMcpTracker:
             team_key=self._team_key_by_identifier.get(wire.team),
             project=wire.project,
             project_id=wire.project_id,
+            milestone_key=(
+                wire.project_milestone.id
+                if wire.project_milestone is not None
+                else None
+            ),
             relations=tuple(relations),
             parent_key=wire.parent_id,
             assignee_key=wire.assignee,

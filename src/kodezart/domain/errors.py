@@ -3,10 +3,19 @@
 from collections.abc import Sequence
 
 from kodezart.types.domain.gating import ScanFailureKind, ScanHit
+from kodezart.types.domain.scope import ScopeRef
 
 
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
+
+
+class ScopeReadError(Exception):
+    """A scope cannot be resolved without inventing membership or metadata."""
+
+    def __init__(self, message: str, *, ref: ScopeRef) -> None:
+        super().__init__(f"{message} (scope: {ref.kind.value}:{ref.key})")
+        self.ref: ScopeRef = ref
 
 
 class TransientAPIError(Exception):
