@@ -40,6 +40,9 @@ def test_scope_outcomes_extend_the_existing_workflow_vocabulary(name: str) -> No
         "FAILING_CRITERION",
         "LANE_WITHOUT_OPEN_PR",
         "UNRECORDED_AT_TERMINAL",
+        "CHECK_ENVIRONMENT_PREREQUISITE",
+        "CHECK_RED_UNCLASSIFIED",
+        "CHECK_RUN_ABSENT",
     ],
 )
 def test_residual_classes_are_named_obligations(name: str) -> None:
