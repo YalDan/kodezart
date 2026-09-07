@@ -40,7 +40,7 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
-from tests.prompt_census import PROMPT_FUNCTION_COUNT
+from tests.prompt_census import PROMPT_FUNCTION_NAMES
 from tests.prompts.sets import PER_RUN
 from tests.prompts.test_prompt_wiring import load_registry
 
@@ -537,7 +537,7 @@ def test_pass_templates_resolve_through_the_port_and_render(
 
 def test_claude_opus_completeness_passes_at_the_full_census() -> None:
     """KOD-63's completeness rule obliges the default set to supply both."""
-    assert len(PromptKey) == PROMPT_FUNCTION_COUNT
+    assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
     members = {path.stem for path in SET_DIR.glob("*.md")}
     assert members == {key.value for key in PromptKey}
 

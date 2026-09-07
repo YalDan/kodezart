@@ -44,7 +44,22 @@ from tests.prompts.test_prompt_wiring import load_registry
 #: shared fixture case, so the expectation is stated per rendering rather
 #: than per key — the regeneration round injects one the first round does
 #: not, and that difference is the point of listing them separately.
+ORGANIZE_INPUT_TAGS = (
+    "mandate_rubric",
+    "issue_body",
+    "linked_issue_bodies",
+    "linked_issue",
+    "criterion_issue_bodies",
+    "criterion_issue",
+    "base_ref",
+    "defect_classes",
+)
+
 ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
+    "organize_assess": ORGANIZE_INPUT_TAGS,
+    "organize_verify": ORGANIZE_INPUT_TAGS,
+    "organize_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
+    "organize_criteria_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
     "acceptance_criteria": ("ticket",),
     "acceptance_criteria__regeneration_round": ("validation_findings", "ticket"),
     "branch_name": ("task",),

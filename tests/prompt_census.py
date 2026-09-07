@@ -1,18 +1,33 @@
-"""How many prompt functions the system has, written once.
-
-Two suites assert that the default set supplies every key, and each held
-its own copy of the number.  Two copies of one census are two numbers
-that can disagree, and the merge of two lanes that each added a key is
-where they do.
-
-Adding a key is an edit here as well as to :class:`PromptKey`, which is
-what keeps the completeness assertions a census rather than a
-restatement of the enum they are checking.
-"""
+"""The explicit prompt-role census, independent of the enum under test."""
 
 from typing import Final
 
-PROMPT_FUNCTION_COUNT: Final[int] = 18
+PROMPT_FUNCTION_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        "branch_name",
+        "ticket_create",
+        "ticket_review",
+        "ticket_revision",
+        "acceptance_criteria",
+        "criteria_validation",
+        "implementation",
+        "evaluation",
+        "iteration_feedback",
+        "post_merge_review",
+        "fix",
+        "remediation_ticket",
+        "commit_message",
+        "pr_description",
+        "fire_prep_pass",
+        "grooming_pass",
+        "content_audit",
+        "knowledge_map",
+        "organize_assess",
+        "organize_author",
+        "organize_verify",
+        "organize_criteria_author",
+    }
+)
 
 
 def configured_investigation_cap() -> int:

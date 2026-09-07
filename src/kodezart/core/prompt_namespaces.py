@@ -57,6 +57,12 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         # The row title a scheduled pass's own record must carry: per call
         # because it spells the instant that run began (KOD-290).
         "record_title",
+        "mandate_rubric",
+        "issue_body",
+        "linked_issue_bodies",
+        "refusal_evidence",
+        "defect_classes",
+        "criterion_issue_bodies",
     }
 )
 
