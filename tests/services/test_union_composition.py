@@ -10,7 +10,7 @@ import pytest
 from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.core.config import AppConfig
-from kodezart.domain.errors import MergeConflictError
+from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
 from kodezart.services.union_composition import UnionComposition
 from kodezart.types.domain.operation import CheckStep, RepoEntry
 from kodezart.types.domain.union import UnionLaneHead
@@ -265,3 +265,15 @@ async def test_duplicate_planner_lanes_refuse_before_git():
             lane_heads=(same, same),
         )
     assert adapter.calls == []
+
+
+async def test_composed_tree_without_declared_chain_uses_typed_refusal(repository):
+    adapter = ObservedGit()
+    no_chain = RepoEntry(url="file:///fixture", trunk="main")
+    with pytest.raises(CheckChainExecutionError, match="no check chain") as caught:
+        await verify(repository, adapter, RaisingRunner(), no_chain)
+    assert adapter.merged == [head.head_sha for head in repository[2]]
+    assert caught.value.step_name is None
+    assert caught.value.cwd == adapter.created[0]
+    assert adapter.removed == adapter.created
+    assert not Path(caught.value.cwd).exists()
