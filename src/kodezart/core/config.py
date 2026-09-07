@@ -492,6 +492,15 @@ class AppConfig(BaseSettings):
             "becomes eligible again."
         ),
     )
+    tracker_surface_lease_seconds: float = Field(
+        default=900.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Bound for write-surface leases held by a writing run's job id. "
+            "Renewal is explicit; no background task extends these leases."
+        ),
+    )
     tracker_claim_renewal_fraction: float = Field(
         default=0.25,
         gt=0.0,
