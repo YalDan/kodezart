@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Final
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -105,6 +105,17 @@ class RunIdentity(BaseModel):
         )
 
 
+class FireRecordFacts(BaseModel):
+    """Observed fire facts; absence is unknown, never an invented empty value."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    repo_url: str | None = None
+    base_branch: str | None = None
+    pr_url: str | None = None
+    iterations: int | None = Field(default=None, ge=0)
+
+
 class RunRecord(BaseModel):
     """One run, as its runner measured it.
 
@@ -125,6 +136,7 @@ class RunRecord(BaseModel):
     started_at: datetime
     recorded_at: datetime
     workflow_outcome: WorkflowOutcome | None = None
+    fire_facts: FireRecordFacts = Field(default_factory=FireRecordFacts)
 
     def identity(self) -> RunIdentity:
         """Which run this record is OF, as the run's own prompt knew it."""

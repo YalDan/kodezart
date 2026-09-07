@@ -1,5 +1,7 @@
 """The schema and page fields consumed by the structured Notion record sink."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -24,9 +26,17 @@ class NotionReadText(BaseModel):
     plain_text: str
 
 
+class NotionDateValue(BaseModel):
+    start: datetime
+
+
 class NotionPropertyValue(BaseModel):
     title: list[NotionReadText] | None = None
     select: NotionSelectOption | None = None
+    rich_text: list[NotionReadText] | None = None
+    url: str | None = None
+    date: NotionDateValue | None = None
+    number: float | None = None
 
 
 class NotionRecordPage(BaseModel):

@@ -8,7 +8,9 @@ from kodezart.core.errors import RunRecordWriteError
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.operation import (
     DocumentSystem,
+    RecordColumns,
     RecordDestination,
+    RecordDurationUnit,
     RecordOutcomeMapping,
     RunKind,
 )
@@ -24,6 +26,18 @@ def destination(*, options=None):
         name="Fixture Log",
         id="destination-1",
         append_only=True,
+        columns=RecordColumns(
+            repo="Repository",
+            pr_url="Pull request",
+            base_branch="Base",
+            started="Began",
+            ended="Ended",
+            duration="Minutes",
+            duration_unit=RecordDurationUnit.MINUTES,
+            iterations="Iterations",
+            what_happened="What happened",
+            repo_options={"https://forge.invalid/owner/repo": "owner/repo"},
+        ),
         outcome_mapping=RecordOutcomeMapping(
             property="Disposition",
             options={"run.completed": "Finished", "run.failed": "Failed"}
@@ -202,3 +216,87 @@ async def test_legacy_structural_title_is_normalized_without_a_second_row():
     assert server.rows[key]["properties"]["Run"]["title"] == [
         {"plain_text": record.title()}
     ]
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["Repository", "Base", "Began", "Ended", "Minutes", "Iterations", "What happened"],
+)
+async def test_declared_column_schema_is_checked_even_before_a_fact_is_known(missing):
+    server = NotionLogServer()
+    del server.schema["properties"][missing]
+    with pytest.raises(RunRecordWriteError) as caught:
+        await recorder(server, destination()).record(_record(RunKind.FIRE))
+    assert caught.value.failure == "mapping_invalid"
+    assert server.writes() == []
+
+
+async def test_unknown_repository_mapping_refuses_without_guessing_an_alias():
+    from kodezart.types.domain.run_records import FireRecordFacts
+
+    server = NotionLogServer()
+    record = _record(RunKind.FIRE).model_copy(
+        update={
+            "fire_facts": FireRecordFacts(repo_url="https://forge.invalid/another/repo")
+        }
+    )
+    with pytest.raises(RunRecordWriteError):
+        await recorder(server, destination()).record(record)
+    assert server.writes() == []
+
+
+async def test_unknown_facts_do_not_erase_session_fields_and_zero_is_written():
+    from kodezart.types.domain.run_records import FireRecordFacts
+
+    server = NotionLogServer()
+    record = _record(RunKind.FIRE).model_copy(
+        update={"fire_facts": FireRecordFacts(iterations=0)}
+    )
+    session_base = {"rich_text": [{"plain_text": "observed/session/base"}]}
+    key = server.seed(record.title(), properties={"Base": session_base})
+    await recorder(server, destination()).record(record)
+    assert server.rows[key]["properties"]["Base"] == session_base
+    assert server.rows[key]["properties"]["Iterations"]["number"] == 0
+    assert "What happened" not in server.rows[key]["properties"]
+
+
+async def test_remaining_known_facts_are_filled_even_when_outcome_is_already_correct():
+    server = NotionLogServer()
+    record = _record(RunKind.FIRE)
+    key = server.seed(
+        record.title(), properties={"Disposition": {"select": {"name": "Finished"}}}
+    )
+    await recorder(server, destination()).record(record)
+    assert server.rows[key]["properties"]["Minutes"]["number"] == pytest.approx(
+        record.duration_seconds / 60
+    )
+    assert len(server.rows) == 1
+    assert server.writes()[0][0] == "API-patch-page"
+
+
+async def test_identity_lookup_visits_later_pages_before_creating():
+    server = NotionLogServer()
+    record = _record(RunKind.FIRE)
+    for number in range(101):
+        server.seed(f"{record.title()}?unrelated-{number}")
+    key = server.seed(record.title())
+    await recorder(server, destination()).record(record)
+    assert len(server.rows) == 102
+    assert server.writes()[0][0] == "API-patch-page"
+    assert server.writes()[0][1]["page_id"] == key
+
+
+async def test_duration_unit_is_explicit_and_seconds_are_not_converted():
+    server = NotionLogServer()
+    target = destination()
+    target = target.model_copy(
+        update={
+            "columns": target.columns.model_copy(
+                update={"duration_unit": RecordDurationUnit.SECONDS}
+            )
+        }
+    )
+    record = _record(RunKind.FIRE)
+    await recorder(server, target).record(record)
+    properties = next(iter(server.rows.values()))["properties"]
+    assert properties["Minutes"]["number"] == record.duration_seconds

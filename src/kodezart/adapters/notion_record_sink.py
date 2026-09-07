@@ -16,11 +16,16 @@ from collections.abc import Mapping
 
 from pydantic import BaseModel, ValidationError
 
-from kodezart.adapters.notion_record_properties import mapped_outcome, mapping_error
+from kodezart.adapters.notion_record_properties import (
+    mapping_error,
+    record_properties,
+    write_properties,
+)
 from kodezart.core.errors import McpTransportError, RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
 from kodezart.types.domain.notion_records import (
+    NotionPropertyValue,
     NotionRecordPage,
     NotionRecordPageList,
     NotionRecordSchema,
@@ -64,11 +69,9 @@ class NotionRecordSink:
         all the answer needs.
         """
         if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
-            title, column, option = await self._structured_target(destination, record)
+            title, expected = await self._structured_target(destination, record)
             page = await self._find_record(destination, record, title)
-            return page is not None and self._matches_outcome(
-                page, title, record.title(), column, option
-            )
+            return page is not None and self._matches_properties(page, expected)
         title_property = await self._title_property(destination)
         payload = await self._caller.call_tool(
             name=_TOOL_QUERY_DATA_SOURCE,
@@ -114,16 +117,11 @@ class NotionRecordSink:
     ) -> None:
         """Create or complete this run's page using its declared contract."""
         if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
-            title, column, option = await self._structured_target(destination, record)
+            title, expected = await self._structured_target(destination, record)
             page = await self._find_record(destination, record, title)
-            if page is not None and self._matches_outcome(
-                page, title, record.title(), column, option
-            ):
+            if page is not None and self._matches_properties(page, expected):
                 return
-            properties: dict[str, object] = {
-                title: {"title": [{"text": {"content": record.title()}}]},
-                column: {"select": {"name": option}},
-            }
+            properties = write_properties(expected)
             if page is not None:
                 await self._caller.call_tool(
                     name=_TOOL_PATCH_PAGE,
@@ -159,7 +157,7 @@ class NotionRecordSink:
 
     async def _structured_target(
         self, destination: RecordDestination, record: RunRecord
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, dict[str, NotionPropertyValue]]:
         payload = await self._caller.call_tool(
             name=_TOOL_RETRIEVE_DATA_SOURCE,
             arguments={"data_source_id": destination.id},
@@ -172,23 +170,15 @@ class NotionRecordSink:
             raise mapping_error(
                 destination, record, "the destination must have one title property"
             )
-        column, option = mapped_outcome(destination, record, schema)
-        return titles[0], column, option
+        title = titles[0]
+        return title, record_properties(destination, record, schema, title)
 
     @staticmethod
-    def _matches_outcome(
-        page: NotionRecordPage, title: str, identity: str, column: str, option: str
+    def _matches_properties(
+        page: NotionRecordPage, expected: dict[str, NotionPropertyValue]
     ) -> bool:
-        heading = page.properties.get(title)
-        if (
-            heading is None
-            or heading.title is None
-            or "".join(part.plain_text for part in heading.title) != identity
-        ):
-            return False
-        held = page.properties.get(column)
-        return (
-            held is not None and held.select is not None and held.select.name == option
+        return all(
+            page.properties.get(name) == value for name, value in expected.items()
         )
 
     async def _find_record(

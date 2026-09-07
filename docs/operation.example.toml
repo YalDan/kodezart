@@ -296,6 +296,20 @@ append_only = true
 # Declare every outcome this destination accepts, using its actual options.
 # No generic runner-completed -> PR-created equivalence is implied.
 # Missing mappings/options or conflicting observed matches refuse the write.
+# [records.fire.columns]
+# repo = "Repo"
+# pr_url = "PR"
+# base_branch = "baseBranch"
+# started = "Started"
+# ended = "Ended"
+# duration = "Duration min"
+# duration_unit = "minutes"
+# iterations = "Iterations"
+# what_happened = "What happened"
+# [records.fire.columns.repo_options]
+# "https://forge.example/owner/repo" = "owner/repo"
+# Property names and repository URL -> select option mappings are explicit.
+# The runner fills known facts only. It preserves session-authored narrative.
 
 # Reference material held in the knowledge store, addressed by key. Every
 # value here belongs to the knowledge system by construction, which is what

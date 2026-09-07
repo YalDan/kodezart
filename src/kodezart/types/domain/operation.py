@@ -396,6 +396,50 @@ class RecordOutcomeMapping(OperationModel):
         return self
 
 
+class RecordDurationUnit(StrEnum):
+    SECONDS = "seconds"
+    MINUTES = "minutes"
+
+
+class RecordColumns(OperationModel):
+    """Explicit bindings for structural facts and session-authored narrative."""
+
+    repo: str = Field(min_length=1)
+    pr_url: str = Field(min_length=1)
+    base_branch: str = Field(min_length=1)
+    started: str = Field(min_length=1)
+    ended: str = Field(min_length=1)
+    duration: str = Field(min_length=1)
+    duration_unit: RecordDurationUnit
+    iterations: str = Field(min_length=1)
+    what_happened: str = Field(min_length=1)
+    repo_options: dict[str, str] = Field(default_factory=dict)
+
+    def property_names(self) -> tuple[str, ...]:
+        return (
+            self.repo,
+            self.pr_url,
+            self.base_branch,
+            self.started,
+            self.ended,
+            self.duration,
+            self.iterations,
+            self.what_happened,
+        )
+
+    @model_validator(mode="after")
+    def _distinct_bindings(self) -> Self:
+        names = self.property_names()
+        if any(not name.strip() for name in names) or len(set(names)) != len(names):
+            raise ValueError("record columns require distinct nonempty property names")
+        if any(
+            not key.strip() or not value.strip()
+            for key, value in self.repo_options.items()
+        ):
+            raise ValueError("repository mappings require nonempty sources and options")
+        return self
+
+
 class RecordDestination(OperationModel):
     """A WRITE-side destination a pass records a row to.
 
@@ -415,6 +459,19 @@ class RecordDestination(OperationModel):
     id: str
     append_only: bool
     outcome_mapping: RecordOutcomeMapping | None = None
+    columns: RecordColumns | None = None
+
+    @model_validator(mode="after")
+    def _structured_knowledge_destination(self) -> Self:
+        if self.outcome_mapping is not None or self.columns is not None:
+            if self.system is not DocumentSystem.KNOWLEDGE:
+                raise ValueError(
+                    "structured record bindings require a knowledge destination"
+                )
+        if self.outcome_mapping is not None and self.columns is not None:
+            if self.outcome_mapping.property in self.columns.property_names():
+                raise ValueError("the outcome property must have its own record column")
+        return self
 
 
 class Initiative(OperationModel):

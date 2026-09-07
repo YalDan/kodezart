@@ -609,6 +609,17 @@ at this boundary. A session-created row with the exact run identity is filled
 in place; its narrative is preserved. Duplicate identity rows refuse with
 `identity_conflict` instead of selecting one arbitrarily.
 
+Declare `[records.fire.columns]` to bind `repo`, `pr_url`, `base_branch`,
+`started`, `ended`, `duration`, `iterations`, and `what_happened` to their
+actual destination properties. `duration_unit` is `seconds` or `minutes`;
+`repo_options` maps observed repository URLs to the destination's select names.
+The watcher carries facts from workflow events and computes duration from the
+same submission and terminal recording timestamps used by Started and Ended.
+Unavailable PR, repository, branch, or iteration facts stay unwritten; an
+observed zero iterations is a number, while an unknown count is absent.
+The runner preserves `what_happened` for the session's account of its work.
+These properties are checked against the live schema before writing.
+
 **5. Write the operation config.** Copy
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
 field by field and covers every one — to `operation.toml` in the repository

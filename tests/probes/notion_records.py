@@ -19,6 +19,16 @@ class NotionLogServer:
                     },
                 },
                 "What happened": {"type": "rich_text"},
+                "Repository": {
+                    "type": "select",
+                    "select": {"options": [{"name": "owner/repo"}]},
+                },
+                "Pull request": {"type": "url"},
+                "Base": {"type": "rich_text"},
+                "Began": {"type": "date"},
+                "Ended": {"type": "date"},
+                "Minutes": {"type": "number"},
+                "Iterations": {"type": "number"},
             }
         }
         self.rows = {}
