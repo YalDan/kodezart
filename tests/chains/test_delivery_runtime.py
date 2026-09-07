@@ -23,6 +23,7 @@ from kodezart.types.domain.accept import FlaggedItem
 from kodezart.types.domain.agent import PR_DESCRIPTION_SCHEMA, ResultEvent
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRefRole, trunk_base
 from kodezart.types.domain.delivery import DeliveryContext, LaneDelivery, LaneDispatch
+from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -91,7 +92,7 @@ def context(**changes):
                 allowed_tools=["Read"],
             ),
             "fire_outcome": WorkflowOutcome.handed_off_for_delivery,
-            "ticket": make_ticket_draft(title="Recorded work"),
+            "spec": AuthoredSpec(ticket=make_ticket_draft(title="Recorded work")),
             "criteria": tuple(make_criteria("Recorded criterion")),
             "total_iterations": 7,
             "flagged_items": (FlaggedItem(summary="Recorded caveat"),),

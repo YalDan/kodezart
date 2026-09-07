@@ -36,7 +36,7 @@ from kodezart.domain.pr_body import (
     append_tracker_issue,
     require_tracker_issue,
 )
-from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.agent import PR_DESCRIPTION_SCHEMA, PRDescriptionOutput
 from kodezart.types.domain.delivery import (
     CheckRedClass,
@@ -45,6 +45,7 @@ from kodezart.types.domain.delivery import (
     LaneDelivery,
     LaneDispatch,
 )
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -116,6 +117,10 @@ class DeliveryCoordinator:
             identity is None
             or identity.kind is not RunKind.FIRE
             or identity.name != dispatch.issue_id
+            or (
+                isinstance(context.spec, TrackerSpec)
+                and context.spec.subject != dispatch.issue_id
+            )
         ):
             raise DeliveryContextError(
                 lane_key=dispatch.lane_key,
@@ -333,7 +338,7 @@ class DeliveryCoordinator:
         key = PromptKey.PR_DESCRIPTION
         prompt = self._prompts.template_for(key).render(
             {
-                "task_md": format_ticket_as_task(context.ticket),
+                "task_md": format_fire_spec(context.spec),
                 "acceptance_criteria": list(context.criteria),
                 "total_iterations": context.total_iterations,
             }
