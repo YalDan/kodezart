@@ -12,7 +12,7 @@ from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 
 def in_gap(criterion: TrackerIssue, *, supersession_ref: str | None) -> bool:
-    """Done closes work; cancellation closes it only with a supersession."""
+    """Completion closes work; cancellation needs a supersession."""
     if "criterion" not in criterion.issue_labels:
         raise ValueError("gap membership requires a criterion sub-issue")
     if supersession_ref is not None and not supersession_ref.strip():
