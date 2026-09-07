@@ -176,3 +176,93 @@ def test_admission_refusal_requires_actionable_fields(verdict, fields):
             evidence="observed",
             **fields,
         )
+
+
+def test_defect_role_has_exact_instance_and_mandate_members():
+    from kodezart.types.domain.organize import DefectRole
+
+    assert {member.name: member.value for member in DefectRole} == {
+        "INSTANCE": "instance",
+        "MANDATE": "mandate",
+    }
+
+
+@pytest.mark.parametrize("mandate_text", [None, "", " ", "\n\t"])
+def test_mandate_finding_requires_a_quoted_sentence(mandate_text):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    with pytest.raises(ValidationError, match="MANDATE requires"):
+        SpecFinding(
+            issue_id="ISSUE-1",
+            defect_class="self-sufficiency",
+            evidence="The instruction asks writers to leave the choice open.",
+            role=DefectRole.MANDATE,
+            mandate_text=mandate_text,
+        )
+
+
+@pytest.mark.parametrize("mandate_text", ["", " ", "Repeat this defect."])
+def test_instance_finding_refuses_any_mandate_text(mandate_text):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    with pytest.raises(ValidationError, match="INSTANCE requires"):
+        SpecFinding(
+            issue_id="ISSUE-1",
+            defect_class="self-sufficiency",
+            evidence="The body leaves an implementation choice open.",
+            role=DefectRole.INSTANCE,
+            mandate_text=mandate_text,
+        )
+
+
+@pytest.mark.parametrize(
+    "role,mandate_text",
+    [("instance", None), ("mandate", "  Repeat this defect verbatim.\n")],
+)
+def test_finding_round_trip_keeps_role_and_verbatim_instruction(role, mandate_text):
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    finding = SpecFinding(
+        issue_id="ISSUE-1",
+        defect_class="self-sufficiency",
+        evidence="Observed on the issue body.",
+        role=DefectRole(role),
+        mandate_text=mandate_text,
+    )
+    restored = SpecFinding.model_validate_json(finding.model_dump_json(by_alias=True))
+    assert restored == finding
+    assert restored.mandate_text == mandate_text
+
+
+def test_instance_finding_needs_no_mandate_text():
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    finding = SpecFinding(
+        issue_id="ISSUE-1",
+        defect_class="self-sufficiency",
+        evidence="Observed on the issue body.",
+        role=DefectRole.INSTANCE,
+    )
+    assert finding.mandate_text is None
+
+
+def test_finding_is_frozen_and_rejects_unknown_fields():
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    fields = {
+        "issue_id": "ISSUE-1",
+        "defect_class": "self-sufficiency",
+        "evidence": "Observed on the issue body.",
+        "role": DefectRole.INSTANCE,
+    }
+    finding = SpecFinding.model_validate(fields)
+    with pytest.raises(ValidationError, match="frozen"):
+        finding.role = DefectRole.MANDATE
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        SpecFinding.model_validate({**fields, "instruction": "Not a defined field"})

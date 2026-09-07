@@ -42,3 +42,31 @@ class AdmissionResult(CamelCaseModel):
             if self.pending_blocker_id is None or not self.pending_blocker_id.strip():
                 raise ValueError("UNVERIFIABLE requires a nonempty pending_blocker_id")
         return self
+
+
+class DefectRole(StrEnum):
+    """A defect instance or the instruction that makes writers reproduce it."""
+
+    INSTANCE = "instance"
+    MANDATE = "mandate"
+
+
+class SpecFinding(CamelCaseModel):
+    """Evidence for a class in the selected rubric, with any mandate verbatim."""
+
+    model_config = ConfigDict(frozen=True)
+
+    issue_id: str = Field(min_length=1)
+    defect_class: str = Field(min_length=1)
+    evidence: str
+    role: DefectRole
+    mandate_text: str | None = None
+
+    @model_validator(mode="after")
+    def _require_mandate_evidence(self) -> Self:
+        if self.role is DefectRole.MANDATE:
+            if self.mandate_text is None or not self.mandate_text.strip():
+                raise ValueError("MANDATE requires a nonempty mandate_text")
+        elif self.mandate_text is not None:
+            raise ValueError("INSTANCE requires mandate_text to be None")
+        return self
