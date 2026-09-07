@@ -71,6 +71,8 @@ and leased alarm writer remain separate work.
 | `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS` | `int` | `3` | >= 1, <= 20 | Consecutive empty check-runs polls before concluding no CI when the repository has no active workflows. |
 | `KODEZART_CI_POLL_INTERVAL_SECONDS` | `float` | `30.0` | >= 5.0, <= 300.0 | Seconds between CI status check polls. |
 | `KODEZART_CI_POLL_MAX_ATTEMPTS` | `int` | `60` | >= 1, <= 600 | Maximum CI status check poll attempts before timeout. |
+| `KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` | `float` | `3600.0` | >= 60.0, <= 86400.0 | Seconds between audit delta ticks on the existing scheduler. |
+| `KODEZART_AUDIT_FULL_SWEEP_INTERVAL_SECONDS` | `float` | `86400.0` | >= 60.0, <= 86400.0 | Full coverage interval, no shorter than the audit tick interval. |
 | `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` | `int` | `4` | >= 1, <= 32 | Maximum simultaneous delivery check watches across lanes. |
 | `KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS` | `int` | `1` | >= 0, <= 5 | Same-SHA reruns before a red check set is treated as reproduced. Zero disables flake re-observation; explicit unmet prerequisites consume no rerun. |
 | `KODEZART_CI_REF_NOT_FOUND_GRACE_POLLS` | `int` | `3` | >= 1, <= 20 | Consecutive check-runs 404s tolerated before the ref is treated as a transient API failure. |

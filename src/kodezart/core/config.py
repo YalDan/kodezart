@@ -359,6 +359,18 @@ class AppConfig(BaseSettings):
         le=300.0,
         description="Seconds between CI status check polls.",
     )
+    audit_sweep_interval_seconds: float = Field(
+        default=3600.0,
+        ge=60.0,
+        le=86400.0,
+        description="Seconds between audit delta ticks on the existing scheduler.",
+    )
+    audit_full_sweep_interval_seconds: float = Field(
+        default=86400.0,
+        ge=60.0,
+        le=86400.0,
+        description="Maximum seconds between full audit coverage attempts.",
+    )
     union_check_step_timeout_seconds: float = Field(
         default=1800,
         gt=0,
@@ -1183,6 +1195,16 @@ class AppConfig(BaseSettings):
         le=10000,
         description="Events retained per job for replay on attach.",
     )
+
+    @model_validator(mode="after")
+    def _audit_full_interval_includes_tick(self) -> Self:
+        """A full-coverage interval cannot be shorter than its scheduler tick."""
+        if self.audit_full_sweep_interval_seconds < self.audit_sweep_interval_seconds:
+            raise ValueError(
+                "audit_full_sweep_interval_seconds must not be shorter than "
+                "audit_sweep_interval_seconds"
+            )
+        return self
 
     @model_validator(mode="after")
     def _buffer_retention_within_record_retention(self) -> Self:

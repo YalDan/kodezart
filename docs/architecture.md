@@ -562,6 +562,23 @@ timestamp replaces this graph comparison. Both signals preserve their raw
 readings for replay; the structural signal has no threshold. Retaining prior
 snapshots, supervisor scheduling and alarm publication under the universal
 surface lease remain separate consumers.
+## Audit coverage selection
+
+`AuditCoverage` visits the supplied complete eligible snapshot in state-change
+time and issue-key order. The first attempt is full; later attempts select new
+or changed identities until the configured full-sweep interval expires. Marks
+are per-scope process caches and are advanced only after every selected visit
+returns. Interrupted or failed attempts repeat their selection, and a fresh
+process starts full. Per-key stamps retain newly observed identities even when
+their times tie a previously covered entry. Neither a quiet tick nor an empty
+snapshot postpones periodic full coverage.
+
+The caller supplies the observation time; this component adds no clock, timer
+or scheduler. A simultaneous attempt for the same scope refuses without
+disturbing its owner. Candidates are snapshotted before visiting, and returned
+coverage facts are immutable point-in-time observations, not durable verdicts.
+Tracker state-change collection, granted audit sessions and registration on the
+existing scheduler remain separate implementation work. Sampled mode is retired.
 
 ## Check-chain execution
 
