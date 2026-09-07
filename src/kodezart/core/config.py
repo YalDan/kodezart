@@ -356,6 +356,12 @@ class AppConfig(BaseSettings):
         gt=0,
         description="Wall-clock bound for one check step of a union composition.",
     )
+    delivery_max_concurrent_watches: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="Maximum lanes whose PR checks are watched concurrently.",
+    )
     delivery_red_rerun_max_attempts: int = Field(
         default=1,
         ge=0,
