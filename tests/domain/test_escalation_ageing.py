@@ -178,6 +178,19 @@ def test_missing_or_ambiguous_history_refuses_observation(commits):
     assert raised.value.signal == "escalation_ageing"
 
 
+@pytest.mark.parametrize("commits", [(), ("other",), ("raised", "raised")])
+def test_a_decision_does_not_make_an_unreadable_history_a_clean_observation(commits):
+    with pytest.raises(RunShapeReadError) as raised:
+        evaluate(readings(commits=commits, resolved=True))
+    assert raised.value.source_ref == "record/lane#commits"
+
+
+def test_a_decision_does_not_supply_a_missing_tick_count():
+    with pytest.raises(RunShapeReadError) as raised:
+        evaluate(readings(ticks=None, resolved=True))
+    assert raised.value.source_ref == "record/walker#ticks-since-question"
+
+
 @pytest.mark.parametrize("slot", range(6))
 @pytest.mark.parametrize("value", ["not-json", "null", "{}"])
 def test_malformed_readings_are_typed_errors_with_the_source(slot, value):
