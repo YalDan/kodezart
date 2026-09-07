@@ -16,6 +16,7 @@ from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
     CIMonitor,
+    CIObservationReader,
     ForgeQuery,
     GitService,
     OutboundContentGate,
@@ -27,10 +28,12 @@ from kodezart.core.protocols import (
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import (
     BaseResolutionError,
+    CheckObservationError,
     DeliveryContextError,
     DeliveryRouteUnavailableError,
     PRContentConflictError,
 )
+from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.pr_body import (
     append_flagged_section,
     append_tracker_issue,
@@ -52,7 +55,12 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
-from kodezart.types.domain.operation import RepoEntry, RunKind
+from kodezart.types.domain.operation import (
+    OperationConfig,
+    OperationMemberAbsentError,
+    RepoEntry,
+    RunKind,
+)
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.pr_content import PRContent
 from kodezart.types.domain.prompts import PromptKey
@@ -81,6 +89,8 @@ class DeliveryCoordinator:
         forge_query: ForgeQuery,
         pr_editor: PRContentEditor,
         ci: CIMonitor,
+        ci_observations: CIObservationReader,
+        operation: OperationConfig,
         git: GitService,
         cache: RepoCache,
         git_remote: str,
@@ -95,6 +105,9 @@ class DeliveryCoordinator:
         self._forge_query = forge_query
         self._pr_editor = pr_editor
         self._ci = ci
+        self._ci_observations = ci_observations
+        self._operation = operation
+        self._config = config
         self._git = git
         self._cache = cache
         self._git_remote = git_remote
@@ -185,7 +198,7 @@ class DeliveryCoordinator:
             )
             # Cleaning may commit and push. Preserve the fire's SHA, and
             # re-read both remote refs instead of treating it as the new tip.
-            await self._require_remote_branches(dispatch, context)
+            _, remote_sha = await self._require_remote_branches(dispatch, context)
         description = await self._description(context, feature_branch=feature_branch)
         body = append_tracker_issue(
             append_flagged_section(description.description, context.flagged_items),
@@ -234,6 +247,42 @@ class DeliveryCoordinator:
             passed, summary = await self._ci.wait_for_checks(
                 repo_url=execution.repo_url, ref=feature_branch
             )
+            if passed is False:
+                observation = await self._ci_observations.observed_checks(
+                    repo_url=execution.repo_url, ref=feature_branch
+                )
+                if observation.checks_passed or observation.commit_sha != remote_sha:
+                    raise CheckObservationError(
+                        repo_url=execution.repo_url,
+                        ref=feature_branch,
+                        reason="watched checks do not match the delivered red head",
+                    )
+                classified = await classify_red_checks(
+                    ci=self._ci,
+                    repository=self._repository(execution.repo_url),
+                    final_commit_sha=observation.commit_sha,
+                    initial_summary=summary,
+                    initial_failed_names=observation.failed_names,
+                    config=self._config,
+                )
+                if classified.red_class is not CheckRedClass.RUNNER_FLAKE:
+                    raise DeliveryRouteUnavailableError(
+                        lane_key=dispatch.lane_key,
+                        issue_id=dispatch.issue_id,
+                        reason=f"unconnected delivery: {classified.red_class.value}",
+                        pr_url=url,
+                        pr_number=number,
+                        checks_passed=classified.checks_passed,
+                        checks_summary=classified.checks_summary,
+                    )
+                _, current_sha = await self._require_remote_branches(dispatch, context)
+                if current_sha != observation.commit_sha:
+                    raise CheckObservationError(
+                        repo_url=execution.repo_url,
+                        ref=feature_branch,
+                        reason="delivered head moved during immutable check recovery",
+                    )
+                passed, summary = classified.checks_passed, classified.checks_summary
         if passed is True:
             outcome = WorkflowOutcome.ci_passed
         elif passed is None and not await self._ci.checks_declared(
@@ -271,6 +320,28 @@ class DeliveryCoordinator:
             checks_summary=summary,
             outcome=outcome,
         )
+
+    def _repository(self, repo_url: str) -> RepoEntry:
+        normalized = resolve_repo_url(repo_url, self._config.git_base_url)
+        matches = [
+            entry
+            for entry in self._operation.repos
+            if resolve_repo_url(entry.url, self._config.git_base_url) == normalized
+        ]
+        if not matches:
+            raise OperationMemberAbsentError(
+                missing=f"repository declaration for {repo_url}",
+                stops="red checks require declared repository facts",
+            )
+        try:
+            (repository,) = matches
+        except ValueError as exc:
+            raise CheckObservationError(
+                repo_url=repo_url,
+                ref=normalized,
+                reason="repository declarations identify the same delivered origin",
+            ) from exc
+        return repository.model_copy(update={"url": repo_url})
 
     async def _require_remote_branches(
         self, dispatch: LaneDispatch, context: DeliveryContext
@@ -396,6 +467,7 @@ async def classify_red_checks(
     repository: RepoEntry,
     final_commit_sha: str,
     initial_summary: str,
+    initial_failed_names: frozenset[str],
     config: AppConfig,
 ) -> CheckRedObservation:
     """Classify an already-observed red, preserving the immutable commit.
@@ -404,9 +476,7 @@ async def classify_red_checks(
     Otherwise every observation contributes: a later return to the original
     failing set cannot erase an earlier differing red set.
     """
-    original = await ci.failed_check_names(
-        repo_url=repository.url, ref=final_commit_sha
-    )
+    original = initial_failed_names
     if not original:
         raise ValueError("a red observation must identify a failing check")
     unmet = any(

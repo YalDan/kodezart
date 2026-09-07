@@ -69,6 +69,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.check_observation import ObservedChecks
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -1843,6 +1844,43 @@ class FakePRContentEditor:
 type _FakeCIObservation = tuple[bool | None, str, frozenset[str]]
 
 
+class FakeCIObservationReader:
+    """A separate reader for the check facts its paired fake monitor observed."""
+
+    def __init__(self) -> None:
+        self._context: ContextVar[
+            tuple[object, dict[tuple[str, str], ObservedChecks]] | None
+        ] = ContextVar("fake_completed_check_watches", default=None)
+
+    def _current(self) -> dict[tuple[str, str], ObservedChecks]:
+        context = self._context.get()
+        if context is None or context[0] is not asyncio.current_task():
+            return {}
+        return dict(context[1])
+
+    def _record(
+        self, repo_url: str, ref: str, observation: ObservedChecks | None
+    ) -> None:
+        current = self._current()
+        if observation is None:
+            current.pop((repo_url, ref), None)
+        else:
+            current[(repo_url, ref)] = observation
+        self._context.set((asyncio.current_task(), current))
+
+    async def observed_checks(self, *, repo_url: str, ref: str) -> ObservedChecks:
+        from kodezart.domain.errors import CheckObservationError
+
+        observation = self._current().get((repo_url, ref))
+        if observation is None:
+            raise CheckObservationError(
+                repo_url=repo_url,
+                ref=ref,
+                reason="this task has no completed nonempty check watch",
+            )
+        return observation
+
+
 class FakeCIMonitor:
     """Fake CIMonitor for testing the outer workflow pipeline."""
 
@@ -1855,6 +1893,8 @@ class FakeCIMonitor:
         declared: bool = True,
         failed_names: frozenset[str] = frozenset(),
         rerun_results: Sequence[tuple[bool | None, str, frozenset[str]]] = (),
+        observation_reader: FakeCIObservationReader | None = None,
+        observed_sha_by_ref: Mapping[str, str] | None = None,
     ) -> None:
         self._passed = passed
         self._summary = summary
@@ -1862,6 +1902,8 @@ class FakeCIMonitor:
         self._declared = declared
         self._failed_names = failed_names
         self._rerun_results = list(rerun_results)
+        self.observation_reader = observation_reader
+        self.observed_sha_by_ref = dict(observed_sha_by_ref or {})
         self._attempts: ContextVar[
             tuple[object, dict[tuple[str, str], _FakeCIObservation]] | None
         ] = ContextVar("fake_ci_attempts", default=None)
@@ -1918,9 +1960,25 @@ class FakeCIMonitor:
                 "ref": ref,
             }
         )
+        if self.observation_reader is not None:
+            self.observation_reader._record(repo_url, ref, None)
         if self._fail is not None:
             raise self._fail
-        passed, summary, _ = self._observation(repo_url, ref)
+        passed, summary, names = self._observation(repo_url, ref)
+        sha = self.observed_sha_by_ref.get(ref)
+        if (
+            self.observation_reader is not None
+            and sha is not None
+            and passed is not None
+            and passed != bool(names)
+        ):
+            self.observation_reader._record(
+                repo_url,
+                ref,
+                ObservedChecks(
+                    commit_sha=sha, checks_passed=passed, failed_names=names
+                ),
+            )
         return (passed, summary)
 
 

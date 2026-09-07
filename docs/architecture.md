@@ -48,6 +48,7 @@ does not exist.
 | ForgeQuery        | GitHubAPIClient          | Looks up an open PR by head and composes branch browser URLs |
 | PRContentEditor   | GitHubAPIClient          | Reads unique open PR content and edits changed title/body/base fields |
 | CIMonitor         | GitHubAPIClient          | Polls checks and re-observes Actions attempts at one commit |
+| CIObservationReader | GitHubAPIClient        | Reads the completed watch's commit identity and structured verdict |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |

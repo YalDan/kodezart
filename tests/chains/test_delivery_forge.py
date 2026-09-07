@@ -5,10 +5,11 @@ import json
 import httpx
 import pytest
 
+from kodezart.core.config import AppConfig
 from kodezart.domain.errors import DeliveryRouteUnavailableError, ForgeAPIError
 from kodezart.types.domain.outcome import WorkflowOutcome
 from tests.adapters.test_github_api import _completed_run, _empty_runs, _make_client
-from tests.chains.test_delivery_runtime import BASE, HEAD, deliver, setup
+from tests.chains.test_delivery_runtime import BASE, HEAD, SHA, deliver, setup
 
 
 @pytest.mark.parametrize("verdict", [True, None])
@@ -105,7 +106,9 @@ async def test_actual_forge_red_cannot_publish_a_success_record():
                 },
             )
         if request.method == "GET" and "check-runs" in request.url.path:
-            return _completed_run("failure")
+            payload = _completed_run("failure").json()
+            payload["check_runs"][0]["head_sha"] = SHA
+            return httpx.Response(200, json=payload)
         raise AssertionError(
             f"unconnected red route wrote {request.method} {request.url.path}"
         )
@@ -115,7 +118,12 @@ async def test_actual_forge_red_cannot_publish_a_success_record():
         with pytest.raises(DeliveryRouteUnavailableError) as error:
             await deliver(
                 setup(
-                    forge=client, query=client, editor=client, monitor=client
+                    forge=client,
+                    query=client,
+                    editor=client,
+                    monitor=client,
+                    observations=client,
+                    config=AppConfig(delivery_red_rerun_max_attempts=0),
                 ).coordinator
             )
     finally:
