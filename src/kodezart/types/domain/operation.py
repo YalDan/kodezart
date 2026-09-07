@@ -453,6 +453,7 @@ class OperationConfig(OperationModel):
     queue_states: dict[str, str] = Field(default_factory=dict)
     scope_labels: dict[str, str] = Field(default_factory=dict)
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
+    marker_prefixes: dict[str, str] = Field(default_factory=dict)
     repos: list[RepoEntry] = Field(default_factory=list)
     documents: dict[str, DocumentEntry] = Field(default_factory=dict)
     records: dict[str, RecordDestination] = Field(default_factory=dict)
@@ -539,6 +540,20 @@ class OperationConfig(OperationModel):
                     failures.append(
                         f"workflow_states is missing required stage {stage.value!r}",
                     )
+
+        prefixes = list(self.marker_prefixes.values())
+        failures.extend(
+            f"marker_prefixes[{purpose!r}] must name one nonempty marker token"
+            for purpose, prefix in self.marker_prefixes.items()
+            if not purpose
+            or not prefix
+            or any(character.isspace() or character in '<>[]:"' for character in prefix)
+        )
+        failures.extend(
+            f"marker_prefixes[{purpose!r}] {prefix!r} is not unique"
+            for purpose, prefix in self.marker_prefixes.items()
+            if prefixes.count(prefix) > 1
+        )
 
         if self.documents and CHECKPOINT_DOCUMENT_KEY not in self.documents:
             failures.append(
@@ -774,6 +789,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "queue_states": ConfigOwnership.OWNED,
     "scope_labels": ConfigOwnership.OWNED,
     "workflow_states": ConfigOwnership.EXTERNAL,
+    "marker_prefixes": ConfigOwnership.LOCAL,
     "repos": ConfigOwnership.LOCAL,
     "documents": ConfigOwnership.OWNED,
     "records": ConfigOwnership.EXTERNAL,

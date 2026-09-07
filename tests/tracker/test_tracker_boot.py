@@ -75,6 +75,7 @@ from tests.tracker.conftest import (
     fixture_server,
     linear_over_fake_mcp,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 EXAMPLE_CONFIG = Path(__file__).resolve().parents[2] / "docs" / "operation.example.toml"
 
@@ -575,6 +576,7 @@ class TestQueueVocabularyPerDeclaredTeam:
 
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
+            marker_prefixes=MARKER_PREFIXES,
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
@@ -700,6 +702,7 @@ class TestWorkflowStatesResolvePerTeam:
 
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
+            marker_prefixes=MARKER_PREFIXES,
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
