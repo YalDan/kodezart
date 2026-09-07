@@ -93,6 +93,21 @@ adapter uses GitHub's documented [workflow run rerun and attempt APIs](https://d
 and [attempt-specific jobs API](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt).
 The Actions permission must allow writes to request a rerun.
 
+Tracker revision reads return a frozen `TrackerIssueRevision`: the full issue
+and an opaque, nonempty digest of the body returned in that same read. This
+applies to both ordinary issues and criterion sub-issues. The Linear adapter
+hashes those exact UTF-8 body bytes; timestamps, comments, labels and workflow
+state do not participate. Each surface changes independently, and replaying
+an unchanged body preserves its digest.
+
+Tracker boot calls the required `require_body_digest_stability` contract before
+mapping reconciliation. An adapter that cannot guarantee those semantics
+raises `BodyDigestCapabilityError`, naming `body_digest_stability`, and boot
+closes its transport without serving. This declaration does not mutate a live
+issue to probe it: the shared adapter conformance suite verifies the required
+read/write invariants. Consumers receive no optional capability flag or weaker
+revision read.
+
 ## Workflow Pipeline
 
 The outer workflow runs as a LangGraph StateGraph defined in

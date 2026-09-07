@@ -28,6 +28,7 @@ import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Final, assert_never
 
 from pydantic import ValidationError
@@ -107,6 +108,7 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerIssueRevision,
     TrackerReview,
     WorkflowStateKind,
 )
@@ -607,6 +609,17 @@ class LinearMcpTracker:
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
         return self._to_issue(await self._read_issue_wire(issue_key))
+
+    def require_body_digest_stability(self) -> None:
+        """Supported: full-read body bytes alone determine this adapter's digest."""
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        """Hash exactly the returned body, independently of vendor timestamps."""
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueRevision(
+            issue=issue,
+            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
+        )
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
         """Resolve live container membership or an issue's whole subtree."""

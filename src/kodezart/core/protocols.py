@@ -52,6 +52,7 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerIssueRevision,
     TrackerReview,
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
@@ -672,6 +673,26 @@ class TrackerPort(Protocol):
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
+        ...
+
+    def require_body_digest_stability(self) -> None:
+        """Declare the required body-revision guarantee, or refuse boot.
+
+        Raise BodyDigestCapabilityError if this adapter cannot provide
+        stable body digests. This is a required contract, not feature
+        negotiation: consumers never select a weaker read. Conformance
+        tests prove the guarantee without mutating the live board at boot.
+        """
+        ...
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        """Read one issue and its body digest from the same body snapshot.
+
+        Applies identically to issue bodies and criterion sub-issue bodies.
+        Repeated unchanged reads agree; body changes move the digest;
+        comments, labels, workflow state and UNCHANGED body replays do not.
+        An unavailable digest raises, never substitutes an empty or live one.
+        """
         ...
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:

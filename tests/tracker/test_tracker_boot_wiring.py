@@ -25,6 +25,7 @@ from kodezart.core.errors import (
     TrackerEnsureConflictError,
 )
 from kodezart.core.protocols import ManagedMcpToolCaller
+from kodezart.domain.errors import BodyDigestCapabilityError
 from kodezart.main import create_app, lifespan
 from kodezart.services.pass_scheduler import PassScheduler
 from tests.fakes import FakeMcpDocument, ManagedFakeLinearMcpServer
@@ -308,6 +309,32 @@ async def test_one_unresolvable_principal_aborts_boot_naming_that_entry(
     assert caught.value.unresolved == ("user 'approver+assignee+principal' -> 'ghost'",)
     # The session opened for the check does not leak past the failure.
     assert wired.closes == 1
+
+
+async def test_an_adapter_without_stable_body_digests_aborts_real_lifespan(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """A required capability refusal precedes reconciliation and serving."""
+    _configure(monkeypatch, tmp_path, _operation_toml())
+
+    def refuse(self: LinearMcpTracker) -> None:
+        raise BodyDigestCapabilityError(reason="backend offers only change timestamps")
+
+    monkeypatch.setattr(LinearMcpTracker, "require_body_digest_stability", refuse)
+    app = create_app()
+    entered = False
+    with pytest.raises(BodyDigestCapabilityError) as caught:
+        async with lifespan(app):
+            entered = True
+    assert not entered
+    assert caught.value.capability == "body_digest_stability"
+    assert "change timestamps" in caught.value.reason
+    assert "body_digest_stability" in str(caught.value)
+    assert wired.opens == 1
+    assert wired.closes == 1
+    assert wired.calls == []
 
 
 async def test_an_absent_queue_label_is_created_at_boot_not_a_failure(

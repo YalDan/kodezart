@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
 
@@ -129,6 +130,7 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerIssueRevision,
     TrackerReview,
     WorkflowStateKind,
 )
@@ -3183,6 +3185,16 @@ class FakeTrackerPort:
         await asyncio.sleep(0)
         self.issue_reads.append(issue_key)
         return self.issues[issue_key]
+
+    def require_body_digest_stability(self) -> None:
+        """The fake's revision reads derive their digest from the body alone."""
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueRevision(
+            issue=issue,
+            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
+        )
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
         if ref.kind is ScopeKind.ISSUE:
