@@ -120,6 +120,35 @@ async def test_authored_source_refuses_tracker_rows(tracker):
         context(criteria=facts.criteria)
 
 
+async def test_repeated_captured_reference_is_not_two_criterion_records(tracker):
+    facts = await tracked_context(tracker)
+    repeated = facts.spec.model_copy(update={"criteria": (CHILD, CHILD)})
+    with pytest.raises(ValidationError, match="match the captured spec"):
+        DeliveryContext.model_validate(
+            {
+                **facts.model_dump(),
+                "spec": repeated,
+                "criteria": (*facts.criteria, *facts.criteria),
+            }
+        )
+
+
+async def test_criterion_rows_preserve_the_captured_reference_order(tracker):
+    facts = await tracked_context(tracker)
+    later = facts.criteria[0].model_copy(update={"issue_key": "another/record"})
+    spec = facts.spec.model_copy(update={"criteria": (CHILD, later.issue_key)})
+    values = {
+        **facts.model_dump(),
+        "spec": spec,
+        "criteria": (*facts.criteria, later),
+    }
+    assert DeliveryContext.model_validate(values).criteria == (*facts.criteria, later)
+    with pytest.raises(ValidationError, match="match the captured spec"):
+        DeliveryContext.model_validate(
+            {**values, "criteria": tuple(reversed(values["criteria"]))}
+        )
+
+
 async def test_foreign_captured_subject_refuses_before_delivery_side_effects(tracker):
     facts = await tracked_context(tracker)
     spec = facts.spec.model_copy(update={"subject": "other/42"})
