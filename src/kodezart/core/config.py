@@ -311,6 +311,15 @@ class AppConfig(BaseSettings):
         le=300.0,
         description="Seconds between CI status check polls.",
     )
+    delivery_red_rerun_max_attempts: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        description=(
+            "Times a red check set is re-run at one sha "
+            "before the red is treated as reproduced."
+        ),
+    )
     ci_poll_max_attempts: int = Field(
         default=60,
         ge=1,

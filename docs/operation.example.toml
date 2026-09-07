@@ -165,10 +165,16 @@ done = "Done"
 [[repos]]
 url = "https://example.invalid/example-org/example-repo"
 trunk = "main"
+# Optional environment facts: only explicit false establishes an unmet
+# prerequisite; omitted keys are unknown. Never derive these from CI logs.
+# runner_environment = { repository_history = false, network = true }
 
 [[repos.checks]]
 name = "install"
 command = "make install"
+# Optional exact forge check name and its declared prerequisites:
+# forge_check = "install"
+# requires = ["network"]
 
 [[repos.checks]]
 name = "typecheck"
