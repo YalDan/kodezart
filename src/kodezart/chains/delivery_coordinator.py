@@ -44,7 +44,7 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
-from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.operation import RepoEntry, RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_state import LanePR
@@ -99,6 +99,17 @@ class DeliveryCoordinator:
     ) -> LaneDelivery:
         """Deliver the supplied fire's head against its recorded base."""
         execution = context.execution
+        identity = execution.run_identity
+        if (
+            identity is None
+            or identity.kind is not RunKind.FIRE
+            or identity.name != dispatch.issue_id
+        ):
+            raise DeliveryContextError(
+                lane_key=dispatch.lane_key,
+                issue_id=dispatch.issue_id,
+                reason="delivery requires the dispatched issue's FIRE run identity",
+            )
         if (
             feature_branch != dispatch.head_branch
             or execution.base_spec != dispatch.resolved_base

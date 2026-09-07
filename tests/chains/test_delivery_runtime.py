@@ -242,6 +242,30 @@ async def test_unconnected_fire_outcome_does_not_silently_become_green(outcome):
     assert fixture.forge.calls == fixture.runner.calls == []
 
 
+@pytest.mark.parametrize("change", ["missing", "kind", "name"])
+async def test_delivery_requires_the_same_issue_fire_identity_before_side_effects(
+    change,
+):
+    facts = context()
+    identity = facts.execution.run_identity
+    if change == "missing":
+        identity = None
+    elif change == "kind":
+        identity = identity.model_copy(update={"kind": RunKind.FIRE_PREP})
+    else:
+        identity = identity.model_copy(update={"name": "other/99"})
+    facts = context(
+        execution=facts.execution.model_copy(update={"run_identity": identity})
+    )
+    git = FakeGitService()
+    cleaner = FakeArtifactPersister()
+    fixture = setup(git=git, cleaner=cleaner)
+    with pytest.raises(DeliveryContextError, match="FIRE run identity"):
+        await deliver(fixture.coordinator, facts=facts)
+    assert git.calls == cleaner.clean_calls == fixture.runner.calls == []
+    assert fixture.forge.calls == fixture.monitor.calls == fixture.gate.calls == []
+
+
 @pytest.mark.parametrize("family", [V5_SET, OPUS_SET])
 async def test_description_uses_original_typed_inputs_and_gates_final_body(family):
     fixture = setup(family=family)

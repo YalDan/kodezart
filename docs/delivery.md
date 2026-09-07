@@ -9,6 +9,7 @@ visibility used by the PR-description session. These are caller inputs; the
 coordinator does not synthesize a legacy ticket from tracker issue text.
 
 The common route accepts `handed_off_for_delivery`. It verifies that the
+execution carries the dispatched issue's FIRE run identity, that the
 terminal head and recorded base agree with the call, that both branches exist
 on the configured remote, and that the remote head still matches the fire's
 final SHA. A missing ref raises `BaseResolutionError`; an inconsistent handoff
