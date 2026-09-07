@@ -121,6 +121,9 @@ by fixed re-entry guidance. The record preserves three-state remote head facts,
 ordered `LaneCommit` rows, `LanePR` and explicitly typed `BranchAssociation`
 roles, parents and run identities. Its loop branch must appear in the association
 set, and each run has at most one deliverable. Branch names do not supply roles.
+The model follows the declared list fields: field assignment is frozen, but
+the lists are not deeply immutable. Consumers must not mutate retained evidence;
+each read returns freshly decoded values rather than a shared cached collection.
 Counts remain independently recorded observations, so the consistency signal
 can still detect disagreement with commit rows. The re-entry text directs
 checkout or recovery of existing work and treats absent or reaped remote refs
