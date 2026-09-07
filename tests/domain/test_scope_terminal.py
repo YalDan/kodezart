@@ -12,6 +12,7 @@ from kodezart.types.domain.scope_terminal import (
     ScopeResidualOwner,
     ScopeResidualOwnerKind,
     ScopeStoppingRule,
+    ScopeTerminalEvent,
 )
 
 
@@ -130,3 +131,80 @@ def test_residual_cannot_be_mutated_through_a_callers_collection() -> None:
         residual.items[0].act = "Silently change the handoff."
     with pytest.raises(ValidationError, match="frozen"):
         residual.items[0].owner.key = "a different operator"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "has_items", "has_rule", "valid"),
+    [
+        (WorkflowOutcome.scope_converged, False, False, True),
+        (WorkflowOutcome.scope_converged, True, False, False),
+        (WorkflowOutcome.scope_converged, False, True, False),
+        (WorkflowOutcome.scope_converged, True, True, False),
+        (WorkflowOutcome.scope_converged_with_residual, False, False, False),
+        (WorkflowOutcome.scope_converged_with_residual, True, False, False),
+        (WorkflowOutcome.scope_converged_with_residual, False, True, False),
+        (WorkflowOutcome.scope_converged_with_residual, True, True, True),
+        (WorkflowOutcome.scope_stopped_short, False, False, True),
+        (WorkflowOutcome.scope_stopped_short, True, False, True),
+        (WorkflowOutcome.scope_stopped_short, False, True, False),
+        (WorkflowOutcome.scope_stopped_short, True, True, False),
+    ],
+)
+def test_terminal_rejects_each_inconsistent_convergence_combination(
+    outcome: WorkflowOutcome, has_items: bool, has_rule: bool, valid: bool
+) -> None:
+    rule = ScopeStoppingRule(
+        config_field="organize_max_convergence_rounds",
+        configured_value=3,
+        rounds_used=3,
+    )
+    residual = ScopeResidual(
+        items=(_item(),) if has_items else (),
+        stopping_rule=rule if has_rule else None,
+    )
+    payload = {"outcome": outcome, "residual": residual}
+    if valid:
+        event = ScopeTerminalEvent.model_validate(payload)
+        assert event.outcome is outcome
+        assert ScopeTerminalEvent.model_validate_json(event.model_dump_json()) == event
+    else:
+        with pytest.raises(ValidationError, match=outcome.value):
+            ScopeTerminalEvent.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        member
+        for member in WorkflowOutcome
+        if member
+        not in (
+            WorkflowOutcome.scope_converged,
+            WorkflowOutcome.scope_converged_with_residual,
+            WorkflowOutcome.scope_stopped_short,
+        )
+    ],
+)
+def test_scope_terminal_rejects_fire_dispositions(outcome: WorkflowOutcome) -> None:
+    with pytest.raises(ValidationError):
+        ScopeTerminalEvent.model_validate(
+            {
+                "outcome": outcome,
+                "residual": {"items": [], "stoppingRule": None},
+            }
+        )
+
+
+def test_terminal_cannot_be_changed_after_validation() -> None:
+    event = ScopeTerminalEvent(
+        outcome=WorkflowOutcome.scope_converged,
+        residual=ScopeResidual(items=(), stopping_rule=None),
+    )
+    with pytest.raises(ValidationError, match="frozen"):
+        event.residual = ScopeResidual(items=(_item(),), stopping_rule=None)
+    with pytest.raises(ValidationError, match="frozen"):
+        event.residual.stopping_rule = ScopeStoppingRule(
+            config_field="organize_max_admission_rounds",
+            configured_value=4,
+            rounds_used=4,
+        )

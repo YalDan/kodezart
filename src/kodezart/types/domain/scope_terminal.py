@@ -1,10 +1,12 @@
 """Immutable facts carried by a scope's terminal residual."""
 
 from enum import StrEnum
+from typing import Literal, Self
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.outcome import WorkflowOutcome
 
 
 class ScopeResidualClass(StrEnum):
@@ -78,3 +80,41 @@ class ScopeResidual(CamelCaseModel):
 
     items: tuple[ScopeResidualItem, ...]
     stopping_rule: ScopeStoppingRule | None
+
+
+class ScopeTerminalEvent(CamelCaseModel):
+    """The validated convergence payload of a scope terminal event.
+
+    This value enforces the outcome/residual contract. Computing a scope's
+    outcome from its lane vector, reading tracker records and emitting the
+    event belong to terminal orchestration.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["scope_terminal"] = "scope_terminal"
+    outcome: Literal[
+        WorkflowOutcome.scope_converged,
+        WorkflowOutcome.scope_converged_with_residual,
+        WorkflowOutcome.scope_stopped_short,
+    ]
+    residual: ScopeResidual
+
+    @model_validator(mode="after")
+    def _consistent_convergence(self) -> Self:
+        match self.outcome:
+            case WorkflowOutcome.scope_converged:
+                if self.residual.items or self.residual.stopping_rule is not None:
+                    raise ValueError(
+                        "scope_converged requires no residual items or stopping rule"
+                    )
+            case WorkflowOutcome.scope_converged_with_residual:
+                if not self.residual.items or self.residual.stopping_rule is None:
+                    raise ValueError(
+                        "scope_converged_with_residual requires residual items "
+                        "and a stopping rule"
+                    )
+            case WorkflowOutcome.scope_stopped_short:
+                if self.residual.stopping_rule is not None:
+                    raise ValueError("scope_stopped_short cannot carry a stopping rule")
+        return self
