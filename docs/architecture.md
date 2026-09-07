@@ -118,6 +118,18 @@ An issue body and each criterion body are graded and checked independently.
 Persistence, phase markers and issue readiness orchestration remain separate
 consumers of those results.
 
+The pure `organize_gap` function takes a complete scope revision snapshot,
+admissions keyed by each surface identity, open findings and the configured
+semantic body marker. It returns original issue records in snapshot order.
+Missing markers, absent or stale admissions, missing non-Canceled criterion
+children, or open findings put an issue in the work set. A stale criterion
+body puts its parent there through the same comparison, without lapsing the
+parent body judgment; execution-state changes alone do not. Record-shaped
+`tracker` and `decision` members and criterion children are never work targets.
+Incomplete parent identity or duplicate revision/admission records refuse
+computation. Collecting and persisting these snapshots and running leased
+author sessions remain orchestration work outside this pure function.
+
 ## Workflow Pipeline
 
 The outer workflow runs as a LangGraph StateGraph defined in

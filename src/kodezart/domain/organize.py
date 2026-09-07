@@ -77,6 +77,8 @@ def organize_gap(
     Record-shaped members and criterion children are never work targets.
 
     This function reads no tracker, judges no text and dispatches no author.
+    Each body is compared with its own admission; a stale child surface
+    puts its parent in the work set without changing the parent admission.
     Criterion execution state only answers whether a non-Canceled child
     exists; a code-only regression cannot put a specification in the gap.
     """
@@ -101,20 +103,26 @@ def organize_gap(
         issue = revision.issue
         if issue.issue_labels & {"criterion", "tracker", "decision"}:
             continue
-        result = admitted.get(issue.issue_key)
+        surfaces = (revision, *children.get(issue.issue_key, ()))
+        has_lapsed_surface = any(
+            surface.issue.issue_key not in admitted
+            or not is_admission_live(
+                admitted_body_digest=admitted[
+                    surface.issue.issue_key
+                ].admitted_body_digest,
+                current_body_digest=surface.body_digest,
+            )
+            for surface in surfaces
+        )
         has_criterion = any(
             child.issue.state_kind is not WorkflowStateKind.CANCELED
             for child in children.get(issue.issue_key, ())
         )
         if (
             body_marker_key not in issue.issue_labels
-            or result is None
-            or not is_admission_live(
-                admitted_body_digest=result.admitted_body_digest,
-                current_body_digest=revision.body_digest,
-            )
+            or has_lapsed_surface
             or not has_criterion
-            or issue.issue_key in finding_keys
+            or any(surface.issue.issue_key in finding_keys for surface in surfaces)
         ):
             gap.append(issue)
     return tuple(gap)
