@@ -73,6 +73,22 @@ class StaleWriteError(Exception):
         self.expected = expected
 
 
+class EscalationReadError(Exception):
+    """Resolution cannot be established from a readable, unique escalation."""
+
+    def __init__(
+        self, *, issue_key: str, lane_key: str, escalation_key: str, reason: str
+    ) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.escalation_key = escalation_key
+        self.reason = reason
+        super().__init__(
+            f"escalation {escalation_key!r} on {issue_key!r} "
+            f"in lane {lane_key!r} could not be read: {reason}"
+        )
+
+
 class CriterionReadError(Exception):
     """A criterion membership read could not establish a complete answer."""
 

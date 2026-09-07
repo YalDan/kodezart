@@ -258,6 +258,8 @@ class TrackerComment(TrackerModel):
     author_key: Annotated[str, Field(min_length=1)] | None
     body: str
     created_at: datetime
+    #: The addressed comment when the backend reports a reply relationship.
+    reply_to: Annotated[str, Field(min_length=1)] | None = None
 
 
 class ClaimResult(TrackerModel):

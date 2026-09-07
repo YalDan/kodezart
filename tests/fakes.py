@@ -39,12 +39,14 @@ from kodezart.domain.errors import (
     CriterionReadError,
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
+    EscalationReadError,
     MergeConflictError,
     RateLimitError,
     ScopeReadError,
     TransientAPIError,
     WorkspaceError,
 )
+from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import tracker_spec_from_issues
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
@@ -80,6 +82,7 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
@@ -2341,6 +2344,7 @@ class FakeMcpComment:
     author: str | None
     body: str
     created_at: datetime
+    parent_id: str | None = None
 
     def wire(self) -> dict[str, object]:
         return {
@@ -2352,7 +2356,7 @@ class FakeMcpComment:
             ),
             "body": self.body,
             "createdAt": self.created_at.isoformat(),
-            "parentId": None,
+            "parentId": self.parent_id,
             "resolvedAt": None,
             "quotedText": None,
             "onBehalfOf": None,
@@ -2630,11 +2634,21 @@ class FakeLinearMcpServer:
                     self._moved(existing.issue_id)
                     return existing.wire()
             raise KeyError(f"no comment {comment_id} to update")
+        parent_id = arguments.get("parentId")
+        if parent_id is not None:
+            assert isinstance(parent_id, str)
+            parent = next((c for c in self.comments if c.id == parent_id), None)
+            if parent is None:
+                raise KeyError(f"no parent comment {parent_id}")
+            issue_id = parent.issue_id
+        else:
+            issue_id = str(arguments["issueId"])
         created_at = self._next_instant()
         self._sequence += 1
         comment = FakeMcpComment(
             id=f"comment-{self._sequence:04d}",
-            issue_id=str(arguments["issueId"]),
+            issue_id=issue_id,
+            parent_id=parent_id,
             author=self.actor,
             body=str(arguments["body"]),
             created_at=created_at,
@@ -3008,6 +3022,7 @@ class FakeTrackerPort:
         *,
         issues: Sequence[TrackerIssue] = (),
         issue_identities: Mapping[str, IssueIdentity] | None = None,
+        marker_prefixes: Mapping[str, str] | None = None,
         scope_containers: Sequence[ScopeContainer] = (),
         scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
@@ -3026,6 +3041,8 @@ class FakeTrackerPort:
             issue.issue_key: issue for issue in issues
         }
         self.issue_identities: dict[str, IssueIdentity] = dict(issue_identities or {})
+        self.marker_prefixes: dict[str, str] = dict(marker_prefixes or {})
+        self.comment_read_error: str | None = None
         self.issue_creations: list[str] = []
         self.scope_containers: dict[ScopeRef, ScopeContainer] = {
             container.ref: container for container in scope_containers
@@ -3483,6 +3500,24 @@ class FakeTrackerPort:
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         return tuple(c for c in self.comments if c.issue_key == issue_key)
+
+    async def read_escalation_resolution(
+        self, *, issue_key: str, lane_key: str, escalation_key: str
+    ) -> EscalationResolution:
+        if self.comment_read_error is not None:
+            raise EscalationReadError(
+                issue_key=issue_key,
+                lane_key=lane_key,
+                escalation_key=escalation_key,
+                reason=self.comment_read_error,
+            )
+        return resolution_from_comments(
+            issue_key=issue_key,
+            lane_key=lane_key,
+            escalation_key=escalation_key,
+            prefixes=self.marker_prefixes,
+            comments=await self.list_comments(issue_key=issue_key),
+        )
 
     async def claim_issue(
         self,

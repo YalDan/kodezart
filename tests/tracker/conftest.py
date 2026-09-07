@@ -226,6 +226,7 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
     refusals = await source.verify_scan_capability(signals=list(PassSignal))
     port = FakeTrackerPort(
         issues=issues,
+        marker_prefixes=MARKER_PREFIXES,
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),

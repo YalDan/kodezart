@@ -12,6 +12,7 @@ from kodezart.types.domain.consolidation import (
 )
 from kodezart.types.domain.criteria import ValidatedCriterion
 from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     ContentClass,
@@ -854,6 +855,17 @@ class TrackerPort(Protocol):
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         """Every comment on the issue, oldest first."""
+        ...
+
+    async def read_escalation_resolution(
+        self, *, issue_key: str, lane_key: str, escalation_key: str
+    ) -> EscalationResolution:
+        """Read whether a decision record directly addresses this escalation.
+
+        A resolved value carries the decision reference. Missing, unreadable
+        or ambiguous records raise ``EscalationReadError``; an unresolved
+        value requires a complete readable escalation with no answer.
+        """
         ...
 
     async def claim_issue(

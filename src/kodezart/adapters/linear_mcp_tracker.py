@@ -50,8 +50,10 @@ from kodezart.domain.errors import (
     CriterionReadError,
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
+    EscalationReadError,
     TransientAPIError,
 )
+from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.tracker_writes import (
@@ -61,6 +63,7 @@ from kodezart.domain.tracker_writes import (
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.linear_mcp import (
@@ -81,6 +84,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearProjectWire,
     LinearTeamListWire,
     LinearTeamWire,
+    LinearThreadCommentListWire,
     LinearUserListWire,
     LinearUserWire,
     LinearWireModel,
@@ -428,6 +432,7 @@ class LinearMcpTracker:
         ledger: SelfWriteLedger,
     ) -> None:
         self._caller: McpToolCaller = caller
+        self._marker_prefixes = dict(marker_prefixes)
         self._markers = LinearMarkers(marker_prefixes)
         self._issue_identity = LinearIssueIdentityCarrier(marker_prefixes)
         self._issue_labels = dict(issue_labels)
@@ -986,6 +991,38 @@ class LinearMcpTracker:
         return tuple(
             self._to_comment(wire, issue_key=issue_key)
             for wire in await self._comment_wires(issue_key)
+        )
+
+    async def read_escalation_resolution(
+        self, *, issue_key: str, lane_key: str, escalation_key: str
+    ) -> EscalationResolution:
+        """Read current native reply links across the entire comment listing."""
+        try:
+            comments = tuple(
+                self._to_comment(wire, issue_key=issue_key)
+                for wire in await self._comment_wires(
+                    issue_key, require_reply_links=True
+                )
+            )
+        except (
+            McpTransportError,
+            McpCredentialRefusedError,
+            TrackerProtocolError,
+            TransientAPIError,
+            ValidationError,
+        ) as exc:
+            raise EscalationReadError(
+                issue_key=issue_key,
+                lane_key=lane_key,
+                escalation_key=escalation_key,
+                reason="the tracker read failed or was incomplete",
+            ) from exc
+        return resolution_from_comments(
+            issue_key=issue_key,
+            lane_key=lane_key,
+            escalation_key=escalation_key,
+            prefixes=self._marker_prefixes,
+            comments=comments,
         )
 
     async def upsert_comment(
@@ -1909,16 +1946,32 @@ class LinearMcpTracker:
         )
         return self._validate(LinearIssueDetailWire, payload, _TOOL_GET_ISSUE)
 
-    async def _comment_wires(self, issue_key: str) -> Sequence[LinearCommentWire]:
+    async def _comment_wires(
+        self, issue_key: str, *, require_reply_links: bool = False
+    ) -> Sequence[LinearCommentWire]:
         arguments: dict[str, object] = {"issueId": issue_key}
         seen_cursors: set[str] = set()
         comments: dict[str, LinearCommentWire] = {}
         while True:
             payload = await self._call(_TOOL_LIST_COMMENTS, arguments)
-            listing = self._validate(
-                LinearCommentListWire, payload, _TOOL_LIST_COMMENTS
-            )
-            comments.update((comment.id, comment) for comment in listing.comments)
+            listing: LinearCommentListWire | LinearThreadCommentListWire
+            if require_reply_links:
+                listing = self._validate(
+                    LinearThreadCommentListWire, payload, _TOOL_LIST_COMMENTS
+                )
+            else:
+                listing = self._validate(
+                    LinearCommentListWire, payload, _TOOL_LIST_COMMENTS
+                )
+            for comment in listing.comments:
+                previous = comments.get(comment.id)
+                if require_reply_links and previous is not None and previous != comment:
+                    raise TrackerProtocolError(
+                        "comment changed across resolution pages",
+                        tool=_TOOL_LIST_COMMENTS,
+                        detail=f"target={issue_key}; comment={comment.id}",
+                    )
+                comments[comment.id] = comment
             if not listing.has_next_page:
                 return tuple(
                     sorted(comments.values(), key=lambda c: (c.created_at, c.id))
@@ -2101,6 +2154,7 @@ class LinearMcpTracker:
         else's (KOD-172).
         """
         return TrackerComment(
+            reply_to=wire.parent_id,
             comment_key=wire.id,
             issue_key=issue_key,
             author_key=None if wire.author is None else wire.author.name,

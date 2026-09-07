@@ -400,6 +400,18 @@ failed write propagates to the raising caller; a retry completes the same
 occurrence. This service is the shared raise-site writer; individual organizer,
 audit and evaluator consumers still own when they raise and how they stop.
 
+`read_escalation_resolution(issue_key, lane_key, escalation_key)` reads the
+current escalation and its addressed decision. Both marker prefixes come
+from `marker_prefixes` (`escalation` and `decision`). Linear requires the
+exact first-line decision marker on a direct reply to the escalation;
+labels, prose and replies to another comment do not answer it. A resolved
+value carries the decision comment reference; an unanswered readable
+escalation returns unresolved. Missing or ambiguous records, unreadable
+reply links and incomplete pages raise `EscalationReadError`. Resolution
+reads every comment page and does not parse historical escalation bodies
+as JSON, cache answers, write comments or change labels. The supervisor
+still owns consuming this read in its alarm computation.
+
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the
 live workspace belongs to the tracker adapter, not to config load.

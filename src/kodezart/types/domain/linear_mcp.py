@@ -260,6 +260,26 @@ class LinearCommentWire(LinearWireModel):
     author: LinearCommentAuthorWire | None
     body: str
     created_at: datetime
+    parent_id: str | None = None
+
+
+class LinearThreadCommentWire(LinearCommentWire):
+    """Resolution requires the measured reply link, including explicit null.
+
+    The live escalation/decision proof reports parentId on both comments.
+    An omitted link cannot establish that a decision addresses its parent.
+    Legacy generic comment reads retain their less demanding contract.
+    """
+
+    parent_id: str | None
+
+
+class LinearThreadCommentListWire(LinearWireModel):
+    """A complete resolution page must report every comment's reply link."""
+
+    comments: list[LinearThreadCommentWire]
+    has_next_page: bool
+    cursor: str | None = None
 
 
 class LinearCommentListWire(LinearWireModel):
