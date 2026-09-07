@@ -119,6 +119,7 @@ class MappingKind(StrEnum):
     USER = "user"
     TEAM = "team"
     QUEUE_STATE = "queue_state"
+    SCOPE_LABEL = "scope_label"
     WORKFLOW_STATE = "workflow_state"
     DOCUMENT = "document"
 
@@ -130,7 +131,7 @@ class MappingKind(StrEnum):
 #: a ref outside this set is ``TrackerEnsureConflictError`` everywhere, which
 #: is what keeps an adapter and a test double from disagreeing about it.
 INSTATABLE_MAPPING_KINDS: frozenset[MappingKind] = frozenset(
-    {MappingKind.QUEUE_STATE, MappingKind.DOCUMENT},
+    {MappingKind.QUEUE_STATE, MappingKind.SCOPE_LABEL, MappingKind.DOCUMENT},
 )
 
 
@@ -201,6 +202,9 @@ class TrackerIssue(TrackerModel):
     #: without a per-issue read (KOD-169).
     project: str | None = None
     project_id: str | None = None
+    #: The milestone reported by the full issue read; omission means the
+    #: issue belongs to none. Adapters translate their membership field.
+    milestone_key: str | None = None
     relations: tuple[IssueRelation, ...] = ()
     parent_key: str | None = None
     assignee_key: str | None = None

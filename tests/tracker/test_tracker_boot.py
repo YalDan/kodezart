@@ -155,7 +155,15 @@ class TestConfiguredMappings:
         ref at all.  A tracker-side record would, and that is
         ``TestRecordDestinationsResolveAtBoot`` below.
         """
-        config = operation_config()
+        config = operation_config().model_copy(
+            update={
+                "scope_labels": {
+                    "triage": "scope:triage",
+                    "proposed": "scope:proposed",
+                    "approved": "scope:approved",
+                },
+            },
+        )
         refs = (*configured_mappings(config), *owned_mappings(config))
 
         assert {ref.kind for ref in refs} == set(MappingKind)

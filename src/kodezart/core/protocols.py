@@ -31,6 +31,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunRecord
+from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -51,8 +52,7 @@ from kodezart.types.domain.tracker import (
     TrackerIssue,
     TrackerReview,
 )
-from kodezart.types.domain.workflow import RemediationRequest
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 
 
 @runtime_checkable
@@ -570,6 +570,16 @@ class TrackerPort(Protocol):
     implements ALL of this or it is not an adapter.  There are no
     capability flags and no feature detection, so no consumer ever
     branches on which backend is configured.
+
+    Notification behavior: an issue body edit is expected to be silent,
+    while posting a comment is expected to notify its recipients. This
+    capability is unfalsifiable through the declared port: issue and
+    comment reads reveal stored content, but no read exposes recipient
+    notification events or their originating write. Falsifying the claim
+    would require a recipient notification-event read correlated with
+    the body edit or comment creation. This port carries no such read,
+    so neither write success nor content read-back proves notification
+    delivery or silence; this is not an executable boot check.
     """
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
@@ -617,6 +627,23 @@ class TrackerPort(Protocol):
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
+        ...
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        """All issues in the scope, with their relations and parent fields.
+
+        Container scopes resolve by membership; issue scopes resolve to
+        the issue and its descendant issues. No bounded scan substitutes
+        for the complete scope.
+        """
+        ...
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        """The container's ref, name, description, url and optional parent.
+
+        An issue-kind ref raises a typed domain error: an issue is read
+        through ``read_issue``, never returned as an empty container.
+        """
         ...
 
     async def create_issue(
@@ -1025,6 +1052,7 @@ class WorkflowEngine(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
@@ -1032,6 +1060,8 @@ class WorkflowEngine(Protocol):
     ) -> AsyncIterator[AgentEvent]:
         """Full pipeline: branch → ticket → criteria → loop → merge.
 
+        ``scope`` explicitly selects addressed input or the legacy prompt
+        workflow. An engine must consume an addressed scope or refuse it.
         ``cache_key`` IS the LangGraph thread id, so the caller's job id
         addresses the run's checkpoints.
         """
@@ -1049,7 +1079,7 @@ class JobQueue(Protocol):
     persistence machinery stands behind it.
     """
 
-    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
         """Enqueue *request* on *lane*. Raises ``QueueFullError`` at capacity."""
         ...
 

@@ -35,7 +35,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
-from kodezart.types.domain.branch import WorkRefRole
+from kodezart.types.domain.branch import WorkRefRole, trunk_base
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import (
     DocumentSystem,
@@ -47,7 +47,7 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
 from kodezart.types.domain.tracker import ClaimStatus
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     FIXTURE_EPOCH,
     BrokenRecordSink,
@@ -447,7 +447,16 @@ class TestThePremiseAgainstTheShippedQueue:
         try:
             record = await queue.submit(
                 lane="lane",
-                request=WorkflowRequest(prompt="do the thing", repo_url=REPO_URL),
+                request=WorkflowSubmission(
+                    prompt="do the thing",
+                    repo_path=None,
+                    repo_url=REPO_URL,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode="bypassPermissions",
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
             )
             stream = queue.attach(job_id=record.job_id)
             first = asyncio.ensure_future(anext(stream))
@@ -492,7 +501,16 @@ class TestThePremiseAgainstTheShippedQueue:
             )
             record = await queue.submit(
                 lane="lane",
-                request=WorkflowRequest(prompt="do the thing", repo_url=REPO_URL),
+                request=WorkflowSubmission(
+                    prompt="do the thing",
+                    repo_path=None,
+                    repo_url=REPO_URL,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode="bypassPermissions",
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
             )
 
             await asyncio.wait_for(
@@ -555,7 +573,16 @@ class TestGracefulShutdownHandsTheClaimBack:
         )
         record = await queue.submit(
             lane="lane",
-            request=WorkflowRequest(prompt="do the thing", repo_url=REPO_URL),
+            request=WorkflowSubmission(
+                prompt="do the thing",
+                repo_path=None,
+                repo_url=REPO_URL,
+                base_spec=trunk_base("main"),
+                implied_base=None,
+                scope=None,
+                permission_mode="bypassPermissions",
+                allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+            ),
         )
         watch.follow(
             issue_key=ISSUE,

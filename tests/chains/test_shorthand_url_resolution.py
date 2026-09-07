@@ -90,6 +90,7 @@ async def test_merger_receives_resolved_url_not_shorthand() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path=None,
             repo_url="YalDan/kodezart",
@@ -125,6 +126,7 @@ async def test_full_url_passes_through_unchanged() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path=None,
             repo_url="https://github.com/YalDan/kodezart",
@@ -159,6 +161,7 @@ async def test_local_repo_path_not_affected() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,

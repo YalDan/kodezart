@@ -234,6 +234,7 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
     events = [
         event
         async for event in engine.run(
+            scope=None,
             prompt="do the thing",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -325,6 +326,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
     _ = [
         event
         async for event in engine.run(
+            scope=None,
             prompt="do the thing",
             repo_path="/tmp/fake",
             repo_url=None,

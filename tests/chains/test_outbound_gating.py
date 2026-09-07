@@ -97,6 +97,7 @@ async def run_engine(
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt="do the thing",
             repo_path=repo_path,
             repo_url=repo_url,

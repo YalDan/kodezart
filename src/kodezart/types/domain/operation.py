@@ -135,6 +135,18 @@ class QueueState(StrEnum):
     DECISION = "decision"
 
 
+class ScopeLabel(StrEnum):
+    """Scope admission vocabulary, resolved separately from the issue queue.
+
+    The operation maps each semantic member to its tracker label. Queue
+    writes continue to address only ``QueueState`` and its own mapping.
+    """
+
+    TRIAGE = "triage"
+    PROPOSED = "proposed"
+    APPROVED = "approved"
+
+
 class LifecycleStage(StrEnum):
     """Lifecycle stages resolved through the workflow_states mapping."""
 
@@ -439,6 +451,7 @@ class OperationConfig(OperationModel):
     agent_identities: list[str] = Field(default_factory=list)
     teams: dict[str, TeamEntry] = Field(default_factory=dict)
     queue_states: dict[str, str] = Field(default_factory=dict)
+    scope_labels: dict[str, str] = Field(default_factory=dict)
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     repos: list[RepoEntry] = Field(default_factory=list)
     documents: dict[str, DocumentEntry] = Field(default_factory=dict)
@@ -511,6 +524,13 @@ class OperationConfig(OperationModel):
                 if member.value not in self.queue_states:
                     failures.append(
                         f"queue_states is missing required key {member.value!r}"
+                    )
+
+        if self.scope_labels:
+            for scope_label in ScopeLabel:
+                if scope_label.value not in self.scope_labels:
+                    failures.append(
+                        f"scope_labels is missing required key {scope_label.value!r}"
                     )
 
         if self.workflow_states:
@@ -752,6 +772,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "agent_identities": ConfigOwnership.EXTERNAL,
     "teams": ConfigOwnership.EXTERNAL,
     "queue_states": ConfigOwnership.OWNED,
+    "scope_labels": ConfigOwnership.OWNED,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "repos": ConfigOwnership.LOCAL,
     "documents": ConfigOwnership.OWNED,

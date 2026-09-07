@@ -19,6 +19,7 @@ from kodezart.types.domain.criteria import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
@@ -32,6 +33,26 @@ _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
         "checkpoint_map",
     }
 )
+
+
+class WorkflowSubmission(CamelCaseModel):
+    """Validated workflow input shared by HTTP and dispatcher producers.
+
+    The producer supplies the recorded base or explicitly constructs a
+    trunk base. Scope absence is explicit so producers cannot lose an
+    addressed scope by relying on a downstream default.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    prompt: str = Field(min_length=1)
+    repo_path: str | None
+    repo_url: str | None
+    base_spec: BaseSpec
+    implied_base: BaseSpec | None
+    scope: ScopeRef | None
+    permission_mode: str = Field(min_length=1)
+    allowed_tools: list[str]
 
 
 # ---------------------------------------------------------------------------

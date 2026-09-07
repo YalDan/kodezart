@@ -15,7 +15,9 @@ it is chosen by the same predicate.
 """
 
 import ast
+import asyncio
 import uuid
+from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -27,8 +29,10 @@ from kodezart.composition.engine import (
     build_workflow_engine,
 )
 from kodezart.composition.forge import build_forge_client
+from kodezart.composition.jobs import build_job_queue
 from kodezart.core import protocols
 from kodezart.core.config import AppConfig
+from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import (
     CIMonitor,
     DeliveryProbe,
@@ -36,16 +40,22 @@ from kodezart.core.protocols import (
     RepoVisibilityResolver,
     WorkflowEngine,
 )
+from kodezart.domain.errors import ScopedExecutionUnavailableError, ScopeReadError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
+    ErrorEvent,
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.ticket_review import TicketReviewMode
+from kodezart.types.domain.tracker import TrackerIssue
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
@@ -57,10 +67,12 @@ from tests.fakes import (
     FakeRefPublisher,
     FakeRepoCache,
     FakeTicketGenerator,
+    FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
+    make_tracker_issue,
     no_delay_floor,
 )
 
@@ -68,6 +80,7 @@ from tests.fakes import (
 #: the sanctioned smoke shape, with no forge behind it to be asked.
 FILE_ORIGIN = "file:///tmp/smoke-origin.git"
 FORGE_ORIGIN = "https://github.com/owner/repo"
+SETTLE_SECONDS = 5.0
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "kodezart"
 COMPOSITION = SRC / "composition"
@@ -183,9 +196,10 @@ def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
 
 
 async def _drive(
-    engine: OriginRoutedWorkflowEngine,
+    engine: WorkflowEngine,
     *,
     repo_url: str,
+    scope: ScopeRef | None = None,
 ) -> list[AgentEvent]:
     return [
         event
@@ -193,12 +207,123 @@ async def _drive(
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=repo_url,
+            scope=scope,
             base_spec=trunk_base("main"),
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
     ]
+
+
+class ForbiddenWorkflowEngine:
+    """A scoped entry must never select a legacy execution arm."""
+
+    def run(self, *, scope: ScopeRef | None, **_: object) -> AsyncIterator[AgentEvent]:
+        raise AssertionError("a scoped submission entered the legacy workflow arm")
+
+
+class RecordingScopeTracker(FakeTrackerPort):
+    """Record the exact scope address the production resolver receives."""
+
+    def __init__(self, *, failure: ScopeReadError | None = None) -> None:
+        super().__init__(issues=[make_tracker_issue("ENG-1")])
+        self.scope_reads: list[ScopeRef] = []
+        self.failure = failure
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        self.scope_reads.append(ref)
+        if self.failure is not None:
+            raise self.failure
+        return tuple(self.issues.values())
+
+
+@pytest.mark.parametrize("kind", tuple(ScopeKind))
+@pytest.mark.parametrize("repo_url", [FILE_ORIGIN, FORGE_ORIGIN])
+async def test_scoped_queue_jobs_resolve_then_publish_the_typed_refusal(
+    kind: ScopeKind,
+    repo_url: str,
+) -> None:
+    """Scope is consumed at dequeue and never runs the legacy prompt pipeline."""
+    ref = ScopeRef(kind=kind, key="opaque-address")
+    tracker = RecordingScopeTracker()
+    queue = build_job_queue(
+        config=AppConfig(),
+        workflow_engine=OriginRoutedWorkflowEngine(
+            forge_arm=ForbiddenWorkflowEngine(),
+            forge_less_arm=ForbiddenWorkflowEngine(),
+            tracker=tracker,
+        ),
+    )
+    await queue.start()
+    try:
+        record = await queue.submit(
+            lane=DEFAULT_LANE,
+            request=WorkflowSubmission(
+                prompt="execute the scope",
+                repo_path=None,
+                repo_url=repo_url,
+                base_spec=trunk_base("main"),
+                implied_base=None,
+                scope=ref,
+                permission_mode="bypassPermissions",
+                allowed_tools=["Read"],
+            ),
+        )
+        async with asyncio.timeout(SETTLE_SECONDS):
+            events = [event async for event in queue.attach(job_id=record.job_id)]
+        assert tracker.scope_reads == [ref]
+        (error,) = events
+        assert isinstance(error, ErrorEvent)
+        assert error.error_kind == "ScopedExecutionUnavailableError"
+        assert f"scope: {ref.kind.value}:{ref.key}" in error.error
+        assert "not implemented" in error.error
+        terminal = await queue.get(job_id=record.job_id)
+        assert terminal is not None
+        assert terminal.state is JobState.TERMINAL
+        assert terminal.outcome is WorkflowOutcome.engine_error
+    finally:
+        await queue.stop()
+
+
+async def test_scope_read_failure_propagates_without_a_legacy_run() -> None:
+    ref = ScopeRef(kind=ScopeKind.PROJECT, key="unreadable")
+    failure = ScopeReadError("scope membership cannot be read", ref=ref)
+    tracker = RecordingScopeTracker(failure=failure)
+    engine = OriginRoutedWorkflowEngine(
+        forge_arm=ForbiddenWorkflowEngine(),
+        forge_less_arm=ForbiddenWorkflowEngine(),
+        tracker=tracker,
+    )
+
+    with pytest.raises(ScopeReadError) as caught:
+        await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
+
+    assert caught.value is failure
+    assert tracker.scope_reads == [ref]
+
+
+async def test_scope_without_a_tracker_refuses_before_selecting_a_legacy_arm() -> None:
+    ref = ScopeRef(kind=ScopeKind.ISSUE, key="ENG-1")
+    engine = OriginRoutedWorkflowEngine(
+        forge_arm=ForbiddenWorkflowEngine(),
+        forge_less_arm=ForbiddenWorkflowEngine(),
+        tracker=None,
+    )
+
+    with pytest.raises(ScopedExecutionUnavailableError, match="configured tracker"):
+        await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
+
+
+async def test_direct_legacy_engine_calls_cannot_drop_an_addressed_scope() -> None:
+    forge = RecordingForge()
+    engine = _arm(forge=forge)
+    ref = ScopeRef(kind=ScopeKind.PROJECT, key="project-address")
+
+    with pytest.raises(ScopedExecutionUnavailableError, match="scope entry pipeline"):
+        await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
+
+    assert forge.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +342,7 @@ async def test_a_fire_over_a_file_origin_reaches_the_no_pull_request_terminal() 
     engine = OriginRoutedWorkflowEngine(
         forge_arm=_arm(forge=forge),
         forge_less_arm=_arm(forge=None),
+        tracker=None,
     )
 
     events = await _drive(engine, repo_url=FILE_ORIGIN)
@@ -235,6 +361,7 @@ async def test_a_fire_over_a_forge_shaped_origin_still_opens_its_pull_request() 
     engine = OriginRoutedWorkflowEngine(
         forge_arm=_arm(forge=forge),
         forge_less_arm=_arm(forge=None),
+        tracker=None,
     )
 
     events = await _drive(engine, repo_url=FORGE_ORIGIN)
@@ -254,6 +381,7 @@ def test_a_forge_less_origin_gets_the_forge_less_arm() -> None:
     engine = OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,
         forge_less_arm=forge_less_arm,
+        tracker=None,
     )
 
     assert engine.arm_for(FILE_ORIGIN) is forge_less_arm
@@ -274,6 +402,7 @@ def test_everything_else_keeps_the_forge_arm(repo_url: str | None) -> None:
     engine = OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,
         forge_less_arm=forge_less_arm,
+        tracker=None,
     )
 
     assert engine.arm_for(repo_url) is forge_arm
@@ -283,6 +412,7 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
     """The composition root's own builder, not a hand-assembled analogue."""
     client = build_forge_client(config=AppConfig(github_token=FAKE_TOKEN))
     assert client is not None
+    tracker = RecordingScopeTracker()
     try:
         engine = build_workflow_engine(
             # The shared prompt fixture resolves its set for the reviewed
@@ -306,11 +436,16 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
             gate=PassThroughGate(),
             github_api=client,
             checkpointer=None,
+            tracker=tracker,
         )
 
         assert isinstance(engine, OriginRoutedWorkflowEngine)
         assert engine.arm_for(FILE_ORIGIN) is not engine.arm_for(FORGE_ORIGIN)
         assert engine.arm_for(None) is engine.arm_for(FORGE_ORIGIN)
+        ref = ScopeRef(kind=ScopeKind.PROJECT, key="configured-project")
+        with pytest.raises(ScopedExecutionUnavailableError, match="not implemented"):
+            await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
+        assert tracker.scope_reads == [ref]
     finally:
         await client.close()
 

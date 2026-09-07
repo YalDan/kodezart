@@ -376,6 +376,7 @@ async def _run(engine: RalphWorkflowEngine) -> list[object]:
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path=None,
             repo_url="https://github.com/o/r",

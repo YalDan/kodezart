@@ -27,6 +27,7 @@ COLLECTION_FIELDS = (
     "agent_identities",
     "teams",
     "queue_states",
+    "scope_labels",
     "workflow_states",
     "repos",
     "documents",
@@ -67,7 +68,7 @@ def test_the_two_scalars_alone_are_a_valid_config() -> None:
 
 @pytest.mark.parametrize("field", COLLECTION_FIELDS)
 def test_every_collection_field_defaults_empty(field: str) -> None:
-    """Eleven collections, one rule: absence has a workable meaning."""
+    """Every collection follows one rule: absence has a workable meaning."""
     value = getattr(minimal_config(), field)
     assert len(value) == 0
 

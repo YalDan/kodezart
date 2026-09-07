@@ -6,6 +6,7 @@ from pydantic import Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.scope import ScopeKind
 
 
 class RepoSourceRequest(CamelCaseModel):
@@ -52,6 +53,13 @@ class QueryRequest(RepoSourceRequest):
         return self
 
 
+class ScopeRefRequest(CamelCaseModel):
+    """Address a tracker scope without resolving its membership at submission."""
+
+    kind: ScopeKind
+    key: str = Field(min_length=1)
+
+
 class WorkflowRequest(RepoSourceRequest):
     """Request body for ``POST /api/v1/agent/workflow``.
 
@@ -71,6 +79,7 @@ class WorkflowRequest(RepoSourceRequest):
     """
 
     base_branch: str = "main"
+    scope: ScopeRefRequest | None = None
     base_spec: BaseSpec | None = None
     implied_base: BaseSpec | None = None
     permission_mode: Literal["plan", "bypassPermissions"] = "bypassPermissions"
@@ -84,3 +93,10 @@ class WorkflowRequest(RepoSourceRequest):
             "Write",
         ],
     )
+
+    @model_validator(mode="after")
+    def _check_trunk_base(self) -> Self:
+        if self.base_spec is None and not self.base_branch:
+            msg = "baseBranch must not be empty when baseSpec is absent"
+            raise ValueError(msg)
+        return self

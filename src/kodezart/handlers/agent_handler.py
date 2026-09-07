@@ -8,10 +8,13 @@ from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, JobQueue
 from kodezart.types.domain.agent import JobAcceptedEvent
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.requests.agent import QueryRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
+from kodezart.types.requests.agent import QueryRequest, WorkflowRequest
 
 
 class AgentHandler:
@@ -102,6 +105,37 @@ class AgentHandler:
                 yield event.model_dump(by_alias=True, exclude_none=True)
         except Exception as exc:
             yield await self._egress_error(exc)
+
+    async def submit_workflow(
+        self,
+        request: WorkflowRequest,
+        *,
+        lane: str,
+    ) -> JobRecord:
+        """Validate workflow input into domain values before it enters the queue."""
+        if self._queue is None:
+            msg = "Job queue not configured"
+            raise RuntimeError(msg)
+        scope = (
+            None
+            if request.scope is None
+            else ScopeRef(kind=request.scope.kind, key=request.scope.key)
+        )
+        submission = WorkflowSubmission(
+            prompt=request.prompt,
+            repo_path=request.repo_path,
+            repo_url=request.repo_url,
+            base_spec=(
+                request.base_spec
+                if request.base_spec is not None
+                else trunk_base(request.base_branch)
+            ),
+            implied_base=request.implied_base,
+            scope=scope,
+            permission_mode=request.permission_mode,
+            allowed_tools=request.allowed_tools,
+        )
+        return await self._queue.submit(lane=lane, request=submission)
 
     async def attach_job(
         self,

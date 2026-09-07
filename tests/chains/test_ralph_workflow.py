@@ -196,6 +196,7 @@ async def test_workflow_single_iteration_accepted() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -225,6 +226,7 @@ async def test_workflow_max_iterations_exhausted() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -254,6 +256,7 @@ async def test_workflow_streams_events_per_node() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -286,6 +289,7 @@ async def test_workflow_accepted_calls_merger() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -336,6 +340,7 @@ async def test_workflow_merge_failure_reports_error() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -367,6 +372,7 @@ async def test_workflow_merge_success_has_no_error() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -397,6 +403,7 @@ async def test_workflow_rejected_does_not_merge() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -438,6 +445,7 @@ async def test_concurrent_workflow_runs_isolated() -> None:
         return [
             e
             async for e in engine.run(
+                scope=None,
                 prompt=prompt,
                 repo_path="/tmp/fake",
                 repo_url=None,
@@ -469,6 +477,7 @@ async def test_quality_gate_receives_correct_params() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -503,6 +512,7 @@ async def test_workflow_run_rejects_acceptance_criteria_kwarg() -> None:
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
@@ -528,6 +538,7 @@ async def test_workflow_generates_criteria_before_loop() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -549,6 +560,7 @@ async def test_workflow_streams_criteria_event() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -572,6 +584,7 @@ async def test_workflow_criteria_event_before_iteration_event() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -706,6 +719,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
@@ -731,6 +745,7 @@ async def test_workflow_quality_gate_never_receives_empty_criteria() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -761,6 +776,7 @@ async def test_workflow_accepted_cleans_up_ralph_branch() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -791,6 +807,7 @@ async def test_workflow_rejected_does_not_clean_up() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -832,6 +849,7 @@ async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -863,6 +881,7 @@ async def test_generate_ticket_runs_in_order() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -892,6 +911,7 @@ async def test_generate_ticket_node_forwards_base_branch() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -946,6 +966,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -996,6 +1017,7 @@ async def test_quality_gate_receives_formatted_ticket() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -1018,6 +1040,7 @@ async def test_workflow_ticket_event_yielded() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -1068,6 +1091,7 @@ async def test_no_ticket_event_raises() -> None:
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
@@ -1232,6 +1256,7 @@ async def test_workflow_review_passes_opens_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1334,6 +1359,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1374,6 +1400,7 @@ async def test_workflow_ci_passes_completes() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1409,6 +1436,7 @@ async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1445,6 +1473,7 @@ async def test_workflow_no_pr_creator_skips_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1482,6 +1511,7 @@ async def test_workflow_no_ci_monitor_skips_ci() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1524,6 +1554,7 @@ async def test_workflow_rejected_skips_review() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1564,6 +1595,7 @@ async def test_workflow_complete_event_includes_pr_fields() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1645,6 +1677,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -1693,6 +1726,7 @@ async def test_workflow_ci_fails_budget_remaining_triggers_fix() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1805,6 +1839,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1854,6 +1889,7 @@ async def test_workflow_repo_url_none_with_protocols_skips_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -1895,6 +1931,7 @@ async def test_route_after_review_no_pr_creator_routes_complete() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -1930,6 +1967,7 @@ async def test_route_after_review_no_repo_url_routes_complete() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -1998,6 +2036,7 @@ async def test_route_after_ci_budget_remaining_routes_fix() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -2032,6 +2071,7 @@ async def test_workflow_persists_the_ticket_first_then_both_artifacts() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2070,6 +2110,7 @@ async def test_workflow_reports_artifacts_ignored_by_target() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2145,6 +2186,7 @@ async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2319,6 +2361,7 @@ async def test_a_run_killed_at_criteria_leaves_the_ticket_retrievable(
     events: list[AgentEvent] = []
     with pytest.raises(RuntimeError, match="provider is down"):
         async for event in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2360,6 +2403,7 @@ async def test_a_rate_limit_rejection_retries_the_node_instead_of_ending_the_run
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2391,6 +2435,7 @@ async def test_a_deterministic_empty_output_still_ends_the_run_on_one_attempt(
 
     with pytest.raises(NoStructuredOutputError) as excinfo:
         async for _ in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2422,6 +2467,7 @@ async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
 
     with pytest.raises(RateLimitedSoftFailureError) as excinfo:
         async for _ in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2466,6 +2512,7 @@ async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
     events = [
         event
         async for event in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2494,6 +2541,7 @@ async def test_workflow_cleans_artifacts_before_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url="https://github.com/owner/repo",
@@ -2520,6 +2568,7 @@ async def test_workflow_without_artifact_persister() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
@@ -2554,6 +2603,7 @@ async def test_workflow_success_cleans_backup_branches() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -2588,6 +2638,7 @@ async def test_workflow_rejected_skips_backup_cleanup() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -2621,6 +2672,7 @@ async def test_backup_cleanup_failure_does_not_block_complete() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -2675,6 +2727,7 @@ async def test_workflow_consolidation_event_emitted_post_loop() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -2727,6 +2780,7 @@ async def test_complete_event_final_commit_sha_sources_from_feature_tip_sha() ->
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -2762,6 +2816,7 @@ async def test_merge_to_feature_already_integrated_proceeds_to_review() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -2799,6 +2854,7 @@ async def test_merge_to_feature_divergent_routes_to_complete_with_merge_error() 
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -2836,6 +2892,7 @@ async def test_merge_to_feature_source_missing_raises() -> None:
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
@@ -2869,6 +2926,7 @@ async def test_review_against_ticket_renders_the_changeset_digest() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3068,6 +3126,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3148,6 +3207,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3235,6 +3295,7 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
     events: list[AgentEvent] = []
     with pytest.raises(StaleBaseError) as excinfo:
         async for event in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3432,6 +3493,7 @@ class TestCommentFailureContainment:
         return [
             event
             async for event in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url="https://github.com/owner/repo",
@@ -3580,6 +3642,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
@@ -3635,6 +3698,7 @@ async def test_terminal_event_always_carries_an_outcome() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3666,6 +3730,7 @@ async def test_terminal_outcome_merge_divergent_on_diverged_consolidation() -> N
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3690,6 +3755,7 @@ async def test_terminal_outcome_ci_passed_on_green_ci() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -3714,6 +3780,7 @@ async def test_terminal_outcome_ci_not_configured_when_ci_reports_none() -> None
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -3741,6 +3808,7 @@ async def test_terminal_outcome_loop_not_accepted_when_gate_rejects() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3771,6 +3839,7 @@ async def test_plateaued_run_reports_loop_plateaued_with_actionable_payload() ->
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3816,6 +3885,7 @@ async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3911,6 +3981,7 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3994,6 +4065,7 @@ async def _stalled_run(
     return [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=repo_url,
@@ -4173,6 +4245,7 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url="https://github.com/owner/repo",
@@ -4220,6 +4293,7 @@ async def _failing_run(
     return [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
@@ -4525,6 +4599,7 @@ async def _run_engine(executor: AgentExecutor) -> list[AgentEvent]:
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -4879,6 +4954,7 @@ async def _review_failure_round(
     return [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,

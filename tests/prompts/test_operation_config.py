@@ -120,7 +120,7 @@ def markdown_rows(heading: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
+def test_all_fields_are_present_with_the_stated_types() -> None:
     """Field-by-field census: exact equality, never a subset check.
 
     Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
@@ -137,6 +137,7 @@ def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
         "agent_identities",
         "teams",
         "queue_states",
+        "scope_labels",
         "workflow_states",
         "repos",
         "documents",
@@ -150,6 +151,7 @@ def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
     assert isinstance(config.operation_name, str)
     assert isinstance(config.workspace, str)
     assert isinstance(config.queue_states, dict)
+    assert isinstance(config.scope_labels, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
     assert config.initiatives[0].target_date == date(2026, 12, 31)
     assert config.repos[0].checks
@@ -323,6 +325,7 @@ def test_no_label_or_status_literal_lives_in_source() -> None:
     src = REPO_ROOT / "src" / "kodezart"
     labels = {
         *example_config().queue_states.values(),
+        *example_config().scope_labels.values(),
         *example_config().workflow_states.values(),
     }
     for path in src.rglob("*.py"):

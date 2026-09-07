@@ -37,6 +37,7 @@ from kodezart.domain.errors import (
     DuplicateWorkRefError,
     MergeConflictError,
     RateLimitError,
+    ScopeReadError,
     TransientAPIError,
     WorkspaceError,
 )
@@ -91,6 +92,7 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -120,8 +122,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
 )
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
-from kodezart.types.domain.workflow import RemediationRequest
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from tests.prompt_census import configured_investigation_cap
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
@@ -2255,6 +2256,9 @@ class FakeLinearMcpServer:
         teams: Sequence[str] = (),
         labels: Sequence[str] = (),
         team_labels: Mapping[str, Sequence[str]] | None = None,
+        project_labels: Sequence[str] = (),
+        initiative_labels: Sequence[str] = (),
+        label_page_size: int | None = None,
         statuses: Mapping[str, Sequence[str]] | None = None,
         state_types: Mapping[str, str] | None = None,
         actor: str = "fixture-actor",
@@ -2282,6 +2286,10 @@ class FakeLinearMcpServer:
         self.team_labels: dict[str, list[str]] = {
             container: list(names) for container, names in (team_labels or {}).items()
         }
+        #: Separate definition namespaces, never entity label assignments.
+        self.project_labels: list[str] = list(project_labels)
+        self.initiative_labels: list[str] = list(initiative_labels)
+        self.label_page_size = label_page_size
         #: The workflow-state vocabulary each team offers, keyed by team.
         #: Per team rather than per workspace because that is what the
         #: backend holds: the listing tool takes a team and answers for it
@@ -2664,7 +2672,48 @@ class FakeLinearMcpServer:
                 self._label_entry(name, container)
                 for name in self.team_labels.get(container, [])
             )
-        return {"labels": entries, "hasNextPage": False}
+        return self._label_page(entries, arguments)
+
+    def _label_page(
+        self,
+        entries: Sequence[Mapping[str, object]],
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Synthetic continuation pages under the declared list contract."""
+        name = arguments.get("name")
+        selected = [entry for entry in entries if name is None or entry["name"] == name]
+        start = int(str(arguments.get("cursor", 0)))
+        size = self.label_page_size
+        limit = arguments.get("limit")
+        if isinstance(limit, int):
+            size = limit if size is None else min(size, limit)
+        end = len(selected) if size is None else start + size
+        more = end < len(selected)
+        result: dict[str, object] = {
+            "labels": selected[start:end],
+            "hasNextPage": more,
+        }
+        if more:
+            result["cursor"] = str(end)
+        return result
+
+    def _tool_list_project_labels(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._label_page(
+            [self._label_entry(name, "project") for name in self.project_labels],
+            arguments,
+        )
+
+    def _tool_list_initiative_labels(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._label_page(
+            [self._label_entry(name, "initiative") for name in self.initiative_labels],
+            arguments,
+        )
 
     def _label_entry(self, name: str, container: str | None) -> Mapping[str, object]:
         """One label entry, its id distinct per CONTAINER rather than per name.
@@ -2711,6 +2760,33 @@ class FakeLinearMcpServer:
             raise LookupError(msg)
         held.append(name)
         return {"name": name}
+
+    def _tool_save_project_label(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Creation only: the adapter has no reason to update a definition."""
+        if "id" in arguments:
+            msg = "scope mapping must preserve existing project label definitions"
+            raise AssertionError(msg)
+        name = str(arguments["name"])
+        if name in self.project_labels:
+            msg = f"fake project label namespace already carries {name!r}"
+            raise LookupError(msg)
+        self.project_labels.append(name)
+        # Deliberately no guessed create response; the adapter must re-list.
+        return {}
+
+    def _tool_create_initiative_label(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        name = str(arguments["name"])
+        if name in self.initiative_labels:
+            msg = f"fake initiative label namespace already carries {name!r}"
+            raise LookupError(msg)
+        self.initiative_labels.append(name)
+        return {}
 
     def _tool_list_issue_statuses(
         self,
@@ -2795,10 +2871,13 @@ class FakeTrackerPort:
         self,
         *,
         issues: Sequence[TrackerIssue] = (),
+        scope_containers: Sequence[ScopeContainer] = (),
+        scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         document_titles: Mapping[str, str] | None = None,
         known_identifiers: Sequence[str] = (),
+        scope_label_identifiers: Sequence[str] = (),
         recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         recorded_base_specs: Mapping[str, BaseSpec] | None = None,
         recorded_repositories: Mapping[str, str] | None = None,
@@ -2808,6 +2887,12 @@ class FakeTrackerPort:
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
             issue.issue_key: issue for issue in issues
+        }
+        self.scope_containers: dict[ScopeRef, ScopeContainer] = {
+            container.ref: container for container in scope_containers
+        }
+        self.scope_memberships: dict[ScopeRef, tuple[str, ...]] = {
+            ref: tuple(keys) for ref, keys in (scope_memberships or {}).items()
         }
         self.recorded_work_refs: dict[str, list[WorkRef]] = {
             key: list(value) for key, value in (recorded_work_refs or {}).items()
@@ -2873,6 +2958,9 @@ class FakeTrackerPort:
         #: one of them would leave the other untestable.
         self.document_titles: dict[str, str] = dict(document_titles or {})
         self.known_identifiers: set[str] = set(known_identifiers)
+        #: A complete scope definition spans every label namespace; knowing
+        #: the same spelling as a user or queue state cannot resolve it.
+        self.scope_label_identifiers: set[str] = set(scope_label_identifiers)
         #: Every container each INSTATED value is defined in, ``None`` being
         #: the workspace itself.  A SET per value, because one name is
         #: defined once per container and a two-board operation carries its
@@ -2880,7 +2968,8 @@ class FakeTrackerPort:
         #: knows about is workspace-level, which is what a listing carrying
         #: no container field reports.
         self.mapping_containers: dict[str, set[str | None]] = {
-            identifier: {None} for identifier in self.known_identifiers
+            identifier: {None}
+            for identifier in self.known_identifiers | self.scope_label_identifiers
         }
         self._clock: Callable[[], datetime] = clock
         self._sequence: int = 0
@@ -2954,6 +3043,61 @@ class FakeTrackerPort:
         await asyncio.sleep(0)
         self.issue_reads.append(issue_key)
         return self.issues[issue_key]
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        if ref.kind is ScopeKind.ISSUE:
+            keys = [ref.key]
+            selected: dict[str, TrackerIssue] = {}
+            for key in keys:
+                if key in selected:
+                    continue
+                if key not in self.issues:
+                    raise ScopeReadError("issue is missing", ref=ref)
+                selected[key] = await self.read_issue(issue_key=key)
+                keys.extend(
+                    issue.issue_key
+                    for issue in self.issues.values()
+                    if issue.parent_key == key
+                )
+        else:
+            if ref not in self.scope_containers and ref not in self.scope_memberships:
+                raise ScopeReadError("container is missing", ref=ref)
+            selected = {}
+            for key in self.scope_memberships.get(ref, ()):
+                if key not in self.issues:
+                    raise ScopeReadError("scope member is missing", ref=ref)
+                if key not in selected:
+                    selected[key] = await self.read_issue(issue_key=key)
+        for start in selected:
+            path: set[str] = set()
+            current: str | None = start
+            while current is not None and current in selected:
+                if current in path:
+                    raise ScopeReadError("issue parent cycle", ref=ref)
+                path.add(current)
+                current = selected[current].parent_key
+        return tuple(selected.values())
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        if ref.kind is ScopeKind.ISSUE:
+            raise ScopeReadError(
+                "issue metadata must be read through read_issue", ref=ref
+            )
+        if ref not in self.scope_containers:
+            raise ScopeReadError("container metadata is missing", ref=ref)
+        seen: set[ScopeRef] = set()
+        ancestor: ScopeRef | None = ref
+        while ancestor is not None:
+            if ancestor in seen:
+                raise ScopeReadError("container parent cycle", ref=ref)
+            seen.add(ancestor)
+            if ancestor not in self.scope_containers:
+                raise ScopeReadError("container parent is missing", ref=ref)
+            ancestor = self.scope_containers[ancestor].parent
+        container = self.scope_containers[ref]
+        if not container.url:
+            raise ScopeReadError("container URL was not reported", ref=ref)
+        return container
 
     async def create_issue(
         self,
@@ -3185,9 +3329,23 @@ class FakeTrackerPort:
         refs: Sequence[MappingRef],
     ) -> Sequence[MappingRef]:
         await asyncio.sleep(0)
-        return tuple(
-            ref for ref in refs if ref.identifier not in self.known_identifiers
-        )
+        unresolved: list[MappingRef] = []
+        for ref in refs:
+            if ref.kind is MappingKind.SCOPE_LABEL:
+                identifier = ref.identifier
+                if (
+                    identifier is None
+                    or identifier not in self.scope_label_identifiers
+                    or ref.scope is not None
+                    or any(
+                        container is not None
+                        for container in self.mapping_containers.get(identifier, set())
+                    )
+                ):
+                    unresolved.append(ref)
+            elif ref.identifier not in self.known_identifiers:
+                unresolved.append(ref)
+        return tuple(unresolved)
 
     async def ensure_mappings(
         self,
@@ -3213,6 +3371,9 @@ class FakeTrackerPort:
                 )
             if ref.kind is MappingKind.DOCUMENT:
                 outcomes.append(self._ensure_document(ref))
+                continue
+            if ref.kind is MappingKind.SCOPE_LABEL:
+                outcomes.append(self._ensure_scope_label(ref))
                 continue
             identifier = ref.identifier
             if identifier is None:
@@ -3258,6 +3419,34 @@ class FakeTrackerPort:
                 ),
             )
         return tuple(outcomes)
+
+    def _ensure_scope_label(self, ref: MappingRef) -> MappingOutcome:
+        identifier = ref.identifier
+        if identifier is None or ref.scope is not None:
+            raise TrackerEnsureConflictError(
+                "a scope label requires its configured identifier and workspace scope",
+                entry=ref.describe(),
+            )
+        held = sorted(
+            repr(container)
+            for container in self.mapping_containers.get(identifier, set())
+            if container is not None
+        )
+        if held:
+            raise TrackerEnsureConflictError(
+                "a workspace scope label conflicts with an existing team label; "
+                f"found {', '.join(held)}",
+                entry=ref.describe(),
+            )
+        action = (
+            EnsureAction.ADOPTED
+            if identifier in self.scope_label_identifiers
+            else EnsureAction.CREATED
+        )
+        self.scope_label_identifiers.add(identifier)
+        self.known_identifiers.add(identifier)
+        self.mapping_containers.setdefault(identifier, set()).add(None)
+        return MappingOutcome(ref=ref, action=action, identifier=identifier)
 
     def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
         """The document arm of the ensure contract, held identically here.
@@ -3394,14 +3583,14 @@ class FakeJobQueue:
         states: Mapping[str, JobState] | None = None,
         events: Sequence[AgentEvent] = (),
     ) -> None:
-        self.submissions: list[tuple[str, WorkflowRequest]] = []
+        self.submissions: list[tuple[str, WorkflowSubmission]] = []
         self.records: dict[str, JobRecord] = {}
         self.attached: list[str] = []
         self._states: dict[str, JobState] = dict(states or {})
         self._events: tuple[AgentEvent, ...] = tuple(events)
         self._sequence: int = 0
 
-    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
         await asyncio.sleep(0)
         self._sequence += 1
         job_id = f"job-{self._sequence:04d}"
