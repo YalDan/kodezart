@@ -448,3 +448,66 @@ async def test_cancellation_during_acquisition_must_recover_owned_workspace(
         await task
     assert released == ["/tmp/created-workspace"]
     assert not runner.calls
+
+
+@pytest.mark.parametrize("when", ["before", "during"])
+@pytest.mark.parametrize("kind", ["tracked", "staged", "untracked", "clean", "ignored"])
+async def test_real_git_workspace_integrity_for_pinned_observation(
+    setup, tmp_path, monkeypatch, when, kind
+):
+    import subprocess
+
+    from kodezart.adapters.subprocess_git_service import SubprocessGitService
+
+    def command(*args):
+        return subprocess.check_output(
+            ["git", *args], cwd=tmp_path, stderr=subprocess.STDOUT, text=True
+        ).strip()
+
+    command("init")
+    command("config", "user.email", "fixture@example.invalid")
+    command("config", "user.name", "Fixture")
+    tracked = tmp_path / "evidence.txt"
+    tracked.write_text("committed evidence\n")
+    (tmp_path / ".gitignore").write_text("generated/\n")
+    command("add", "evidence.txt", ".gitignore")
+    command("commit", "-m", "fixture")
+    head = command("rev-parse", "HEAD")
+    command("checkout", "--detach", head)
+    build, runner, git, _, workspace, _ = setup
+    native = SubprocessGitService(remote="configured-remote")
+    git._remote_branch_shas["ordinary-name"] = head
+    monkeypatch.setattr(git, "current_sha", native.current_sha)
+    monkeypatch.setattr(git, "has_changes", native.has_changes)
+    monkeypatch.setattr(workspace, "acquire", AsyncMock(return_value=str(tmp_path)))
+
+    async def dirty():
+        if kind == "clean":
+            return
+        if kind == "ignored":
+            generated = tmp_path / "generated"
+            generated.mkdir()
+            (generated / "output.txt").write_text("test output\n")
+            assert not await native.has_changes(str(tmp_path))
+            return
+        path = tracked if kind != "untracked" else tmp_path / "extra-evidence.txt"
+        path.write_text("evidence not present in the selected commit\n")
+        if kind == "staged":
+            command("add", "evidence.txt")
+        assert command("rev-parse", "HEAD") == head
+        assert await native.has_changes(str(tmp_path))
+
+    if when == "before":
+        await dirty()
+    else:
+        runner.during = dirty
+    if kind in {"clean", "ignored"}:
+        observation = await build().verify(REQUEST)
+        assert observation.judgment.verdict is AuditVerdict.HOLDS
+        assert observation.head_sha == head
+    else:
+        with pytest.raises(AuditClaimReadError, match="workspace"):
+            await build().verify(REQUEST)
+    assert workspace.calls[-1] == ("release", str(tmp_path))
+    if when == "before" and kind not in {"clean", "ignored"}:
+        assert not runner.calls
