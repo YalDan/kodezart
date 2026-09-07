@@ -6,12 +6,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from kodezart.core.protocols import CheckChainRunner, GitService
+from kodezart.domain import check_chain
 from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
-from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.operation import RepoEntry, check_chain_failures
 from kodezart.types.domain.union import (
     UnionCompositionResult,
     UnionLaneHead,
     UnionMergeConflict,
+    UnionRemediationEntry,
     UnionScratchObservation,
 )
 
@@ -68,6 +70,13 @@ class UnionComposition:
                 scratch_path=worktree,
                 scratch_sha=base_sha,
             )
+            failures = check_chain_failures(repo.checks)
+            if failures:
+                raise CheckChainExecutionError(
+                    cwd=worktree,
+                    step_name=None,
+                    reason="; ".join(failures),
+                )
             created = False
             try:
                 _, cancelled = await _finish_owned(
@@ -117,11 +126,24 @@ class UnionComposition:
                         reason="no check chain is declared",
                     )
                 checks = await self._runner.run_chain(cwd=worktree, steps=repo.checks)
+                classification = check_chain.classify_check_failures(
+                    repo.checks,
+                    checks.failed_step_names,
+                )
+                remediation = (
+                    UnionRemediationEntry(
+                        root_step_names=classification.roots,
+                        cascade_step_names=classification.cascades,
+                    )
+                    if classification.roots
+                    else None
+                )
                 scratch_sha = await self._git.current_sha(worktree)
                 return UnionCompositionResult(
                     **snapshot.model_dump(exclude={"scratch_sha"}),
                     scratch_sha=scratch_sha,
                     checks=checks,
+                    remediation=remediation,
                 )
             finally:
                 if created or self._git.is_repo(worktree):
