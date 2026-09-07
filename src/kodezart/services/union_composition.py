@@ -28,6 +28,10 @@ async def _finish_owned[T](task: asyncio.Task[T]) -> tuple[T, bool]:
             if task.cancelled():
                 raise
             cancelled = True
+        except Exception:
+            if cancelled:
+                raise asyncio.CancelledError from None
+            raise
 
 
 class UnionComposition:
@@ -110,7 +114,7 @@ class UnionComposition:
                             raise
                         return UnionCompositionResult(
                             **snapshot.model_dump(exclude={"scratch_sha"}),
-                            scratch_sha=await self._git.current_sha(worktree),
+                            scratch_sha=await self._scratch_sha(worktree),
                             checks=None,
                             merge_conflict=UnionMergeConflict(
                                 lane_key=head.lane_key,
@@ -138,7 +142,7 @@ class UnionComposition:
                     if classification.roots
                     else None
                 )
-                scratch_sha = await self._git.current_sha(worktree)
+                scratch_sha = await self._scratch_sha(worktree)
                 return UnionCompositionResult(
                     **snapshot.model_dump(exclude={"scratch_sha"}),
                     scratch_sha=scratch_sha,
@@ -154,3 +158,11 @@ class UnionComposition:
                     )
                     if cancelled:
                         raise asyncio.CancelledError
+
+    async def _scratch_sha(self, worktree: str) -> str:
+        sha, cancelled = await _finish_owned(
+            asyncio.create_task(self._git.current_sha(worktree))
+        )
+        if cancelled:
+            raise asyncio.CancelledError
+        return sha
