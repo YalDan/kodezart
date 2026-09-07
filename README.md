@@ -434,8 +434,9 @@ founder's own boards and codebases), and shaped by that setup's rulings:
 - **One record row per run, and it is also the window.** Each run kind
   (`fire_prep`, `grooming`, `fire`) declares one `[records.<kind>]`
   destination. The session's own row IS the record — the runner verifies
-  one exists and backfills a bare structural line only when the session
-  skipped it — and the newest row's start time is the next pass's
+  the row and fills the declared structured Fire Log properties, preserving
+  session prose. Scheduled passes retain their structural line contract,
+  and the newest row's start time is the next pass's
   sweep-window boundary. There is no separate checkpoint document.
 - **Per-key engines.** `KODEZART_SESSION_MODELS` (env, JSON) pins named
   prompt keys' sessions to an engine — e.g. every fire-path and utility
@@ -589,11 +590,24 @@ id = "<the document id>"
 
 Do the same for the run-record destinations under `[records.<kind>]`, one per
 run kind you want recorded — `fire_prep`, `grooming` or `fire`; any other key
-is refused at load. A record declared `append_only` is never rewritten, only
-added to.
+is refused at load. A record declared `append_only` is retained; scheduled
+records are only added to.
 
 *Observable result:* a `[documents.checkpoint]` block and one
 `[records.<kind>]` block per recorded run kind, each naming its `system`.
+
+A knowledge Fire Log requires an explicit outcome select mapping. Each key
+names its observed source, for example `"workflow.pr_opened" = "PR opened"`
+or `"run.failed" = "Failed"` under `[records.fire.outcome_mapping.options]`;
+`[records.fire.outcome_mapping]` declares the destination `property` name.
+These are example options, not an assumed destination vocabulary. A completed
+runner does not imply a PR: declare workflow outcomes individually when that
+is the distinction the destination records. Unmapped outcomes, conflicting
+matches, wrong column types, and absent destination options refuse with
+`mapping_invalid` before writing. The sink rereads the live select options
+at this boundary. A session-created row with the exact run identity is filled
+in place; its narrative is preserved. Duplicate identity rows refuse with
+`identity_conflict` instead of selecting one arbitrarily.
 
 **5. Write the operation config.** Copy
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated

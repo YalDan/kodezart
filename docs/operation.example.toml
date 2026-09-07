@@ -286,6 +286,17 @@ name = "Example Grooming Log"
 id = "example-grooming-log-destination-id"
 append_only = true
 
+# A declared knowledge fire destination additionally requires an explicit
+# outcome select mapping. Source-qualified keys preserve workflow semantics:
+# [records.fire.outcome_mapping]
+# property = "Outcome"
+# [records.fire.outcome_mapping.options]
+# "workflow.pr_opened" = "PR opened"
+# "run.failed" = "Failed"
+# Declare every outcome this destination accepts, using its actual options.
+# No generic runner-completed -> PR-created equivalence is implied.
+# Missing mappings/options or conflicting observed matches refuse the write.
+
 # Reference material held in the knowledge store, addressed by key. Every
 # value here belongs to the knowledge system by construction, which is what
 # a template naming it must say.

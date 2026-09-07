@@ -364,6 +364,38 @@ class DocumentEntry(OperationModel):
         return self
 
 
+class RecordOutcomeSource(StrEnum):
+    """Which observed outcome vocabulary a destination column represents."""
+
+    RUN = "run"
+    WORKFLOW = "workflow"
+
+
+class RecordOutcomeMapping(OperationModel):
+    """An explicit semantic source and its destination select options."""
+
+    property: str = Field(min_length=1)
+    options: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _nonempty_names(self) -> Self:
+        if not self.property.strip():
+            raise ValueError("outcome property must be nonempty")
+        for key, value in self.options.items():
+            source, separator, outcome = key.partition(".")
+            if (
+                source not in RecordOutcomeSource
+                or not separator
+                or not outcome.strip()
+                or not value.strip()
+            ):
+                raise ValueError(
+                    "outcome mappings require run.<value> or workflow.<value> "
+                    "and a nonempty destination option"
+                )
+        return self
+
+
 class RecordDestination(OperationModel):
     """A WRITE-side destination a pass records a row to.
 
@@ -382,6 +414,7 @@ class RecordDestination(OperationModel):
     name: str = Field(min_length=1)
     id: str
     append_only: bool
+    outcome_mapping: RecordOutcomeMapping | None = None
 
 
 class Initiative(OperationModel):

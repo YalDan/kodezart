@@ -675,7 +675,7 @@ class TestNotionRecordSink:
 
         await self._sink(caller).holds_record(
             destination=_destination(DocumentSystem.KNOWLEDGE),
-            record=_record(RunKind.FIRE, name="K-1", started_at=LATER),
+            record=_record(RunKind.GROOMING, name="K-1", started_at=LATER),
         )
 
         (_, arguments) = caller.calls[1]
@@ -688,7 +688,7 @@ class TestNotionRecordSink:
             },
             {
                 "property": "Run",
-                "title": {"starts_with": "fire — K-1 @ 2026-09-01T12:58:00Z"},
+                "title": {"starts_with": "grooming — K-1 @ 2026-09-01T12:58:00Z"},
             },
         ]
 

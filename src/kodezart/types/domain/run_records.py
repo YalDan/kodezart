@@ -19,6 +19,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict
 
 from kodezart.types.domain.operation import RunKind
+from kodezart.types.domain.outcome import WorkflowOutcome
 
 #: How every stamp inside a record is spelled.  One format, because a row
 #: is FOUND by the string it carries: two spellings of one instant are two
@@ -59,7 +60,7 @@ class RunRecordResult(StrEnum):
 class RunRecordFailure(StrEnum):
     """Why a run's declared destination did not take its record.
 
-    Four members because the four have four different remedies, and the
+    Transport failures retain their separate remedies, and the
     measured boot's record failures named none of them: the transport
     said the session was GONE (reopen it, read the server's stderr), the
     request was written and never ANSWERED (leave the row to the next
@@ -67,13 +68,16 @@ class RunRecordFailure(StrEnum):
     it twice, KOD-305), the destination's system ANSWERED and would not
     take the row (fix the payload or the destination), or this process
     holds no sink for the declared system at all (fix the wiring, or stop
-    declaring it).
+    declaring it). Configuration and duplicate run identities have their own
+    refusals because neither is repaired by retrying the same write.
     """
 
     SESSION_CLOSED = "session_closed"
     UNANSWERED = "unanswered"
     VENDOR_REFUSED = "vendor_refused"
     SINK_UNWIRED = "sink_unwired"
+    MAPPING_INVALID = "mapping_invalid"
+    IDENTITY_CONFLICT = "identity_conflict"
 
 
 class RunIdentity(BaseModel):
@@ -120,6 +124,7 @@ class RunRecord(BaseModel):
     duration_seconds: float
     started_at: datetime
     recorded_at: datetime
+    workflow_outcome: WorkflowOutcome | None = None
 
     def identity(self) -> RunIdentity:
         """Which run this record is OF, as the run's own prompt knew it."""
