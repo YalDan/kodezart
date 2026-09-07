@@ -1,8 +1,11 @@
 """Fresh current-head claim judgments, before full sweep publication."""
 
+import asyncio
+
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import soft_failure
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
@@ -92,12 +95,18 @@ class AuditClaimVerifier:
         prompt = self._prompts.template_for(key).render(
             {"criterion_key": criterion.issue_key, "head_sha": head, "check": check}
         )
-        workspace = await self._workspace.acquire(
-            repo_path=repository,
-            ref=head,
-            create_branch=False,
+        workspace, cancelled = await finish_owned(
+            asyncio.create_task(
+                self._workspace.acquire(
+                    repo_path=repository,
+                    ref=head,
+                    create_branch=False,
+                )
+            )
         )
         try:
+            if cancelled:
+                raise asyncio.CancelledError
             if await self._git.current_sha(workspace) != head:
                 raise AuditClaimReadError(
                     "the audit workspace is not at the selected head"
@@ -158,4 +167,8 @@ class AuditClaimVerifier:
                 check=check,
             )
         finally:
-            await self._workspace.release(workspace)
+            _, cancelled = await finish_owned(
+                asyncio.create_task(self._workspace.release(workspace))
+            )
+            if cancelled:
+                raise asyncio.CancelledError

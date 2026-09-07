@@ -391,3 +391,60 @@ async def test_actual_agent_service_forwards_fresh_dispatch_and_detached_workspa
     assert call["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA
     assert call["cwd"] == "/tmp/fake-workspace"
     assert "OLD_RED_VERDICT" not in call["prompt"]
+
+
+async def test_repeated_cancellation_must_settle_release(setup, monkeypatch):
+    build, runner, _, _, workspace, _ = setup
+    running = asyncio.Event()
+    releasing = asyncio.Event()
+    settle = asyncio.Event()
+    released = []
+
+    async def during():
+        running.set()
+        await asyncio.Future()
+
+    async def release(path):
+        releasing.set()
+        await settle.wait()
+        released.append(path)
+
+    runner.during = during
+    monkeypatch.setattr(workspace, "release", release)
+    task = asyncio.create_task(build().verify(REQUEST))
+    await asyncio.wait_for(running.wait(), 2)
+    task.cancel()
+    await asyncio.wait_for(releasing.wait(), 2)
+    task.cancel()
+    settle.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert released == ["/tmp/fake-workspace"]
+
+
+async def test_cancellation_during_acquisition_must_recover_owned_workspace(
+    setup, monkeypatch
+):
+    build, runner, _, _, workspace, _ = setup
+    created = asyncio.Event()
+    acquired = asyncio.Event()
+    released = []
+
+    async def acquire(**kwargs):
+        created.set()
+        await acquired.wait()
+        return "/tmp/created-workspace"
+
+    async def release(path):
+        released.append(path)
+
+    monkeypatch.setattr(workspace, "acquire", acquire)
+    monkeypatch.setattr(workspace, "release", release)
+    task = asyncio.create_task(build().verify(REQUEST))
+    await asyncio.wait_for(created.wait(), 2)
+    task.cancel()
+    acquired.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert released == ["/tmp/created-workspace"]
+    assert not runner.calls

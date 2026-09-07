@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from kodezart.core.owned_tasks import finish_owned as _finish_owned
 from kodezart.core.protocols import CheckChainRunner, GitService
 from kodezart.domain import check_chain
 from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
@@ -16,22 +17,6 @@ from kodezart.types.domain.union import (
     UnionRemediationEntry,
     UnionScratchObservation,
 )
-
-
-async def _finish_owned[T](task: asyncio.Task[T]) -> tuple[T, bool]:
-    """Settle a Git operation before removing the tree it may still use."""
-    cancelled = False
-    while True:
-        try:
-            return await asyncio.shield(task), cancelled
-        except asyncio.CancelledError:
-            if task.cancelled():
-                raise
-            cancelled = True
-        except Exception:
-            if cancelled:
-                raise asyncio.CancelledError from None
-            raise
 
 
 class UnionComposition:
