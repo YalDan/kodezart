@@ -91,10 +91,9 @@ Each of these needs an action from a v0.1 operator or client; the steps are in
   `ArtifactPersistStatus`, `QualityGate.run` takes `base_spec`,
   `work_base_ref` and `repo_visibility`, and `WorkflowEngine.run` takes
   `cache_key` and `base_spec` instead of `base_branch`.
-- `make check` now needs Node.js on `PATH` (CI installs Node 22) and a
-  full-history clone, because `tests/workflows` executes
-  `.claude/workflows/kodezart-investigate.js` and `tests/test_additivity_guard.py`
-  reads pinned commits; both fail rather than skip.
+- `make check` now needs Node.js on `PATH` (CI installs Node 22), because
+  `tests/workflows` executes `.claude/workflows/kodezart-investigate.js`; it
+  fails rather than skips.
 - pytest treats every warning as an error (`filterwarnings = ["error"]`), so a
   dependency `DeprecationWarning` now fails the suite.
 
