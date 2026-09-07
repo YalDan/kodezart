@@ -615,6 +615,9 @@ class LinearMcpTracker:
         """The full issue — body, state, relations, parent, assignee."""
         return self._to_issue(await self._read_issue_wire(issue_key))
 
+    def require_criterion_reads(self) -> None:
+        """Supported: read_criteria hydrates the issue's criterion children."""
+
     def require_body_digest_stability(self) -> None:
         """Supported: full-read body bytes alone determine this adapter's digest."""
 

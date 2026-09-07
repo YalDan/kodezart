@@ -101,6 +101,13 @@ hashes those exact UTF-8 body bytes; timestamps, comments, labels and workflow
 state do not participate. Each surface changes independently, and replaying
 an unchanged body preserves its digest.
 
+Tracker boot first requires `require_criterion_reads`. An adapter declaring
+that criterion-child reads are unavailable raises `CriterionReadCapabilityError`
+with its adapter identity and the `criterion_reads` capability. Boot closes
+the opened transport before mapping reconciliation or execution can start.
+The declaration itself performs no writes or lease acquisition. Scope-walker
+dispatch remains a separate unfinished consumer of this mandatory boot boundary.
+
 Tracker boot calls the required `require_body_digest_stability` contract before
 mapping reconciliation. An adapter that cannot guarantee those semantics
 raises `BodyDigestCapabilityError`, naming `body_digest_stability`, and boot

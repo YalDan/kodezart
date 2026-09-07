@@ -3217,6 +3217,9 @@ class FakeTrackerPort:
         self.issue_reads.append(issue_key)
         return self.issues[issue_key]
 
+    def require_criterion_reads(self) -> None:
+        """Supported: the fake reads independently stored criterion children."""
+
     def require_body_digest_stability(self) -> None:
         """The fake's revision reads derive their digest from the body alone."""
 

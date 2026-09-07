@@ -684,6 +684,15 @@ class TrackerPort(Protocol):
         """The full issue — body, state, relations, parent, assignee."""
         ...
 
+    def require_criterion_reads(self) -> None:
+        """Require criterion-child reads before boot can enable execution.
+
+        Raise CriterionReadCapabilityError naming this adapter if absent.
+        This declaration never acquires leases or performs tracker writes.
+        It is mandatory, not a choice of a weaker criteria carrier.
+        """
+        ...
+
     def require_body_digest_stability(self) -> None:
         """Declare the required body-revision guarantee, or refuse boot.
 
