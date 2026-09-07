@@ -264,7 +264,15 @@ async def test_inflight_changes_and_failed_sessions_never_return_observation(
         runner._events = []
         error = NoStructuredOutputError
     elif damage == "error":
-        runner._events[0] = result_event(subtype="error", is_error=True)
+        runner._events[0] = result_event(
+            subtype="error",
+            is_error=True,
+            structured_output={
+                "criterionKey": CHILD,
+                "verdict": "holds",
+                "evidence": "not a successful session",
+            },
+        )
         error = NoStructuredOutputError
     elif damage == "cancel":
         error = asyncio.CancelledError
@@ -345,3 +353,41 @@ async def test_runner_double_records_stream_session_identity():
     ):
         pass
     assert runner.calls[0]["session_id"] == "writer-session"
+
+
+async def test_actual_agent_service_forwards_fresh_dispatch_and_detached_workspace(
+    setup, tracker, monkeypatch
+):
+    from kodezart.services.agent_service import AgentService
+    from tests.fakes import FakeAgentExecutor
+
+    _, runner, git, cache, workspace, _ = setup
+    acquire = AsyncMock(wraps=workspace.acquire)
+    monkeypatch.setattr(workspace, "acquire", acquire)
+    executor = FakeAgentExecutor(runner._events)
+    service = AgentService(
+        executor=executor, workspace=workspace, git_base_url="https://forge.invalid"
+    )
+    verifier = AuditClaimVerifier(
+        tracker=tracker,
+        records=LaneRecordReader(tracker=tracker, operation=OPERATION),
+        cache=cache,
+        git=git,
+        workspace=workspace,
+        runner=service,
+        prompts=load_registry(default_set=V5_SET),
+        skills=SUPPRESS_ALL_SKILLS,
+        config=AppConfig(git_remote="configured-remote"),
+    )
+    observation = await verifier.verify(REQUEST)
+    assert observation.judgment.verdict is AuditVerdict.HOLDS
+    acquire.assert_awaited_once_with(
+        repo_path="/tmp/fake-cache", ref=HEAD, create_branch=False
+    )
+    (call,) = executor.calls
+    assert call["session_id"] is None
+    assert call["permission_mode"] == EVAL_PERMISSION_MODE
+    assert call["allowed_tools"] == list(EVAL_TOOLS)
+    assert call["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA
+    assert call["cwd"] == "/tmp/fake-workspace"
+    assert "OLD_RED_VERDICT" not in call["prompt"]
