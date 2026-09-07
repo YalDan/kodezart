@@ -85,11 +85,14 @@ One semaphore per coordinator limits concurrent watches using
 its slot. The existing CI poll budgets remain adapter configuration.
 
 A completed red now reaches the existing structural classifier. The separate
-`CIObservationReader` returns the original watch's commit SHA, verdict and
-failing names, using the native check run's `head_sha` from the
+`CIObservationReader` returns the original watch's commit SHA and verdict,
+using the native check run's `head_sha` from the
 [GitHub Checks response](https://docs.github.com/en/rest/checks/runs#list-check-runs-for-a-git-reference).
-It performs no second query: a moving branch cannot replace the original
-failing set. Missing or mixed commit identities, incomplete or nonterminal
+The existing `failed_check_names` reads the original branch ref from those
+same retained bytes, then reads each requested rerun attempt. Both classifier
+comparisons use that one failing-set reader. Neither original read performs
+another query, so a moving branch cannot replace the original failing set.
+Missing or mixed commit identities, incomplete or nonterminal
 sets, and absent observations raise `CheckObservationError`. Each async task
 owns its observations; starting another watch clears the previous result
 before that new watch can fail or be canceled. The normal monitor retains its

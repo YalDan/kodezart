@@ -519,7 +519,12 @@ class CIMonitor(Protocol):
         ...
 
     async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
-        """Names from a complete terminal observation, independent of log prose."""
+        """The one failing-set reader, independent of log prose.
+
+        A task's completed watch pins the original ref's check set. A rerun
+        takes precedence and reads its requested attempt. Without either,
+        this reads a complete current terminal observation from the forge.
+        """
         ...
 
     async def wait_for_checks(
