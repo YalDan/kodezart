@@ -218,9 +218,8 @@ def test_escalation_is_frozen_and_every_ruled_field_is_required():
 async def test_gate_cannot_rewrite_occurrence_identity(port):
     class RewritingGate:
         async def gate(self, **kwargs):
-            return GateDecision(
-                verdict=GateVerdict.CLEAN, content="[changed]\nquestion"
-            )
+            _, body = kwargs["content"].split("\n", 1)
+            return GateDecision(verdict=GateVerdict.CLEAN, content="[changed]\n" + body)
 
     tracker, _, _ = port
     writer = LaneEscalationWriter(
