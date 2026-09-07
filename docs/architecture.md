@@ -364,3 +364,21 @@ config.
 > replacement for the configurable dict pattern. The codebase pins
 > `langgraph>=0.2.0` and does not use `config_schema`. This pattern may need
 > migration in future LangGraph versions.
+
+## Run-shape observations
+
+`RunAlarm` is a frozen observation value with exactly one subject, one signal,
+ordered nonempty readings, an optional threshold bound, and the raising
+commit and holder. It has no diagnosis, remediation, severity or message
+field. Readings retain source references and verbatim values, including
+empty values; commit references remain opaque.
+
+The subject model validates scope, lane, issue, criterion, surface and
+escalation addresses. A criterion member is its own tracker sub-issue key,
+carried without parsing parent text. A surface member uses
+`surface_alarm_member_id(WritableSurface(...))`: canonical JSON preserves
+the complete address inside the declared string member field, so equivalent
+addresses cannot create different alarm identities through formatting.
+The alarm vocabulary and payload validation are available independently of
+signal computation, supervisor scheduling and leased alarm writes; those
+consumers are not enabled by constructing a model.
