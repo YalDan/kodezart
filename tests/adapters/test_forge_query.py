@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from kodezart.core.protocols import ForgeQuery
-from kodezart.domain.errors import ForgeAPIError
+from kodezart.domain.errors import ForgeAPIError, PRContentConflictError
 from tests.adapters.test_github_api import _make_client
 from tests.fakes import FakeForgeQuery
 
@@ -18,7 +18,7 @@ async def test_open_head_lookup_uses_native_filter_and_domain_result(found):
         assert dict(request.url.params) == {
             "state": "open",
             "head": "owner:feature/one",
-            "per_page": "1",
+            "per_page": "2",
             "sort": "created",
             "direction": "desc",
         }
@@ -59,6 +59,30 @@ async def test_refused_lookup_is_not_absence():
     with pytest.raises(ForgeAPIError):
         await adapter.open_pr_for_head(repo_url="https://github.com/o/r.git", head="x")
     await adapter.close()
+
+
+@pytest.mark.parametrize("boundary", ["fake", "github"])
+async def test_multiple_open_heads_refuse_without_selecting_the_newest(boundary):
+    repo = "https://github.com/example/project"
+    if boundary == "fake":
+        adapter = FakeForgeQuery(ambiguous_heads=frozenset({(repo, "head")}))
+        with pytest.raises(PRContentConflictError):
+            await adapter.open_pr_for_head(repo_url=repo, head="head")
+    else:
+        adapter = _make_client(
+            lambda _: httpx.Response(
+                200,
+                json=[
+                    {"html_url": f"{repo}/pull/1", "number": 1},
+                    {"html_url": f"{repo}/pull/2", "number": 2},
+                ],
+            )
+        )
+        try:
+            with pytest.raises(PRContentConflictError):
+                await adapter.open_pr_for_head(repo_url=repo, head="head")
+        finally:
+            await adapter.close()
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,7 @@
 """Shared constants for workflow execution."""
 
+ARTIFACT_DIR = ".kodezart"
+
 EVAL_PERMISSION_MODE = "plan"
 # A scheduled pass runs unattended on its cadence: there is no caller to
 # answer a permission prompt, so a session that stops to ask is one that

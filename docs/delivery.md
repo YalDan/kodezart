@@ -1,7 +1,7 @@
 # Delivery coordinator boundary
 
 `DeliveryCoordinator.deliver(dispatch, feature_branch=..., final_commit_sha=...,
-context=...)` opens an accepted lane's pull request and observes its checks.
+context=...)` creates or edits an accepted lane's pull request and observes its checks.
 `LaneDispatch` contains the lane key, issue identity, head branch and recorded
 `BaseSpec`. `DeliveryContext` supplies the existing execution context, fire
 outcome, ticket, validated criteria, iteration count, flags and repository
@@ -12,18 +12,36 @@ The common route accepts `handed_off_for_delivery`. It verifies that the
 execution carries the dispatched issue's FIRE run identity, that the
 terminal head and recorded base agree with the call, that both branches exist
 on the configured remote, and that the remote head still matches the fire's
-final SHA. A missing ref raises `BaseResolutionError`; an inconsistent handoff
+final SHA. An existing-PR replay also accepts a descendant whose nonempty diff
+is confined to the cleaner's owned `.kodezart/` directory: it fetches the native
+Git objects and proves ancestry and changed paths. This permits cold replay
+after cleanup without replacing the original fire SHA or accepting later code
+changes. A missing ref raises `BaseResolutionError`; an inconsistent handoff
 raises `DeliveryContextError`. A dependent lane can open against its blocker's
 branch before that blocker has a PR.
 
 The existing `ForgeQuery` is a separate required read dependency. After the
 handoff identity is validated, the coordinator looks up the open PR for that
 repository and head. Only a successful empty lookup permits creation. An
-existing PR raises `DeliveryRouteUnavailableError` carrying its URL and number
-before remote checks, cleanup, sessions or writes; a failed lookup propagates.
-The current ports cannot inspect or edit that PR's content, so replay does not
-claim successful delivery yet. Lookup and creation are not an atomic operation;
-simultaneous calls can still race on an absent PR.
+existing PR is read through the separate `PRContentEditor`: URL, number, head,
+base, title and body. The native adapter requires a unique open PR for the exact
+repository and head; ambiguity or a conflicting identity raises
+`PRContentConflictError`, while malformed or unreadable responses remain typed
+adapter errors. Successful replay retains that PR's identity.
+
+After authoring and gating, the editor re-reads the expected content snapshot
+and refuses an intervening change. Matching fields cause no write. Otherwise,
+the GitHub adapter sends one PATCH containing only differing title, body and
+base fields and verifies the response. It never retries that mutation after an
+uncertain transport result. Both adapters share content conformance tests;
+native coordinator tests cover creation followed by replay and existing-PR
+editing followed by a replay with no additional content write.
+
+These are optimistic checks. The [GitHub pull-request REST contract](https://docs.github.com/en/rest/pulls/pulls)
+does not provide the content editor with an atomic compare-and-swap guarantee.
+Concurrent edits can still arrive between the read and PATCH, and simultaneous
+calls can still race on an absent PR. These limitations are not treated as
+successful exclusion.
 
 If an artifact cleaner is supplied, it runs before description generation and
 both remote refs are checked again afterward. Cleanup may advance the branch;
@@ -37,10 +55,22 @@ refuses publication; the writer never appends bytes after the gate. Permitted
 redaction of other prose remains publishable, and legacy calls without an
 issue key retain their existing behavior.
 
-The coordinator creates the PR and calls `wait_for_checks` with its head branch.
+Retargeting an existing PR sends the dispatch-resolved base through the shared
+identifier gate before PATCH. A blocked or rewritten reference refuses the
+update; it never substitutes another branch. `PRCreator` remains exactly
+`create_pr` and `comment_on_pr`; content reads and edits expose no merge or
+mergedness operation.
+The composition module's `pr_content_editor_for_origin` selects this capability
+using the shared origin predicate, returning no editor for a `file://` origin or
+an absent client.
+
+The coordinator creates or edits the PR and calls `wait_for_checks` with its head branch.
 One semaphore per coordinator limits concurrent watches using
 `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES`. A failed or canceled watch releases
 its slot. The existing CI poll budgets remain adapter configuration.
+Before returning success it re-observes the same unique open PR, its recorded
+base and its fixed issue line. Closure, ambiguity or a changed identity/base
+during watching cannot produce a stale successful result.
 
 | Observation | Result |
 | --- | --- |
@@ -57,7 +87,7 @@ a residual was published.
 This boundary is callable independently; scope-walker dispatch and application
 composition are not connected yet. The legacy fire graph still owns its prior
 PR/check nodes until that extraction is completed. Stalled-fire handoff,
-editing an existing PR on replay, same-SHA linkage between the initial branch watch
+same-SHA linkage between the initial branch watch
 and red re-observation, the shared remediation loop, durable residual
 publication, and declared-no-run exemption/close-out remain unfinished. The
 existing pure red classifier is not invoked by this common route.

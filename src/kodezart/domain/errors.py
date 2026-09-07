@@ -11,6 +11,19 @@ class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
 
+class PRContentConflictError(Exception):
+    """An open PR cannot be identified or edited from the observed content."""
+
+    def __init__(
+        self, *, repo_url: str, head: str, pr_number: int | None, reason: str
+    ) -> None:
+        self.repo_url = repo_url
+        self.head = head
+        self.pr_number = pr_number
+        self.reason = reason
+        super().__init__(f"PR content for {repo_url!r}/{head!r}: {reason}")
+
+
 class PRTrackerIdentityError(Exception):
     """The publishable PR body lost its required tracker identity."""
 

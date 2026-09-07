@@ -44,6 +44,7 @@ from tests.fakes import (
     FakeCIMonitor,
     FakeForgeQuery,
     FakeGitService,
+    FakePRContentEditor,
     FakePRCreator,
     FakeRepoCache,
     FakeWorkspaceProvider,
@@ -122,6 +123,7 @@ class Setup:
     runner: FakeAgentRunner
     forge: FakePRCreator
     query: FakeForgeQuery
+    editor: FakePRContentEditor
     monitor: FakeCIMonitor
     gate: PassThroughGate
     prompts: RecordingPromptProvider
@@ -132,6 +134,7 @@ def setup(
     runner=None,
     forge=None,
     query=None,
+    editor=None,
     monitor=None,
     gate=None,
     cleaner=None,
@@ -141,7 +144,8 @@ def setup(
     config=None,
 ):
     runner = runner if runner is not None else FakeAgentRunner([description()])
-    forge = forge if forge is not None else FakePRCreator()
+    editor = editor if editor is not None else FakePRContentEditor()
+    forge = forge if forge is not None else FakePRCreator(content_store=editor.records)
     query = query if query is not None else FakeForgeQuery()
     monitor = monitor if monitor is not None else FakeCIMonitor()
     gate = gate if gate is not None else PassThroughGate()
@@ -154,6 +158,7 @@ def setup(
             gate=gate,
             pr_creator=forge,
             forge_query=query,
+            pr_editor=editor,
             ci=monitor,
             git=git
             if git is not None
@@ -166,6 +171,7 @@ def setup(
         runner=runner,
         forge=forge,
         query=query,
+        editor=editor,
         monitor=monitor,
         gate=gate,
         prompts=prompts,
