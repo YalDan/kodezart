@@ -21,6 +21,12 @@ operation_name = "example-operation"
 # The tracker workspace the operation acts within. A slug, not a URL.
 workspace = "example-workspace"
 
+# Optional pre-approval organize phase table. A populated table declares
+# groom, ticket and criteria exactly once, using qualified scope_labels
+# and issue_labels references. See docs/configuration.md for its five fields.
+# Empty declares no table and does not schedule an organize pass.
+organize_mandates = []
+
 # Identities the agent posts under, in the order the pass templates address
 # them: the mention handle first, the account's plain name second. Must not
 # collide with a principal.

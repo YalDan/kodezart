@@ -2,6 +2,11 @@ Groom the backlog of operation {{operation_name}}.
 
 {{#if issue_labels.criterion}}Read an issue's criteria from its direct sub-issues carrying `{{issue_labels.criterion}}`. Each sub-issue's own key identifies it; its body and workflow state carry its evidence and satisfaction.
 {{/if}}
+Use only declared organize phase mappings. If no table is declared below, do not infer phase completion from labels or invent phase mappings.
+{{#if organize_mandates}}The operation declares these organize phase markers:
+{{#each organize_mandates}}- {{this.kind}}: gate `{{this.gate_label}}`, completion `{{this.terminal_marker}}`.
+{{/each}}Use this table when checking phase evidence. Report discrepancies without setting phase markers; a completion marker never grants scope approval.
+{{/if}}
 The teams this operation declares, and the repository each one's issues are fired into:
 {{#each teams}}- {{this.name}} ({{this.key}}){{#if this.repository}} — {{this.repository}}{{/if}}{{#if this.repository_absent}} — the only repository this operation declares{{/if}}{{#if this.repository_recorded}} — the repository recorded on each staged issue{{/if}}{{#if this.scope}} — in scope: only issues in {{this.scope}}{{/if}}
 {{/each}}

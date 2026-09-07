@@ -3,9 +3,10 @@
 from enum import StrEnum
 from typing import Self
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.prompts import PromptKey
 
 
 class AdmissionVerdict(StrEnum):
@@ -90,3 +91,64 @@ class SpecFinding(CamelCaseModel):
         elif self.mandate_text is not None:
             raise ValueError("INSTANCE requires mandate_text to be None")
         return self
+
+
+class MandateKind(StrEnum):
+    """The phases of one organize pass, before scope approval."""
+
+    GROOM = "groom"
+    TICKET = "ticket"
+    CRITERIA = "criteria"
+
+
+class OrganizeLabelNamespace(StrEnum):
+    """The operation mappings a phase may reference explicitly."""
+
+    SCOPE = "scope_labels"
+    ISSUE = "issue_labels"
+
+
+def split_label_key(reference: str) -> tuple[OrganizeLabelNamespace, str]:
+    """Parse a qualified mapping key without guessing from the phase kind."""
+    namespace, separator, key = reference.partition(".")
+    if not separator or not key.strip():
+        raise ValueError(
+            "label reference requires a namespace and nonempty mapping key"
+        )
+    return OrganizeLabelNamespace(namespace), key
+
+
+class MandateSpec(CamelCaseModel):
+    """One phase's configured differences, with explicit mapping references."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: MandateKind
+    gate_label_key: str
+    rubric_prompt_key: PromptKey
+    admission_prompt_key: PromptKey
+    terminal_marker_key: str
+
+    @field_validator("gate_label_key", "terminal_marker_key")
+    @classmethod
+    def _require_qualified_label_key(cls, value: str) -> str:
+        split_label_key(value)
+        return value
+
+    @field_validator("terminal_marker_key")
+    @classmethod
+    def _require_issue_phase_marker(cls, value: str) -> str:
+        namespace, _ = split_label_key(value)
+        if namespace is not OrganizeLabelNamespace.ISSUE:
+            raise ValueError("an organize phase terminates on an issue_labels marker")
+        return value
+
+
+class ResolvedMandateSpec(CamelCaseModel):
+    """A validated phase specification and the configured labels it names."""
+
+    model_config = ConfigDict(frozen=True)
+
+    spec: MandateSpec
+    gate_label: str
+    terminal_marker: str

@@ -84,6 +84,7 @@ registries.
 | queue_states.decision | queue_states |
 | scope_labels | scope_labels |
 | issue_labels.criterion | issue_labels |
+| organize_mandates | organize_mandates |
 | scope_labels.triage | scope_labels |
 | scope_labels.proposed | scope_labels |
 | scope_labels.approved | scope_labels |

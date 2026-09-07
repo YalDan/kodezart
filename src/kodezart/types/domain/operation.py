@@ -22,6 +22,13 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.organize import (
+    MandateKind,
+    MandateSpec,
+    OrganizeLabelNamespace,
+    ResolvedMandateSpec,
+    split_label_key,
+)
 
 #: The one stable document key the structure validators below and the pass
 #: templates address by name; it carries no accessor that refuses on absence,
@@ -453,6 +460,7 @@ class OperationConfig(OperationModel):
     queue_states: dict[str, str] = Field(default_factory=dict)
     scope_labels: dict[str, str] = Field(default_factory=dict)
     issue_labels: dict[str, str] = Field(default_factory=dict)
+    organize_mandates: tuple[MandateSpec, ...] = ()
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     marker_prefixes: dict[str, str] = Field(default_factory=dict)
     repos: list[RepoEntry] = Field(default_factory=list)
@@ -473,6 +481,11 @@ class OperationConfig(OperationModel):
     def _check_structure(self) -> Self:
         """Collect EVERY structural failure into one error, never the first."""
         failures: list[str] = []
+
+        try:
+            self.resolve_organize_mandates()
+        except ValueError as exc:
+            failures.append(str(exc))
 
         if self.principals:
             approvers = [
@@ -751,6 +764,63 @@ class OperationConfig(OperationModel):
             )
         return scanned
 
+    def resolve_organize_mandates(self) -> tuple[ResolvedMandateSpec, ...]:
+        """Resolve every declared phase during ordinary configuration validation.
+
+        An absent table is a legitimate operation without an organizer table.
+        A declared table names every phase exactly once. The namespace in
+        each key selects its mapping; phase kind never guesses one. Approval
+        ends organization, so its configured label cannot be a phase gate
+        or a machine-written completion marker, including through aliases.
+        """
+        if not self.organize_mandates:
+            return ()
+
+        failures: list[str] = []
+        kinds = [spec.kind for spec in self.organize_mandates]
+        for kind in MandateKind:
+            if kind not in kinds:
+                failures.append(f"organize_mandates is missing phase {kind.value!r}")
+            elif kinds.count(kind) > 1:
+                failures.append(f"organize_mandates repeats phase {kind.value!r}")
+
+        mappings = {
+            OrganizeLabelNamespace.SCOPE: self.scope_labels,
+            OrganizeLabelNamespace.ISSUE: self.issue_labels,
+        }
+        approved_label = self.scope_labels.get(ScopeLabel.APPROVED.value)
+        resolved: list[ResolvedMandateSpec] = []
+        for spec in self.organize_mandates:
+            labels: dict[str, str] = {}
+            for field, reference in (
+                ("gate_label_key", spec.gate_label_key),
+                ("terminal_marker_key", spec.terminal_marker_key),
+            ):
+                namespace, key = split_label_key(reference)
+                label = mappings[namespace].get(key)
+                location = f"organize_mandates[{spec.kind.value!r}].{field}"
+                if label is None or not label.strip():
+                    failures.append(
+                        f"{location} has no nonempty mapping for {reference!r}"
+                    )
+                elif label == approved_label:
+                    failures.append(
+                        f"{location} names scope approval, which ends organize"
+                    )
+                else:
+                    labels[field] = label
+            if "gate_label_key" in labels and "terminal_marker_key" in labels:
+                resolved.append(
+                    ResolvedMandateSpec(
+                        spec=spec,
+                        gate_label=labels["gate_label_key"],
+                        terminal_marker=labels["terminal_marker_key"],
+                    )
+                )
+        if failures:
+            raise ValueError("; ".join(failures))
+        return tuple(resolved)
+
     def board_visibility(self, team_key: str | None) -> RepoVisibility:
         """The visibility posture of the board *team_key* names — fail-closed.
 
@@ -802,6 +872,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "queue_states": ConfigOwnership.OWNED,
     "scope_labels": ConfigOwnership.OWNED,
     "issue_labels": ConfigOwnership.OWNED,
+    "organize_mandates": ConfigOwnership.LOCAL,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "marker_prefixes": ConfigOwnership.LOCAL,
     "repos": ConfigOwnership.LOCAL,

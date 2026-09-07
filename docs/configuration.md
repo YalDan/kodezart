@@ -126,6 +126,33 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV` | `str \| None` | `None` | min length 1 | Name of the environment entry the stdio knowledge server reads its credential from; the value comes from `KODEZART_KNOWLEDGE_MCP_TOKEN`. |
 | `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `list[str]` | `["mcp.notion.com"]` |  | Hosts that authenticate interactively (OAuth) and accept no static credential; a granted endpoint on one of them paired with a static credential aborts boot, naming the conflict. |
 
+## Organize phase configuration
+
+The operation TOML may declare `[[organize_mandates]]` entries. Omission is
+valid and declares no phase table. A populated table must include `groom`,
+`ticket` and `criteria` exactly once each. Every entry is frozen, rejects
+unknown fields and requires these fields:
+
+| Field | Value |
+| -- | -- |
+| `kind` | `groom`, `ticket` or `criteria` |
+| `gate_label_key` | A qualified `scope_labels.<key>` or `issue_labels.<key>` reference |
+| `rubric_prompt_key` | A registered `PromptKey` value |
+| `admission_prompt_key` | A registered `PromptKey` value |
+| `terminal_marker_key` | A qualified `issue_labels.<key>` reference |
+
+Keys name entries in the operation's label mappings; they never contain
+tracker label names directly. Qualification distinguishes the two mappings
+even when they use the same key. Dots after the namespace belong to the key.
+All declared references resolve while loading the operation configuration,
+before tracker startup or dispatch. Missing or empty mappings abort loading
+and report every unresolved reference.
+
+Organize runs before scope approval. The configured `scope_labels.approved`
+label cannot gate a phase or be its completion marker, including when another
+key aliases that label. Each phase completes with an issue marker. The table
+validates phase configuration; it does not schedule an organize pass.
+
 ## The knowledge-server grant
 
 `KODEZART_KNOWLEDGE_SESSION_GRANTS` names, one by one, the kinds of agent

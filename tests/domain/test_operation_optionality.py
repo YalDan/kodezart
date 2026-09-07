@@ -29,6 +29,7 @@ COLLECTION_FIELDS = (
     "queue_states",
     "scope_labels",
     "issue_labels",
+    "organize_mandates",
     "workflow_states",
     "marker_prefixes",
     "repos",
