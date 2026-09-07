@@ -637,6 +637,12 @@ Identity-less HTTP execution keeps its existing behavior; it has no tracked
 Fire Log producer and receives no new Record contract. Scheduled sessions use
 their existing pass-specific Record clauses.
 
+Run titles retain the full observed start timestamp in UTC, including fractional
+seconds when present. Whole-second timestamps keep their prior spelling. This
+separates rapid repeated fires of the same issue. Historical rows that discarded
+fractional identity are not automatically migrated: the missing precision cannot
+be recovered from their title.
+
 **5. Write the operation config.** Copy
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
 field by field and covers every one — to `operation.toml` in the repository

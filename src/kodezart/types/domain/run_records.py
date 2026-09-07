@@ -12,19 +12,18 @@ fields it KNOWS without asking the session: which kind ran, under what
 name, when it began, how it ended, and how long it took.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
 
-#: How every stamp inside a record is spelled.  One format, because a row
-#: is FOUND by the string it carries: two spellings of one instant are two
-#: rows to any destination matching on the title (KOD-288).
-_STAMP_FORMAT: Final[str] = "%Y-%m-%dT%H:%M:%SZ"
+
+def _stamp(instant: datetime) -> str:
+    """Preserve the observed instant, with one canonical UTC spelling."""
+    return instant.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 class RunOutcome(StrEnum):
@@ -95,14 +94,11 @@ class RunIdentity(BaseModel):
 
     kind: RunKind
     name: str
-    started_at: datetime
+    started_at: AwareDatetime
 
     def title(self) -> str:
         """The one string that spells all three, for every reader of it."""
-        return (
-            f"{self.kind.value} — {self.name} @ "
-            f"{self.started_at.strftime(_STAMP_FORMAT)}"
-        )
+        return f"{self.kind.value} — {self.name} @ {_stamp(self.started_at)}"
 
 
 class FireRecordFacts(BaseModel):
@@ -133,8 +129,8 @@ class RunRecord(BaseModel):
     name: str
     outcome: RunOutcome
     duration_seconds: float
-    started_at: datetime
-    recorded_at: datetime
+    started_at: AwareDatetime
+    recorded_at: AwareDatetime
     workflow_outcome: WorkflowOutcome | None = None
     fire_facts: FireRecordFacts = Field(default_factory=FireRecordFacts)
 
@@ -171,5 +167,5 @@ class RunRecord(BaseModel):
         return (
             f"{self.title()} — {self.outcome.value} "
             f"({self.duration_seconds:.1f}s) — recorded "
-            f"{self.recorded_at.strftime(_STAMP_FORMAT)}"
+            f"{_stamp(self.recorded_at)}"
         )
