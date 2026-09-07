@@ -566,8 +566,16 @@ rulings cannot inflate the count. Required authorship comes from the ruling
 artifact, using the owner's `RulingId` and `RulingAuthor` vocabulary; transport
 authors and timestamps cannot supply it. The read-only service obtains current
 criterion closure through the shared gap arithmetic for every declared lane
-issue. The full ruling artifact writer/renderer/reader and persisted window
-advancement remain implementation work; the projection does not replace them.
+issue. `read_lane_rulings` now obtains those projections from full native
+ruling comments for every explicitly supplied lane member. The configured
+`ruling` occurrence marker is separate from escalation decision replies;
+`RulingRecordReader` checks exact question identity, native ownership and
+required authorship before projecting it. `observe_recorded_ruling_growth`
+combines that current read with live closure and the caller's retained
+baseline. Amendments keep their deterministic question identity and cannot
+reset the baseline. The actual ruling node, verified leased artifact writes,
+lane-membership producer and persisted window advancement remain separate
+implementation work.
 
 `structural_write_uncrosses_milestone` compares complete lane membership
 snapshots. The collector reads both the fire subtree and native milestone

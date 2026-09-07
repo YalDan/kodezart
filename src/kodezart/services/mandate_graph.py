@@ -14,11 +14,14 @@ from kodezart.domain.mandate_graph import (
     rulings_outpace_closures,
     structural_write_uncrosses_milestone,
 )
+from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.mandate_graph import (
     IssueSupersession,
     LaneGraphSnapshot,
     LaneRulingSnapshot,
+    RulingAuthorship,
 )
+from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
@@ -30,6 +33,99 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue
 
 _REFS = TypeAdapter(tuple[str, ...])
+
+
+async def read_lane_rulings(
+    *,
+    tracker: TrackerPort,
+    operation: OperationConfig,
+    lane_key: str,
+    issue_keys: tuple[str, ...],
+    source_ref: str,
+) -> AlarmReading:
+    """Read full native ruling artifacts for every declared lane issue.
+
+    The caller supplies current lane membership and the retained window's
+    source identity. Only the decoded ruling's required authored_by field
+    supplies authorship; the tracker account has no role in this projection.
+    """
+    try:
+        empty = LaneRulingSnapshot(lane_key=lane_key, issue_keys=issue_keys, rulings=())
+        AlarmReading(source_ref=source_ref, value=empty.model_dump_json())
+    except ValidationError as exc:
+        raise RunShapeReadError(
+            signal=AlarmSignal.RULINGS_OUTPACE_CLOSURES.value,
+            source_ref=source_ref,
+            reason="invalid lane or window identity",
+        ) from exc
+    if len(set(issue_keys)) != len(issue_keys):
+        raise RunShapeReadError(
+            signal=AlarmSignal.RULINGS_OUTPACE_CLOSURES.value,
+            source_ref=source_ref,
+            reason="the lane lists an issue more than once",
+        )
+    reader = RulingRecordReader(tracker=tracker, operation=operation)
+    rows: list[RulingAuthorship] = []
+    for issue_key in issue_keys:
+        records = await reader.read_all(issue_key=issue_key, lane_key=lane_key)
+        rows.extend(
+            RulingAuthorship(
+                ruling_id=ruling.ruling_id,
+                issue_key=ruling.issue_ref,
+                authored_by=ruling.authored_by,
+            )
+            for _, ruling in records
+        )
+    snapshot = LaneRulingSnapshot(
+        lane_key=lane_key, issue_keys=issue_keys, rulings=tuple(rows)
+    )
+    return AlarmReading(
+        source_ref=source_ref, value=snapshot.model_dump_json(by_alias=True)
+    )
+
+
+async def observe_recorded_ruling_growth(
+    *,
+    tracker: TrackerPort,
+    operation: OperationConfig,
+    config: AppConfig,
+    subject: AlarmSubject,
+    issue_keys: tuple[str, ...],
+    baseline_rulings: AlarmReading,
+    previous_open: AlarmReading,
+    supersession_refs: Mapping[str, str],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Combine current native ruling records and live criterion closure.
+
+    Baseline retention and advancement remain the window writer's job. The
+    returned alarm is an observation, not a tracker publication.
+    """
+    if subject.kind is not AlarmSubjectKind.LANE or subject.lane_key is None:
+        raise RunShapeReadError(
+            signal=AlarmSignal.RULINGS_OUTPACE_CLOSURES.value,
+            source_ref=baseline_rulings.source_ref,
+            reason="a lane subject is required",
+        )
+    current = await read_lane_rulings(
+        tracker=tracker,
+        operation=operation,
+        lane_key=subject.lane_key,
+        issue_keys=issue_keys,
+        source_ref=baseline_rulings.source_ref,
+    )
+    return await observe_ruling_growth(
+        tracker=tracker,
+        config=config,
+        subject=subject,
+        baseline_rulings=baseline_rulings,
+        current_rulings=current,
+        previous_open=previous_open,
+        supersession_refs=supersession_refs,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
 
 
 async def read_lane_graph(
