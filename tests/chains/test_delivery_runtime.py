@@ -546,7 +546,10 @@ async def test_unconnected_check_routes_refuse_with_observed_pr_facts(passed):
     assert error.value.pr_number == 1
     assert error.value.checks_passed is passed
     assert error.value.checks_summary == "Observed evidence."
-    assert monitor.rerun_calls == monitor.failed_name_calls == []
+    assert monitor.rerun_calls == []
+    assert monitor.failed_name_calls == (
+        [(REPOSITORY, HEAD)] if passed is False else []
+    )
     assert [call["method"] for call in fixture.forge.calls] == ["create_pr"]
     assert monitor.declaration_calls == ([REPOSITORY] if passed is None else [])
 
