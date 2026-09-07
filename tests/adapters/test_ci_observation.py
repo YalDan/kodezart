@@ -115,3 +115,50 @@ async def test_failed_names_refuses_incomplete_or_ambiguous_observation(kind):
     client = _make_client(handler, ci_check_runs_max_pages=1)
     with pytest.raises(ForgeAPIError):
         await client.failed_check_names(repo_url=REPO, ref="sha")
+
+
+@pytest.mark.parametrize("kind", ["unknown_state", "shrinking_total"])
+async def test_declaration_refuses_unsupported_absence_evidence(kind):
+    def handler(request):
+        page = int(request.url.params["page"])
+        return httpx.Response(
+            200,
+            json={
+                "total_count": 1 if kind == "unknown_state" else 4 - page,
+                "workflows": [
+                    {
+                        "id": page,
+                        "state": "future_state"
+                        if kind == "unknown_state"
+                        else "disabled_manually",
+                    }
+                ],
+            },
+        )
+
+    client = _make_client(handler)
+    with pytest.raises(ForgeAPIError):
+        await client.checks_declared(repo_url=REPO)
+
+
+async def test_failed_names_refuses_shrinking_total():
+    def handler(request):
+        page = int(request.url.params["page"])
+        return httpx.Response(
+            200,
+            json={
+                "total_count": 4 - page,
+                "check_runs": [
+                    {
+                        "id": page,
+                        "name": "test",
+                        "status": "completed",
+                        "conclusion": "failure",
+                    }
+                ],
+            },
+        )
+
+    client = _make_client(handler)
+    with pytest.raises(ForgeAPIError):
+        await client.failed_check_names(repo_url=REPO, ref="sha")

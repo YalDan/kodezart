@@ -504,6 +504,8 @@ class GitHubAPIClient:
         owner: str,
         repo: str,
         ref: str,
+        *,
+        require_stable_total: bool = False,
     ) -> CheckRunsResponse | None:
         """Fetch every check-runs page for *ref*, or ``None`` when it 404s.
 
@@ -548,6 +550,16 @@ class GitHubAPIClient:
                 if exc.status_code == self._NOT_FOUND_STATUS:
                     return None
                 raise
+            if (
+                require_stable_total
+                and page_number > 1
+                and page.total_count != reported_total
+            ):
+                raise ForgeAPIError(
+                    "Check listing changed during pagination",
+                    status_code=None,
+                    detail="CI observation",
+                )
             reported_total = page.total_count
             collected.extend(page.check_runs)
             if not page.check_runs or len(collected) >= reported_total:
@@ -612,7 +624,7 @@ class GitHubAPIClient:
         """
         owner, repo = extract_owner_repo(repo_url)
         seen: set[int] = set()
-        page_number = 1
+        expected_total: int | None = None
         for page_number in range(1, self._ci_check_runs_max_pages + 1):
             page = await self._parsed_with_retry(
                 "GET",
@@ -624,6 +636,28 @@ class GitHubAPIClient:
                 item.state == self._ACTIVE_WORKFLOW_STATE for item in page.workflows
             ):
                 return True
+            if expected_total is not None and page.total_count != expected_total:
+                raise ForgeAPIError(
+                    "Workflow declaration changed during pagination",
+                    status_code=None,
+                    detail="CI observation",
+                )
+            expected_total = page.total_count
+            if any(
+                item.state
+                not in {
+                    "deleted",
+                    "disabled_fork",
+                    "disabled_inactivity",
+                    "disabled_manually",
+                }
+                for item in page.workflows
+            ):
+                raise ForgeAPIError(
+                    "Workflow declaration contained an unknown state",
+                    status_code=None,
+                    detail="CI observation",
+                )
             identities = {item.id for item in page.workflows}
             if identities & seen or len(identities) != len(page.workflows):
                 raise ForgeAPIError(
@@ -649,7 +683,7 @@ class GitHubAPIClient:
     async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
         """Read failing names from a complete terminal check observation."""
         owner, repo = extract_owner_repo(repo_url)
-        page = await self._fetch_check_runs(owner, repo, ref)
+        page = await self._fetch_check_runs(owner, repo, ref, require_stable_total=True)
         if page is None or len(page.check_runs) != page.total_count:
             raise ForgeAPIError(
                 "Failed check names were not completely observable",
