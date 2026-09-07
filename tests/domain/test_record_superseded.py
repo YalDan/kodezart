@@ -158,6 +158,12 @@ def test_other_lane_or_field_cannot_supply_a_contrary_assertion(slot, changes):
     [
         subject(lane_key="other"),
         AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="scope/run"),
+        AlarmSubject(
+            kind=AlarmSubjectKind.ISSUE,
+            scope_key="scope/run",
+            lane_key="lane/42",
+            issue_id="issue/42",
+        ),
     ],
 )
 def test_subject_must_identify_the_compared_lane(target):
