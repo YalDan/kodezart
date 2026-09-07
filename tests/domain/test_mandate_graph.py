@@ -419,3 +419,10 @@ def test_both_fire_observations_must_be_completed(was_completed: bool) -> None:
         children=(issue("NEW", opened, parent="FIRE"),),
     )
     assert graph_alarm(before, after) is None
+
+
+def test_superseded_fire_is_not_a_previously_crossed_fire() -> None:
+    refs = (IssueSupersession(issue_key="FIRE", source_ref="replacement/fire"),)
+    before = graph(fire_state=WorkflowStateKind.CANCELED, supersessions=refs)
+    after = graph(children=(issue("NEW", WorkflowStateKind.STARTED, parent="FIRE"),))
+    assert graph_alarm(before, after) is None
