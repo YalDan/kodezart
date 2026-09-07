@@ -5,6 +5,7 @@ from enum import StrEnum
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.tracker import TrackerIssue
 
 
 class ScopeKind(StrEnum):
@@ -36,3 +37,11 @@ class ScopeContainer(CamelCaseModel):
     url: str
     parent: ScopeRef | None = None
 
+
+class ResolvedScope(CamelCaseModel):
+    """A resolved reference and the issues whose own fields describe its graph."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ref: ScopeRef
+    issues: tuple[TrackerIssue, ...]
