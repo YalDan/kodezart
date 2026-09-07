@@ -21,6 +21,7 @@ class AuditCoverage:
         self._full_interval = timedelta(
             seconds=config.audit_full_sweep_interval_seconds
         )
+        self._tick_interval = timedelta(seconds=config.audit_sweep_interval_seconds)
         self._covered: dict[ScopeRef, dict[str, datetime]] = {}
         self._last_full: dict[ScopeRef, datetime] = {}
         self._last_tick: dict[ScopeRef, datetime] = {}
@@ -51,7 +52,10 @@ class AuditCoverage:
         if any(row.state_changed_at > observed_at for row in snapshot):
             raise ValueError("audit candidate state change follows the observation")
         last_full = self._last_full.get(scope)
-        full = last_full is None or observed_at - last_full >= self._full_interval
+        full = last_full is None or (
+            observed_at - last_full >= self._full_interval
+            or observed_at - last_full + self._tick_interval > self._full_interval
+        )
         previous = self._covered.get(scope, {})
         selected = (
             snapshot

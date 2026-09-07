@@ -52,6 +52,18 @@ async def test_first_delta_and_periodic_full_cover_exact_records():
     assert full.full and full.covered == (row("a"), row("z", 60))
 
 
+async def test_nondivisible_full_interval_uses_last_tick_before_expiry():
+    service = AuditCoverage(
+        config=AppConfig(
+            audit_sweep_interval_seconds=60, audit_full_sweep_interval_seconds=90
+        )
+    )
+    await cover(service, [row("a")])
+    # Waiting until the following tick would leave this record unread for 120s.
+    result = await cover(service, [row("a")], 60)
+    assert result.full and result.covered == (row("a"),)
+
+
 async def test_new_record_with_tied_or_older_stamp_is_not_lost():
     service = AuditCoverage(config=CONFIG)
     await cover(service, [row("z")])

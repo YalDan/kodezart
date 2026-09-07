@@ -571,7 +571,9 @@ are per-scope process caches and are advanced only after every selected visit
 returns. Interrupted or failed attempts repeat their selection, and a fresh
 process starts full. Per-key stamps retain newly observed identities even when
 their times tie a previously covered entry. Neither a quiet tick nor an empty
-snapshot postpones periodic full coverage.
+snapshot postpones periodic full coverage. If the next configured tick would
+cross the full-coverage deadline, the current tick covers everything; intervals
+that are not divisible therefore cannot silently extend the declared bound.
 
 The caller supplies the observation time; this component adds no clock, timer
 or scheduler. A simultaneous attempt for the same scope refuses without
