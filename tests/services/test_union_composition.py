@@ -1,0 +1,267 @@
+"""Real scratch composition, ordered planner inputs, and owned cleanup."""
+
+import asyncio
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
+from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.core.config import AppConfig
+from kodezart.domain.errors import MergeConflictError
+from kodezart.services.union_composition import UnionComposition
+from kodezart.types.domain.operation import CheckStep, RepoEntry
+from kodezart.types.domain.union import UnionLaneHead
+from tests.fakes import FakeGitService
+
+
+async def git(repo, *args):
+    process = await asyncio.create_subprocess_exec(
+        "git",
+        *args,
+        cwd=repo,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Fixture",
+            "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+            "GIT_COMMITTER_NAME": "Fixture",
+            "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+        },
+    )
+    stdout, stderr = await process.communicate()
+    assert process.returncode == 0, stderr.decode()
+    return stdout.decode().strip()
+
+
+@pytest.fixture
+async def repository(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    await git(repo, "init", "-b", "main")
+    (repo / "base.txt").write_text("base\n")
+    await git(repo, "add", ".")
+    await git(repo, "commit", "-m", "base")
+    base = await git(repo, "rev-parse", "HEAD")
+    heads = []
+    # The planner requests z before a although a's PR was opened first.
+    for lane in ("a", "z"):
+        await git(repo, "checkout", "-b", f"work/{lane}", base)
+        (repo / f"{lane}.txt").write_text(lane)
+        await git(repo, "add", ".")
+        await git(repo, "commit", "-m", lane)
+        heads.append(
+            UnionLaneHead(
+                lane_key=lane,
+                branch=f"work/{lane}",
+                head_sha=await git(repo, "rev-parse", "HEAD"),
+            )
+        )
+    await git(repo, "checkout", "main")
+    return repo, base, tuple(reversed(heads))
+
+
+class ObservedGit(SubprocessGitService):
+    def __init__(self):
+        super().__init__(remote="upstream")
+        self.created = []
+        self.merged = []
+        self.removed = []
+
+    async def create_worktree(
+        self, repo_path, base_ref, worktree_path, branch_name=None, create_branch=True
+    ):
+        assert branch_name is None
+        assert create_branch is False
+        await super().create_worktree(
+            repo_path, base_ref, worktree_path, branch_name, create_branch
+        )
+        self.created.append(worktree_path)
+
+    async def merge_scratch_head(self, **kwargs):
+        self.merged.append(kwargs["head_sha"])
+        await super().merge_scratch_head(**kwargs)
+
+    async def remove_worktree(self, repo_path, worktree_path):
+        await super().remove_worktree(repo_path, worktree_path)
+        self.removed.append(worktree_path)
+
+
+def service(adapter, runner=None):
+    return UnionComposition(
+        git=adapter,
+        runner=runner or SubprocessCheckChainRunner(config=AppConfig()),
+        author_name="Union Fixture",
+        author_email="union@example.invalid",
+    )
+
+
+def entry(command=None):
+    return RepoEntry(
+        url="file:///fixture",
+        trunk="main",
+        checks=(
+            CheckStep(
+                name="gate",
+                command=command
+                or (
+                    f'{sys.executable} -c "from pathlib import Path; '
+                    "assert Path('z.txt').exists(); assert Path('a.txt').exists()\""
+                ),
+            ),
+        ),
+    )
+
+
+async def verify(repository, adapter, runner=None, repo_entry=None):
+    repo, base, heads = repository
+    return await service(adapter, runner).verify(
+        scope_key="scope",
+        repo_path=str(repo),
+        repo=repo_entry or entry(),
+        base_sha=base,
+        lane_heads=heads,
+    )
+
+
+async def test_real_independent_heads_merge_in_planner_order_and_remove(repository):
+    adapter = ObservedGit()
+    result = await verify(repository, adapter)
+    repo, base, heads = repository
+    assert adapter.merged == [h.head_sha for h in heads]
+    assert result.composition_order == ("z", "a")
+    assert not result.checks.failed_step_names
+    assert result.base_sha == base
+    assert result.lane_heads == heads
+    assert result.scratch_sha != base
+    assert adapter.removed == adapter.created == [result.scratch_path]
+    assert not Path(result.scratch_path).exists()
+    assert (await git(repo, "worktree", "list", "--porcelain")).count("worktree ") == 1
+    # The actual merge graph, not just the fake's call order.
+    last_parents = (
+        await git(repo, "show", "-s", "--format=%P", result.scratch_sha)
+    ).split()
+    assert last_parents[1] == heads[1].head_sha
+    prior_parents = (
+        await git(repo, "show", "-s", "--format=%P", last_parents[0])
+    ).split()
+    assert prior_parents == [base, heads[0].head_sha]
+
+
+class RaisingRunner:
+    async def run_chain(self, **kwargs):
+        raise RuntimeError("check transport broke")
+
+
+async def test_runner_raise_still_removes_actual_composed_tree(repository):
+    adapter = ObservedGit()
+    with pytest.raises(RuntimeError, match="transport broke"):
+        await verify(repository, adapter, RaisingRunner())
+    assert adapter.removed == adapter.created
+    assert adapter.created
+    assert not Path(adapter.created[0]).exists()
+
+
+async def test_merge_raise_still_removes_tree(repository):
+    adapter = ObservedGit()
+    repo, base, heads = repository
+    broken = (heads[0], heads[1].model_copy(update={"head_sha": "f" * 40}))
+    with pytest.raises(MergeConflictError):
+        await service(adapter).verify(
+            scope_key="scope",
+            repo_path=str(repo),
+            repo=entry(),
+            base_sha=base,
+            lane_heads=broken,
+        )
+    assert adapter.removed == adapter.created
+    assert not Path(adapter.created[0]).exists()
+
+
+@pytest.mark.parametrize("phase", ["create", "merge", "remove"])
+async def test_repeated_cancel_settles_owned_git_before_cleanup(repository, phase):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class DelayedGit(ObservedGit):
+        async def create_worktree(self, *args, **kwargs):
+            await super().create_worktree(*args, **kwargs)
+            if phase == "create":
+                entered.set()
+                await release.wait()
+
+        async def merge_scratch_head(self, **kwargs):
+            await super().merge_scratch_head(**kwargs)
+            if phase == "merge":
+                entered.set()
+                await release.wait()
+
+        async def remove_worktree(self, *args):
+            if phase == "remove":
+                entered.set()
+                await release.wait()
+            await super().remove_worktree(*args)
+
+    adapter = DelayedGit()
+    task = asyncio.create_task(verify(repository, adapter))
+    try:
+        await asyncio.wait_for(entered.wait(), 10)
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+    finally:
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 10)
+    assert adapter.removed == adapter.created
+    assert not Path(adapter.created[0]).exists()
+
+
+async def test_partial_worktree_creation_failure_is_cleaned(repository):
+    class FailedCreate(ObservedGit):
+        async def create_worktree(self, *args, **kwargs):
+            await super().create_worktree(*args, **kwargs)
+            raise RuntimeError("created but handshake failed")
+
+    adapter = FailedCreate()
+    with pytest.raises(RuntimeError, match="handshake"):
+        await verify(repository, adapter)
+    assert adapter.removed == adapter.created
+
+
+async def test_scratch_merge_refuses_attached_branch_and_noncommit_ref(repository):
+    repo, base, heads = repository
+    adapter = SubprocessGitService(remote="upstream")
+    with pytest.raises(ValueError, match="detached"):
+        await adapter.merge_scratch_head(
+            cwd=str(repo),
+            head_sha=heads[0].head_sha,
+            author_name="Test",
+            author_email="t@example.invalid",
+        )
+    with pytest.raises(ValueError, match="immutable"):
+        await adapter.merge_scratch_head(
+            cwd=str(repo),
+            head_sha="work/z",
+            author_name="Test",
+            author_email="t@example.invalid",
+        )
+    assert await git(repo, "rev-parse", "HEAD") == base
+
+
+async def test_duplicate_planner_lanes_refuse_before_git():
+    adapter = FakeGitService()
+    same = UnionLaneHead(lane_key="a", branch="work/a", head_sha="a" * 40)
+    with pytest.raises(ValueError, match="unique"):
+        await service(adapter).verify(
+            scope_key="scope",
+            repo_path="unused",
+            repo=entry(),
+            base_sha="b" * 40,
+            lane_heads=(same, same),
+        )
+    assert adapter.calls == []

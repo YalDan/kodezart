@@ -141,6 +141,12 @@ class GitService(Protocol):
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None: ...
 
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        """Merge a pinned commit in a detached scratch tree, never a branch."""
+        ...
+
     async def current_sha(self, cwd: str) -> str: ...
 
     async def head_commit_message(self, cwd: str) -> str:
