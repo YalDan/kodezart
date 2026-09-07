@@ -181,7 +181,7 @@ async def test_merge_raise_still_removes_tree(repository):
     assert not Path(adapter.created[0]).exists()
 
 
-@pytest.mark.parametrize("phase", ["create", "merge", "remove"])
+@pytest.mark.parametrize("phase", ["create", "merge", "observe", "remove"])
 async def test_repeated_cancel_settles_owned_git_before_cleanup(repository, phase):
     entered, release = asyncio.Event(), asyncio.Event()
 
@@ -197,6 +197,13 @@ async def test_repeated_cancel_settles_owned_git_before_cleanup(repository, phas
             if phase == "merge":
                 entered.set()
                 await release.wait()
+
+        async def current_sha(self, cwd):
+            result = await super().current_sha(cwd)
+            if phase == "observe":
+                entered.set()
+                await release.wait()
+            return result
 
         async def remove_worktree(self, *args):
             if phase == "remove":
