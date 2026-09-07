@@ -45,6 +45,7 @@ private_surface = "Anything identifying the people, customers or commercial arra
 # a tracker with recorded work: changing one addresses a different marker.
 # Every used purpose needs an entry; an absent purpose is refused at use.
 [marker_prefixes]
+ruling = "kodezart-ruling"
 claim = "kodezart-claim"
 work_ref = "kodezart-workref"
 base_spec = "kodezart-basespec"

@@ -360,8 +360,19 @@ Tracker carriers take their identity prefixes from `marker_prefixes`.
 Declare `claim`, `work_ref`, `base_spec` and `repository` for the corresponding
 tracker operations. When upgrading an existing operation, copy the example's
 values for these keys to keep addressing its stored markers. Additional
-purposes such as `run_state`, `decision` and `escalation` use the same mapping;
+purposes such as `run_state`, `decision`, `ruling` and `escalation` use the same mapping;
 missing purposes are refused when read or written.
+
+Fire-time ruling records declare a distinct `ruling` purpose. Its configured
+prefix, explicit lane and deterministic `RulingId` occurrence address one
+pinned question. The question key derives from the exact owning issue and
+question; changing the answer retains that key. `Ruling` records explicitly
+carry one of four classes, the answer, any rejected alternative, repository
+evidence and required `machine` or `principal` authorship. The formatter
+includes every field in one readable JSON block and the parser refuses damaged
+or mismatched identity. The `decision` purpose remains the native escalation
+reply carrier. The actual ruling node and verified, leased publication remain
+separate consumers.
 
 Declare `issue_identity` to use keyed issue upsert. The Linear adapter records
 the scope kind, scope key and deliverable key in a hidden first description

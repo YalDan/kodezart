@@ -1,12 +1,13 @@
 """Agent event domain models for SSE streaming."""
 
 from enum import StrEnum
-from typing import Literal, NewType
+from typing import Annotated, Literal, NewType, Self
 
 from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    model_validator,
 )
 
 from kodezart.types.base import CamelCaseModel
@@ -672,6 +673,69 @@ class GeneratedCriteriaOutput(CamelCaseModel):
     reasoning: str = Field(
         min_length=1,
         description="How the set was derived from the ticket and the repository.",
+    )
+
+
+class RulingClass(StrEnum):
+    """The four defects a fire-time ruling may resolve."""
+
+    PIN_READING = "pin_reading"
+    PIN_ARTIFACT = "pin_artifact"
+    REGROUND_PREMISE = "reground_premise"
+    RESOLVE_CONTRADICTION = "resolve_contradiction"
+
+
+class Ruling(CamelCaseModel):
+    """One pinned answer, with explicit authorship and its stable question key."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ruling_id: RulingId = Field(
+        min_length=1, pattern=r"\S", description="The harness-minted ruling identity."
+    )
+    issue_ref: str = Field(
+        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
+    )
+    question: str = Field(
+        min_length=1, pattern=r"\S", description="The exact question being ruled on."
+    )
+    ruling_class: RulingClass = Field(
+        description="Which of the four permitted defects this ruling resolves."
+    )
+    resolution: str = Field(
+        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
+    )
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(description="The losing reading or contradiction, or explicit absence.")
+    )
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
+        Field(
+            description="Repository evidence references supporting the pinned answer."
+        )
+    )
+    authored_by: RulingAuthor = Field(
+        description="Explicit machine or principal authorship, independent of account."
+    )
+
+    @model_validator(mode="after")
+    def name_rejected_reading(self) -> Self:
+        if (
+            self.ruling_class
+            in {
+                RulingClass.PIN_READING,
+                RulingClass.RESOLVE_CONTRADICTION,
+            }
+            and self.rejected_alternative is None
+        ):
+            raise ValueError("this ruling class must name its rejected alternative")
+        return self
+
+
+class RulingOutput(CamelCaseModel):
+    """The complete structured result of a fire-time ruling session."""
+
+    rulings: list[Ruling] = Field(
+        description="One answer per ruled question; an empty list means no rulings."
     )
 
 
