@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1728,6 +1729,9 @@ class FakeForgeQuery:
         return self.branch_urls[(repo_url, branch)]
 
 
+type _FakeCIObservation = tuple[bool | None, str, frozenset[str]]
+
+
 class FakeCIMonitor:
     """Fake CIMonitor for testing the outer workflow pipeline."""
 
@@ -1747,17 +1751,37 @@ class FakeCIMonitor:
         self._declared = declared
         self._failed_names = failed_names
         self._rerun_results = list(rerun_results)
+        self._attempts: ContextVar[
+            tuple[object, dict[tuple[str, str], _FakeCIObservation]] | None
+        ] = ContextVar("fake_ci_attempts", default=None)
         self.rerun_calls: list[tuple[str, str]] = []
         self.declaration_calls: list[str] = []
         self.failed_name_calls: list[tuple[str, str]] = []
         self.calls: list[dict[str, object]] = []
 
+    def _attempt_context(self) -> dict[tuple[str, str], _FakeCIObservation]:
+        context = self._attempts.get()
+        if context is None or context[0] is not asyncio.current_task():
+            return {}
+        return dict(context[1])
+
+    def _observation(self, repo_url: str, ref: str) -> _FakeCIObservation:
+        return self._attempt_context().get(
+            (repo_url, ref), (self._passed, self._summary, self._failed_names)
+        )
+
     async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
         self.rerun_calls.append((repo_url, ref))
         if self._fail is not None:
             raise self._fail
-        if self._rerun_results:
-            self._passed, self._summary, self._failed_names = self._rerun_results.pop(0)
+        result = (
+            self._rerun_results.pop(0)
+            if self._rerun_results
+            else self._observation(repo_url, ref)
+        )
+        attempts = self._attempt_context()
+        attempts[(repo_url, ref)] = result
+        self._attempts.set((asyncio.current_task(), attempts))
 
     async def checks_declared(self, *, repo_url: str) -> bool:
         self.declaration_calls.append(repo_url)
@@ -1769,7 +1793,7 @@ class FakeCIMonitor:
         self.failed_name_calls.append((repo_url, ref))
         if self._fail is not None:
             raise self._fail
-        return self._failed_names
+        return self._observation(repo_url, ref)[2]
 
     async def wait_for_checks(
         self,
@@ -1785,7 +1809,8 @@ class FakeCIMonitor:
         )
         if self._fail is not None:
             raise self._fail
-        return (self._passed, self._summary)
+        passed, summary, _ = self._observation(repo_url, ref)
+        return (passed, summary)
 
 
 class SequentialCIMonitor(FakeCIMonitor):

@@ -461,6 +461,8 @@ class CIMonitor(Protocol):
         Subsequent waits and failed-name reads on this monitor must observe
         the requested attempt, never the completed checks preceding it.
         An unsupported or incomplete rerun raises a domain error.
+        Each asynchronous task owns its rerun/read sequence; another task's
+        rerun must not replace its observation.
         """
         ...
 

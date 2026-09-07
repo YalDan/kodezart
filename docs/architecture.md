@@ -46,7 +46,7 @@ does not exist.
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
 | ForgeQuery        | GitHubAPIClient          | Looks up an open PR by head and composes branch browser URLs |
-| CIMonitor         | GitHubAPIClient          | Polls check runs for a pushed head                   |
+| CIMonitor         | GitHubAPIClient          | Polls checks and re-observes Actions attempts at one commit |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
@@ -71,6 +71,27 @@ does not exist.
 | OutboundContentGate | PatternOutboundContentGate | CLEAN / REDACTED / BLOCKED over N scanners      |
 | RefPublisher      | GitRefPublisher          | Points a named ref at an existing commit on the remote |
 | Remediator        | RemediationChain         | One remediation round: failure evidence in, one targeted ticket out |
+
+The CI adapter's `rerun_checks` resolves the supplied ref once, validates that
+every observed check belongs to an identifiable Actions workflow attempt, then
+requests each run again. Subsequent `wait_for_checks` and `failed_check_names`
+calls on that monitor and ref read the requested attempt's jobs, with the same
+commit identity. Existing completed checks cannot satisfy that observation.
+The caller should supply an immutable commit SHA and keep its rerun/read
+sequence on the same monitor and asynchronous task. Each task owns its
+attempt context; a later rerun by another task cannot replace its observation.
+Baseline selection and dispatch are serialized per repository and resolved
+SHA, including branch aliases. A shared attempt floor refuses stale baselines
+across tasks. Different SHAs can dispatch independently. Attempt tracking is
+process-local; it is not a durable rerun ledger.
+
+The existing CI poll and page bounds apply. An unsupported check provider,
+incomplete enumeration, unknown result, or unobservable new attempt raises a
+domain error. Rerun POSTs are issued once: a partial batch or lost response
+remains an error instead of retrying a write whose effect is uncertain. The
+adapter uses GitHub's documented [workflow run rerun and attempt APIs](https://docs.github.com/en/rest/actions/workflow-runs)
+and [attempt-specific jobs API](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt).
+The Actions permission must allow writes to request a rerun.
 
 ## Workflow Pipeline
 
