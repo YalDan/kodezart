@@ -41,11 +41,15 @@ class WorkflowSubmission(CamelCaseModel):
     The producer supplies the recorded base or explicitly constructs a
     trunk base. Scope absence is explicit so producers cannot lose an
     addressed scope by relying on a downstream default.
+
+    ``issue_key`` records the dispatched issue independently of prompt
+    text and scope. HTTP submissions may have no tracker identity.
     """
 
     model_config = ConfigDict(frozen=True)
 
     prompt: str = Field(min_length=1)
+    issue_key: str | None = None
     repo_path: str | None
     repo_url: str | None
     base_spec: BaseSpec
@@ -187,6 +191,9 @@ class RalphLoopState(TypedDict):
 class WorkflowState(TypedDict):
     """State for the outer workflow pipeline.
 
+    ``issue_key`` is the producer's tracker identity for this run. It is
+    preserved across remediation and appended before gating a PR body.
+
     ``feature_tip_sha`` is the canonical feature-branch tip SHA after the
     last successful consolidation; ``None`` until ``_merge_to_feature_node``
     runs.  ``review_base_sha`` / ``review_head_sha`` are the exact 40-char
@@ -213,6 +220,7 @@ class WorkflowState(TypedDict):
     ``base_spec`` on the execution context.
     """
 
+    issue_key: str | None
     feature_branch: str
     ralph_branch: str
     work_base_ref: str

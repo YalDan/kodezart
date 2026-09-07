@@ -79,6 +79,7 @@ class WorkflowRequest(RepoSourceRequest):
     """
 
     base_branch: str = "main"
+    issue_key: str | None = None
     scope: ScopeRefRequest | None = None
     base_spec: BaseSpec | None = None
     implied_base: BaseSpec | None = None

@@ -31,6 +31,7 @@ def _state(
 ) -> WorkflowState:
     """A neutral terminal state; each test sets only its predicate's fields."""
     return WorkflowState(
+        issue_key=None,
         feature_branch="kodezart/x-12345678",
         ralph_branch="kodezart/x-12345678-ralph-abcdef01",
         ticket=None,

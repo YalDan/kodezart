@@ -289,6 +289,7 @@ class AsyncioJobQueue:
         try:
             async for event in self._engine.run(
                 prompt=request.prompt,
+                issue_key=request.issue_key,
                 repo_path=request.repo_path,
                 repo_url=request.repo_url,
                 base_spec=request.base_spec,

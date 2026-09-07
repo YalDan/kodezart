@@ -50,12 +50,14 @@ class RecordingEngine:
     def __init__(self) -> None:
         self.scopes: list[ScopeRef | None] = []
         self.bases: list[BaseSpec] = []
+        self.issue_keys: list[str | None] = []
         self.finished = asyncio.Event()
 
     async def run(
         self,
         *,
         prompt: str,
+        issue_key: str | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
@@ -67,6 +69,7 @@ class RecordingEngine:
     ) -> AsyncGenerator[AgentEvent, None]:
         self.scopes.append(scope)
         self.bases.append(base_spec)
+        self.issue_keys.append(issue_key)
         yield AssistantTextEvent(text="scope observed", model="fixture")
         self.finished.set()
 
@@ -141,6 +144,38 @@ async def test_scope_is_domain_typed_before_queue_and_reaches_engine(
         assert engine.scopes == [submission.scope]
         assert engine.scopes[0] is submission.scope
         assert engine.bases[0].base_branch == "feature/base"
+        assert submission.issue_key is None
+        assert engine.issue_keys == [None]
+
+
+@pytest.mark.parametrize("route", ROUTES)
+@pytest.mark.parametrize("issue_key", [None, "EXT/42"])
+async def test_issue_identity_is_independent_of_scope_and_prompt(
+    route: str, issue_key: str | None
+) -> None:
+    body: dict[str, object] = {
+        "prompt": "Tracker issue: DECOY-9",
+        "repoPath": "/tmp/fixture",
+        "scope": {"kind": "issue", "key": "SCOPE-1"},
+        "issueKey": issue_key,
+        "baseSpec": {"inputs": [], "baseBranch": "recorded-base"},
+        "impliedBase": {"inputs": [], "baseBranch": "implied-base"},
+        "permissionMode": "plan",
+        "allowedTools": ["Read"],
+    }
+    async with scope_app() as (client, queue, engine):
+        response = await client.post(route, json=body)
+        assert_accepted(response, route)
+        await asyncio.wait_for(engine.finished.wait(), timeout=SETTLE_SECONDS)
+        (submission,) = queue.submissions
+        assert submission.issue_key == issue_key
+        assert engine.issue_keys == [issue_key]
+        assert submission.scope == ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1")
+        assert submission.base_spec.base_branch == "recorded-base"
+        assert submission.implied_base is not None
+        assert submission.implied_base.base_branch == "implied-base"
+        assert submission.permission_mode == "plan"
+        assert submission.allowed_tools == ["Read"]
 
 
 @pytest.mark.parametrize("route", ROUTES)

@@ -1122,6 +1122,7 @@ class WorkflowEngine(Protocol):
         self,
         *,
         prompt: str,
+        issue_key: str | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
@@ -1135,6 +1136,8 @@ class WorkflowEngine(Protocol):
 
         ``scope`` explicitly selects addressed input or the legacy prompt
         workflow. An engine must consume an addressed scope or refuse it.
+        ``issue_key`` is the producer's optional tracker identity, carried
+        independently of the prompt and scope address.
         ``cache_key`` IS the LangGraph thread id, so the caller's job id
         addresses the run's checkpoints.
         """

@@ -69,7 +69,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
-from kodezart.domain.pr_body import append_flagged_section
+from kodezart.domain.pr_body import append_flagged_section, append_tracker_issue
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.stall_report import stall_pr_body, stall_pr_title
 from kodezart.domain.thread_id import workflow_thread_id
@@ -221,6 +221,7 @@ class RalphWorkflowEngine:
         self,
         *,
         prompt: str,
+        issue_key: str | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
@@ -279,6 +280,7 @@ class RalphWorkflowEngine:
         config: RunnableConfig = {"configurable": configurable}
 
         initial_state: WorkflowState = {
+            "issue_key": issue_key,
             "feature_branch": "",
             "ralph_branch": "",
             "work_base_ref": base_spec.base_branch,
@@ -1262,10 +1264,13 @@ class RalphWorkflowEngine:
                 content_class=ContentClass.AUTHORED,
             ),
             body=await self._gated(
-                content=stall_pr_body(
-                    trajectory,
-                    validated_criteria(state),
-                    landed_commit=best_sha,
+                content=append_tracker_issue(
+                    stall_pr_body(
+                        trajectory,
+                        validated_criteria(state),
+                        landed_commit=best_sha,
+                    ),
+                    state["issue_key"],
                 ),
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
@@ -1676,6 +1681,10 @@ class RalphWorkflowEngine:
         pr_output = PRDescriptionOutput.model_validate(
             result_event.structured_output,
         )
+        body = append_tracker_issue(
+            append_flagged_section(pr_output.description, state["flagged_items"]),
+            state["issue_key"],
+        )
 
         pr_url, pr_number = await pr_creator.create_pr(
             repo_url=repo_url,
@@ -1687,10 +1696,7 @@ class RalphWorkflowEngine:
                 content_class=ContentClass.AUTHORED,
             ),
             body=await self._gated(
-                content=append_flagged_section(
-                    pr_output.description,
-                    state["flagged_items"],
-                ),
+                content=body,
                 visibility=state["repo_visibility"],
                 shape=WriterShape.PROSE,
                 destination=OutboundDestination.PR_BODY,

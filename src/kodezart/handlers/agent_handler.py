@@ -123,6 +123,7 @@ class AgentHandler:
         )
         submission = WorkflowSubmission(
             prompt=request.prompt,
+            issue_key=request.issue_key,
             repo_path=request.repo_path,
             repo_url=request.repo_url,
             base_spec=(

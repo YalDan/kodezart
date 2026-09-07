@@ -13,6 +13,13 @@ from kodezart.types.domain.accept import FlaggedItem
 FLAGGED_HEADING = "## Shipped with flags"
 
 
+def append_tracker_issue(body: str, issue_key: str | None) -> str:
+    """Record the dispatched issue independently of generated prose."""
+    if issue_key is None:
+        return body
+    return f"{body}\n\nTracker issue: {issue_key}"
+
+
 def append_flagged_section(body: str, items: Sequence[FlaggedItem]) -> str:
     """Append the flagged items to a pull-request *body*, verbatim.
 
