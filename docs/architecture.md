@@ -70,6 +70,7 @@ does not exist.
 | ContentScanner    | AgentContentScanner      | The judgment half, ordered after the patterns        |
 | OutboundContentGate | PatternOutboundContentGate | CLEAN / REDACTED / BLOCKED over N scanners      |
 | RefPublisher      | GitRefPublisher          | Points a named ref at an existing commit on the remote |
+| CheckChainRunner | SubprocessCheckChainRunner | Runs the ordered declared check steps in a scratch directory and captures every result |
 | Remediator        | RemediationChain         | One remediation round: failure evidence in, one targeted ticket out |
 
 The CI adapter's `rerun_checks` resolves the supplied ref once, validates that
@@ -459,3 +460,13 @@ kinds still depends on the universal holder-aware writer foundation. Vendor
 account authors and change timestamps cannot supply those run identities.
 The pure count and replay tests do not establish that producer, its port
 conformance, or a supervisor's leased alarm writer.
+
+## Check-chain execution
+
+The check-chain runner executes each declared command through the host shell,
+in the supplied directory and in declared order. Earlier failures do not hide
+later observations. The configured per-step deadline kills the shell process
+group and retains partial output; cancellation also reaps the attempt before
+propagating. Empty or ambiguous step identities refuse before execution.
+The runner returns failed names and ordered outputs without classifying roots
+or cascades. Union composition and its result publication are separate consumers.

@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec, WorkRef
+from kodezart.types.domain.check_chain import CheckChainResult
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -26,6 +27,7 @@ from kodezart.types.domain.gating import (
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.operation import (
+    CheckStep,
     LifecycleStage,
     QueueState,
     RecordDestination,
@@ -1406,3 +1408,12 @@ class OutboundContentGate(Protocol):
         saying so.
         """
         ...
+
+
+@runtime_checkable
+class CheckChainRunner(Protocol):
+    """Execute the declared ordered chain, retaining every step's output."""
+
+    async def run_chain(
+        self, *, cwd: str, steps: Sequence[CheckStep]
+    ) -> CheckChainResult: ...

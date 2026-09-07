@@ -496,3 +496,13 @@ class OrganizeAdmissionIdentityError(Exception):
         super().__init__(
             f"organize admission returned issue {observed!r}, expected {expected!r}"
         )
+
+
+class CheckChainExecutionError(Exception):
+    """The configured chain could not be observed as command results."""
+
+    def __init__(self, *, cwd: str, step_name: str | None, reason: str) -> None:
+        self.cwd = cwd
+        self.step_name = step_name
+        self.reason = reason
+        super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")

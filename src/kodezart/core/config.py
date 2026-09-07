@@ -351,6 +351,11 @@ class AppConfig(BaseSettings):
         le=300.0,
         description="Seconds between CI status check polls.",
     )
+    union_check_step_timeout_seconds: float = Field(
+        default=1800,
+        gt=0,
+        description="Wall-clock bound for one check step of a union composition.",
+    )
     delivery_red_rerun_max_attempts: int = Field(
         default=1,
         ge=0,
