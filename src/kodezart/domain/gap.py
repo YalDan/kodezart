@@ -1,7 +1,7 @@
 """Pure gap membership over the tracker's criterion sub-issues.
 
-The September 1 amendment to KOD75 retires the old obligation enums. This
-module preserves the actual records; it neither decodes Evidence text nor
+The tracker owns the criterion-state vocabulary. This module preserves
+the actual records; it neither decodes Evidence text nor
 invents a second state or grading vocabulary. Supersession references must
 already have been established by the owning tracker/lifecycle reader.
 """
