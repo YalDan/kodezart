@@ -76,6 +76,7 @@ Ralph loop, and finalize.
 | `prompt`         | `string`                          | Yes      |                                              | The task prompt (min 1 char)    |
 | `repoPath`       | `string \| null`                  | *        |                                              | Local filesystem path           |
 | `repoUrl`        | `string \| null`                  | *        |                                              | Remote repository URL           |
+| `scope`          | `ScopeRefRequest \| null`         | No       | `null`                                       | Tracker scope address: `kind` and nonempty opaque `key` |
 | `baseBranch`     | `string`                          | No       | `"main"`                                     | Branch to base work on          |
 | `baseSpec`       | `BaseSpec \| null`                | No       | `null`                                       | Recorded base to scope the run against; when present `baseBranch` is not consulted |
 | `impliedBase`    | `BaseSpec \| null`                | No       | `null`                                       | The caller's view of the base; refused with `StaleBaseError` when it differs from the recorded one |
@@ -83,6 +84,18 @@ Ralph loop, and finalize.
 | `allowedTools`   | `string[]`                        | No       | `["Read","Glob","Grep","Bash","Edit","Write"]` | Tools the agent may use       |
 
 \* Exactly one of `repoPath` or `repoUrl` must be provided.
+
+`scope.kind` accepts `initiative`, `project`, `milestone`, or `issue`.
+Omitting `scope` or supplying `null` runs the existing prompt workflow.
+Invalid scope input returns `422` before a job is queued. `baseBranch`
+must be nonempty when no recorded `baseSpec` is supplied.
+
+Scoped graph execution is not yet implemented. A valid scoped job reads
+current membership through the configured tracker when dequeued, then
+terminates with `ScopedExecutionUnavailableError` and outcome `engine_error`.
+Without a configured tracker it terminates with the same error kind; a
+tracker read failure retains its own error kind. An addressed scope never
+falls back to the prompt workflow. These rules also apply to `/fire`.
 
 ### Example
 

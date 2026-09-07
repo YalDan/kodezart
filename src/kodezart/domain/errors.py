@@ -18,6 +18,14 @@ class ScopeReadError(Exception):
         self.ref: ScopeRef = ref
 
 
+class ScopedExecutionUnavailableError(Exception):
+    """An addressed scope cannot execute through the legacy workflow pipeline."""
+
+    def __init__(self, message: str, *, ref: ScopeRef) -> None:
+        super().__init__(f"{message} (scope: {ref.kind.value}:{ref.key})")
+        self.ref: ScopeRef = ref
+
+
 class TransientAPIError(Exception):
     """Raised for transient, retry-eligible API failures (e.g. 5xx, network)."""
 

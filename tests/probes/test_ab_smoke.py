@@ -367,6 +367,7 @@ async def run_arm(
         gate=gate,
         github_api=None,
         checkpointer=None,
+        tracker=None,
     )
 
     repo = await fixture_repo(root)
@@ -379,6 +380,7 @@ async def run_arm(
             prompt=request.prompt,
             repo_path=request.repo_path,
             repo_url=request.repo_url,
+            scope=None,
             base_spec=trunk_base(request.base_branch),
             permission_mode=request.permission_mode,
             allowed_tools=request.allowed_tools,

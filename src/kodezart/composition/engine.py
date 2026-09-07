@@ -24,15 +24,18 @@ from kodezart.core.protocols import (
     PromptSetProvider,
     RefPublisher,
     RepoCache,
+    TrackerPort,
     WorkflowEngine,
     WorkspaceProvider,
 )
 from kodezart.core.retry import DelayFloor
-from kodezart.domain.errors import RateLimitError
+from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
+from kodezart.services.scope_resolution import resolve_scope
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -61,9 +64,11 @@ class OriginRoutedWorkflowEngine:
         *,
         forge_arm: WorkflowEngine,
         forge_less_arm: WorkflowEngine,
+        tracker: TrackerPort | None,
     ) -> None:
         self._forge_arm: WorkflowEngine = forge_arm
         self._forge_less_arm: WorkflowEngine = forge_less_arm
+        self._tracker: TrackerPort | None = tracker
         self._log: BoundLogger = get_logger(__name__)
 
     def arm_for(self, repo_url: str | None) -> WorkflowEngine:
@@ -85,17 +90,31 @@ class OriginRoutedWorkflowEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
-        """Run on the arm this origin's forge capability allows.
+        """Resolve addressed scopes or run the legacy arm for an unscoped job.
 
-        A forwarder, never a second dispatch path: the queue worker is
-        still the only thing that starts a run, and this hands that one
-        run to the arm the origin allows.
+        The queue worker starts the run, so membership is read at dequeue.
+        The scoped graph pipeline is not implemented yet: a resolved scope
+        receives a typed refusal before either legacy arm can execute it.
         """
+        if scope is not None:
+            if self._tracker is None:
+                msg = "Scoped execution requires a configured tracker"
+                raise ScopedExecutionUnavailableError(msg, ref=scope)
+            resolved = await resolve_scope(ref=scope, tracker=self._tracker)
+            await self._log.ainfo(
+                "workflow_scope_resolved",
+                scope_kind=resolved.ref.kind.value,
+                scope_key=resolved.ref.key,
+                issue_count=len(resolved.issues),
+            )
+            msg = "Scoped graph execution is not implemented"
+            raise ScopedExecutionUnavailableError(msg, ref=resolved.ref)
         arm = self.arm_for(repo_url)
         await self._log.ainfo(
             "forge_capabilities_selected",
@@ -107,6 +126,7 @@ class OriginRoutedWorkflowEngine:
             repo_path=repo_path,
             repo_url=repo_url,
             base_spec=base_spec,
+            scope=None,
             implied_base=implied_base,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
@@ -152,6 +172,7 @@ def build_workflow_engine(
     skills: SkillsSelection,
     gate: OutboundContentGate,
     github_api: GitHubAPIClient | None,
+    tracker: TrackerPort | None,
     checkpointer: BaseCheckpointSaver[str] | None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
@@ -232,4 +253,5 @@ def build_workflow_engine(
     return OriginRoutedWorkflowEngine(
         forge_arm=arm(github_api),
         forge_less_arm=arm(None),
+        tracker=tracker,
     )

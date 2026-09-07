@@ -239,6 +239,7 @@ async def _run(
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt=prompt,
             repo_path=None if repo_url else "/tmp/fake",
             repo_url=repo_url,

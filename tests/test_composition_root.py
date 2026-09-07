@@ -54,6 +54,7 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     WorkflowCompleteEvent,
 )
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
@@ -64,7 +65,7 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome, RunRecord
 from kodezart.types.domain.tracker import TrackerIssue
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     FakeFireReport,
     FakeTrackerPort,
@@ -434,7 +435,16 @@ async def _shutdown(
         for key in (FINISHED, KILLED, NEVER_RAN):
             record = await queue.submit(
                 lane=LANE,
-                request=WorkflowRequest(prompt=key, repo_url=REPO_URL),
+                request=WorkflowSubmission(
+                    prompt=key,
+                    repo_path=None,
+                    repo_url=REPO_URL,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode="bypassPermissions",
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
             )
             watch.follow(
                 issue_key=key,

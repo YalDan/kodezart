@@ -24,10 +24,9 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import WorkflowEngine
 from kodezart.domain.errors import QueueFullError
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
-from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 
 
 class _JobStream:
@@ -130,7 +129,7 @@ class AsyncioJobQueue:
         self._event_buffer_capacity: int = event_buffer_capacity
         self._lanes: dict[str, _Lane] = {}
         self._records: dict[str, JobRecord] = {}
-        self._requests: dict[str, WorkflowRequest] = {}
+        self._requests: dict[str, WorkflowSubmission] = {}
         self._streams: dict[str, _JobStream] = {}
         self._evictions: set[asyncio.Task[None]] = set()
         self._accepting: bool = False
@@ -205,7 +204,7 @@ class AsyncioJobQueue:
 
     # -- JobQueue ------------------------------------------------------------
 
-    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
         """Enqueue *request* on *lane*. Raises ``QueueFullError`` at capacity."""
         if not self._accepting:
             msg = f"lane {lane!r} is not accepting submissions"
@@ -292,11 +291,8 @@ class AsyncioJobQueue:
                 prompt=request.prompt,
                 repo_path=request.repo_path,
                 repo_url=request.repo_url,
-                base_spec=(
-                    request.base_spec
-                    if request.base_spec is not None
-                    else trunk_base(request.base_branch)
-                ),
+                base_spec=request.base_spec,
+                scope=request.scope,
                 implied_base=request.implied_base,
                 permission_mode=request.permission_mode,
                 allowed_tools=request.allowed_tools,

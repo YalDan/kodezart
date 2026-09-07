@@ -255,6 +255,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
+            scope=None,
             permission_mode="bypassPermissions",
             allowed_tools=["Bash"],
             cache_key="k",

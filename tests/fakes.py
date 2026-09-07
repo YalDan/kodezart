@@ -122,8 +122,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
 )
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
-from kodezart.types.domain.workflow import RemediationRequest
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from tests.prompt_census import configured_investigation_cap
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
@@ -3584,14 +3583,14 @@ class FakeJobQueue:
         states: Mapping[str, JobState] | None = None,
         events: Sequence[AgentEvent] = (),
     ) -> None:
-        self.submissions: list[tuple[str, WorkflowRequest]] = []
+        self.submissions: list[tuple[str, WorkflowSubmission]] = []
         self.records: dict[str, JobRecord] = {}
         self.attached: list[str] = []
         self._states: dict[str, JobState] = dict(states or {})
         self._events: tuple[AgentEvent, ...] = tuple(events)
         self._sequence: int = 0
 
-    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
         await asyncio.sleep(0)
         self._sequence += 1
         job_id = f"job-{self._sequence:04d}"

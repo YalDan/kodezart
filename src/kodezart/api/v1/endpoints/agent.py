@@ -82,17 +82,17 @@ async def stream_workflow(
     await _log.adebug("stream_workflow_endpoint")
     config: AppConfig = request.app.state.config
     queue: JobQueue = request.app.state.job_queue
-    try:
-        record: JobRecord = await queue.submit(lane=DEFAULT_LANE, request=body)
-    except QueueFullError as exc:
-        return _queue_full_response(exc)
-
-    status_url, stream_url = _job_urls(config, record.job_id)
     handler = AgentHandler(
         service=request.app.state.agent_service,
         skills=request.app.state.skills,
         queue=queue,
     )
+    try:
+        record = await handler.submit_workflow(body, lane=DEFAULT_LANE)
+    except QueueFullError as exc:
+        return _queue_full_response(exc)
+
+    status_url, stream_url = _job_urls(config, record.job_id)
 
     async def generate() -> AsyncGenerator[str, None]:
         async for event in handler.stream_workflow(
@@ -111,8 +111,13 @@ async def fire_workflow(body: WorkflowRequest, request: Request) -> Response:
     await _log.adebug("fire_workflow_endpoint")
     config: AppConfig = request.app.state.config
     queue: JobQueue = request.app.state.job_queue
+    handler = AgentHandler(
+        service=request.app.state.agent_service,
+        skills=request.app.state.skills,
+        queue=queue,
+    )
     try:
-        record: JobRecord = await queue.submit(lane=DEFAULT_LANE, request=body)
+        record = await handler.submit_workflow(body, lane=DEFAULT_LANE)
     except QueueFullError as exc:
         return _queue_full_response(exc)
 

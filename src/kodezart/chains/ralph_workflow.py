@@ -62,6 +62,7 @@ from kodezart.domain.criteria_prompt import render_validation_findings
 from kodezart.domain.errors import (
     CriteriaFanInError,
     ForgeAPIError,
+    ScopedExecutionUnavailableError,
     TransientAPIError,
     UngroundedVerdictError,
 )
@@ -123,6 +124,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
@@ -222,6 +224,7 @@ class RalphWorkflowEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
@@ -237,6 +240,9 @@ class RalphWorkflowEngine:
         ``cache_key`` IS the LangGraph thread id: the caller's job id
         addresses this run's checkpoints.
         """
+        if scope is not None:
+            msg = "Scoped execution requires the scope entry pipeline"
+            raise ScopedExecutionUnavailableError(msg, ref=scope)
         # TODO(time-travel): E2E checkpoint resume still requires:
         # 2. On resume: pass None (not initial_state) to astream()
         #    so LangGraph loads from the outer checkpoint.

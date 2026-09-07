@@ -32,8 +32,9 @@ from kodezart.core.config import AppConfig
 from kodezart.core.logging import configure_logging, get_logger
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import PassRun
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.services.test_pass_scheduler import Metronome
 
 FAILURE = "the creator produced no structured output"
@@ -172,7 +173,16 @@ async def test_the_queues_failure_event_carries_the_traceback() -> None:
         try:
             record = await queue.submit(
                 lane=LANE,
-                request=WorkflowRequest(prompt="do the thing", repo_path="/tmp/fake"),
+                request=WorkflowSubmission(
+                    prompt="do the thing",
+                    repo_path="/tmp/fake",
+                    repo_url=None,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode="bypassPermissions",
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
             )
             await asyncio.wait_for(
                 drain(queue, job_id=record.job_id),

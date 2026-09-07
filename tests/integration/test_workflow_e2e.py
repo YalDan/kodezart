@@ -259,6 +259,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
@@ -410,6 +411,7 @@ async def test_workflow_e2e_exhausts_iterations(
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
@@ -615,6 +617,7 @@ async def test_workflow_e2e_divergent_base_branch(
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
@@ -915,6 +918,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
@@ -1180,6 +1184,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix",
                 repo_path="/tmp/fake",
                 repo_url=None,
@@ -1491,6 +1496,7 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,
@@ -1776,6 +1782,7 @@ async def test_a_review_entry_round_is_built_on_the_consolidated_work(
             executor=executor,
             remediator=remediator,
         ).run(
+            scope=None,
             prompt="fix",
             repo_path=str(repo),
             repo_url=None,

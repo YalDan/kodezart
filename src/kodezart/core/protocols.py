@@ -52,8 +52,7 @@ from kodezart.types.domain.tracker import (
     TrackerIssue,
     TrackerReview,
 )
-from kodezart.types.domain.workflow import RemediationRequest
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 
 
 @runtime_checkable
@@ -1053,6 +1052,7 @@ class WorkflowEngine(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: str,
         allowed_tools: list[str],
@@ -1060,6 +1060,8 @@ class WorkflowEngine(Protocol):
     ) -> AsyncIterator[AgentEvent]:
         """Full pipeline: branch → ticket → criteria → loop → merge.
 
+        ``scope`` explicitly selects addressed input or the legacy prompt
+        workflow. An engine must consume an addressed scope or refuse it.
         ``cache_key`` IS the LangGraph thread id, so the caller's job id
         addresses the run's checkpoints.
         """
@@ -1077,7 +1079,7 @@ class JobQueue(Protocol):
     persistence machinery stands behind it.
     """
 
-    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
         """Enqueue *request* on *lane*. Raises ``QueueFullError`` at capacity."""
         ...
 

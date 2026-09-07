@@ -212,6 +212,7 @@ async def _run(
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt="do the lane's own work",
             repo_path=str(repo),
             repo_url=None,
