@@ -382,3 +382,71 @@ async def test_clean_union_is_green_and_check_failure_is_red(repository):
     assert red.outcome is UnionOutcome.RED
     assert red.checks.failed_step_names == frozenset({"gate"})
     assert red.merge_conflict is None
+
+
+async def test_real_consumer_calls_single_classifier_and_names_root_once(
+    repository, monkeypatch
+):
+    from kodezart.domain import check_chain
+
+    called = []
+    actual = check_chain.classify_check_failures
+
+    def observed(steps, failed):
+        called.append((tuple(steps), failed))
+        return actual(steps, failed)
+
+    monkeypatch.setattr(check_chain, "classify_check_failures", observed)
+    command = f'{sys.executable} -c "raise SystemExit(1)"'
+    steps = (
+        CheckStep(name="gate", command=command),
+        CheckStep(name="middle", command=command, depends_on="gate"),
+        CheckStep(name="last", command=command, depends_on="middle"),
+    )
+    result = await verify(
+        repository,
+        ObservedGit(),
+        repo_entry=RepoEntry(url="file:///fixture", trunk="main", checks=steps),
+    )
+    assert called == [(steps, frozenset({"gate", "middle", "last"}))]
+    assert result.remediation.root_step_names == ("gate",)
+    assert result.remediation.cascade_step_names == ("middle", "last")
+    assert (
+        result.remediation.detail
+        == "Repair union check roots: gate. Cascading checks: middle, last."
+    )
+    assert [output.name for output in result.checks.step_outputs] == [
+        "gate",
+        "middle",
+        "last",
+    ]
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        (
+            CheckStep(name="a", command="a", depends_on="b"),
+            CheckStep(name="b", command="b", depends_on="a"),
+        ),
+        (
+            CheckStep(name="a", command="a", depends_on="b"),
+            CheckStep(name="b", command="b", depends_on="missing"),
+        ),
+        (CheckStep(name="a", command="a"), CheckStep(name="a", command="a")),
+    ],
+)
+async def test_malformed_chain_refuses_before_git_or_classifier(steps):
+    adapter = FakeGitService()
+    repo = RepoEntry(url="file:///fixture", trunk="main", checks=steps)
+    with pytest.raises(CheckChainExecutionError):
+        await service(adapter).verify(
+            scope_key="scope",
+            repo_path="unused",
+            repo=repo,
+            base_sha="b" * 40,
+            lane_heads=(
+                UnionLaneHead(lane_key="a", branch="work/a", head_sha="a" * 40),
+            ),
+        )
+    assert adapter.calls == []

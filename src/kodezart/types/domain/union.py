@@ -67,6 +67,25 @@ class UnionMergeConflict(CamelCaseModel):
     paths: tuple[str, ...] = Field(min_length=1)
 
 
+class UnionRemediationEntry(CamelCaseModel):
+    """One scope remediation entry naming check causes and their cascades.
+
+    This returned value is not a tracker record or a terminal emission.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    root_step_names: tuple[str, ...] = Field(min_length=1)
+    cascade_step_names: tuple[str, ...]
+
+    @property
+    def detail(self) -> str:
+        """Name causes once, with dependent failures identified separately."""
+        roots = ", ".join(self.root_step_names)
+        cascades = ", ".join(self.cascade_step_names) or "none"
+        return f"Repair union check roots: {roots}. Cascading checks: {cascades}."
+
+
 class UnionCompositionResult(UnionScratchObservation):
     """A public scope-grain check observation available to any consumer.
 
@@ -76,6 +95,7 @@ class UnionCompositionResult(UnionScratchObservation):
 
     checks: CheckChainResult | None
     merge_conflict: UnionMergeConflict | None = None
+    remediation: UnionRemediationEntry | None = None
 
     @model_validator(mode="after")
     def _one_observation(self) -> Self:
