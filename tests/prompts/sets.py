@@ -47,6 +47,7 @@ AUDIT_DESTINATION = "a public code-hosting surface"
 ORGANIZE_CASE: dict[str, object] = {
     "mandate_rubric": "Golden mandate rubric",
     "issue_body": "Golden source issue body",
+    "issue_key": "external/42",
     "linked_issue_bodies": ["Golden linked issue body"],
     "criterion_issue_bodies": ["Golden criterion issue body"],
     "refusal_evidence": "Golden refusal evidence",

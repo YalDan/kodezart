@@ -46,6 +46,7 @@ from tests.prompts.test_prompt_wiring import load_registry
 #: not, and that difference is the point of listing them separately.
 ORGANIZE_INPUT_TAGS = (
     "mandate_rubric",
+    "issue_key",
     "issue_body",
     "linked_issue_bodies",
     "linked_issue",

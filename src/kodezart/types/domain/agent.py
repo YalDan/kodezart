@@ -45,6 +45,8 @@ from kodezart.types.domain.trajectory import LoopTrajectory
 RaiseSite = Literal[
     "ticket_creator",
     "ticket_reviewer",
+    "organize_assess",
+    "organize_verify",
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",

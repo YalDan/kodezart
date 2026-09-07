@@ -177,6 +177,14 @@ fragments. Boot rejects a colliding configuration root or projected binding.
 Refusal evidence carries the admission result for an authoring repair; assess
 and verify render the current source bodies without that prior refusal.
 
+`OrganizeAdmission.assess` and `.verify` read the current subject, linked
+issues and criterion children through the tracker port on every call. The
+source `issue_key` is supplied separately from the verbatim bodies. Each
+call acquires the requested repository base and starts a read-only
+`organize_pass` session, with no prior session or author transcript. These
+entry points return an admission result; they do not write phase markers or
+run the full organizer convergence loop.
+
 ## The knowledge-server grant
 
 `KODEZART_KNOWLEDGE_SESSION_GRANTS` names, one by one, the kinds of agent

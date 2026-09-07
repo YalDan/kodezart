@@ -4856,7 +4856,7 @@ def _dispatch_sites() -> list[tuple[str, str]]:
     sites: list[tuple[str, str]] = []
     for path in sorted(root.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
-        if "template_for(PromptKey." not in source:
+        if ".template_for(" not in source:
             continue
         for opener in (".stream(", ".stream_in_workspace(", ".stream_workflow("):
             start = 0
@@ -4868,7 +4868,16 @@ def _dispatch_sites() -> list[tuple[str, str]]:
 
 #: The dispatch census this suite expects to find, so a site that stops
 #: resolving a template cannot silently leave the check.
-KEYED_DISPATCH_COUNT = 12
+KEYED_DISPATCH_COUNTS = {
+    "agent_content_scanner.py": 1,
+    "git_change_persister.py": 1,
+    "organize.py": 1,
+    "ralph_loop.py": 2,
+    "ralph_workflow.py": 5,
+    "remediation.py": 1,
+    "ticket_generation.py": 2,
+    "prompt_pass.py": 1,
+}
 
 
 def test_house_rules_delivered_as_system_prompt_append() -> None:
@@ -4893,7 +4902,9 @@ def test_house_rules_delivered_as_system_prompt_append() -> None:
         assert registry.session_policy(key).system_prompt_append == house_rules
 
     sites = _dispatch_sites()
-    assert len(sites) == KEYED_DISPATCH_COUNT, [name for name, _ in sites]
+    from collections import Counter
+
+    assert Counter(name for name, _ in sites) == KEYED_DISPATCH_COUNTS
 
     carriers = [
         (name, block) for name, block in sites if "session_policy=" not in block

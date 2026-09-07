@@ -119,9 +119,19 @@ def test_two_calls_render_distinct_rubrics_and_all_current_source_bodies(
 ) -> None:
     registry = load_registry(default_set=set_name)
     template = registry.template_for(key)
-    first = template.render({**variables("First rubric"), "base_ref": "selected/base"})
+    first = template.render(
+        {
+            **variables("First rubric"),
+            "base_ref": "selected/base",
+            "issue_key": "external/42",
+        }
+    )
     second = template.render(
-        {**variables("Second rubric"), "base_ref": "selected/base"}
+        {
+            **variables("Second rubric"),
+            "base_ref": "selected/base",
+            "issue_key": "external/42",
+        }
     )
     assert "First rubric" in first and "Second rubric" not in first
     assert "Second rubric" in second and "First rubric" not in second
@@ -152,6 +162,7 @@ def test_read_only_roles_do_not_render_prior_refusal_or_author_rationale(
             {
                 **variables(),
                 "base_ref": "main",
+                "issue_key": "external/42",
                 "refusal_evidence": "Prior refusal must not enter fresh judgment",
                 "author_reasoning": "Author rationale must not enter fresh judgment",
             }
@@ -173,7 +184,7 @@ def test_authoring_receives_the_typed_refusal_decision_and_evidence(
     rendered = (
         load_registry(default_set=set_name)
         .template_for(key)
-        .render({**supplied, "base_ref": "main"})
+        .render({**supplied, "base_ref": "main", "issue_key": "external/42"})
     )
     assert refusal().invented_decision in rendered
     assert refusal().evidence in rendered
@@ -200,7 +211,7 @@ def test_an_empty_child_family_and_first_authoring_round_remain_explicit(
     rendered = (
         load_registry(default_set=set_name)
         .template_for(key)
-        .render({**supplied, "base_ref": "main"})
+        .render({**supplied, "base_ref": "main", "issue_key": "external/42"})
     )
     assert "<refusal_evidence>" not in rendered
     assert "None" not in rendered
@@ -220,5 +231,5 @@ def test_required_source_bindings_cannot_silently_disappear(
     del supplied[missing]
     with pytest.raises(PromptRenderError):
         load_registry(default_set=set_name).template_for(key).render(
-            {**supplied, "base_ref": "main"}
+            {**supplied, "base_ref": "main", "issue_key": "external/42"}
         )

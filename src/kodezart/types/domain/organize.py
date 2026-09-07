@@ -152,3 +152,16 @@ class ResolvedMandateSpec(CamelCaseModel):
     spec: MandateSpec
     gate_label: str
     terminal_marker: str
+
+
+class OrganizeAdmissionRequest(CamelCaseModel):
+    """Source identity, rubric and repository base for one fresh judgment."""
+
+    model_config = ConfigDict(frozen=True)
+
+    issue_key: str = Field(min_length=1)
+    mandate_rubric: str = Field(min_length=1)
+    repo_url: str = Field(min_length=1)
+    base_ref: str = Field(min_length=1)
+    cache_key: str | None = None
+    defect_classes: tuple[str, ...] = ()
