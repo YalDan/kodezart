@@ -277,3 +277,38 @@ async def test_composed_tree_without_declared_chain_uses_typed_refusal(repositor
     assert caught.value.cwd == adapter.created[0]
     assert adapter.removed == adapter.created
     assert not Path(caught.value.cwd).exists()
+
+
+@pytest.mark.parametrize("raises", [False, True])
+async def test_verification_cannot_publish_or_change_open_prs(repository, raises):
+    from kodezart.core.protocols import ForgeQuery
+    from tests.fakes import FakeForgeQuery
+
+    class NoPublisher(ObservedGit):
+        async def push(self, *args):
+            pytest.fail("a scratch verification must not push")
+
+        async def delete_remote_branch(self, *args):
+            pytest.fail("a scratch verification must not delete a branch")
+
+    repo, _, heads = repository
+    opened = {
+        (entry().url, h.branch): (f"https://forge.invalid/pr/{i}", i)
+        for i, h in enumerate(reversed(heads), 1)
+    }
+    forge: ForgeQuery = FakeForgeQuery(open_prs=opened)
+    assert not hasattr(forge, "merge")
+    assert not hasattr(forge, "merge_pr")
+    before = await git(repo, "show-ref")
+    adapter = NoPublisher()
+    if raises:
+        with pytest.raises(RuntimeError, match="transport broke"):
+            await verify(repository, adapter, RaisingRunner())
+    else:
+        await verify(repository, adapter)
+    assert await git(repo, "show-ref") == before
+    for h in heads:
+        assert (
+            await forge.open_pr_for_head(repo_url=entry().url, head=h.branch)
+            == opened[(entry().url, h.branch)]
+        )
