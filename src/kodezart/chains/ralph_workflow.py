@@ -77,7 +77,7 @@ from kodezart.domain.pr_body import (
 from kodezart.domain.prompt_variables import changeset_variables
 from kodezart.domain.stall_report import stall_pr_body, stall_pr_title
 from kodezart.domain.thread_id import workflow_thread_id
-from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.domain.ticket import format_fire_spec, format_ticket_as_task
 from kodezart.domain.trajectory import landable_commit
 from kodezart.domain.workflow_state import (
     current_ticket,
@@ -120,6 +120,7 @@ from kodezart.types.domain.criteria import (
     FanInReport,
     ValidatedCriterion,
 )
+from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -915,7 +916,7 @@ class RalphWorkflowEngine:
 
         implementation_prompt = self._prompts.template_for(
             PromptKey.IMPLEMENTATION,
-        ).render({"task_md": format_ticket_as_task(ticket)})
+        ).render({"task_md": format_fire_spec(AuthoredSpec(ticket=ticket))})
 
         last_iteration_event = await self._run_quality_gate(
             prompt=implementation_prompt,
@@ -1666,7 +1667,7 @@ class RalphWorkflowEngine:
         # Generate PR description via agent
         prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
             {
-                "task_md": format_ticket_as_task(ticket),
+                "task_md": format_fire_spec(AuthoredSpec(ticket=ticket)),
                 "acceptance_criteria": validated_criteria(state),
                 "total_iterations": state["total_iterations"],
             },

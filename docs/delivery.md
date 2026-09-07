@@ -17,6 +17,12 @@ authored subject bytes and renders a tracker subject's body verbatim. Both
 shipped PR prompts retain tracker criterion keys, owning issue references and
 bodies without minting legacy criterion identities or classes.
 
+The existing authored implementation, remediation and workflow PR bindings also
+use the total formatter. A generated ticket corpus exercises the actual
+consumers in both shipped prompt sets against 192 prompt digests captured on the
+dispatch base, preserving the authored bytes without changing existing goldens.
+The branch-name input still belongs to its earlier dispatch stage.
+
 The common route accepts `handed_off_for_delivery`. It verifies that the
 execution carries the dispatched issue's FIRE run identity, that the
 terminal head and recorded base agree with the call, that both branches exist
