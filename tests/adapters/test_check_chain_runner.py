@@ -87,8 +87,9 @@ async def test_timeout_kills_the_shells_descendants(tmp_path: Path) -> None:
             await asyncio.sleep(0.01)
 
 
+@pytest.mark.parametrize("cancellation_count", [1, 2, 3])
 async def test_cancel_during_spawn_reaps_the_eventual_process(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancellation_count: int
 ) -> None:
     real_spawn = asyncio.create_subprocess_shell
     spawned = asyncio.Event()
@@ -113,7 +114,9 @@ async def test_cancel_during_spawn_reaps_the_eventual_process(
         )
     )
     await asyncio.wait_for(spawned.wait(), timeout=3)
-    task.cancel()
+    for _ in range(cancellation_count):
+        task.cancel()
+        await asyncio.sleep(0)
     release.set()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=3)
@@ -205,3 +208,44 @@ def test_timeout_environment_and_no_runner_numeric_literal(
         for node in ast.walk(ast.parse(inspect.getsource(subprocess_check_chain)))
         if isinstance(node, ast.Constant) and type(node.value) in (int, float)
     ]
+
+
+@pytest.mark.parametrize("cancel_cleanup", [False, True])
+async def test_launch_handshake_counts_against_step_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancel_cleanup: bool
+) -> None:
+    real_spawn = asyncio.create_subprocess_shell
+    spawned = asyncio.Event()
+    release = asyncio.Event()
+
+    async def delayed_spawn(
+        *args: object, **kwargs: object
+    ) -> asyncio.subprocess.Process:
+        process = await real_spawn(*args, **kwargs)
+        spawned.set()
+        await release.wait()
+        return process
+
+    monkeypatch.setattr(
+        subprocess_check_chain.asyncio, "create_subprocess_shell", delayed_spawn
+    )
+    task = asyncio.create_task(
+        runner(0.05).run_chain(
+            cwd=str(tmp_path),
+            steps=[CheckStep(name="launch", command="printf complete")],
+        )
+    )
+    await asyncio.wait_for(spawned.wait(), timeout=3)
+    await asyncio.sleep(0.1)
+    if cancel_cleanup:
+        task.cancel()
+        await asyncio.sleep(0)
+    release.set()
+    if cancel_cleanup:
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=3)
+    else:
+        result = await asyncio.wait_for(task, timeout=3)
+        assert result.failed_step_names == frozenset({"launch"})
+        assert result.step_outputs[0].timed_out is True
+        assert result.step_outputs[0].output == "complete"

@@ -19,6 +19,32 @@ def _kill_group(process: asyncio.subprocess.Process) -> None:
         pass
 
 
+async def _finish_cleanup[T](task: asyncio.Task[T]) -> tuple[T, bool]:
+    """Finish owned cleanup despite repeated cancellation of the caller."""
+    canceled = False
+    while True:
+        try:
+            return await asyncio.shield(task), canceled
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise
+            canceled = True
+
+
+async def _stop_attempt(
+    spawning: asyncio.Task[asyncio.subprocess.Process],
+    communication: asyncio.Task[tuple[bytes, bytes]] | None,
+) -> tuple[asyncio.subprocess.Process, bytes]:
+    process, spawn_canceled = await _finish_cleanup(spawning)
+    _kill_group(process)
+    if communication is None:
+        communication = asyncio.create_task(process.communicate())
+    (output, _), read_canceled = await _finish_cleanup(communication)
+    if spawn_canceled or read_canceled:
+        raise asyncio.CancelledError
+    return process, output
+
+
 class SubprocessCheckChainRunner:
     """Capture every declared step, including cascades after an earlier red.
 
@@ -61,41 +87,33 @@ class SubprocessCheckChainRunner:
         )
 
     async def _run_step(self, *, cwd: str, step: CheckStep) -> CheckStepOutput:
-        try:
-            spawning = asyncio.create_task(
-                asyncio.create_subprocess_shell(
-                    step.command,
-                    cwd=cwd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    start_new_session=True,
-                )
+        spawning = asyncio.create_task(
+            asyncio.create_subprocess_shell(
+                step.command,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                start_new_session=True,
             )
+        )
+        communication: asyncio.Task[tuple[bytes, bytes]] | None = None
+        timed_out = False
+        try:
             try:
-                process = await asyncio.shield(spawning)
-            except asyncio.CancelledError:
-                process = await spawning
-                _kill_group(process)
-                await process.communicate()
+                async with asyncio.timeout(self._timeout):
+                    process = await asyncio.shield(spawning)
+                    communication = asyncio.create_task(process.communicate())
+                    output, _ = await asyncio.shield(communication)
+            except TimeoutError:
+                timed_out = True
+                process, output = await _stop_attempt(spawning, communication)
+            except BaseException:
+                await _stop_attempt(spawning, communication)
                 raise
         except OSError as exc:
             raise CheckChainExecutionError(
                 cwd=cwd, step_name=step.name, reason=str(exc)
             ) from exc
-        communication = asyncio.create_task(process.communicate())
-        timed_out = False
-        try:
-            output, _ = await asyncio.wait_for(
-                asyncio.shield(communication), timeout=self._timeout
-            )
-        except TimeoutError:
-            timed_out = True
-            _kill_group(process)
-            output, _ = await communication
-        except BaseException:
-            _kill_group(process)
-            await communication
-            raise
         if process.returncode is None:
             raise CheckChainExecutionError(
                 cwd=cwd, step_name=step.name, reason="step returned no exit status"
