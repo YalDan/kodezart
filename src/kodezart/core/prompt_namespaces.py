@@ -87,7 +87,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     Bare names for the two scalars, dotted namespaces for the mappings.
     Nothing here is a per-call value and nothing here is a fragment.
 
-    Every binding that can be absent — the eleven collections, the
+    Every binding that can be absent — the collections, the
     private-surface prose, a principal's forge handle, an unadopted
     document id, a gate step's dependency — is three-state: the value, or
     the paired absent marker, never a hole.
@@ -108,7 +108,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     position is what the template names: ``principals.approver``,
     ``principals.assignee`` and ``principals.1`` by role and position,
     ``agent_identities.0`` and ``initiatives.1`` by position, and
-    ``documents``, ``records``, ``knowledge``, ``queue_states``,
+    ``documents``, ``records``, ``knowledge``, ``queue_states``, ``scope_labels``,
     ``workflow_states`` and ``endpoints`` by their configured key.  A role,
     position or key the config does not declare is an unbound placeholder
     and the render refuses, naming it — the refusal at the point of need.
@@ -122,6 +122,12 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         "queue_states",
         dict(config.queue_states),
         absent=not config.queue_states,
+    )
+    _bind_absentable(
+        bindings,
+        "scope_labels",
+        dict(config.scope_labels),
+        absent=not config.scope_labels,
     )
     _bind_absentable(
         bindings,

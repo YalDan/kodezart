@@ -118,6 +118,14 @@ approved = "queue:approved"
 done = "queue:done"
 decision = "queue:decision"
 
+# Scope admission is separate from the issue queue. Names are configurable;
+# an omitted or empty mapping is valid, and a populated mapping must include
+# all three semantic members. Additional keys remain available to templates.
+[scope_labels]
+triage = "scope:triage"
+proposed = "scope:proposed"
+approved = "scope:approved"
+
 # Lifecycle states, validated exactly parallel to queue_states.
 [workflow_states]
 in_progress = "In Progress"
