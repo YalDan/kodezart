@@ -1,6 +1,9 @@
 """Per-call render variables derived from domain values — pure, no I/O."""
 
+from collections.abc import Sequence
+
 from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.organize import AdmissionResult
 
 
 def changeset_variables(changeset: ChangesetDigest) -> dict[str, object]:
@@ -22,3 +25,33 @@ def changeset_variables(changeset: ChangesetDigest) -> dict[str, object]:
     if not changeset.file_paths:
         variables["file_paths_absent"] = True
     return variables
+
+
+def organize_variables(
+    *,
+    mandate_rubric: str,
+    issue_body: str,
+    linked_issue_bodies: Sequence[str],
+    criterion_issue_bodies: Sequence[str],
+    refusal_evidence: AdmissionResult | None,
+    defect_classes: Sequence[str],
+) -> dict[str, object]:
+    """Bind one dispatch's source material without retaining another call's values.
+
+    Refusal evidence is the admission result, never an author's rationale.
+    The read-only role templates consume source bodies and class evidence;
+    only authoring templates read the optional refusal for a repair round.
+    The selected repository base uses the existing caller-owned base_ref binding.
+    """
+    return {
+        "mandate_rubric": mandate_rubric,
+        "issue_body": issue_body,
+        "linked_issue_bodies": tuple(linked_issue_bodies),
+        "criterion_issue_bodies": tuple(criterion_issue_bodies),
+        "refusal_evidence": (
+            None
+            if refusal_evidence is None
+            else refusal_evidence.model_dump_json(by_alias=False)
+        ),
+        "defect_classes": tuple(defect_classes),
+    }

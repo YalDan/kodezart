@@ -170,6 +170,13 @@ roles inherit the set's existing authoring or judgment session policy.
 These templates supply prompt content; organizer session dispatch and
 tracker mutation remain the caller's responsibility.
 
+The rubric and issue evidence vary per call: `mandate_rubric`, `issue_body`,
+`linked_issue_bodies`, `criterion_issue_bodies`, `refusal_evidence`, and
+`defect_classes`. They are reserved outside operation configuration and set
+fragments. Boot rejects a colliding configuration root or projected binding.
+Refusal evidence carries the admission result for an authoring repair; assess
+and verify render the current source bodies without that prior refusal.
+
 ## The knowledge-server grant
 
 `KODEZART_KNOWLEDGE_SESSION_GRANTS` names, one by one, the kinds of agent
