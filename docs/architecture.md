@@ -535,6 +535,33 @@ the event/record readers must supply those assertions and the commit order.
 Their collectors, supervisor scheduling and leased publication remain
 separate consumers.
 
+`rulings_outpace_closures` counts distinct machine-authored ruling identities
+added since the recorded last-closure snapshot. Its five readings preserve
+the baseline/current ruling projections, prior open/current closed references
+and the actual `run_alarm_max_rulings_without_closure` bound (default five,
+configurable and nonnegative). Only the intersection of the two obligation
+sets establishes a closure. Repeated identities, amended answers and principal
+rulings cannot inflate the count. Required authorship comes from the ruling
+artifact, using the owner's `RulingId` and `RulingAuthor` vocabulary; transport
+authors and timestamps cannot supply it. The read-only service obtains current
+criterion closure through the shared gap arithmetic for every declared lane
+issue. The full ruling artifact writer/renderer/reader and persisted window
+advancement remain implementation work; the projection does not replace them.
+
+`structural_write_uncrosses_milestone` compares complete lane membership
+snapshots. The collector reads both the fire subtree and native milestone
+membership through the port, including archived issues, and preserves the
+returned state, parent and membership facts. Conflicting versions of a shared
+member refuse observation instead of pretending the reads are atomic. The
+prior graph must support crossing under the charter: completed fire, all
+members completed or canceled with recorded supersession. A newly present
+unresolved member while the fire remains completed raises the alarm; an
+existing member changing only state does not. No derived crossed flag or vendor change
+timestamp replaces this graph comparison. Both signals preserve their raw
+readings for replay; the structural signal has no threshold. Retaining prior
+snapshots, supervisor scheduling and alarm publication under the universal
+surface lease remain separate consumers.
+
 ## Check-chain execution
 
 The check-chain runner executes each declared command through the host shell,

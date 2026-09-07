@@ -1,7 +1,7 @@
 """Agent event domain models for SSE streaming."""
 
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, NewType
 
 from pydantic import (
     ConfigDict,
@@ -31,6 +31,16 @@ from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
+
+RulingId = NewType("RulingId", str)
+
+
+class RulingAuthor(StrEnum):
+    """Authorship explicitly recorded by the ruling artifact's producer."""
+
+    MACHINE = "machine"
+    PRINCIPAL = "principal"
+
 
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)

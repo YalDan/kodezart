@@ -164,6 +164,14 @@ class AppConfig(BaseSettings):
             "before a contention observation fires."
         ),
     )
+    run_alarm_max_rulings_without_closure: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Distinct machine-authored rulings allowed since a lane last "
+            "closed a previously-open obligation reference."
+        ),
+    )
     organize_max_admission_rounds: int = Field(
         default=3,
         ge=1,
