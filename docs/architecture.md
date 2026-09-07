@@ -588,8 +588,9 @@ The caller supplies the observation time; this component adds no clock, timer
 or scheduler. A simultaneous attempt for the same scope refuses without
 disturbing its owner. Candidates are snapshotted before visiting, and returned
 coverage facts are immutable point-in-time observations, not durable verdicts.
-Tracker state-change collection, granted audit sessions and registration on the
-existing scheduler remain separate implementation work. Sampled mode is retired.
+The native tracker state-change collector supplies complete checked candidates.
+Granted audit sessions and registration on the existing scheduler remain
+separate implementation work. Sampled mode is retired.
 
 ## Check-chain execution
 
