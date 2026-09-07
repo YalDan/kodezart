@@ -488,6 +488,24 @@ invisible: the declared head is retained for replay and is never resolved
 against a repository. Both predicates are pure; neither implements the
 supervisor tick, a record collector or leased alarm publication.
 
+`record_superseded` compares explicit assertions about the same field in the
+same lane. Its three raw readings contain the record's `LaneFieldValue`, an
+event's `LaneFieldValue`, and the lane record's ordered commit SHA projection.
+The frozen field projection carries only `lane_key`, `field_key` and an
+opaque string `value`; each assertion's SHA remains on its `AlarmReading`.
+History must name the same record source, and both asserted SHAs must occur
+exactly once. Missing or ambiguous history refuses even when values agree.
+
+A differing decoded value raises `RECORD_SUPERSEDED` only when the event's
+SHA stands strictly after the record's SHA in that series. Earlier or equal
+positions cannot supersede it, and equal values stay clean. No timestamp,
+SHA spelling, event-body interpretation or repository read establishes the
+order. The alarm retains all original readings and has no threshold bound.
+The field projection is an observation input, not a new run-event vocabulary;
+the event/record readers must supply those assertions and the commit order.
+Their collectors, supervisor scheduling and leased publication remain
+separate consumers.
+
 ## Check-chain execution
 
 The check-chain runner executes each declared command through the host shell,

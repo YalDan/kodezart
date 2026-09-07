@@ -15,6 +15,7 @@ from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
     AlarmSubjectKind,
+    LaneFieldValue,
     RunAlarm,
     surface_alarm_member_id,
 )
@@ -40,6 +41,7 @@ _IDENTITY: TypeAdapter[str] = TypeAdapter(
     Annotated[str, Field(min_length=1, pattern=r"\S")]
 )
 _COMMIT_ROWS = TypeAdapter(tuple[LaneCommit, ...])
+_LANE_FIELD = TypeAdapter(LaneFieldValue)
 
 
 def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeReadError:
@@ -57,6 +59,75 @@ def _decode[T](
         return adapter.validate_json(reading.value, strict=True)
     except ValidationError as exc:
         raise _unreadable(signal, reading.source_ref, "invalid recorded value") from exc
+
+
+def record_superseded(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Compare one record field with a later event asserting that same field.
+
+    Three JSON readings: the record's LaneFieldValue, the event's
+    LaneFieldValue, and the lane record's ordered commit SHA projection.
+    The first two carry their asserted SHAs in at_sha; commit history names
+    the same source as the record. Lane and field keys match exactly.
+
+    Opaque values are compared after JSON decoding, never by interpreting
+    their prose. Only a contrary value at a strictly later recorded position
+    supersedes the record. Equal or earlier positions cannot do so. Missing
+    or repeated commit identities refuse observation, including when the
+    values agree, because incomplete history cannot establish a clean read.
+    """
+    signal = AlarmSignal.RECORD_SUPERSEDED
+    try:
+        record, event, commits = readings
+    except ValueError as exc:
+        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+    recorded = _decode(record, _LANE_FIELD, signal)
+    asserted = _decode(event, _LANE_FIELD, signal)
+    order = _decode(commits, _COMMITS, signal)
+    if (
+        subject.kind is not AlarmSubjectKind.LANE
+        or subject.lane_key != recorded.lane_key
+        or asserted.lane_key != recorded.lane_key
+    ):
+        raise _unreadable(signal, event.source_ref, "readings identify different lanes")
+    if asserted.field_key != recorded.field_key:
+        raise _unreadable(
+            signal, event.source_ref, "assertions identify different fields"
+        )
+    if commits.source_ref != record.source_ref:
+        raise _unreadable(
+            signal, commits.source_ref, "history identifies another record"
+        )
+    if len(set(order)) != len(order):
+        raise _unreadable(
+            signal, commits.source_ref, "recorded commit order repeats a SHA"
+        )
+    record_sha, event_sha = record.at_sha, event.at_sha
+    if record_sha is None or record_sha not in order:
+        raise _unreadable(
+            signal, record.source_ref, "assertion SHA is absent from recorded history"
+        )
+    if event_sha is None or event_sha not in order:
+        raise _unreadable(
+            signal, event.source_ref, "assertion SHA is absent from recorded history"
+        )
+    if recorded.value == asserted.value:
+        return None
+    if order.index(event_sha) <= order.index(record_sha):
+        return None
+    return RunAlarm(
+        subject=subject,
+        signal=signal,
+        readings=readings,
+        bound=None,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
 
 
 def write_back_missing(

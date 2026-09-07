@@ -112,6 +112,22 @@ class AlarmSubject(CamelCaseModel):
         return self
 
 
+class LaneFieldValue(CamelCaseModel):
+    """An explicit field projection supplied by a record or event reader.
+
+    This is an observation input, not a run event or an event vocabulary.
+    The producer supplies one field identity and its opaque string value;
+    no body text is parsed to infer either. Source and SHA stay on the
+    AlarmReading that carries this value.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    lane_key: str = Field(min_length=1, pattern=r"\S")
+    field_key: str = Field(min_length=1, pattern=r"\S")
+    value: str
+
+
 class AlarmReading(CamelCaseModel):
     """A referenced input, retaining the value exactly as it was read."""
 
