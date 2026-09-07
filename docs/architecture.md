@@ -425,3 +425,21 @@ Collectors for the lane's durable commit list and walker's recorded tick
 age, the supervisor tick, and alarm persistence under a surface lease remain
 unwired. This slice provides one pure signal and its read-only service; it
 does not declare the complete signal table or supervisor boot capability.
+
+`barren_tick_with_diff_growth` compares recorded files-changed and
+commits-ahead against their own configured bounds when a tick closes no
+previously-open reference. Its six readings carry the prior open identities,
+current closed identities, both lane-base growth counts and both limits.
+Only an identity present in both reference sets establishes progress;
+newly-added closed work and disappeared old work do not. Files take
+deterministic precedence if both limits are exceeded. The default bounds
+are ten files and five commits; both are configurable nonnegative counts.
+
+The read-only `observe_barren_tick` service uses `read_criteria` and the shared
+criterion gap arithmetic to obtain current closure. Done closes a criterion;
+cancellation or duplication needs an established supersession reference
+supplied by its owning reader. It retains the returned closure projection
+for replay and makes no tracker writes or version-control calls. The prior
+open identities and both diff counts must already be recorded inputs with
+explicit source references. Their collectors, supervisor scheduling and
+leased alarm persistence remain separate work.

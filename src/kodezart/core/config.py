@@ -140,6 +140,22 @@ class AppConfig(BaseSettings):
             "before an ageing observation fires."
         ),
     )
+    run_alarm_barren_tick_max_files_changed: int = Field(
+        default=10,
+        ge=0,
+        description=(
+            "Recorded files changed against the lane base allowed on a tick "
+            "that closes no previously-open reference."
+        ),
+    )
+    run_alarm_barren_tick_max_commits_ahead: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Recorded commits ahead of the lane base allowed on a tick "
+            "that closes no previously-open reference."
+        ),
+    )
     organize_max_admission_rounds: int = Field(
         default=3,
         ge=1,
