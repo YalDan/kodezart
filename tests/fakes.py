@@ -2523,6 +2523,10 @@ class FakeLinearMcpServer:
             assert isinstance(raw_labels, list)
             new_labels = [str(entry) for entry in raw_labels]
             issue.labels = new_labels
+        if "addLabels" in arguments:
+            additions = arguments["addLabels"]
+            assert isinstance(additions, list)
+            issue.labels = list(dict.fromkeys([*issue.labels, *map(str, additions)]))
         self._moved(issue.id)
         return issue.wire()
 
@@ -2980,6 +2984,7 @@ class FakeTrackerPort:
             issue.state_name: issue.state_kind for issue in issues
         }
         self.queue_writes: list[tuple[str, QueueState]] = []
+        self.classification_writes: list[tuple[str, str]] = []
         self.scans: list[IssueQuery] = []
         #: Every issue this double was asked to READ, in order.  A scan is
         #: one call whatever it returns and a read is one call per issue,
@@ -3323,6 +3328,20 @@ class FakeTrackerPort:
             return issue
         self.queue_writes.append((issue_key, state))
         updated = issue.model_copy(update={"queue_states": frozenset({state})})
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str
+    ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if classification in issue.issue_labels:
+            return issue
+        self.classification_writes.append((issue_key, classification))
+        updated = issue.model_copy(
+            update={"issue_labels": issue.issue_labels | {classification}}
+        )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
         return updated

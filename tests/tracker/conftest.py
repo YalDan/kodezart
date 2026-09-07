@@ -347,6 +347,7 @@ def tracker_writes(
             *tracker.workflow_writes,
             *tracker.restored_states,
             *tracker.queue_writes,
+            *tracker.classification_writes,
         )
     return lambda: tuple(
         call for call in server.calls if call[0] in {"save_comment", "save_issue"}

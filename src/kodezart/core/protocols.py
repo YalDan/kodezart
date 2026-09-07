@@ -775,6 +775,16 @@ class TrackerPort(Protocol):
         """Read first; replace other queue states only if they differ."""
         ...
 
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str
+    ) -> TrackerIssue:
+        """Add one configured semantic classification, reading before writing.
+
+        An already present value writes nothing. Unrelated classifications
+        and all workflow/queue state survive unchanged.
+        """
+        ...
+
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""
         ...

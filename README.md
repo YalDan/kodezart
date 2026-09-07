@@ -382,6 +382,15 @@ labelled direct sub-issues, with their own keys, full bodies and workflow
 states. The parent description supplies no criterion identity or membership.
 An empty set is a successful read; incomplete or failed reads raise an error.
 
+`set_issue_classification` adds a configured semantic issue classification
+without replacing approval or unrelated labels; an identical replay writes
+nothing. `LaneEscalationWriter` requires `issue_labels.decision` and
+`marker_prefixes.escalation`. It gates the complete occurrence comment, then
+awaits its keyed comment and decision classification before returning. A
+failed write propagates to the raising caller; a retry completes the same
+occurrence. This service is the shared raise-site writer; individual organizer,
+audit and evaluator consumers still own when they raise and how they stop.
+
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the
 live workspace belongs to the tracker adapter, not to config load.

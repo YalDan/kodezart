@@ -922,6 +922,26 @@ class LinearMcpTracker:
         )
         return self._saved_issue(payload)
 
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str
+    ) -> TrackerIssue:
+        if classification not in self._issue_labels:
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels[{classification!r}]",
+                stops="this issue classification cannot be written",
+            )
+        current = await self.read_issue(issue_key=issue_key)
+        if classification in current.issue_labels:
+            return current
+        payload = await self._call(
+            _TOOL_SAVE_ISSUE,
+            {
+                "id": current.issue_key,
+                "addLabels": [self._issue_labels[classification]],
+            },
+        )
+        return self._saved_issue(payload)
+
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""
         payload = await self._call(

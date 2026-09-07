@@ -246,6 +246,7 @@ LIVE_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
     "save_issue": ToolSchema(
         properties=frozenset(
             {
+                "addLabels",
                 "addReleases",
                 "assignee",
                 "blockedBy",
@@ -335,6 +336,9 @@ async def sent_arguments() -> Mapping[str, set[str]]:
     )
     await tracker.read_issue_identity(issue_key=keyed.issue_key)
     await tracker.read_criteria(issue_key=keyed.issue_key)
+    await tracker.set_issue_classification(
+        issue_key=CLAIMED_ISSUE, classification="criterion"
+    )
     await tracker.create_issue(
         title="t",
         body="b",

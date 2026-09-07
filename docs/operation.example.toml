@@ -135,6 +135,8 @@ decision = "queue:decision"
 # mapping loads; criterion reads require the criterion entry at the point of use.
 [issue_labels]
 criterion = "criterion"
+# Escalations add this classification without replacing queue approval.
+decision = "decision"
 
 # Scope admission is separate from the issue queue. Names are configurable;
 # an omitted or empty mapping is valid, and a populated mapping must include
