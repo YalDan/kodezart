@@ -34,6 +34,13 @@ class GateVerdict(StrEnum):
     BLOCKED = "blocked"
 
 
+class SurfaceDurability(StrEnum):
+    """Whether a reader treats a write as current or as a past observation."""
+
+    DURABLE = "durable"
+    POINT_IN_TIME = "point_in_time"
+
+
 _SEVERITY: dict[GateVerdict, int] = {
     GateVerdict.CLEAN: 0,
     GateVerdict.REDACTED: 1,
@@ -141,6 +148,31 @@ DESTINATION_SURFACE: Mapping[OutboundDestination, OutboundSurface] = {
 def surface_of(destination: OutboundDestination) -> OutboundSurface:
     """The surface class *destination* writes onto."""
     return DESTINATION_SURFACE[destination]
+
+
+#: Classify real writers in code, alongside their surface classification.
+#: Descriptions and replaceable artifacts are read as current; appended
+#: comments and commit messages describe a particular event.
+DESTINATION_DURABILITY: Mapping[OutboundDestination, SurfaceDurability] = {
+    OutboundDestination.BRANCH_NAME: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_TITLE: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_BODY: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_COMMENT: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.COMMIT_MESSAGE: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY: (
+        SurfaceDurability.POINT_IN_TIME
+    ),
+    OutboundDestination.ARTIFACT_TICKET_JSON: SurfaceDurability.DURABLE,
+    OutboundDestination.ARTIFACT_CRITERIA_JSON: SurfaceDurability.DURABLE,
+    OutboundDestination.TRACKER_COMMENT: SurfaceDurability.POINT_IN_TIME,
+}
+
+
+def durability_of(destination: OutboundDestination | None) -> SurfaceDurability:
+    """An unclassified write is durable; every named writer has a mapping."""
+    if destination is None:
+        return SurfaceDurability.DURABLE
+    return DESTINATION_DURABILITY[destination]
 
 
 class ContentClass(StrEnum):
