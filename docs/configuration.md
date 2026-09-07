@@ -28,6 +28,8 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_GIT_COMMITTER_EMAIL`    | `str`        | `kodezart@noreply.dev`   |             | Git committer email for auto-generated commits           |
 | `KODEZART_MAX_ITERATIONS`         | `int`        | `5`                      | 1-20        | Maximum Ralph loop iterations before stopping            |
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
+| `KODEZART_ORGANIZE_MAX_ADMISSION_ROUNDS` | `int` | `3` | 1-10 | Maximum organize admission re-author and re-test rounds; runtime organizer wiring is pending. |
+| `KODEZART_ORGANIZE_MAX_CONVERGENCE_ROUNDS` | `int` | `3` | 1-10 | Maximum organize whole-scope convergence rounds; runtime organizer wiring is pending. |
 | `KODEZART_TICKET_REVIEW_MODE`     | `str`        | `create_only`            | `reviewed`, `create_only` | Whether the ticket loop compiles a reviewer session or one creator session whose draft the set's draft-critic lens checks; setting `KODEZART_MAX_REVIEWS` under `create_only`, or `create_only` over a set declaring no such lens, is refused at boot |
 | `KODEZART_FALLBACK_MODEL`         | `str\|None`  | `None`                   |             | Engine a session falls back to when the primary declines a request; absent declares no fallback |
 | `KODEZART_SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary (KOD-161) |

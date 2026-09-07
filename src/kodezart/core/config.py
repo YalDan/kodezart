@@ -124,6 +124,18 @@ class AppConfig(BaseSettings):
         le=10,
         description="Maximum ticket review rounds before accepting.",
     )
+    organize_max_admission_rounds: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum organize admission re-author and re-test rounds.",
+    )
+    organize_max_convergence_rounds: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum organize whole-scope convergence rounds.",
+    )
     ticket_review_mode: TicketReviewMode = Field(
         default=TicketReviewMode.CREATE_ONLY,
         description=(
