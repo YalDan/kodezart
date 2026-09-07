@@ -179,7 +179,7 @@ def test_render_has_one_configured_marker_and_one_readable_fact_block():
         record=record, marker_prefixes={"run_state": "fixture-record"}
     )
     assert rendered.startswith("[fixture-record:lane%3Aalpha]\n```json\n")
-    payload = rendered.split("\n", 2)[2].removesuffix("\n```")
+    payload = rendered.split("\n", 2)[2].split("\n```", 1)[0]
     assert json.loads(payload) == record_data()
     assert '"issueId": "EXT/43"' in rendered
     assert "crossOffs" not in rendered
@@ -193,3 +193,29 @@ def test_render_does_not_guess_an_absent_configured_marker():
         render_lane_record(
             record=LaneRunState.model_validate(record_data()), marker_prefixes={}
         )
+
+
+@pytest.mark.parametrize("remote_head", [None, "head-full-identity", "older-head"])
+def test_every_record_ends_with_the_fixed_truthful_role_aware_reentry(remote_head):
+    record = LaneRunState.model_validate(
+        {**record_data(), "pushedHeadSha": remote_head}
+    )
+    rendered = render_lane_record(
+        record=record, marker_prefixes={"run_state": "fixture-record"}
+    )
+    expected = """## Re-entry
+
+Resume the branch identified by the LOOP role and the record's branch field.
+When pushedHeadSha is present, that branch exists on the remote at the recorded
+head; check out the existing branch. When pushedHeadSha is null, no remote copy
+was recorded: recover the existing branch before continuing. Never mint a new
+branch in place of a recorded association. Follow the explicit roles and
+derivedFrom links to the deliverable, other loop and recovery branches; do not
+infer their roles from their names. Associations survive reaping, so verify
+current remote liveness before checkout.
+
+Grade the existing commits against each criterion sub-issue's own Check and
+verification instructions, reading satisfaction and Evidence on that sub-issue.
+Let only failing criteria drive new work."""
+    assert rendered.endswith("\n\n" + expected)
+    assert rendered.count("## Re-entry") == 1
