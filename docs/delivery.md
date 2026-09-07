@@ -31,6 +31,11 @@ the caller's original fire SHA is preserved. The description session uses the
 existing PR-description prompt and output schema in a fresh read-only session,
 with the original run identity. The harness appends recorded flags and issue
 identity before sending both title and body through the shared outbound gate.
+Every PR writer then validates the fixed tracker-issue line in the gated body.
+If rewriting removed or changed that identity, `PRTrackerIdentityError`
+refuses publication; the writer never appends bytes after the gate. Permitted
+redaction of other prose remains publishable, and legacy calls without an
+issue key retain their existing behavior.
 
 The coordinator creates the PR and calls `wait_for_checks` with its head branch.
 One semaphore per coordinator limits concurrent watches using
