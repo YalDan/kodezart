@@ -5,9 +5,208 @@ classification reads summary or log text; summaries are carried as evidence.
 """
 
 from kodezart.core.config import AppConfig
-from kodezart.core.protocols import CIMonitor
-from kodezart.types.domain.delivery import CheckRedClass, CheckRedObservation
+from kodezart.core.constants import EVAL_PERMISSION_MODE
+from kodezart.core.errors import soft_failure
+from kodezart.core.logging import get_logger
+from kodezart.core.outbound_write import gated_write
+from kodezart.core.protocols import (
+    AgentRunner,
+    ArtifactPersister,
+    CIMonitor,
+    OutboundContentGate,
+    PRCreator,
+    PromptSetProvider,
+)
+from kodezart.core.stream_drain import drain
+from kodezart.domain.errors import DeliveryContextError, DeliveryRouteUnavailableError
+from kodezart.domain.pr_body import append_flagged_section, append_tracker_issue
+from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.types.domain.agent import PR_DESCRIPTION_SCHEMA, PRDescriptionOutput
+from kodezart.types.domain.delivery import (
+    CheckRedClass,
+    CheckRedObservation,
+    DeliveryContext,
+    LaneDelivery,
+    LaneDispatch,
+)
+from kodezart.types.domain.gating import (
+    ContentClass,
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+)
 from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_state import LanePR
+from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.subagents import NO_SUBAGENTS
+
+
+class DeliveryCoordinator:
+    """Open a lane's PR and report its observed check result.
+
+    Scope-walker dispatch and fire graph extraction are separate consumers.
+    Until residual publication and remediation are connected, an observation
+    requiring either raises with its PR facts instead of returning success.
+    """
+
+    def __init__(
+        self,
+        *,
+        runner: AgentRunner,
+        prompts: PromptSetProvider,
+        skills: SkillsSelection,
+        gate: OutboundContentGate,
+        pr_creator: PRCreator,
+        ci: CIMonitor,
+        artifact_persister: ArtifactPersister | None,
+    ) -> None:
+        self._runner = runner
+        self._prompts = prompts
+        self._skills = skills
+        self._gate = gate
+        self._pr_creator = pr_creator
+        self._ci = ci
+        self._artifact_persister = artifact_persister
+        self._log = get_logger(__name__)
+
+    async def deliver(
+        self,
+        dispatch: LaneDispatch,
+        *,
+        feature_branch: str,
+        final_commit_sha: str,
+        context: DeliveryContext,
+    ) -> LaneDelivery:
+        """Deliver the supplied fire's head against its recorded base."""
+        execution = context.execution
+        if (
+            feature_branch != dispatch.head_branch
+            or execution.base_spec != dispatch.resolved_base
+            or not final_commit_sha.strip()
+            or not execution.repo_url
+        ):
+            raise DeliveryContextError(
+                lane_key=dispatch.lane_key,
+                issue_id=dispatch.issue_id,
+                reason="head, resolved base, final SHA and repository must agree",
+            )
+        if context.fire_outcome is not WorkflowOutcome.handed_off_for_delivery:
+            raise DeliveryRouteUnavailableError(
+                lane_key=dispatch.lane_key,
+                issue_id=dispatch.issue_id,
+                reason="this fire outcome has no connected delivery route",
+                pr_url=None,
+                pr_number=None,
+                checks_passed=None,
+                checks_summary=None,
+            )
+        if self._artifact_persister is not None:
+            await self._artifact_persister.clean(
+                repo_path=execution.repo_path,
+                repo_url=execution.repo_url,
+                branch=feature_branch,
+                cache_key=execution.cache_key,
+            )
+        description = await self._description(context, feature_branch=feature_branch)
+        body = append_tracker_issue(
+            append_flagged_section(description.description, context.flagged_items),
+            dispatch.issue_id,
+        )
+        title = await self._gated(
+            description.title, context.visibility, OutboundDestination.PR_TITLE
+        )
+        body = await self._gated(body, context.visibility, OutboundDestination.PR_BODY)
+        url, number = await self._pr_creator.create_pr(
+            repo_url=execution.repo_url,
+            title=title,
+            body=body,
+            head=feature_branch,
+            base=dispatch.resolved_base.base_branch,
+        )
+        passed, summary = await self._ci.wait_for_checks(
+            repo_url=execution.repo_url, ref=feature_branch
+        )
+        if passed is not True:
+            raise DeliveryRouteUnavailableError(
+                lane_key=dispatch.lane_key,
+                issue_id=dispatch.issue_id,
+                reason="check observation requires an unconnected delivery route",
+                pr_url=url,
+                pr_number=number,
+                checks_passed=passed,
+                checks_summary=summary,
+            )
+        return LaneDelivery(
+            lane_key=dispatch.lane_key,
+            issue_id=dispatch.issue_id,
+            head_branch=feature_branch,
+            base_branch=dispatch.resolved_base.base_branch,
+            pr=LanePR(url=url, number=number, state="open"),
+            checks_passed=passed,
+            checks_summary=summary,
+            outcome=WorkflowOutcome.ci_passed,
+        )
+
+    async def _description(
+        self, context: DeliveryContext, *, feature_branch: str
+    ) -> PRDescriptionOutput:
+        execution = context.execution
+        key = PromptKey.PR_DESCRIPTION
+        prompt = self._prompts.template_for(key).render(
+            {
+                "task_md": format_ticket_as_task(context.ticket),
+                "acceptance_criteria": list(context.criteria),
+                "total_iterations": context.total_iterations,
+            }
+        )
+        result, rate_limit_rejected = await drain(
+            self._runner.stream(
+                prompt=prompt,
+                repo_path=execution.repo_path,
+                repo_url=execution.repo_url,
+                branch=feature_branch,
+                permission_mode=EVAL_PERMISSION_MODE,
+                allowed_tools=[],
+                skills=self._prompts.session_skills(key, self._skills),
+                session_type=SessionType.TICKET_FIRE,
+                run_identity=execution.run_identity,
+                agents=NO_SUBAGENTS,
+                session_policy=self._prompts.session_policy(key),
+                session_id=None,
+                output_format={"type": "json_schema", "schema": PR_DESCRIPTION_SCHEMA},
+                cache_key=execution.cache_key,
+            ),
+            site="pr_description",
+        )
+        if (
+            result is None
+            or result.structured_output is None
+            or result.is_error
+            or rate_limit_rejected
+        ):
+            raise soft_failure(
+                "Agent did not produce a successful PR description",
+                raise_site="pr_description",
+                result_event=result,
+                rate_limit_rejected=rate_limit_rejected,
+            )
+        return PRDescriptionOutput.model_validate(result.structured_output)
+
+    async def _gated(
+        self, content: str, visibility: RepoVisibility, destination: OutboundDestination
+    ) -> str:
+        return await gated_write(
+            gate=self._gate,
+            log=self._log,
+            content=content,
+            visibility=visibility,
+            shape=WriterShape.PROSE,
+            destination=destination,
+            content_class=ContentClass.AUTHORED,
+        )
 
 
 async def classify_red_checks(
