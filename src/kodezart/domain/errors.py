@@ -11,6 +11,16 @@ class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
 
+class RunShapeReadError(Exception):
+    """Recorded observations cannot establish a run-shape predicate."""
+
+    def __init__(self, *, signal: str, source_ref: str, reason: str) -> None:
+        self.signal = signal
+        self.source_ref = source_ref
+        self.reason = reason
+        super().__init__(f"{signal} cannot read {source_ref!r}: {reason}")
+
+
 class BodyDigestCapabilityError(Exception):
     """The configured tracker cannot provide stable body revisions."""
 

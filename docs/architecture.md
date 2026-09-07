@@ -392,3 +392,24 @@ addresses cannot create different alarm identities through formatting.
 The alarm vocabulary and payload validation are available independently of
 signal computation, supervisor scheduling and leased alarm writes; those
 consumers are not enabled by constructing a model.
+
+`domain.run_shape.escalation_ageing` measures an unresolved escalation in
+recorded lane commits after its raise SHA and recorded walker ticks since
+raise. Either count exceeding its own AppConfig limit returns the observation;
+when both exceed, the commit bound has deterministic precedence. Equal counts
+remain clean. The function retains six readings in order: the escalation JSON,
+its resolution JSON, the ordered commit SHA projection, the tick-age count,
+the configured commit limit and the configured tick limit. Each value keeps
+its source reference and original bytes. Replaying those readings with the
+alarm's subject and raising provenance reconstructs the same alarm.
+
+`services.run_shape.observe_escalation_ageing` consumes already-read tracker
+projections and reads the current addressed decision through `TrackerPort`.
+It has no writer or repository dependency. Missing escalation reads, malformed
+counts, and absent or duplicate raise positions refuse observation; they do
+not manufacture an unanswered question or a clean result. The configured
+limits are nonnegative counts, defaulting to five commits and ten ticks.
+Collectors for the lane's durable commit list and walker's recorded tick
+age, the supervisor tick, and alarm persistence under a surface lease remain
+unwired. This slice provides one pure signal and its read-only service; it
+does not declare the complete signal table or supervisor boot capability.

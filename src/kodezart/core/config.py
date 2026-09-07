@@ -124,6 +124,22 @@ class AppConfig(BaseSettings):
         le=10,
         description="Maximum ticket review rounds before accepting.",
     )
+    run_alarm_escalation_age_max_commits: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Recorded lane commits allowed after an unanswered escalation's "
+            "raise SHA before an ageing observation fires."
+        ),
+    )
+    run_alarm_escalation_age_max_ticks: int = Field(
+        default=10,
+        ge=0,
+        description=(
+            "Recorded walker ticks allowed after an unanswered escalation "
+            "before an ageing observation fires."
+        ),
+    )
     organize_max_admission_rounds: int = Field(
         default=3,
         ge=1,
