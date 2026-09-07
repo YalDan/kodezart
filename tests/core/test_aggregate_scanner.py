@@ -4,7 +4,10 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
+from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.composition.gating import outbound_scanners
 from kodezart.core.config import AppConfig
+from kodezart.core.protocols import ContentScanner
 from kodezart.types.domain.gating import (
     DESTINATION_DURABILITY,
     UNCONDITIONAL_ROUTING,
@@ -17,11 +20,14 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     ScanCategory,
     ScanHit,
+    ScanResult,
     SurfaceDurability,
     WriterShape,
     durability_of,
 )
-from tests.fakes import FakeContentScanner
+from kodezart.types.domain.skills import SkillsMode, SkillsSelection
+from tests.fakes import FakeAgentExecutor, FakeContentScanner
+from tests.prompts.test_prompt_wiring import load_registry
 
 
 def test_every_real_writer_has_a_durability_classification() -> None:
@@ -122,3 +128,74 @@ def test_aggregate_thresholds_cannot_match_a_single_identifier_or_negative_gap(
 ) -> None:
     with pytest.raises(ValidationError):
         AppConfig.model_validate(field_and_value)
+
+
+def configured_scanners(config: AppConfig) -> list[ContentScanner]:
+    """Exercise the same scanner assembly the application uses at boot."""
+    scanners, _ = outbound_scanners(
+        config=config,
+        operation=None,
+        executor=FakeAgentExecutor([]),
+        prompts=load_registry(),
+        skills=SkillsSelection(mode=SkillsMode.NONE),
+    )
+    return scanners
+
+
+def configured_gate(config: AppConfig | None = None) -> PatternOutboundContentGate:
+    selected = config or AppConfig(agentic_content_scanner_enabled=False)
+    return PatternOutboundContentGate(
+        scanners=configured_scanners(selected),
+        verdicts=selected.deny_pattern_verdicts,
+    )
+
+
+async def test_registered_aggregate_scanner_uses_the_existing_regex_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scans: list[str] = []
+    original_scan = RegexContentScanner.scan
+
+    async def observed_scan(
+        self: RegexContentScanner,
+        *,
+        content: str,
+        destination: OutboundDestination,
+    ) -> ScanResult:
+        scans.append(content)
+        return await original_scan(self, content=content, destination=destination)
+
+    monkeypatch.setattr(RegexContentScanner, "scan", observed_scan)
+    decision = await configured_gate().gate(
+        content="There are 3 issues remaining.",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.DERIVED,
+    )
+    assert scans == [
+        "There are 3 issues remaining.",
+        "There are 3 issues remaining.",
+    ]
+    assert decision.verdict is GateVerdict.BLOCKED
+    assert decision.categories == (DurabilityCategory.OBJECT_COUNT,)
+
+
+async def test_aggregate_block_wins_over_an_earlier_redaction() -> None:
+    config = AppConfig(
+        agentic_content_scanner_enabled=False,
+        deny_patterns={RedactionCategory.TRACKER_URLS: [r"example\.invalid"]},
+    )
+    decision = await configured_gate(config).gate(
+        content="example.invalid: 5 tickets remain",
+        visibility=RepoVisibility.UNKNOWN,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.BLOCKED
+    assert set(decision.categories) == {
+        RedactionCategory.TRACKER_URLS,
+        DurabilityCategory.OBJECT_COUNT,
+    }
+    assert decision.content == ""

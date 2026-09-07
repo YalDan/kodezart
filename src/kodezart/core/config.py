@@ -1022,6 +1022,38 @@ class AppConfig(BaseSettings):
             "a roster on a durable surface. A single reference is not a roster."
         ),
     )
+    aggregate_tracker_object_nouns: list[str] = Field(
+        default_factory=lambda: [
+            "issue",
+            "issues",
+            "ticket",
+            "tickets",
+            "lane",
+            "lanes",
+            "project",
+            "projects",
+            "milestone",
+            "milestones",
+            "sub-issue",
+            "sub-issues",
+            "PR",
+            "PRs",
+            "pull request",
+            "pull requests",
+        ],
+        min_length=1,
+        description="Tracker-object nouns counted by the durable aggregate scanner.",
+    )
+    aggregate_issue_identifier_pattern: str = Field(
+        default=r"\b[A-Z][A-Z0-9]*-\d+\b",
+        min_length=1,
+        description="Tracker issue-identifier regex used to recognize a roster.",
+    )
+    aggregate_identifier_separator_pattern: str = Field(
+        default=r"(?:[\s,;|/·•`*()\[\]-]+|\s+and\s+)",
+        min_length=1,
+        description="Regex separating consecutive identifiers in a tracker roster.",
+    )
     operation_config: str | None = Field(
         default=None,
         description=(

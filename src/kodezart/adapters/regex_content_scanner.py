@@ -18,22 +18,22 @@ from collections.abc import Mapping, Sequence
 from kodezart.types.domain.gating import (
     UNCONDITIONAL_ROUTING,
     OutboundDestination,
-    RedactionCategory,
+    ScanCategory,
     ScanHit,
     ScannerRouting,
     ScanResult,
 )
 
 
-class RegexContentScanner:
+class RegexContentScanner[Category: ScanCategory]:
     """``ContentScanner`` over a configured category -> patterns mapping."""
 
     def __init__(
         self,
         *,
-        patterns: Mapping[RedactionCategory, Sequence[str]],
+        patterns: Mapping[Category, Sequence[str]],
     ) -> None:
-        self._compiled: dict[RedactionCategory, list[re.Pattern[str]]] = {
+        self._compiled: dict[Category, list[re.Pattern[str]]] = {
             category: [re.compile(pattern) for pattern in category_patterns]
             for category, category_patterns in patterns.items()
             if category_patterns

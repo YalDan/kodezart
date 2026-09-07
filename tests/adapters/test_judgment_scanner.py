@@ -731,7 +731,10 @@ def test_disabled_registers_the_deterministic_scanner_alone() -> None:
         enabled=False,
         private_surface=FIXTURE_PRIVATE_SURFACE,
     )
-    assert [type(scanner).__name__ for scanner in scanners] == ["RegexContentScanner"]
+    assert [type(scanner).__name__ for scanner in scanners] == [
+        "RegexContentScanner",
+        "AggregateContentScanner",
+    ]
     assert digest == ""
 
 
@@ -743,6 +746,7 @@ def test_enabled_with_a_description_registers_the_judgment_scanner_second() -> N
     )
     assert [type(scanner).__name__ for scanner in scanners] == [
         "RegexContentScanner",
+        "AggregateContentScanner",
         "AgentContentScanner",
     ]
     assert digest
