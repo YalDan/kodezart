@@ -77,6 +77,8 @@ Ralph loop, and finalize.
 | `repoPath`       | `string \| null`                  | *        |                                              | Local filesystem path           |
 | `repoUrl`        | `string \| null`                  | *        |                                              | Remote repository URL           |
 | `baseBranch`     | `string`                          | No       | `"main"`                                     | Branch to base work on          |
+| `baseSpec`       | `BaseSpec \| null`                | No       | `null`                                       | Recorded base to scope the run against; when present `baseBranch` is not consulted |
+| `impliedBase`    | `BaseSpec \| null`                | No       | `null`                                       | The caller's view of the base; refused with `StaleBaseError` when it differs from the recorded one |
 | `permissionMode` | `"plan" \| "bypassPermissions"`   | No       | `"bypassPermissions"`                        | Agent permission level          |
 | `allowedTools`   | `string[]`                        | No       | `["Read","Glob","Grep","Bash","Edit","Write"]` | Tools the agent may use       |
 
@@ -99,13 +101,13 @@ Queue a workflow run and return immediately. Same request body as
 
 ```json
 {
-  "jobId": "job_01H...",
-  "lane": "default",
+  "jobId": "3fa85f6457174562b3fc2c963f66afa6",
+  "lane": "workflow",
   "state": "queued",
-  "queuePosition": 0,
+  "queuePosition": 1,
   "submittedAt": "2026-01-01T00:00:00Z",
-  "statusUrl": "/api/v1/jobs/job_01H...",
-  "streamUrl": "/api/v1/jobs/job_01H.../stream"
+  "statusUrl": "/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6",
+  "streamUrl": "/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6/stream"
 }
 ```
 
@@ -129,7 +131,7 @@ record has been released (`KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS`).
 ### Example
 
 ```bash
-curl http://localhost:8000/api/v1/jobs/job_01H...
+curl http://localhost:8000/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6
 ```
 
 ## GET /api/v1/jobs/{jobId}/stream
@@ -144,7 +146,7 @@ record and replays nothing.
 ### Example
 
 ```bash
-curl -N http://localhost:8000/api/v1/jobs/job_01H.../stream
+curl -N http://localhost:8000/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6/stream
 ```
 
 ## SSE Event Types

@@ -132,6 +132,19 @@ See [docs/api.md](docs/api.md) for the full API reference, including the table
 of SSE event types — derived from the shipped event models, so no count is
 written down here to go stale.
 
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md) — the run pipeline, the Ralph
+  loop, ticket generation and workspace isolation.
+- [docs/api.md](docs/api.md) — every endpoint, status code and SSE event,
+  derived from the shipped models.
+- [docs/configuration.md](docs/configuration.md) — every `AppConfig` field and
+  the operation config.
+- [CHANGELOG.md](CHANGELOG.md) — every release since v0.1.0, breaking changes
+  first.
+- [docs/migration-v0.1-to-v0.2.md](docs/migration-v0.1-to-v0.2.md) — the
+  upgrade guide for a v0.1.x operator or API client.
+
 ## Configuration
 
 All settings use the `KODEZART_` environment variable prefix. Copy
@@ -173,9 +186,9 @@ substituted for a configured override.
 
 `anthropic_v5` is the shipped default: de-prescribed templates, typed lens
 definitions dispatched as their own sessions, and per-role session policy read
-from set metadata. `claude-opus` is the **legacy configuration** — complete,
-still selectable, and held byte-identical by a content-hash manifest, so any
-change to it fails the suite rather than drifting.
+from set metadata. `claude-opus` is the **legacy configuration** — complete and
+still selectable. Nothing freezes its text; it is a second corpus for its
+model, edited like any other set.
 
 Roll back with both lines, not one:
 
@@ -539,11 +552,13 @@ name = "<the document name>"
 id = "<the document id>"
 ```
 
-Do the same for the run-log destination under `[records.run_log]`. A record
-declared `append_only` is never rewritten, only added to.
+Do the same for the run-record destinations under `[records.<kind>]`, one per
+run kind you want recorded — `fire_prep`, `grooming` or `fire`; any other key
+is refused at load. A record declared `append_only` is never rewritten, only
+added to.
 
-*Observable result:* a `[documents.checkpoint]` block and a `[records.run_log]`
-block, each naming its `system`.
+*Observable result:* a `[documents.checkpoint]` block and one
+`[records.<kind>]` block per recorded run kind, each naming its `system`.
 
 **5. Write the operation config.** Copy
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
@@ -616,7 +631,7 @@ it could not resolve. Nothing runs until you fix it.
 | `tracker_mappings_reconciled`, then `pass_scheduler_started` | A | Nothing. Go to step 8. |
 | `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER_TOKEN` (step 1). |
 | `tracker_not_configured` with `operation_config_present: false` | B | Set `KODEZART_OPERATION_CONFIG` (step 5). |
-| `fire_prep_pass_not_wired` | B | Same missing premise as the line above: no operation config, so the pass path has nothing to compose from. |
+| `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. |
 | `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`. Supply whichever reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. |
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
@@ -660,18 +675,23 @@ wakes and reports `outcome: empty_eligible_set`, the report carries one
 exclusion per issue naming the clause that excluded it — read the clause rather
 than re-reading the config.
 
-**Known limitation — the prep and grooming passes are not scheduled by this
-process.** Step 8 exercises the dispatch pass, which is deterministic and dials
-the tracker in-process. The judgment passes are a different shape: by design
-their rendered prompt goes to an **agent session with the tracker attached**,
-and the session does the work. Two consequences an operator should not have to
-discover by watching nothing happen: this repository registers no schedule for
-them, and it arranges no attachment of the tracker's MCP server to a session —
-that registration is host configuration, made where a session started in a
-service-owned directory can see it, and nothing here performs or verifies it.
-So a correctly configured deployment runs the dispatch loop and does **not**
-run prep or grooming. The gap is owned by KOD-60; do not read a machine-local
-MCP registration you happen to have as a property of the deployment.
+**The prep and grooming passes are scheduled here; their sessions reach the
+tracker through the host, not through this process.** Step 8 exercises the
+dispatch pass, which is deterministic and dials the tracker in-process. The
+judgment passes are a different shape: on their interval
+(`KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`,
+`KODEZART_GROOMING_PASS_INTERVAL_SECONDS`) the rendered prompt goes to an
+**agent session**, and the session does the work — so the session itself must
+be able to reach the tracker. Both passes register whenever the operation
+config declares at least one team and one repository (an empty roster logs
+`prompt_passes_not_wired` naming what is absent). What this process attaches to
+a session is the knowledge server it was granted
+(`KODEZART_KNOWLEDGE_SESSION_GRANTS`) and nothing else: it registers no tracker
+MCP server on a session. That registration is host configuration, made where a
+session started in `KODEZART_SCHEDULED_PASS_WORKING_DIR` can see it, and
+nothing here performs or verifies it — do not read a machine-local MCP
+registration you happen to have as a property of the deployment. Attaching the
+tracker to sessions from configuration is v0.3 work (KOD-312).
 
 ## Development
 

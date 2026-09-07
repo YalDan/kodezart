@@ -314,11 +314,12 @@ LangGraph workflow state can be checkpointed for resumability. Configure via
 | ------------------- | ----------------------------------------------------------- |
 | Not set / `None`    | Checkpointing disabled (default)                            |
 | `":memory:"`        | In-memory checkpointing via `InMemorySaver`                 |
-| PostgreSQL URL      | Persistent checkpointing via `PostgresSaver`                |
+| PostgreSQL URL      | Persistent checkpointing via `AsyncPostgresSaver`           |
 
-PostgreSQL checkpointing requires the `langgraph-checkpoint-postgres` dev
-dependency:
+PostgreSQL checkpointing requires the `postgres` extra (`langgraph-checkpoint-postgres`
+and `psycopg[binary]`); without it boot raises
+`PostgreSQL checkpointing requires the 'postgres' extra.`:
 
 ```bash
-uv add langgraph-checkpoint-postgres
+uv sync --all-groups --extra postgres
 ```
