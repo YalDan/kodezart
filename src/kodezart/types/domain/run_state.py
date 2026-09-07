@@ -5,6 +5,16 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 
 
+class LaneCommit(CamelCaseModel):
+    """One recorded commit row, with its own issue identity."""
+
+    model_config = ConfigDict(frozen=True)
+
+    sha: str
+    subject: str
+    issue_id: str
+
+
 class LaneEscalation(CamelCaseModel):
     """One occurrence, including the reading used while its question is open."""
 

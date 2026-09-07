@@ -461,6 +461,26 @@ account authors and change timestamps cannot supply those run identities.
 The pure count and replay tests do not establish that producer, its port
 conformance, or a supervisor's leased alarm writer.
 
+`write_back_missing` compares one event's explicitly declared
+`WritableSurface` with a successful keyed-record presence reading. The
+presence source must be that complete canonical address, including its
+marker. Only a strict boolean is accepted; an unreadable or omitted lookup
+cannot become absence. The resulting surface alarm retains both raw
+readings and has no threshold bound. Event-to-target projection and complete
+record collection belong to their producers and are not supplied by this
+predicate; it adds no competing event vocabulary or inferred target mapping.
+
+`commits_ahead_of_record` compares four projections from one lane record:
+lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.
+Each frozen row carries exactly `sha`, `subject` and `issue_id`. Either
+direction of count disagreement raises the lane alarm, with no configured
+bound. Subject/source mismatches, inconsistent SHA stamps and ambiguous
+commit identities refuse observation. Commit subjects and issue mentions
+never affect the count. A wholly stale record whose terms agree remains
+invisible: the declared head is retained for replay and is never resolved
+against a repository. Both predicates are pure; neither implements the
+supervisor tick, a record collector or leased alarm publication.
+
 ## Check-chain execution
 
 The check-chain runner executes each declared command through the host shell,
