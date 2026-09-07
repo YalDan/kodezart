@@ -199,3 +199,151 @@ async def test_aggregate_block_wins_over_an_earlier_redaction() -> None:
         DurabilityCategory.OBJECT_COUNT,
     }
     assert decision.content == ""
+
+
+@pytest.mark.parametrize("visibility", [RepoVisibility.PUBLIC, RepoVisibility.UNKNOWN])
+@pytest.mark.parametrize("content_class", list(ContentClass))
+@pytest.mark.parametrize(
+    "content",
+    ["3 issues remain", "ABC-1, ABC-2, ABC-3"],
+)
+async def test_identical_aggregate_bytes_block_only_on_current_surfaces(
+    visibility: RepoVisibility,
+    content_class: ContentClass,
+    content: str,
+) -> None:
+    """One memoized gate must still distinguish the two destinations."""
+    gate = configured_gate()
+    durable = await gate.gate(
+        content=content,
+        visibility=visibility,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=content_class,
+    )
+    event = await gate.gate(
+        content=content,
+        visibility=visibility,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_COMMENT,
+        content_class=content_class,
+    )
+    assert durable.verdict is GateVerdict.BLOCKED
+    assert event.verdict is GateVerdict.CLEAN
+    assert event.content == content
+
+
+@pytest.mark.parametrize("destination", list(OutboundDestination))
+async def test_single_identifier_is_a_reference_on_every_surface(
+    destination: OutboundDestination,
+) -> None:
+    decision = await configured_gate().gate(
+        content="See ABC-42 for the details.",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=destination,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.CLEAN
+
+
+@pytest.mark.parametrize("distance", [0, 1, 3, 7])
+@pytest.mark.parametrize("noun_first", [False, True])
+async def test_object_count_distance_uses_the_configured_boundary(
+    distance: int,
+    noun_first: bool,
+) -> None:
+    gate = configured_gate(
+        AppConfig(
+            agentic_content_scanner_enabled=False,
+            aggregate_count_token_distance=distance,
+        ),
+    )
+    for intervening, expected in [
+        (distance, GateVerdict.BLOCKED),
+        (distance + 1, GateVerdict.CLEAN),
+    ]:
+        ends = ("issues", "5") if noun_first else ("5", "issues")
+        content = " ".join([ends[0], *(["open"] * intervening), ends[1]])
+        decision = await gate.gate(
+            content=content,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.DERIVED,
+        )
+        assert decision.verdict is expected, content
+
+
+@pytest.mark.parametrize("minimum", [2, 4, 7])
+async def test_identifier_roster_uses_the_configured_run_boundary(minimum: int) -> None:
+    gate = configured_gate(
+        AppConfig(
+            agentic_content_scanner_enabled=False,
+            aggregate_identifier_roster_min_length=minimum,
+        ),
+    )
+    for length, expected in [
+        (minimum - 1, GateVerdict.CLEAN),
+        (minimum, GateVerdict.BLOCKED),
+    ]:
+        content = ", ".join(f"ABC-{index}" for index in range(length))
+        decision = await gate.gate(
+            content=content,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+        )
+        assert decision.verdict is expected, content
+
+
+async def test_roster_grammar_is_configuration_and_prose_breaks_a_run() -> None:
+    gate = configured_gate(
+        AppConfig(
+            agentic_content_scanner_enabled=False,
+            aggregate_issue_identifier_pattern=r"WORK/\d+",
+            aggregate_identifier_separator_pattern=r"\s*~\s*",
+        ),
+    )
+    for content, expected in [
+        ("WORK/1 ~ WORK/2 ~ WORK/3", GateVerdict.BLOCKED),
+        ("WORK/1, WORK/2, WORK/3", GateVerdict.CLEAN),
+        ("ABC-1 ~ ABC-2 ~ ABC-3", GateVerdict.CLEAN),
+        ("WORK/1 depends on WORK/2 ~ WORK/3", GateVerdict.CLEAN),
+    ]:
+        decision = await gate.gate(
+            content=content,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+        )
+        assert decision.verdict is expected, content
+
+
+async def test_event_destination_never_enters_the_aggregate_pattern_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scans: list[str] = []
+    original_scan = RegexContentScanner.scan
+
+    async def observed_scan(
+        self: RegexContentScanner,
+        *,
+        content: str,
+        destination: OutboundDestination,
+    ) -> ScanResult:
+        scans.append(content)
+        return await original_scan(self, content=content, destination=destination)
+
+    monkeypatch.setattr(RegexContentScanner, "scan", observed_scan)
+    decision = await configured_gate().gate(
+        content="3 issues remain",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_COMMENT,
+        content_class=ContentClass.DERIVED,
+    )
+    assert decision.verdict is GateVerdict.CLEAN
+    assert scans == ["3 issues remain"]  # Only the credential/privacy pattern set.
