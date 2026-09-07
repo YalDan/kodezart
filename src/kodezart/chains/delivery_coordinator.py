@@ -151,7 +151,13 @@ class DeliveryCoordinator:
         passed, summary = await self._ci.wait_for_checks(
             repo_url=execution.repo_url, ref=feature_branch
         )
-        if passed is not True:
+        if passed is True:
+            outcome = WorkflowOutcome.ci_passed
+        elif passed is None and not await self._ci.checks_declared(
+            repo_url=execution.repo_url
+        ):
+            outcome = WorkflowOutcome.ci_not_configured
+        else:
             raise DeliveryRouteUnavailableError(
                 lane_key=dispatch.lane_key,
                 issue_id=dispatch.issue_id,
@@ -169,7 +175,7 @@ class DeliveryCoordinator:
             pr=LanePR(url=url, number=number, state="open"),
             checks_passed=passed,
             checks_summary=summary,
-            outcome=WorkflowOutcome.ci_passed,
+            outcome=outcome,
         )
 
     async def _require_remote_branches(

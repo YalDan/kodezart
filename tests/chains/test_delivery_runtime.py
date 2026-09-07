@@ -459,3 +459,44 @@ async def test_real_git_remote_reads_drive_delivery_preflight(tmp_path):
     with pytest.raises(BaseResolutionError):
         await deliver(fixture.coordinator, facts=facts, sha=sha)
     assert len(fixture.forge.calls) == 1
+
+
+async def test_no_checks_and_no_declarations_preserves_explicit_none():
+    monitor = FakeCIMonitor(passed=None, declared=False, summary="No configured CI.")
+    fixture = setup(monitor=monitor)
+    result = await deliver(fixture.coordinator)
+    assert result.outcome is WorkflowOutcome.ci_not_configured
+    assert result.checks_passed is None
+    assert result.model_dump()["checks_passed"] is None
+    assert monitor.declaration_calls == [REPOSITORY]
+    assert monitor.rerun_calls == monitor.failed_name_calls == []
+
+
+@pytest.mark.parametrize("passed", [False, None])
+async def test_unconnected_check_routes_refuse_with_observed_pr_facts(passed):
+    monitor = FakeCIMonitor(passed=passed, declared=True, summary="Observed evidence.")
+    fixture = setup(monitor=monitor)
+    with pytest.raises(DeliveryRouteUnavailableError) as error:
+        await deliver(fixture.coordinator)
+    assert error.value.pr_url == "https://github.com/o/r/pull/1"
+    assert error.value.pr_number == 1
+    assert error.value.checks_passed is passed
+    assert error.value.checks_summary == "Observed evidence."
+    assert monitor.rerun_calls == monitor.failed_name_calls == []
+    assert [call["method"] for call in fixture.forge.calls] == ["create_pr"]
+    assert monitor.declaration_calls == ([REPOSITORY] if passed is None else [])
+
+
+async def test_unreadable_declarations_never_mean_no_ci():
+    from kodezart.domain.errors import ForgeAPIError
+
+    refusal = ForgeAPIError("unreadable declaration", status_code=None, detail="test")
+
+    class UnreadableDeclaration(FakeCIMonitor):
+        async def checks_declared(self, *, repo_url):
+            raise refusal
+
+    fixture = setup(monitor=UnreadableDeclaration(passed=None))
+    with pytest.raises(ForgeAPIError) as error:
+        await deliver(fixture.coordinator)
+    assert error.value is refusal
