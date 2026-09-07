@@ -177,6 +177,14 @@ class LinearIssueDetailWire(LinearIssueWire):
     documents: list[LinearAssetWire]
 
 
+class LinearCriterionIssueWire(LinearIssueDetailWire):
+    """A child's reported membership and full description cannot be omitted."""
+
+    labels: list[str]
+    parent_id: str | None
+    description: str | None
+
+
 class LinearIssueListWire(LinearWireModel):
     """The ``list_issues`` envelope."""
 

@@ -120,6 +120,7 @@ class MappingKind(StrEnum):
     TEAM = "team"
     QUEUE_STATE = "queue_state"
     SCOPE_LABEL = "scope_label"
+    ISSUE_LABEL = "issue_label"
     WORKFLOW_STATE = "workflow_state"
     DOCUMENT = "document"
 
@@ -131,7 +132,12 @@ class MappingKind(StrEnum):
 #: a ref outside this set is ``TrackerEnsureConflictError`` everywhere, which
 #: is what keeps an adapter and a test double from disagreeing about it.
 INSTATABLE_MAPPING_KINDS: frozenset[MappingKind] = frozenset(
-    {MappingKind.QUEUE_STATE, MappingKind.SCOPE_LABEL, MappingKind.DOCUMENT},
+    {
+        MappingKind.QUEUE_STATE,
+        MappingKind.SCOPE_LABEL,
+        MappingKind.ISSUE_LABEL,
+        MappingKind.DOCUMENT,
+    },
 )
 
 
@@ -195,6 +201,8 @@ class TrackerIssue(TrackerModel):
     state_name: str
     state_kind: WorkflowStateKind
     queue_states: frozenset[QueueState]
+    #: Configured semantic issue-label keys, never backend label spellings.
+    issue_labels: frozenset[str] = frozenset()
     team_key: str | None
     #: The project the issue belongs to, in both spellings the backend
     #: reports them — display name and id — or ``None`` for an issue in no

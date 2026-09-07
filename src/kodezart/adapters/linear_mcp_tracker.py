@@ -46,6 +46,7 @@ from kodezart.core.errors import (
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import (
+    CriterionReadError,
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     TransientAPIError,
@@ -63,6 +64,7 @@ from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
     LinearCommentWire,
+    LinearCriterionIssueWire,
     LinearDiffListWire,
     LinearDocumentListWire,
     LinearDocumentSummaryWire,
@@ -81,7 +83,11 @@ from kodezart.types.domain.linear_mcp import (
     LinearWireModel,
 )
 from kodezart.types.domain.linear_scope import LinearScopeIssuesWire
-from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    OperationMemberAbsentError,
+    QueueState,
+)
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -408,6 +414,7 @@ class LinearMcpTracker:
         *,
         caller: McpToolCaller,
         queue_state_labels: Mapping[str, str],
+        issue_labels: Mapping[str, str],
         workflow_state_names: Mapping[LifecycleStage, str],
         marker_prefixes: Mapping[str, str],
         team_identifiers: Mapping[str, str],
@@ -419,6 +426,7 @@ class LinearMcpTracker:
         self._caller: McpToolCaller = caller
         self._markers = LinearMarkers(marker_prefixes)
         self._issue_identity = LinearIssueIdentityCarrier(marker_prefixes)
+        self._issue_labels = dict(issue_labels)
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._clock: Callable[[], datetime] = clock
@@ -710,6 +718,61 @@ class LinearMcpTracker:
             arguments["description"] = body
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
         return self._saved_issue(payload)
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        if "criterion" not in self._issue_labels:
+            raise OperationMemberAbsentError(
+                missing="issue_labels['criterion']",
+                stops="criterion sub-issue membership cannot be read",
+            )
+        try:
+            return await self._read_criteria(issue_key=issue_key)
+        except (McpTransportError, TrackerProtocolError) as exc:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="the tracker read failed or was incomplete"
+            ) from exc
+
+    async def _read_criteria(self, *, issue_key: str) -> tuple[TrackerIssue, ...]:
+        parent = await self.read_issue(issue_key=issue_key)
+        arguments: dict[str, object] = {
+            "parentId": parent.issue_key,
+            "includeArchived": True,
+            "limit": _ISSUE_IDENTITY_PAGE_SIZE,
+            "fields": ["id"],
+        }
+        seen_keys: set[str] = set()
+        seen_cursors: set[str] = set()
+        criteria: list[TrackerIssue] = []
+        while True:
+            payload = await self._call(_TOOL_LIST_ISSUES, arguments)
+            page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+            for entry in page.issues:
+                if entry.id in seen_keys:
+                    continue
+                seen_keys.add(entry.id)
+                detail = await self._call(
+                    _TOOL_GET_ISSUE, {"id": entry.id, "includeRelations": True}
+                )
+                child = self._to_issue(
+                    self._validate(LinearCriterionIssueWire, detail, _TOOL_GET_ISSUE)
+                )
+                if child.issue_key != entry.id or child.parent_key != parent.issue_key:
+                    raise CriterionReadError(
+                        issue_key=issue_key,
+                        reason="child differs from its current identity or parent",
+                    )
+                if "criterion" in child.issue_labels:
+                    criteria.append(child)
+            if not page.has_next_page:
+                break
+            if not page.cursor or page.cursor in seen_cursors:
+                raise CriterionReadError(
+                    issue_key=issue_key,
+                    reason="child listing pagination cannot advance",
+                )
+            seen_cursors.add(page.cursor)
+            arguments["cursor"] = page.cursor
+        return tuple(sorted(criteria, key=lambda criterion: criterion.issue_key))
 
     async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
         self._issue_identity.require_prefix()
@@ -1723,7 +1786,7 @@ class LinearMcpTracker:
         match kind:
             case MappingKind.DOCUMENT:
                 return frozenset(await self._document_definitions())
-            case MappingKind.QUEUE_STATE:
+            case MappingKind.QUEUE_STATE | MappingKind.ISSUE_LABEL:
                 return (await self._label_definitions()).names()
             case MappingKind.SCOPE_LABEL:
                 issues = await self._label_definitions()
@@ -1949,6 +2012,11 @@ class LinearMcpTracker:
                 self._queue_state_by_label[label]
                 for label in wire.labels
                 if label in self._queue_state_by_label
+            ),
+            issue_labels=frozenset(
+                name
+                for name, label in self._issue_labels.items()
+                if label in wire.labels
             ),
             team_key=self._team_key_by_identifier.get(wire.team),
             project=wire.project,

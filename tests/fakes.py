@@ -34,6 +34,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import (
+    CriterionReadError,
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     MergeConflictError,
@@ -2406,7 +2407,14 @@ class FakeLinearMcpServer:
         if handler is None:
             msg = f"fake MCP server exposes no tool named {name!r}"
             raise LookupError(msg)
-        result: McpToolResult = handler(arguments)
+        try:
+            result: McpToolResult = handler(arguments)
+        except LookupError as exc:
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {exc}",
+                server_name="fake-linear",
+                tool_name=name,
+            ) from exc
         return result
 
     def tool_calls(self, name: str) -> list[Mapping[str, object]]:
@@ -2451,11 +2459,13 @@ class FakeLinearMcpServer:
     ) -> Mapping[str, object]:
         label = arguments.get("label")
         team = arguments.get("team")
+        parent = arguments.get("parentId")
         selected = [
             issue
             for issue in self.issues.values()
             if (label is None or label in issue.labels)
             and (team is None or issue.team == team)
+            and (parent is None or issue.parent_id == parent)
         ]
         limit = int(str(arguments.get("limit", len(selected))))
         return {
@@ -3171,6 +3181,24 @@ class FakeTrackerPort:
         self.issues[issue.issue_key] = issue
         self.issue_creations.append(issue.issue_key)
         return issue
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        if issue_key not in self.issues:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
+            )
+        parent = await self.read_issue(issue_key=issue_key)
+        return tuple(
+            sorted(
+                (
+                    issue
+                    for issue in self.issues.values()
+                    if issue.parent_key == parent.issue_key
+                    and "criterion" in issue.issue_labels
+                ),
+                key=lambda issue: issue.issue_key,
+            )
+        )
 
     async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
         await self.read_issue(issue_key=issue_key)

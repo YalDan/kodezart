@@ -711,6 +711,16 @@ class TrackerPort(Protocol):
         """
         ...
 
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        """Read exactly the currently labelled direct criterion sub-issues.
+
+        Their own issue keys carry identity; full bodies and workflow states
+        carry specification and evidence. A successful empty read returns
+        an empty sequence. A failed or incomplete lookup raises; it never
+        becomes an empty answer. No parent-body syntax supplies membership.
+        """
+        ...
+
     async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
         """The issue's recorded deliverable identity, or no owned identity."""
         ...

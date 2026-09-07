@@ -334,6 +334,7 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         priority=IssuePriority.LOW,
     )
     await tracker.read_issue_identity(issue_key=keyed.issue_key)
+    await tracker.read_criteria(issue_key=keyed.issue_key)
     await tracker.create_issue(
         title="t",
         body="b",

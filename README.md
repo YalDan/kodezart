@@ -375,6 +375,13 @@ issue because Linear's listing descriptions can be truncated. Callers must
 serialize concurrent creation of the same key; this lookup cannot provide an
 atomic uniqueness constraint. Duplicate recorded identities refuse any write.
 
+`issue_labels` maps semantic issue-label keys to tracker label names. Declare
+`criterion` for criterion reads; boot adopts or creates these labels using the
+same team namespaces as queue labels. `read_criteria` returns the currently
+labelled direct sub-issues, with their own keys, full bodies and workflow
+states. The parent description supplies no criterion identity or membership.
+An empty set is a successful read; incomplete or failed reads raise an error.
+
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the
 live workspace belongs to the tracker adapter, not to config load.

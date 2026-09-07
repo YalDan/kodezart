@@ -131,6 +131,11 @@ approved = "queue:approved"
 done = "queue:done"
 decision = "queue:decision"
 
+# Issue labels use semantic keys and configurable tracker names. An empty
+# mapping loads; criterion reads require the criterion entry at the point of use.
+[issue_labels]
+criterion = "criterion"
+
 # Scope admission is separate from the issue queue. Names are configurable;
 # an omitted or empty mapping is valid, and a populated mapping must include
 # all three semantic members. Additional keys remain available to templates.

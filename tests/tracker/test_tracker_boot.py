@@ -163,6 +163,7 @@ class TestConfiguredMappings:
                     "proposed": "scope:proposed",
                     "approved": "scope:approved",
                 },
+                "issue_labels": {"criterion": "acceptance-condition"},
             },
         )
         refs = (*configured_mappings(config), *owned_mappings(config))
@@ -577,6 +578,7 @@ class TestQueueVocabularyPerDeclaredTeam:
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
             marker_prefixes=MARKER_PREFIXES,
+            issue_labels={"criterion": "acceptance-condition"},
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
@@ -703,6 +705,7 @@ class TestWorkflowStatesResolvePerTeam:
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
             marker_prefixes=MARKER_PREFIXES,
+            issue_labels={"criterion": "acceptance-condition"},
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
