@@ -494,3 +494,60 @@ async def test_pinned_heads_survive_branch_movement_and_caller_list_mutation(
             == ""
         )
     assert not Path(result.scratch_path).exists()
+
+
+async def test_actual_check_cancellation_reaps_before_worktree_removal(
+    repository, tmp_path
+):
+    import shlex
+
+    repo, base, heads = repository
+    marker = tmp_path / "process.pid"
+    code = (
+        "import os,time; from pathlib import Path; Path("
+        + repr(str(marker))
+        + ").write_text(str(os.getpid())); time.sleep(60)"
+    )
+    command = shlex.quote(sys.executable) + " -c " + shlex.quote(code)
+
+    class InspectCleanup(ObservedGit):
+        async def remove_worktree(self, *args, **kwargs):
+            pid = int(marker.read_text())
+            proc = await asyncio.create_subprocess_exec(
+                "ps",
+                "-o",
+                "stat=",
+                "-p",
+                str(pid),
+                stdout=asyncio.subprocess.PIPE,
+            )
+            state, _ = await proc.communicate()
+            assert not state.strip() or state.strip().startswith(b"Z"), state
+            await super().remove_worktree(*args, **kwargs)
+
+    adapter = InspectCleanup()
+    task = asyncio.create_task(
+        service(adapter).verify(
+            scope_key="scope",
+            repo_path=str(repo),
+            repo=entry(command),
+            base_sha=base,
+            lane_heads=heads,
+        )
+    )
+    try:
+        async with asyncio.timeout(15):
+            while not marker.exists():
+                await asyncio.sleep(0.01)
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 15)
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+    assert adapter.removed == adapter.created
+    assert not Path(adapter.created[0]).exists()
+    assert (await git(repo, "worktree", "list", "--porcelain")).count("worktree ") == 1
