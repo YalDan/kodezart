@@ -1713,11 +1713,29 @@ class FakeCIMonitor:
         passed: bool | None = True,
         summary: str = "All CI checks passed.",
         fail: Exception | None = None,
+        declared: bool = True,
+        failed_names: frozenset[str] = frozenset(),
     ) -> None:
         self._passed = passed
         self._summary = summary
         self._fail = fail
+        self._declared = declared
+        self._failed_names = failed_names
+        self.declaration_calls: list[str] = []
+        self.failed_name_calls: list[tuple[str, str]] = []
         self.calls: list[dict[str, object]] = []
+
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        self.declaration_calls.append(repo_url)
+        if self._fail is not None:
+            raise self._fail
+        return self._declared
+
+    async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
+        self.failed_name_calls.append((repo_url, ref))
+        if self._fail is not None:
+            raise self._fail
+        return self._failed_names
 
     async def wait_for_checks(
         self,
@@ -1736,7 +1754,7 @@ class FakeCIMonitor:
         return (self._passed, self._summary)
 
 
-class SequentialCIMonitor:
+class SequentialCIMonitor(FakeCIMonitor):
     """CIMonitor that returns a different result on each call.
 
     Takes a list of ``(passed, summary)`` tuples and pops the first entry
@@ -1745,6 +1763,7 @@ class SequentialCIMonitor:
     """
 
     def __init__(self, results: list[tuple[bool | None, str]]) -> None:
+        super().__init__()
         self._results = list(results)
         self.calls: list[dict[str, object]] = []
 

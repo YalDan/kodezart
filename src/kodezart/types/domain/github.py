@@ -1,6 +1,6 @@
 """GitHub API response shapes — Pydantic validation at the adapter boundary."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CheckRun(BaseModel):
@@ -66,3 +66,16 @@ class WorkflowsResponse(BaseModel):
 
     total_count: int
     workflows: list[Workflow]
+
+
+class DeclaredWorkflow(Workflow):
+    """Identity makes a complete declaration read detect repeated pages."""
+
+    id: int
+
+
+class DeclaredWorkflowsResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    total_count: int = Field(ge=0)
+    workflows: list[DeclaredWorkflow]

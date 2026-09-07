@@ -453,6 +453,14 @@ class ForgeQuery(Protocol):
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
 
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        """Read whether checks are declared; failed reads never mean absent."""
+        ...
+
+    async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
+        """Names from a complete terminal observation, independent of log prose."""
+        ...
+
     async def wait_for_checks(
         self,
         *,
