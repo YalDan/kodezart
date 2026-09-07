@@ -26,6 +26,12 @@ from kodezart.core.protocols import (
     RepoCache,
 )
 from kodezart.core.stream_drain import drain
+from kodezart.domain.delivery_content import (
+    delivered_outcome,
+    prepared_delivery_description,
+    require_deliverable_context,
+    require_delivery_presentation,
+)
 from kodezart.domain.errors import (
     BaseResolutionError,
     CheckObservationError,
@@ -151,16 +157,7 @@ class DeliveryCoordinator:
                 issue_id=dispatch.issue_id,
                 reason="head, resolved base, final SHA and repository must agree",
             )
-        if context.fire_outcome is not WorkflowOutcome.handed_off_for_delivery:
-            raise DeliveryRouteUnavailableError(
-                lane_key=dispatch.lane_key,
-                issue_id=dispatch.issue_id,
-                reason="this fire outcome has no connected delivery route",
-                pr_url=None,
-                pr_number=None,
-                checks_passed=None,
-                checks_summary=None,
-            )
+        require_deliverable_context(dispatch=dispatch, context=context)
         existing = await self._forge_query.open_pr_for_head(
             repo_url=execution.repo_url, head=feature_branch
         )
@@ -199,7 +196,13 @@ class DeliveryCoordinator:
             # Cleaning may commit and push. Preserve the fire's SHA, and
             # re-read both remote refs instead of treating it as the new tip.
             _, remote_sha = await self._require_remote_branches(dispatch, context)
-        description = await self._description(context, feature_branch=feature_branch)
+        description = prepared_delivery_description(
+            context=context, published_sha=remote_sha
+        )
+        if description is None:
+            description = await self._description(
+                context, feature_branch=feature_branch
+            )
         body = append_tracker_issue(
             append_flagged_section(description.description, context.flagged_items),
             dispatch.issue_id,
@@ -209,6 +212,9 @@ class DeliveryCoordinator:
         )
         body = await self._gated(body, context.visibility, OutboundDestination.PR_BODY)
         require_tracker_issue(body, dispatch.issue_id)
+        require_delivery_presentation(
+            context=context, dispatch=dispatch, title=title, body=body
+        )
         base = dispatch.resolved_base.base_branch
         if existing_content is None:
             url, number = await self._pr_creator.create_pr(
@@ -312,6 +318,12 @@ class DeliveryCoordinator:
                 reason="open PR identity or base changed during check watching",
             )
         require_tracker_issue(observed.body, dispatch.issue_id)
+        require_delivery_presentation(
+            context=context,
+            dispatch=dispatch,
+            title=observed.title,
+            body=observed.body,
+        )
         return LaneDelivery(
             lane_key=dispatch.lane_key,
             issue_id=dispatch.issue_id,
@@ -320,7 +332,9 @@ class DeliveryCoordinator:
             pr=LanePR(url=url, number=number, state="open"),
             checks_passed=passed,
             checks_summary=summary,
-            outcome=outcome,
+            outcome=delivered_outcome(
+                fire_outcome=context.fire_outcome, check_outcome=outcome
+            ),
         )
 
     def _repository(self, repo_url: str) -> RepoEntry:
