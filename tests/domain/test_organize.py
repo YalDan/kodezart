@@ -36,3 +36,54 @@ def test_no_source_call_booleanizes_admission_verdict():
                     isinstance(child, ast.Name) and child.id == "AdmissionVerdict"
                     for child in ast.walk(node)
                 ), path
+
+
+@pytest.mark.parametrize(
+    "verdict,fields",
+    [
+        ("not_buildable", {"invented_decision": "choose a storage model"}),
+        (
+            "unverifiable",
+            {"missing_artifact": "schema", "pending_blocker_id": "ISSUE-9"},
+        ),
+        ("buildable", {}),
+    ],
+)
+def test_admission_result_round_trips_without_changing_verdict(verdict, fields):
+    from kodezart.types.domain.organize import AdmissionResult
+
+    result = AdmissionResult(
+        issue_id="ISSUE-1",
+        verdict=AdmissionVerdict(verdict),
+        evidence="observed",
+        **fields,
+    )
+    assert AdmissionResult.model_validate_json(result.model_dump_json()) == result
+    assert result.verdict.value == verdict
+
+
+@pytest.mark.parametrize(
+    "verdict,fields",
+    [
+        ("not_buildable", {}),
+        ("not_buildable", {"invented_decision": ""}),
+        ("not_buildable", {"invented_decision": "  "}),
+        ("unverifiable", {}),
+        ("unverifiable", {"missing_artifact": "schema"}),
+        ("unverifiable", {"pending_blocker_id": "ISSUE-9"}),
+        ("unverifiable", {"missing_artifact": " ", "pending_blocker_id": "ISSUE-9"}),
+        ("unverifiable", {"missing_artifact": "schema", "pending_blocker_id": ""}),
+    ],
+)
+def test_admission_refusal_requires_actionable_fields(verdict, fields):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import AdmissionResult
+
+    with pytest.raises(ValidationError):
+        AdmissionResult(
+            issue_id="ISSUE-1",
+            verdict=AdmissionVerdict(verdict),
+            evidence="observed",
+            **fields,
+        )
