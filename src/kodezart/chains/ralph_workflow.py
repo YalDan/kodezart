@@ -1263,6 +1263,7 @@ class RalphWorkflowEngine:
             ConsolidationStatus.ALREADY_INTEGRATED,
         )
         head = state["feature_branch"] if integrated else best_ref
+        head_sha = outcome.feature_tip_sha if integrated else best_sha
 
         pr_url, pr_number = await self._pr_creator.create_pr(
             repo_url=repo_url,
@@ -1296,7 +1297,7 @@ class RalphWorkflowEngine:
                 pr_number=pr_number,
                 feature_branch=head,
                 base_branch=ctx.base_branch,
-                feature_tip_sha=outcome.feature_tip_sha if integrated else best_sha,
+                feature_tip_sha=head_sha,
                 # The acceptance gate rejected this branch: the pull request
                 # asks a human to read a stall, it does not deliver the issue.
                 delivered=False,
@@ -1309,7 +1310,12 @@ class RalphWorkflowEngine:
             consolidation_status=outcome.status.value,
             best_commit_sha=best_sha,
         )
-        return {"pr_url": pr_url, "pr_number": pr_number}
+        return {
+            "pr_url": pr_url,
+            "pr_number": pr_number,
+            "feature_branch": head,
+            "feature_tip_sha": head_sha,
+        }
 
     async def _resolve_cwd(self, ctx: ExecutionContext) -> str:
         """Resolve a usable cwd for GitService calls in the outer engine."""

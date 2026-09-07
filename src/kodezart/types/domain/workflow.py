@@ -196,11 +196,12 @@ class WorkflowState(TypedDict):
     ``issue_key`` is the producer's tracker identity for this run. It is
     preserved across remediation and appended before gating a PR body.
 
-    ``feature_tip_sha`` is the canonical feature-branch tip SHA after the
-    last successful consolidation; ``None`` until ``_merge_to_feature_node``
-    runs.  ``review_base_sha`` / ``review_head_sha`` are the exact 40-char
-    SHAs the evaluator's ``ChangesetDigest`` is computed between — set by
-    consolidation nodes, read by ``_review_against_ticket_node``.
+    ``feature_branch`` and ``feature_tip_sha`` identify the selected published
+    head. Consolidation records its branch tip; a stalled exit may instead
+    select the published best-iteration ref. The SHA remains ``None`` until
+    a node establishes that head. ``review_base_sha`` / ``review_head_sha`` are
+    the exact 40-character endpoints of the evaluator's ``ChangesetDigest``.
+    Consolidation nodes write them; ``_review_against_ticket_node`` reads them.
 
     ``trajectory`` carries the most recent quality-gate invocation's
     ``LoopTrajectory``; ``None`` until the first gate invocation projects
