@@ -105,7 +105,7 @@ def test_distinct_runs_under_the_same_marker_use_the_same_signal():
     assert alarm.signal is AlarmSignal.SURFACE_CONTENDED
     assert alarm.bound.observed_value == 2
     assert alarm.readings[1] == original[1]
-    assert len(AlarmSignal) == 12
+    assert alarm.subject.member_id == surface_alarm_member_id(surface)
 
 
 @pytest.mark.parametrize(
