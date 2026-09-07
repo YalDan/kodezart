@@ -35,7 +35,7 @@ class AggregateContentScanner:
         nouns = "|".join(re.escape(noun) for noun in tracker_object_nouns)
         noun = rf"\b(?:{nouns})\b"
         # Identifier suffixes and decimal fragments are not standalone counts.
-        numeral = r"(?<![\w.-])\d+(?:[.,]\d+)*(?![\w.-])"
+        numeral = r"(?<![\w.-])\d+(?:[.,]\d+)*(?!\w|[.,]\d)"
         gap = rf"(?:\W+\w+){{0,{count_token_distance}}}\W+"
         identifier = rf"(?:{issue_identifier_pattern})"
         separator = rf"(?:{identifier_separator_pattern})"

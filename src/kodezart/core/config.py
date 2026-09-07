@@ -1007,11 +1007,12 @@ class AppConfig(BaseSettings):
         ),
     )
     aggregate_count_token_distance: int = Field(
-        default=2,
+        default=0,
         ge=0,
         description=(
             "Maximum intervening tokens between a numeral and a tracker-object "
-            "noun in a durable aggregate claim."
+            "noun in a durable aggregate claim. The adjacent-only default "
+            "leaves counts of tests, files and commits untouched."
         ),
     )
     aggregate_identifier_roster_min_length: int = Field(

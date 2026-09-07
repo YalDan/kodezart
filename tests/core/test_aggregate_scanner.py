@@ -412,3 +412,114 @@ async def test_privacy_match_text_is_not_copied_into_the_blocked_error() -> None
         )
     assert secret not in str(excinfo.value)
     assert all(hit.matched_text is None for hit in excinfo.value.hits)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "3 tests passed.",
+        "Changed 7 files in 2 commits.",
+        "3 files fix issues.",
+        "42 tests cover tickets.",
+        "The commit closes ABC-42.",
+        "ABC-1 depends on ABC-2 and ABC-3.",
+    ],
+)
+async def test_shipped_patterns_leave_repository_counts_and_references_clean(
+    content: str,
+) -> None:
+    decision = await configured_gate().gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.CLEAN
+    assert decision.content == content
+
+
+@pytest.mark.parametrize("noun", AppConfig().aggregate_tracker_object_nouns)
+@pytest.mark.parametrize("noun_first", [False, True])
+async def test_shipped_nouns_block_adjacent_counts_in_either_order(
+    noun: str,
+    noun_first: bool,
+) -> None:
+    content = f"{noun}: 3." if noun_first else f"3 {noun} remain."
+    gate = configured_gate()
+    durable = await gate.gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.DERIVED,
+    )
+    assert durable.verdict is GateVerdict.BLOCKED
+    assert durable.categories == (DurabilityCategory.OBJECT_COUNT,)
+    event = await gate.gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_COMMENT,
+        content_class=ContentClass.DERIVED,
+    )
+    assert event.verdict is GateVerdict.CLEAN
+    assert event.content == content
+
+
+@pytest.mark.parametrize("number", ["1,234", "3.5", "900"])
+async def test_noun_first_count_allows_sentence_punctuation(number: str) -> None:
+    content = f"Issues: {number}."
+    decision = await configured_gate().gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.BLOCKED
+    assert [hit.matched_text for hit in decision.hits] == [f"Issues: {number}"]
+
+
+async def test_configured_object_nouns_replace_the_shipped_vocabulary() -> None:
+    config = AppConfig(
+        agentic_content_scanner_enabled=False,
+        aggregate_tracker_object_nouns=["work package", "work packages"],
+    )
+    for content, expected in [
+        ("3 work packages remain", GateVerdict.BLOCKED),
+        ("work packages: 3.", GateVerdict.BLOCKED),
+        ("3 issues remain", GateVerdict.CLEAN),
+        ("3 files remain", GateVerdict.CLEAN),
+    ]:
+        decision = await configured_gate(config).gate(
+            content=content,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+        )
+        assert decision.verdict is expected, content
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("A 3-issue scope.", GateVerdict.BLOCKED),
+        ("A 3-file change.", GateVerdict.CLEAN),
+        ("ABC-3 issues are discussed here.", GateVerdict.CLEAN),
+        ("See ISSUE-3 for the details.", GateVerdict.CLEAN),
+    ],
+)
+async def test_count_adjectives_and_identifier_suffixes_are_distinct(
+    content: str,
+    expected: GateVerdict,
+) -> None:
+    decision = await configured_gate().gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is expected
