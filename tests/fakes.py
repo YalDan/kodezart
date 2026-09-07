@@ -1717,15 +1717,25 @@ class FakeCIMonitor:
         fail: Exception | None = None,
         declared: bool = True,
         failed_names: frozenset[str] = frozenset(),
+        rerun_results: Sequence[tuple[bool | None, str, frozenset[str]]] = (),
     ) -> None:
         self._passed = passed
         self._summary = summary
         self._fail = fail
         self._declared = declared
         self._failed_names = failed_names
+        self._rerun_results = list(rerun_results)
+        self.rerun_calls: list[tuple[str, str]] = []
         self.declaration_calls: list[str] = []
         self.failed_name_calls: list[tuple[str, str]] = []
         self.calls: list[dict[str, object]] = []
+
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        self.rerun_calls.append((repo_url, ref))
+        if self._fail is not None:
+            raise self._fail
+        if self._rerun_results:
+            self._passed, self._summary, self._failed_names = self._rerun_results.pop(0)
 
     async def checks_declared(self, *, repo_url: str) -> bool:
         self.declaration_calls.append(repo_url)

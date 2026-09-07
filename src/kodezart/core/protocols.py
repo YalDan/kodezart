@@ -454,6 +454,15 @@ class ForgeQuery(Protocol):
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
 
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        """Request re-observation at the same SHA.
+
+        Subsequent waits and failed-name reads on this monitor must observe
+        the requested attempt, never the completed checks preceding it.
+        An unsupported or incomplete rerun raises a domain error.
+        """
+        ...
+
     async def checks_declared(self, *, repo_url: str) -> bool:
         """Read whether checks are declared; failed reads never mean absent."""
         ...
