@@ -108,6 +108,32 @@ the opened transport before mapping reconciliation or execution can start.
 The declaration itself performs no writes or lease acquisition. Scope-walker
 dispatch remains a separate unfinished consumer of this mandatory boot boundary.
 
+`LaneRecordReader` reads the owning issue's complete comment listing through
+`TrackerPort`, locates the exact configured `marker_prefixes.run_state` marker,
+and returns the native comment and decoded `LaneRunState` from that same read.
+An existing `record_ref` must still identify that marker comment. Missing,
+duplicate, malformed or misaddressed records raise `LaneRecordReadError`;
+transport failure never becomes an empty record. Every call reads again, so a
+fresh client needs no process cache, repository, trajectory or forge connection.
+
+`render_lane_record` places one readable JSON value under that marker, followed
+by fixed re-entry guidance. The record preserves three-state remote head facts,
+ordered `LaneCommit` rows, `LanePR` and explicitly typed `BranchAssociation`
+roles, parents and run identities. Its loop branch must appear in the association
+set, and each run has at most one deliverable. Branch names do not supply roles.
+Counts remain independently recorded observations, so the consistency signal
+can still detect disagreement with commit rows. The re-entry text directs
+checkout or recovery of existing work and treats absent or reaped remote refs
+explicitly. Satisfaction and Evidence remain on the criterion issues.
+
+The reader recognizes this declared format; old free-form manual comments need
+an explicit migration. A formatter and cold tracker read do not implement the
+committing node's collection/write operation, its first-push notification,
+first-class branch-association persistence, or a complete mid-loop kill test.
+Mandatory write leases and the recorded association-storage conflict remain
+separate prerequisites. Scope terminals must still consume this reader and
+other required durable records; no terminal outcome is inferred from it.
+
 Tracker boot calls the required `require_body_digest_stability` contract before
 mapping reconciliation. An adapter that cannot guarantee those semantics
 raises `BodyDigestCapabilityError`, naming `body_digest_stability`, and boot

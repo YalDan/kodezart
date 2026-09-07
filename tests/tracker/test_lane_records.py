@@ -1,5 +1,6 @@
 """Cold lane reconstruction uses the actual tracker comment read boundary."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock
 
@@ -20,6 +21,7 @@ from tests.tracker.conftest import (
     CLAIMED_ISSUE,
     linear_over_fake_mcp,
 )
+from tests.tracker.test_comment_pages import CommentPageServer, comment
 
 PREFIXES = {"run_state": "fixture-record"}
 OPERATION = OperationConfig(
@@ -240,3 +242,53 @@ async def test_legacy_manual_prose_requires_a_deliberate_migration(tracker):
     )
     with pytest.raises(LaneRecordReadError, match="framing"):
         await LaneRecordReader(tracker=tracker, operation=OPERATION).read(**ADDRESS)
+
+
+@pytest.mark.parametrize("mode", ["later-record", "later-duplicate", "incomplete"])
+async def test_native_read_requires_the_complete_comment_listing(mode):
+    body = render_lane_record(
+        record=LaneRunState.model_validate(record_data()), marker_prefixes=PREFIXES
+    )
+    first = comment("first", "unrelated" if mode == "later-record" else body)
+    second = comment("second", body)
+    server = CommentPageServer(
+        {
+            None: {"comments": [first.wire()], "hasNextPage": True, "cursor": "later"},
+            "later": {"comments": [second.wire()], "hasNextPage": mode == "incomplete"},
+        }
+    )
+    reader = LaneRecordReader(tracker=linear_over_fake_mcp(server), operation=OPERATION)
+    if mode == "later-record":
+        stored, record = await reader.read(**ADDRESS)
+        assert stored.comment_key == "second"
+        assert record.lane_key == LANE
+    else:
+        with pytest.raises(LaneRecordReadError):
+            await reader.read(**ADDRESS)
+    assert server.tool_calls("list_comments") == [
+        {"issueId": APPROVED_ISSUE},
+        {"issueId": APPROVED_ISSUE, "cursor": "later"},
+    ]
+    assert server.tool_calls("save_comment") == []
+
+
+async def test_cancellation_propagates_without_manufacturing_a_record(
+    tracker, monkeypatch
+):
+    listing = AsyncMock(side_effect=asyncio.CancelledError)
+    monkeypatch.setattr(tracker, "list_comments", listing)
+    with pytest.raises(asyncio.CancelledError):
+        await LaneRecordReader(tracker=tracker, operation=OPERATION).read(**ADDRESS)
+
+
+@pytest.mark.parametrize(
+    "address", [{"issue_key": "", "lane_key": LANE}, {**ADDRESS, "record_ref": ""}]
+)
+async def test_empty_address_refuses_before_any_tracker_call(
+    tracker, monkeypatch, address
+):
+    listing = AsyncMock()
+    monkeypatch.setattr(tracker, "list_comments", listing)
+    with pytest.raises(LaneRecordReadError, match="nonempty"):
+        await LaneRecordReader(tracker=tracker, operation=OPERATION).read(**address)
+    listing.assert_not_called()
