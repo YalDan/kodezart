@@ -108,7 +108,7 @@ async def observe_barren_tick(
 ) -> RunAlarm | None:
     """Read current criterion closure, then compare already-recorded growth.
 
-    Closure comes from the shared criterion gap arithmetic: Done closes,
+    Closure comes from the shared criterion gap arithmetic: Completion closes,
     and canceled/duplicate work closes only with an established supersession
     reference supplied by its owning reader. Missing references never imply
     closure. The previous tick and both lane-base diff counts must already
