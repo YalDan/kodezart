@@ -243,6 +243,7 @@ class ScanHit(CamelCaseModel):
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)
     rationale: str | None = None
+    matched_text: str | None = None
 
     @property
     def has_span(self) -> bool:

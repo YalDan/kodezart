@@ -65,4 +65,16 @@ class AggregateContentScanner:
     ) -> ScanResult:
         if durability_of(destination) is SurfaceDurability.POINT_IN_TIME:
             return ScanResult()
-        return await self._scanner.scan(content=content, destination=destination)
+        result = await self._scanner.scan(content=content, destination=destination)
+        # Only aggregate hits carry their source text into a repair error.
+        # The privacy scanner never copies its matched secrets into a hit.
+        return result.model_copy(
+            update={
+                "hits": tuple(
+                    hit.model_copy(
+                        update={"matched_text": content[hit.start : hit.end]},
+                    )
+                    for hit in result.hits
+                ),
+            },
+        )

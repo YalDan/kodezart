@@ -199,6 +199,12 @@ class OutboundContentBlockedError(Exception):
         detail = f"{message} (writer: {writer}; categories: {', '.join(categories)})"
         if failure is not None:
             detail = f"{detail} (scan failure: {failure.value})"
+        for hit in hits:
+            if hit.has_span and hit.matched_text is not None:
+                detail = (
+                    f"{detail} (start: {hit.start}; end: {hit.end}; "
+                    f"matched text: {hit.matched_text!r})"
+                )
         super().__init__(detail)
         self.writer: str = writer
         self.categories: tuple[str, ...] = tuple(categories)

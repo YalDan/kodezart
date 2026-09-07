@@ -7,7 +7,10 @@ from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.composition.gating import outbound_scanners
 from kodezart.core.config import AppConfig
+from kodezart.core.logging import get_logger
+from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import ContentScanner
+from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.gating import (
     DESTINATION_DURABILITY,
     UNCONDITIONAL_ROUTING,
@@ -347,3 +350,65 @@ async def test_event_destination_never_enters_the_aggregate_pattern_engine(
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert scans == ["3 issues remain"]  # Only the credential/privacy pattern set.
+
+
+@pytest.mark.parametrize(
+    ("content", "matched"),
+    [
+        ("Résumé: 3 issues remain.", "3 issues"),
+        ("References: ABC-1, ABC-2, ABC-3.", "ABC-1, ABC-2, ABC-3"),
+    ],
+)
+async def test_blocked_write_names_the_exact_span_for_repair(
+    content: str,
+    matched: str,
+) -> None:
+    with pytest.raises(OutboundContentBlockedError) as excinfo:
+        await gated_write(
+            gate=configured_gate(),
+            log=get_logger(__name__),
+            content=content,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+        )
+    error = excinfo.value
+    start = content.index(matched)
+    end = start + len(matched)
+    assert [(hit.start, hit.end, hit.matched_text) for hit in error.hits] == [
+        (start, end, matched),
+    ]
+    assert f"start: {start}" in str(error)
+    assert f"end: {end}" in str(error)
+    assert repr(matched) in str(error)
+
+    repaired = content[:start] + content[end:]
+    assert (
+        await gated_write(
+            gate=configured_gate(),
+            log=get_logger(__name__),
+            content=repaired,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+        )
+        == repaired
+    )
+
+
+async def test_privacy_match_text_is_not_copied_into_the_blocked_error() -> None:
+    secret = "ghp_" + "A" * 40
+    with pytest.raises(OutboundContentBlockedError) as excinfo:
+        await gated_write(
+            gate=configured_gate(),
+            log=get_logger(__name__),
+            content=f"credential={secret}",
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+        )
+    assert secret not in str(excinfo.value)
+    assert all(hit.matched_text is None for hit in excinfo.value.hits)
