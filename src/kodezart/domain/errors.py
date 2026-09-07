@@ -64,6 +64,21 @@ class StaleWriteError(Exception):
         self.expected = expected
 
 
+class DuplicateIssueIdentityError(Exception):
+    """Several issues claim one scope-and-deliverable identity."""
+
+    def __init__(
+        self, *, scope_key: ScopeRef, deliverable_key: str, issue_keys: Sequence[str]
+    ) -> None:
+        super().__init__(
+            f"duplicate deliverable {deliverable_key!r} in "
+            f"{scope_key.kind.value}:{scope_key.key}: {', '.join(issue_keys)}"
+        )
+        self.scope_key = scope_key
+        self.deliverable_key = deliverable_key
+        self.issue_keys = tuple(issue_keys)
+
+
 class ScopeCycleError(Exception):
     """A cycle in the scope's dependency graph prevents any plan being returned.
 

@@ -34,6 +34,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import (
+    DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     MergeConflictError,
     RateLimitError,
@@ -88,6 +89,7 @@ from kodezart.types.domain.gating import (
     ScanResult,
     WriterShape,
 )
+from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import (
     LifecycleStage,
@@ -2493,6 +2495,7 @@ class FakeLinearMcpServer:
                 id=f"NEW-{self._sequence}",
                 title=str(arguments.get("title", "")),
                 description=str(arguments.get("description", "")),
+                team=str(arguments["team"]),
                 priority_raw=int(str(arguments.get("priority", 0))),
             )
             self.issues[created.id] = created
@@ -2908,6 +2911,7 @@ class FakeTrackerPort:
         self,
         *,
         issues: Sequence[TrackerIssue] = (),
+        issue_identities: Mapping[str, IssueIdentity] | None = None,
         scope_containers: Sequence[ScopeContainer] = (),
         scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
@@ -2925,6 +2929,8 @@ class FakeTrackerPort:
         self.issues: dict[str, TrackerIssue] = {
             issue.issue_key: issue for issue in issues
         }
+        self.issue_identities: dict[str, IssueIdentity] = dict(issue_identities or {})
+        self.issue_creations: list[str] = []
         self.scope_containers: dict[ScopeRef, ScopeContainer] = {
             container.ref: container for container in scope_containers
         }
@@ -3147,6 +3153,8 @@ class FakeTrackerPort:
         priority: IssuePriority,
     ) -> TrackerIssue:
         self._sequence += 1
+        while f"FAKE-{self._sequence}" in self.issues:
+            self._sequence += 1
         issue = TrackerIssue(
             issue_key=f"FAKE-{self._sequence}",
             title=title,
@@ -3161,7 +3169,45 @@ class FakeTrackerPort:
             url=f"https://tracker.invalid/issue/FAKE-{self._sequence}",
         )
         self.issues[issue.issue_key] = issue
+        self.issue_creations.append(issue.issue_key)
         return issue
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        await self.read_issue(issue_key=issue_key)
+        return self.issue_identities.get(issue_key)
+
+    async def upsert_issue(
+        self,
+        *,
+        scope_key: ScopeRef,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
+        keys = [
+            key for key, value in self.issue_identities.items() if value == identity
+        ]
+        if len(keys) > 1:
+            raise DuplicateIssueIdentityError(
+                scope_key=scope_key, deliverable_key=deliverable_key, issue_keys=keys
+            )
+        if not keys:
+            created = await self.create_issue(
+                title=title, body=body, team_key=team_key, priority=priority
+            )
+            self.issue_identities[created.issue_key] = identity
+            return created
+        current = await self.read_issue(issue_key=keys[0])
+        if current.body != body:
+            await self.edit_description(
+                target=current.issue_key, expected=current.body, replacement=body
+            )
+        if current.title != title:
+            await self.update_issue(issue_key=current.issue_key, title=title)
+        return await self.read_issue(issue_key=current.issue_key)
 
     async def update_issue(
         self,
