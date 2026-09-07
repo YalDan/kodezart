@@ -12,6 +12,7 @@ import hashlib
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -69,7 +70,7 @@ class BranchAssociation(CamelCaseModel):
 
     branch: str = Field(min_length=1)
     role: BranchRole
-    derived_from: str | None
+    derived_from: Annotated[str, Field(min_length=1)] | None
     run_id: str = Field(min_length=1)
 
 

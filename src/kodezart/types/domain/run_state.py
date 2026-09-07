@@ -1,6 +1,6 @@
 """Shared lane records and durable questions raised while work is in flight."""
 
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -56,7 +56,7 @@ class LaneRunState(CamelCaseModel):
     branch: str = Field(min_length=1)
     branch_url: str = Field(min_length=1)
     head_sha: str = Field(min_length=1)
-    pushed_head_sha: str | None
+    pushed_head_sha: Annotated[str, Field(min_length=1)] | None
     commits_ahead: int = Field(ge=0)
     files_changed: int = Field(ge=0)
     commits: list[LaneCommit]

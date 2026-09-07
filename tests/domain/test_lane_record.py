@@ -144,6 +144,15 @@ def test_no_pr_remains_an_explicit_absence():
     assert LaneRunState.model_validate(data).pr is None
 
 
+def test_optional_reference_absence_is_none_not_an_empty_string():
+    data = record_data()
+    with pytest.raises(ValidationError):
+        LaneRunState.model_validate({**data, "pushedHeadSha": ""})
+    data["associations"][0]["derivedFrom"] = ""
+    with pytest.raises(ValidationError):
+        LaneRunState.model_validate(data)
+
+
 def test_nonloop_current_branch_and_second_deliverable_in_one_run_refuse():
     data = record_data()
     with pytest.raises(ValidationError, match="LOOP"):
