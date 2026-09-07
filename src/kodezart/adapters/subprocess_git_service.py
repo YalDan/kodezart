@@ -234,10 +234,16 @@ class SubprocessGitService:
                 env=self._author_env(author_name, author_email),
             )
         except RuntimeError as exc:
+            unmerged = await self._run_output(
+                ["git", "diff", "--name-only", "--diff-filter=U"],
+                cwd=cwd,
+            )
+            if not unmerged:
+                raise
             raise MergeConflictError(
                 f"scratch merge of {head_sha} could not be completed",
                 source_branch=head_sha,
-                paths=_conflicting_paths(str(exc)),
+                paths=tuple(unmerged.splitlines()),
             ) from exc
 
     async def current_sha(self, cwd: str) -> str:

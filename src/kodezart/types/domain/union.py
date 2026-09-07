@@ -1,5 +1,6 @@
 """Scope composition observations measured in a disposable scratch tree."""
 
+from enum import StrEnum
 from typing import Annotated, Literal, Self
 
 from pydantic import ConfigDict, Field, model_validator
@@ -50,6 +51,22 @@ class UnionScratchObservation(CamelCaseModel):
         return tuple(head.lane_key for head in self.lane_heads)
 
 
+class UnionOutcome(StrEnum):
+    """Composability of a scope, independent of each lane's outcome."""
+
+    GREEN = "green"
+    RED = "red"
+
+
+class UnionMergeConflict(CamelCaseModel):
+    """The first planner head that could not join the scratch composition."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    lane_key: str = Field(min_length=1)
+    paths: tuple[str, ...] = Field(min_length=1)
+
+
 class UnionCompositionResult(UnionScratchObservation):
     """A public scope-grain check observation available to any consumer.
 
@@ -57,4 +74,35 @@ class UnionCompositionResult(UnionScratchObservation):
     grading consumers can retain the same complete captured observation.
     """
 
-    checks: CheckChainResult
+    checks: CheckChainResult | None
+    merge_conflict: UnionMergeConflict | None = None
+
+    @model_validator(mode="after")
+    def _one_observation(self) -> Self:
+        if (self.checks is None) == (self.merge_conflict is None):
+            raise ValueError(
+                "union requires either executed checks or a merge conflict"
+            )
+        if (
+            self.merge_conflict is not None
+            and self.merge_conflict.lane_key not in self.composition_order
+        ):
+            raise ValueError("merge conflict must name a planned lane")
+        return self
+
+    @property
+    def outcome(self) -> UnionOutcome:
+        """A conflict or an observed check failure makes this union red."""
+        if self.merge_conflict is not None or (
+            self.checks and self.checks.failed_step_names
+        ):
+            return UnionOutcome.RED
+        return UnionOutcome.GREEN
+
+    @property
+    def composed_lane_heads(self) -> tuple[UnionLaneHead, ...]:
+        """Only heads actually merged; a conflict preserves its successful prefix."""
+        if self.merge_conflict is None:
+            return self.lane_heads
+        stop = self.composition_order.index(self.merge_conflict.lane_key)
+        return self.lane_heads[:stop]

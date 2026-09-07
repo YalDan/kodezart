@@ -10,7 +10,7 @@ import pytest
 from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.core.config import AppConfig
-from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
+from kodezart.domain.errors import CheckChainExecutionError
 from kodezart.services.union_composition import UnionComposition
 from kodezart.types.domain.operation import CheckStep, RepoEntry
 from kodezart.types.domain.union import UnionLaneHead
@@ -169,7 +169,7 @@ async def test_merge_raise_still_removes_tree(repository):
     adapter = ObservedGit()
     repo, base, heads = repository
     broken = (heads[0], heads[1].model_copy(update={"head_sha": "f" * 40}))
-    with pytest.raises(MergeConflictError):
+    with pytest.raises(RuntimeError, match="merge"):
         await service(adapter).verify(
             scope_key="scope",
             repo_path=str(repo),
@@ -312,3 +312,73 @@ async def test_verification_cannot_publish_or_change_open_prs(repository, raises
             await forge.open_pr_for_head(repo_url=entry().url, head=h.branch)
             == opened[(entry().url, h.branch)]
         )
+
+
+async def test_incompatible_constructor_heads_are_each_green_but_union_red(repository):
+    from kodezart.types.domain.union import UnionOutcome
+
+    repo, _, _ = repository
+    (repo / "api.py").write_text(
+        "class Service:\n    def __init__(self):\n        pass\n"
+    )
+    await git(repo, "add", ".")
+    await git(repo, "commit", "-m", "shared constructor")
+    base = await git(repo, "rev-parse", "HEAD")
+    heads = []
+    runner = SubprocessCheckChainRunner(config=AppConfig())
+    individual = []
+    for lane, parameter in (("left", "timeout"), ("right", "credentials")):
+        await git(repo, "checkout", "-b", lane, base)
+        (repo / "api.py").write_text(
+            f"class Service:\n    def __init__(self, {parameter}):\n"
+            f"        self.{parameter} = {parameter}\n"
+        )
+        (repo / "check.py").write_text(
+            f"from api import Service\nService({parameter}=object())\n"
+        )
+        await git(repo, "add", ".")
+        await git(repo, "commit", "-m", lane)
+        check_repo = entry(f"{sys.executable} -B check.py")
+        individual.append(
+            await runner.run_chain(cwd=str(repo), steps=check_repo.checks)
+        )
+        heads.append(
+            UnionLaneHead(
+                lane_key=lane,
+                branch=lane,
+                head_sha=await git(repo, "rev-parse", "HEAD"),
+            )
+        )
+    await git(repo, "checkout", "main")
+    assert all(not item.failed_step_names for item in individual)
+    adapter = ObservedGit()
+    result = await service(adapter).verify(
+        scope_key="scope",
+        repo_path=str(repo),
+        repo=check_repo,
+        base_sha=base,
+        lane_heads=heads,
+    )
+    assert result.outcome is UnionOutcome.RED
+    assert result.checks is None
+    assert result.merge_conflict.lane_key == "right"
+    assert "api.py" in result.merge_conflict.paths
+    assert result.composed_lane_heads == (heads[0],)
+    assert result.lane_heads == tuple(heads)
+    assert all(not item.failed_step_names for item in individual)
+    assert adapter.removed == adapter.created
+
+
+async def test_clean_union_is_green_and_check_failure_is_red(repository):
+    from kodezart.types.domain.union import UnionOutcome
+
+    green = await verify(repository, ObservedGit())
+    red = await verify(
+        repository,
+        ObservedGit(),
+        repo_entry=entry(f'{sys.executable} -c "raise SystemExit(1)"'),
+    )
+    assert green.outcome is UnionOutcome.GREEN
+    assert red.outcome is UnionOutcome.RED
+    assert red.checks.failed_step_names == frozenset({"gate"})
+    assert red.merge_conflict is None
