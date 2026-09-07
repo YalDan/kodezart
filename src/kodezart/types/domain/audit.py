@@ -1,11 +1,13 @@
 """Inputs and point-in-time coverage observations for the audit cadence."""
 
 from enum import StrEnum
+from typing import Self
 
-from pydantic import AwareDatetime, ConfigDict, Field
+from pydantic import AwareDatetime, ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.surface import WritableSurface
 
 
 class AuditCandidate(CamelCaseModel):
@@ -81,3 +83,57 @@ class AuditClaimRequest(CamelCaseModel):
     repo_url: str = Field(min_length=1, pattern=r"\S")
     cache_key: str | None = None
     record_ref: str | None = None
+
+
+class TrackerArtifact(CamelCaseModel):
+    """Exact addressed content re-read through the tracker port."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    surface: WritableSurface
+    native_ref: str = Field(min_length=1)
+    content: str
+
+
+class WriteBackRequest(CamelCaseModel):
+    """A caller-owned write's verification goal and immutable repository ref."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    surface: WritableSurface
+    verification_goal: str = Field(min_length=1, pattern=r"\S")
+    repo_url: str = Field(min_length=1, pattern=r"\S")
+    head_sha: str = Field(min_length=1, pattern=r"\S")
+    cache_key: str | None = None
+
+
+class WriteBackJudgment(CamelCaseModel):
+    """Fresh judgment of the re-read artifact, never an author verdict."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    verdict: AuditVerdict = Field(
+        description="Holds, refuted or unverifiable from the artifact and ground truth."
+    )
+    evidence: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="Concrete evidence, reproduction or missing resource.",
+    )
+
+
+class WriteBackResult(CamelCaseModel):
+    """Only a settled holds exposes an artifact for the next consumer."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    verdict: AuditVerdict
+    rounds: tuple[WriteBackJudgment, ...] = Field(min_length=1)
+    verified_artifact: TrackerArtifact | None
+
+    @model_validator(mode="after")
+    def _verified_requires_holds(self) -> Self:
+        if (self.verdict is AuditVerdict.HOLDS) != (self.verified_artifact is not None):
+            raise ValueError("only holds carries a verified artifact")
+        if (
+            self.verdict is AuditVerdict.HOLDS
+            and self.rounds[-1].verdict is not AuditVerdict.HOLDS
+        ):
+            raise ValueError("holds requires a final holds verification round")
+        return self

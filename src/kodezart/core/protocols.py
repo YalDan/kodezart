@@ -1,10 +1,16 @@
 """Protocol definitions — composition without inheritance."""
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.audit import (
+    TrackerArtifact,
+    WriteBackJudgment,
+    WriteBackRequest,
+    WriteBackResult,
+)
 from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.check_chain import CheckChainResult
 from kodezart.types.domain.check_observation import ObservedChecks
@@ -1486,3 +1492,21 @@ class CheckChainRunner(Protocol):
     async def run_chain(
         self, *, cwd: str, steps: Sequence[CheckStep]
     ) -> CheckChainResult: ...
+
+
+@runtime_checkable
+class WriteBackVerifier(Protocol):
+    """Verify caller-owned writes before their result reaches another consumer.
+
+    The caller owns authorization, sanitization and the surface lease for its
+    write and repair actions. This component does not acquire or bypass those
+    controls; scope-writer adoption must supply them at the actual call sites.
+    """
+
+    async def verify(
+        self,
+        request: WriteBackRequest,
+        *,
+        write: Callable[[], Awaitable[None]],
+        repair: Callable[[TrackerArtifact, WriteBackJudgment], Awaitable[None]],
+    ) -> WriteBackResult: ...

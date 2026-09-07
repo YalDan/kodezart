@@ -46,6 +46,7 @@ does not exist.
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
 | ForgeQuery        | GitHubAPIClient          | Looks up an open PR by head and composes branch browser URLs |
+| WriteBackVerifier | TrackerWriteBackVerifier | Bounded native artifact re-read and fresh judgment around caller-owned write/repair actions; leases and universal adoption remain separate |
 | PRContentEditor   | GitHubAPIClient          | Reads unique open PR content and edits changed title/body/base fields |
 | CIMonitor         | GitHubAPIClient          | Polls checks and re-observes Actions attempts at one commit |
 | CIObservationReader | GitHubAPIClient        | Reads the completed watch's commit identity and structured verdict |

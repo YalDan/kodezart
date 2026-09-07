@@ -118,6 +118,12 @@ class AppConfig(BaseSettings):
         le=5,
         description="Maximum criteria regeneration rounds after an infeasible verdict.",
     )
+    write_back_max_verify_rounds: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        description="Maximum fresh verification rounds per caller-owned tracker write.",
+    )
     max_reviews: int = Field(
         default=DEFAULT_MAX_REVIEWS,
         ge=1,

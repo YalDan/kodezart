@@ -627,3 +627,7 @@ class CheckChainExecutionError(Exception):
 
 class AuditClaimReadError(ValueError):
     """The claim's source or remote head cannot support this observation."""
+
+
+class WriteBackReadError(ValueError):
+    """An addressed artifact cannot be re-read completely for verification."""
