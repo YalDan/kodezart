@@ -4,7 +4,7 @@ import ast
 import inspect
 
 from kodezart.chains.delivery_coordinator import DeliveryCoordinator
-from kodezart.core.protocols import PRCreator
+from kodezart.core.protocols import ForgeQuery, PRCreator
 from kodezart.types.domain.outcome import WorkflowOutcome
 from tests.chains.test_delivery_runtime import BASE, HEAD, REPOSITORY, deliver, setup
 from tests.fakes import FakePRCreator
@@ -22,6 +22,7 @@ def test_pr_creator_and_forge_double_expose_exactly_the_two_write_methods():
 def test_coordinator_has_no_merge_or_issue_mutation_dependency():
     constructor = inspect.signature(DeliveryCoordinator)
     assert constructor.parameters["pr_creator"].annotation is PRCreator
+    assert constructor.parameters["forge_query"].annotation is ForgeQuery
     assert "tracker" not in constructor.parameters
     tree = ast.parse(inspect.getsource(DeliveryCoordinator))
     creator_reads = {

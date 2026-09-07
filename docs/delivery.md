@@ -16,6 +16,15 @@ final SHA. A missing ref raises `BaseResolutionError`; an inconsistent handoff
 raises `DeliveryContextError`. A dependent lane can open against its blocker's
 branch before that blocker has a PR.
 
+The existing `ForgeQuery` is a separate required read dependency. After the
+handoff identity is validated, the coordinator looks up the open PR for that
+repository and head. Only a successful empty lookup permits creation. An
+existing PR raises `DeliveryRouteUnavailableError` carrying its URL and number
+before remote checks, cleanup, sessions or writes; a failed lookup propagates.
+The current ports cannot inspect or edit that PR's content, so replay does not
+claim successful delivery yet. Lookup and creation are not an atomic operation;
+simultaneous calls can still race on an absent PR.
+
 If an artifact cleaner is supplied, it runs before description generation and
 both remote refs are checked again afterward. Cleanup may advance the branch;
 the caller's original fire SHA is preserved. The description session uses the
@@ -43,7 +52,7 @@ a residual was published.
 This boundary is callable independently; scope-walker dispatch and application
 composition are not connected yet. The legacy fire graph still owns its prior
 PR/check nodes until that extraction is completed. Stalled-fire handoff,
-check-before-create replay, same-SHA linkage between the initial branch watch
+editing an existing PR on replay, same-SHA linkage between the initial branch watch
 and red re-observation, the shared remediation loop, durable residual
 publication, and declared-no-run exemption/close-out remain unfinished. The
 existing pure red classifier is not invoked by this common route.

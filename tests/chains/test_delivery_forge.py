@@ -19,6 +19,11 @@ async def test_actual_forge_opens_and_observes_once_without_closing(verdict):
     def handler(request):
         requests.append(request)
         if (
+            request.method == "GET"
+            and request.url.path == "/repos/example/project/pulls"
+        ):
+            return httpx.Response(200, json=[])
+        if (
             request.method == "POST"
             and request.url.path == "/repos/example/project/pulls"
         ):
@@ -47,7 +52,7 @@ async def test_actual_forge_opens_and_observes_once_without_closing(verdict):
     client = _make_client(
         handler, ci_no_checks_grace_polls=1, ci_no_workflows_grace_polls=1
     )
-    fixture = setup(forge=client, monitor=client)
+    fixture = setup(forge=client, query=client, monitor=client)
     try:
         result = await deliver(fixture.coordinator)
     finally:
@@ -77,6 +82,11 @@ async def test_actual_forge_red_cannot_publish_a_success_record():
 
     def handler(request):
         if (
+            request.method == "GET"
+            and request.url.path == "/repos/example/project/pulls"
+        ):
+            return httpx.Response(200, json=[])
+        if (
             request.method == "POST"
             and request.url.path == "/repos/example/project/pulls"
         ):
@@ -97,7 +107,7 @@ async def test_actual_forge_red_cannot_publish_a_success_record():
     client = _make_client(handler)
     try:
         with pytest.raises(DeliveryRouteUnavailableError) as error:
-            await deliver(setup(forge=client, monitor=client).coordinator)
+            await deliver(setup(forge=client, query=client, monitor=client).coordinator)
     finally:
         await client.close()
     assert error.value.pr_number == 20
@@ -110,12 +120,17 @@ async def test_actual_forge_create_refusal_never_starts_a_watch():
 
     def handler(request):
         requests.append(request)
+        if (
+            request.method == "GET"
+            and request.url.path == "/repos/example/project/pulls"
+        ):
+            return httpx.Response(200, json=[])
         return httpx.Response(422, json={"message": "invalid base"})
 
     client = _make_client(handler)
     try:
         with pytest.raises(ForgeAPIError):
-            await deliver(setup(forge=client, monitor=client).coordinator)
+            await deliver(setup(forge=client, query=client, monitor=client).coordinator)
     finally:
         await client.close()
-    assert [request.method for request in requests] == ["POST"]
+    assert [request.method for request in requests] == ["GET", "POST"]

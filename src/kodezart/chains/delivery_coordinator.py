@@ -16,6 +16,7 @@ from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
     CIMonitor,
+    ForgeQuery,
     GitService,
     OutboundContentGate,
     PRCreator,
@@ -69,6 +70,7 @@ class DeliveryCoordinator:
         skills: SkillsSelection,
         gate: OutboundContentGate,
         pr_creator: PRCreator,
+        forge_query: ForgeQuery,
         ci: CIMonitor,
         git: GitService,
         cache: RepoCache,
@@ -81,6 +83,7 @@ class DeliveryCoordinator:
         self._skills = skills
         self._gate = gate
         self._pr_creator = pr_creator
+        self._forge_query = forge_query
         self._ci = ci
         self._git = git
         self._cache = cache
@@ -128,6 +131,20 @@ class DeliveryCoordinator:
                 reason="this fire outcome has no connected delivery route",
                 pr_url=None,
                 pr_number=None,
+                checks_passed=None,
+                checks_summary=None,
+            )
+        existing = await self._forge_query.open_pr_for_head(
+            repo_url=execution.repo_url, head=feature_branch
+        )
+        if existing is not None:
+            url, number = existing
+            raise DeliveryRouteUnavailableError(
+                lane_key=dispatch.lane_key,
+                issue_id=dispatch.issue_id,
+                reason="existing PR requires an unconnected content-edit route",
+                pr_url=url,
+                pr_number=number,
                 checks_passed=None,
                 checks_summary=None,
             )
