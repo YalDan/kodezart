@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from kodezart.core.protocols import CheckChainRunner, GitService
+from kodezart.domain.errors import CheckChainExecutionError
 from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.union import (
     UnionCompositionResult,
@@ -95,6 +96,12 @@ class UnionComposition:
                     )
                     if cancelled:
                         raise asyncio.CancelledError
+                if not repo.checks:
+                    raise CheckChainExecutionError(
+                        cwd=worktree,
+                        step_name=None,
+                        reason="no check chain is declared",
+                    )
                 checks = await self._runner.run_chain(cwd=worktree, steps=repo.checks)
                 scratch_sha = await self._git.current_sha(worktree)
                 return UnionCompositionResult(
