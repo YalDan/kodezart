@@ -41,7 +41,11 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WorkspaceError,
 )
-from kodezart.domain.tracker_writes import comment_under_marker, marked_comment_body
+from kodezart.domain.tracker_writes import (
+    comment_under_marker,
+    description_replacement,
+    marked_comment_body,
+)
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.prompt_pass import pass_render_bindings
 from kodezart.types.domain.agent import (
@@ -122,6 +126,7 @@ from kodezart.types.domain.tracker import (
     TrackerReview,
     WorkflowStateKind,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from tests.prompt_census import configured_investigation_cap
@@ -2947,6 +2952,7 @@ class FakeTrackerPort:
         self.renewals: list[tuple[str, str]] = []
         self.comments: list[TrackerComment] = []
         self.comment_writes: list[tuple[str, str]] = []
+        self.issue_writes: list[tuple[str, str | None, str | None]] = []
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
         #: Every put-back the failure arm made, as (issue, state name).
         #: Kept apart from ``workflow_writes`` because a restore names a
@@ -3164,6 +3170,7 @@ class FakeTrackerPort:
         title: str | None = None,
         body: str | None = None,
     ) -> TrackerIssue:
+        self.issue_writes.append((issue_key, title, body))
         issue = self.issues[issue_key]
         updated = issue.model_copy(
             update={
@@ -3174,6 +3181,18 @@ class FakeTrackerPort:
         self.issues[issue_key] = updated
         self._wrote(issue_key)
         return updated
+
+    async def edit_description(
+        self, *, target: str, expected: str, replacement: str
+    ) -> DescriptionEditResult:
+        current = await self.read_issue(issue_key=target)
+        body = description_replacement(
+            target=target, body=current.body, expected=expected, replacement=replacement
+        )
+        if body is None:
+            return DescriptionEditResult.UNCHANGED
+        await self.update_issue(issue_key=target, body=body)
+        return DescriptionEditResult.EDITED
 
     async def set_workflow_state(
         self,

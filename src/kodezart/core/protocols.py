@@ -52,6 +52,7 @@ from kodezart.types.domain.tracker import (
     TrackerIssue,
     TrackerReview,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 
 
@@ -696,6 +697,19 @@ class TrackerPort(Protocol):
         stage: LifecycleStage,
     ) -> TrackerIssue:
         """Move the issue to the state the configuration binds *stage* to."""
+        ...
+
+    async def edit_description(
+        self, *, target: str, expected: str, replacement: str
+    ) -> DescriptionEditResult:
+        """Replace exact expected text in the issue's current description.
+
+        Expected present reports EDITED. Otherwise, replacement present
+        reports UNCHANGED with no write; neither raises StaleWriteError
+        naming target and expected with no write. State moves separately.
+        Callers serialize writes: this read-before-write detects stale
+        anchors, but is not a backend atomic compare-and-swap.
+        """
         ...
 
     async def restore_workflow_state(

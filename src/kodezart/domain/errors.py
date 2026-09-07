@@ -54,6 +54,15 @@ class DuplicateCommentMarkerError(Exception):
         self.comment_keys = tuple(comment_keys)
 
 
+class StaleWriteError(Exception):
+    """Neither the asserted anchor nor its replacement is on the target."""
+
+    def __init__(self, *, target: str, expected: str) -> None:
+        super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
+        self.target = target
+        self.expected = expected
+
+
 class ScopeReadError(Exception):
     """A scope cannot be resolved without inventing membership or metadata."""
 

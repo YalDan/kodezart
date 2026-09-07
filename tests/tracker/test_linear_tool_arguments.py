@@ -331,6 +331,7 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         priority=IssuePriority.LOW,
     )
     await tracker.update_issue(issue_key=CLAIMED_ISSUE, title="x", body="y")
+    await tracker.edit_description(target=CLAIMED_ISSUE, expected="y", replacement="z")
     await tracker.set_workflow_state(
         issue_key=CLAIMED_ISSUE,
         stage=LifecycleStage.DONE,
@@ -513,3 +514,15 @@ async def test_a_team_the_workspace_does_not_hold_is_refused_by_name() -> None:
         )
     assert caught.value.tool == "create_issue_label"
     assert server.tool_calls("create_issue_label") == []
+
+
+async def test_guarded_description_write_sends_no_state_or_unrelated_fields():
+    server = fixture_server()
+    tracker = linear_over_fake_mcp(server)
+    current = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    await tracker.edit_description(
+        target=CLAIMED_ISSUE, expected=current.body, replacement="amended description"
+    )
+    assert server.tool_calls("save_issue") == [
+        {"id": CLAIMED_ISSUE, "description": "amended description"}
+    ]

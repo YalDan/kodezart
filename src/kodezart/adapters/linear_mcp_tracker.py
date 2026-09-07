@@ -46,7 +46,11 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
-from kodezart.domain.tracker_writes import comment_under_marker, marked_comment_body
+from kodezart.domain.tracker_writes import (
+    comment_under_marker,
+    description_replacement,
+    marked_comment_body,
+)
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.linear_mcp import (
@@ -91,6 +95,7 @@ from kodezart.types.domain.tracker import (
     TrackerReview,
     WorkflowStateKind,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 
 _TOOL_LIST_ISSUES = "list_issues"
 _TOOL_LIST_DIFFS = "list_diffs"
@@ -753,6 +758,19 @@ class LinearMcpTracker:
             arguments["description"] = body
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
         return self._saved_issue(payload)
+
+    async def edit_description(
+        self, *, target: str, expected: str, replacement: str
+    ) -> DescriptionEditResult:
+        """Read and assert the anchor before a description-only write."""
+        current = await self.read_issue(issue_key=target)
+        body = description_replacement(
+            target=target, body=current.body, expected=expected, replacement=replacement
+        )
+        if body is None:
+            return DescriptionEditResult.UNCHANGED
+        await self.update_issue(issue_key=target, body=body)
+        return DescriptionEditResult.EDITED
 
     async def set_workflow_state(
         self,

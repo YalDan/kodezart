@@ -5,7 +5,8 @@ from collections.abc import Callable
 import pytest
 
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import DuplicateCommentMarkerError
+from kodezart.domain.errors import DuplicateCommentMarkerError, StaleWriteError
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE
 
 MARKER = "[fixture:lane:decision-1]"
@@ -93,3 +94,90 @@ class TestCommentUpsert:
                 target=APPROVED_ISSUE, marker=marker, body="invalid"
             )
         assert tracker_writes() == calls
+
+
+class TestDescriptionEdit:
+    async def test_present_anchor_is_replaced_preserving_surroundings_and_state(
+        self, tracker: TrackerPort
+    ):
+        before = await tracker.update_issue(
+            issue_key=APPROVED_ISSUE, body="before\nexpected anchor\nafter"
+        )
+        result = await tracker.edit_description(
+            target=APPROVED_ISSUE,
+            expected="expected anchor",
+            replacement="replacement text",
+        )
+        after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        assert result is DescriptionEditResult.EDITED
+        assert after.body == "before\nreplacement text\nafter"
+        assert after.state_name == before.state_name
+        assert after.state_kind == before.state_kind
+        assert after.title == before.title
+
+    async def test_replacement_already_present_is_unchanged_without_writes(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ):
+        await tracker.edit_description(
+            target=APPROVED_ISSUE, expected="body", replacement="amended description"
+        )
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        calls = tracker_writes()
+        result = await tracker.edit_description(
+            target=APPROVED_ISSUE, expected="body", replacement="amended description"
+        )
+        assert result is DescriptionEditResult.UNCHANGED
+        assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)) == before
+        assert tracker_writes() == calls
+
+    async def test_neither_anchor_nor_replacement_refuses_without_writes(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ):
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        calls = tracker_writes()
+        with pytest.raises(StaleWriteError) as raised:
+            await tracker.edit_description(
+                target=APPROVED_ISSUE,
+                expected="outdated anchor",
+                replacement="amended description",
+            )
+        assert raised.value.target == APPROVED_ISSUE
+        assert raised.value.expected == "outdated anchor"
+        assert APPROVED_ISSUE in str(raised.value)
+        assert "outdated anchor" in str(raised.value)
+        assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)) == before
+        assert tracker_writes() == calls
+
+    async def test_changed_anchor_is_detected_on_a_fresh_tracker_read(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ):
+        initial = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        await tracker.update_issue(issue_key=APPROVED_ISSUE, body="concurrent edit")
+        calls = tracker_writes()
+        with pytest.raises(StaleWriteError):
+            await tracker.edit_description(
+                target=APPROVED_ISSUE,
+                expected=initial.body,
+                replacement="amended description",
+            )
+        assert (
+            await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        ).body == "concurrent edit"
+        assert tracker_writes() == calls
+
+    async def test_overlapping_anchor_is_a_counterexample_to_universal_replay(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ):
+        """KOD-644 expected-present precedence conflicts with KOD-641 replay."""
+        first = await tracker.edit_description(
+            target=APPROVED_ISSUE, expected="body", replacement="new body"
+        )
+        calls = tracker_writes()
+        second = await tracker.edit_description(
+            target=APPROVED_ISSUE, expected="body", replacement="new body"
+        )
+        assert first is second is DescriptionEditResult.EDITED
+        assert (
+            await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        ).body == "new new body"
+        assert len(tracker_writes()) == len(calls) + 1

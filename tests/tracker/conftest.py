@@ -339,6 +339,7 @@ def tracker_writes(
     if isinstance(tracker, FakeTrackerPort):
         return lambda: (
             *tracker.comment_writes,
+            *tracker.issue_writes,
             *tracker.workflow_writes,
             *tracker.restored_states,
             *tracker.queue_writes,
