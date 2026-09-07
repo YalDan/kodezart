@@ -4,6 +4,7 @@ import pytest
 
 from kodezart.domain.errors import CriterionReadError
 from kodezart.types.domain.tracker import EnsureAction, MappingKind, MappingRef
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
 from tests.tracker.conftest import fixture_server
 
@@ -107,3 +108,32 @@ async def test_owned_issue_label_can_be_instated_and_read_back(tracker):
     second = await tracker.ensure_mappings(refs=[ref])
     assert second[0].action is EnsureAction.ADOPTED
     assert tuple(await tracker.resolve_mappings(refs=[ref])) == ()
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "",
+        "- [x] old-AC-9 · A parent checkbox cannot satisfy a sub-issue.",
+        "## Protocol\n\nThe surrounding specification was rewritten completely.",
+    ],
+)
+async def test_parent_rewrite_preserves_every_criterion_key_state_and_evidence(
+    tracker, replacement
+):
+    parent = await tracker.read_issue(issue_key=PARENT)
+    before = tuple(await tracker.read_criteria(issue_key=PARENT))
+    assert {criterion.issue_key for criterion in before} == {FIRST, SECOND}
+    assert any(EVIDENCE in criterion.body for criterion in before)
+    assert {criterion.state_name for criterion in before} == {"Backlog", "Done"}
+
+    result = await tracker.edit_description(
+        target=PARENT, expected=parent.body, replacement=replacement
+    )
+
+    assert result is DescriptionEditResult.EDITED
+    assert (await tracker.read_issue(issue_key=PARENT)).body == replacement
+    after = tuple(await tracker.read_criteria(issue_key=PARENT))
+    assert [criterion.model_dump_json() for criterion in after] == [
+        criterion.model_dump_json() for criterion in before
+    ]
