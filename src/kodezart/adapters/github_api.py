@@ -417,7 +417,10 @@ class GitHubAPIClient:
             or origin.username is not None
             or origin.password is not None
         ):
-            msg = "Branch browser URLs require a full HTTPS repository URL without userinfo"
+            msg = (
+                "Branch browser URLs require a full HTTPS repository URL "
+                "without userinfo"
+            )
             raise ValueError(msg)
         return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch, safe='')}"
 
