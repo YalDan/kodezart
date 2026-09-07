@@ -5,6 +5,8 @@ from enum import StrEnum
 from pydantic import ConfigDict
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_state import LanePR
 
 
 class CheckRedClass(StrEnum):
@@ -22,3 +24,18 @@ class CheckRedObservation(CamelCaseModel):
     red_class: CheckRedClass
     checks_passed: bool | None
     checks_summary: str
+
+
+class LaneDelivery(CamelCaseModel):
+    """One lane's delivery facts, retaining its resolved dispatch base."""
+
+    model_config = ConfigDict(frozen=True)
+
+    lane_key: str
+    issue_id: str
+    head_branch: str
+    base_branch: str
+    pr: LanePR | None
+    checks_passed: bool | None
+    checks_summary: str | None
+    outcome: WorkflowOutcome

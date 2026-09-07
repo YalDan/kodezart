@@ -325,6 +325,7 @@ class RepoEntry(OperationModel):
     trunk: str = Field(min_length=1)
     checks: tuple[CheckStep, ...] = ()
     runner_environment: dict[CheckPrerequisite, bool] = Field(default_factory=dict)
+    forge_exempt: bool = False
 
 
 class DocumentEntry(OperationModel):

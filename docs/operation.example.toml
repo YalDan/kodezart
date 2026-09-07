@@ -168,6 +168,8 @@ trunk = "main"
 # Optional environment facts: only explicit false establishes an unmet
 # prerequisite; omitted keys are unknown. Never derive these from CI logs.
 # runner_environment = { repository_history = false, network = true }
+# Explicit exemption from blocking close-out when declared CI has no run:
+# forge_exempt = false
 
 [[repos.checks]]
 name = "install"

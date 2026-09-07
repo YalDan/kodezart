@@ -70,3 +70,7 @@ class WorkflowOutcome(StrEnum):
     scope_converged = "scope_converged"
     scope_converged_with_residual = "scope_converged_with_residual"
     scope_stopped_short = "scope_stopped_short"
+    handed_off_for_delivery = "handed_off_for_delivery"
+    ci_failed_environment_prerequisite = "ci_failed_environment_prerequisite"
+    ci_failed_unclassified = "ci_failed_unclassified"
+    ci_no_run_at_ref = "ci_no_run_at_ref"
