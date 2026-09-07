@@ -284,14 +284,17 @@ class LinearLabelWire(LinearNamedWire):
 
 
 class LinearLabelListWire(LinearWireModel):
-    """The ``list_issue_labels`` envelope — the array is keyed ``labels``.
+    """The issue, project and initiative label-definition list envelope.
 
-    Each list tool names its array after ITSELF; there is no shared
-    envelope key across them, so there is one model per tool here and no
-    invented common one.
+    All three connected-app reads returned ``labels`` and ``hasNextPage``
+    on 2026-09-07. The project read was empty; populated project entries
+    and service-credential availability still need deployment verification.
+    A continued page must carry a cursor; the reader refuses its absence.
     """
 
     labels: list[LinearLabelWire]
+    has_next_page: bool
+    cursor: str | None = None
 
 
 class LinearTeamWire(LinearNamedWire):

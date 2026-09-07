@@ -105,7 +105,20 @@ _TOOL_LIST_USERS = "list_users"
 _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
 _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
+_TOOL_LIST_PROJECT_LABELS = "list_project_labels"
+_TOOL_SAVE_PROJECT_LABEL = "save_project_label"
+_TOOL_LIST_INITIATIVE_LABELS = "list_initiative_labels"
+_TOOL_CREATE_INITIATIVE_LABEL = "create_initiative_label"
 _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
+
+#: One configured scope label has a separate native definition per kind.
+#: Project creation uses the connected app's declared save tool with no id;
+#: its availability to the deployment's service credential is unverified.
+_SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
+    _TOOL_LIST_ISSUE_LABELS: _TOOL_CREATE_ISSUE_LABEL,
+    _TOOL_LIST_PROJECT_LABELS: _TOOL_SAVE_PROJECT_LABEL,
+    _TOOL_LIST_INITIATIVE_LABELS: _TOOL_CREATE_INITIATIVE_LABEL,
+}
 
 #: The tools that change nothing on the board.  A call the server may have
 #: performed is made again only if performing it twice is the same as once
@@ -122,6 +135,8 @@ _READ_TOOLS: Final[frozenset[str]] = frozenset(
         _TOOL_LIST_USERS,
         _TOOL_LIST_TEAMS,
         _TOOL_LIST_ISSUE_LABELS,
+        _TOOL_LIST_PROJECT_LABELS,
+        _TOOL_LIST_INITIATIVE_LABELS,
         _TOOL_LIST_ISSUE_STATUSES,
     },
 )
@@ -1164,6 +1179,9 @@ class LinearMcpTracker:
         unresolved: list[MappingRef] = []
         divergent: list[str] = []
         for ref in refs:
+            if ref.kind is MappingKind.SCOPE_LABEL and ref.scope is not None:
+                unresolved.append(ref)
+                continue
             if ref.kind is MappingKind.WORKFLOW_STATE:
                 if states_by_team is None:
                     states_by_team = await self._workflow_states_by_team()
@@ -1250,6 +1268,11 @@ class LinearMcpTracker:
         """
         outcomes: list[MappingOutcome] = []
         definitions = await self._label_definitions()
+        scope_definitions = (
+            await self._scope_label_definitions(definitions)
+            if any(ref.kind is MappingKind.SCOPE_LABEL for ref in refs)
+            else {}
+        )
         documents = (
             await self._document_definitions()
             if any(ref.kind is MappingKind.DOCUMENT for ref in refs)
@@ -1263,6 +1286,11 @@ class LinearMcpTracker:
                 )
             if ref.kind is MappingKind.DOCUMENT:
                 outcomes.append(await self._ensure_document(ref, documents))
+                continue
+            if ref.kind is MappingKind.SCOPE_LABEL:
+                outcomes.append(
+                    await self._ensure_scope_label(ref, definitions, scope_definitions),
+                )
                 continue
             identifier = ref.identifier
             if identifier is None:
@@ -1317,6 +1345,70 @@ class LinearMcpTracker:
                 team=ref.scope,
             )
         return tuple(outcomes)
+
+    async def _scope_label_definitions(
+        self,
+        issue_definitions: _LabelListings,
+    ) -> dict[str, set[str]]:
+        """Keep native namespaces apart: one label id cannot stand for all."""
+        return {
+            tool: (
+                issue_definitions.workspace
+                if tool == _TOOL_LIST_ISSUE_LABELS
+                else {entry.name for entry in await self._label_entries({}, tool=tool)}
+            )
+            for tool in _SCOPE_LABEL_CREATORS
+        }
+
+    async def _ensure_scope_label(
+        self,
+        ref: MappingRef,
+        issues: _LabelListings,
+        definitions: dict[str, set[str]],
+    ) -> MappingOutcome:
+        """Create missing definitions only; never apply approval to an entity.
+
+        Scope labels are workspace-level, including the issue namespace.
+        A declared team's own copy is refused before any namespace write:
+        preserving it and adding a workspace copy would leave issue writes
+        ambiguous. Undeclared teams remain unobservable, as for queue labels.
+
+        Create replies were not captured by the connected-app measurement.
+        Resolve the name through a fresh listing instead of inventing a
+        write-response schema or treating a successful call as readback.
+        """
+        identifier = ref.identifier
+        if identifier is None or ref.scope is not None:
+            raise TrackerEnsureConflictError(
+                "a scope label requires its configured identifier and workspace scope",
+                entry=ref.describe(),
+            )
+        held = issues.teams_holding(identifier)
+        if held:
+            raise TrackerEnsureConflictError(
+                "a workspace scope label conflicts with an existing team label; "
+                f"found {', '.join(repr(team) for team in held)}",
+                entry=ref.describe(),
+            )
+        action = EnsureAction.ADOPTED
+        for tool, creator in _SCOPE_LABEL_CREATORS.items():
+            names = definitions[tool]
+            if identifier in names:
+                continue
+            await self._call(creator, {"name": identifier})
+            observed = {
+                entry.name for entry in await self._label_entries({}, tool=tool)
+            }
+            if identifier not in observed:
+                raise TrackerProtocolError(
+                    "the created scope label is absent from its namespace readback",
+                    tool=tool,
+                    detail=ref.describe(),
+                )
+            names.clear()
+            names.update(observed)
+            action = EnsureAction.CREATED
+        return MappingOutcome(ref=ref, action=action, identifier=identifier)
 
     async def _ensure_document(
         self,
@@ -1439,11 +1531,28 @@ class LinearMcpTracker:
     async def _label_entries(
         self,
         arguments: Mapping[str, object],
+        *,
+        tool: str = _TOOL_LIST_ISSUE_LABELS,
     ) -> Sequence[LinearLabelWire]:
-        """One label listing, scoped by *arguments* or not scoped at all."""
-        tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
-        payload = await self._call(tool, arguments)
-        return self._validate(LinearLabelListWire, payload, tool).labels
+        """Every page of one label namespace, preserving the listing scope."""
+        entries: list[LinearLabelWire] = []
+        sent = dict(arguments)
+        seen: set[str] = set()
+        while True:
+            payload = await self._call(tool, sent)
+            listing = self._validate(LinearLabelListWire, payload, tool)
+            entries.extend(listing.labels)
+            if not listing.has_next_page:
+                return entries
+            cursor = listing.cursor
+            if not cursor or cursor in seen:
+                raise TrackerProtocolError(
+                    "label pagination did not provide a new continuation cursor",
+                    tool=tool,
+                    detail=f"cursor={cursor!r}",
+                )
+            seen.add(cursor)
+            sent["cursor"] = cursor
 
     async def _team_listing(self) -> Sequence[LinearTeamWire]:
         """Every team the workspace holds, with the UUID it is addressed by."""
@@ -1515,6 +1624,13 @@ class LinearMcpTracker:
                 return frozenset(await self._document_definitions())
             case MappingKind.QUEUE_STATE:
                 return (await self._label_definitions()).names()
+            case MappingKind.SCOPE_LABEL:
+                issues = await self._label_definitions()
+                definitions = await self._scope_label_definitions(issues)
+                shared = set.intersection(*definitions.values())
+                return frozenset(
+                    name for name in shared if not issues.teams_holding(name)
+                )
             case MappingKind.USER:
                 return frozenset(
                     identity

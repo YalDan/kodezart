@@ -42,6 +42,10 @@ from tests.tracker.conftest import (
     fixture_server,
     linear_over_fake_mcp,
 )
+from tests.tracker.connected_app_label_contract import (
+    CONNECTED_APP_LABEL_ARGUMENTS,
+    CONNECTED_APP_LABEL_REQUIRED,
+)
 
 
 @dataclass(frozen=True)
@@ -289,6 +293,19 @@ LIVE_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
 #: declared team's issue was dispatched.
 KNOWN_UNMET_REQUIREMENTS: Mapping[str, frozenset[str]] = {}
 
+#: Original service capture plus separately measured connected-app label
+#: declarations. The latter do not establish service credential access.
+DECLARED_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
+    **LIVE_INPUT_SCHEMAS,
+    **{
+        tool: ToolSchema(
+            properties=properties,
+            required=CONNECTED_APP_LABEL_REQUIRED[tool],
+        )
+        for tool, properties in CONNECTED_APP_LABEL_ARGUMENTS.items()
+    },
+}
+
 
 async def sent_arguments() -> Mapping[str, set[str]]:
     """Every argument key the adapter hands the transport, by tool.
@@ -359,6 +376,11 @@ async def sent_arguments() -> Mapping[str, set[str]]:
                 scope="fixture-team",
             ),
             MappingRef(
+                kind=MappingKind.SCOPE_LABEL,
+                name="approved",
+                identifier="scope:brand-new",
+            ),
+            MappingRef(
                 kind=MappingKind.DOCUMENT,
                 name="a document nobody holds",
                 scope="fixture-team",
@@ -380,7 +402,7 @@ async def test_the_sweep_reaches_every_tool_the_adapter_names(
     sent: Mapping[str, set[str]],
 ) -> None:
     """A vacuous sweep would pass every assertion below it."""
-    assert set(sent) == set(LIVE_INPUT_SCHEMAS)
+    assert set(sent) == set(DECLARED_INPUT_SCHEMAS)
 
 
 async def test_every_argument_key_is_a_declared_property(
@@ -388,9 +410,9 @@ async def test_every_argument_key_is_a_declared_property(
 ) -> None:
     """The check that would have caught the boot failure before sending it."""
     undeclared: dict[str, Sequence[str]] = {
-        tool: sorted(keys - LIVE_INPUT_SCHEMAS[tool].properties)
+        tool: sorted(keys - DECLARED_INPUT_SCHEMAS[tool].properties)
         for tool, keys in sorted(sent.items())
-        if keys - LIVE_INPUT_SCHEMAS[tool].properties
+        if keys - DECLARED_INPUT_SCHEMAS[tool].properties
     }
     assert undeclared == {}
 
@@ -406,9 +428,9 @@ async def test_every_required_argument_is_sent(
     a new omission fails here instead of on the workspace.
     """
     unmet = {
-        tool: LIVE_INPUT_SCHEMAS[tool].required - keys
+        tool: DECLARED_INPUT_SCHEMAS[tool].required - keys
         for tool, keys in sorted(sent.items())
-        if LIVE_INPUT_SCHEMAS[tool].required - keys
+        if DECLARED_INPUT_SCHEMAS[tool].required - keys
     }
     assert unmet == {}
     assert KNOWN_UNMET_REQUIREMENTS == {}
