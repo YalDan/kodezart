@@ -1664,6 +1664,37 @@ class FakePRCreator:
             raise self._fail_comment
 
 
+class FakeForgeQuery:
+    """Configured read results, isolated by repository and branch identity."""
+
+    def __init__(
+        self,
+        *,
+        open_prs: dict[tuple[str, str], tuple[str, int]] | None = None,
+        branch_urls: dict[tuple[str, str], str] | None = None,
+    ) -> None:
+        self.open_prs = dict(open_prs or {})
+        self.branch_urls = dict(branch_urls or {})
+        self.calls: list[dict[str, str]] = []
+
+    async def open_pr_for_head(
+        self,
+        *,
+        repo_url: str,
+        head: str,
+    ) -> tuple[str, int] | None:
+        self.calls.append(
+            {"method": "open_pr_for_head", "repo_url": repo_url, "head": head}
+        )
+        return self.open_prs.get((repo_url, head))
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        self.calls.append(
+            {"method": "branch_web_url", "repo_url": repo_url, "branch": branch}
+        )
+        return self.branch_urls[(repo_url, branch)]
+
+
 class FakeCIMonitor:
     """Fake CIMonitor for testing the outer workflow pipeline."""
 

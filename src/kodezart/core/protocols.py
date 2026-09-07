@@ -426,6 +426,28 @@ class PRCreator(Protocol):
 
 
 @runtime_checkable
+class ForgeQuery(Protocol):
+    """Read forge identities before creating delivery artifacts."""
+
+    async def open_pr_for_head(
+        self,
+        *,
+        repo_url: str,
+        head: str,
+    ) -> tuple[str, int] | None:
+        """Return an open PR's (html_url, number), or None.
+
+        Head is a branch in the repository named by repo_url. Forge
+        transport and payload failures use the same domain errors as PRCreator.
+        """
+        ...
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """Compose the forge's browser URL for a repository branch."""
+        ...
+
+
+@runtime_checkable
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
 
