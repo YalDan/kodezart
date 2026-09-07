@@ -3200,8 +3200,10 @@ class FakeTrackerPort:
         issue_key: str,
         stage: LifecycleStage,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.state_name == stage.value:
+            return issue
         self.workflow_writes.append((issue_key, stage))
-        issue = self.issues[issue_key]
         self._state_kinds[issue.state_name] = issue.state_kind
         self._state_kinds[stage.value] = _STAGE_KIND[stage]
         updated = issue.model_copy(
@@ -3220,13 +3222,15 @@ class FakeTrackerPort:
         issue_key: str,
         state_name: str,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.state_name == state_name:
+            return issue
         # A backend knows the kind of every state it defines, so the fake
         # does too: seeded from the fixture's issues and extended by every
         # write. An unknown name is a state no backend defined, and it
         # raises rather than inventing a kind for it.
         kind = self._state_kinds[state_name]
         self.restored_states.append((issue_key, state_name))
-        issue = self.issues[issue_key]
         updated = issue.model_copy(
             update={"state_name": state_name, "state_kind": kind},
         )
@@ -3240,8 +3244,10 @@ class FakeTrackerPort:
         issue_key: str,
         state: QueueState,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.queue_states == frozenset({state}):
+            return issue
         self.queue_writes.append((issue_key, state))
-        issue = self.issues[issue_key]
         updated = issue.model_copy(update={"queue_states": frozenset({state})})
         self.issues[issue_key] = updated
         self._wrote(issue_key)

@@ -798,7 +798,10 @@ class LinearMcpTracker:
         return await self._save_state(issue_key=issue_key, state_name=state_name)
 
     async def _save_state(self, *, issue_key: str, state_name: str) -> TrackerIssue:
-        """Write one backend state name. The two state writers' shared tail."""
+        """Read first; matching state writes produce no history entry."""
+        current = await self.read_issue(issue_key=issue_key)
+        if current.state_name == state_name:
+            return current
         payload = await self._call(
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},
@@ -813,6 +816,9 @@ class LinearMcpTracker:
     ) -> TrackerIssue:
         """Set the semantic queue state, replacing any other member."""
         current = await self._read_issue_wire(issue_key)
+        issue = self._to_issue(current)
+        if issue.queue_states == frozenset({state}):
+            return issue
         preserved = [
             label for label in current.labels if label not in self._queue_state_by_label
         ]

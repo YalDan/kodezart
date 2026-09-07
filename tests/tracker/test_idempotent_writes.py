@@ -6,6 +6,7 @@ import pytest
 
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import DuplicateCommentMarkerError, StaleWriteError
+from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE
 
@@ -180,4 +181,67 @@ class TestDescriptionEdit:
         assert (
             await tracker.read_issue(issue_key=APPROVED_ISSUE)
         ).body == "new new body"
+        assert len(tracker_writes()) == len(calls) + 1
+
+
+class TestStateReplay:
+    @pytest.mark.parametrize("stage", list(LifecycleStage))
+    async def test_replayed_workflow_state_records_zero_write_calls(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        stage: LifecycleStage,
+    ):
+        await tracker.set_workflow_state(issue_key=APPROVED_ISSUE, stage=stage)
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        calls = tracker_writes()
+        replay = await tracker.set_workflow_state(issue_key=APPROVED_ISSUE, stage=stage)
+        assert replay == before
+        assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)) == before
+        assert tracker_writes() == calls
+
+    @pytest.mark.parametrize("state", list(QueueState))
+    async def test_replayed_label_records_zero_write_calls(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        state: QueueState,
+    ):
+        await tracker.set_queue_state(issue_key=APPROVED_ISSUE, state=state)
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        calls = tracker_writes()
+        replay = await tracker.set_queue_state(issue_key=APPROVED_ISSUE, state=state)
+        assert replay == before
+        assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)) == before
+        assert tracker_writes() == calls
+
+    async def test_restoring_the_current_state_records_zero_write_calls(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ):
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        calls = tracker_writes()
+        replay = await tracker.restore_workflow_state(
+            issue_key=APPROVED_ISSUE, state_name=before.state_name
+        )
+        assert replay == before
+        assert tracker_writes() == calls
+
+    async def test_changes_between_calls_are_read_and_corrected(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ):
+        await tracker.set_workflow_state(
+            issue_key=APPROVED_ISSUE, stage=LifecycleStage.IN_PROGRESS
+        )
+        await tracker.set_workflow_state(
+            issue_key=APPROVED_ISSUE, stage=LifecycleStage.IN_REVIEW
+        )
+        calls = tracker_writes()
+        await tracker.set_workflow_state(
+            issue_key=APPROVED_ISSUE, stage=LifecycleStage.IN_PROGRESS
+        )
+        assert len(tracker_writes()) == len(calls) + 1
+        await tracker.set_queue_state(issue_key=APPROVED_ISSUE, state=QueueState.DONE)
+        await tracker.set_queue_state(issue_key=APPROVED_ISSUE, state=QueueState.TRIAGE)
+        calls = tracker_writes()
+        await tracker.set_queue_state(issue_key=APPROVED_ISSUE, state=QueueState.DONE)
         assert len(tracker_writes()) == len(calls) + 1

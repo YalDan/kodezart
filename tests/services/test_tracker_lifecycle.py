@@ -459,6 +459,9 @@ class TestTheFailureArm:
     async def test_the_failure_comment_follows_the_boards_posture(self) -> None:
         """The put-back arm gates under the same per-board posture."""
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        await tracker.set_workflow_state(
+            issue_key="K-1", stage=LifecycleStage.IN_PROGRESS
+        )
         gate = PassThroughGate()
         write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
 
@@ -477,6 +480,9 @@ class TestTheFailureArm:
     async def test_a_blocked_failure_comment_is_never_posted(self) -> None:
         """The put-back still lands; only the prose is the gate's to stop."""
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        await tracker.set_workflow_state(
+            issue_key="K-1", stage=LifecycleStage.IN_PROGRESS
+        )
         write = TrackerLifecycleWriter(tracker=tracker, gate=BlockingGate())
 
         with pytest.raises(OutboundContentBlockedError):

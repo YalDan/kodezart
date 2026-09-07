@@ -696,7 +696,7 @@ class TrackerPort(Protocol):
         issue_key: str,
         stage: LifecycleStage,
     ) -> TrackerIssue:
-        """Move the issue to the state the configuration binds *stage* to."""
+        """Read first and move only if the configured state differs."""
         ...
 
     async def edit_description(
@@ -737,7 +737,7 @@ class TrackerPort(Protocol):
         issue_key: str,
         state: QueueState,
     ) -> TrackerIssue:
-        """Set the semantic queue state, replacing any other member."""
+        """Read first; replace other queue states only if they differ."""
         ...
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
