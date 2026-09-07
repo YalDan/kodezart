@@ -356,6 +356,7 @@ def test_admission_refusal_route_uses_kind_without_reading_tone(
 ):
     from kodezart.domain.organize import admission_route
     from kodezart.types.domain.organize import AdmissionResult
+    from tests.fakes import make_tracker_issue
 
     result = AdmissionResult.model_validate(
         {
@@ -367,6 +368,13 @@ def test_admission_refusal_route_uses_kind_without_reading_tone(
         }
     )
     before = result.model_dump_json()
-    assert admission_route(result).value == expected
+    assert (
+        admission_route(
+            result,
+            issue=make_tracker_issue("ISSUE-1"),
+            scope_issue_keys=frozenset({"ISSUE-1"}),
+        ).value
+        == expected
+    )
     assert result.model_dump_json() == before
     assert AdmissionResult.model_validate_json(before) == result
