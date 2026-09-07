@@ -1,5 +1,6 @@
 """One readable representation of the lane's branch-state record."""
 
+import json
 from collections.abc import Mapping
 
 from kodezart.domain.comment_markers import compose_comment_marker
@@ -40,3 +41,36 @@ def render_lane_record(
             f"\n\n{REENTRY_SECTION}"
         ),
     )
+
+
+def parse_lane_record(
+    *, body: str, lane_key: str, marker_prefixes: Mapping[str, str]
+) -> LaneRunState:
+    """Read the declared record format, refusing damaged or ambiguous facts.
+
+    Historical free-form comments require an explicit migration; guessing at
+    their prose is not a substitute for the recorded fields.
+    """
+    marker = compose_comment_marker(
+        prefixes=marker_prefixes, purpose="run_state", lane=lane_key
+    )
+    prefix = f"{marker}\n```json\n"
+    suffix = f"\n```\n\n{REENTRY_SECTION}"
+    if not body.startswith(prefix) or not body.endswith(suffix):
+        raise ValueError("the record framing or fixed re-entry section is invalid")
+    payload = body[len(prefix) : -len(suffix)]
+    # JSON otherwise accepts repeated keys by silently taking the last value.
+    json.loads(payload, object_pairs_hook=_unique_object)
+    record = LaneRunState.model_validate_json(payload, strict=True)
+    if record.lane_key != lane_key:
+        raise ValueError("the record lane does not match its configured marker")
+    return record
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate record field {key!r}")
+        result[key] = value
+    return result

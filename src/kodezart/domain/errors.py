@@ -144,6 +144,27 @@ class StaleWriteError(Exception):
         self.expected = expected
 
 
+class LaneRecordReadError(Exception):
+    """A lane's branch record cannot be read from its addressed tracker comment."""
+
+    def __init__(
+        self,
+        *,
+        issue_key: str,
+        lane_key: str,
+        record_ref: str | None,
+        reason: str,
+    ) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.record_ref = record_ref
+        self.reason = reason
+        super().__init__(
+            f"lane record {record_ref!r} on {issue_key!r} "
+            f"for {lane_key!r} could not be read: {reason}"
+        )
+
+
 class EscalationReadError(Exception):
     """Resolution cannot be established from a readable, unique escalation."""
 
