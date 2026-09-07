@@ -43,6 +43,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WorkspaceError,
 )
+from kodezart.domain.fire_spec import tracker_spec_from_issues
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -77,6 +78,7 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
     ContentClass,
@@ -3207,12 +3209,22 @@ class FakeTrackerPort:
         return issue
 
     async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        _, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return criteria
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        subject, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return tracker_spec_from_issues(subject=subject, criteria=criteria)
+
+    async def _read_criterion_family(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
         if issue_key not in self.issues:
             raise CriterionReadError(
                 issue_key=issue_key, reason="parent issue is absent"
             )
         parent = await self.read_issue(issue_key=issue_key)
-        return tuple(
+        return parent, tuple(
             sorted(
                 (
                     issue
