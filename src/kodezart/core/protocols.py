@@ -570,6 +570,16 @@ class TrackerPort(Protocol):
     implements ALL of this or it is not an adapter.  There are no
     capability flags and no feature detection, so no consumer ever
     branches on which backend is configured.
+
+    Notification behavior: an issue body edit is expected to be silent,
+    while posting a comment is expected to notify its recipients. This
+    capability is unfalsifiable through the declared port: issue and
+    comment reads reveal stored content, but no read exposes recipient
+    notification events or their originating write. Falsifying the claim
+    would require a recipient notification-event read correlated with
+    the body edit or comment creation. This port carries no such read,
+    so neither write success nor content read-back proves notification
+    delivery or silence; this is not an executable boot check.
     """
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
