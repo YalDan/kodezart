@@ -167,6 +167,18 @@ class StaleWriteError(Exception):
         self.expected = expected
 
 
+class RulingRecordReadError(Exception):
+    """The addressed issue's ruling records are unreadable or ambiguous."""
+
+    def __init__(self, *, issue_key: str, lane_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.reason = reason
+        super().__init__(
+            f"rulings on {issue_key!r} for {lane_key!r} could not be read: {reason}"
+        )
+
+
 class LaneRecordReadError(Exception):
     """A lane's branch record cannot be read from its addressed tracker comment."""
 

@@ -374,6 +374,13 @@ or mismatched identity. The `decision` purpose remains the native escalation
 reply carrier. The actual ruling node and verified, leased publication remain
 separate consumers.
 
+`RulingRecordReader` enumerates the current configured ruling comments through
+`TrackerPort.list_comments`, preserving each native comment key and decoded
+record. Successful absence is an empty tuple; malformed records, duplicate
+identities, foreign ownership and incomplete reads refuse. A fresh reader
+observes replay edits through the existing marker upsert primitive. This is
+read-back capability and conformance, not a production ruling writer.
+
 Declare `issue_identity` to use keyed issue upsert. The Linear adapter records
 the scope kind, scope key and deliverable key in a hidden first description
 line in the initial create request. A retry reads that persisted identity,
