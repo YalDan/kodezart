@@ -68,10 +68,13 @@ async def test_timeout_retains_partial_output_and_runs_following_step(
 
 
 async def test_timeout_kills_the_shells_descendants(tmp_path: Path) -> None:
-    result = await runner(0.3).run_chain(
-        cwd=str(tmp_path),
-        steps=[CheckStep(name="tree", command="sleep 30 & printf '%s\\n' $!; wait")],
-    )
+    async with asyncio.timeout(3):
+        result = await runner(0.3).run_chain(
+            cwd=str(tmp_path),
+            steps=[
+                CheckStep(name="tree", command="sleep 30 & printf '%s\\n' $!; wait")
+            ],
+        )
     pid = int(result.step_outputs[0].output.strip())
     async with asyncio.timeout(3):
         while True:
