@@ -534,3 +534,39 @@ async def test_a_refused_session_cannot_pass_a_dirty_workspace_to_its_retry(setu
         await build().validate(REQUEST)
     assert len(runner.arguments) == 1
     assert workspace.calls[-1][0] == "release"
+
+
+async def test_coherent_foreign_capture_still_refuses_the_requested_subject(
+    setup, tracker, monkeypatch
+):
+    build, runner, _, cache, workspace = setup
+    spec = await tracker.read_fire_spec(issue_key=SUBJECT)
+    rows = await tracker.read_criteria(issue_key=SUBJECT)
+    monkeypatch.setattr(
+        tracker,
+        "read_fire_spec",
+        AsyncMock(return_value=spec.model_copy(update={"subject": "foreign/42"})),
+    )
+    monkeypatch.setattr(
+        tracker,
+        "read_criteria",
+        AsyncMock(
+            return_value=[
+                row.model_copy(update={"parent_key": "foreign/42"}) for row in rows
+            ]
+        ),
+    )
+    with pytest.raises(TrackerFeasibilityReadError, match="different subject"):
+        await build().validate(REQUEST)
+    assert not runner.arguments and not cache.calls and not workspace.calls
+
+
+async def test_wrong_initial_head_refuses_before_session_and_releases(
+    setup, monkeypatch
+):
+    build, runner, git, _, workspace = setup
+    monkeypatch.setattr(git, "current_sha", AsyncMock(return_value="wrong-head"))
+    with pytest.raises(TrackerFeasibilityReadError, match="dispatch head"):
+        await build().validate(REQUEST)
+    assert not runner.arguments
+    assert workspace.calls[-1][0] == "release"
