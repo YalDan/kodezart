@@ -28,7 +28,7 @@ from kodezart.composition.engine import (
     OriginRoutedWorkflowEngine,
     build_workflow_engine,
 )
-from kodezart.composition.forge import build_forge_client
+from kodezart.composition.forge import build_forge_client, forge_query_for_origin
 from kodezart.composition.jobs import build_job_queue
 from kodezart.core import protocols
 from kodezart.core.config import AppConfig
@@ -36,6 +36,7 @@ from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import (
     CIMonitor,
     DeliveryProbe,
+    ForgeQuery,
     PRCreator,
     RepoVisibilityResolver,
     WorkflowEngine,
@@ -102,12 +103,14 @@ FAKE_TOKEN = "not-a-real-token"
 
 #: Every protocol the forge adapter answers, against the per-origin
 #: selection that covers it.  ``DeliveryProbe`` is the dispatch tick's,
-#: repaired under KOD-145; the other three are the engine's.
+#: repaired under KOD-145; three are the engine's and queries have an
+#: explicit per-origin selector for their downstream consumer.
 COVERED_BY_ORIGIN: dict[type, str] = {
     PRCreator: "pr_creator",
     CIMonitor: "ci_monitor",
     RepoVisibilityResolver: "visibility_resolver",
     DeliveryProbe: "delivery",
+    ForgeQuery: "query",
 }
 
 
@@ -556,3 +559,31 @@ def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
     assert isinstance(delivery.value, ast.Call)
     assert isinstance(delivery.value.func, ast.Name)
     assert delivery.value.func.id == "delivery_probe_for"
+
+
+@pytest.mark.parametrize("repo_url", [FORGE_ORIGIN, "https://github.example/o/r.git"])
+async def test_query_capability_selects_repository_origin_before_read(repo_url):
+    from tests.fakes import FakeForgeQuery
+
+    expected = (f"{repo_url}/pull/7", 7)
+    client = FakeForgeQuery(open_prs={(repo_url, "feature"): expected})
+    selected = forge_query_for_origin(client=client, repo_url=repo_url)
+    assert selected is client
+    assert (
+        await selected.open_pr_for_head(repo_url=repo_url, head="feature") == expected
+    )
+    assert client.calls == [
+        {"method": "open_pr_for_head", "repo_url": repo_url, "head": "feature"}
+    ]
+
+
+def test_query_capability_is_absent_for_local_origin_despite_client():
+    from tests.fakes import FakeForgeQuery
+
+    client = FakeForgeQuery()
+    assert forge_query_for_origin(client=client, repo_url=FILE_ORIGIN) is None
+    assert client.calls == []
+
+
+def test_query_capability_is_absent_without_configured_client():
+    assert forge_query_for_origin(client=None, repo_url=FORGE_ORIGIN) is None
