@@ -84,7 +84,11 @@ class AdmissionJudgment(CamelCaseModel):
 class AdmissionResult(AdmissionJudgment):
     """A judgment bound by its caller to the exact body revision examined."""
 
-    admitted_body_digest: str = Field(min_length=1, pattern=r"\S")
+    admitted_body_digest: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="Opaque digest of the exact body revision examined.",
+    )
 
 
 class DefectRole(StrEnum):
