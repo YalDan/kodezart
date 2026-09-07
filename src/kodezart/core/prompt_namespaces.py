@@ -64,6 +64,9 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "refusal_evidence",
         "defect_classes",
         "criterion_issue_bodies",
+        "criterion_key",
+        "head_sha",
+        "check",
     }
 )
 

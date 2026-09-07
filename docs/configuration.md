@@ -416,3 +416,9 @@ These settings configure the aggregate scanner on the existing outbound gate. Du
 | `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS` | `list[str]` | Issue, ticket, lane, project, milestone, sub-issue, PR and pull-request nouns, singular and plural | Nonempty list | JSON list of object nouns; each is matched literally, without case sensitivity. |
 | `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` | `str` | Uppercase issue prefix followed by a hyphen and digits | Nonempty regex | Identifier grammar used by roster matching. |
 | `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` | `str` | Whitespace and punctuation separators, or “and” | Nonempty regex | Grammar separating consecutive references in a roster. |
+
+
+The audit claim role is `audit_claim` in both prompt sets. Its `criterion_key`,
+`head_sha` and `check` bindings are supplied per verification call, never by the
+operation configuration. It uses the existing scheduled-session grant and
+configured evaluation policy; no prior session identifier is accepted.

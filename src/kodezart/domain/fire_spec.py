@@ -80,16 +80,22 @@ def tracker_spec_from_issues(
     if not criteria:
         raise EmptyFireCriteriaError(issue_key=subject.issue_key)
     for criterion in criteria:
-        checks = _check_bodies(criterion.body)
-        if len(checks) != 1 or not checks[0]:
-            raise InvalidFireCriterionError(
-                issue_key=subject.issue_key,
-                criterion_key=criterion.issue_key,
-                reason="one nonempty Check field is required",
-            )
+        criterion_check(criterion=criterion, issue_key=subject.issue_key)
     return TrackerSpec(
         subject=IssueRef(subject.issue_key),
         body=subject.body,
         criteria=tuple(CriterionRef(criterion.issue_key) for criterion in criteria),
         read_at_version=subject.updated_at.isoformat(),
     )
+
+
+def criterion_check(*, criterion: TrackerIssue, issue_key: str) -> str:
+    """Return only the one current Check, excluding the recorded Evidence."""
+    checks = _check_bodies(criterion.body)
+    if len(checks) != 1 or not checks[0]:
+        raise InvalidFireCriterionError(
+            issue_key=issue_key,
+            criterion_key=criterion.issue_key,
+            reason="one nonempty Check field is required",
+        )
+    return checks[0]

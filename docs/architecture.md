@@ -629,3 +629,21 @@ is independent of lane outcomes. The result is available to any caller;
 it does not itself publish a tracker remediation record or scope terminal.
 Walker tick scheduling, stale-head re-entry, and terminal residual
 publication remain separate integration work.
+
+
+## Current-head audit claim sessions
+
+`AuditClaimVerifier` reads the current criterion through its owning lane's
+complete criterion query and extracts only its Check. It reconstructs the lane
+from the current addressed tracker comment, resolves the actual remote branch
+head and acquires a detached workspace at that exact SHA. The fresh evaluative
+session receives the Check and measured head, with `session_id=None`, no
+subagents and the configured read-only tools. The record's prior head, prior
+Evidence/verdict and author transcript are not session inputs.
+
+The result uses the shared three-state `AuditVerdict`. The caller attaches the
+measured SHA, native comment reference and exact Check. A changed criterion,
+record, workspace or remote head refuses the observation; workspace release
+also runs on errors and cancellation. This is a repeat-read observation, not an
+atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
+report publication, write-back and scheduler registration remain separate work.

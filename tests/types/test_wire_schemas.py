@@ -31,6 +31,7 @@ from kodezart.types.domain.agent import (
     TicketDraftOutput,
     TicketReviewOutput,
 )
+from kodezart.types.domain.audit import AuditClaimJudgment
 from kodezart.types.domain.criteria import CRITERION_ID_PATTERN
 from kodezart.types.domain.organize import AdmissionJudgment
 from tests.types.schema_nodes import DEFS, schema_nodes
@@ -67,6 +68,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
     "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
     "ORGANIZE_ADMISSION_SCHEMA": AdmissionJudgment,
+    "AUDIT_CLAIM_SCHEMA": AuditClaimJudgment,
 }
 
 

@@ -1077,6 +1077,7 @@ class FakeAgentRunner:
         self.calls.append(
             {
                 "method": "stream",
+                "session_id": session_id,
                 "prompt": prompt,
                 "skills": skills,
                 "session_type": session_type,
