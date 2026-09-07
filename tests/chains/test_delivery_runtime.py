@@ -1,15 +1,18 @@
 """The real delivery entry uses typed run inputs and gated authored content."""
 
 import inspect
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
+from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.chains.delivery_coordinator import DeliveryCoordinator
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import (
+    BaseResolutionError,
     DeliveryContextError,
     DeliveryRouteUnavailableError,
     OutboundContentBlockedError,
@@ -17,7 +20,7 @@ from kodezart.domain.errors import (
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import FlaggedItem
 from kodezart.types.domain.agent import PR_DESCRIPTION_SCHEMA, ResultEvent
-from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRefRole, trunk_base
 from kodezart.types.domain.delivery import DeliveryContext, LaneDelivery, LaneDispatch
 from kodezart.types.domain.gating import (
     ContentClass,
@@ -38,7 +41,9 @@ from tests.fakes import (
     FakeAgentRunner,
     FakeArtifactPersister,
     FakeCIMonitor,
+    FakeGitService,
     FakePRCreator,
+    FakeRepoCache,
     FakeWorkspaceProvider,
     PassThroughGate,
     RecordingPromptProvider,
@@ -120,7 +125,15 @@ class Setup:
 
 
 def setup(
-    *, runner=None, forge=None, monitor=None, gate=None, cleaner=None, family=V5_SET
+    *,
+    runner=None,
+    forge=None,
+    monitor=None,
+    gate=None,
+    cleaner=None,
+    family=V5_SET,
+    git=None,
+    cache=None,
 ):
     runner = runner if runner is not None else FakeAgentRunner([description()])
     forge = forge if forge is not None else FakePRCreator()
@@ -135,6 +148,11 @@ def setup(
             gate=gate,
             pr_creator=forge,
             ci=monitor,
+            git=git
+            if git is not None
+            else FakeGitService(remote_branch_shas={HEAD: SHA, BASE: "b" * 40}),
+            cache=cache if cache is not None else FakeRepoCache(),
+            git_remote="upstream",
             artifact_persister=cleaner,
         ),
         runner=runner,
@@ -319,3 +337,125 @@ async def test_real_agent_service_receives_fresh_read_only_description_contract(
         "type": "json_schema",
         "schema": PR_DESCRIPTION_SCHEMA,
     }
+
+
+@pytest.mark.parametrize("missing", [HEAD, BASE])
+async def test_missing_remote_branch_refuses_before_session_and_pr(missing):
+    git = FakeGitService(remote_branch_shas={HEAD: SHA, BASE: "b" * 40, missing: None})
+    fixture = setup(git=git)
+    with pytest.raises(BaseResolutionError) as error:
+        await deliver(fixture.coordinator)
+    assert error.value.branches == (missing,)
+    assert error.value.issue_id == "subject/42"
+    assert fixture.forge.calls == fixture.runner.calls == fixture.monitor.calls == []
+    assert {call[-1] for call in git.calls} == {HEAD, BASE}
+
+
+async def test_changed_remote_head_refuses_the_stale_fire_handoff():
+    fixture = setup(
+        git=FakeGitService(remote_branch_shas={HEAD: "new-tip", BASE: "b" * 40})
+    )
+    with pytest.raises(DeliveryContextError, match="final commit SHA"):
+        await deliver(fixture.coordinator)
+    assert fixture.forge.calls == fixture.runner.calls == []
+
+
+async def test_dependent_lane_needs_no_blocker_pr_to_open():
+    base = BaseSpec(
+        inputs=(
+            BaseInput(
+                blocker_issue_id="blocker/17", branch="blocker-head", sha="b" * 40
+            ),
+        ),
+        base_branch="blocker-head",
+        base_role=WorkRefRole.DELIVERABLE,
+    )
+    git = FakeGitService(remote_branch_shas={HEAD: SHA, "blocker-head": "b" * 40})
+    fixture = setup(git=git)
+    facts = context(
+        execution=context().execution.model_copy(update={"base_spec": base})
+    )
+    result = await deliver(
+        fixture.coordinator, record=dispatch(resolved_base=base), facts=facts
+    )
+    assert result.base_branch == "blocker-head"
+    assert fixture.forge.calls[0]["base"] == "blocker-head"
+    assert [call["method"] for call in fixture.forge.calls] == ["create_pr"]
+
+
+async def test_remote_only_execution_uses_the_addressed_cache():
+    cache = FakeRepoCache(repo_path="/addressed-cache")
+    git = FakeGitService(remote_branch_shas={HEAD: SHA, BASE: "b" * 40})
+    fixture = setup(git=git, cache=cache)
+    facts = context(
+        execution=context().execution.model_copy(update={"repo_path": None})
+    )
+    await deliver(fixture.coordinator, facts=facts)
+    assert cache.calls == [{"url": REPOSITORY, "cache_key": "original-job"}]
+    assert all(call[1:3] == ("/addressed-cache", "upstream") for call in git.calls)
+
+
+async def test_cleanup_may_advance_head_without_rewriting_fire_sha():
+    git = FakeGitService(
+        remote_branch_shas={BASE: "b" * 40},
+        remote_branch_sha_sequences={HEAD: [SHA, "cleanup-tip"]},
+    )
+    fixture = setup(git=git, cleaner=FakeArtifactPersister())
+    await deliver(fixture.coordinator)
+    assert [call[-1] for call in git.calls] == [HEAD, BASE, HEAD, BASE]
+    assert fixture.monitor.calls[0]["ref"] == HEAD
+
+
+async def test_a_branch_removed_during_cleanup_is_not_opened():
+    git = FakeGitService(
+        remote_branch_shas={BASE: "b" * 40},
+        remote_branch_sha_sequences={HEAD: [SHA, None]},
+    )
+    fixture = setup(git=git, cleaner=FakeArtifactPersister())
+    with pytest.raises(BaseResolutionError):
+        await deliver(fixture.coordinator)
+    assert fixture.forge.calls == fixture.runner.calls == []
+
+
+async def test_real_git_remote_reads_drive_delivery_preflight(tmp_path):
+    remote = tmp_path / "remote.git"
+    checkout = tmp_path / "checkout"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(["git", "init", str(checkout)], check=True, capture_output=True)
+
+    def git(*arguments):
+        return subprocess.run(
+            ["git", *arguments],
+            cwd=checkout,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git(
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "fixture",
+    )
+    git("branch", HEAD)
+    git("branch", BASE)
+    git("remote", "add", "upstream", str(remote))
+    git("push", "upstream", HEAD, BASE)
+    sha = git("rev-parse", HEAD)
+    fixture = setup(git=SubprocessGitService(remote="upstream"))
+    facts = context(
+        execution=context().execution.model_copy(update={"repo_path": str(checkout)})
+    )
+    result = await deliver(fixture.coordinator, facts=facts, sha=sha)
+    assert result.head_branch == HEAD
+    git("push", "upstream", "--delete", BASE)
+    with pytest.raises(BaseResolutionError):
+        await deliver(fixture.coordinator, facts=facts, sha=sha)
+    assert len(fixture.forge.calls) == 1

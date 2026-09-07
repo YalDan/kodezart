@@ -13,12 +13,18 @@ from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
     CIMonitor,
+    GitService,
     OutboundContentGate,
     PRCreator,
     PromptSetProvider,
+    RepoCache,
 )
 from kodezart.core.stream_drain import drain
-from kodezart.domain.errors import DeliveryContextError, DeliveryRouteUnavailableError
+from kodezart.domain.errors import (
+    BaseResolutionError,
+    DeliveryContextError,
+    DeliveryRouteUnavailableError,
+)
 from kodezart.domain.pr_body import append_flagged_section, append_tracker_issue
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.types.domain.agent import PR_DESCRIPTION_SCHEMA, PRDescriptionOutput
@@ -61,6 +67,9 @@ class DeliveryCoordinator:
         gate: OutboundContentGate,
         pr_creator: PRCreator,
         ci: CIMonitor,
+        git: GitService,
+        cache: RepoCache,
+        git_remote: str,
         artifact_persister: ArtifactPersister | None,
     ) -> None:
         self._runner = runner
@@ -69,6 +78,9 @@ class DeliveryCoordinator:
         self._gate = gate
         self._pr_creator = pr_creator
         self._ci = ci
+        self._git = git
+        self._cache = cache
+        self._git_remote = git_remote
         self._artifact_persister = artifact_persister
         self._log = get_logger(__name__)
 
@@ -103,6 +115,13 @@ class DeliveryCoordinator:
                 checks_passed=None,
                 checks_summary=None,
             )
+        remote_sha = await self._require_remote_branches(dispatch, context)
+        if remote_sha != final_commit_sha:
+            raise DeliveryContextError(
+                lane_key=dispatch.lane_key,
+                issue_id=dispatch.issue_id,
+                reason="remote head differs from the fire's final commit SHA",
+            )
         if self._artifact_persister is not None:
             await self._artifact_persister.clean(
                 repo_path=execution.repo_path,
@@ -110,6 +129,9 @@ class DeliveryCoordinator:
                 branch=feature_branch,
                 cache_key=execution.cache_key,
             )
+            # Cleaning may commit and push. Preserve the fire's SHA, and
+            # re-read both remote refs instead of treating it as the new tip.
+            await self._require_remote_branches(dispatch, context)
         description = await self._description(context, feature_branch=feature_branch)
         body = append_tracker_issue(
             append_flagged_section(description.description, context.flagged_items),
@@ -149,6 +171,47 @@ class DeliveryCoordinator:
             checks_summary=summary,
             outcome=WorkflowOutcome.ci_passed,
         )
+
+    async def _require_remote_branches(
+        self, dispatch: LaneDispatch, context: DeliveryContext
+    ) -> str:
+        execution = context.execution
+        cwd = execution.repo_path
+        if cwd is None:
+            if execution.repo_url is None:
+                raise DeliveryContextError(
+                    lane_key=dispatch.lane_key,
+                    issue_id=dispatch.issue_id,
+                    reason="remote branch lookup requires a repository",
+                )
+            cwd = await self._cache.ensure_available(
+                execution.repo_url, execution.cache_key
+            )
+        head = await self._git.remote_branch_sha(
+            cwd=cwd, remote=self._git_remote, branch=dispatch.head_branch
+        )
+        base = await self._git.remote_branch_sha(
+            cwd=cwd,
+            remote=self._git_remote,
+            branch=dispatch.resolved_base.base_branch,
+        )
+        if head is None or base is None:
+            raise BaseResolutionError(
+                "delivery requires both recorded branches on the remote",
+                issue_id=dispatch.issue_id,
+                blocker_issue_ids=[
+                    item.blocker_issue_id for item in dispatch.resolved_base.inputs
+                ],
+                branches=[
+                    branch
+                    for branch, sha in (
+                        (dispatch.head_branch, head),
+                        (dispatch.resolved_base.base_branch, base),
+                    )
+                    if sha is None
+                ],
+            )
+        return head
 
     async def _description(
         self, context: DeliveryContext, *, feature_branch: str
