@@ -11,6 +11,28 @@ _CRITERION_ROW = re.compile(r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
+def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:
+    """Keep visible text around inline or continued HTML comments."""
+    parts: list[str] = []
+    cursor = 0
+    while cursor < len(line):
+        if comment:
+            closing = line.find("-->", cursor)
+            if closing < 0:
+                return "".join(parts), True
+            cursor = closing + len("-->")
+            comment = False
+        else:
+            opening = line.find("<!--", cursor)
+            if opening < 0:
+                parts.append(line[cursor:])
+                break
+            parts.append(line[cursor:opening])
+            cursor = opening + len("<!--")
+            comment = True
+    return "".join(parts), comment
+
+
 def _check_bodies(body: str) -> tuple[str, ...]:
     """Read the template's Check field, excluding quoted code and HTML comments."""
     checks: list[str] = []
@@ -19,12 +41,6 @@ def _check_bodies(body: str) -> tuple[str, ...]:
     fence: tuple[str, int] | None = None
     comment = False
     for line in body.splitlines():
-        if comment:
-            comment = "-->" not in line
-            continue
-        if fence is None and line.lstrip().startswith("<!--"):
-            comment = "-->" not in line
-            continue
         delimiter = _FENCE.match(line)
         if fence is not None:
             if active:
@@ -37,6 +53,8 @@ def _check_bodies(body: str) -> tuple[str, ...]:
             ):
                 fence = None
             continue
+        line, comment = _without_comments(line, comment=comment)
+        delimiter = _FENCE.match(line)
         if delimiter is not None:
             fence = delimiter[1][0], len(delimiter[1])
             if active:

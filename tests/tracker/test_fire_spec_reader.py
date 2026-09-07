@@ -129,6 +129,8 @@ async def test_subject_changed_during_membership_read_does_not_mix_text_and_vers
         "```markdown\n**Check:** Example only.\n```",
         "~~~~\n**Check:** Example only.\n~~~~",
         "<!--\n**Check:** Hidden example.\n-->",
+        "**Check:** <!-- TODO: author the Check -->\n**Do:** Implement later.",
+        "**Check:** <!--\n**Do:** ignored -->\n**Evidence:** —",
         "> **Check:** A quoted example.",
         "    **Check:** An indented code example.",
         "**Check:** First.\n\n**Check:** A conflicting second field.",
@@ -164,6 +166,8 @@ async def test_missing_empty_or_ambiguous_check_refuses_at_the_spec_read(
         "<!-- persisted-identity -->\n\n**Check:** A behavior can be checked.",
         "```\n**Check:** Example only.\n```\n\n**Check:** The actual behavior.",
         "**Check:** Preserve this example.\n```\n**Check:** nested example\n```",
+        "**Check:** Keep <!-- private annotation --> visible behavior.",
+        "**Check:** <!--\n**Do:** ignored --> Visible behavior.\n\n**Evidence:** —",
     ],
 )
 async def test_check_content_is_read_without_rewriting_criterion_or_parent(
