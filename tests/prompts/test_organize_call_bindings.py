@@ -60,9 +60,7 @@ def variables(rubric: str = "Selected rubric") -> dict[str, object]:
     )
 
 
-def test_named_per_call_roster_is_disjoint_from_both_other_namespaces() -> (
-    None
-):
+def test_named_per_call_roster_is_disjoint_from_both_other_namespaces() -> None:
     assert set(variables()) == ORGANIZE_BINDINGS
     assert ORGANIZE_BINDINGS <= PER_CALL_VARIABLE_NAMES
     assert ORGANIZE_BINDINGS.isdisjoint(SET_FRAGMENT_NAMES)
