@@ -6,11 +6,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from kodezart.core.protocols import CheckChainRunner, GitService
-from kodezart.domain.errors import CheckChainExecutionError
+from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
 from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.union import (
     UnionCompositionResult,
     UnionLaneHead,
+    UnionMergeConflict,
     UnionScratchObservation,
 )
 
@@ -84,16 +85,29 @@ class UnionComposition:
                 if cancelled:
                     raise asyncio.CancelledError
                 for head in snapshot.lane_heads:
-                    _, cancelled = await _finish_owned(
-                        asyncio.create_task(
-                            self._git.merge_scratch_head(
-                                cwd=worktree,
-                                head_sha=head.head_sha,
-                                author_name=self._author_name,
-                                author_email=self._author_email,
+                    try:
+                        _, cancelled = await _finish_owned(
+                            asyncio.create_task(
+                                self._git.merge_scratch_head(
+                                    cwd=worktree,
+                                    head_sha=head.head_sha,
+                                    author_name=self._author_name,
+                                    author_email=self._author_email,
+                                )
                             )
                         )
-                    )
+                    except MergeConflictError as exc:
+                        if not exc.paths:
+                            raise
+                        return UnionCompositionResult(
+                            **snapshot.model_dump(exclude={"scratch_sha"}),
+                            scratch_sha=await self._git.current_sha(worktree),
+                            checks=None,
+                            merge_conflict=UnionMergeConflict(
+                                lane_key=head.lane_key,
+                                paths=exc.paths,
+                            ),
+                        )
                     if cancelled:
                         raise asyncio.CancelledError
                 if not repo.checks:
