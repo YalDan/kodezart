@@ -5,6 +5,7 @@ from typing import Annotated, Literal, Self
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.check_chain import CheckChainResult
 
 CommitSha = Annotated[str, Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")]
 
@@ -47,3 +48,13 @@ class UnionScratchObservation(CamelCaseModel):
     def composition_order(self) -> tuple[str, ...]:
         """The planner order, derived from the ordered measured head snapshot."""
         return tuple(head.lane_key for head in self.lane_heads)
+
+
+class UnionCompositionResult(UnionScratchObservation):
+    """A public scope-grain check observation available to any consumer.
+
+    No lane outcome is inferred or changed by this value. Terminal and
+    grading consumers can retain the same complete captured observation.
+    """
+
+    checks: CheckChainResult
