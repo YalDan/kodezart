@@ -523,3 +523,57 @@ async def test_count_adjectives_and_identifier_suffixes_are_distinct(
         content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is expected
+
+
+@pytest.mark.parametrize(
+    ("pattern", "reference"),
+    [(r"#\d+", "#42"), (r"ISSUE/\d+", "ISSUE/42")],
+)
+@pytest.mark.parametrize("noun_first", [False, True])
+async def test_configured_identifier_numbers_never_become_object_counts(
+    pattern: str,
+    reference: str,
+    noun_first: bool,
+) -> None:
+    config = AppConfig(
+        agentic_content_scanner_enabled=False,
+        aggregate_issue_identifier_pattern=pattern,
+    )
+    content = (
+        f"Issue {reference} explains the change."
+        if noun_first
+        else f"{reference} issue is already linked."
+    )
+    decision = await configured_gate(config).gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.CLEAN
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["3 ABC-42 issues", "issues ABC-42 3"],
+)
+async def test_a_reference_inside_the_configured_gap_does_not_hide_a_count(
+    content: str,
+) -> None:
+    gate = configured_gate(
+        AppConfig(
+            agentic_content_scanner_enabled=False,
+            aggregate_count_token_distance=2,
+        ),
+    )
+    decision = await gate.gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.BLOCKED
+    assert decision.categories == (DurabilityCategory.OBJECT_COUNT,)
+    assert [hit.matched_text for hit in decision.hits] == [content]

@@ -13,7 +13,7 @@ to cover.
 """
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 
 from kodezart.types.domain.gating import (
     UNCONDITIONAL_ROUTING,
@@ -23,6 +23,13 @@ from kodezart.types.domain.gating import (
     ScannerRouting,
     ScanResult,
 )
+
+
+def pattern_spans(pattern: re.Pattern[str], content: str) -> Iterator[tuple[int, int]]:
+    """The engine's non-empty matches, reusable before assigning a category."""
+    for match in pattern.finditer(content):
+        if match.end() > match.start():
+            yield match.start(), match.end()
 
 
 class RegexContentScanner[Category: ScanCategory]:
@@ -58,12 +65,11 @@ class RegexContentScanner[Category: ScanCategory]:
                 hits.extend(
                     ScanHit(
                         category=category,
-                        start=match.start(),
-                        end=match.end(),
+                        start=start,
+                        end=end,
                         rationale=None,
                     )
-                    for match in pattern.finditer(content)
-                    if match.end() > match.start()
+                    for start, end in pattern_spans(pattern, content)
                 )
         hits.sort(key=lambda hit: hit.sort_key())
         return ScanResult(hits=tuple(hits))
