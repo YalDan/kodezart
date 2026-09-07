@@ -401,3 +401,21 @@ def test_ruling_bound_is_environment_configured_and_nonnegative(
     assert AppConfig().run_alarm_max_rulings_without_closure == 3
     with pytest.raises(ValidationError):
         AppConfig(run_alarm_max_rulings_without_closure=-1)
+
+
+def test_omitted_authorship_cannot_inherit_machine_attribution() -> None:
+    row = ruling("x")
+    del row["authoredBy"]
+    with pytest.raises(RunShapeReadError):
+        count_alarm(ruling_inputs(rows=[row]))
+
+
+@pytest.mark.parametrize("was_completed", [False, True])
+def test_both_fire_observations_must_be_completed(was_completed: bool) -> None:
+    completed, opened = WorkflowStateKind.COMPLETED, WorkflowStateKind.STARTED
+    before = graph(fire_state=completed if was_completed else opened)
+    after = graph(
+        fire_state=opened if was_completed else completed,
+        children=(issue("NEW", opened, parent="FIRE"),),
+    )
+    assert graph_alarm(before, after) is None
