@@ -39,6 +39,7 @@ class SurfaceLeaseError(Exception):
         self.marker: str | None = surface.marker
         self.current_holder: str | None = current_holder
 
+
 class DuplicateCommentMarkerError(Exception):
     """Several comments claim the same first-line marker on one target."""
 
@@ -61,6 +62,19 @@ class StaleWriteError(Exception):
         super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
         self.target = target
         self.expected = expected
+
+
+class ScopeCycleError(Exception):
+    """A cycle in the scope's dependency graph prevents any plan being returned.
+
+    ``issue_keys`` is one offending directed cycle, without unrelated issues
+    that merely lead into it. No edge is removed or invented to produce an
+    order; the caller receives the tracker keys that require repair.
+    """
+
+    def __init__(self, *, issue_keys: Sequence[str]) -> None:
+        self.issue_keys: tuple[str, ...] = tuple(issue_keys)
+        super().__init__(f"scope dependency cycle: {', '.join(self.issue_keys)}")
 
 
 class ScopeReadError(Exception):

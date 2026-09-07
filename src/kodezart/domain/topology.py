@@ -3,6 +3,7 @@
 from collections.abc import Iterator, Mapping, Sequence
 
 from kodezart.domain.dispatch import blocker_keys, live_blocker
+from kodezart.domain.errors import ScopeCycleError
 from kodezart.types.domain.topology import BlockedIssue, ReadyIssue, TopologyPlan
 from kodezart.types.domain.tracker import TrackerIssue, is_open, priority_rank
 
@@ -30,8 +31,7 @@ def _acyclic_order(graph: Mapping[str, tuple[str, ...]]) -> tuple[str, ...]:
                 ordered.append(completed)
                 stack.pop()
             elif child in active:
-                cycle = (*path[path.index(child) :], child)
-                raise ValueError(f"scope dependency cycle: {' -> '.join(cycle)}")
+                raise ScopeCycleError(issue_keys=path[path.index(child) :])
             elif child not in visited:
                 path.append(child)
                 active.add(child)
