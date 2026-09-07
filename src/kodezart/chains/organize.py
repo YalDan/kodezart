@@ -12,7 +12,7 @@ from kodezart.core.protocols import (
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.domain.prompt_variables import organize_variables
-from kodezart.types.domain.agent import RaiseSite
+from kodezart.types.domain.agent import ORGANIZE_ADMISSION_SCHEMA, RaiseSite
 from kodezart.types.domain.organize import AdmissionResult, OrganizeAdmissionRequest
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
@@ -110,7 +110,7 @@ class OrganizeAdmission:
                     session_id=None,
                     output_format={
                         "type": "json_schema",
-                        "schema": AdmissionResult.model_json_schema(),
+                        "schema": ORGANIZE_ADMISSION_SCHEMA,
                     },
                 ),
                 site=site,
