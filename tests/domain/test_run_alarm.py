@@ -255,6 +255,18 @@ def test_readings_are_frozen_independently_of_the_input_list():
         alarm.raised_by = "changed"
 
 
+def test_reading_collection_cannot_be_changed_through_the_frozen_alarm():
+    alarm = RunAlarm.model_validate(alarm_data())
+    before = alarm.model_dump_json()
+    replacement = AlarmReading(source_ref="other/reading", value="changed")
+    with pytest.raises(TypeError):
+        alarm.readings[0] = replacement
+    assert alarm.model_dump_json() == before
+    with pytest.raises(ValidationError, match="frozen_instance"):
+        alarm.readings += (replacement,)
+    assert alarm.model_dump_json() == before
+
+
 def test_empty_read_value_is_a_valid_verbatim_reading():
     reading = AlarmReading(source_ref="record/empty", value="", at_sha=None)
     assert reading.value == ""
