@@ -107,9 +107,11 @@ class AuditClaimVerifier:
         try:
             if cancelled:
                 raise asyncio.CancelledError
-            if await self._git.current_sha(workspace) != head:
+            if await self._git.current_sha(
+                workspace
+            ) != head or await self._git.has_changes(workspace):
                 raise AuditClaimReadError(
-                    "the audit workspace is not at the selected head"
+                    "the audit workspace is not clean at the selected head"
                 )
             result, rate_limited = await drain(
                 self._runner.stream_in_workspace(
@@ -156,9 +158,10 @@ class AuditClaimVerifier:
                 )
                 != head
                 or await self._git.current_sha(workspace) != head
+                or await self._git.has_changes(workspace)
             ):
                 raise AuditClaimReadError(
-                    "the branch or workspace moved during verification"
+                    "the branch or workspace changed during verification"
                 )
             return AuditClaimObservation(
                 judgment=judgment,
