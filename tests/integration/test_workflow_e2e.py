@@ -38,6 +38,7 @@ from kodezart.types.domain.consolidation import (
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistSource
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -468,6 +469,7 @@ class _MarkerCapturingExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1621,6 +1623,7 @@ class _RoundStackingExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

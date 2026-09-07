@@ -39,6 +39,7 @@ from kodezart.types.domain.criteria import (
     CriterionVerdict,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -108,6 +109,7 @@ class ValidatorScriptExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

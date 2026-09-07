@@ -629,6 +629,14 @@ observed zero iterations is a number, while an unknown count is absent.
 The runner preserves `what_happened` for the session's account of its work.
 These properties are checked against the live schema before writing.
 
+Tracked fire sessions granted the knowledge server receive the `fire_record`
+prompt-set clause. The queue passes the original issue identity and submission
+time through ticket creation, execution, evaluation, and remediation, so each
+session appends its honest account to the same row the terminal runner fills.
+Identity-less HTTP execution keeps its existing behavior; it has no tracked
+Fire Log producer and receives no new Record contract. Scheduled sessions use
+their existing pass-specific Record clauses.
+
 **5. Write the operation config.** Copy
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
 field by field and covers every one — to `operation.toml` in the repository

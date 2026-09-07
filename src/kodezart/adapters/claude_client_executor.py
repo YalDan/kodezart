@@ -33,8 +33,10 @@ from kodezart.core.constants import STDERR_TAIL_BYTES
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.errors import OutputStyleNotConfirmedError
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent, SystemEvent
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -87,11 +89,13 @@ class ClaudeClientExecutor:
         model: str | None = None,
         setting_sources: list[SettingSource],
         knowledge_grant: KnowledgeGrant,
+        fire_record: PromptTemplate | None = None,
         output_style: str | None = None,
     ) -> None:
         self._model = model
         self._setting_sources = setting_sources
         self._knowledge_grant = knowledge_grant
+        self._fire_record = fire_record
         self._output_style = output_style
         self._log: BoundLogger = get_logger(__name__)
 
@@ -125,6 +129,7 @@ class ClaudeClientExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -173,6 +178,10 @@ class ClaudeClientExecutor:
             prompt,
             grant=self._knowledge_grant,
             attached=knowledge,
+            fire_record=(
+                self._fire_record if session_type is SessionType.TICKET_FIRE else None
+            ),
+            run_identity=run_identity,
         )
         try:
             async with ClaudeSDKClient(

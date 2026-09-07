@@ -265,6 +265,7 @@ def executor_for(
     *,
     model: str | None = None,
     output_style: str | None = None,
+    fire_record: PromptTemplate | None = None,
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("claude_client_executor"):
@@ -272,11 +273,13 @@ def executor_for(
             model=model,
             setting_sources=DEFAULT_SETTING_SOURCES,
             knowledge_grant=grant,
+            fire_record=fire_record,
             output_style=output_style,
         )
     return ClaudeAgentExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
         knowledge_grant=grant,
+        fire_record=fire_record,
     )
 
 
@@ -360,6 +363,8 @@ async def recorded_session(
     model: str | None = None,
     output_style: str | None = None,
     messages: Sequence[object] = (),
+    fire_record: PromptTemplate | None = None,
+    run_identity: RunIdentity | None = None,
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -369,7 +374,9 @@ async def recorded_session(
         if target == "ClaudeSDKClient"
         else _recording_query(recorded, messages)
     )
-    executor = executor_for(module, grant, model=model, output_style=output_style)
+    executor = executor_for(
+        module, grant, model=model, output_style=output_style, fire_record=fire_record
+    )
     events: list[AgentEvent] = []
 
     with patch(f"{module}.{target}", replacement):
@@ -380,6 +387,7 @@ async def recorded_session(
             allowed_tools=[],
             skills=skills,
             session_type=session_type,
+            run_identity=run_identity,
             agents=agents,
             session_policy=session_policy,
         ):
@@ -698,6 +706,7 @@ class FakeAgentExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -713,6 +722,7 @@ class FakeAgentExecutor:
                 "permission_mode": permission_mode,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         if self._is_branch_name_schema(output_format):
@@ -868,6 +878,7 @@ class FakeRaisingExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -935,6 +946,7 @@ class FakeChangePersister:
         backup_ref_id_prefix: str,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -1032,6 +1044,7 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1044,6 +1057,7 @@ class FakeAgentRunner:
                 "prompt": prompt,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         for event in self._events:
@@ -1062,6 +1076,7 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -1089,6 +1104,7 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1101,6 +1117,7 @@ class FakeAgentRunner:
                 "workspace_path": workspace_path,
                 "session_id": session_id,
                 "session_type": session_type,
+                "run_identity": run_identity,
                 "skills": skills,
                 "session_policy": session_policy,
             }
@@ -1142,6 +1159,7 @@ class ScriptedFakeExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1157,6 +1175,7 @@ class ScriptedFakeExecutor:
                 "permission_mode": permission_mode,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         if output_format is None:
@@ -1492,6 +1511,7 @@ class FakeQualityGate:
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -1509,6 +1529,7 @@ class FakeQualityGate:
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
                 "cache_key": cache_key,
+                "run_identity": run_identity,
             }
         )
         for event in self._events:
@@ -1604,6 +1625,7 @@ class FakeRemediator:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(request)
         yield WorkflowRemediationEvent(
@@ -1811,6 +1833,7 @@ class FakeTicketGenerator:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         base_branch: str,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -1819,6 +1842,7 @@ class FakeTicketGenerator:
                 "repo_path": repo_path,
                 "repo_url": repo_url,
                 "cache_key": cache_key,
+                "run_identity": run_identity,
                 "base_branch": base_branch,
             }
         )

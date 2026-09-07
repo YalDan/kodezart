@@ -38,6 +38,7 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
@@ -105,6 +106,7 @@ class RalphLoop:
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the quality-gating loop.
@@ -117,6 +119,7 @@ class RalphLoop:
             repo_path=repo_path,
             repo_url=repo_url,
             cache_key=cache_key,
+            run_identity=run_identity,
             base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
@@ -217,6 +220,7 @@ class RalphLoop:
             allowed_tools=ctx.allowed_tools,
             skills=self._prompts.session_skills(PromptKey.IMPLEMENTATION, self._skills),
             session_type=SessionType.TICKET_FIRE,
+            run_identity=ctx.run_identity,
             session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
             create_branch=is_first,
@@ -271,6 +275,7 @@ class RalphLoop:
                         PromptKey.EVALUATION, self._skills
                     ),
                     session_type=SessionType.TICKET_FIRE,
+                    run_identity=ctx.run_identity,
                     # Evaluative: no lens is dispatched from here. Asking a
                     # template not to fan out is a request; an empty
                     # definition list is a guarantee.

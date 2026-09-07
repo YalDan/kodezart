@@ -64,6 +64,7 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         {"content": AUDITED_PAYLOAD, "destination": AUDIT_DESTINATION},
     ),
     "knowledge_map": (PromptKey.KNOWLEDGE_MAP, {}),
+    "fire_record": (PromptKey.FIRE_RECORD, PER_RUN),
     "fire_prep_pass": (
         PromptKey.FIRE_PREP_PASS,
         pass_render_variables(PromptKey.FIRE_PREP_PASS),

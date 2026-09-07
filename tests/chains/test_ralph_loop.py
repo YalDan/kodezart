@@ -43,6 +43,7 @@ from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -257,6 +258,7 @@ async def test_loop_second_iteration_succeeds() -> None:
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -571,6 +573,7 @@ async def test_loop_re_evaluates_all_criteria_every_iteration(
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -721,6 +724,7 @@ async def test_evaluate_node_emits_workflowiteration_with_per_iter_commit_sha(
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1040,6 +1044,7 @@ async def test_no_structured_output_raises_with_ralph_evaluator_raise_site() -> 
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1107,6 +1112,7 @@ class _ScriptedLoopExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1653,6 +1659,7 @@ class _NonPermutationExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1951,6 +1958,7 @@ class _RejectedThenEvaluatingExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

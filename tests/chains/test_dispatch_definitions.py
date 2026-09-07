@@ -26,6 +26,7 @@ from kodezart.core.errors import NoStructuredOutputError
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -135,6 +136,7 @@ class RecordingRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -155,6 +157,7 @@ class RecordingRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -178,6 +181,7 @@ class RecordingRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
+        run_identity: RunIdentity | None = None,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,

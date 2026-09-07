@@ -14,6 +14,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent, AssistantTextEvent
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
@@ -66,6 +67,7 @@ class RecordingEngine:
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.scopes.append(scope)
         self.bases.append(base_spec)

@@ -19,6 +19,7 @@ from kodezart.types.domain.criteria import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
@@ -73,6 +74,7 @@ class WorkflowContext(CamelCaseModel):
     repo_path: str | None = None
     repo_url: str | None = None
     cache_key: str = Field(min_length=1)
+    run_identity: RunIdentity | None = None
     workspace_path: str | None = None
 
     @classmethod

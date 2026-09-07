@@ -44,6 +44,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.workflow import WorkflowSubmission
 from kodezart.types.requests.agent import WorkflowRequest
@@ -108,6 +109,7 @@ class GatedWorkflowEngine:
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.started.append(prompt)
         self.cache_keys.append(cache_key)
@@ -137,6 +139,7 @@ class ChattyWorkflowEngine:
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.cache_keys.append(cache_key)
         for event in self._events:
@@ -324,6 +327,7 @@ class GatedQualityGate:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls += 1
@@ -780,6 +784,7 @@ class RaisingWorkflowEngine:
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         for event in self._events:
             yield event
@@ -1624,6 +1629,7 @@ class BaseRecordingEngine:
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.base_specs.append(base_spec)
         self.implied.append(implied_base)

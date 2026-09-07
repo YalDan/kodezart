@@ -30,6 +30,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketReviewEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import AgentDefinition
@@ -163,6 +164,7 @@ class TicketGenerationLoop:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         base_branch: str,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the ticket generation loop.
@@ -217,6 +219,7 @@ class TicketGenerationLoop:
                 repo_path=repo_path,
                 repo_url=repo_url,
                 cache_key=cache_key,
+                run_identity=run_identity,
                 workspace_path=workspace_path,
             )
             configurable: dict[str, object] = ctx.model_dump()
@@ -312,6 +315,7 @@ class TicketGenerationLoop:
                     self._skills,
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=ctx.run_identity,
                 # Generative: the set's lenses are dispatchable from here.
                 agents=self._prompts.definitions(),
                 session_policy=self._prompts.session_policy(
@@ -390,6 +394,7 @@ class TicketGenerationLoop:
                     PromptKey.TICKET_REVIEW, self._skills
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=ctx.run_identity,
                 session_policy=self._prompts.session_policy(
                     PromptKey.TICKET_REVIEW,
                 ),

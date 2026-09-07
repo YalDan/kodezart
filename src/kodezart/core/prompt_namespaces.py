@@ -246,6 +246,9 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                 "name": entry.name,
                 "id": entry.id,
                 "append_only": entry.append_only,
+                "columns": (
+                    None if entry.columns is None else entry.columns.model_dump()
+                ),
             }
         )
         records_namespace[f"{kind.value}_absent"] = True if entry is None else None

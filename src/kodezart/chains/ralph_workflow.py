@@ -124,6 +124,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -230,6 +231,7 @@ class RalphWorkflowEngine:
         permission_mode: str,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the full workflow pipeline.
 
@@ -269,6 +271,7 @@ class RalphWorkflowEngine:
             repo_path=repo_path,
             repo_url=resolved_url,
             cache_key=cache_key,
+            run_identity=run_identity,
             base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
@@ -572,6 +575,7 @@ class RalphWorkflowEngine:
                     PromptKey.BRANCH_NAME, self._skills
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=ctx.run_identity,
                 session_policy=self._prompts.session_policy(PromptKey.BRANCH_NAME),
                 output_format={
                     "type": "json_schema",
@@ -621,6 +625,7 @@ class RalphWorkflowEngine:
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             cache_key=ctx.cache_key,
+            run_identity=ctx.run_identity,
             base_branch=ctx.base_branch,
         ):
             writer(event)
@@ -667,6 +672,7 @@ class RalphWorkflowEngine:
                     PromptKey.ACCEPTANCE_CRITERIA, self._skills
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=ctx.run_identity,
                 # Generative: the set's lenses are dispatchable from here.
                 agents=self._prompts.definitions(),
                 session_policy=self._prompts.session_policy(
@@ -753,6 +759,7 @@ class RalphWorkflowEngine:
                         PromptKey.CRITERIA_VALIDATION, self._skills
                     ),
                     session_type=SessionType.TICKET_FIRE,
+                    run_identity=ctx.run_identity,
                     agents=NO_SUBAGENTS,
                     session_policy=self._prompts.session_policy(
                         PromptKey.CRITERIA_VALIDATION,
@@ -856,6 +863,7 @@ class RalphWorkflowEngine:
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility,
     ) -> WorkflowIterationEvent:
         """Delegate to the quality gate for iterative execution."""
@@ -873,6 +881,7 @@ class RalphWorkflowEngine:
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
             cache_key=cache_key,
+            run_identity=run_identity,
             repo_visibility=repo_visibility,
         ):
             writer(event)
@@ -916,6 +925,7 @@ class RalphWorkflowEngine:
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=validated_criteria(state),
             cache_key=ctx.cache_key,
+            run_identity=ctx.run_identity,
             repo_visibility=state["repo_visibility"],
         )
 
@@ -1356,6 +1366,7 @@ class RalphWorkflowEngine:
                         PromptKey.POST_MERGE_REVIEW, self._skills
                     ),
                     session_type=SessionType.TICKET_FIRE,
+                    run_identity=ctx.run_identity,
                     agents=NO_SUBAGENTS,
                     session_policy=self._prompts.session_policy(
                         PromptKey.POST_MERGE_REVIEW,
@@ -1531,6 +1542,7 @@ class RalphWorkflowEngine:
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
             cache_key=ctx.cache_key,
+            run_identity=ctx.run_identity,
         ):
             writer(event)
             if isinstance(event, WorkflowRemediationEvent):
@@ -1657,6 +1669,7 @@ class RalphWorkflowEngine:
                     PromptKey.PR_DESCRIPTION, self._skills
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=ctx.run_identity,
                 session_policy=self._prompts.session_policy(
                     PromptKey.PR_DESCRIPTION,
                 ),

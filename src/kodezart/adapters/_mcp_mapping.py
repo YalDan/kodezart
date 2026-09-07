@@ -26,6 +26,8 @@ from claude_agent_sdk.types import (
     McpStdioServerConfig,
 )
 
+from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import (
     KnowledgeGrant,
     KnowledgeTransport,
@@ -200,6 +202,8 @@ def prompt_with_knowledge_map(
     *,
     grant: KnowledgeGrant,
     attached: McpSessionOptions,
+    fire_record: PromptTemplate | None = None,
+    run_identity: RunIdentity | None = None,
 ) -> str:
     """*prompt* preceded by the what-lives-where map, for a granted session.
 
@@ -215,4 +219,7 @@ def prompt_with_knowledge_map(
     """
     if not attached["mcp_servers"]:
         return prompt
+    if fire_record is not None and run_identity is not None:
+        clause = fire_record.render({"record_title": run_identity.title()})
+        return f"{grant.knowledge_map}\n\n{prompt}\n\n{clause}"
     return f"{grant.knowledge_map}\n\n{prompt}"
