@@ -119,7 +119,7 @@ async def test_the_session_can_read_each_fetched_asset() -> None:
         documents={SPEC_KEY: SPEC_CONTENT, NOTES_KEY: NOTES_CONTENT},
     )
     rendered = (await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)).render()
-    assert BODY in rendered
+    assert rendered.startswith(f"Tracker issue: {ISSUE}\n\n{BODY}\n\n")
     for key, title, content in (
         (SPEC_KEY, SPEC_TITLE, SPEC_CONTENT),
         (NOTES_KEY, NOTES_TITLE, NOTES_CONTENT),
@@ -132,7 +132,10 @@ async def test_a_ticket_with_no_assets_says_so_rather_than_saying_nothing() -> N
     """ "No assets" and "assets not fetched" must not look alike."""
     tracker = FakeTrackerPort(issues=[make_tracker_issue(ISSUE, body=BODY)])
     rendered = (await assembler(tracker).assemble(issue_key=ISSUE, body=BODY)).render()
-    assert "references no assets" in rendered
+    assert rendered == (
+        f"Tracker issue: {ISSUE}\n\n{BODY}\n\n"
+        "## Fetched assets\n\nThis ticket references no assets."
+    )
 
 
 # ---------------------------------------------------------------------------
