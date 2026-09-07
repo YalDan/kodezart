@@ -96,6 +96,7 @@ def context(**changes):
             "spec": AuthoredSpec(ticket=make_ticket_draft(title="Recorded work")),
             "criteria": tuple(make_criteria("Recorded criterion")),
             "total_iterations": 7,
+            "trajectory": None,
             "flagged_items": (FlaggedItem(summary="Recorded caveat"),),
             "visibility": RepoVisibility.PUBLIC,
             **changes,

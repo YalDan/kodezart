@@ -1,10 +1,10 @@
 # Delivery coordinator boundary
 
 `DeliveryCoordinator.deliver(dispatch, feature_branch=..., final_commit_sha=...,
-context=...)` creates or edits an accepted lane's pull request and observes its checks.
+context=...)` creates or edits a lane's pull request and observes its checks.
 `LaneDispatch` contains the lane key, issue identity, head branch and recorded
 `BaseSpec`. `DeliveryContext` supplies the existing execution context, fire
-outcome, `FireSpec`, criteria, iteration count, flags and repository visibility
+outcome, `FireSpec`, criteria, iteration count, nullable trajectory, flags and repository visibility
 used by the PR-description session. Authored calls supply
 `AuthoredSpec(ticket=...)` with validated authored criteria. Tracker calls supply
 the captured `TrackerSpec` and the criterion issues themselves, in its recorded
@@ -23,7 +23,8 @@ consumers in both shipped prompt sets against 192 prompt digests captured on the
 dispatch base, preserving the authored bytes without changing existing goldens.
 The branch-name input still belongs to its earlier dispatch stage.
 
-The common route accepts `handed_off_for_delivery`. It verifies that the
+The common route accepts `handed_off_for_delivery` and an authored
+`stalled_pr_opened` handoff carrying its original trajectory. It verifies that the
 execution carries the dispatched issue's FIRE run identity, that the
 terminal head and recorded base agree with the call, that both branches exist
 on the configured remote, and that the remote head still matches the fire's
@@ -34,6 +35,26 @@ after cleanup without replacing the original fire SHA or accepting later code
 changes. A missing ref raises `BaseResolutionError`; an inconsistent handoff
 raises `DeliveryContextError`. A dependent lane can open against its blocker's
 branch before that blocker has a PR.
+
+`DeliveryContext.from_terminal` copies the existing terminal outcome,
+iteration count and trajectory. It adds no terminal fields. An authored stalled
+handoff requires nonempty recorded work, known criterion identities and matching
+iteration/count facts. Its description is the existing factual stall report,
+with the observed published head SHA after the ordinary artifact cleanup. No
+description session runs on this path. Both presentations pass through the same
+title/body gate, PR create-or-edit route and check watcher. The required stalled
+title prefix and report heading must survive gating and the final PR read;
+failure refuses publication or its successful result without appending ungated
+content. Completed green/no-CI checks retain `stalled_pr_opened`, including after
+runner-flake recovery: successful checks do not establish acceptance criteria.
+
+The existing fire still opens its stalled PR before this boundary; consuming
+that real terminal therefore edits the existing PR and then watches it. The
+native boundary also covers creation after a successful empty lookup. Moving
+that first PR-opening act out of the fire remains separate integration work.
+Tracker stalled handoffs refuse before lookup because their trajectory producer
+does not yet carry tracker criterion identities; no authored AC ids are minted
+for those references.
 
 The existing `ForgeQuery` is a separate required read dependency. After the
 handoff identity is validated, the coordinator looks up the open PR for that
@@ -126,6 +147,7 @@ during watching cannot produce a stale successful result.
 | Checks pass | Open PR and `ci_passed` |
 | No checks, and the adapter confirms no active workflow declaration | Open PR and `ci_not_configured`, retaining `checks_passed=None` |
 | Red checks that recover at the same commit | Ordinary green/no-CI result after bounded rerun |
+| Authored stalled handoff whose ordinary green/no-CI route completes | Open PR and `stalled_pr_opened`, retaining the observed check result |
 | Reproduced, prerequisite-unmet or unclassified red, or no checks despite an active declaration | `DeliveryRouteUnavailableError` carrying the observed PR and check facts |
 | Any other fire outcome | `DeliveryRouteUnavailableError` before writes |
 | Failed forge or declaration read | The adapter's typed refusal propagates |
@@ -136,7 +158,7 @@ a residual was published.
 
 This boundary is callable independently; scope-walker dispatch and application
 composition are not connected yet. The legacy fire graph still owns its prior
-PR/check nodes until that extraction is completed. Stalled-fire handoff,
+PR/check nodes until that extraction is completed. Tracker stalled trajectories,
 the shared remediation loop, durable residual publication, and declared-no-run
 exemption/close-out remain unfinished.
 Tracker fire entry, approval/state eligibility, per-iteration criterion queries
