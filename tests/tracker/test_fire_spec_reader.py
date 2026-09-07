@@ -4,7 +4,11 @@ from datetime import timedelta
 
 import pytest
 
-from kodezart.domain.errors import CriterionReadError, EmptyFireCriteriaError
+from kodezart.domain.errors import (
+    CriterionReadError,
+    EmptyFireCriteriaError,
+    InvalidFireCriterionError,
+)
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.fire_spec import TrackerSpec
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue, FakeTrackerPort
@@ -113,3 +117,88 @@ async def test_subject_changed_during_membership_read_does_not_mix_text_and_vers
     assert spec.body == BODY
     assert spec.read_at_version == FIXTURE_NOW.isoformat()
     assert server.issues[SUBJECT].description == "A later amendment."
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "",
+        "The criterion title and prose cannot substitute for its Check field.",
+        "**Check:**\n\n**Do:** Build it.\n\n**Evidence:** sha + test",
+        "**Check:**  \n\t\n**Class:** hard",
+        "```markdown\n**Check:** Example only.\n```",
+        "~~~~\n**Check:** Example only.\n~~~~",
+        "<!--\n**Check:** Hidden example.\n-->",
+        "> **Check:** A quoted example.",
+        "    **Check:** An indented code example.",
+        "**Check:** First.\n\n**Check:** A conflicting second field.",
+    ],
+)
+async def test_missing_empty_or_ambiguous_check_refuses_at_the_spec_read(
+    tracker, server, tracker_writes, body
+):
+    if isinstance(tracker, FakeTrackerPort):
+        tracker.issues[CRITERION] = tracker.issues[CRITERION].model_copy(
+            update={"body": body}
+        )
+    else:
+        server.issues[CRITERION].description = body
+    before = tracker_writes()
+    with pytest.raises(InvalidFireCriterionError) as raised:
+        await tracker.read_fire_spec(issue_key=SUBJECT)
+    assert raised.value.issue_key == SUBJECT
+    assert raised.value.criterion_key == CRITERION
+    assert tracker_writes() == before
+    assert [
+        criterion.issue_key
+        for criterion in await tracker.read_criteria(issue_key=SUBJECT)
+    ] == [CRITERION]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "**Check:** A behavior can be checked.",
+        "**Check:**\nA behavior can be checked.\n\nAnother paragraph.\n\n**Do:** Act.",
+        "**Do:** Act.\n\n**Check:** A behavior can be checked.\n\n**Evidence:** —",
+        "<!-- persisted-identity -->\n\n**Check:** A behavior can be checked.",
+        "```\n**Check:** Example only.\n```\n\n**Check:** The actual behavior.",
+        "**Check:** Preserve this example.\n```\n**Check:** nested example\n```",
+    ],
+)
+async def test_check_content_is_read_without_rewriting_criterion_or_parent(
+    tracker, server, tracker_writes, body
+):
+    if isinstance(tracker, FakeTrackerPort):
+        tracker.issues[CRITERION] = tracker.issues[CRITERION].model_copy(
+            update={"body": body}
+        )
+    else:
+        server.issues[CRITERION].description = body
+    before = tracker_writes()
+    spec = await tracker.read_fire_spec(issue_key=SUBJECT)
+    assert spec.criteria == (CRITERION,)
+    assert spec.body == BODY
+    assert (await tracker.read_issue(issue_key=CRITERION)).body == body
+    assert tracker_writes() == before
+
+
+async def test_unknown_backend_state_refuses_at_spec_read_without_guessing_by_name():
+    server = FakeLinearMcpServer(
+        issues=[
+            FakeMcpIssue(id=SUBJECT, description=BODY),
+            FakeMcpIssue(
+                id=CRITERION,
+                parent_id=SUBJECT,
+                labels=[LABEL],
+                description="**Check:** The behavior can be checked.",
+                status="Done",
+                status_type="unknown-backend-state",
+            ),
+        ]
+    )
+    with pytest.raises(CriterionReadError) as raised:
+        await tracker_over(server).read_fire_spec(issue_key=SUBJECT)
+    assert raised.value.__cause__ is not None
+    assert "no domain mapping" in str(raised.value.__cause__)
+    assert not server.tool_calls("save_issue")

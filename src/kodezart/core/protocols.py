@@ -733,9 +733,9 @@ class TrackerPort(Protocol):
     async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
         """Capture the subject once and read its full criterion membership.
 
-        Empty membership raises at this read boundary. This captures source
-        text and provenance; staging approval remains a separate admission
-        requirement and is never inferred from the existence of criteria.
+        Empty membership or missing Check content raises at this boundary.
+        This captures source text and provenance; staging approval and
+        criterion-state eligibility remain separate admission requirements.
         """
         ...
 

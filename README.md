@@ -384,8 +384,12 @@ An empty set is a successful read; incomplete or failed reads raise an error.
 
 `read_fire_spec` captures the subject's body and version once, with its
 criterion sub-issue keys, and raises `EmptyFireCriteriaError` if that query
-finds none. This source read does not grant staging approval or authorize
-scope execution; the current workflow boundary continues to refuse it.
+finds none. A criterion without one nonempty Check field raises
+`InvalidFireCriterionError`; unknown backend workflow states retain the
+typed read failure. Declared states are decoded without deciding their
+eligibility for a fire. This source read does not grant staging approval
+or authorize scope execution; the current workflow boundary continues to
+refuse it.
 
 `set_issue_classification` adds a configured semantic issue classification
 without replacing approval or unrelated labels; an identical replay writes
