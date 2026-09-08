@@ -15,9 +15,17 @@ class RemovedSourceQuote(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    path: str = Field(min_length=1)
-    line: int = Field(ge=1, strict=True)
-    text: str = Field(min_length=1, pattern=r"\S")
+    path: str = Field(
+        min_length=1, description="Canonical repository-relative source path."
+    )
+    line: int = Field(
+        ge=1, strict=True, description="One-based line where the exact excerpt starts."
+    )
+    text: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="Exact source excerpt at the recorded grading revision.",
+    )
 
     @model_validator(mode="after")
     def canonical_path(self) -> Self:
@@ -37,8 +45,12 @@ class DeletedDetectionFinding(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    mechanism: RemovedSourceQuote
-    detector: RemovedSourceQuote
+    mechanism: RemovedSourceQuote = Field(
+        description="The removed mechanism at the recorded grading revision."
+    )
+    detector: RemovedSourceQuote = Field(
+        description="The removed detector that witnessed the mechanism's absence."
+    )
     absence_demonstration: str = Field(
         min_length=1,
         pattern=r"\S",
@@ -54,15 +66,24 @@ class DetectorRemovalJudgment(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    criterion_key: CriterionRef = Field(min_length=1)
+    criterion_key: CriterionRef = Field(
+        min_length=1,
+        description="Exact native criterion identity dispatched for this judgment.",
+    )
     verdict: AuditVerdict = Field(
         description=(
             "Refuted only for lost effective detection; holds when this arm finds "
             "none; unverifiable when the comparison cannot be established."
         )
     )
-    evidence: str = Field(min_length=1, pattern=r"\S")
-    findings: tuple[DeletedDetectionFinding, ...]
+    evidence: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="Current repository evidence supporting this verdict.",
+    )
+    findings: tuple[DeletedDetectionFinding, ...] = Field(
+        description="Demonstrated losses of effective detection; empty unless refuted."
+    )
 
     @model_validator(mode="after")
     def findings_match_verdict(self) -> Self:
