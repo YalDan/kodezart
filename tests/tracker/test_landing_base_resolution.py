@@ -66,3 +66,32 @@ async def test_recorded_landed_blockers_contribute_nothing_before_any_git_read(
     assert result.inputs == ()
     assert git.calls == []
     assert tracker_writes() == before
+
+
+@pytest.mark.parametrize(
+    "retained", [WorkRefLanding.NOT_LANDED, WorkRefLanding.UNKNOWN]
+)
+@pytest.mark.parametrize("landed_key", [CLAIMED_ISSUE, ASSET_ISSUE])
+async def test_mixed_inputs_select_only_the_unlanded_record(
+    tracker, tracker_writes, blockers, retained, landed_key
+):
+    remaining = next(key for key in blockers if key != landed_key)
+    await record(tracker, landed_key, landing=WorkRefLanding.LANDED)
+    await record(tracker, remaining, landing=retained, sha="retained-head")
+    git = FakeGitService(
+        remote_branch_shas={
+            f"work/{landed_key}": None,
+            f"work/{remaining}": "retained-head",
+        }
+    )
+    before = tracker_writes()
+    result = await resolve(tracker, git)
+    assert result.base_branch == f"work/{remaining}"
+    assert result.base_role is WorkRefRole.DELIVERABLE
+    assert [
+        (item.blocker_issue_id, item.branch, item.sha) for item in result.inputs
+    ] == [(remaining, f"work/{remaining}", "retained-head")]
+    assert len(git.calls) == 1
+    assert git.calls[0][0] == "remote_branch_sha"
+    assert git.calls[0][-1] == f"work/{remaining}"
+    assert tracker_writes() == before
