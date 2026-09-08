@@ -1,5 +1,6 @@
 """Shared audit execution keeps fresh-context and owned-workspace boundaries."""
 
+from copy import deepcopy
 from functools import partial
 from unittest.mock import AsyncMock
 
@@ -49,6 +50,7 @@ def invoke(session, **changes):
 
 
 async def test_success_keeps_exact_input_and_fresh_read_only_session(session):
+    expected_schema = deepcopy(AUDIT_CLAIM_SCHEMA)
     assert await invoke(session) == {"fresh": "observation"}
     args = session._runner.arguments
     assert args["session_id"] is None
@@ -56,10 +58,9 @@ async def test_success_keeps_exact_input_and_fresh_read_only_session(session):
     assert args["allowed_tools"] == EVAL_TOOLS
     assert args["agents"] == NO_SUBAGENTS
     assert args["prompt"] == "Fresh current source only."
-    assert args["output_format"] == {
-        "type": "json_schema",
-        "schema": AUDIT_CLAIM_SCHEMA,
-    }
+    assert args["output_format"] == {"type": "json_schema", "schema": expected_schema}
+    assert args["output_format"]["schema"] is AUDIT_CLAIM_SCHEMA
+    assert AUDIT_CLAIM_SCHEMA == expected_schema
     assert session._workspace.calls == [
         ("acquire", "/tmp/fake-cache", HEAD),
         ("release", "/tmp/fake-workspace"),

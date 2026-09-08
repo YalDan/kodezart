@@ -6,6 +6,7 @@ import pytest
 
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import AuditEvidenceReadError
+from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.lane_records import LaneRecordReader
 from tests.tracker import test_audit_evidence as fixtures
@@ -121,3 +122,27 @@ async def test_missing_evidence_is_never_a_current_head_default(setup, tracker):
     with pytest.raises(AuditEvidenceReadError):
         await source.read(fixtures.REQUEST)
     assert source._cache.calls == [] and source._git.calls == []
+
+
+async def test_valid_same_comment_replacement_invalidates_the_original_snapshot(
+    setup, tracker
+):
+    source = reader(setup, tracker)
+    snapshot = await source.read(fixtures.REQUEST)
+    changed = snapshot.record.model_copy(update={"files_changed": 17})
+    marker, payload = render_lane_record(
+        record=changed, marker_prefixes=fixtures.PREFIXES
+    ).split("\n", 1)
+    replacement = await tracker.upsert_comment(
+        target=fixtures.ROOT, marker=marker, body=payload
+    )
+    assert replacement.comment_key == snapshot.comment.comment_key
+    current, decoded = await source._records.read(
+        issue_key=fixtures.ROOT,
+        lane_key=fixtures.REQUEST.lane_key,
+        record_ref=replacement.comment_key,
+    )
+    assert current == replacement and decoded.files_changed == 17
+    assert decoded != snapshot.record
+    with pytest.raises(AuditEvidenceReadError, match="lane record changed"):
+        await source.require_unchanged(snapshot)

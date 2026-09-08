@@ -4857,7 +4857,7 @@ def _dispatch_sites() -> list[tuple[str, str]]:
     sites: list[tuple[str, str]] = []
     for path in sorted(root.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
-        if ".template_for(" not in source:
+        if ".template_for(" not in source and ".session_policy(" not in source:
             continue
         for opener in (".stream(", ".stream_in_workspace(", ".stream_workflow("):
             start = 0
@@ -4872,6 +4872,7 @@ def _dispatch_sites() -> list[tuple[str, str]]:
 KEYED_DISPATCH_COUNTS = {
     "tracker_feasibility.py": 1,
     "audit_pass.py": 2,
+    "audit_sessions.py": 1,
     "write_back_verifier.py": 1,
     "delivery_coordinator.py": 1,
     "agent_content_scanner.py": 1,

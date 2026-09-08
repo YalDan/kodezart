@@ -1,6 +1,7 @@
 """Canceled audit sessions release the actual detached worktree they acquired."""
 
 import asyncio
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,12 @@ async def test_repeated_cancellation_settles_native_worktree(
         await asyncio.wait_for(entered.wait(), 5)
         assert len(acquired) == 1 and Path(acquired[0]).is_dir()
         assert await native.current_sha(acquired[0]) == head
+        branch = subprocess.run(
+            ["git", "symbolic-ref", "-q", "HEAD"],
+            cwd=acquired[0],
+            capture_output=True,
+        )
+        assert branch.returncode == 1, "the audit worktree must be detached"
         task.cancel()
         await asyncio.sleep(0)
         task.cancel()
