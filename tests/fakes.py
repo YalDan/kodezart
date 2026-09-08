@@ -2508,6 +2508,7 @@ class FakeLinearMcpServer:
         state_types: Mapping[str, str] | None = None,
         actor: str = "fixture-actor",
         comment_instants: Sequence[datetime] = (),
+        comment_clock: Callable[[], datetime] | None = None,
         projects: Mapping[str, Mapping[str, object]] | None = None,
         transient_failures: Mapping[str, int] | None = None,
         transport_failures: Mapping[str, int] | None = None,
@@ -2550,6 +2551,19 @@ class FakeLinearMcpServer:
         self.actor: str = actor
         self.calls: list[tuple[str, Mapping[str, object]]] = []
         self.comment_instants: list[datetime] = list(comment_instants)
+        #: The backend's OWN clock, which is the only reading of "when"
+        #: an ownership arbitration is allowed to use.  A double whose
+        #: comment stamps ran on an epoch of their own could not model
+        #: the arbitration at all: every grant would read lapsed against
+        #: a holder clock months away from it.  Stamps follow this clock
+        #: and are strictly increasing, because the vendor orders
+        #: creations and a fixture that tied them all would settle no
+        #: race.
+        self._comment_clock: Callable[[], datetime] = (
+            comment_clock if comment_clock is not None else lambda: FIXTURE_EPOCH
+        )
+        self._stamps: int = 0
+        self._stamped: datetime | None = None
         self._transient_failures: dict[str, int] = dict(transient_failures or {})
         self._transport_failures: dict[str, int] = dict(transport_failures or {})
         #: Tools that answer with an error RESULT, and the diagnosis each
@@ -2627,11 +2641,31 @@ class FakeLinearMcpServer:
         return [args for tool, args in self.calls if tool == name]
 
     def _next_instant(self) -> datetime:
-        if self.comment_instants:
-            return self.comment_instants[
-                min(self._sequence, len(self.comment_instants) - 1)
-            ]
         return FIXTURE_EPOCH + timedelta(seconds=self._sequence)
+
+    def _comment_stamp(self) -> datetime:
+        """The instant the backend puts on one comment write.
+
+        Stated instants, when a case states them, in the order the writes
+        land — a case that needs two writes to share an instant, or one to
+        land late, says so here.  Otherwise the backend's own clock, never
+        repeating: a listing the vendor orders by creation cannot answer
+        two creations with one place.
+        """
+        if self.comment_instants:
+            stamp = self.comment_instants[
+                min(self._stamps, len(self.comment_instants) - 1)
+            ]
+        else:
+            now = self._comment_clock()
+            stamp = (
+                now
+                if self._stamped is None
+                else max(now, self._stamped + FIXTURE_WRITE_STEP)
+            )
+        self._stamps += 1
+        self._stamped = stamp
+        return stamp
 
     def _issue(self, arguments: Mapping[str, object], key: str) -> FakeMcpIssue:
         issue_key = str(arguments[key])
@@ -2759,7 +2793,7 @@ class FakeLinearMcpServer:
                     # moves: the order the claim depends on is the first
                     # stamp, and when a body last changed is the second.
                     existing.body = str(arguments["body"])
-                    existing.updated_at = self._next_instant()
+                    existing.updated_at = self._comment_stamp()
                     self._moved(existing.issue_id)
                     return existing.wire()
             raise KeyError(f"no comment {comment_id} to update")
@@ -2772,7 +2806,7 @@ class FakeLinearMcpServer:
             issue_id = parent.issue_id
         else:
             issue_id = self._comment_parent(arguments)
-        created_at = self._next_instant()
+        created_at = self._comment_stamp()
         self._sequence += 1
         comment = FakeMcpComment(
             id=f"comment-{self._sequence:04d}",

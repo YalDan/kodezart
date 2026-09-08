@@ -18,9 +18,9 @@ Live only (``pytest -m live``): it dials the operator's tracker.
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -34,7 +34,12 @@ from kodezart.composition.tracker import (
 )
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
-from kodezart.core.protocols import ManagedMcpToolCaller, TrackerPort
+from kodezart.core.protocols import (
+    ManagedMcpToolCaller,
+    McpToolCaller,
+    McpToolResult,
+    TrackerPort,
+)
 from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -75,6 +80,13 @@ LEASE_SECONDS = 120.0
 #: this is the probe's choice and not a deployment's.
 SHORT_LEASE_SECONDS = 60.0
 
+#: How long one creation is made to take to reach the backend, and how
+#: far past its own deadline the renewal that follows it lands. The
+#: refuted arithmetic read the first as a clock offset and handed the
+#: holder immunity worth exactly that much, so a renewal inside this
+#: window is the interleaving that broke it.
+LANDING_DELAY_SECONDS = 7.0
+
 ORDER_MARKERS = 8
 ORDER_READS = 3
 
@@ -96,6 +108,34 @@ def _ids(comment_keys: Sequence[str]) -> str:
     return "[" + ", ".join(comment_keys) + "]" if comment_keys else "[none]"
 
 
+class SlowToLand:
+    """Delay one creation on its way to the backend, when a case arms it.
+
+    A write that takes seconds to land is the interleaving this probe
+    exists to run: the backend stamps the marker that much after the
+    holder began the call, so the difference between the two readings is
+    the skew PLUS the delay. Armed for exactly one creation, so every
+    other case dials the untouched session.
+    """
+
+    def __init__(self, through: ManagedMcpToolCaller) -> None:
+        self._through = through
+        self.arm_seconds: float = 0.0
+        self.landed: float = 0.0
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        if name == "save_comment" and "id" not in arguments and self.arm_seconds:
+            delay, self.arm_seconds = self.arm_seconds, 0.0
+            began = datetime.now(UTC)
+            await asyncio.sleep(delay)
+            result = await self._through.call_tool(name=name, arguments=arguments)
+            self.landed = (datetime.now(UTC) - began).total_seconds()
+            return result
+        return await self._through.call_tool(name=name, arguments=arguments)
+
+
 @dataclass
 class Ownership:
     """Two deployments over one board, and the issue they contend for."""
@@ -103,6 +143,7 @@ class Ownership:
     first: TrackerPort
     second: TrackerPort
     caller: ManagedMcpToolCaller
+    slow: SlowToLand
     issue_key: str
     run_id: str
 
@@ -146,7 +187,11 @@ def _probe_operation() -> OperationConfig:
     )
 
 
-async def _dial(operation: OperationConfig) -> tuple[TrackerPort, ManagedMcpToolCaller]:
+async def _dial(
+    operation: OperationConfig,
+    *,
+    wrap: Callable[[ManagedMcpToolCaller], McpToolCaller] | None = None,
+) -> tuple[TrackerPort, ManagedMcpToolCaller]:
     """The shipped adapter over a real session, and nothing else.
 
     Deliberately not the deployment boot: that reconciles every declared
@@ -169,7 +214,7 @@ async def _dial(operation: OperationConfig) -> tuple[TrackerPort, ManagedMcpTool
             initial_delay=config.tracker.retry_backoff_factor,
         ),
         operation=operation,
-        caller=caller,
+        caller=caller if wrap is None else wrap(caller),
     )
     return tracker, caller
 
@@ -212,7 +257,13 @@ async def ownership() -> AsyncIterator[Ownership]:
     """Two adapter instances over two sessions, and a swept probe issue."""
     operation = _probe_operation()
     run_id = uuid.uuid4().hex[:8]
-    first, first_caller = await _dial(operation)
+    slow: list[SlowToLand] = []
+
+    def delaying(caller: ManagedMcpToolCaller) -> McpToolCaller:
+        slow.append(SlowToLand(caller))
+        return slow[-1]
+
+    first, first_caller = await _dial(operation, wrap=delaying)
     second, second_caller = await _dial(operation)
     issue_key = await _probe_issue(first)
     assert issue_key, "the probe has no issue to write to"
@@ -220,6 +271,7 @@ async def ownership() -> AsyncIterator[Ownership]:
         first=first,
         second=second,
         caller=first_caller,
+        slow=slow[0],
         issue_key=issue_key,
         run_id=run_id,
     )
@@ -396,6 +448,152 @@ async def test_a_delayed_renewal_after_expiry_reports_lost(
     assert held.holder == holder_b
     # The lapsed holder took its own marker down on the way out, so the
     # board advertises exactly the one holder that owns the issue.
+    assert len(standing) == 1
+    await ownership.second.release_claim(issue_key=ownership.issue_key, holder=holder_b)
+
+
+async def test_an_edit_keeps_its_place_and_moves_the_stamp_that_dates_it(
+    ownership: Ownership,
+) -> None:
+    """The raw material of the fence, measured rather than assumed.
+
+    Ownership is decided by the backend's own stamps: the creation a
+    marker is ordered by, and the update its last write is dated by. A
+    backend that moved the first, or did not move the second, could not
+    carry the arithmetic at all. Read off the vendor's own payload rather
+    than the port's projection, which keeps only the creation.
+    """
+    written = await ownership.first.post_comment(
+        issue_key=ownership.issue_key, body=f"probe {ownership.run_id} edit before"
+    )
+
+    async def stamps() -> tuple[datetime, datetime]:
+        answer = await ownership.caller.call_tool(
+            name="list_comments", arguments={"issueId": ownership.issue_key}
+        )
+        assert isinstance(answer, Mapping)
+        entries = answer["comments"]
+        assert isinstance(entries, list)
+        found = [
+            entry
+            for entry in entries
+            if isinstance(entry, Mapping) and entry["id"] == written.comment_key
+        ]
+        assert len(found) == 1
+        return (
+            datetime.fromisoformat(str(found[0]["createdAt"])),
+            datetime.fromisoformat(str(found[0]["updatedAt"])),
+        )
+
+    created, dated = await stamps()
+    await asyncio.sleep(1)
+    await ownership.caller.call_tool(
+        name="save_comment",
+        arguments={
+            "id": written.comment_key,
+            "body": f"probe {ownership.run_id} edit after",
+        },
+    )
+    created_after, dated_after = await stamps()
+
+    record(
+        probe=PROBE,
+        question="does an edit keep a comment's place and move its stamp?",
+        configuration=f"{ownership.issue_key}, one comment, one edit by id",
+        observed=(
+            f"comment {written.comment_key}; "
+            f"createdAt kept {created_after == created}; "
+            f"updatedAt moved {dated_after > dated} by "
+            f"{(dated_after - dated).total_seconds():+.3f}s; "
+            f"creation to first update {(dated - created).total_seconds():+.3f}s"
+        ),
+        verdict=(
+            "orderable"
+            if created_after == created and dated_after > dated
+            else "NOT ORDERABLE"
+        ),
+    )
+
+    assert created_after == created
+    assert dated_after > dated
+    await ownership.caller.call_tool(
+        name="delete_comment", arguments={"id": written.comment_key}
+    )
+
+
+async def test_a_grant_that_lands_late_gains_no_immunity_from_the_fence(
+    ownership: Ownership,
+) -> None:
+    """The interleaving that refuted the round before this one, run live.
+
+    A's own creation is made to take seconds to reach the backend, so the
+    backend's reading of that write is the skew PLUS that delay away from
+    A's. The refuted arithmetic read the difference as a clock offset and
+    let A's renewal land that much past its deadline and still be in
+    force. Here the renewal is deliberately landed INSIDE that window:
+    after the deadline the creation bought, and before the deadline plus
+    the delay. It must renew nothing, and B must be the only owner.
+    """
+    holder_a, holder_b = ownership.holders
+    ownership.slow.arm_seconds = LANDING_DELAY_SECONDS
+    began = datetime.now(UTC)
+    granted = await ownership.first.claim_issue(
+        issue_key=ownership.issue_key,
+        holder=holder_a,
+        lease_seconds=SHORT_LEASE_SECONDS,
+    )
+    assert granted.status is ClaimStatus.GRANTED
+    stamped = [
+        comment.created_at
+        for comment in await ownership.first.list_comments(
+            issue_key=ownership.issue_key
+        )
+        if ownership.run_id in comment.body
+    ]
+    assert len(stamped) == 1
+    landed = (stamped[0] - began).total_seconds()
+    deadline = stamped[0] + timedelta(seconds=SHORT_LEASE_SECONDS)
+    await asyncio.sleep(max((deadline - datetime.now(UTC)).total_seconds(), 0.0) + 1.0)
+    replacement = await ownership.second.claim_issue(
+        issue_key=ownership.issue_key,
+        holder=holder_b,
+        lease_seconds=LEASE_SECONDS,
+    )
+    stale = await ownership.first.renew_claim(
+        issue_key=ownership.issue_key,
+        holder=holder_a,
+        lease_seconds=LEASE_SECONDS,
+    )
+    late = (datetime.now(UTC) - deadline).total_seconds()
+    held = await ownership.second.active_claim(issue_key=ownership.issue_key)
+    standing = await ownership.markers()
+
+    record(
+        probe=PROBE,
+        question="does a grant whose creation lands late gain fence immunity?",
+        configuration=(
+            f"{ownership.issue_key}, creation delayed {LANDING_DELAY_SECONDS:g}s, "
+            f"lease {SHORT_LEASE_SECONDS:g}s, renewal landed inside the "
+            "window the refuted arithmetic would have granted"
+        ),
+        observed=(
+            f"creation landed {landed:+.3f}s after the call began; "
+            f"replacement {replacement.status.value}; "
+            f"renewal {late:+.3f}s past the deadline "
+            f"(immunity window {LANDING_DELAY_SECONDS:g}s) -> "
+            f"{'None' if stale is None else stale.status.value}; "
+            f"active claim {None if held is None else held.holder}; "
+            f"markers standing {_ids(standing)}"
+        ),
+        verdict="no immunity" if stale is None else "IMMUNE",
+    )
+
+    assert landed >= LANDING_DELAY_SECONDS
+    assert 0.0 < late < LANDING_DELAY_SECONDS
+    assert replacement.status is ClaimStatus.GRANTED
+    assert stale is None
+    assert held is not None
+    assert held.holder == holder_b
     assert len(standing) == 1
     await ownership.second.release_claim(issue_key=ownership.issue_key, holder=holder_b)
 

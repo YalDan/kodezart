@@ -1,5 +1,7 @@
 """Nondefault prefixes reach the real adapter through production composition."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from kodezart.composition.tracker import build_tracker
@@ -50,7 +52,10 @@ async def test_all_existing_marker_carriers_use_the_injected_operation_mapping()
             "repository": "different.repository",
         },
     )
-    server = fixture_server()
+    # Composition gives the adapter the deployment's own clock, so the
+    # backend this case dials has to be on one too: ownership is decided
+    # by the stamps it puts on writes.
+    server = fixture_server(clock=lambda: datetime.now(UTC))
     config = AppConfig()
     tracker, _ = build_tracker(
         backend=config.tracker.backend,

@@ -34,6 +34,66 @@ LEASE_SECONDS = 60.0
 #: cases that turn on that distinction state both clocks and this offset.
 SERVER_SKEW = timedelta(seconds=0.5)
 
+#: How long one write is made to take to reach the backend, in a case
+#: about a write that takes a long time to reach the backend.  Two orders
+#: of magnitude above the skew, because the refutation this module pins
+#: was that a slow write bought its holder immunity worth exactly this.
+LANDING_DELAY = timedelta(seconds=7)
+
+
+class _Board:
+    """One backend, one clock the holders read, and the offset between.
+
+    The backend stamps every write it accepts, and those stamps are what
+    ownership is decided by; the holders read a clock of their own that
+    runs ``SERVER_SKEW`` behind it.  Both are stated because a case about
+    a renewal that lands late is a case about the difference between them.
+    """
+
+    def __init__(self) -> None:
+        self.now = FIXTURE_NOW
+        self.server = fixture_server(clock=lambda: self.now + SERVER_SKEW)
+
+    def clock(self) -> datetime:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds)
+
+    def holder(self, *, caller: object | None = None) -> LinearMcpTracker:
+        return tracker_over(
+            self.server,
+            caller=self.server if caller is None else caller,
+            clock=self.clock,
+        )
+
+
+class _SlowToLand:
+    """Make one creation take *delay* to reach the backend.
+
+    Time passes between the holder deciding to grant and the backend
+    stamping the write, which is what "the create landed late" is: the
+    difference between a holder's reading and the backend's is then the
+    skew PLUS that delay, and a fence that treated it as a clock offset
+    handed the holder exactly this much immunity.
+    """
+
+    def __init__(
+        self, board: _Board, *, delay: timedelta, through: McpToolCaller
+    ) -> None:
+        self._board = board
+        self._delay = delay
+        self._through = through
+        self.landed = False
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        if name == "save_comment" and "id" not in arguments and not self.landed:
+            self.landed = True
+            self._board.now += self._delay
+        return await self._through.call_tool(name=name, arguments=arguments)
+
 
 class _WroteTogether:
     """Hold every creation until both holders have made theirs.
@@ -61,7 +121,14 @@ class _WroteTogether:
 
 
 class _PausedRenewal:
-    """Hold the renewal's edit, so the board changes hands under it."""
+    """Hold the renewal's edit, so the board changes hands under it.
+
+    A renewal is the write that states the deadline it is published
+    against; an acquisition's own confirmation states none.  Holding by
+    that distinction is what lets the holder taking the issue over run
+    its whole acquisition through this same caller while the renewal
+    waits.
+    """
 
     def __init__(self, server: FakeLinearMcpServer) -> None:
         self.reached = asyncio.Event()
@@ -74,7 +141,8 @@ class _PausedRenewal:
     async def call_tool(
         self, *, name: str, arguments: Mapping[str, object]
     ) -> McpToolResult:
-        if self.holding and name == "save_comment" and "id" in arguments:
+        renewal = "id" in arguments and _renews(str(arguments.get("body", "")))
+        if self.holding and name == "save_comment" and renewal:
             self.reached.set()
             await self.resume.wait()
         return await self.through.call_tool(name=name, arguments=arguments)
@@ -106,9 +174,11 @@ class _RefusesTheWithdrawal:
 class _ArrivesWhileWithdrawing:
     """Let a third holder ask who owns the set, inside the withdrawal window.
 
-    Between the write a holder publishes and the delete it compensates
-    with, the board is whatever the write left there — and nothing but a
-    party arriving inside that window can say what it names as the owner.
+    Between the write a holder publishes and the first request that
+    compensates for it, the board is whatever the write left there — and
+    nothing but a party arriving inside that window can say what it names
+    as the owner.  The window opens at the retraction, which is the first
+    thing a holder standing down asks the backend for.
     """
 
     def __init__(
@@ -124,8 +194,41 @@ class _ArrivesWhileWithdrawing:
     async def call_tool(
         self, *, name: str, arguments: Mapping[str, object]
     ) -> McpToolResult:
-        if name == "delete_comment":
+        retracting = (
+            name == "save_comment"
+            and "id" in arguments
+            and (_state_of(str(arguments["body"])) == "void")
+        )
+        if retracting:
             self.holders.append(await self._arrival())
+        return await self._server.call_tool(name=name, arguments=arguments)
+
+
+class _RefusesEveryWithdrawal:
+    """Answer every call but the two a holder stands down with.
+
+    Neither the retraction nor the deletion reaches the backend, which is
+    the whole of what a holder can do about a marker it has been told
+    grants it nothing.  What must survive that is the ownership itself.
+    """
+
+    def __init__(self, server: FakeLinearMcpServer) -> None:
+        self._server = server
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        retracting = (
+            name == "save_comment"
+            and "id" in arguments
+            and (_state_of(str(arguments["body"])) == "void")
+        )
+        if name == "delete_comment" or retracting:
+            raise McpTransportError(
+                "the MCP server reported a tool error: comment is not writable",
+                server_name="fake-linear",
+                tool_name=name,
+            )
         return await self._server.call_tool(name=name, arguments=arguments)
 
 
@@ -170,7 +273,9 @@ async def test_two_grants_at_one_instant_leave_the_issue_to_neither() -> None:
     )
 
     assert [outcome.status for outcome in outcomes] == [ClaimStatus.CONTENDED] * 2
-    assert [outcome.current_holder for outcome in outcomes] == ["runner-b", "runner-a"]
+    # A race the backend settled for nobody names nobody: reporting the
+    # party contended with would say a refused claimant holds the issue.
+    assert [outcome.current_holder for outcome in outcomes] == [None, None]
     assert server.comments == []
     assert await first.active_claim(issue_key=CLAIMED_ISSUE) is None
 
@@ -200,76 +305,38 @@ async def test_a_tied_read_reports_no_holder_while_both_markers_stand() -> None:
     await asyncio.gather(*claims)
 
 
-async def test_a_delayed_renewal_extends_nothing_after_the_lease_changed_hands() -> (
-    None
-):
-    """The counterexample: A's write lands after B took the expired issue."""
-    server = fixture_server()
-    now = [FIXTURE_NOW]
-    caller = _PausedRenewal(server)
-    first = tracker_over(server, caller=caller, clock=lambda: now[0])
-    second = tracker_over(server, caller=caller, clock=lambda: now[0])
-    granted = await first.claim_issue(
-        issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
-    )
-    assert granted.status is ClaimStatus.GRANTED
-
-    now[0] += timedelta(seconds=LEASE_SECONDS / 2)
-    caller.holding = True
-    renewal = asyncio.create_task(
-        first.renew_claim(
-            issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
-        )
-    )
-    await asyncio.wait_for(caller.reached.wait(), 5)
-    now[0] = FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1)
-    replacement = await second.claim_issue(
-        issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
-    )
-    assert replacement.status is ClaimStatus.GRANTED
-    caller.resume.set()
-
-    assert await asyncio.wait_for(renewal, 5) is None
-    held = await second.active_claim(issue_key=CLAIMED_ISSUE)
-    assert held is not None
-    assert held.holder == "runner-b"
-    assert len(server.comments) == 1
-
-
 class _DelayedRenewal:
-    """A holder whose extension the backend stamps after its lease lapsed.
+    """A holder whose renewal the backend stamps after its lease lapsed.
 
-    Both clocks are stated, and they run together: the backend stamps
-    each write ``SERVER_SKEW`` after the holder that made it, which is
-    what a delayed renewal has to be measured against.  The holders write
-    A's claim, then B's claim past the expiry, then A's extension — three
-    stamps, in that order.
+    The interleaving that refuted the two rounds before this one, with the
+    write latency that broke the second stated explicitly: A's own grant
+    takes ``LANDING_DELAY`` to reach the backend, so the backend's reading
+    of that write is the skew PLUS the delay away from A's.  A then
+    renews, its renewal is held mid-write, its lease runs out, B takes the
+    issue, and only then does A's renewal land.
     """
 
-    def __init__(self) -> None:
-        self.server = fixture_server()
-        self.now = FIXTURE_NOW
-        self.paused = _PausedRenewal(self.server)
-        self.server.comment_instants = [
-            FIXTURE_NOW + SERVER_SKEW,
-            FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1) + SERVER_SKEW,
-            FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 2) + SERVER_SKEW,
-        ]
+    def __init__(self, *, delay: timedelta = LANDING_DELAY) -> None:
+        self.board = _Board()
+        self.paused = _PausedRenewal(self.board.server)
+        self.slow = _SlowToLand(self.board, delay=delay, through=self.paused)
+
+    @property
+    def server(self) -> FakeLinearMcpServer:
+        return self.board.server
 
     def clock(self) -> datetime:
-        return self.now
+        return self.board.clock()
 
-    def holder(self, *, caller: object) -> LinearMcpTracker:
-        return tracker_over(self.server, caller=caller, clock=self.clock)
-
-    async def up_to_the_extension(self) -> asyncio.Task[ClaimResult | None]:
-        """A claims, its renewal is held mid-write, it expires, B acquires."""
-        lapsing = self.holder(caller=self.paused)
+    async def up_to_the_renewal(self) -> asyncio.Task[ClaimResult | None]:
+        """A claims slowly, renews, lapses; B takes the issue over."""
+        lapsing = self.board.holder(caller=self.slow)
         granted = await lapsing.claim_issue(
             issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
         )
         assert granted.status is ClaimStatus.GRANTED
-        self.now = FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS / 2)
+        assert self.slow.landed, "the case did not delay A's own creation"
+        self.board.advance(LEASE_SECONDS / 2)
         self.paused.holding = True
         renewal = asyncio.create_task(
             lapsing.renew_claim(
@@ -277,23 +344,25 @@ class _DelayedRenewal:
             )
         )
         await asyncio.wait_for(self.paused.reached.wait(), 5)
-        self.now = FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1)
-        replacement = await self.holder(caller=self.server).claim_issue(
+        self.board.now = self.server.comments[0].created_at + timedelta(
+            seconds=LEASE_SECONDS + 1
+        )
+        replacement = await self.board.holder().claim_issue(
             issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
         )
         assert replacement.status is ClaimStatus.GRANTED
         return renewal
 
 
-async def test_an_extension_the_backend_stamps_after_the_lapse_grants_nothing() -> None:
+async def test_a_renewal_the_backend_stamps_after_the_lapse_renews_nothing() -> None:
     """The counterexample read from the board, not from the renewal's answer.
 
-    The lapsed holder's extension reaches the log while the holder that
-    took the issue is holding it, and the marker it lands on is the
-    EARLIEST one there.  What must not happen is that the board reads
-    twice-owned in the window between that write and the withdrawal
-    compensating for it: the extension states the expiry it replaces, so
-    a reader holds it to that deadline and reads only the new holder.
+    The lapsed holder's renewal reaches the log while the holder that took
+    the issue is holding it, and the marker it lands on is the EARLIEST
+    one there.  What must not happen is that the board reads twice-owned
+    in the window between that write and the retraction compensating for
+    it: the renewal states the deadline it was published against in the
+    backend's own clock, so a stamp at or after it renews nothing.
     """
     delayed = _DelayedRenewal()
     reading = tracker_over(delayed.server, clock=delayed.clock)
@@ -304,7 +373,7 @@ async def test_an_extension_the_backend_stamps_after_the_lapse_grants_nothing() 
 
     arriving = _ArrivesWhileWithdrawing(delayed.server, arrival=named_holder)
     delayed.paused.through = arriving
-    renewal = await delayed.up_to_the_extension()
+    renewal = await delayed.up_to_the_renewal()
 
     delayed.paused.resume.set()
 
@@ -315,29 +384,41 @@ async def test_an_extension_the_backend_stamps_after_the_lapse_grants_nothing() 
     )
     assert held is not None
     assert held.holder == "runner-b"
-    assert len(delayed.server.comments) == 1
+    assert _standing(delayed.server) == [("runner-b", "held")]
 
 
-async def test_a_withdrawal_the_backend_refuses_leaves_the_new_holder_alone() -> None:
-    """Exclusivity cannot rest on the request that compensates for a write.
+async def test_a_creation_that_lands_late_buys_its_holder_no_immunity() -> None:
+    """The refutation of the round before this one, pinned as a case.
 
-    The vendor binds no delete to the write it compensates for, so the
-    lapsed holder is made to publish its extension and then be refused
-    the withdrawal.  Its marker stays on the board, earliest and stating
-    a live expiry, and still grants it nothing: the holder is told it
-    holds nothing rather than handed the transport failure, and the
-    board reads the new holder throughout.
+    A's own grant takes seconds to reach the backend, so the difference
+    between the backend's reading of that write and A's own is the skew
+    plus that delay.  An arithmetic reading that difference as a clock
+    offset let A's renewal land that much past its deadline and still be
+    in force, and the board then named A while B held the issue.  Nothing
+    the fence compares is a holder's reading now, so the delay moves
+    A's deadline and B's admission together and there is no window
+    between them.
     """
     delayed = _DelayedRenewal()
     delayed.paused.through = _RefusesTheWithdrawal(delayed.server)
-    renewal = await delayed.up_to_the_extension()
+    renewal = await delayed.up_to_the_renewal()
+    grant, replacement = delayed.server.comments
+    landed = grant.created_at - FIXTURE_NOW
 
     delayed.paused.resume.set()
 
     with structlog.testing.capture_logs() as logs:
         assert await asyncio.wait_for(renewal, 5) is None
+    # A's own creation is stamped a whole LANDING_DELAY past the instant
+    # its holder decided to grant, and its renewal lands past the deadline
+    # that creation bought — which is also the deadline B was admitted on.
+    assert landed >= LANDING_DELAY
+    assert delayed.server.comments[0].updated_at > grant.created_at + timedelta(
+        seconds=LEASE_SECONDS
+    )
+    assert replacement.created_at > grant.created_at + timedelta(seconds=LEASE_SECONDS)
     assert [entry["event"] for entry in logs] == ["tracker_withdrawal_incomplete"]
-    assert len(delayed.server.comments) == 2
+    assert _standing(delayed.server) == [("runner-a", "void"), ("runner-b", "held")]
     held = await tracker_over(delayed.server, clock=delayed.clock).active_claim(
         issue_key=CLAIMED_ISSUE
     )
@@ -345,29 +426,63 @@ async def test_a_withdrawal_the_backend_refuses_leaves_the_new_holder_alone() ->
     assert held.holder == "runner-b"
 
 
+async def test_a_retraction_the_backend_refuses_entirely_leaves_one_owner() -> None:
+    """Exclusivity cannot rest on any request that compensates for a write.
+
+    The vendor binds nothing to the write it compensates for, so the
+    lapsed holder is made to publish its renewal and then be refused both
+    the retraction and the deletion.  Its marker stays on the board,
+    earliest and stating a holder, and still grants it nothing: the
+    renewal put no deadline in force, so every reader — including a
+    holder arriving now — reads only the holder that took the issue.
+    """
+    delayed = _DelayedRenewal()
+    delayed.paused.through = _RefusesEveryWithdrawal(delayed.server)
+    renewal = await delayed.up_to_the_renewal()
+
+    delayed.paused.resume.set()
+
+    with structlog.testing.capture_logs() as logs:
+        assert await asyncio.wait_for(renewal, 5) is None
+    assert [entry["event"] for entry in logs] == [
+        "tracker_retraction_incomplete",
+        "tracker_withdrawal_incomplete",
+    ]
+    assert _standing(delayed.server) == [("runner-a", "held"), ("runner-b", "held")]
+    held = await tracker_over(delayed.server, clock=delayed.clock).active_claim(
+        issue_key=CLAIMED_ISSUE
+    )
+    assert held is not None
+    assert held.holder == "runner-b"
+    arriving = await tracker_over(delayed.server, clock=delayed.clock).claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-c", lease_seconds=LEASE_SECONDS
+    )
+    assert arriving.status is ClaimStatus.LOST
+    assert arriving.current_holder == "runner-b"
+
+
 async def test_a_renewal_of_a_lapsed_lease_takes_its_own_marker_down() -> None:
     """A holder told it owns nothing stops advertising that it does.
 
     The marker outlives the lease it recorded, and its holder is the only
     party allowed to take it off: every other holder reads it, finds it
-    expired and steps over it, so nothing else will ever remove it.  A
+    lapsed and steps over it, so nothing else will ever remove it.  A
     renewal is that holder's next appearance — if it leaves the marker
     standing, a run that lapsed and never released has littered the issue
     for good.
     """
-    server = fixture_server()
-    now = [FIXTURE_NOW]
-    lapsed = tracker_over(server, clock=lambda: now[0])
-    successor = tracker_over(server, clock=lambda: now[0])
+    board = _Board()
+    lapsed = board.holder()
+    successor = board.holder()
     await lapsed.claim_issue(
         issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
     )
-    now[0] += timedelta(seconds=LEASE_SECONDS + 1)
+    board.advance(LEASE_SECONDS + 1)
     inherited = await successor.claim_issue(
         issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
     )
     assert inherited.status is ClaimStatus.GRANTED
-    assert len(server.comments) == 2
+    assert len(board.server.comments) == 2
 
     assert (
         await lapsed.renew_claim(
@@ -376,7 +491,7 @@ async def test_a_renewal_of_a_lapsed_lease_takes_its_own_marker_down() -> None:
         is None
     )
 
-    assert [_holder_of(comment.body) for comment in server.comments] == ["runner-b"]
+    assert _standing(board.server) == [("runner-b", "held")]
     held = await successor.active_claim(issue_key=CLAIMED_ISSUE)
     assert held is not None
     assert held.holder == "runner-b"
@@ -388,73 +503,104 @@ async def test_a_marker_left_behind_does_not_answer_for_the_holder_after_it() ->
     Only its own holder may take one off, so a run that lapsed and never
     released leaves its marker sitting in front of everything written
     after it.  Weighing a request against the earliest marker of ANY kind
-    would let that one answer for the address — and, being expired,
-    answer that nobody holds it — handing a third holder the issue the
-    second one is holding right now.
+    would let that one answer for the address — and, being lapsed, answer
+    that nobody holds it — handing a third holder the issue the second
+    one is holding right now.
     """
-    server = fixture_server()
-    now = [FIXTURE_NOW]
-    lapsed = tracker_over(server, clock=lambda: now[0])
-    await lapsed.claim_issue(
+    board = _Board()
+    await board.holder().claim_issue(
         issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
     )
-    now[0] += timedelta(seconds=LEASE_SECONDS + 1)
-    successor = await tracker_over(server, clock=lambda: now[0]).claim_issue(
+    board.advance(LEASE_SECONDS + 1)
+    successor = await board.holder().claim_issue(
         issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
     )
     assert successor.status is ClaimStatus.GRANTED
-    assert len(server.comments) == 2
+    assert len(board.server.comments) == 2
 
-    third = await tracker_over(server, clock=lambda: now[0]).claim_issue(
+    third = await board.holder().claim_issue(
         issue_key=CLAIMED_ISSUE, holder="runner-c", lease_seconds=LEASE_SECONDS
     )
 
     assert third.status is ClaimStatus.LOST
     assert third.current_holder == "runner-b"
-    assert [_holder_of(comment.body) for comment in server.comments] == [
-        "runner-a",
-        "runner-b",
-    ]
+    assert _standing(board.server) == [("runner-a", "held"), ("runner-b", "held")]
+
+
+class _UnseenRace:
+    """Keep one holder's markers out of another holder's listings.
+
+    Every party reading the whole log back is what settles the order, and
+    a backend that answered one holder's listing without a creation it had
+    already accepted would let both of them confirm.  Nothing in the
+    vendor's contract promises otherwise, so the arbitration has to
+    survive it: the case turns the veil off again afterwards, and the
+    later holder is the one that gives way.
+    """
+
+    def __init__(self, server: FakeLinearMcpServer, *, hidden: str) -> None:
+        self._server = server
+        self._hidden = hidden
+        self.veiled = True
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        result = await self._server.call_tool(name=name, arguments=arguments)
+        if name != "list_comments" or not self.veiled:
+            return result
+        assert isinstance(result, Mapping)
+        entries = result["comments"]
+        assert isinstance(entries, list)
+        return {
+            **result,
+            "comments": [
+                entry
+                for entry in entries
+                if _holder_of(str(entry["body"])) != self._hidden  # type: ignore[index]
+            ],
+        }
 
 
 async def test_a_renewal_an_earlier_grant_outranks_withdraws_the_late_one() -> None:
-    """Two runners disagree about the clock; the earlier marker still wins.
+    """Two holders both confirmed; the earlier marker still wins.
 
-    Nothing keeps two deployments' clocks together, so a holder can take
-    an issue whose marker another holder still reads as its own live
-    grant.  Both markers then stand, and the rule that settles it is the
-    server's order, not either clock: the later holder finds itself
-    outranked on its own next renewal and takes its marker down rather
-    than leave the issue looking twice owned.
+    A read-back that did not answer with a creation the backend had
+    already accepted is the one way two holders can both confirm a grant
+    over one address.  The rule that settles it afterwards is the
+    backend's order and nothing either holder's clock says: the later
+    holder finds itself outranked on its own next renewal and takes its
+    marker down rather than leave the issue looking twice owned.
     """
-    server = fixture_server()
-    early = [FIXTURE_NOW]
-    late = [FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1)]
-    behind = tracker_over(server, clock=lambda: early[0])
-    ahead = tracker_over(server, clock=lambda: late[0])
-    await behind.claim_issue(
+    board = _Board()
+    early = board.holder()
+    veil = _UnseenRace(board.server, hidden="runner-a")
+    late = board.holder(caller=veil)
+    await early.claim_issue(
         issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
     )
-    taken = await ahead.claim_issue(
+    taken = await late.claim_issue(
         issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
     )
     assert taken.status is ClaimStatus.GRANTED
-    early[0] += timedelta(seconds=LEASE_SECONDS / 2)
+    assert _standing(board.server) == [("runner-a", "held"), ("runner-b", "held")]
+    veil.veiled = False
+    board.advance(LEASE_SECONDS / 2)
     assert (
-        await behind.renew_claim(
+        await early.renew_claim(
             issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
         )
         is not None
     )
 
     assert (
-        await ahead.renew_claim(
+        await late.renew_claim(
             issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
         )
         is None
     )
 
-    assert [_holder_of(comment.body) for comment in server.comments] == ["runner-a"]
+    assert _standing(board.server) == [("runner-a", "held")]
 
 
 async def test_a_grant_the_log_does_not_answer_with_is_not_a_grant() -> None:
@@ -488,14 +634,20 @@ async def test_a_restarted_holder_prunes_the_marker_it_left_behind() -> None:
     assert held.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS * 2)
 
 
-async def test_renewal_edits_the_marker_in_place_and_keeps_its_order() -> None:
-    """Order is the server's; a renewal that re-created it would forfeit it."""
-    server = fixture_server()
-    tracker = tracker_over(server)
+async def test_confirmation_and_renewal_edit_in_place_and_keep_the_order() -> None:
+    """Order is the server's; a write that re-created the marker forfeits it.
+
+    Both writes after the bid are edits by id: the one that confirms the
+    bid into a hold, and the one that renews it.  Each moves the stamp an
+    edit moves and leaves the creation the arbitration orders by exactly
+    where the backend put it.
+    """
+    board = _Board()
+    tracker = board.holder()
     await tracker.claim_issue(
         issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
     )
-    marker = server.comments[0]
+    marker = board.server.comments[0]
     created_at = marker.created_at
 
     renewed = await tracker.renew_claim(
@@ -503,12 +655,15 @@ async def test_renewal_edits_the_marker_in_place_and_keeps_its_order() -> None:
     )
 
     assert renewed is not None
-    assert len(server.comments) == 1
-    assert server.comments[0].id == marker.id
-    assert server.comments[0].created_at == created_at
-    assert [call for call in server.tool_calls("save_comment") if "id" in call] == [
-        {"id": marker.id, "body": server.comments[0].body}
-    ]
+    assert len(board.server.comments) == 1
+    assert board.server.comments[0].id == marker.id
+    assert board.server.comments[0].created_at == created_at
+    assert board.server.comments[0].updated_at is not None
+    assert board.server.comments[0].updated_at > created_at
+    edits = [call for call in board.server.tool_calls("save_comment") if "id" in call]
+    assert [call["id"] for call in edits] == [marker.id, marker.id]
+    assert [_state_of(str(call["body"])) for call in edits] == ["held", "held"]
+    assert [_renews(str(call["body"])) for call in edits] == [False, True]
 
 
 class _InTurn:
@@ -549,6 +704,27 @@ def _holder_of(body: str) -> str:
         if line.startswith("holder: "):
             return line.removeprefix("holder: ")
     raise AssertionError(f"no holder in {body!r}")
+
+
+def _state_of(body: str) -> str:
+    """What a marker body declares itself to be."""
+    for line in body.splitlines():
+        if line.startswith("state: "):
+            return line.removeprefix("state: ")
+    raise AssertionError(f"no state in {body!r}")
+
+
+def _renews(body: str) -> bool:
+    """Whether a marker body is a renewal — one that states its deadline."""
+    return any(line.startswith("since: ") for line in body.splitlines())
+
+
+def _standing(server: FakeLinearMcpServer) -> list[tuple[str, str]]:
+    """Every marker on the board as (holder, state), in the log's order."""
+    return [
+        (_holder_of(comment.body), _state_of(comment.body))
+        for comment in server.comments
+    ]
 
 
 CONTAINER = WritableSurface(
@@ -598,7 +774,7 @@ async def test_holders_earliest_on_different_targets_both_withdraw() -> None:
         outcome.current_holder
         for outcome in outcomes
         if isinstance(outcome, SurfaceLeaseError)
-    } == {"job-a", "job-b"}
+    } == {None}
     assert server.comments == []
 
 
@@ -613,9 +789,11 @@ async def test_a_container_surface_parks_its_marker_on_the_container() -> None:
     )
 
     assert lease.surfaces == held
-    assert [call["projectId"] for call in server.tool_calls("save_comment")] == [
-        "fixture-scope"
-    ]
+    assert [
+        call["projectId"]
+        for call in server.tool_calls("save_comment")
+        if "projectId" in call
+    ] == ["fixture-scope"]
     assert [comment.issue_id for comment in server.comments] == ["fixture-scope"]
     renewed = await tracker.renew_surfaces(
         surfaces=held, holder="job-a", lease_seconds=LEASE_SECONDS * 2
@@ -696,13 +874,13 @@ async def test_a_refused_acquisition_answers_the_refusal_a_delete_cannot_reach()
 ):
     """The withdrawal compensates for the answer; it does not become it.
 
-    The loser's markers go on before the read-back that refuses it, so
-    taking them off is a second request the backend can turn down.  When
-    it does, the caller is still told what it asked — which surface, held
-    by whom — the markers the refusal did not reach still come off, and
-    what stayed on is recorded.  It grants the loser nothing: the holder
-    that beat it was created earlier, so the board names that holder to
-    everyone, this loser included.
+    The loser's marker goes on before the read-back that refuses it, so
+    taking it off is a second request the backend can turn down.  When it
+    does, the caller is still told what it asked — which surface, held by
+    whom — the marker is retracted in place instead, and what stayed on
+    the log is recorded.  The retracted marker answers for nothing at
+    all: when the winner releases, the set is free for the next holder
+    and no reader ever names the loser.
     """
     server = fixture_server()
     spanning = frozenset({CONTAINER, ISSUE_DESCRIPTION})
@@ -725,7 +903,7 @@ async def test_a_refused_acquisition_answers_the_refusal_a_delete_cannot_reach()
     assert [entry["event"] for entry in logs] == ["tracker_withdrawal_incomplete"]
     assert [entry["comments"] for entry in logs] == [[caller.refused]]
     standing = [comment for comment in server.comments if comment.id == caller.refused]
-    assert [_holder_of(comment.body) for comment in standing] == ["job-b"]
+    assert [_state_of(comment.body) for comment in standing] == ["void"]
     assert len(server.comments) == 3
     with pytest.raises(SurfaceLeaseError) as after:
         await tracker_over(server).acquire_surfaces(
@@ -733,30 +911,91 @@ async def test_a_refused_acquisition_answers_the_refusal_a_delete_cannot_reach()
         )
     assert after.value.current_holder == "job-a"
 
+    await holding.release_surfaces(surfaces=spanning, holder="job-a")
+
+    inherited = await tracker_over(server).acquire_surfaces(
+        surfaces=spanning, holder="job-c", lease_seconds=LEASE_SECONDS
+    )
+    assert inherited.holder == "job-c"
+
+
+async def test_a_bid_no_request_can_take_off_was_never_a_hold() -> None:
+    """The clause satisfied by construction, not by a compensating request.
+
+    The backend refuses BOTH requests a loser can make about its own
+    marker — the retraction and the deletion — so the marker stays
+    exactly as the loser wrote it, at the earliest order there is once
+    the winner leaves.  It still holds nothing: it was never confirmed,
+    and only a marker its own read-back confirmed is a hold.  So the
+    loser is named to nobody, the next holder meets a race rather than an
+    owner, and the marker lapses on the bound it declared without
+    anybody acting.
+    """
+    board = _Board()
+    spanning = frozenset({CONTAINER, ISSUE_DESCRIPTION})
+    holding = board.holder()
+    await holding.acquire_surfaces(
+        surfaces=spanning, holder="job-a", lease_seconds=LEASE_SECONDS
+    )
+    losing = board.holder(caller=_RefusesEveryWithdrawal(board.server))
+
+    with structlog.testing.capture_logs() as logs, pytest.raises(SurfaceLeaseError):
+        await losing.acquire_surfaces(
+            surfaces=spanning, holder="job-b", lease_seconds=LEASE_SECONDS
+        )
+
+    assert [entry["event"] for entry in logs] == [
+        "tracker_retraction_incomplete",
+        "tracker_retraction_incomplete",
+        "tracker_withdrawal_incomplete",
+    ]
+    assert sorted(_standing(board.server)) == [
+        ("job-a", "held"),
+        ("job-a", "held"),
+        ("job-b", "bid"),
+        ("job-b", "bid"),
+    ]
+
+    await holding.release_surfaces(surfaces=spanning, holder="job-a")
+
+    with pytest.raises(SurfaceLeaseError) as unsettled:
+        await board.holder().acquire_surfaces(
+            surfaces=spanning, holder="job-c", lease_seconds=LEASE_SECONDS
+        )
+    assert unsettled.value.current_holder is None
+    assert "not settled" in str(unsettled.value)
+
+    abandoned = next(
+        comment
+        for comment in board.server.comments
+        if _holder_of(comment.body) == "job-b"
+    )
+    board.now = abandoned.created_at + timedelta(seconds=LEASE_SECONDS + 1)
+    inherited = await board.holder().acquire_surfaces(
+        surfaces=spanning, holder="job-c", lease_seconds=LEASE_SECONDS
+    )
+    assert inherited.holder == "job-c"
+
 
 async def test_a_delayed_lease_renewal_stamped_after_the_lapse_grants_nothing() -> None:
     """The claim interleaving, run over the lease vocabulary that shares it.
 
-    A lease renewal is the same extension published against the same
-    deadline, and the set it covers is what a lease adds: the holder that
-    took the surfaces while the extension was in flight keeps them, and
-    the lapsed holder is told it holds nothing rather than left owning a
-    set it stopped paying for.
+    A lease renewal is the same write weighed against the same deadline,
+    and the set it covers is what a lease adds: the holder that took the
+    surfaces while the renewal was in flight keeps them, and the lapsed
+    holder is told it holds nothing rather than left owning a set it
+    stopped paying for.
     """
-    server = fixture_server()
-    now = FIXTURE_NOW
-    server.comment_instants = [
-        FIXTURE_NOW + SERVER_SKEW,
-        FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1) + SERVER_SKEW,
-        FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 2) + SERVER_SKEW,
-    ]
-    paused = _PausedRenewal(server)
+    board = _Board()
+    paused = _PausedRenewal(board.server)
+    slow = _SlowToLand(board, delay=LANDING_DELAY, through=paused)
     held = frozenset({ISSUE_DESCRIPTION, MARKER_A})
-    lapsing = tracker_over(server, caller=paused, clock=lambda: now)
+    lapsing = board.holder(caller=slow)
     await lapsing.acquire_surfaces(
         surfaces=held, holder="job-a", lease_seconds=LEASE_SECONDS
     )
-    now = FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS / 2)
+    assert slow.landed
+    board.advance(LEASE_SECONDS / 2)
     paused.holding = True
     renewal = asyncio.create_task(
         lapsing.renew_surfaces(
@@ -764,8 +1003,10 @@ async def test_a_delayed_lease_renewal_stamped_after_the_lapse_grants_nothing() 
         )
     )
     await asyncio.wait_for(paused.reached.wait(), 5)
-    now = FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1)
-    successor = await tracker_over(server, clock=lambda: now).acquire_surfaces(
+    board.now = board.server.comments[0].created_at + timedelta(
+        seconds=LEASE_SECONDS + 1
+    )
+    successor = await board.holder().acquire_surfaces(
         surfaces=held, holder="job-b", lease_seconds=LEASE_SECONDS
     )
     assert successor.holder == "job-b"
@@ -773,13 +1014,15 @@ async def test_a_delayed_lease_renewal_stamped_after_the_lapse_grants_nothing() 
     async def late_arrival() -> str | None:
         """Whom a third holder is refused in the name of, right now."""
         with pytest.raises(SurfaceLeaseError) as refused:
-            await tracker_over(server, clock=lambda: now).acquire_surfaces(
+            await board.holder().acquire_surfaces(
                 surfaces=held, holder="job-c", lease_seconds=LEASE_SECONDS
             )
         return refused.value.current_holder
 
-    paused.through = _ArrivesWhileWithdrawing(server, arrival=late_arrival)
+    paused.through = _ArrivesWhileWithdrawing(board.server, arrival=late_arrival)
     paused.resume.set()
 
     assert await asyncio.wait_for(renewal, 5) is None
+    # Both surfaces sit on one issue, so one marker carries the whole set.
     assert paused.through.holders == ["job-b"]
+    assert _standing(board.server) == [("job-b", "held")]

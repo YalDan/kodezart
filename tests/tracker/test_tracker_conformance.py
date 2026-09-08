@@ -383,7 +383,15 @@ class TestAtomicClaim:
         self,
         tracker: TrackerPort,
     ) -> None:
-        """AC: two simultaneous claimants -> one wins, the loser sees LOST."""
+        """AC: two simultaneous claimants -> one wins, the other holds nothing.
+
+        The loser is told which: ``LOST`` when the backend settled an
+        owner, naming it, and ``CONTENDED`` when it settled nobody — the
+        loser met the winner mid-race, before the winner's own read-back
+        had confirmed it, and neither of them owned the issue at the
+        instant the loser was weighed.  Both are refusals and neither is
+        ownership; what may never happen is two grants.
+        """
         first, second = await asyncio.gather(
             tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
@@ -398,7 +406,19 @@ class TestAtomicClaim:
         )
         statuses = [first.status, second.status]
         assert statuses.count(ClaimStatus.GRANTED) == 1
-        assert statuses.count(ClaimStatus.LOST) == 1
+        granted = next(
+            one for one in (first, second) if one.status is ClaimStatus.GRANTED
+        )
+        refused = next(
+            one for one in (first, second) if one.status is not ClaimStatus.GRANTED
+        )
+        assert refused.status in {ClaimStatus.LOST, ClaimStatus.CONTENDED}
+        assert refused.current_holder == (
+            granted.holder if refused.status is ClaimStatus.LOST else None
+        )
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == granted.holder
 
     async def test_the_loser_observes_a_distinct_typed_result_not_an_exception(
         self,

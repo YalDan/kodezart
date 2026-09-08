@@ -6,7 +6,7 @@ import pytest
 
 from kodezart.domain.surface_lease import (
     live_conflict,
-    published_expiry,
+    renewed_deadline,
     surface_address,
 )
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -118,52 +118,54 @@ def test_a_lease_requires_a_holder_and_a_nonempty_set(holder, surfaces) -> None:
 SKEW = timedelta(seconds=0.5)
 
 
-def test_a_record_that_never_extended_anything_is_read_as_written() -> None:
-    assert published_expiry(
-        expires_at=NOW + timedelta(seconds=60),
-        extends=None,
-        granted_at=NOW,
-        created_at=NOW + SKEW,
-        updated_at=NOW + SKEW,
+def test_a_renewal_the_backend_stamped_in_time_moves_the_deadline() -> None:
+    assert renewed_deadline(
+        published_at=NOW + timedelta(seconds=30),
+        lease=timedelta(seconds=60),
+        since=NOW + timedelta(seconds=60),
+    ) == NOW + timedelta(seconds=90)
+
+
+def test_a_renewal_stamped_after_the_deadline_renews_nothing() -> None:
+    """The grant keeps the deadline it had; a lapsed order does not return."""
+    assert renewed_deadline(
+        published_at=NOW + timedelta(seconds=62),
+        lease=timedelta(seconds=60),
+        since=NOW + timedelta(seconds=60),
     ) == NOW + timedelta(seconds=60)
 
 
-def test_an_extension_stamped_inside_the_grant_it_extends_is_in_force() -> None:
-    assert published_expiry(
-        expires_at=NOW + timedelta(seconds=120),
-        extends=NOW + timedelta(seconds=60),
-        granted_at=NOW,
-        created_at=NOW + SKEW,
-        updated_at=NOW + timedelta(seconds=30) + SKEW,
-    ) == NOW + timedelta(seconds=120)
-
-
-def test_an_extension_stamped_after_the_lapse_puts_nothing_in_force() -> None:
-    """The grant keeps the expiry it had; a lapsed order does not come back."""
-    assert published_expiry(
-        expires_at=NOW + timedelta(seconds=120),
-        extends=NOW + timedelta(seconds=60),
-        granted_at=NOW,
-        created_at=NOW + SKEW,
-        updated_at=NOW + timedelta(seconds=62) + SKEW,
+def test_a_renewal_stamped_exactly_at_the_deadline_renews_nothing() -> None:
+    """The deadline is the first instant the address is free for the next
+    holder, so a renewal sharing it is already late."""
+    assert renewed_deadline(
+        published_at=NOW + timedelta(seconds=60),
+        lease=timedelta(seconds=60),
+        since=NOW + timedelta(seconds=60),
     ) == NOW + timedelta(seconds=60)
 
 
-def test_the_deadline_is_converted_by_the_records_own_two_readings() -> None:
-    """Clocks months apart decide the same way: the offset is per record."""
-    apart = timedelta(days=61)
-    for offset in (SKEW, apart, -apart):
-        assert published_expiry(
-            expires_at=NOW + timedelta(seconds=120),
-            extends=NOW + timedelta(seconds=60),
-            granted_at=NOW,
-            created_at=NOW + offset,
-            updated_at=NOW + timedelta(seconds=59) + offset,
-        ) == NOW + timedelta(seconds=120)
-        assert published_expiry(
-            expires_at=NOW + timedelta(seconds=120),
-            extends=NOW + timedelta(seconds=60),
-            granted_at=NOW,
-            created_at=NOW + offset,
-            updated_at=NOW + timedelta(seconds=61) + offset,
-        ) == NOW + timedelta(seconds=60)
+def test_how_long_the_write_took_to_land_cannot_move_the_fence() -> None:
+    """The refutation this arithmetic replaces, stated as a property.
+
+    Every quantity here is one the backend assigned or a duration, so a
+    grant whose creation took seconds to land buys its holder nothing:
+    the deadline moves with the stamp, and the newcomer that is weighed
+    against the SAME deadline cannot be granted the address before it.
+    """
+    lease = timedelta(seconds=60)
+    for latency in (timedelta(0), timedelta(seconds=5), timedelta(minutes=3)):
+        stamped = NOW + latency
+        deadline = stamped + lease
+        assert (
+            renewed_deadline(
+                published_at=deadline - timedelta(microseconds=1),
+                lease=lease,
+                since=deadline,
+            )
+            > deadline
+        )
+        assert (
+            renewed_deadline(published_at=deadline, lease=lease, since=deadline)
+            == deadline
+        )

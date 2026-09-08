@@ -278,9 +278,11 @@ class ClaimResult(TrackerModel):
 
     ``holder`` is always the claimant this result answers, so a caller
     reads its own identity back whatever the outcome.  ``current_holder``
-    names the OTHER party a refusal turned on — the holder that owns the
-    issue after a ``LOST``, or the one whose grant tied under a
-    ``CONTENDED`` — and is absent on a grant.
+    names an OWNER and nothing else: the holder that owns the issue after
+    a ``LOST``.  It is absent on a grant, and absent under a
+    ``CONTENDED`` — a race the backend settled for nobody has no owner to
+    name, and naming the party contended with would report a claimant as
+    holding an issue it was refused.
     """
 
     issue_key: str = Field(min_length=1)

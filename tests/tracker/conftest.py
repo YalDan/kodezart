@@ -135,6 +135,7 @@ def fixture_server(
     *,
     scope_refusals: Mapping[str, str] | None = None,
     actor: str = APPROVER,
+    clock: Callable[[], datetime] = _frozen_now,
 ) -> FakeLinearMcpServer:
     """A fresh fake workspace — one per test, never shared.
 
@@ -147,6 +148,7 @@ def fixture_server(
     """
     return FakeLinearMcpServer(
         tool_errors=scope_refusals,
+        comment_clock=clock,
         diffs=[
             FakeMcpDiff(
                 full_identifier=FIXTURE_REVIEW,
@@ -383,12 +385,20 @@ def refused_signals(request: pytest.FixtureRequest) -> tuple[PassSignal, ...]:
 
 
 @pytest.fixture
-def server(refused_signals: tuple[PassSignal, ...]) -> FakeLinearMcpServer:
-    """A fresh fixture workspace."""
+def server(
+    refused_signals: tuple[PassSignal, ...], clock: FixtureClock
+) -> FakeLinearMcpServer:
+    """A fresh fixture workspace, on the same clock the holders read.
+
+    The backend's stamps are what ownership is arbitrated by, so a
+    workspace whose comment log ran on a clock of its own would answer
+    every question about expiry with a skew no deployment has.
+    """
     return fixture_server(
         scope_refusals={
             SCAN_TOOL_BY_SIGNAL[signal]: SCOPE_DIAGNOSIS for signal in refused_signals
         },
+        clock=clock,
     )
 
 
