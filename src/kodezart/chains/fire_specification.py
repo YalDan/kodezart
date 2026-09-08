@@ -7,11 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 from pydantic import ValidationError
 
-from kodezart.core.constants import (
-    EVAL_PERMISSION_MODE,
-    EVAL_TOOLS,
-    EVAL_TOOLS_WITH_AGENT,
-)
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
@@ -65,7 +61,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.workflow import (
@@ -278,7 +274,7 @@ class FireSpecification:
                 repo_url=ctx.repo_url,
                 branch=ctx.base_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS_WITH_AGENT,
+                allowed_tools=ToolPreset.DELEGATED_EVALUATION,
                 skills=self._prompts.session_skills(
                     PromptKey.ACCEPTANCE_CRITERIA, self._skills
                 ),
@@ -365,7 +361,7 @@ class FireSpecification:
                     repo_url=ctx.repo_url,
                     branch=ctx.base_branch,
                     permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=EVAL_TOOLS,
+                    allowed_tools=ToolPreset.EVALUATION,
                     skills=self._prompts.session_skills(
                         PromptKey.CRITERIA_VALIDATION, self._skills
                     ),

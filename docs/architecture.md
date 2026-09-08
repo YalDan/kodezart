@@ -496,8 +496,17 @@ before invoking the application. HTTP responses do not expose the internal
 permission value. Checkpoint configuration round-trips the domain enum; there
 is no supported cross-version workflow-resume API.
 
-Tool-name presets and open `allowedTools` selectors still use SDK vocabulary;
-this permission boundary does not narrow or translate those selectors.
+Application callers select one of four existing `ToolPreset` bundles:
+evaluation, delegated evaluation, authoring, or implementation. The SDK option
+mapper expands these to the native ordered tool names. `AllowedTools` also
+accepts an explicit string list, passed through without parsing, reordering,
+or restricting future, scoped, or MCP selectors. Named subagents retain their
+explicit selector lists.
+
+HTTP continues to accept only explicit lists with its existing defaults and
+schemas. A preset is one whole value in internal submission/context models;
+an explicit list containing the same word stays a list after JSON or checkpoint
+serialization. Permission mode and knowledge-server grants remain independent.
 
 ### Structured Output
 

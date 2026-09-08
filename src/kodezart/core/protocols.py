@@ -40,7 +40,7 @@ from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
-from kodezart.types.domain.session import PermissionMode, SessionType
+from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -295,7 +295,7 @@ class AgentExecutor(Protocol):
         prompt: str,
         cwd: str,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         run_identity: RunIdentity | None = None,
@@ -1180,7 +1180,7 @@ class AgentRunner(Protocol):
         repo_url: str | None = None,
         branch: str | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         run_identity: RunIdentity | None = None,
@@ -1203,7 +1203,7 @@ class AgentRunner(Protocol):
         branch_name: str | None = None,
         ralph_branch: str | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         run_identity: RunIdentity | None = None,
@@ -1222,7 +1222,7 @@ class AgentRunner(Protocol):
         prompt: str,
         workspace_path: str,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         run_identity: RunIdentity | None = None,
@@ -1269,7 +1269,7 @@ class QualityGate(Protocol):
         base_spec: BaseSpec,
         work_base_ref: str,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         run_identity: RunIdentity | None = None,
@@ -1335,7 +1335,7 @@ class WorkflowEngine(Protocol):
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Full pipeline: branch → ticket → criteria → loop → merge.

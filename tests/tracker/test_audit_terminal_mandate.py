@@ -5,13 +5,14 @@ from dataclasses import replace
 
 import pytest
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.lane_record import render_lane_record
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_terminal import TerminalDiscrepancy
 from kodezart.types.domain.pr_state import PRLifecycle
+from kodezart.types.domain.session import ToolPreset
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.tracker.test_audit_requests import PREFIXES
 from tests.tracker.test_audit_sweep import CHILD, HEAD, REPO, ROOT, state
@@ -90,7 +91,7 @@ async def test_native_terminal_refutation_reuses_actual_mandate_hunt(
             call["session_id"] is None
             and call["permission_mode"] == EVAL_PERMISSION_MODE
         )
-        assert call["allowed_tools"] == list(EVAL_TOOLS)
+        assert call["allowed_tools"] == ToolPreset.EVALUATION
         assert terminal.refutation_evidence() in call["prompt"]
         assert terminal.defect_class() in call["prompt"] and HEAD in call["prompt"]
         assert '"criterion_key"' not in terminal.refutation_evidence()

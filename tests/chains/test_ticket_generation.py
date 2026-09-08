@@ -21,7 +21,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketReviewEvent,
 )
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import PermissionMode, SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -349,8 +349,8 @@ async def test_configurable_values_flow_to_executor() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_websearch_in_allowed_tools() -> None:
-    """Every executor call must have WebSearch and WebFetch in allowed_tools."""
+async def test_ticket_sessions_request_the_authoring_tool_bundle() -> None:
+    """Both ticket roles select the bundle whose native expansion includes web tools."""
     executor = FakeAgentExecutor(events=[])
     loop = _make_loop(executor=executor)
 
@@ -358,10 +358,7 @@ async def test_websearch_in_allowed_tools() -> None:
 
     assert len(executor.calls) >= 2
     for call in executor.calls:
-        allowed = call["allowed_tools"]
-        assert isinstance(allowed, list)
-        assert "WebSearch" in allowed
-        assert "WebFetch" in allowed
+        assert call["allowed_tools"] is ToolPreset.AUTHORING
 
 
 # ---------------------------------------------------------------------------

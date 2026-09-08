@@ -28,7 +28,7 @@ from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
-from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.workflow import (
     AuthoredWorkflowState,
     RemediationRequest,
@@ -63,7 +63,7 @@ class AuthoredDeliveryCoordinator:
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         cache_key: str,
         run_identity: RunIdentity | None = None,
     ) -> AsyncIterator[AgentEvent]:

@@ -27,7 +27,7 @@ from kodezart.types.domain.organize import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import PermissionMode, SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -260,7 +260,7 @@ async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_bas
         assert call["session_id"] is None
         assert call["session_type"] is SessionType.ORGANIZE_PASS
         assert call["permission_mode"] == "plan"
-        assert set(call["allowed_tools"]) == {"Read", "Glob", "Grep", "Bash"}
+        assert call["allowed_tools"] is ToolPreset.EVALUATION
         assert call["agents"] == ()
         assert call["run_identity"] is None
         assert call["skills"] == SUPPRESS_ALL_SKILLS

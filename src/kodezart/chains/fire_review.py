@@ -4,10 +4,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 
 from kodezart.chains.fire_consolidation import resolve_workflow_cwd
-from kodezart.core.constants import (
-    EVAL_PERMISSION_MODE,
-    EVAL_TOOLS,
-)
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
@@ -39,7 +36,7 @@ from kodezart.types.domain.criteria import (
     FanInReport,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.workflow import (
@@ -110,7 +107,7 @@ class FireReview:
                     repo_url=ctx.repo_url,
                     branch=state["feature_branch"],
                     permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=EVAL_TOOLS,
+                    allowed_tools=ToolPreset.EVALUATION,
                     skills=self._prompts.session_skills(
                         PromptKey.POST_MERGE_REVIEW, self._skills
                     ),

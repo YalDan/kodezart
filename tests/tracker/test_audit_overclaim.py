@@ -4,11 +4,12 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.types.domain.agent import AUDIT_OVERCLAIM_SCHEMA
 from kodezart.types.domain.audit_overclaim import OverclaimKind
+from kodezart.types.domain.session import ToolPreset
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from tests.fakes import SUPPRESS_ALL_SKILLS
 from tests.prompts.test_prompt_wiring import load_registry
@@ -85,7 +86,10 @@ async def test_each_standing_judgment_uses_current_native_source_and_fresh_sessi
     args = runner.arguments
     assert args["session_id"] is None
     assert args["permission_mode"] == EVAL_PERMISSION_MODE
-    assert args["allowed_tools"] == EVAL_TOOLS and args["agents"] == NO_SUBAGENTS
+    assert (
+        args["allowed_tools"] == ToolPreset.EVALUATION
+        and args["agents"] == NO_SUBAGENTS
+    )
     assert args["output_format"]["schema"] == AUDIT_OVERCLAIM_SCHEMA
     assert fixtures.HEAD in args["prompt"] and fixtures.PRIOR in args["prompt"]
     assert fixtures.CHECK in args["prompt"]

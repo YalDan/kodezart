@@ -57,7 +57,7 @@ from kodezart.types.domain.dispatch import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.run_records import RunOutcome
-from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.tracker import ClaimStatus, IssueQuery, TrackerIssue
 from kodezart.types.domain.workflow import WorkflowSubmission
 
@@ -454,7 +454,7 @@ class FireDispatcher:
                 implied_base=spec,
                 scope=None,
                 permission_mode=PermissionMode.UNATTENDED,
-                allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                allowed_tools=ToolPreset.IMPLEMENTATION,
             ),
         )
         self._jobs_by_issue[winner.issue_key] = record.job_id
