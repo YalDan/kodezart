@@ -4,6 +4,7 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+import asyncio
 from dataclasses import dataclass
 from typing import Final, assert_never
 
@@ -16,6 +17,7 @@ from kodezart.adapters.linear_mcp_tracker import (
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import TrackerCredentialShapeError
 from kodezart.core.logging import BoundLogger
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     McpToolCaller,
@@ -208,6 +210,26 @@ async def boot_tracker(
             operation=reconciliation.config,
             ledger=ledger,
         )
-    except BaseException:
-        await caller.close()
+    except BaseException as failure:
+
+        async def close_caller() -> BaseException | None:
+            try:
+                await caller.close()
+            except BaseException as exc:
+                await log.aerror(
+                    "tracker_boot_cleanup_failed",
+                    error_kind=type(exc).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
+                return exc
+            return None
+
+        cleanup_error, cancelled = await finish_owned(
+            asyncio.create_task(close_caller())
+        )
+        if cancelled or isinstance(failure, asyncio.CancelledError):
+            raise asyncio.CancelledError from cleanup_error
+        if cleanup_error is not None:
+            raise cleanup_error from failure
         raise
