@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import Sequence
+from typing import Literal
 
 from kodezart.domain.errors import EmptyFireCriteriaError, InvalidFireCriterionError
 from kodezart.types.domain.fire_spec import CriterionRef, IssueRef, TrackerSpec
@@ -33,8 +34,10 @@ def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:
     return "".join(parts), comment
 
 
-def _check_bodies(body: str) -> tuple[str, ...]:
-    """Read the template's Check field, excluding quoted code and HTML comments."""
+def criterion_field_bodies(
+    body: str, *, field: Literal["Check", "Do", "Evidence", "Class"]
+) -> tuple[str, ...]:
+    """Read one template field, excluding quoted row labels and HTML comments."""
     checks: list[str] = []
     lines: list[str] = []
     active = False
@@ -64,7 +67,7 @@ def _check_bodies(body: str) -> tuple[str, ...]:
         if row is not None:
             if active:
                 checks.append("\n".join(lines).strip())
-            active = row[1] == "Check"
+            active = row[1] == field
             lines = [row[2]] if active else []
         elif active:
             lines.append(line)
@@ -91,7 +94,7 @@ def tracker_spec_from_issues(
 
 def criterion_check(*, criterion: TrackerIssue, issue_key: str) -> str:
     """Return only the one current Check, excluding the recorded Evidence."""
-    checks = _check_bodies(criterion.body)
+    checks = criterion_field_bodies(criterion.body, field="Check")
     if len(checks) != 1 or not checks[0]:
         raise InvalidFireCriterionError(
             issue_key=issue_key,
