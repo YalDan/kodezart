@@ -39,6 +39,7 @@ from kodezart.domain.errors import (
     IssueLabelReadError,
     TransientAPIError,
     UnsupportedClaimError,
+    UnsupportedLeaseError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
@@ -98,6 +99,7 @@ from kodezart.types.domain.self_writes import (
     field_value,
     field_values,
 )
+from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -1430,6 +1432,42 @@ class LinearMcpTracker:
             f"holder {holder!r}, duration {lease_seconds:g}s; "
             "save_comment has no expected owner or version"
         )
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        """Refuse acquisition without a native atomic ownership primitive."""
+        raise UnsupportedLeaseError(
+            f"Linear MCP cannot fence surface-lease acquisition for holder "
+            f"{holder!r}, {len(surfaces)} surface(s), duration {lease_seconds:g}s; "
+            "save_comment and save_issue carry no conditional ownership check"
+        )
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        """Never extend a lease this backend could not have fenced."""
+        raise UnsupportedLeaseError(
+            f"Linear MCP cannot fence surface-lease renewal for holder "
+            f"{holder!r}, {len(surfaces)} surface(s), duration {lease_seconds:g}s; "
+            "save_comment and save_issue carry no conditional ownership check"
+        )
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        """Release nothing: acquisition is refused, so nothing is ever held."""
 
     async def _unexpired_claim_markers(
         self,

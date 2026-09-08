@@ -48,6 +48,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
@@ -1036,6 +1037,58 @@ class TrackerPort(
         ``expires_at`` is when the CLAIM lapses, not when any one write
         that carried it does: a holder that renewed holds until the last of
         its renewals runs out.
+        """
+        ...
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        """Take the WHOLE set exclusively for *holder*, or take nothing.
+
+        Acquisition never blocks and never retries: on intersection with
+        another holder's live lease it raises ``SurfaceLeaseError`` naming
+        that surface and its current holder, releases whatever it took, and
+        holds nothing afterwards. A surface *holder* itself holds live is
+        not contention — re-acquisition succeeds and re-times the whole
+        set — and an expired lease is free to anyone. An adapter without
+        fenced ownership raises ``UnsupportedLeaseError`` before mutation.
+
+        *holder* is the writing run's job id (``JobRecord.job_id``), never
+        the claim's process identity.
+        """
+        ...
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        """Extend a lease *holder* holds live on EVERY surface of the set.
+
+        Returns the lease as it now stands, expiring no earlier than
+        *lease_seconds* from now. Returns ``None``, writing NOTHING, when
+        *holder* does not hold every one of them live: renewal EXTENDS and
+        never acquires, so a lapsed lease stays lapsed and its surfaces stay
+        free. An adapter without fenced ownership raises
+        ``UnsupportedLeaseError`` before mutation.
+        """
+        ...
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        """Release the surfaces *holder* holds.
+
+        A surface it does not hold is a no-op, live or expired.
         """
         ...
 

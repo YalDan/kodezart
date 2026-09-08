@@ -1,6 +1,7 @@
 """Vendor-neutral addresses for independently leased tracker write surfaces."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -54,3 +55,23 @@ class WritableSurface:
                 raise ValueError("a marker-keyed comment requires a nonblank marker")
         elif self.marker is not None:
             raise ValueError("only a marker-keyed comment may carry a marker")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SurfaceLease:
+    """One holder's exclusive grant over a whole declared surface set.
+
+    The set is the unit: a lease covers every surface it names and expires
+    for all of them at once, so a holder never owns half of what it asked
+    for. ``holder`` is the writing run's identity, opaque to this value.
+    """
+
+    holder: str
+    surfaces: frozenset[WritableSurface]
+    expires_at: datetime
+
+    def __post_init__(self) -> None:
+        if not self.holder.strip():
+            raise ValueError("a surface lease requires a nonblank holder")
+        if not self.surfaces:
+            raise ValueError("a surface lease requires at least one surface")

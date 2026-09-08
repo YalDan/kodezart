@@ -46,12 +46,14 @@ from kodezart.domain.errors import (
     PRStateReadError,
     RateLimitError,
     ScopeReadError,
+    SurfaceLeaseError,
     TransientAPIError,
     WorkspaceError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.scope_approval import resolve_execution_approval
+from kodezart.domain.surface_lease import live_conflict
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -127,6 +129,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -3184,6 +3187,13 @@ class FakeTrackerPort:
             initiative_identifiers or {},
         )
         self.claims: dict[str, ClaimResult] = {}
+        #: The live lease per surface.  One SurfaceLease object is written
+        #: under every surface of the set it covers, so a partial release
+        #: or a partial renewal is visible as a set that no longer agrees.
+        self.leases: dict[WritableSurface, SurfaceLease] = {}
+        #: Every lease this double GRANTED, in order — kept past the release
+        #: that removes it, the way ``claim_writes`` outlives its claim.
+        self.lease_writes: list[SurfaceLease] = []
         #: Every renewal ATTEMPT, granted or refused, as (issue, holder).
         #: A heartbeat that has stopped is observed as a count that stopped
         #: growing, which a record of grants alone cannot tell from a
@@ -3831,6 +3841,77 @@ class FakeTrackerPort:
         if held is not None and held.holder == holder:
             del self.claims[issue_key]
             self._wrote(issue_key)
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        # The scheduling point is BEFORE the check-and-set, never inside it:
+        # a fake whose acquisition is not genuinely atomic proves nothing
+        # about the all-or-nothing contract.
+        await asyncio.sleep(0)
+        now = self._clock()
+        conflict = live_conflict(
+            requested=surfaces, held=self.leases, holder=holder, now=now
+        )
+        if conflict is not None:
+            raise SurfaceLeaseError(
+                "surface set intersects a live lease",
+                surface=conflict[0],
+                current_holder=conflict[1],
+            )
+        granted = SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=now + timedelta(seconds=lease_seconds),
+        )
+        for surface in surfaces:
+            self.leases[surface] = granted
+        self.lease_writes.append(granted)
+        return granted
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        await asyncio.sleep(0)
+        now = self._clock()
+        held = [self.leases.get(surface) for surface in surfaces]
+        if any(
+            lease is None or lease.holder != holder or lease.expires_at <= now
+            for lease in held
+        ):
+            return None
+        renewed = SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=max(
+                now + timedelta(seconds=lease_seconds),
+                *(lease.expires_at for lease in held if lease is not None),
+            ),
+        )
+        for surface in surfaces:
+            self.leases[surface] = renewed
+        self.lease_writes.append(renewed)
+        return renewed
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        await asyncio.sleep(0)
+        for surface in surfaces:
+            lease = self.leases.get(surface)
+            if lease is not None and lease.holder == holder:
+                del self.leases[surface]
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
         await asyncio.sleep(0)

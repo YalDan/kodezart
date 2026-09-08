@@ -11,6 +11,10 @@ class UnsupportedClaimError(RuntimeError):
     """The tracker cannot fence exclusive claim acquisition or renewal."""
 
 
+class UnsupportedLeaseError(RuntimeError):
+    """The tracker cannot fence exclusive surface-lease acquisition or renewal."""
+
+
 class IssueLabelReadError(Exception):
     """A configured classification cannot establish complete issue membership."""
 
