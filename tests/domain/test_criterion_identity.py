@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Annotated, NewType, Union, get_args, get_origin
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pydantic.fields import FieldInfo
 
 from kodezart.domain.criteria import mint_criterion_id
@@ -54,17 +54,19 @@ def _domain_models() -> list[type[BaseModel]]:
     return models
 
 
-def _mentions_identity(annotation: object) -> bool:
+def _mentions_identity(
+    annotation: object, identities: tuple[object, ...] = (CriterionId, CriterionRef)
+) -> bool:
     """Whether an authored or tracker-native identity types the field."""
-    if annotation is CriterionId or annotation is CriterionRef:
+    if any(annotation is identity for identity in identities):
         return True
     origin = get_origin(annotation)
     if origin is None:
         return False
     if origin is Annotated:
-        return _mentions_identity(get_args(annotation)[0])
+        return _mentions_identity(get_args(annotation)[0], identities)
     if origin is Union or origin is list or origin is tuple or origin is set:
-        return any(_mentions_identity(arg) for arg in get_args(annotation))
+        return any(_mentions_identity(arg, identities) for arg in get_args(annotation))
     return False
 
 
@@ -101,7 +103,7 @@ def test_every_field_constrained_by_the_id_pattern_annotates_the_identity() -> N
         f"{model}.{name}"
         for model, name, field in _fields()
         if _constrained_by_the_id_pattern(field)
-        and not _mentions_identity(field.annotation)
+        and not _mentions_identity(field.annotation, (CriterionId,))
     ]
     assert offenders == []
 
@@ -200,3 +202,12 @@ def test_tracker_identity_is_distinct_and_loose_strings_remain_rejected():
     assert _mentions_identity(list[CriterionRef])
     assert not _mentions_identity(str)
     assert not _mentions_identity(list[str])
+
+
+def test_authored_pattern_requires_authored_identity_even_on_native_shape():
+    assert _mentions_identity(CriterionId, (CriterionId,))
+    assert not _mentions_identity(CriterionRef, (CriterionId,))
+    assert not _mentions_identity(
+        Annotated[CriterionRef, Field(pattern=CRITERION_ID_PATTERN)],
+        (CriterionId,),
+    )
