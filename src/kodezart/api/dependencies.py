@@ -12,9 +12,9 @@ from kodezart.services.job_service import JobService
 from kodezart.types.domain.skills import SkillsSelection
 
 
-async def get_config(request: Request) -> AppConfig:
+async def get_api_prefix(request: Request) -> str:
     config: AppConfig = request.app.state.config
-    return config
+    return config.http.api_v1_prefix
 
 
 async def get_job_queue(request: Request) -> JobQueue:
@@ -37,7 +37,7 @@ async def get_skills(request: Request) -> SkillsSelection:
     return skills
 
 
-ConfigDep = Annotated[AppConfig, Depends(get_config)]
+ApiPrefixDep = Annotated[str, Depends(get_api_prefix)]
 JobQueueDep = Annotated[JobQueue, Depends(get_job_queue)]
 JobRegistryDep = Annotated[JobRegistry, Depends(get_job_registry)]
 AgentRunnerDep = Annotated[AgentRunner, Depends(get_agent_runner)]

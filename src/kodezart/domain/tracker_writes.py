@@ -14,11 +14,25 @@ def marked_comment_body(*, marker: str, body: str) -> str:
 
 
 def comment_under_marker(
-    *, target: str, marker: str, comments: Sequence[TrackerComment]
+    *,
+    target: str,
+    marker: str,
+    comments: Sequence[TrackerComment],
+    prefix: bool = False,
 ) -> TrackerComment | None:
-    """Resolve a marker without guessing among duplicate identities."""
+    """Resolve one marker, refusing duplicate identities.
+
+    Namespace discovery uses the LF-delimited prefix of the native record.
+    Exact reads retain the historical splitlines handling of line endings.
+    """
     matches = [
-        comment for comment in comments if comment.body.splitlines()[:1] == [marker]
+        comment
+        for comment in comments
+        if (
+            comment.body.partition("\n")[0].startswith(marker)
+            if prefix
+            else comment.body.splitlines()[:1] == [marker]
+        )
     ]
     if len(matches) > 1:
         raise DuplicateCommentMarkerError(

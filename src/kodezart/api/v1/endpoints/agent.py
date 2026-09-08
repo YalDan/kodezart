@@ -5,8 +5,7 @@ from collections.abc import AsyncGenerator
 from fastapi import APIRouter
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
-from kodezart.api.dependencies import ConfigDep, QueryHandlerDep, WorkflowHandlerDep
-from kodezart.core.config import AppConfig
+from kodezart.api.dependencies import ApiPrefixDep, QueryHandlerDep, WorkflowHandlerDep
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import QueueFullError
@@ -20,11 +19,11 @@ router = APIRouter()
 _log: BoundLogger = get_logger(__name__)
 
 
-def _job_urls(config: AppConfig, job_id: str) -> tuple[str, str]:
+def _job_urls(api_prefix: str, job_id: str) -> tuple[str, str]:
     """Path-relative status and stream URLs for *job_id*."""
     return (
-        f"{config.api_v1_prefix}/jobs/{job_id}",
-        f"{config.api_v1_prefix}/jobs/{job_id}/stream",
+        f"{api_prefix}/jobs/{job_id}",
+        f"{api_prefix}/jobs/{job_id}/stream",
     )
 
 
@@ -82,7 +81,7 @@ async def stream_query(
 async def stream_workflow(
     body: WorkflowRequest,
     handler: WorkflowHandlerDep,
-    config: ConfigDep,
+    api_prefix: ApiPrefixDep,
 ) -> Response:
     """``POST /api/v1/agent/workflow``. Enqueues, then attaches.
 
@@ -96,7 +95,7 @@ async def stream_workflow(
     except QueueFullError as exc:
         return _queue_full_response(exc)
 
-    status_url, stream_url = _job_urls(config, record.job_id)
+    status_url, stream_url = _job_urls(api_prefix, record.job_id)
 
     async def generate() -> AsyncGenerator[str, None]:
         async for event in handler.stream_workflow(
@@ -117,7 +116,7 @@ async def stream_workflow(
     summary="Queue a workflow run, no stream",
 )
 async def fire_workflow(
-    body: WorkflowRequest, handler: WorkflowHandlerDep, config: ConfigDep
+    body: WorkflowRequest, handler: WorkflowHandlerDep, api_prefix: ApiPrefixDep
 ) -> FireAcceptedResponse | JSONResponse:
     """``POST /api/v1/agent/fire``. Returns the job handle and nothing else."""
     await _log.adebug("fire_workflow_endpoint")
@@ -126,7 +125,7 @@ async def fire_workflow(
     except QueueFullError as exc:
         return _queue_full_response(exc)
 
-    status_url, stream_url = _job_urls(config, record.job_id)
+    status_url, stream_url = _job_urls(api_prefix, record.job_id)
     return FireAcceptedResponse(
         job_id=record.job_id,
         lane=record.lane,

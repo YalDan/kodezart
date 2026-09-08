@@ -98,9 +98,9 @@ hidden from validation errors (`src/kodezart/core/config.py`,
 | `KODEZART_MODEL` | `str \| None`, default `None` = SDK/account default | Unchanged, but note that an empty assignment `KODEZART_MODEL=` is not refused and sends an empty model id to the SDK | Leave it commented out unless you are pinning a model. |
 | `KODEZART_CI_NO_CHECKS_GRACE_POLLS` | `int`, default `10` | Same default; now applies only when the repository has workflows or the workflows probe was indeterminate (the no-workflows case uses `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS`) | Nothing. |
 
-Unchanged in name, type and default: `KODEZART_PROJECT_NAME`,
-`KODEZART_DEBUG`, `KODEZART_LOG_LEVEL`, `KODEZART_LOG_PRETTY`,
-`KODEZART_API_V1_PREFIX`, `KODEZART_CLONE_CACHE_DIR`, `KODEZART_GIT_BASE_URL`,
+Unchanged in type and default (the current HTTP names are nested):
+`KODEZART_HTTP__PROJECT_NAME`, `KODEZART_HTTP__DEBUG`, `KODEZART_LOGGING__LEVEL`,
+`KODEZART_LOGGING__PRETTY`, `KODEZART_HTTP__API_V1_PREFIX`, `KODEZART_CLONE_CACHE_DIR`, `KODEZART_GIT_BASE_URL`,
 `KODEZART_GIT_REMOTE`, `KODEZART_GIT_COMMITTER_NAME`,
 `KODEZART_GIT_COMMITTER_EMAIL`, `KODEZART_MAX_ITERATIONS`,
 `KODEZART_RETRY_MAX_ATTEMPTS`, `KODEZART_RETRY_INITIAL_INTERVAL`,
@@ -138,11 +138,11 @@ otherwise.
 | `KODEZART_CI_GRACE_POLL_INTERVAL_SECONDS` | not present | `10.0` (1 to 60) | Nothing. |
 | `KODEZART_CI_REF_NOT_FOUND_GRACE_POLLS` | not present | `3` (1 to 20) | Nothing. |
 | `KODEZART_CI_CHECK_RUNS_MAX_PAGES` | not present | `10` (1 to 100) | Nothing. |
-| `KODEZART_QUEUE_MAX_CONCURRENT_RUNS_PER_LANE` | not present | `1` (1 to 16) | Raise it only if you relied on v0.1 running two `/workflow` calls in parallel. |
-| `KODEZART_QUEUE_MAX_DEPTH_PER_LANE` | not present | `64` (1 to 1024) | Nothing. |
-| `KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS` | not present | `86400.0` (60 to 604800) | Nothing. |
-| `KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS` | not present | `900.0` (0 to 86400; must not exceed the record retention) | Nothing. |
-| `KODEZART_QUEUE_EVENT_BUFFER_CAPACITY` | not present | `512` (1 to 10000) | Nothing. |
+| `KODEZART_QUEUE__MAX_CONCURRENT_RUNS_PER_LANE` | not present | `1` (1 to 16) | Raise it only if you relied on v0.1 running two `/workflow` calls in parallel. |
+| `KODEZART_QUEUE__MAX_DEPTH_PER_LANE` | not present | `64` (1 to 1024) | Nothing. |
+| `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` | not present | `86400.0` (60 to 604800) | Nothing. |
+| `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` | not present | `900.0` (0 to 86400; must not exceed the record retention) | Nothing. |
+| `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` | not present | `512` (1 to 10000) | Nothing. |
 | `KODEZART_DENY_PATTERNS` | not present | every category `[]` except `credentials`, which carries the credential-shape regexes | Nothing; `{}` would delete the credential category, and the `org_private` key is refused. |
 | `KODEZART_DENY_PATTERN_VERDICTS` | not present | `redacted` for `cross_repo_names`, `tracker_urls`, `email_handles`, `org_private`; `blocked` for `infra_endpoints`, `credentials` | Nothing. |
 | `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` | not present | `false` | Nothing; `true` requires an operation config with `private_surface`. |
@@ -370,9 +370,9 @@ message shapes:
   `PromptResolutionError: Default prompt set '<name>' not found under <sets_root>`.
 - A `KODEZART_SESSION_MODELS` key outside the prompt-function vocabulary:
   `session_models names no prompt function key: '<key>' (allowed: acceptance_criteria, branch_name, commit_message, content_audit, criteria_validation, evaluation, fire_prep_pass, fix, grooming_pass, implementation, iteration_feedback, knowledge_map, post_merge_review, pr_description, remediation_ticket, ticket_create, ticket_review, ticket_revision)`.
-- `KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS` above
-  `KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS`:
-  `queue_event_buffer_retention_seconds (<n>) must not exceed queue_terminal_retention_seconds (<n>): a replay buffer cannot outlive the job record that names it`.
+- `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` above
+  `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS`:
+  `event_buffer_retention_seconds must not exceed terminal_retention_seconds: a replay buffer cannot outlive the job record that names it`.
 - `KODEZART_SKILLS_MODE=explicit` with an empty allowlist:
   `KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty KODEZART_SKILLS_ALLOWLIST`;
   the reverse: `KODEZART_SKILLS_ALLOWLIST must be empty when KODEZART_SKILLS_MODE=none`.
@@ -524,7 +524,7 @@ event that closes the stream.
 ## 7. HTTP API changes
 
 **Endpoints.** Every endpoint from v0.1 keeps its path; the job endpoints are new.
-The prefix `KODEZART_API_V1_PREFIX` (default `/api/v1`) and the `v1` router
+The prefix `KODEZART_HTTP__API_V1_PREFIX` (default `/api/v1`) and the `v1` router
 are unchanged; there is no `v2`.
 
 | Endpoint | v0.1 | v0.2 |

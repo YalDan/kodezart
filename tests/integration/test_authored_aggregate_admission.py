@@ -84,11 +84,10 @@ def actual_prompt_set(monkeypatch, request):
     monkeypatch.setenv("KODEZART_PROMPT_SET", request.param)
 
 
-async def gate_with_judge(tmp_path, judge, *, privacy=False, legacy_roster_minimum=3):
+async def gate_with_judge(tmp_path, judge, *, privacy=False):
     config = AppConfig(
         content_audit_working_dir=str(tmp_path),
         agentic_content_scanner_enabled=privacy,
-        aggregate_identifier_roster_min_length=legacy_roster_minimum,
     )
     operation = operation_with_facts() if privacy else None
     log = get_logger(__name__)
@@ -131,6 +130,7 @@ async def test_actual_pr_blocks_authored_aggregate_with_shipped_policy(
     assert hit.matched_text == claim
     assert hit.start == 0 and hit.end == len(claim)
     assert judge.calls
+    assert all("at least\n3 references" in call["prompt"] for call in judge.calls)
     assert all("as `object_count`" in call["prompt"] for call in judge.calls)
     assert all("no\nissue reference occurs" in call["prompt"] for call in judge.calls)
     assert all(call["allowed_tools"] == [] for call in judge.calls)
@@ -351,27 +351,6 @@ async def test_single_public_reference_and_two_references_remain_ordinary_text(
         (created,) = creator.calls
         assert body in created["body"]
         assert any(body in call["prompt"] for call in judge.calls)
-
-
-@pytest.mark.parametrize("legacy_minimum", [2, 9])
-async def test_authored_roster_policy_does_not_take_the_legacy_pattern_override(
-    tmp_path, legacy_minimum
-):
-    judge = RecordedTextJudge(ROSTER_CLAIM, DurabilityCategory.IDENTIFIER_ROSTER)
-    creator = FakePRCreator()
-    engine = make_engine(
-        pr_creator=creator,
-        gate=await gate_with_judge(
-            tmp_path, judge, legacy_roster_minimum=legacy_minimum
-        ),
-        visibility_resolver=FakeVisibilityResolver(RepoVisibility.PUBLIC),
-        executor=DescriptionExecutor(ROSTER_CLAIM),
-    )
-    with pytest.raises(OutboundContentBlockedError):
-        await run_engine(engine)
-    assert creator.calls == []
-    assert judge.calls
-    assert all("at least\n3 references" in call["prompt"] for call in judge.calls)
 
 
 async def test_derived_technical_values_keep_the_existing_no_session_route(tmp_path):

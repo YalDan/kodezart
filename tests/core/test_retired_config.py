@@ -1,5 +1,7 @@
 """Removed settings fail clearly at the config boundary."""
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -10,14 +12,15 @@ def _from_source(source, field, value, tmp_path, monkeypatch):
     name = "KODEZART_" + field.upper()
     if source == "init":
         return AppConfig(_env_file=None, **{field: value})
+    encoded = value if isinstance(value, str) else json.dumps(value)
     if source == "env":
-        monkeypatch.setenv(name, value)
+        monkeypatch.setenv(name, encoded)
         return AppConfig(_env_file=None)
     if source == "dotenv":
         path = tmp_path / ".env"
-        path.write_text(f"{name}={value}\n")
+        path.write_text(f"{name}={encoded}\n")
         return AppConfig(_env_file=path)
-    (tmp_path / name).write_text(value)
+    (tmp_path / name).write_text(encoded)
     return AppConfig(_env_file=None, _secrets_dir=tmp_path)
 
 
@@ -75,3 +78,56 @@ def test_unrelated_unprefixed_names_are_not_retired_settings(
         (tmp_path / name).write_text("synthetic-unrelated-value")
         config = AppConfig(_env_file=None, _secrets_dir=tmp_path)
     assert config.git_remote == "origin"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("aggregate_count_token_distance", 7),
+        ("aggregate_identifier_roster_min_length", 5),
+        ("aggregate_tracker_object_nouns", ["issues"]),
+        ("aggregate_issue_identifier_pattern", "WORK/[0-9]+"),
+        ("aggregate_identifier_separator_pattern", "~"),
+    ],
+)
+@pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+def test_removed_aggregate_grammar_refuses_previously_valid_settings(
+    source, field, value, tmp_path, monkeypatch
+):
+    with pytest.raises(ValidationError, match="Extra inputs") as caught:
+        _from_source(source, field, value, tmp_path, monkeypatch)
+    assert field in str(caught.value).casefold()
+    assert "input_value" not in str(caught.value)
+
+
+@pytest.mark.parametrize("source", ["env", "secret"])
+def test_aggregate_retirement_is_an_exact_name_not_a_prefix_rule(
+    source, tmp_path, monkeypatch
+):
+    name = "KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE_ARCHIVE"
+    if source == "env":
+        monkeypatch.setenv(name, "synthetic-unrelated-value")
+        config = AppConfig(_env_file=None)
+    else:
+        (tmp_path / name).write_text("synthetic-unrelated-value")
+        config = AppConfig(_env_file=None, _secrets_dir=tmp_path)
+    assert config.git_remote == "origin"
+
+
+def test_a_retired_aggregate_secret_is_rejected_without_reading_its_value(
+    tmp_path, monkeypatch
+):
+    from pathlib import Path
+
+    path = tmp_path / "KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS"
+    path.write_text("synthetic-secret-value")
+    original = Path.read_text
+
+    def read_text(self, *args, **kwargs):
+        assert self != path, "A retired secret has no value consumer"
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    with pytest.raises(ValidationError, match="Extra inputs") as caught:
+        AppConfig(_env_file=None, _secrets_dir=tmp_path)
+    assert "synthetic-secret-value" not in str(caught.value)

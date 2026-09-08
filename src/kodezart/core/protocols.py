@@ -654,14 +654,53 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
 
 
 @runtime_checkable
-class TrackerPort(Protocol):
-    """The whole capability surface the passes and the runner need.
+class TrackerCommentReader(Protocol):
+    """Read complete native comments without granting a writer."""
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
+        ...
+
+
+@runtime_checkable
+class TrackerCriteriaReader(Protocol):
+    """Read current native criterion families with their full source."""
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        """Read exactly the currently labelled direct criterion sub-issues.
+
+        Their own issue keys carry identity; full bodies and workflow states
+        carry specification and evidence. A successful empty read returns
+        an empty sequence. A failed or incomplete lookup raises; it never
+        becomes an empty answer. No parent-body syntax supplies membership.
+        """
+        ...
+
+
+@runtime_checkable
+class TrackerContextReader(Protocol):
+    """Read the documents referenced by a fire's issue."""
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        ...
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
+        ...
+
+
+@runtime_checkable
+class TrackerPort(
+    TrackerCommentReader, TrackerCriteriaReader, TrackerContextReader, Protocol
+):
+    """The complete adapter surface selected by application composition.
 
     Vendor-neutral by construction: every parameter and every return type
-    is domain vocabulary.  Substitutability is total — an adapter
-    implements ALL of this or it is not an adapter.  There are no
-    capability flags and no feature detection, so no consumer ever
-    branches on which backend is configured.
+    is domain vocabulary. Consumers use narrower read roles where their
+    dependencies permit it.
+    The selected adapter supplies the complete surface; consumers never
+    choose a weaker read based on backend feature detection.
 
     Notification behavior: an issue body edit is expected to be silent,
     while posting a comment is expected to notify its recipients. This
@@ -760,25 +799,6 @@ class TrackerPort(Protocol):
         """
         ...
 
-    def require_criterion_reads(self) -> None:
-        """Require criterion-child reads before boot can enable execution.
-
-        Raise CriterionReadCapabilityError naming this adapter if absent.
-        This declaration never acquires leases or performs tracker writes.
-        It is mandatory, not a choice of a weaker criteria carrier.
-        """
-        ...
-
-    def require_body_digest_stability(self) -> None:
-        """Declare the required body-revision guarantee, or refuse boot.
-
-        Raise BodyDigestCapabilityError if this adapter cannot provide
-        stable body digests. This is a required contract, not feature
-        negotiation: consumers never select a weaker read. Conformance
-        tests prove the guarantee without mutating the live board at boot.
-        """
-        ...
-
     async def read_issue_state_change(
         self, *, issue_key: str
     ) -> TrackerIssueStateChange:
@@ -866,16 +886,6 @@ class TrackerPort(Protocol):
         Duplicate identities refuse before any write. Callers serialize
         concurrent creation of the same identity. The backend owns the
         identity carrier; descriptions retain its raw representation.
-        """
-        ...
-
-    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
-        """Read exactly the currently labelled direct criterion sub-issues.
-
-        Their own issue keys carry identity; full bodies and workflow states
-        carry specification and evidence. A successful empty read returns
-        an empty sequence. A failed or incomplete lookup raises; it never
-        becomes an empty answer. No parent-body syntax supplies membership.
         """
         ...
 
@@ -968,10 +978,6 @@ class TrackerPort(Protocol):
         """
         ...
 
-    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
-        """Every comment on the issue, oldest first."""
-        ...
-
     async def read_escalation_resolution(
         self, *, issue_key: str, lane_key: str, escalation_key: str
     ) -> EscalationResolution:
@@ -1032,14 +1038,6 @@ class TrackerPort(Protocol):
         that carried it does: a holder that renewed holds until the last of
         its renewals runs out.
         """
-        ...
-
-    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
-        """Attachment and document metadata referenced by the issue."""
-        ...
-
-    async def read_document(self, *, document_key: str) -> str:
-        """The document's text content."""
         ...
 
     async def record_work_ref(self, *, ref: WorkRef) -> None:

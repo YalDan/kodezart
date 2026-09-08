@@ -6,7 +6,6 @@ Local credentials and typed references precede authored text judgment.
 from pathlib import Path
 
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
-from kodezart.adapters.aggregate_content_scanner import AggregateContentScanner
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
@@ -46,13 +45,6 @@ def outbound_scanners(
     scanners: list[ContentScanner] = [
         RegexContentScanner(patterns=config.deny_patterns),
         ReferenceContentScanner(private_surface=private_surface or PrivateSurface()),
-        AggregateContentScanner(
-            tracker_object_nouns=config.aggregate_tracker_object_nouns,
-            count_token_distance=config.aggregate_count_token_distance,
-            issue_identifier_pattern=config.aggregate_issue_identifier_pattern,
-            identifier_separator_pattern=config.aggregate_identifier_separator_pattern,
-            identifier_roster_min_length=config.aggregate_identifier_roster_min_length,
-        ),
     ]
     if config.agentic_content_scanner_enabled and (
         private_surface is None or not private_surface.description.strip()

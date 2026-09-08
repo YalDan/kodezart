@@ -75,6 +75,9 @@ does not exist.
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
+| TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
+| TrackerCriteriaReader | LinearMcpTracker | Full current criterion families for resolution and audit consumers |
+| TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
@@ -132,12 +135,15 @@ refusing changed snapshots or duplicate native members before coverage begins.
 These are checked observations, not an atomic vendor snapshot; scheduled audit
 sessions remain a separate consumer.
 
-Tracker boot first requires `require_criterion_reads`. An adapter declaring
-that criterion-child reads are unavailable raises `CriterionReadCapabilityError`
-with its adapter identity and the `criterion_reads` capability. Boot closes
-the opened transport before mapping reconciliation or execution can start.
-The declaration itself performs no writes or lease acquisition. Scope-walker
-dispatch remains a separate unfinished consumer of this mandatory boot boundary.
+The selected tracker provides criterion-family and body-revision reads directly.
+Their required semantics are exercised by the shared native/fake conformance
+suite. Boot performs real credential and mapping checks; empty capability
+self-declarations do not prove an adapter's behavior.
+
+`TrackerCommentReader`, `TrackerCriteriaReader` and `TrackerContextReader` expose
+only the read operations used by record readers, criterion consumers and the
+fire context assembler. The composed `TrackerPort` inherits those definitions;
+the selected adapter satisfies each role directly.
 
 `read_scope_plan` applies native stage barriers at the actual scoped engine
 entry before any execution arm is selected. Its `require_scope_plan_reads`
@@ -210,13 +216,10 @@ Mandatory write leases and the recorded association-storage conflict remain
 separate prerequisites. Scope terminals must still consume this reader and
 other required durable records; no terminal outcome is inferred from it.
 
-Tracker boot calls the required `require_body_digest_stability` contract before
-mapping reconciliation. An adapter that cannot guarantee those semantics
-raises `BodyDigestCapabilityError`, naming `body_digest_stability`, and boot
-closes its transport without serving. This declaration does not mutate a live
-issue to probe it: the shared adapter conformance suite verifies the required
-read/write invariants. Consumers receive no optional capability flag or weaker
-revision read.
+Body revisions retain the exact same-read body and a nonempty digest. Shared
+conformance checks cover body changes, unchanged replays and metadata-only
+writes. An unreadable or invalid revision refuses at the actual read; no
+consumer substitutes an empty digest or treats it as live.
 
 Admission sessions return an `AdmissionJudgment`. The caller creates the
 `AdmissionResult` by attaching the body digest from the revision supplied to

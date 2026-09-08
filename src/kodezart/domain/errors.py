@@ -83,27 +83,6 @@ class RunShapeReadError(Exception):
         super().__init__(f"{signal} cannot read {source_ref!r}: {reason}")
 
 
-class CriterionReadCapabilityError(Exception):
-    """The configured tracker cannot read criterion sub-issues."""
-
-    def __init__(self, *, adapter: str, reason: str) -> None:
-        self.capability = "criterion_reads"
-        self.adapter = adapter
-        self.reason = reason
-        super().__init__(
-            f"required tracker capability {self.capability} on {adapter}: {reason}"
-        )
-
-
-class BodyDigestCapabilityError(Exception):
-    """The configured tracker cannot provide stable body revisions."""
-
-    def __init__(self, *, reason: str) -> None:
-        self.capability = "body_digest_stability"
-        self.reason = reason
-        super().__init__(f"required tracker capability {self.capability}: {reason}")
-
-
 class SurfaceLeaseError(Exception):
     """A surface acquisition or write lacks the required live lease.
 

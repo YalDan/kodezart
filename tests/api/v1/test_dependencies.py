@@ -9,7 +9,6 @@ from fastapi.exceptions import ResponseValidationError
 from httpx import ASGITransport, AsyncClient
 
 from kodezart.api import dependencies as deps
-from kodezart.core.config import AppConfig
 from kodezart.domain.errors import QueueFullError
 from kodezart.handlers.job_handler import JobHandler
 from kodezart.main import create_app
@@ -92,10 +91,8 @@ async def test_fire_and_status_use_overrides_preserving_wire_contract(boundary):
     assert boundary.queue.attached == boundary.runner.calls == []
 
 
-async def test_config_override_controls_handle_urls(boundary):
-    boundary.app.dependency_overrides[deps.get_config] = lambda: AppConfig(
-        api_v1_prefix="/alternate"
-    )
+async def test_prefix_override_controls_handle_urls(boundary):
+    boundary.app.dependency_overrides[deps.get_api_prefix] = lambda: "/alternate"
     async with AsyncClient(
         transport=ASGITransport(app=boundary.app), base_url="http://test"
     ) as client:

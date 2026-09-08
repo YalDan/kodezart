@@ -3393,12 +3393,6 @@ class FakeTrackerPort:
     ) -> None:
         """Supported: criterion and record classifications are explicit facts."""
 
-    def require_criterion_reads(self) -> None:
-        """Supported: the fake reads independently stored criterion children."""
-
-    def require_body_digest_stability(self) -> None:
-        """The fake's revision reads derive their digest from the body alone."""
-
     async def read_issue_state_change(
         self, *, issue_key: str
     ) -> TrackerIssueStateChange:

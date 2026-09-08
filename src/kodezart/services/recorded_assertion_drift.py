@@ -1,6 +1,6 @@
 """Compare explicitly protected assertions from current native ruling records."""
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import TrackerCriteriaReader
 from kodezart.domain.errors import AssertionComparisonError
 from kodezart.services.assertion_drift import AssertionDriftDetector
 from kodezart.services.audit_sources import AuditSourceReader
@@ -24,7 +24,7 @@ class RecordedAssertionDriftDetector:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: TrackerCriteriaReader,
         sources: AuditSourceReader,
         rulings: RulingRecordReader,
         detector: AssertionDriftDetector,

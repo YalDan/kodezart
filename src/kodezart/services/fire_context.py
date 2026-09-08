@@ -28,7 +28,7 @@ evidence.
 import asyncio
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.core.protocols import OutboundContentGate, TrackerContextReader
 from kodezart.domain.errors import AssetFetchError
 from kodezart.types.domain.fire import FireAsset, FireContext
 from kodezart.types.domain.gating import (
@@ -64,13 +64,13 @@ class FireContextAssembler:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: TrackerContextReader,
         gate: OutboundContentGate,
         max_count: int,
         max_bytes: int,
         fetch_timeout_seconds: float,
     ) -> None:
-        self._tracker: TrackerPort = tracker
+        self._tracker: TrackerContextReader = tracker
         self._gate: OutboundContentGate = gate
         self._max_count: int = max_count
         self._max_bytes: int = max_bytes

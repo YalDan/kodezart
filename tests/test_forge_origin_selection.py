@@ -244,7 +244,7 @@ async def test_scoped_queue_jobs_publish_typed_refusal_without_resolving(
     """Unsupported scopes fail at dequeue before I/O or the legacy pipeline."""
     ref = ScopeRef(kind=kind, key="opaque-address")
     queue = build_job_queue(
-        config=AppConfig(),
+        settings=AppConfig().queue,
         workflow_engine=OriginRoutedWorkflowEngine(
             forge_arm=ForbiddenWorkflowEngine(),
             forge_less_arm=ForbiddenWorkflowEngine(),

@@ -142,11 +142,11 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
     engine = _MergingEngine()
     queue = AsyncioJobQueue(
         engine=engine,
-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
-        max_depth_per_lane=config.queue_max_depth_per_lane,
-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
-        event_buffer_capacity=config.queue_event_buffer_capacity,
+        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
+        max_depth_per_lane=config.queue.max_depth_per_lane,
+        terminal_retention_seconds=config.queue.terminal_retention_seconds,
+        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
+        event_buffer_capacity=config.queue.event_buffer_capacity,
     )
     await queue.start()
     try:
@@ -212,11 +212,11 @@ async def test_the_chain_never_sets_the_approved_state_itself() -> None:
     )
     queue = AsyncioJobQueue(
         engine=_MergingEngine(),
-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
-        max_depth_per_lane=config.queue_max_depth_per_lane,
-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
-        event_buffer_capacity=config.queue_event_buffer_capacity,
+        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
+        max_depth_per_lane=config.queue.max_depth_per_lane,
+        terminal_retention_seconds=config.queue.terminal_retention_seconds,
+        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
+        event_buffer_capacity=config.queue.event_buffer_capacity,
     )
     await queue.start()
     try:
@@ -285,11 +285,11 @@ async def test_a_fire_that_crashes_puts_its_issue_back_and_says_why() -> None:
     )
     queue = AsyncioJobQueue(
         engine=_CrashingEngine(),
-        max_concurrent_runs_per_lane=config.queue_max_concurrent_runs_per_lane,
-        max_depth_per_lane=config.queue_max_depth_per_lane,
-        terminal_retention_seconds=config.queue_terminal_retention_seconds,
-        event_buffer_retention_seconds=config.queue_event_buffer_retention_seconds,
-        event_buffer_capacity=config.queue_event_buffer_capacity,
+        max_concurrent_runs_per_lane=config.queue.max_concurrent_runs_per_lane,
+        max_depth_per_lane=config.queue.max_depth_per_lane,
+        terminal_retention_seconds=config.queue.terminal_retention_seconds,
+        event_buffer_retention_seconds=config.queue.event_buffer_retention_seconds,
+        event_buffer_capacity=config.queue.event_buffer_capacity,
     )
     await queue.start()
     try:

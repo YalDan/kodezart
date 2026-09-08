@@ -12,7 +12,10 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from kodezart.core.http_settings import HttpSettings
+from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.knowledge_settings import KnowledgeSettings
+from kodezart.core.logging_settings import LoggingSettings
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
@@ -72,6 +75,21 @@ class AppConfig(BaseSettings):
                 "organize_max_admission_rounds",
                 "organize_max_convergence_rounds",
                 "union_check_cleanup_poll_interval_seconds",
+                "project_name",
+                "debug",
+                "api_v1_prefix",
+                "log_level",
+                "log_pretty",
+                "queue_max_concurrent_runs_per_lane",
+                "queue_max_depth_per_lane",
+                "queue_terminal_retention_seconds",
+                "queue_event_buffer_retention_seconds",
+                "queue_event_buffer_capacity",
+                "aggregate_count_token_distance",
+                "aggregate_identifier_roster_min_length",
+                "aggregate_tracker_object_nouns",
+                "aggregate_issue_identifier_pattern",
+                "aggregate_identifier_separator_pattern",
             } or (name.startswith("knowledge_") and not name.startswith("knowledge__"))
 
         def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
@@ -100,25 +118,13 @@ class AppConfig(BaseSettings):
             checked(file_secret_settings),
         )
 
-    project_name: str = Field(
-        default="kodezart",
-        description="FastAPI application title.",
+    http: HttpSettings = Field(
+        default_factory=HttpSettings,
+        description="HTTP application metadata, debug behavior and route prefix.",
     )
-    debug: bool = Field(
-        default=False,
-        description="Enable /docs and /redoc Swagger UI.",
-    )
-    log_level: str = Field(
-        default="INFO",
-        description="Logging level (DEBUG, INFO, WARNING, ERROR).",
-    )
-    log_pretty: bool = Field(
-        default=False,
-        description="Colorized console output when true, JSON lines when false.",
-    )
-    api_v1_prefix: str = Field(
-        default="/api/v1",
-        description="URL prefix for all v1 API routes.",
+    logging: LoggingSettings = Field(
+        default_factory=LoggingSettings,
+        description="Logging severity and output format.",
     )
     github_token: str | None = Field(
         default=None,
@@ -939,55 +945,6 @@ class AppConfig(BaseSettings):
             "in that category yields. A payload takes the max severity."
         ),
     )
-    aggregate_count_token_distance: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "Maximum intervening tokens between a numeral and a tracker-object "
-            "noun in a durable aggregate claim. The adjacent-only default "
-            "leaves counts of tests, files and commits untouched."
-        ),
-    )
-    aggregate_identifier_roster_min_length: int = Field(
-        default=3,
-        ge=2,
-        description=(
-            "Minimum separated run of tracker issue identifiers that constitutes "
-            "a roster on a durable surface. A single reference is not a roster."
-        ),
-    )
-    aggregate_tracker_object_nouns: list[str] = Field(
-        default_factory=lambda: [
-            "issue",
-            "issues",
-            "ticket",
-            "tickets",
-            "lane",
-            "lanes",
-            "project",
-            "projects",
-            "milestone",
-            "milestones",
-            "sub-issue",
-            "sub-issues",
-            "PR",
-            "PRs",
-            "pull request",
-            "pull requests",
-        ],
-        min_length=1,
-        description="Tracker-object nouns counted by the durable aggregate scanner.",
-    )
-    aggregate_issue_identifier_pattern: str = Field(
-        default=r"\b[A-Z][A-Z0-9]*-\d+\b",
-        min_length=1,
-        description="Tracker issue-identifier regex used to recognize a roster.",
-    )
-    aggregate_identifier_separator_pattern: str = Field(
-        default=r"(?:[\s,;|/·•`*()\[\]-]+|\s+and\s+)",
-        min_length=1,
-        description="Regex separating consecutive identifiers in a tracker roster.",
-    )
     operation_config: str | None = Field(
         default=None,
         description=(
@@ -1008,45 +965,9 @@ class AppConfig(BaseSettings):
             "loop is considered plateaued and stops."
         ),
     )
-    queue_max_concurrent_runs_per_lane: int = Field(
-        default=1,
-        ge=1,
-        le=16,
-        description="Dispatcher worker tasks per lane. 1 makes runs serial.",
-    )
-    queue_max_depth_per_lane: int = Field(
-        default=64,
-        ge=1,
-        le=1024,
-        description="Queued submissions a lane accepts before rejecting.",
-    )
-    queue_terminal_retention_seconds: float = Field(
-        default=86400.0,
-        ge=60.0,
-        le=604800.0,
-        description=(
-            "Seconds the terminal JOB RECORD is retained in the registry. "
-            "Governs the record only — a record is 1-2 KB, so a long window "
-            "is cheap. The replay buffer has its own, shorter window."
-        ),
-    )
-    queue_event_buffer_retention_seconds: float = Field(
-        default=900.0,
-        ge=0.0,
-        le=86400.0,
-        description=(
-            "Seconds a terminal job's REPLAY BUFFER is retained, independently "
-            "of its record. Governs the buffer only — buffered events run to "
-            "megabytes per job, so this window is short: long enough for a "
-            "disconnected client to reconnect and replay. 0 drops the buffer "
-            "as soon as the job goes terminal."
-        ),
-    )
-    queue_event_buffer_capacity: int = Field(
-        default=512,
-        ge=1,
-        le=10000,
-        description="Events retained per job for replay on attach.",
+    queue: JobQueueSettings = Field(
+        default_factory=JobQueueSettings,
+        description="Job queue capacity and record/replay retention.",
     )
 
     @model_validator(mode="after")
@@ -1057,27 +978,6 @@ class AppConfig(BaseSettings):
                 "audit_full_sweep_interval_seconds must not be shorter than "
                 "audit_sweep_interval_seconds"
             )
-        return self
-
-    @model_validator(mode="after")
-    def _buffer_retention_within_record_retention(self) -> Self:
-        """Reject a replay buffer that would outlive its own job record.
-
-        Replayable frames for a job the registry can no longer name are
-        incoherent, so the configuration is rejected at boot rather than
-        clamped.
-        """
-        if self.queue_event_buffer_retention_seconds > (
-            self.queue_terminal_retention_seconds
-        ):
-            msg = (
-                "queue_event_buffer_retention_seconds "
-                f"({self.queue_event_buffer_retention_seconds}) must not exceed "
-                "queue_terminal_retention_seconds "
-                f"({self.queue_terminal_retention_seconds}): a replay buffer "
-                "cannot outlive the job record that names it"
-            )
-            raise ValueError(msg)
         return self
 
     @model_validator(mode="after")

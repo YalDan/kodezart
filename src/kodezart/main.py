@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ``app.state`` for handler access.
     """
     config: AppConfig = app.state.config
-    configure_logging(log_level=config.log_level, pretty=config.log_pretty)
+    configure_logging(log_level=config.logging.level, pretty=config.logging.pretty)
     log: BoundLogger = get_logger(__name__)
 
     def observed_release[**P, T](
@@ -176,7 +176,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # the watchers later. This exit stack reserves their dependency order.
         watchers = await cleanup.enter_async_context(AsyncExitStack())
         job_queue = build_job_queue(
-            config=config,
+            settings=config.queue,
             workflow_engine=workflow_engine,
         )
         app.state.job_queue = job_queue
@@ -221,8 +221,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         await log.ainfo(
             "application_starting",
-            project=config.project_name,
-            debug=config.debug,
+            project=config.http.project_name,
+            debug=config.http.debug,
         )
         yield
     except BaseException as exc:
@@ -255,14 +255,14 @@ def create_app() -> FastAPI:
     """
     config = AppConfig.from_env()
     application = FastAPI(
-        title=config.project_name,
-        debug=config.debug,
+        title=config.http.project_name,
+        debug=config.http.debug,
         lifespan=lifespan,
-        docs_url="/docs" if config.debug else None,
-        redoc_url="/redoc" if config.debug else None,
+        docs_url="/docs" if config.http.debug else None,
+        redoc_url="/redoc" if config.http.debug else None,
     )
     application.state.config = config
-    application.include_router(v1_router, prefix=config.api_v1_prefix)
+    application.include_router(v1_router, prefix=config.http.api_v1_prefix)
     return application
 
 

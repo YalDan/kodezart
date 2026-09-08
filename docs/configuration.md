@@ -16,7 +16,7 @@ Kodezart uses [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pyda
 for configuration. All settings are loaded from environment variables with the
 `KODEZART_` prefix and optionally from a `.env` file (`env_file='.env'`).
 
-- **Case insensitive**: `KODEZART_DEBUG` and `kodezart_debug` are equivalent
+- **Case insensitive**: `KODEZART_HTTP__DEBUG` and `kodezart_http__debug` are equivalent
 - **Extra fields forbidden**: a `KODEZART_` variable whose suffix names no
   field below raises a validation error at startup rather than being ignored
 
@@ -40,6 +40,17 @@ environment name were also removed. Repeated process-group termination uses
 a fixed 0.01-second interval until output drains; it is cleanup mechanics,
 not a deployment policy. The per-step command timeout remains configurable.
 
+The legacy aggregate-pattern scanner had no remaining applicable production
+writer after authored admission moved to the fresh judgment. These five settings
+have no replacement and are refused from initializer, environment, dotenv and
+file-secret sources; delete their corresponding uppercase prefixed assignments:
+
+- `aggregate_count_token_distance`
+- `aggregate_identifier_roster_min_length`
+- `aggregate_tracker_object_nouns`
+- `aggregate_issue_identifier_pattern`
+- `aggregate_identifier_separator_pattern`
+
 ## Settings Reference
 
 Escalation ageing uses recorded run progress. The implementation defaults
@@ -51,7 +62,7 @@ and leased alarm writer remain separate work.
 
 | Variable                          | Type         | Default                  | Constraints | Description                                              |
 | --------------------------------- | ------------ | ------------------------ | ----------- | -------------------------------------------------------- |
-| `KODEZART_PROJECT_NAME`           | `str`        | `kodezart`               |             | FastAPI application title                                |
+| `KODEZART_HTTP__PROJECT_NAME`           | `str`        | `kodezart`               |             | FastAPI application title                                |
 | `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_COMMITS` | `int` | `5` | >= 0 | Recorded lane commits allowed after an unanswered escalation's raise SHA. |
 | `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_TICKS` | `int` | `10` | >= 0 | Recorded walker ticks allowed after an unanswered escalation was raised. |
 | `KODEZART_RUN_ALARM_BARREN_TICK_MAX_FILES_CHANGED` | `int` | `10` | >= 0 | Recorded files changed against the lane base allowed on a tick closing no previously-open reference. |
@@ -60,10 +71,10 @@ and leased alarm writer remain separate work.
 | `KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` | `float` | `1800` | > 0 | Wall-clock bound for one check step of a union composition. |
 | `KODEZART_UNION_STALE_MAX_ATTEMPTS` | `int` | `3` | >= 1 | Maximum union attempts before continuously moving lane heads refuse. |
 | `KODEZART_RUN_ALARM_MAX_RULINGS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Distinct machine-authored ruling identities allowed since the lane last closed a previously-open obligation. |
-| `KODEZART_DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
-| `KODEZART_LOG_LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
-| `KODEZART_LOG_PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
-| `KODEZART_API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
+| `KODEZART_HTTP__DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
+| `KODEZART_LOGGING__LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
+| `KODEZART_LOGGING__PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
+| `KODEZART_HTTP__API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
 | `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   | min length 1 | GitHub PAT for cloning private repositories and reaching the forge. Unset means no forge credential: the clone path attaches no auth and no dispatch pass is scheduled. An empty assignment is refused at startup rather than resolving to "unset" on one code path and "empty credential" on the next |
 | `KODEZART_CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
 | `KODEZART_INTEGRATION_WORKSPACE_DIR` | `str`     | `/tmp/kodezart-integration` |          | Local directory the base resolver builds integration refs in |
@@ -85,11 +96,11 @@ and leased alarm writer remain separate work.
 | `KODEZART_RETRY_RATE_LIMIT_FLOOR_SECONDS` | `float` | `60.0` | >= 1.0, <= 3600.0 | Seconds a node attempt that died on a provider rate-limit rejection waits before the graph's own back-off begins, when the rejection states no retry-after of its own. Measured 2026-09-01: under one standing limit the retry policy spawned around sixteen empty sessions in thirty seconds. The attempt budget is unchanged — only the spacing is. |
 | `KODEZART_CHECKPOINT_URL`         | `str\|None`  | `None`                   |             | LangGraph checkpoint URL (see Checkpointing below)       |
 | `KODEZART_LOOP_PLATEAU_WINDOW`    | `int`        | `2`                      | 2-10        | Iterations without a new best passed-count before the Ralph loop is considered plateaued and stops |
-| `KODEZART_QUEUE_MAX_CONCURRENT_RUNS_PER_LANE` | `int` | `1`             | 1-16        | Dispatcher worker tasks per lane; `1` makes runs serial. Above 1 is honored and warns at start |
-| `KODEZART_QUEUE_MAX_DEPTH_PER_LANE` | `int`      | `64`                     | 1-1024      | Queued submissions a lane accepts before rejecting with HTTP 429 |
-| `KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS` | `float` | `86400.0`        | 60-604800   | Seconds the terminal **job record** is retained in the registry (see Queue retention below) |
-| `KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS` | `float` | `900.0`      | 0-86400     | Seconds a terminal job's **replay buffer** is retained, independently of its record (see Queue retention below) |
-| `KODEZART_QUEUE_EVENT_BUFFER_CAPACITY` | `int`   | `512`                    | 1-10000     | Events retained per job for replay on attach; overflow drops oldest and marks the job truncated |
+| `KODEZART_QUEUE__MAX_CONCURRENT_RUNS_PER_LANE` | `int` | `1`             | 1-16        | Dispatcher worker tasks per lane; `1` makes runs serial. Above 1 is honored and warns at start |
+| `KODEZART_QUEUE__MAX_DEPTH_PER_LANE` | `int`      | `64`                     | 1-1024      | Queued submissions a lane accepts before rejecting with HTTP 429 |
+| `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` | `float` | `86400.0`        | 60-604800   | Seconds the terminal **job record** is retained in the registry (see Queue retention below) |
+| `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` | `float` | `900.0`      | 0-86400     | Seconds a terminal job's **replay buffer** is retained, independently of its record (see Queue retention below) |
+| `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` | `int`   | `512`                    | 1-10000     | Events retained per job for replay on attach; overflow drops oldest and marks the job truncated |
 | `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` | `bool` | `false` |  | Enables organization-privacy judgment and requires an OperationConfig `private_surface` description. Mandatory authored aggregate judgment on durable PUBLIC/UNKNOWN writes is independent of this setting. |
 | `KODEZART_TRACKER_ASSET_FETCH_TIMEOUT_SECONDS` | `float` | `30.0` | >= 1.0, <= 300.0 | Time one asset fetch may take before the fire fails to build. |
 | `KODEZART_TRACKER_ASSET_MAX_BYTES` | `int` | `10485760` | >= 1024, <= 104857600 | Largest single asset admitted into a fire context. An asset over the bound is a typed failure, never a truncation. |
@@ -402,7 +413,7 @@ own window:
 
 - the **job record** (`jobId`, lane, state, outcome, truncated) is 1-2 KB, so it
   is kept for a day by default;
-- the **replay buffer** holds up to `QUEUE_EVENT_BUFFER_CAPACITY` full SSE
+- the **replay buffer** holds up to `queue.event_buffer_capacity` full SSE
   frames, which run to megabytes per job, so it is released after 15 minutes —
   long enough for a disconnected client to reconnect at
   `GET /api/v1/jobs/{jobId}/stream` and replay.
@@ -412,8 +423,8 @@ terminal. Releasing a buffer marks the record `truncated: true` and logs
 `job_event_buffer_dropped`, so frames a client can no longer replay are never a
 silent gap.
 
-`QUEUE_EVENT_BUFFER_RETENTION_SECONDS` must not exceed
-`QUEUE_TERMINAL_RETENTION_SECONDS`: a buffer outliving the record that names it
+`queue.event_buffer_retention_seconds` must not exceed
+`queue.terminal_retention_seconds`: a buffer outliving the record that names it
 is incoherent, so the configuration is **rejected at startup** rather than
 clamped.
 
@@ -424,11 +435,11 @@ most commonly customized variables. This table above is the authoritative
 full reference.
 
 ```bash
-KODEZART_PROJECT_NAME=kodezart
-KODEZART_DEBUG=false
-KODEZART_LOG_LEVEL=INFO
-KODEZART_LOG_PRETTY=false
-KODEZART_API_V1_PREFIX=/api/v1
+KODEZART_HTTP__PROJECT_NAME=kodezart
+KODEZART_HTTP__DEBUG=false
+KODEZART_LOGGING__LEVEL=INFO
+KODEZART_LOGGING__PRETTY=false
+KODEZART_HTTP__API_V1_PREFIX=/api/v1
 # GitHub personal access token for repository cloning (optional). The field is
 # str | None and an empty assignment is NOT an unset one — it is refused at
 # startup. Leave the line commented out to keep it unset.
@@ -442,13 +453,13 @@ KODEZART_INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration
 
 ### JSON Lines (Production Default)
 
-When `KODEZART_LOG_PRETTY=false` (default), structured log output is emitted as
+When `KODEZART_LOGGING__PRETTY=false` (default), structured log output is emitted as
 JSON lines suitable for log aggregation systems. Uvicorn loggers are quieted to
 WARNING level.
 
 ### Colorized Console (Development)
 
-When `KODEZART_LOG_PRETTY=true`, log output uses colorized human-readable
+When `KODEZART_LOGGING__PRETTY=true`, log output uses colorized human-readable
 formatting for local development.
 
 ## Checkpointing
@@ -470,17 +481,14 @@ and `psycopg[binary]`); without it boot raises
 uv sync --all-groups --extra postgres
 ```
 
-### Durable aggregate scanning
+### Durable authored aggregate admission
 
-These settings configure the aggregate scanner on the existing outbound gate. Durable public or unknown-visibility surfaces are checked; appended event surfaces skip aggregate matching. The gate's existing private-repository bypass still applies.
-
-| Variable | Type | Default | Constraint | Meaning |
-| --- | --- | --- | --- | --- |
-| `KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE` | `int` | `0` | >= 0 | Maximum intervening tokens between a numeral and a tracker-object noun. |
-| `KODEZART_AGGREGATE_IDENTIFIER_ROSTER_MIN_LENGTH` | `int` | `3` | >= 2 | Minimum consecutive tracker references forming a roster. |
-| `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS` | `list[str]` | Issue, ticket, lane, project, milestone, sub-issue, PR and pull-request nouns, singular and plural | Nonempty list | JSON list of object nouns; each is matched literally, without case sensitivity. |
-| `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` | `str` | Uppercase issue prefix followed by a hyphen and digits | Nonempty regex | Identifier grammar used by roster matching. |
-| `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` | `str` | Whitespace and punctuation separators, or “and” | Nonempty regex | Grammar separating consecutive references in a roster. |
+Durable PUBLIC/UNKNOWN authored text uses the existing fresh content judgment.
+Tracker-object counts and rosters of at least three references block the whole
+write; ordinary test/file/commit counts remain permitted. This policy has no
+aggregate setting. Point-in-time comments allow aggregates subject to privacy;
+PRIVATE targets retain the existing fast path. Typed generated aggregate and
+terminal/residual writer adoption remain unfinished.
 
 
 The audit claim role is `audit_claim` in both prompt sets. Its `criterion_key`,
@@ -573,3 +581,57 @@ the workspace; an unreadable namespace cannot establish a valid observation.
 Scoped execution is currently unavailable and refuses before tracker,
 repository or judgment work. There is no fire-time ruling prompt setting or
 preparation-only session. Authored workflow prompt configuration is unchanged.
+
+## Queue environment migration
+
+Queue settings now live in the ordinary `AppConfig.queue` value passed to the
+queue builder. The five operator choices, defaults and bounds are unchanged.
+Replace each former flat field's environment name (the uppercase field with the
+`KODEZART` prefix and separator) with the nested name below. Old flat assignments
+are rejected in constructor input, process environment, dotenv and file secrets.
+
+| Former flat field | Nested environment name |
+| --- | --- |
+| `queue_max_concurrent_runs_per_lane` | `KODEZART_QUEUE__MAX_CONCURRENT_RUNS_PER_LANE` |
+| `queue_max_depth_per_lane` | `KODEZART_QUEUE__MAX_DEPTH_PER_LANE` |
+| `queue_terminal_retention_seconds` | `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` |
+| `queue_event_buffer_retention_seconds` | `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` |
+| `queue_event_buffer_capacity` | `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` |
+
+A file secret named `KODEZART_QUEUE` contains a JSON object with these section
+field names, without the old `queue_` prefix. Standard settings precedence remains
+constructor input, process environment, dotenv, file secrets, then defaults.
+
+## HTTP environment migration
+
+HTTP settings now live in `AppConfig.http`. The application consumes this section;
+HTTP response handlers receive only the route prefix. Defaults and debug behavior
+are unchanged. Replace the former flat environment assignments with these names:
+
+| Former flat field | Nested environment name |
+| --- | --- |
+| `project_name` | `KODEZART_HTTP__PROJECT_NAME` |
+| `debug` | `KODEZART_HTTP__DEBUG` |
+| `api_v1_prefix` | `KODEZART_HTTP__API_V1_PREFIX` |
+
+The former names (uppercase field with the `KODEZART` prefix and separator) now
+refuse in constructor input, environment, dotenv and file secrets. A file secret
+named `KODEZART_HTTP` holds a JSON object with the three field names above.
+Standard constructor/environment/dotenv/file-secret precedence is unchanged.
+
+## Logging environment migration
+
+Logging settings now live in `AppConfig.logging`; the native logger still receives
+its level and renderer choice directly. Defaults remain INFO and JSON output.
+Standard level names are case-insensitive, including WARN/WARNING and FATAL/CRITICAL
+aliases. An unknown level now fails validation instead of silently selecting INFO.
+
+| Former flat field | Nested environment name |
+| --- | --- |
+| `log_level` | `KODEZART_LOGGING__LEVEL` |
+| `log_pretty` | `KODEZART_LOGGING__PRETTY` |
+
+Replace the former uppercase flat assignments (with the `KODEZART` prefix and
+separator). They now refuse in constructor input, environment, dotenv and file
+secrets. A file secret named `KODEZART_LOGGING` holds a JSON object with `level` and
+`pretty`. Standard settings-source precedence is unchanged.

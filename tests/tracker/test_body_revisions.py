@@ -33,7 +33,6 @@ def server():
 async def test_repeated_reads_preserve_body_and_digest_without_writes(
     tracker: TrackerPort, tracker_writes, issue_key
 ):
-    tracker.require_body_digest_stability()
     writes = tracker_writes()
     first = await tracker.read_issue_revision(issue_key=issue_key)
     second = await tracker.read_issue_revision(issue_key=issue_key)

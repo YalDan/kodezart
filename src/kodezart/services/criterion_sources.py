@@ -1,12 +1,12 @@
 """Read a criterion's own full source from an unambiguous native child family."""
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import TrackerCriteriaReader
 from kodezart.domain.errors import CriterionResolutionError
 from kodezart.types.domain.tracker import TrackerIssue
 
 
 async def resolve_criterion(
-    *, tracker: TrackerPort, issue_key: str, criterion_key: str
+    *, tracker: TrackerCriteriaReader, issue_key: str, criterion_key: str
 ) -> TrackerIssue:
     """Resolve one native key against a fresh, complete criterion-family read.
 
