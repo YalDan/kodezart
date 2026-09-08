@@ -27,6 +27,7 @@ class PromptKey(StrEnum):
     TICKET_REVISION = "ticket_revision"
     ACCEPTANCE_CRITERIA = "acceptance_criteria"
     CRITERIA_VALIDATION = "criteria_validation"
+    FIRE_TIME_RULING = "fire_time_ruling"
     IMPLEMENTATION = "implementation"
     EVALUATION = "evaluation"
     ITERATION_FEEDBACK = "iteration_feedback"

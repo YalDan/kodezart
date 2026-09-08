@@ -31,7 +31,36 @@ invalid Python, and a graded test with no Python `assert` statements refuse
 with typed errors. Explicitly supplying no protected references yields no
 claims; the service does not infer a protection declaration from source prose.
 
-The source-owned reference producer, audit invocation and claim publication
-remain separate work. Returned claims are observations, not audit judgments or
-permission to rewrite assertions. No tracker writer, protection enforcement,
-or durable carrier is introduced here.
+`RecordedAssertionDriftDetector.compare` supplies those inputs through actual
+native readers. It reads the current criterion's structured Evidence SHA and
+the current remote head of the recorded lane branch through `AuditSourceReader`.
+It enumerates configured ruling comments on the lane issue and its current
+criterion children. Each ruling can explicitly designate `protectedTests` using
+the existing reference shape: its own `RulingId` as `sourceRef`, a canonical
+Python path, and a qualified test name. `RulingProtectedTestRef` narrows the
+existing reference's owner to `RulingId`; its path/name validation and wire shape
+are inherited. Generic detector references still carry native comment addresses.
+The existing marker, question identity,
+required authorship, complete comment reader, and strict JSON parser remain the
+record boundary; there is no second protection marker or inferred file owner.
+
+An omitted or null designation remains unknown and the comparison refuses it.
+An explicit empty list means that ruling designates no protected tests. A
+successfully read empty configured ruling set also yields no comparisons;
+unmarked historical prose is outside that record set and is not silently
+migrated. Generic ruling readers remain compatible with unknown designation,
+and rendering an unknown designation preserves the previous record bytes.
+
+The collector binds every selected test to its actual native ruling comment
+identity, compares immutable Git objects, then rereads the complete ruling sets,
+criterion family, criterion Evidence, lane record and remote head. Changed or
+unreadable inputs refuse a result. The supplied criterion establishes the graded
+baseline only: a deviation belongs to the ruling source, and does not itself
+refute that criterion. Neither the recorded Evidence test string nor a dispatch
+base is interpreted as a protection declaration.
+
+The current ruling-node producer, historical declaration migration, complete
+scheduled audit invocation and claim publication remain separate work. Returned
+claims are observations, not audit judgments or permission to rewrite assertions.
+This reader introduces no tracker write or protection enforcement; any eventual
+record publication must use the authorized lease and outbound gate boundaries.

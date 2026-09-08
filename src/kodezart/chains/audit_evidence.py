@@ -10,6 +10,7 @@ from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.criterion_sources import resolve_criterion
+from kodezart.services.git_observations import read_replace_refs
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import AuditClaimRequest, AuditVerdict
@@ -65,6 +66,8 @@ class AuditEvidenceVerifier:
     ) -> str:
         async def observe() -> str:
             await self._git.fetch(repository)
+            if await read_replace_refs(git=self._git, workspace=repository):
+                raise ValueError("the Evidence repository substitutes Git objects")
             head = await self._git.remote_branch_sha(repository, self._remote, branch)
             if not head:
                 raise ValueError("the recorded branch has no live remote head")
@@ -155,6 +158,8 @@ class AuditEvidenceVerifier:
             raise asyncio.CancelledError
         if latest_head != head:
             raise ValueError("the remote head changed during Evidence verification")
+        if await read_replace_refs(git=self._git, workspace=repository):
+            raise ValueError("the Evidence repository substitutes Git objects")
         return AuditEvidenceObservation(
             criterion=criterion,
             recorded_evidence=evidence,
