@@ -93,7 +93,10 @@ class ObservedGit(SubprocessGitService):
 def service(adapter, runner=None):
     return UnionComposition(
         git=adapter,
-        runner=runner or SubprocessCheckChainRunner(config=AppConfig()),
+        runner=runner
+        or SubprocessCheckChainRunner(
+            timeout=AppConfig().union_check_step_timeout_seconds
+        ),
         author_name="Union Fixture",
         author_email="union@example.invalid",
     )
@@ -318,7 +321,9 @@ async def test_incompatible_constructor_heads_are_each_green_but_union_red(repos
     await git(repo, "commit", "-m", "shared constructor")
     base = await git(repo, "rev-parse", "HEAD")
     heads = []
-    runner = SubprocessCheckChainRunner(config=AppConfig())
+    runner = SubprocessCheckChainRunner(
+        timeout=AppConfig().union_check_step_timeout_seconds
+    )
     individual = []
     for lane, parameter in (("left", "timeout"), ("right", "credentials")):
         await git(repo, "checkout", "-b", lane, base)

@@ -5,10 +5,11 @@ import os
 import signal
 from collections.abc import Sequence
 
-from kodezart.core.config import AppConfig
 from kodezart.domain.errors import CheckChainExecutionError
 from kodezart.types.domain.check_chain import CheckChainResult, CheckStepOutput
 from kodezart.types.domain.operation import CheckStep
+
+_CLEANUP_POLL_INTERVAL_SECONDS = 0.01
 
 
 def _kill_group(process: asyncio.subprocess.Process) -> None:
@@ -34,16 +35,12 @@ async def _finish_cleanup[T](task: asyncio.Task[T]) -> tuple[T, bool]:
 async def _stop_attempt(
     spawning: asyncio.Task[asyncio.subprocess.Process],
     communication: asyncio.Task[tuple[bytes, bytes]] | None,
-    *,
-    poll_interval: float,
 ) -> tuple[asyncio.subprocess.Process, bytes]:
     process, spawn_canceled = await _finish_cleanup(spawning)
     _kill_group(process)
     if communication is None:
         communication = asyncio.create_task(process.communicate())
-    draining = asyncio.create_task(
-        _drain_stopped_group(process, communication, poll_interval=poll_interval)
-    )
+    draining = asyncio.create_task(_drain_stopped_group(process, communication))
     (output, _), read_canceled = await _finish_cleanup(draining)
     if spawn_canceled or read_canceled:
         raise asyncio.CancelledError
@@ -53,8 +50,6 @@ async def _stop_attempt(
 async def _drain_stopped_group(
     process: asyncio.subprocess.Process,
     communication: asyncio.Task[tuple[bytes, bytes]],
-    *,
-    poll_interval: float,
 ) -> tuple[bytes, bytes]:
     """Cover children created while the first group signal was delivered.
 
@@ -62,7 +57,7 @@ async def _drain_stopped_group(
     captured pipe. Keep owning that group until communication has settled.
     """
     while not communication.done():
-        await asyncio.wait({communication}, timeout=poll_interval)
+        await asyncio.wait({communication}, timeout=_CLEANUP_POLL_INTERVAL_SECONDS)
         if not communication.done():
             _kill_group(process)
     return communication.result()
@@ -77,9 +72,8 @@ class SubprocessCheckChainRunner:
     No command is retried and no failure text is classified here.
     """
 
-    def __init__(self, *, config: AppConfig) -> None:
-        self._timeout = config.union_check_step_timeout_seconds
-        self._cleanup_poll_interval = config.union_check_cleanup_poll_interval_seconds
+    def __init__(self, *, timeout: float) -> None:
+        self._timeout = timeout
 
     async def run_chain(
         self, *, cwd: str, steps: Sequence[CheckStep]
@@ -130,13 +124,9 @@ class SubprocessCheckChainRunner:
                     output, _ = await asyncio.shield(communication)
             except TimeoutError:
                 timed_out = True
-                process, output = await _stop_attempt(
-                    spawning, communication, poll_interval=self._cleanup_poll_interval
-                )
+                process, output = await _stop_attempt(spawning, communication)
             except BaseException:
-                await _stop_attempt(
-                    spawning, communication, poll_interval=self._cleanup_poll_interval
-                )
+                await _stop_attempt(spawning, communication)
                 raise
         except OSError as exc:
             raise CheckChainExecutionError(

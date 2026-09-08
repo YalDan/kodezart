@@ -25,7 +25,7 @@ resolved Git remote name, rather than the application configuration object.
 `KODEZART_GIT_REMOTE` retains its existing default and environment override;
 this API narrowing does not add an audit setting or compose a new scheduler.
 
-## Removed ORGANIZE settings
+## Removed implementation settings
 
 The unconsumed `organize_max_admission_rounds` and
 `organize_max_convergence_rounds` settings were removed. Delete their
@@ -34,6 +34,11 @@ from the environment, dotenv files and file-secret directories. Startup
 refuses these retired names. There is no replacement setting while the
 bounded ORGANIZE loops have no active consumer; this does not remove their
 required bounded retry and exhaustion behavior.
+
+The `union_check_cleanup_poll_interval_seconds` setting and its uppercase
+environment name were also removed. Repeated process-group termination uses
+a fixed 0.01-second interval until output drains; it is cleanup mechanics,
+not a deployment policy. The per-step command timeout remains configurable.
 
 ## Settings Reference
 
@@ -54,7 +59,6 @@ and leased alarm writer remain separate work.
 | `KODEZART_RUN_ALARM_MAX_SURFACE_HOLDERS` | `int` | `1` | >= 0 | Distinct recorded run holders allowed on one complete writable-surface address. |
 | `KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` | `float` | `1800` | > 0 | Wall-clock bound for one check step of a union composition. |
 | `KODEZART_UNION_STALE_MAX_ATTEMPTS` | `int` | `3` | >= 1 | Maximum union attempts before continuously moving lane heads refuse. |
-| `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` | `float` | `0.01` | finite, > 0 | Seconds between repeated check-process group termination signals while canceled or timed-out output is still draining. |
 | `KODEZART_RUN_ALARM_MAX_RULINGS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Distinct machine-authored ruling identities allowed since the lane last closed a previously-open obligation. |
 | `KODEZART_DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
 | `KODEZART_LOG_LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |

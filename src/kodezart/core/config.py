@@ -71,6 +71,7 @@ class AppConfig(BaseSettings):
             return name in {
                 "organize_max_admission_rounds",
                 "organize_max_convergence_rounds",
+                "union_check_cleanup_poll_interval_seconds",
             } or (name.startswith("knowledge_") and not name.startswith("knowledge__"))
 
         def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
@@ -420,15 +421,6 @@ class AppConfig(BaseSettings):
         ge=1,
         description=(
             "Maximum union attempts before continuously moving lane heads refuse."
-        ),
-    )
-    union_check_cleanup_poll_interval_seconds: float = Field(
-        default=0.01,
-        gt=0,
-        allow_inf_nan=False,
-        description=(
-            "Seconds between repeated check-process group termination signals "
-            "while canceled or timed-out output is still draining."
         ),
     )
     delivery_max_concurrent_watches: int = Field(

@@ -1,4 +1,4 @@
-"""Retired, unconsumed ORGANIZE settings fail clearly at the config boundary."""
+"""Removed settings fail clearly at the config boundary."""
 
 import pytest
 from pydantic import ValidationError
@@ -22,10 +22,15 @@ def _from_source(source, field, value, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "field", ["organize_max_admission_rounds", "organize_max_convergence_rounds"]
+    "field",
+    [
+        "organize_max_admission_rounds",
+        "organize_max_convergence_rounds",
+        "union_check_cleanup_poll_interval_seconds",
+    ],
 )
 @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
-def test_removed_organize_limit_refuses_all_supported_sources(
+def test_removed_setting_refuses_all_supported_sources(
     source, field, tmp_path, monkeypatch
 ):
     with pytest.raises(ValidationError, match="Extra inputs") as caught:
@@ -42,11 +47,12 @@ def test_retained_remote_override_loads_at_the_same_config_boundary(
     assert config.git_remote == "upstream"
 
 
-def test_default_config_exposes_no_unused_organize_limit():
+def test_default_config_exposes_no_removed_setting():
     config = AppConfig(_env_file=None)
     assert config.git_remote == "origin"
     assert "organize_max_admission_rounds" not in config.model_dump()
     assert "organize_max_convergence_rounds" not in config.model_dump()
+    assert "union_check_cleanup_poll_interval_seconds" not in config.model_dump()
 
 
 @pytest.mark.parametrize("source", ["env", "secret"])
@@ -56,6 +62,7 @@ def test_default_config_exposes_no_unused_organize_limit():
         "organize_max_admission_rounds",
         "organize_max_convergence_rounds",
         "knowledge_mcp_token",
+        "union_check_cleanup_poll_interval_seconds",
     ],
 )
 def test_unrelated_unprefixed_names_are_not_retired_settings(
