@@ -44,13 +44,13 @@ class AuditForgeObservation(CamelCaseModel):
             raise ValueError("the checks belong to another grading SHA")
         if self.verdict is AuditVerdict.UNVERIFIABLE:
             return self
-        if (
-            self.checks is None
-            or not self.checks.check_names
-            or not self.required_check_names <= self.checks.check_names
-        ):
+        if self.checks is None or not self.checks.check_names:
             raise ValueError("a definite verdict requires the observed check roster")
         if self.verdict is AuditVerdict.HOLDS:
+            if not self.required_check_names <= self.checks.check_names:
+                raise ValueError(
+                    "a clean verdict requires the complete declared roster"
+                )
             if not self.checks.checks_passed or (
                 self.red is not None
                 and (

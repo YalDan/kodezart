@@ -694,7 +694,9 @@ Evidence SHA through the existing CI monitor and completed-watch reader. Its
 request cannot supply a replacement SHA. The returned commit must match exactly;
 no branch name, newer branch run or ancestor run can substitute. Completed watch
 snapshots now retain their check names, and every explicitly configured
-`CheckStep.forge_check` must be present before a definite verdict. An empty
+`CheckStep.forge_check` must be present before accepting green. A readable red
+is still classified when another declared check is missing: reproduced failure
+can refute the forge claim without proving unrelated missing checks. An empty
 configured roster leaves the repository's observed CI roster authoritative.
 
 Green at that SHA holds the forge proposition. Red goes through the existing

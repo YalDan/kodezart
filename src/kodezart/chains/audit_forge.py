@@ -115,8 +115,9 @@ class AuditForgeVerifier:
             )
             if passed is None:
                 return result(AuditVerdict.UNVERIFIABLE, "no run at the recorded SHA")
-            checks = await self._checked_snapshot(request, evidence, required, passed)
+            checks = await self._checked_snapshot(request, evidence, passed)
             if passed:
+                self._require_roster(checks, required)
                 return result(AuditVerdict.HOLDS, "the recorded SHA has green checks")
             names = await self._ci.failed_check_names(
                 repo_url=request.repo_url, ref=evidence.graded_sha
@@ -136,11 +137,10 @@ class AuditForgeVerifier:
                     AuditVerdict.UNVERIFIABLE,
                     "the classified rerun has no completed check observation",
                 )
-            checks = await self._checked_snapshot(
-                request, evidence, required, red.checks_passed
-            )
+            checks = await self._checked_snapshot(request, evidence, red.checks_passed)
             match red.red_class:
                 case CheckRedClass.RUNNER_FLAKE:
+                    self._require_roster(checks, required)
                     return result(AuditVerdict.HOLDS, "a same-SHA rerun is green")
                 case CheckRedClass.WORK_DEFECT:
                     return result(AuditVerdict.REFUTED, "same-SHA checks reproduce red")
@@ -161,7 +161,6 @@ class AuditForgeVerifier:
         self,
         request: AuditForgeRequest,
         evidence: CriterionEvidence,
-        required: frozenset[str],
         passed: bool,
     ) -> ObservedChecks:
         if self._observations is None:
@@ -178,7 +177,10 @@ class AuditForgeVerifier:
             not name.strip() for name in checks.check_names
         ):
             raise ValueError("the completed observation has no usable check roster")
+        return checks
+
+    @staticmethod
+    def _require_roster(checks: ObservedChecks, required: frozenset[str]) -> None:
         if not required <= checks.check_names:
             missing = sorted(required - checks.check_names)
             raise ValueError(f"configured checks were not observed: {missing}")
-        return checks

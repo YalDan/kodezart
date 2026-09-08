@@ -142,7 +142,7 @@ async def forge(backend, case):
         ("roster", AuditVerdict.UNVERIFIABLE, None),
     ],
 )
-async def test_exact_sha_and_declared_roster_precede_the_one_red_classifier(
+async def test_exact_sha_roster_and_the_one_red_classifier_determine_the_verdict(
     setup, tracker_writes, backend, case, verdict, red_class
 ):
     repository = REPOSITORY
@@ -465,3 +465,48 @@ async def test_an_empty_declared_roster_leaves_the_native_ci_roster_authoritativ
         assert result.verdict is AuditVerdict.HOLDS
         assert result.required_check_names == frozenset()
         assert result.checks.check_names == NAMES
+
+
+@pytest.mark.parametrize("backend", ["fake", "github"])
+@pytest.mark.parametrize("rerun_green", [False, True])
+async def test_a_readable_red_is_classified_even_when_another_declared_check_is_missing(
+    setup, backend, rerun_green
+):
+    failures = frozenset() if rerun_green else frozenset({"unit"})
+    if backend == "fake":
+        reader = FakeCIObservationReader()
+        ci = FakeCIMonitor(
+            passed=False,
+            failed_names=frozenset({"unit"}),
+            check_names=frozenset({"unit"}),
+            rerun_results=[(rerun_green, "rerun result", failures)],
+            observation_reader=reader,
+            observed_sha_by_ref={SHA: SHA},
+        )
+        result = await setup(ci, reader).observe(REQUEST)
+        assert ci.rerun_calls == [(REPO, SHA)]
+    else:
+        api = ActionsAPI(names=("unit",), fresh_failed=failures)
+        ci = _make_client(api)
+        try:
+            result = await setup(ci, ci).observe(REQUEST)
+            assert len(api.writes) == 1
+        finally:
+            await ci.close()
+    assert result.verdict is (
+        AuditVerdict.UNVERIFIABLE if rerun_green else AuditVerdict.REFUTED
+    )
+    assert result.red.red_class is (
+        CheckRedClass.RUNNER_FLAKE if rerun_green else CheckRedClass.WORK_DEFECT
+    )
+    assert result.required_check_names - result.checks.check_names == {"integration"}
+
+
+async def test_a_constructed_green_verdict_cannot_ignore_the_declared_roster(setup):
+    async with forge("fake", "roster") as (ci, reader, _):
+        result = await setup(ci, reader).observe(REQUEST)
+    assert result.verdict is AuditVerdict.UNVERIFIABLE
+    data = result.model_dump()
+    data["verdict"] = AuditVerdict.HOLDS
+    with pytest.raises(ValidationError, match="complete declared roster"):
+        AuditForgeObservation.model_validate(data)
