@@ -32,14 +32,13 @@ def comment_under_marker(
 def description_replacement(
     *, target: str, body: str, expected: str, replacement: str
 ) -> str | None:
-    """Apply the three-outcome rule, with expected-present taking precedence.
+    """Replace one complete description, refusing partial or ambiguous anchors.
 
-    ``None`` means the expected text is absent and replacement is present.
-    This rule cannot make overlapping anchors replay-safe: if replacement
-    contains expected, another call still takes the edit arm.
+    None means the desired bytes are already present or the request is a no-op.
+    The complete expected body identifies the target without a span selector.
     """
-    if expected in body:
-        return body.replace(expected, replacement)
-    if replacement in body:
+    if expected == replacement or body == replacement:
         return None
+    if body == expected:
+        return replacement
     raise StaleWriteError(target=target, expected=expected)

@@ -949,13 +949,12 @@ class TrackerPort(Protocol):
     async def edit_description(
         self, *, target: str, expected: str, replacement: str
     ) -> DescriptionEditResult:
-        """Replace exact expected text in the issue's current description.
+        """Replace the complete expected description; state moves separately.
 
-        Expected present reports EDITED. Otherwise, replacement present
-        reports UNCHANGED with no write; neither raises StaleWriteError
-        naming target and expected with no write. State moves separately.
-        Callers serialize writes: this read-before-write detects stale
-        anchors, but is not a backend atomic compare-and-swap.
+        Exact desired bytes or identical expected/replacement return UNCHANGED.
+        Exact expected bytes return EDITED; any other current body raises
+        StaleWriteError with no write. Substrings do not identify the target.
+        Callers serialize writes; this is not an atomic compare-and-swap.
         """
         ...
 

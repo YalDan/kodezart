@@ -228,3 +228,39 @@ async def test_opaque_keys_round_trip_without_becoming_markup_or_extra_lines(
     assert (
         await upsert(tracker, scope_key=scope, deliverable_key=key)
     ).issue_key == first.issue_key
+
+
+async def test_changed_upsert_replay_keeps_one_issue_and_performs_zero_second_writes(
+    tracker, tracker_writes
+):
+    first = await upsert(tracker, body="body plus body")
+    amended = await upsert(tracker, body="new body plus body", title="Revised")
+    writes = tracker_writes()
+    repeated = await upsert(tracker, body="new body plus body", title="Revised")
+    assert first.issue_key == amended.issue_key == repeated.issue_key
+    assert repeated == amended
+    assert tracker_writes() == writes
+
+
+async def test_upsert_stale_full_body_cannot_edit_a_matching_fragment(
+    tracker, tracker_writes, monkeypatch
+):
+    original = await upsert(tracker)
+    edit = tracker.edit_description
+    foreign = None
+    writes = None
+
+    async def interleaved(**arguments):
+        nonlocal foreign, writes
+        foreign = await tracker.update_issue(
+            issue_key=original.issue_key,
+            body=original.body + "\nA principal added an independent clause.",
+        )
+        writes = tracker_writes()
+        return await edit(**arguments)
+
+    monkeypatch.setattr(tracker, "edit_description", interleaved)
+    with pytest.raises(StaleWriteError):
+        await upsert(tracker, body="A replacement", title="Must not be applied")
+    assert await tracker.read_issue(issue_key=original.issue_key) == foreign
+    assert tracker_writes() == writes

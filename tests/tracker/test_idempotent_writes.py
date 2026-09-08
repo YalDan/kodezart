@@ -111,7 +111,7 @@ class TestCommentUpsert:
 
 
 class TestDescriptionEdit:
-    async def test_present_anchor_is_replaced_preserving_surroundings_and_state(
+    async def test_exact_description_is_replaced_preserving_other_issue_fields(
         self, tracker: TrackerPort
     ):
         before = await tracker.update_issue(
@@ -119,8 +119,8 @@ class TestDescriptionEdit:
         )
         result = await tracker.edit_description(
             target=APPROVED_ISSUE,
-            expected="expected anchor",
-            replacement="replacement text",
+            expected=before.body,
+            replacement="before\nreplacement text\nafter",
         )
         after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
         assert result is DescriptionEditResult.EDITED
@@ -179,10 +179,9 @@ class TestDescriptionEdit:
         ).body == "concurrent edit"
         assert tracker_writes() == calls
 
-    async def test_overlapping_anchor_is_a_counterexample_to_universal_replay(
+    async def test_overlapping_anchor_replay_leaves_desired_description_unchanged(
         self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
     ):
-        """Expected-present precedence conflicts with universal replay."""
         first = await tracker.edit_description(
             target=APPROVED_ISSUE, expected="body", replacement="new body"
         )
@@ -190,11 +189,69 @@ class TestDescriptionEdit:
         second = await tracker.edit_description(
             target=APPROVED_ISSUE, expected="body", replacement="new body"
         )
-        assert first is second is DescriptionEditResult.EDITED
+        assert first is DescriptionEditResult.EDITED
+        assert second is DescriptionEditResult.UNCHANGED
+        assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)).body == "new body"
+        assert tracker_writes() == calls
+
+    @pytest.mark.parametrize("current", ["body", "unrelated", ""])
+    @pytest.mark.parametrize("same", ["body", ""])
+    async def test_identical_expected_and_replacement_is_a_write_free_noop(
+        self, tracker, tracker_writes, current, same
+    ):
+        before = await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
+        writes = tracker_writes()
         assert (
-            await tracker.read_issue(issue_key=APPROVED_ISSUE)
-        ).body == "new new body"
-        assert len(tracker_writes()) == len(calls) + 1
+            await tracker.edit_description(
+                target=APPROVED_ISSUE, expected=same, replacement=same
+            )
+            is DescriptionEditResult.UNCHANGED
+        )
+        assert await tracker.read_issue(issue_key=APPROVED_ISSUE) == before
+        assert tracker_writes() == writes
+
+    @pytest.mark.parametrize(
+        "current",
+        [
+            "body plus body",
+            "prefix body suffix",
+            "prefix new body suffix",
+            "desired body elsewhere\nbody",
+            "unrelated desired body",
+            "new body body",
+        ],
+    )
+    async def test_partial_or_incidental_target_never_authorizes_a_write(
+        self, tracker, tracker_writes, current
+    ):
+        before = await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
+        writes = tracker_writes()
+        with pytest.raises(StaleWriteError) as caught:
+            await tracker.edit_description(
+                target=APPROVED_ISSUE, expected="body", replacement="new body"
+            )
+        assert caught.value.target == APPROVED_ISSUE
+        assert caught.value.expected == "body"
+        assert await tracker.read_issue(issue_key=APPROVED_ISSUE) == before
+        assert tracker_writes() == writes
+
+    @pytest.mark.parametrize("current", ["body plus body", "", "é\r\nbody"])
+    async def test_full_description_disambiguates_repeated_and_empty_text(
+        self, tracker, tracker_writes, current
+    ):
+        await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
+        desired = "new " + current
+        first = await tracker.edit_description(
+            target=APPROVED_ISSUE, expected=current, replacement=desired
+        )
+        writes = tracker_writes()
+        second = await tracker.edit_description(
+            target=APPROVED_ISSUE, expected=current, replacement=desired
+        )
+        assert first is DescriptionEditResult.EDITED
+        assert second is DescriptionEditResult.UNCHANGED
+        assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)).body == desired
+        assert tracker_writes() == writes
 
 
 class TestStateReplay:

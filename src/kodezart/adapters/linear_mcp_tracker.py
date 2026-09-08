@@ -1196,7 +1196,7 @@ class LinearMcpTracker:
     async def edit_description(
         self, *, target: str, expected: str, replacement: str
     ) -> DescriptionEditResult:
-        """Read and assert the anchor before a description-only write."""
+        """Assert the complete expected body before a description-only write."""
         current = await self.read_issue(issue_key=target)
         body = description_replacement(
             target=target, body=current.body, expected=expected, replacement=replacement

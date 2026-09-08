@@ -1029,3 +1029,12 @@ indistinguishable transient histories, including a simultaneous mention-only
 ripple during otherwise identical own churn; this is not a vendor event
 history or a universal attribution proof. Admission continues to use its
 upstream body digest and gap, never this scan window or a second digest.
+
+
+Description edits address the complete issue body. An exact desired body or
+identical expected/replacement is unchanged without a write; an exact expected
+body is replaced once. Any other current body raises `StaleWriteError`.
+Substring matches, repeated fragments and incidental desired text never
+identify the target. `upsert_issue` supplies the complete body it read and
+preserves its adapter-owned identity. This is optimistic stale-read detection,
+not atomic compare-and-swap; callers still serialize writes.
