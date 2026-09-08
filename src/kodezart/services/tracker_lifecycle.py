@@ -154,6 +154,7 @@ class TrackerLifecycleWriter:
     ) -> None:
         """The run ended with no terminal outcome: undo, then say so.
 
+        Ruled 2026-08-26: option (a), restore the prior state and comment.
         The vocabulary this operation declares has no failure state — only
         in-progress, in-review and done — so the issue goes back to the
         state the pass found it in, and a comment carries the rest.  The

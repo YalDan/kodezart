@@ -28,8 +28,8 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
-from kodezart.types.domain.session import HttpKnowledge, StdioKnowledge
 from kodezart.types.domain.tracker import TrackerBackend
+from tests.docs.configuration import model_types
 from tests.outbound import make_admission
 
 # Each fixture is assembled by concatenation so no literal in this file has
@@ -46,8 +46,8 @@ _ENGINE_KEY: Final[str] = "sk-ant-api03-" + ("D" * 90)
 _HELD_CREDENTIALS: Final[tuple[tuple[str, str], ...]] = (
     ("github_token", f"git clone https://x-access-token:{_FORGE_TOKEN}@h/o/r.git"),
     ("github_token", f"forge call rejected: {_FORGE_TOKEN}"),
-    ("knowledge_mcp_token", f"knowledge call rejected: {_KNOWLEDGE_TOKEN}"),
-    ("tracker_token", f"tracker call rejected: {_TRACKER_TOKEN}"),
+    ("knowledge credential", f"knowledge call rejected: {_KNOWLEDGE_TOKEN}"),
+    ("TrackerSettings.token", f"tracker call rejected: {_TRACKER_TOKEN}"),
     ("engine credential", f"process error: {_ENGINE_KEY}"),
 )
 
@@ -109,35 +109,29 @@ def test_the_one_tracker_backend_has_a_credential_shape() -> None:
 #: Every credential-bearing field, mapped to a value in its live shape.
 _CREDENTIAL_FIELD_FIXTURES: Final[dict[str, str]] = {
     "github_token": _FORGE_TOKEN,
-    "tracker_token": _TRACKER_TOKEN,
+    "TrackerSettings.token": _TRACKER_TOKEN,
     "HttpKnowledge.credential": _KNOWLEDGE_TOKEN,
     "StdioKnowledge.credential": _KNOWLEDGE_TOKEN,
 }
 _SHAPELESS_TOKEN_FIELDS = {"HttpKnowledge.gateway_credential"}
 
 
-def _credential_fields():
-    fields = {
-        name: field
-        for name, field in AppConfig.model_fields.items()
-        if name.endswith("_token")
-    }
-    for model in (HttpKnowledge, StdioKnowledge):
-        fields.update(
-            {
-                f"{model.__name__}.{name}": field
-                for name, field in model.model_fields.items()
-                if name.endswith("credential")
-            }
-        )
+def _credential_fields(model=AppConfig):
+    fields = {}
+    for name, field in model.model_fields.items():
+        if name == "token" or name.endswith(("_token", "credential")):
+            key = name if model is AppConfig else f"{model.__name__}.{name}"
+            fields[key] = field
+        for nested in model_types(field.annotation):
+            fields.update(_credential_fields(nested))
     return fields
 
 
 def test_every_token_field_maps_into_the_table_or_names_its_exemption() -> None:
     """The class, closed: a credential field the table does not know fails here.
 
-    The enumeration is derived from the configuration model — every field
-    whose name ends ``_token`` — so a new credential knob cannot ship
+    The enumeration follows the actual configuration models, including nested
+    sections and transport arms. Token and credential fields cannot ship
     without either a shape the scrubber recognises or a recorded shapeless
     exemption, and neither can this test go vacuous when one is renamed.
     """
