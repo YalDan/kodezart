@@ -4,9 +4,6 @@ These declarations supplement the August service capture. Exercising them
 over a double checks request construction, not service-credential access.
 """
 
-import pytest
-
-from kodezart.domain.errors import ScopeReadError
 from tests.tracker.conftest import linear_over_fake_mcp
 from tests.tracker.test_linear_tool_arguments import LIVE_INPUT_SCHEMAS, ToolSchema
 from tests.tracker.test_scope_reads import (
@@ -64,8 +61,8 @@ async def test_scope_reads_send_declared_arguments_on_every_call() -> None:
         await tracker.scope_issues(ref=ref)
     for ref in (PROJECT, INITIATIVE):
         await tracker.container_metadata(ref=ref)
-    with pytest.raises(ScopeReadError):
-        await tracker.container_metadata(ref=MILESTONE)
+    milestone = await tracker.container_metadata(ref=MILESTONE)
+    assert milestone.ref == MILESTONE and milestone.url is None
 
     assert {tool for tool, _ in server.calls} == set(SCOPE_INPUT_SCHEMAS)
     for tool, arguments in server.calls:

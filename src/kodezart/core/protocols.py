@@ -854,8 +854,9 @@ class TrackerPort(Protocol):
         ...
 
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
-        """The container's ref, name, description, url and optional parent.
+        """The container's ref, name, description, optional url and parent.
 
+        Milestone metadata carries no invented or containing-project URL.
         An issue-kind ref raises a typed domain error: an issue is read
         through ``read_issue``, never returned as an empty container.
         """

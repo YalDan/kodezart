@@ -3504,6 +3504,8 @@ class FakeTrackerPort:
                 raise ScopeReadError("container parent is missing", ref=ref)
             ancestor = self.scope_containers[ancestor].parent
         container = self.scope_containers[ref]
+        if ref.kind is ScopeKind.MILESTONE:
+            return container.model_copy(update={"url": None})
         if not container.url:
             raise ScopeReadError("container URL was not reported", ref=ref)
         return container

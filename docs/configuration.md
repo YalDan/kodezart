@@ -428,6 +428,28 @@ The audit claim role is `audit_claim` in both prompt sets. Its `criterion_key`,
 operation configuration. It uses the existing scheduled-session grant and
 configured evaluation policy; no prior session identifier is accepted.
 
+`AuditReadSweep` binds a `ScopeRef` at construction and offers a zero-argument
+`run()` for a read-only full-snapshot observation. It discovers each native
+lane record from its configured marker and resolves the repository through
+existing team bindings or the recorded-repository route. Ambiguous records,
+unknown routes and unreadable targets remain explicit; no latest-lane selection
+or issue-key-to-lane-key assumption fills a missing address.
+
+The sweep retains every issue and criterion state. It uses the existing fresh
+claim verifier, recorded-Evidence lapse/review consumer and expected-terminal
+reader. Refuted criteria complete the existing mandate hunt over the exact
+scope issue bodies, any addressed parent outside the scope, and the scope
+container body when applicable. The returned surface set bounds the mandate
+finding; it does not claim to have read every charter or ruling elsewhere.
+Terminal refutations retain their observation and name the missing terminal
+mandate consumer. Independent readable targets continue after a target fails.
+
+This read attempt does not advance the completed-audit coverage cache, even
+when its individual observations succeed. Every invocation reads the full
+scope again. Remaining detector composition, scheduler registration and leased
+publication must be completed before this can count as a completed scheduled
+audit. There is no additional clock, timer or scope-selection setting.
+
 The `audit_detection_removal` role additionally receives `graded_sha` from the
 criterion's current native Evidence. Its complete model-owned output schema
 requires source quotations and a concrete absence demonstration for each
