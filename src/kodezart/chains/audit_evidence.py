@@ -9,7 +9,7 @@ from kodezart.core.protocols import GitService, GitSourceReader, RepoCache, Trac
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
-from kodezart.services.criterion_sources import read_audit_criterion
+from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import AuditClaimRequest, AuditVerdict
@@ -49,9 +49,9 @@ class AuditEvidenceVerifier:
         self._remote = config.git_remote
 
     async def _criterion(self, request: AuditClaimRequest) -> TrackerIssue:
-        return await read_audit_criterion(
+        return await resolve_criterion(
             tracker=self._tracker,
-            lane_issue_key=request.lane_issue_key,
+            issue_key=request.lane_issue_key,
             criterion_key=request.criterion_key,
         )
 

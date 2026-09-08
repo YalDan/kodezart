@@ -9,7 +9,7 @@ from kodezart.core.protocols import CIMonitor, CIObservationReader, TrackerPort
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.git_url import resolve_repo_url
-from kodezart.services.criterion_sources import read_audit_criterion
+from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
 from kodezart.types.domain.check_observation import ObservedChecks
@@ -58,9 +58,9 @@ class AuditForgeVerifier:
 
     async def observe(self, request: AuditForgeRequest) -> AuditForgeObservation:
         try:
-            criterion = await read_audit_criterion(
+            criterion = await resolve_criterion(
                 tracker=self._tracker,
-                lane_issue_key=request.lane_issue_key,
+                issue_key=request.lane_issue_key,
                 criterion_key=request.criterion_key,
             )
             if criterion.state_kind is not WorkflowStateKind.COMPLETED:
@@ -69,9 +69,9 @@ class AuditForgeVerifier:
             observed = await asyncio.create_task(
                 self._forge(request=request, criterion=criterion, evidence=evidence)
             )
-            if criterion != await read_audit_criterion(
+            if criterion != await resolve_criterion(
                 tracker=self._tracker,
-                lane_issue_key=request.lane_issue_key,
+                issue_key=request.lane_issue_key,
                 criterion_key=request.criterion_key,
             ):
                 raise ValueError("the criterion changed during forge verification")
