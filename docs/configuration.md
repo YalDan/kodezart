@@ -494,27 +494,13 @@ policy. No detector-to-mechanism registry is inferred from file names or added
 to operation configuration.
 
 
-### Inline write-back verification
+### Tracker artifact verification
 
-| Variable | Type | Default | Constraint | Meaning |
-| --- | --- | --- | --- | --- |
-| `KODEZART_WRITE_BACK_MAX_VERIFY_ROUNDS` | `int` | `2` | 1–10 | Total fresh verification rounds, including the initial read; exhaustion returns unverifiable without a verified artifact. |
-
-The `write_back_verify` role in both prompt sets receives `verification_goal`,
-`head_sha` and `written_artifact` per call. It starts a fresh read-only session
-and re-executes evidence at the requested commit. The component re-reads the
-native issue description, marker comment or container description after each
-caller-owned write/repair and again before accepting the judgment. Other
-whole-surface reads refuse before writing. The caller retains its required
-lease, authorization and outbound sanitization throughout; this component does
-not complete universal scope-writer adoption. Ignored generated outputs are
-outside the Git workspace-cleanliness check.
-The verifier also refuses active Git replacement references before the initial
-write and around every fresh judgment. A replacement introduced by a write,
-repair or session cannot yield a verified artifact, even at the expected SHA
-with a clean tree. Replacement reads settle before workspace release, and an
-unreadable namespace propagates instead of being treated as empty.
-
+There is no standalone write-back verification loop or budget setting. The
+unused verifier has been retired. Active tracker writers retain their inline
+read-back obligations, and audit sessions retain fresh-session and source
+checks. `read_tracker_artifact` remains the native full-content reader used by
+the audit path. Universal scope-writer adoption is unfinished.
 
 The shared `AuditMandateHunt.observe` consumes an explicit `AuditMandateContext`
 from either a fresh criterion judgment or a native terminal refutation. The

@@ -16,7 +16,6 @@ from kodezart.types.domain.assertion_drift import ProtectedTestRef
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditMandateJudgment,
-    WriteBackJudgment,
 )
 from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
 from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
@@ -72,7 +71,6 @@ RaiseSite = Literal[
     "audit_claim",
     "audit_overclaim",
     "audit_detection_removal",
-    "write_back_verify",
     "audit_mandate",
     "branch_name",
     "acceptance_criteria",
@@ -1085,7 +1083,6 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
 AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
-WRITE_BACK_SCHEMA: dict[str, object] = WriteBackJudgment.model_json_schema()
 
 AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_schema()
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
@@ -1112,6 +1109,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
     "AUDIT_OVERCLAIM_SCHEMA": AUDIT_OVERCLAIM_SCHEMA,
     "DETECTOR_REMOVAL_SCHEMA": DETECTOR_REMOVAL_SCHEMA,
-    "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
 }

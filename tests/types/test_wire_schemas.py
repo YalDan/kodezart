@@ -35,7 +35,6 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditMandateJudgment,
-    WriteBackJudgment,
 )
 from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
 from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
@@ -81,7 +80,6 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "AUDIT_OVERCLAIM_SCHEMA": AuditOverclaimJudgment,
     "AUDIT_MANDATE_SCHEMA": AuditMandateJudgment,
     "DETECTOR_REMOVAL_SCHEMA": DetectorRemovalJudgment,
-    "WRITE_BACK_SCHEMA": WriteBackJudgment,
 }
 
 

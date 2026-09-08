@@ -222,7 +222,6 @@ keys = [
     "audit_claim",
     "audit_overclaim",
     "audit_detection_removal",
-    "write_back_verify",
     "audit_mandate",
 ]
 
