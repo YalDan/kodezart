@@ -49,7 +49,7 @@ def require_deliverable_context(
                     not known
                     or len(known) != len(keys)
                     or not observed <= known
-                    or context.total_iterations != len(trajectory.records)
+                    or context.total_iterations < len(trajectory.records)
                     or any(
                         record.passed_count > len(keys) for record in trajectory.records
                     )

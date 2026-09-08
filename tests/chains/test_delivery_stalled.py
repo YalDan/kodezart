@@ -40,6 +40,7 @@ from tests.fakes import (
     FakePRContentEditor,
     FakePRCreator,
     FakeQualityGate,
+    FakeRemediator,
     PassThroughGate,
     make_failing_evaluation,
 )
@@ -118,7 +119,10 @@ async def test_recovered_checks_do_not_turn_stalled_work_into_accepted_work():
     assert fixture.runner.calls == []
 
 
-async def test_actual_stalled_terminal_is_consumed_without_a_second_pull_request():
+@pytest.mark.parametrize("remediation_rounds", [0, 1, 2])
+async def test_actual_stalled_terminal_is_consumed_without_a_second_pull_request(
+    remediation_rounds,
+):
     original = stalled_context()
     editor = FakePRContentEditor()
     forge = FakePRCreator(content_store=editor.records)
@@ -133,6 +137,8 @@ async def test_actual_stalled_terminal_is_consumed_without_a_second_pull_request
         quality_gate=quality,
         pr_creator=forge,
         git=FakeGitService(remote_branch_shas={BASE: "b" * 40}),
+        remediator=FakeRemediator(),
+        remediation_max_rounds=remediation_rounds,
     )
     execution = original.execution
     events = [
@@ -155,6 +161,9 @@ async def test_actual_stalled_terminal_is_consumed_without_a_second_pull_request
     )
     assert terminal.outcome is WorkflowOutcome.stalled_pr_opened
     assert terminal.trajectory is not None
+    assert len(quality.calls) == remediation_rounds + 1
+    assert terminal.total_iterations == original.total_iterations * len(quality.calls)
+    assert len(terminal.trajectory.records) == original.total_iterations
     execution = execution.model_copy(update={"repo_url": quality.calls[0]["repo_url"]})
     ticket = next(
         event.ticket for event in events if isinstance(event, WorkflowTicketEvent)
@@ -168,7 +177,7 @@ async def test_actual_stalled_terminal_is_consumed_without_a_second_pull_request
         terminal=terminal,
         execution=execution,
         spec=AuthoredSpec(ticket=ticket),
-        criteria=tuple(quality.calls[0]["acceptance_criteria"]),
+        criteria=tuple(quality.calls[-1]["acceptance_criteria"]),
         flagged_items=(),
         visibility=visibility,
     )
@@ -231,7 +240,9 @@ async def test_unreadable_stalled_facts_refuse_before_any_remote_activity(damage
         trajectory = trajectory.model_copy(update={"never_passed_ids": ["AC-99"]})
         facts = facts.model_copy(update={"trajectory": trajectory})
     else:
-        facts = facts.model_copy(update={"total_iterations": 99})
+        facts = facts.model_copy(
+            update={"total_iterations": len(trajectory.records) - 1}
+        )
     fixture = setup()
     with pytest.raises((DeliveryContextError, DeliveryRouteUnavailableError)):
         await deliver(fixture.coordinator, facts=facts)
