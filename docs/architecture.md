@@ -670,6 +670,24 @@ reset the baseline. The actual ruling node, verified leased artifact writes,
 lane-membership producer and persisted window advancement remain separate
 implementation work.
 
+`TrackerRulingProposer` now consumes a fresh native feasibility observation at
+an explicitly resolved full commit SHA. It rereads the current fire spec and
+criterion family, collects the full native issue subtree, and runs the
+`fire_time_ruling` template through a fresh read-only ticket-fire session.
+Unchanged source snapshots, a clean detached worktree and absence of Git
+replacement objects are required before returning. Cache acquisition and
+workspace acquisition, reads and release settle repeated cancellation.
+
+The session supplies only proposed answer fields and unresolved questions.
+Canonical ruling identities and machine authorship are supplied by the harness,
+using the existing mint and ruling validators. Foreign or duplicate questions,
+missing or erroneous output, nonfeasible entry observations and unresolved
+questions refuse. The returned `RulingOutput` is a proposal, never read-back
+evidence: this consumer writes no tracker surface and authorizes no loop entry.
+The graph node, escalation publication, idempotent leased writes and read-back
+gate remain separate implementation work. Protected-test designation remains
+unknown on these proposals; test ownership is never inferred from evidence prose.
+
 The criterion-lifecycle code conformance module checks both identity owners:
 `CriterionRef` is constructed by the full tracker-spec reader and `RulingId`
 by the ruling mint. Its shared static guard covers direct, qualified, imported

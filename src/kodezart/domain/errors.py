@@ -35,6 +35,10 @@ class AuditEvidenceReadError(Exception):
         super().__init__(f"Evidence for {criterion_key!r} could not be read: {reason}")
 
 
+class RulingProposalError(Exception):
+    """Current native sources or the session cannot establish a ruling proposal."""
+
+
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 

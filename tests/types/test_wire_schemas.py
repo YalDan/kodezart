@@ -29,6 +29,7 @@ from kodezart.types.domain.agent import (
     DraftCritiqueOutput,
     GeneratedCriteriaOutput,
     PRDescriptionOutput,
+    RulingProposalOutput,
     TicketDraftOutput,
     TicketReviewOutput,
 )
@@ -84,6 +85,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "AUDIT_MANDATE_SCHEMA": AuditMandateJudgment,
     "DETECTOR_REMOVAL_SCHEMA": DetectorRemovalJudgment,
     "WRITE_BACK_SCHEMA": WriteBackJudgment,
+    "RULING_PROPOSAL_SCHEMA": RulingProposalOutput,
 }
 
 

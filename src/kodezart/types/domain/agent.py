@@ -78,6 +78,7 @@ RaiseSite = Literal[
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",
+    "fire_time_ruling",
     "ralph_evaluator",
     "post_merge_review",
     "pr_description",
@@ -786,6 +787,28 @@ class Ruling(CamelCaseModel):
         return self
 
 
+class RulingProposal(CamelCaseModel):
+    """Session-authored answer fields; identity and authorship are harness-owned."""
+
+    issue_ref: str = Field(min_length=1, pattern=r"\S")
+    question: str = Field(min_length=1, pattern=r"\S")
+    ruling_class: RulingClass
+    resolution: str = Field(min_length=1, pattern=r"\S")
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...]
+
+
+class RulingProposalOutput(CamelCaseModel):
+    """Transient proposals, explicitly distinct from pinned tracker records."""
+
+    rulings: tuple[RulingProposal, ...]
+    unresolved_questions: tuple[
+        Annotated[str, Field(min_length=1, pattern=r"\S")], ...
+    ] = Field(
+        description="Unresolved questions, including consequences outside deliverables."
+    )
+
+
 class RulingOutput(CamelCaseModel):
     """The complete structured result of a fire-time ruling session."""
 
@@ -1095,6 +1118,8 @@ AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_sc
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
 DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_schema()
 
+RULING_PROPOSAL_SCHEMA: dict[str, object] = RulingProposalOutput.model_json_schema()
+
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
@@ -1118,4 +1143,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "DETECTOR_REMOVAL_SCHEMA": DETECTOR_REMOVAL_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
+    "RULING_PROPOSAL_SCHEMA": RULING_PROPOSAL_SCHEMA,
 }
