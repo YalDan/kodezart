@@ -35,6 +35,7 @@ from kodezart.composition.forge import (
     ci_observation_reader_for_origin,
     forge_query_for_origin,
     pr_content_editor_for_origin,
+    pr_state_reader_for_origin,
 )
 from kodezart.composition.jobs import build_job_queue
 from kodezart.core import protocols
@@ -47,6 +48,7 @@ from kodezart.core.protocols import (
     ForgeQuery,
     PRContentEditor,
     PRCreator,
+    PRStateReader,
     RepoVisibilityResolver,
     WorkflowEngine,
 )
@@ -122,6 +124,7 @@ COVERED_BY_ORIGIN: dict[type, str] = {
     ForgeQuery: "query",
     PRContentEditor: "pr_content",
     CIObservationReader: "ci_observations",
+    PRStateReader: "pr_state",
 }
 
 
@@ -695,5 +698,32 @@ async def test_native_watch_observation_reader_is_selected_by_origin():
         observed = await selected.observed_checks(repo_url=FORGE_ORIGIN, ref="feature")
         assert observed.commit_sha == "a" * 40 and observed.checks_passed is False
         assert len(requests) == count
+    finally:
+        await client.close()
+
+
+async def test_native_pr_state_reader_is_selected_before_any_forge_read():
+    from tests.adapters.test_github_api import _make_client
+    from tests.adapters.test_pr_state_reader import REPO, payload
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload())
+
+    client = _make_client(handler)
+    try:
+        assert pr_state_reader_for_origin(client=None, repo_url=REPO) is None
+        assert pr_state_reader_for_origin(client=client, repo_url=FILE_ORIGIN) is None
+        assert requests == []
+        selected = pr_state_reader_for_origin(client=client, repo_url=REPO)
+        assert selected is client
+        observed = await selected.read_pr_state(repo_url=REPO, pr_number=7)
+        assert observed.url == f"{REPO}/pull/7"
+        assert observed.head_repo_url == REPO
+        assert [(request.method, request.url.path) for request in requests] == [
+            ("GET", "/repos/example/project/pulls/7")
+        ]
     finally:
         await client.close()
