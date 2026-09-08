@@ -422,6 +422,11 @@ resolves project approval through the same method. There is no milestone label
 level or extra mapping. Approval needs no milestone display URL; a member that
 reports a milestone without its owning project refuses.
 
+`container_metadata` returns the native ref, name, description, optional URL
+and parent ref. Linear milestone metadata has `url=None`; its project URL is
+never substituted. Project and initiative metadata still require their native
+URLs, and issue refs use `read_issue` instead of container metadata.
+
 `read_fire_spec` captures the subject's body and version once, with its
 criterion sub-issue keys, and raises `EmptyFireCriteriaError` if that query
 finds none. A criterion without one nonempty Check field raises

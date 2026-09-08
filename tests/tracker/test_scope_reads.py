@@ -60,7 +60,11 @@ def _container(ref: ScopeRef, parent: ScopeRef | None = None) -> ScopeContainer:
         ref=ref,
         name=ref.key,
         description=f"Complete description of {ref.key}",
-        url=f"https://tracker.invalid/{ref.kind.value}/{ref.key}",
+        url=(
+            None
+            if ref.kind is ScopeKind.MILESTONE
+            else f"https://tracker.invalid/{ref.kind.value}/{ref.key}"
+        ),
         parent=parent,
     )
 
@@ -363,13 +367,15 @@ async def test_missing_scope_refuses_with_the_requested_address(
         assert failure.tool_name in {"get_issue", "get_project", "get_initiative"}
 
 
-@pytest.mark.parametrize("ref", [INITIATIVE, PROJECT])
+@pytest.mark.parametrize("ref", [INITIATIVE, PROJECT, MILESTONE])
 async def test_container_metadata_returns_only_the_five_domain_fields(
     scope_fixture: ScopeFixture, ref: ScopeRef
 ) -> None:
     container = await scope_fixture.tracker.container_metadata(ref=ref)
 
-    expected_parent = INITIATIVE if ref == PROJECT else None
+    expected_parent = (
+        PROJECT if ref == MILESTONE else INITIATIVE if ref == PROJECT else None
+    )
     assert container == _container(ref, expected_parent)
     assert set(container.model_dump()) == {
         "ref",
@@ -448,15 +454,32 @@ async def test_linear_refuses_multiple_metadata_parents(ref: ScopeRef) -> None:
     assert caught.value.ref == ref
 
 
-async def test_linear_milestone_metadata_refuses_the_measured_missing_url() -> None:
+async def test_linear_milestone_metadata_preserves_the_measured_missing_url() -> None:
     server = ScopeMcpServer()
 
-    with pytest.raises(ScopeReadError) as caught:
-        await linear_over_fake_mcp(server).container_metadata(ref=MILESTONE)
-
-    assert caught.value.ref == MILESTONE
-    assert "url" in str(caught.value).lower()
+    result = await linear_over_fake_mcp(server).container_metadata(ref=MILESTONE)
+    assert result.ref == MILESTONE
+    assert result.parent == PROJECT
+    assert result.url is None
+    assert result.model_dump(mode="json")["url"] is None
     assert "url" not in server.milestones[PROJECT.key][0]
+
+
+@pytest.mark.parametrize("ref", [PROJECT, INITIATIVE])
+@pytest.mark.parametrize("url", [None, ""])
+async def test_other_container_kinds_still_require_their_native_url(ref, url):
+    server = ScopeMcpServer()
+    table = server.projects if ref == PROJECT else server.initiatives
+    table[ref.key]["url"] = url
+    with pytest.raises(ScopeReadError, match="URL"):
+        await linear_over_fake_mcp(server).container_metadata(ref=ref)
+
+
+async def test_milestone_never_substitutes_an_unsupported_payload_url():
+    server = ScopeMcpServer()
+    server.milestones[PROJECT.key][0]["url"] = server.projects[PROJECT.key]["url"]
+    result = await linear_over_fake_mcp(server).container_metadata(ref=MILESTONE)
+    assert result.url is None
 
 
 async def test_linear_resolves_milestones_beyond_the_first_project_page() -> None:

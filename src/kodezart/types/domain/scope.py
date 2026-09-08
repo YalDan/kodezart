@@ -34,7 +34,7 @@ class ScopeContainer(CamelCaseModel):
     ref: ScopeRef
     name: str
     description: str
-    url: str
+    url: str | None
     parent: ScopeRef | None = None
 
 
