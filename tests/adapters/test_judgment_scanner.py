@@ -747,7 +747,6 @@ def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment() -> None:
     assert [type(scanner).__name__ for scanner in scanners] == [
         "RegexContentScanner",
         "ReferenceContentScanner",
-        "AggregateContentScanner",
         "AgentContentScanner",
     ]
     assert digest
@@ -762,7 +761,6 @@ def test_enabled_with_a_description_registers_the_judgment_scanner_second() -> N
     assert [type(scanner).__name__ for scanner in scanners] == [
         "RegexContentScanner",
         "ReferenceContentScanner",
-        "AggregateContentScanner",
         "AgentContentScanner",
     ]
     assert digest

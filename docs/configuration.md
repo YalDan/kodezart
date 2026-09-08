@@ -40,6 +40,17 @@ environment name were also removed. Repeated process-group termination uses
 a fixed 0.01-second interval until output drains; it is cleanup mechanics,
 not a deployment policy. The per-step command timeout remains configurable.
 
+The legacy aggregate-pattern scanner had no remaining applicable production
+writer after authored admission moved to the fresh judgment. These five settings
+have no replacement and are refused from initializer, environment, dotenv and
+file-secret sources; delete their corresponding uppercase prefixed assignments:
+
+- `aggregate_count_token_distance`
+- `aggregate_identifier_roster_min_length`
+- `aggregate_tracker_object_nouns`
+- `aggregate_issue_identifier_pattern`
+- `aggregate_identifier_separator_pattern`
+
 ## Settings Reference
 
 Escalation ageing uses recorded run progress. The implementation defaults
@@ -470,17 +481,14 @@ and `psycopg[binary]`); without it boot raises
 uv sync --all-groups --extra postgres
 ```
 
-### Durable aggregate scanning
+### Durable authored aggregate admission
 
-These settings configure the aggregate scanner on the existing outbound gate. Durable public or unknown-visibility surfaces are checked; appended event surfaces skip aggregate matching. The gate's existing private-repository bypass still applies.
-
-| Variable | Type | Default | Constraint | Meaning |
-| --- | --- | --- | --- | --- |
-| `KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE` | `int` | `0` | >= 0 | Maximum intervening tokens between a numeral and a tracker-object noun. |
-| `KODEZART_AGGREGATE_IDENTIFIER_ROSTER_MIN_LENGTH` | `int` | `3` | >= 2 | Minimum consecutive tracker references forming a roster. |
-| `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS` | `list[str]` | Issue, ticket, lane, project, milestone, sub-issue, PR and pull-request nouns, singular and plural | Nonempty list | JSON list of object nouns; each is matched literally, without case sensitivity. |
-| `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` | `str` | Uppercase issue prefix followed by a hyphen and digits | Nonempty regex | Identifier grammar used by roster matching. |
-| `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` | `str` | Whitespace and punctuation separators, or “and” | Nonempty regex | Grammar separating consecutive references in a roster. |
+Durable PUBLIC/UNKNOWN authored text uses the existing fresh content judgment.
+Tracker-object counts and rosters of at least three references block the whole
+write; ordinary test/file/commit counts remain permitted. This policy has no
+aggregate setting. Point-in-time comments allow aggregates subject to privacy;
+PRIVATE targets retain the existing fast path. Typed generated aggregate and
+terminal/residual writer adoption remain unfinished.
 
 
 The audit claim role is `audit_claim` in both prompt sets. Its `criterion_key`,

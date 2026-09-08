@@ -78,6 +78,11 @@ class AppConfig(BaseSettings):
                 "queue_terminal_retention_seconds",
                 "queue_event_buffer_retention_seconds",
                 "queue_event_buffer_capacity",
+                "aggregate_count_token_distance",
+                "aggregate_identifier_roster_min_length",
+                "aggregate_tracker_object_nouns",
+                "aggregate_issue_identifier_pattern",
+                "aggregate_identifier_separator_pattern",
             } or (name.startswith("knowledge_") and not name.startswith("knowledge__"))
 
         def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
@@ -944,55 +949,6 @@ class AppConfig(BaseSettings):
             "JSON object mapping a redaction category to the verdict a hit "
             "in that category yields. A payload takes the max severity."
         ),
-    )
-    aggregate_count_token_distance: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "Maximum intervening tokens between a numeral and a tracker-object "
-            "noun in a durable aggregate claim. The adjacent-only default "
-            "leaves counts of tests, files and commits untouched."
-        ),
-    )
-    aggregate_identifier_roster_min_length: int = Field(
-        default=3,
-        ge=2,
-        description=(
-            "Minimum separated run of tracker issue identifiers that constitutes "
-            "a roster on a durable surface. A single reference is not a roster."
-        ),
-    )
-    aggregate_tracker_object_nouns: list[str] = Field(
-        default_factory=lambda: [
-            "issue",
-            "issues",
-            "ticket",
-            "tickets",
-            "lane",
-            "lanes",
-            "project",
-            "projects",
-            "milestone",
-            "milestones",
-            "sub-issue",
-            "sub-issues",
-            "PR",
-            "PRs",
-            "pull request",
-            "pull requests",
-        ],
-        min_length=1,
-        description="Tracker-object nouns counted by the durable aggregate scanner.",
-    )
-    aggregate_issue_identifier_pattern: str = Field(
-        default=r"\b[A-Z][A-Z0-9]*-\d+\b",
-        min_length=1,
-        description="Tracker issue-identifier regex used to recognize a roster.",
-    )
-    aggregate_identifier_separator_pattern: str = Field(
-        default=r"(?:[\s,;|/·•`*()\[\]-]+|\s+and\s+)",
-        min_length=1,
-        description="Regex separating consecutive identifiers in a tracker roster.",
     )
     operation_config: str | None = Field(
         default=None,

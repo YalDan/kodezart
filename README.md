@@ -299,11 +299,11 @@ redacts the complete original span while preserving neighboring text.
 Opaque document URLs carry no inferred workspace; declare an entire private
 host when appropriate, or use the semantic privacy description.
 
-The existing regex overrides and DERIVED aggregate scanner remain transitional
-pending the structured writer-admission migration. Authored text uses the fresh
-judgment described below. This reference increment removes
-vendor URL patterns from their shipped defaults; it does not claim the whole
-outbound admission replacement is complete.
+The remaining privacy regex overrides are transitional pending the structured
+writer-admission migration. The unused aggregate-pattern scanner and its five
+settings are removed; authored text uses the fresh judgment described below.
+Vendor URL patterns are absent from shipped defaults; the whole outbound
+admission replacement remains unfinished.
 
 #### The judgment half
 
@@ -348,9 +348,10 @@ answer" and "said it is clean" stay two distinct observable states.
 Organization-privacy judgment retains its publication/tracker authored routing
 and branch-name rule. Mandatory aggregate judgment also reaches durable authored
 repository artifacts. PRIVATE destinations retain the explicit no-scanner fast
-path. Credential refusal happens locally before any audit session. DERIVED values
-retain their legacy pattern admission pending typed generated-writer adoption;
-this increment does not infer native tracker ownership from authored criterion IDs.
+path. Credential refusal happens locally before any audit session. The only
+current DERIVED writers are point-in-time lifecycle comments. Typed generated
+durable-writer adoption remains unfinished; this increment does not infer native
+tracker ownership from authored criterion IDs.
 
 ### Operation config
 
