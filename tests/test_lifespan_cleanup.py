@@ -535,3 +535,28 @@ async def test_actual_lifespan_passes_queue_section_to_composed_workers(
             await queue.submit(lane="same-lane", request=_request(prompt))
         await _until(lambda: engine.started == ["first", "second"])
     assert engine.finished == []
+
+
+@pytest.mark.parametrize(
+    "level,pretty", [("INFO", False), ("error", False), ("WARNING", True)]
+)
+async def test_actual_lifespan_forwards_logging_choices(
+    resources, monkeypatch, level, pretty
+):
+    from kodezart.core.logging import configure_logging, get_logger
+    from tests.core.test_logging_chain import configured_chain
+
+    resources.app.state.config = AppConfig(logging={"level": level, "pretty": pretty})
+    monkeypatch.setattr(main, "configure_logging", configure_logging)
+    with configured_chain() as output:
+        async with resources.app.router.lifespan_context(resources.app):
+            logger = get_logger("fixture.logging_settings")
+            logger.info("logging_info_probe")
+            logger.warning("logging_warning_probe")
+            logger.error("logging_error_probe")
+        text = output.getvalue()
+        assert ("logging_info_probe" in text) is (level.upper() == "INFO")
+        assert ("logging_warning_probe" in text) is (level.upper() != "ERROR")
+        assert "logging_error_probe" in text
+        assert ("\x1b[" in text) is pretty
+        assert ('"event": "logging_error_probe"' in text) is (not pretty)

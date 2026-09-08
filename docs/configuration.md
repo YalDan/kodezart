@@ -72,8 +72,8 @@ and leased alarm writer remain separate work.
 | `KODEZART_UNION_STALE_MAX_ATTEMPTS` | `int` | `3` | >= 1 | Maximum union attempts before continuously moving lane heads refuse. |
 | `KODEZART_RUN_ALARM_MAX_RULINGS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Distinct machine-authored ruling identities allowed since the lane last closed a previously-open obligation. |
 | `KODEZART_HTTP__DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
-| `KODEZART_LOG_LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
-| `KODEZART_LOG_PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
+| `KODEZART_LOGGING__LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
+| `KODEZART_LOGGING__PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
 | `KODEZART_HTTP__API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
 | `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   | min length 1 | GitHub PAT for cloning private repositories and reaching the forge. Unset means no forge credential: the clone path attaches no auth and no dispatch pass is scheduled. An empty assignment is refused at startup rather than resolving to "unset" on one code path and "empty credential" on the next |
 | `KODEZART_CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
@@ -437,8 +437,8 @@ full reference.
 ```bash
 KODEZART_HTTP__PROJECT_NAME=kodezart
 KODEZART_HTTP__DEBUG=false
-KODEZART_LOG_LEVEL=INFO
-KODEZART_LOG_PRETTY=false
+KODEZART_LOGGING__LEVEL=INFO
+KODEZART_LOGGING__PRETTY=false
 KODEZART_HTTP__API_V1_PREFIX=/api/v1
 # GitHub personal access token for repository cloning (optional). The field is
 # str | None and an empty assignment is NOT an unset one — it is refused at
@@ -453,13 +453,13 @@ KODEZART_INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration
 
 ### JSON Lines (Production Default)
 
-When `KODEZART_LOG_PRETTY=false` (default), structured log output is emitted as
+When `KODEZART_LOGGING__PRETTY=false` (default), structured log output is emitted as
 JSON lines suitable for log aggregation systems. Uvicorn loggers are quieted to
 WARNING level.
 
 ### Colorized Console (Development)
 
-When `KODEZART_LOG_PRETTY=true`, log output uses colorized human-readable
+When `KODEZART_LOGGING__PRETTY=true`, log output uses colorized human-readable
 formatting for local development.
 
 ## Checkpointing
@@ -618,3 +618,20 @@ The former names (uppercase field with the `KODEZART` prefix and separator) now
 refuse in constructor input, environment, dotenv and file secrets. A file secret
 named `KODEZART_HTTP` holds a JSON object with the three field names above.
 Standard constructor/environment/dotenv/file-secret precedence is unchanged.
+
+## Logging environment migration
+
+Logging settings now live in `AppConfig.logging`; the native logger still receives
+its level and renderer choice directly. Defaults remain INFO and JSON output.
+Standard level names are case-insensitive, including WARN/WARNING and FATAL/CRITICAL
+aliases. An unknown level now fails validation instead of silently selecting INFO.
+
+| Former flat field | Nested environment name |
+| --- | --- |
+| `log_level` | `KODEZART_LOGGING__LEVEL` |
+| `log_pretty` | `KODEZART_LOGGING__PRETTY` |
+
+Replace the former uppercase flat assignments (with the `KODEZART` prefix and
+separator). They now refuse in constructor input, environment, dotenv and file
+secrets. A file secret named `KODEZART_LOGGING` holds a JSON object with `level` and
+`pretty`. Standard settings-source precedence is unchanged.

@@ -15,6 +15,7 @@ from pydantic_settings import (
 from kodezart.core.http_settings import HttpSettings
 from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.knowledge_settings import KnowledgeSettings
+from kodezart.core.logging_settings import LoggingSettings
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
@@ -77,6 +78,8 @@ class AppConfig(BaseSettings):
                 "project_name",
                 "debug",
                 "api_v1_prefix",
+                "log_level",
+                "log_pretty",
                 "queue_max_concurrent_runs_per_lane",
                 "queue_max_depth_per_lane",
                 "queue_terminal_retention_seconds",
@@ -119,13 +122,9 @@ class AppConfig(BaseSettings):
         default_factory=HttpSettings,
         description="HTTP application metadata, debug behavior and route prefix.",
     )
-    log_level: str = Field(
-        default="INFO",
-        description="Logging level (DEBUG, INFO, WARNING, ERROR).",
-    )
-    log_pretty: bool = Field(
-        default=False,
-        description="Colorized console output when true, JSON lines when false.",
+    logging: LoggingSettings = Field(
+        default_factory=LoggingSettings,
+        description="Logging severity and output format.",
     )
     github_token: str | None = Field(
         default=None,

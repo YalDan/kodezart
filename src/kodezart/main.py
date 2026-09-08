@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ``app.state`` for handler access.
     """
     config: AppConfig = app.state.config
-    configure_logging(log_level=config.log_level, pretty=config.log_pretty)
+    configure_logging(log_level=config.logging.level, pretty=config.logging.pretty)
     log: BoundLogger = get_logger(__name__)
 
     def observed_release[**P, T](
