@@ -57,6 +57,7 @@ ORGANIZE_INPUT_TAGS = (
 )
 
 ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
+    "write_back_verify": ("verification_goal", "head_sha", "written_artifact"),
     "audit_claim": ("criterion_key", "head_sha", "check"),
     "organize_assess": ORGANIZE_INPUT_TAGS,
     "organize_verify": ORGANIZE_INPUT_TAGS,

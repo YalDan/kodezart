@@ -1,12 +1,20 @@
 """Protocol definitions — composition without inheritance."""
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.assertion_drift import GitSourceBlob
+from kodezart.types.domain.audit import (
+    TrackerArtifact,
+    WriteBackJudgment,
+    WriteBackRequest,
+    WriteBackResult,
+)
 from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.check_chain import CheckChainResult
+from kodezart.types.domain.check_observation import ObservedChecks
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -87,6 +95,21 @@ class LogEmitter(Protocol):
     async def aerror(self, event: str, **kwargs: object) -> None: ...
 
     async def aexception(self, event: str, **kwargs: object) -> None: ...
+
+
+@runtime_checkable
+class GitSourceReader(Protocol):
+    """Read pinned Git objects without checking out or running repository code."""
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        """Resolve a commit-ish once to its complete immutable object identity."""
+        ...
+
+    async def read_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob:
+        """Read exact regular-file bytes; missing/unsupported objects refuse."""
+        ...
 
 
 @runtime_checkable
@@ -485,6 +508,20 @@ class PRContentEditor(Protocol):
 
 
 @runtime_checkable
+class CIObservationReader(Protocol):
+    """Read the completed watch's evidence without widening CIMonitor."""
+
+    async def observed_checks(self, *, repo_url: str, ref: str) -> ObservedChecks:
+        """Require this task's latest completed watch to name one commit.
+
+        Missing, pending, failed or identity-incomplete watches raise
+        CheckObservationError. Reading never starts another forge observation.
+        A later watch clears the earlier result before it can fail or cancel.
+        """
+        ...
+
+
+@runtime_checkable
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
 
@@ -504,7 +541,12 @@ class CIMonitor(Protocol):
         ...
 
     async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
-        """Names from a complete terminal observation, independent of log prose."""
+        """The one failing-set reader, independent of log prose.
+
+        A task's completed watch pins the original ref's check set. A rerun
+        takes precedence and reads its requested attempt. Without either,
+        this reads a complete current terminal observation from the forge.
+        """
         ...
 
     async def wait_for_checks(
@@ -1466,3 +1508,21 @@ class CheckChainRunner(Protocol):
     async def run_chain(
         self, *, cwd: str, steps: Sequence[CheckStep]
     ) -> CheckChainResult: ...
+
+
+@runtime_checkable
+class WriteBackVerifier(Protocol):
+    """Verify caller-owned writes before their result reaches another consumer.
+
+    The caller owns authorization, sanitization and the surface lease for its
+    write and repair actions. This component does not acquire or bypass those
+    controls; scope-writer adoption must supply them at the actual call sites.
+    """
+
+    async def verify(
+        self,
+        request: WriteBackRequest,
+        *,
+        write: Callable[[], Awaitable[None]],
+        repair: Callable[[TrackerArtifact, WriteBackJudgment], Awaitable[None]],
+    ) -> WriteBackResult: ...

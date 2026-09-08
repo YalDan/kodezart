@@ -1,17 +1,18 @@
 """Agent event domain models for SSE streaming."""
 
 from enum import StrEnum
-from typing import Literal, NewType
+from typing import Annotated, Literal, NewType, Self
 
 from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    model_validator,
 )
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
-from kodezart.types.domain.audit import AuditClaimJudgment
+from kodezart.types.domain.audit import AuditClaimJudgment, WriteBackJudgment
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
@@ -24,6 +25,7 @@ from kodezart.types.domain.criteria import (
     DraftedCriterion,
     FanInReport,
     GeneratedCriterion,
+    TrackerCriteriaValidationOutput,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.organize import AdmissionJudgment
@@ -60,6 +62,7 @@ RaiseSite = Literal[
     "organize_assess",
     "organize_verify",
     "audit_claim",
+    "write_back_verify",
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",
@@ -675,6 +678,69 @@ class GeneratedCriteriaOutput(CamelCaseModel):
     )
 
 
+class RulingClass(StrEnum):
+    """The four defects a fire-time ruling may resolve."""
+
+    PIN_READING = "pin_reading"
+    PIN_ARTIFACT = "pin_artifact"
+    REGROUND_PREMISE = "reground_premise"
+    RESOLVE_CONTRADICTION = "resolve_contradiction"
+
+
+class Ruling(CamelCaseModel):
+    """One pinned answer, with explicit authorship and its stable question key."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ruling_id: RulingId = Field(
+        min_length=1, pattern=r"\S", description="The harness-minted ruling identity."
+    )
+    issue_ref: str = Field(
+        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
+    )
+    question: str = Field(
+        min_length=1, pattern=r"\S", description="The exact question being ruled on."
+    )
+    ruling_class: RulingClass = Field(
+        description="Which of the four permitted defects this ruling resolves."
+    )
+    resolution: str = Field(
+        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
+    )
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(description="The losing reading or contradiction, or explicit absence.")
+    )
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
+        Field(
+            description="Repository evidence references supporting the pinned answer."
+        )
+    )
+    authored_by: RulingAuthor = Field(
+        description="Explicit machine or principal authorship, independent of account."
+    )
+
+    @model_validator(mode="after")
+    def name_rejected_reading(self) -> Self:
+        if (
+            self.ruling_class
+            in {
+                RulingClass.PIN_READING,
+                RulingClass.RESOLVE_CONTRADICTION,
+            }
+            and self.rejected_alternative is None
+        ):
+            raise ValueError("this ruling class must name its rejected alternative")
+        return self
+
+
+class RulingOutput(CamelCaseModel):
+    """The complete structured result of a fire-time ruling session."""
+
+    rulings: list[Ruling] = Field(
+        description="One answer per ruled question; an empty list means no rulings."
+    )
+
+
 class PRDescriptionOutput(CamelCaseModel):
     """Structured output for agent-generated PR descriptions."""
 
@@ -952,6 +1018,9 @@ GENERATED_CRITERIA_SCHEMA: dict[str, object] = (
 CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
     CriteriaValidationOutput.model_json_schema()
 )
+TRACKER_CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
+    TrackerCriteriaValidationOutput.model_json_schema()
+)
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
 # Schema for structured ticket review output
@@ -961,6 +1030,8 @@ PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema
 CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
+
+WRITE_BACK_SCHEMA: dict[str, object] = WriteBackJudgment.model_json_schema()
 
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
 
@@ -975,6 +1046,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
+    "TRACKER_CRITERIA_VALIDATION_SCHEMA": TRACKER_CRITERIA_VALIDATION_SCHEMA,
     "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
@@ -982,4 +1054,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
     "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
+    "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
 }

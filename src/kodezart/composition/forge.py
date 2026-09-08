@@ -6,7 +6,7 @@ than defines.
 
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.core.config import AppConfig
-from kodezart.core.protocols import ForgeQuery, PRContentEditor
+from kodezart.core.protocols import CIObservationReader, ForgeQuery, PRContentEditor
 from kodezart.domain.git_url import is_forge_less_origin
 
 
@@ -55,4 +55,11 @@ def pr_content_editor_for_origin(
     *, client: PRContentEditor | None, repo_url: str
 ) -> PRContentEditor | None:
     """Select PR content access only for an origin with a forge capability."""
+    return None if is_forge_less_origin(repo_url) else client
+
+
+def ci_observation_reader_for_origin(
+    *, client: CIObservationReader | None, repo_url: str
+) -> CIObservationReader | None:
+    """Select access to a forge watch's recorded commit evidence per origin."""
     return None if is_forge_less_origin(repo_url) else client

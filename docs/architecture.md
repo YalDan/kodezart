@@ -38,6 +38,7 @@ does not exist.
 | ----------------- | ------------------------ | ---------------------------------------------------- |
 | LogEmitter        | structlog `stdlib.BoundLogger` | The five awaited emitters. No adapter class: the configured wrapper already satisfies the port, and a test asserts it |
 | GitService        | SubprocessGitService     | Git CLI via asyncio subprocess                       |
+| GitSourceReader   | SubprocessGitSourceReader | Pins local commits and reads exact regular-file blob bytes without checkout |
 | RepoCache         | LocalBareRepoCache       | Bare repo clones in a cache directory                |
 | AgentExecutor     | ClaudeClientExecutor     | **Default.** Persistent sessions via ClaudeSDKClient |
 | AgentExecutor     | ClaudeAgentExecutor      | One-shot via `query()`. Available but NOT wired in default composition root |
@@ -46,8 +47,10 @@ does not exist.
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
 | ForgeQuery        | GitHubAPIClient          | Looks up an open PR by head and composes branch browser URLs |
+| WriteBackVerifier | TrackerWriteBackVerifier | Bounded native artifact re-read and fresh judgment around caller-owned write/repair actions; leases and universal adoption remain separate |
 | PRContentEditor   | GitHubAPIClient          | Reads unique open PR content and edits changed title/body/base fields |
 | CIMonitor         | GitHubAPIClient          | Polls checks and re-observes Actions attempts at one commit |
+| CIObservationReader | GitHubAPIClient        | Reads the completed watch's commit identity and structured verdict |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
@@ -565,8 +568,16 @@ rulings cannot inflate the count. Required authorship comes from the ruling
 artifact, using the owner's `RulingId` and `RulingAuthor` vocabulary; transport
 authors and timestamps cannot supply it. The read-only service obtains current
 criterion closure through the shared gap arithmetic for every declared lane
-issue. The full ruling artifact writer/renderer/reader and persisted window
-advancement remain implementation work; the projection does not replace them.
+issue. `read_lane_rulings` now obtains those projections from full native
+ruling comments for every explicitly supplied lane member. The configured
+`ruling` occurrence marker is separate from escalation decision replies;
+`RulingRecordReader` checks exact question identity, native ownership and
+required authorship before projecting it. `observe_recorded_ruling_growth`
+combines that current read with live closure and the caller's retained
+baseline. Amendments keep their deterministic question identity and cannot
+reset the baseline. The actual ruling node, verified leased artifact writes,
+lane-membership producer and persisted window advancement remain separate
+implementation work.
 
 `structural_write_uncrosses_milestone` compares complete lane membership
 snapshots. The collector reads both the fire subtree and native milestone
@@ -647,3 +658,35 @@ record, workspace or remote head refuses the observation; workspace release
 also runs on errors and cancellation. This is a repeat-read observation, not an
 atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
 report publication, write-back and scheduler registration remain separate work.
+
+
+`TrackerFeasibilityValidator.validate` is the read-only criterion-validation
+consumer for a tracker subject. It accepts an issue key and a previously
+resolved dispatch SHA, obtains the subject once through `read_fire_spec`,
+and matches a fresh full criterion-family read to that captured identity set.
+Only the backend's unstarted (Todo) children enter its feasibility session;
+other criterion states are retained in the observation without re-authoring.
+The session receives the captured subject and current Check fields, with native
+sub-issue keys and no recorded Evidence or criterion-author rationale.
+
+The validator uses the existing evidence classifier and permutation/conjunction
+arithmetic. A native schema carries those same grounded three-state findings
+without constructing authored AC-n identities or a ticket draft. The authored
+schemas and rendered prompt bytes remain unchanged. Flags remain observations;
+they cannot remove a tracker criterion from its obligations. The existing
+`fan_in_max_attempts` bounds fresh corrective sessions. A missing, foreign,
+duplicate or ungrounded response refuses on exhaustion.
+
+The selected SHA is checked in a detached workspace before each session and
+after validation. Ordinary tracked, staged or untracked changes refuse through
+`GitService.has_changes`; ignored test outputs follow Git's existing ignore
+behavior. The full criterion family is read again before returning, and any
+observed change refuses. This is optimistic source coherence, not an atomic
+tracker snapshot or an immutable-filesystem claim. Owned acquisition and
+release settle through repeated cancellation. An empty Todo subset opens no
+session and leaves every state untouched.
+
+This consumer returns a source-addressed observation. It does not apply
+amendments, cancellations or state transitions, authorize dispatch, persist an
+artifact, or supply the missing full FIRE composition. Approval eligibility,
+leased authoring and the live iteration-exit path remain separate consumers.

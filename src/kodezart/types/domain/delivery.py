@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import FlaggedItem
+from kodezart.types.domain.agent import WorkflowCompleteEvent
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import ValidatedCriterion
 from kodezart.types.domain.fire_spec import AuthoredSpec, FireSpec
@@ -14,6 +15,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_state import LanePR
 from kodezart.types.domain.tracker import TrackerIssue
+from kodezart.types.domain.trajectory import LoopTrajectory
 from kodezart.types.domain.workflow import ExecutionContext
 
 
@@ -44,8 +46,32 @@ class DeliveryContext(CamelCaseModel):
     spec: FireSpec
     criteria: tuple[ValidatedCriterion | TrackerIssue, ...]
     total_iterations: int = Field(ge=0)
+    trajectory: LoopTrajectory | None
     flagged_items: tuple[FlaggedItem, ...]
     visibility: RepoVisibility
+
+    @classmethod
+    def from_terminal(
+        cls,
+        *,
+        terminal: WorkflowCompleteEvent,
+        execution: ExecutionContext,
+        spec: FireSpec,
+        criteria: tuple[ValidatedCriterion | TrackerIssue, ...],
+        flagged_items: tuple[FlaggedItem, ...],
+        visibility: RepoVisibility,
+    ) -> Self:
+        """Carry existing terminal facts without widening its wire payload."""
+        return cls(
+            execution=execution,
+            fire_outcome=terminal.outcome,
+            spec=spec,
+            criteria=criteria,
+            total_iterations=terminal.total_iterations,
+            trajectory=terminal.trajectory,
+            flagged_items=flagged_items,
+            visibility=visibility,
+        )
 
     @model_validator(mode="after")
     def criteria_match_source(self) -> Self:

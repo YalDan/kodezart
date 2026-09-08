@@ -7,8 +7,37 @@ from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
 
 
+class GitSourceReadError(Exception):
+    """The requested immutable repository object cannot supply source bytes."""
+
+    def __init__(self, *, ref: str, path: str | None, reason: str) -> None:
+        self.ref = ref
+        self.path = path
+        self.reason = reason
+        super().__init__(f"source {ref!r}:{path!r} could not be read: {reason}")
+
+
+class AssertionComparisonError(Exception):
+    """A protected comparison cannot establish a readable, unambiguous pair."""
+
+    def __init__(self, *, source_ref: str, reason: str) -> None:
+        self.source_ref = source_ref
+        self.reason = reason
+        super().__init__(f"assertion comparison for {source_ref!r} refused: {reason}")
+
+
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
+
+
+class CheckObservationError(Exception):
+    """A completed watch cannot establish one immutable check-set identity."""
+
+    def __init__(self, *, repo_url: str, ref: str, reason: str) -> None:
+        self.repo_url = repo_url
+        self.ref = ref
+        self.reason = reason
+        super().__init__(f"Cannot read watched checks for {repo_url}@{ref}: {reason}")
 
 
 class PRContentConflictError(Exception):
@@ -155,6 +184,18 @@ class StaleWriteError(Exception):
         super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
         self.target = target
         self.expected = expected
+
+
+class RulingRecordReadError(Exception):
+    """The addressed issue's ruling records are unreadable or ambiguous."""
+
+    def __init__(self, *, issue_key: str, lane_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.reason = reason
+        super().__init__(
+            f"rulings on {issue_key!r} for {lane_key!r} could not be read: {reason}"
+        )
 
 
 class LaneRecordReadError(Exception):
@@ -605,3 +646,11 @@ class CheckChainExecutionError(Exception):
 
 class AuditClaimReadError(ValueError):
     """The claim's source or remote head cannot support this observation."""
+
+
+class WriteBackReadError(ValueError):
+    """An addressed artifact cannot be re-read completely for verification."""
+
+
+class TrackerFeasibilityReadError(Exception):
+    """The selected tracker family or repository changed before judgment settled."""

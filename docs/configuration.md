@@ -422,3 +422,20 @@ The audit claim role is `audit_claim` in both prompt sets. Its `criterion_key`,
 `head_sha` and `check` bindings are supplied per verification call, never by the
 operation configuration. It uses the existing scheduled-session grant and
 configured evaluation policy; no prior session identifier is accepted.
+
+
+### Inline write-back verification
+
+| Variable | Type | Default | Constraint | Meaning |
+| --- | --- | --- | --- | --- |
+| `KODEZART_WRITE_BACK_MAX_VERIFY_ROUNDS` | `int` | `2` | 1–10 | Total fresh verification rounds, including the initial read; exhaustion returns unverifiable without a verified artifact. |
+
+The `write_back_verify` role in both prompt sets receives `verification_goal`,
+`head_sha` and `written_artifact` per call. It starts a fresh read-only session
+and re-executes evidence at the requested commit. The component re-reads the
+native issue description, marker comment or container description after each
+caller-owned write/repair and again before accepting the judgment. Other
+whole-surface reads refuse before writing. The caller retains its required
+lease, authorization and outbound sanitization throughout; this component does
+not complete universal scope-writer adoption. Ignored generated outputs are
+outside the Git workspace-cleanliness check.

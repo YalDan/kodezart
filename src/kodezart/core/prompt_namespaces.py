@@ -26,6 +26,7 @@ SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 # compares it against what the shipped templates actually reference.
 PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
     {
+        "tracker_criteria",
         "task",
         "task_md",
         "task_description",
@@ -67,6 +68,8 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "criterion_key",
         "head_sha",
         "check",
+        "written_artifact",
+        "verification_goal",
     }
 )
 

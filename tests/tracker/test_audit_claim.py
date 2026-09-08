@@ -511,3 +511,22 @@ async def test_real_git_workspace_integrity_for_pinned_observation(
     assert workspace.calls[-1] == ("release", str(tmp_path))
     if when == "before" and kind not in {"clean", "ignored"}:
         assert not runner.calls
+
+
+@pytest.mark.parametrize("phase", ["current_sha", "has_changes"])
+@pytest.mark.parametrize("read_number", [1, 2])
+async def test_native_git_read_cancellation_settles_before_workspace_release(
+    setup, monkeypatch, tmp_path, phase, read_number
+):
+    from tests.git_read_cancellation import assert_git_read_settles_before_release
+
+    build, _, git, _, workspace, _ = setup
+    await assert_git_read_settles_before_release(
+        invoke=lambda: build().verify(REQUEST),
+        git=git,
+        workspace=workspace,
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        phase=phase,
+        read_number=read_number,
+    )

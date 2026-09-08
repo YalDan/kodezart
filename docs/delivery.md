@@ -1,10 +1,10 @@
 # Delivery coordinator boundary
 
 `DeliveryCoordinator.deliver(dispatch, feature_branch=..., final_commit_sha=...,
-context=...)` creates or edits an accepted lane's pull request and observes its checks.
+context=...)` creates or edits a lane's pull request and observes its checks.
 `LaneDispatch` contains the lane key, issue identity, head branch and recorded
 `BaseSpec`. `DeliveryContext` supplies the existing execution context, fire
-outcome, `FireSpec`, criteria, iteration count, flags and repository visibility
+outcome, `FireSpec`, criteria, iteration count, nullable trajectory, flags and repository visibility
 used by the PR-description session. Authored calls supply
 `AuthoredSpec(ticket=...)` with validated authored criteria. Tracker calls supply
 the captured `TrackerSpec` and the criterion issues themselves, in its recorded
@@ -23,7 +23,8 @@ consumers in both shipped prompt sets against 192 prompt digests captured on the
 dispatch base, preserving the authored bytes without changing existing goldens.
 The branch-name input still belongs to its earlier dispatch stage.
 
-The common route accepts `handed_off_for_delivery`. It verifies that the
+The common route accepts `handed_off_for_delivery` and an authored
+`stalled_pr_opened` handoff carrying its original trajectory. It verifies that the
 execution carries the dispatched issue's FIRE run identity, that the
 terminal head and recorded base agree with the call, that both branches exist
 on the configured remote, and that the remote head still matches the fire's
@@ -34,6 +35,28 @@ after cleanup without replacing the original fire SHA or accepting later code
 changes. A missing ref raises `BaseResolutionError`; an inconsistent handoff
 raises `DeliveryContextError`. A dependent lane can open against its blocker's
 branch before that blocker has a PR.
+
+`DeliveryContext.from_terminal` copies the existing terminal outcome,
+iteration count and trajectory. It adds no terminal fields. An authored stalled
+handoff requires nonempty recorded work, known criterion identities and consistent
+iteration/count facts. Total iterations accumulate across remediation rounds;
+the terminal trajectory retains only the latest quality-gate invocation. Its
+record count must not exceed that cumulative total. The description is the existing factual stall report,
+with the observed published head SHA after the ordinary artifact cleanup. No
+description session runs on this path. Both presentations pass through the same
+title/body gate, PR create-or-edit route and check watcher. The required stalled
+title prefix and report heading must survive gating and the final PR read;
+failure refuses publication or its successful result without appending ungated
+content. Completed green/no-CI checks retain `stalled_pr_opened`, including after
+runner-flake recovery: successful checks do not establish acceptance criteria.
+
+The existing fire still opens its stalled PR before this boundary; consuming
+that real terminal therefore edits the existing PR and then watches it. The
+native boundary also covers creation after a successful empty lookup. Moving
+that first PR-opening act out of the fire remains separate integration work.
+Tracker stalled handoffs refuse before lookup because their trajectory producer
+does not yet carry tracker criterion identities; no authored AC ids are minted
+for those references.
 
 The existing `ForgeQuery` is a separate required read dependency. After the
 handoff identity is validated, the coordinator looks up the open PR for that
@@ -83,6 +106,40 @@ The coordinator creates or edits the PR and calls `wait_for_checks` with its hea
 One semaphore per coordinator limits concurrent watches using
 `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES`. A failed or canceled watch releases
 its slot. The existing CI poll budgets remain adapter configuration.
+
+A completed red now reaches the existing structural classifier. The separate
+`CIObservationReader` returns the original watch's commit SHA and verdict,
+using the native check run's `head_sha` from the
+[GitHub Checks response](https://docs.github.com/en/rest/checks/runs#list-check-runs-for-a-git-reference).
+The existing `failed_check_names` reads the original branch ref from those
+same retained bytes, then reads each requested rerun attempt. Both classifier
+comparisons use that one failing-set reader. Neither original read performs
+another query, so a moving branch cannot replace the original failing set.
+Missing or mixed commit identities, incomplete or nonterminal
+sets, and absent observations raise `CheckObservationError`. Each async task
+owns its observations; starting another watch clears the previous result
+before that new watch can fail or be canceled. The normal monitor retains its
+four methods and its existing timeout/no-CI behavior; a timeout cannot supply
+the completed red evidence this reader requires.
+
+The observed commit must match the delivered remote head, including a cleanup
+commit when present. The classifier receives that observed SHA and failing
+set, then follows the declared prerequisite and bounded rerun order. Its
+repository declarations come from the required `OperationConfig`, resolved
+against the delivered URL using the existing clone URL resolver. Missing or
+ambiguous repository declarations refuse classification; an undeclared
+environment prerequisite never establishes that it is unmet.
+After recovery the coordinator re-reads the remote head and refuses if it
+moved away from the commit that was checked. These are observations, not an
+atomic lock on a branch another writer can move.
+
+A not-red rerun establishes `RUNNER_FLAKE`. Green returns through the ordinary
+successful PR validation; `None` still needs a successful declaration read
+establishing no CI. Rerun watches retain the same semaphore slot and create no
+remediation session. Other red classes remain typed unavailable routes with
+their observed check facts. The per-origin `ci_observation_reader_for_origin`
+selector supplies no capability for a `file://` origin or an absent client.
+
 Before returning success it re-observes the same unique open PR, its recorded
 base and its fixed issue line. Closure, ambiguity or a changed identity/base
 during watching cannot produce a stale successful result.
@@ -91,7 +148,9 @@ during watching cannot produce a stale successful result.
 | --- | --- |
 | Checks pass | Open PR and `ci_passed` |
 | No checks, and the adapter confirms no active workflow declaration | Open PR and `ci_not_configured`, retaining `checks_passed=None` |
-| Red checks, or no checks despite an active declaration | `DeliveryRouteUnavailableError` carrying the observed PR and check facts |
+| Red checks that recover at the same commit | Ordinary green/no-CI result after bounded rerun |
+| Authored stalled handoff whose ordinary green/no-CI route completes | Open PR and `stalled_pr_opened`, retaining the observed check result |
+| Reproduced, prerequisite-unmet or unclassified red, or no checks despite an active declaration | `DeliveryRouteUnavailableError` carrying the observed PR and check facts |
 | Any other fire outcome | `DeliveryRouteUnavailableError` before writes |
 | Failed forge or declaration read | The adapter's typed refusal propagates |
 
@@ -101,11 +160,9 @@ a residual was published.
 
 This boundary is callable independently; scope-walker dispatch and application
 composition are not connected yet. The legacy fire graph still owns its prior
-PR/check nodes until that extraction is completed. Stalled-fire handoff,
-same-SHA linkage between the initial branch watch
-and red re-observation, the shared remediation loop, durable residual
-publication, and declared-no-run exemption/close-out remain unfinished. The
-existing pure red classifier is not invoked by this common route.
+PR/check nodes until that extraction is completed. Tracker stalled trajectories,
+the shared remediation loop, durable residual publication, and declared-no-run
+exemption/close-out remain unfinished.
 Tracker fire entry, approval/state eligibility, per-iteration criterion queries
 and the write-only artifact projection remain separate integration work. This
 delivery input path does not establish any of those producer behaviors.
