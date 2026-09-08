@@ -75,12 +75,16 @@ async def test_session_requires_an_immutable_commit_before_acquisition(session, 
 
 
 @pytest.mark.parametrize("phase", ["before", "after"])
-@pytest.mark.parametrize("damage", ["head", "dirty"])
+@pytest.mark.parametrize("damage", ["head", "dirty", "replacement"])
 async def test_workspace_integrity_is_checked_around_the_session(
     session, monkeypatch, phase, damage
 ):
     def change():
-        target = "current_sha" if damage == "head" else "has_changes"
+        target = {
+            "head": "current_sha",
+            "dirty": "has_changes",
+            "replacement": "has_replace_refs",
+        }[damage]
         monkeypatch.setattr(
             session._git,
             target,
@@ -122,7 +126,7 @@ async def test_no_observation_is_returned_for_failed_execution(session, damage):
     assert session._workspace.calls[-1] == ("release", "/tmp/fake-workspace")
 
 
-@pytest.mark.parametrize("phase", ["current_sha", "has_changes"])
+@pytest.mark.parametrize("phase", ["current_sha", "has_changes", "has_replace_refs"])
 @pytest.mark.parametrize("read_number", [1, 2])
 async def test_native_workspace_reads_settle_through_repeated_cancellation(
     session, monkeypatch, tmp_path, phase, read_number

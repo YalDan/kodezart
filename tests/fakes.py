@@ -418,6 +418,7 @@ class FakeGitService:
         remote_branches: list[str] | None = None,
         *,
         is_path_ignored_result: bool = False,
+        has_replace_refs_result: bool = False,
         remote_branch_shas: dict[str, str | None] | None = None,
         remote_branch_sha_sequences: dict[str, list[str | None]] | None = None,
         delete_remote_branch_error: Exception | None = None,
@@ -431,6 +432,7 @@ class FakeGitService:
         self.calls: list[tuple[str, ...]] = []
         self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
         self.has_changes_result: bool = has_changes_result
+        self.has_replace_refs_result = has_replace_refs_result
         self._is_path_ignored_result: bool = is_path_ignored_result
         self._remote_branches: list[str] = remote_branches or []
         self._remote_branch_shas: dict[str, str | None] = (
@@ -485,6 +487,10 @@ class FakeGitService:
     async def has_changes(self, cwd: str) -> bool:
         self.calls.append(("has_changes", cwd))
         return self.has_changes_result
+
+    async def has_replace_refs(self, cwd: str) -> bool:
+        self.calls.append(("has_replace_refs", cwd))
+        return self.has_replace_refs_result
 
     async def is_path_ignored(self, cwd: str, path: str) -> bool:
         self.calls.append(("is_path_ignored", cwd, path))

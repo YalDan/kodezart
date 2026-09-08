@@ -41,6 +41,13 @@ class FreshAuditSession:
         self._skills = skills
 
     async def _require_head(self, workspace: str, head_sha: str) -> None:
+        replacements, cancelled = await finish_owned(
+            asyncio.create_task(self._git.has_replace_refs(workspace))
+        )
+        if cancelled:
+            raise asyncio.CancelledError
+        if replacements:
+            raise AuditClaimReadError("the audit repository substitutes Git objects")
         if await read_workspace_head(git=self._git, workspace=workspace) != (
             head_sha,
             False,

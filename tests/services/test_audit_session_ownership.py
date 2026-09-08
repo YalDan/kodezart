@@ -6,10 +6,50 @@ from pathlib import Path
 
 import pytest
 
+from kodezart.domain.errors import AuditClaimReadError
 from tests.adapters.test_git_worktree_provider import git_repo as git_repo
 from tests.adapters.test_git_worktree_provider import provider as provider
 from tests.services.test_audit_sessions import invoke
 from tests.services.test_audit_sessions import session as session
+
+
+@pytest.mark.parametrize("phase", ["before", "during"])
+@pytest.mark.parametrize("namespace", ["default", "configured"])
+async def test_native_replaced_commit_cannot_supply_a_clean_audit_workspace(
+    session, provider, git_repo, monkeypatch, phase, namespace
+):
+    if namespace == "configured":
+        monkeypatch.setenv("GIT_REPLACE_REF_BASE", "refs/audit-replacement/")
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "--no-replace-objects", *args],
+            cwd=git_repo,
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout.strip()
+
+    requested = git("rev-parse", "HEAD")
+    (git_repo / "replacement.txt").write_text("Not in the requested commit.\n")
+    git("add", "replacement.txt")
+    git("commit", "-qm", "Replacement source tree")
+    replacement = git("rev-parse", "HEAD")
+
+    async def replace():
+        git("replace", requested, replacement)
+        git("pack-refs", "--all")
+
+    if phase == "before":
+        await replace()
+    else:
+        session._runner.during = replace
+    session._git = provider._git
+    session._workspace = provider
+    with pytest.raises(AuditClaimReadError):
+        await invoke(session, repository=str(git_repo), head_sha=requested)
+    assert bool(session._runner.calls) is (phase == "during")
+    assert not provider._workspaces
 
 
 @pytest.mark.parametrize("phase", ["acquire", "release", "session_then_release"])

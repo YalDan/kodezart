@@ -142,6 +142,10 @@ class GitService(Protocol):
 
     async def has_changes(self, cwd: str) -> bool: ...
 
+    async def has_replace_refs(self, cwd: str) -> bool:
+        """Whether native object replacement is configured for this repository."""
+        ...
+
     async def is_path_ignored(self, cwd: str, path: str) -> bool:
         """True iff *path* is excluded by the repository's ignore rules.
 
