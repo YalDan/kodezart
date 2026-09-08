@@ -22,8 +22,32 @@ for configuration. All settings are loaded from environment variables with the
 
 Audit claim, Evidence, source, terminal and sweep consumers receive only the
 resolved Git remote name, rather than the application configuration object.
-`KODEZART_GIT_REMOTE` retains its existing default and environment override;
+`KODEZART_GIT__REMOTE` retains its existing default and environment override;
 this API narrowing does not add an audit setting or compose a new scheduler.
+
+## Git settings migration
+
+The six Git choices now belong to `AppConfig.git`. `build_git_stack` receives
+that section and the separate existing GitHub credential. Audit remote-only
+consumers still receive the resolved string. The worktree provider no longer
+accepts unused commit identity arguments; the two actual commit persisters
+retain the configured name and email.
+
+| Retired flat field | Nested field / environment suffix |
+| --- | --- |
+| `git_remote` | `git.remote` / `GIT__REMOTE` |
+| `git_base_url` | `git.base_url` / `GIT__BASE_URL` |
+| `clone_cache_dir` | `git.clone_cache_dir` / `GIT__CLONE_CACHE_DIR` |
+| `integration_workspace_dir` | `git.integration_workspace_dir` / `GIT__INTEGRATION_WORKSPACE_DIR` |
+| `git_committer_name` | `git.committer_name` / `GIT__COMMITTER_NAME` |
+| `git_committer_email` | `git.committer_email` / `GIT__COMMITTER_EMAIL` |
+
+Prefix each suffix with `KODEZART_`. Replace the old initializer keys and
+uppercase environment, dotenv or file-secret names; these exact retired names
+are refused. File-secret sources use one JSON object in `KODEZART_GIT`, for
+example `{"remote":"upstream"}`. Initializer, environment, dotenv and file-secret
+precedence stays unchanged. All six choices retain their defaults and native
+behavior; grouping them does not claim to remove six operator choices.
 
 ## Removed implementation settings
 
@@ -85,12 +109,12 @@ and leased alarm writer remain separate work.
 | `KODEZART_LOGGING__PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
 | `KODEZART_HTTP__API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
 | `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   | min length 1 | GitHub PAT for cloning private repositories and reaching the forge. Unset means no forge credential: the clone path attaches no auth and no dispatch pass is scheduled. An empty assignment is refused at startup rather than resolving to "unset" on one code path and "empty credential" on the next |
-| `KODEZART_CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
-| `KODEZART_INTEGRATION_WORKSPACE_DIR` | `str`     | `/tmp/kodezart-integration` |          | Local directory the base resolver builds integration refs in |
-| `KODEZART_GIT_BASE_URL`           | `str`        | `https://github.com`     |             | Base URL for resolving `owner/repo` shorthand            |
-| `KODEZART_GIT_REMOTE`             | `str`        | `origin`                 |             | Git remote name for fetch/push operations and remote-ref probes |
-| `KODEZART_GIT_COMMITTER_NAME`     | `str`        | `kodezart`               |             | Git committer name for auto-generated commits            |
-| `KODEZART_GIT_COMMITTER_EMAIL`    | `str`        | `kodezart@noreply.dev`   |             | Git committer email for auto-generated commits           |
+| `KODEZART_GIT__CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
+| `KODEZART_GIT__INTEGRATION_WORKSPACE_DIR` | `str`     | `/tmp/kodezart-integration` |          | Local directory the base resolver builds integration refs in |
+| `KODEZART_GIT__BASE_URL`           | `str`        | `https://github.com`     |             | Base URL for resolving `owner/repo` shorthand            |
+| `KODEZART_GIT__REMOTE`             | `str`        | `origin`                 |             | Git remote name for fetch/push operations and remote-ref probes |
+| `KODEZART_GIT__COMMITTER_NAME`     | `str`        | `kodezart`               |             | Git committer name for auto-generated commits            |
+| `KODEZART_GIT__COMMITTER_EMAIL`    | `str`        | `kodezart@noreply.dev`   |             | Git committer email for auto-generated commits           |
 | `KODEZART_MAX_ITERATIONS`         | `int`        | `5`                      | 1-20        | Maximum Ralph loop iterations before stopping            |
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
 | `KODEZART_TICKET_REVIEW_MODE`     | `str`        | `create_only`            | `reviewed`, `create_only` | Whether the ticket loop compiles a reviewer session or one creator session whose draft the set's draft-critic lens checks; setting `KODEZART_MAX_REVIEWS` under `create_only`, or `create_only` over a set declaring no such lens, is refused at boot |
@@ -452,8 +476,8 @@ KODEZART_HTTP__API_V1_PREFIX=/api/v1
 # startup. Leave the line commented out to keep it unset.
 #KODEZART_GITHUB_TOKEN=ghp_replace_me
 # Local directory for cached repository clones
-KODEZART_CLONE_CACHE_DIR=/tmp/kodezart-clones
-KODEZART_INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration
+KODEZART_GIT__CLONE_CACHE_DIR=/tmp/kodezart-clones
+KODEZART_GIT__INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration
 ```
 
 ## Logging Modes

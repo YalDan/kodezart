@@ -46,8 +46,6 @@ async def test_repeated_cancellation_settles_native_admission_worktree(
     workspace = GitWorktreeProvider(
         git=native_git,
         cache=FakeRepoCache(repo_path=str(repository)),
-        committer_name="Fixture",
-        committer_email="fixture@example.invalid",
     )
     original_acquire = workspace.acquire
     original_release = workspace.release

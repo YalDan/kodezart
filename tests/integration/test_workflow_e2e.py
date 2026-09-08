@@ -147,8 +147,6 @@ async def test_workflow_e2e_creates_branch_and_pushes(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitChangePersister(
         gate=PassThroughGate(),
@@ -303,8 +301,6 @@ async def test_workflow_e2e_exhausts_iterations(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitChangePersister(
         gate=PassThroughGate(),
@@ -513,8 +509,6 @@ async def test_workflow_e2e_divergent_base_branch(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitChangePersister(
         gate=PassThroughGate(),
@@ -665,15 +659,15 @@ async def test_workflow_e2e_divergent_base_branch(
 
 
 # ---------------------------------------------------------------------------
-# AppConfig.git_remote threading — end-to-end verification
+# AppConfig.git.remote threading — end-to-end verification
 #
 # The two tests below cover the failed criteria from the refactor that
-# extracted ``_REMOTE = "origin"`` to ``AppConfig.git_remote``:
+# extracted ``_REMOTE = "origin"`` to ``AppConfig.git.remote``:
 #
-#   1. Default-parity: WITHOUT ``KODEZART_GIT_REMOTE`` set, every git
+#   1. Default-parity: WITHOUT ``KODEZART_GIT__REMOTE`` set, every git
 #      subprocess and remote-ref probe addresses ``origin/*`` (byte-identical
 #      to the pre-refactor literal).
-#   2. Override path: WITH ``KODEZART_GIT_REMOTE=upstream`` (or, equivalently,
+#   2. Override path: WITH ``KODEZART_GIT__REMOTE=upstream`` (or, equivalently,
 #      ``remote="upstream"`` threaded through constructors), every git
 #      subprocess addresses ``upstream/*`` and the three rewritten error
 #      messages contain ``upstream`` rather than ``origin``.
@@ -819,8 +813,6 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitChangePersister(
         gate=PassThroughGate(),
@@ -1122,8 +1114,6 @@ async def test_git_branch_merger_source_missing_error_references_configured_remo
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     merger = GitBranchMerger(git=git, workspace=workspace, remote=remote_name)
 
@@ -1233,7 +1223,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
 def test_app_config_threads_kodezart_git_remote_env_var(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``KODEZART_GIT_REMOTE`` env var lands on ``AppConfig.git_remote``.
+    """``KODEZART_GIT__REMOTE`` env var lands on ``AppConfig.git.remote``.
 
     Closes the env-var → config → constructor-kwarg loop end-to-end at the
     config layer.  Without the env var, the default is ``"origin"`` (byte-
@@ -1242,13 +1232,13 @@ def test_app_config_threads_kodezart_git_remote_env_var(
     ``git_remote=`` kwarg to the four touched classes by the lifespan.
     """
     # Drop any inherited override so the default path is honestly tested.
-    monkeypatch.delenv("KODEZART_GIT_REMOTE", raising=False)
+    monkeypatch.delenv("KODEZART_GIT__REMOTE", raising=False)
     default_config = AppConfig.from_env()
-    assert default_config.git_remote == "origin"
+    assert default_config.git.remote == "origin"
 
-    monkeypatch.setenv("KODEZART_GIT_REMOTE", "upstream")
+    monkeypatch.setenv("KODEZART_GIT__REMOTE", "upstream")
     override_config = AppConfig.from_env()
-    assert override_config.git_remote == "upstream"
+    assert override_config.git.remote == "upstream"
 
 
 # ---------------------------------------------------------------------------
@@ -1441,8 +1431,6 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitChangePersister(
         gate=PassThroughGate(),
@@ -1579,8 +1567,6 @@ async def test_the_flipped_defaults_attach_the_sets_lenses_to_the_creator(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     executor = ScriptedFakeExecutor(eval_results=[])
     loop = TicketGenerationLoop(
@@ -1717,8 +1703,6 @@ def _remediation_engine(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     service = AgentService(
         git_base_url="https://github.com",

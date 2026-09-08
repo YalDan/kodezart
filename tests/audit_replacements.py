@@ -72,8 +72,6 @@ async def native_repository(tmp_path):
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="Fixture",
-        committer_email="fixture@example.invalid",
     )
     return NativeAuditRepository(
         source, cache_path, head, alternate, git, cache, workspace

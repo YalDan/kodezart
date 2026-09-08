@@ -123,7 +123,7 @@ async def setup(tracker, server):
     stored = await lane_record(
         tracker, data={"pr": {"number": 7, "url": f"{REPO}/pull/7", "state": "old"}}
     )
-    config = AppConfig(git_remote="configured-remote")
+    config = AppConfig(git={"remote": "configured-remote"})
     op = operation().model_copy(update={"workflow_states": WORKFLOW_STATE_NAMES})
     executor = Executor()
     git = FakeGitService(remote_branch_shas={"ordinary-name": HEAD})
@@ -169,7 +169,7 @@ async def setup(tracker, server):
             runner=runner,
             prompts=prompts,
             skills=SUPPRESS_ALL_SKILLS,
-            remote=config.git_remote,
+            remote=config.git.remote,
         )
         evidence = AuditEvidenceVerifier(
             tracker=tracker,
@@ -179,7 +179,7 @@ async def setup(tracker, server):
             source=selected_source or Source(),
             claims=claims,
             operation=selected_op,
-            remote=config.git_remote,
+            remote=config.git.remote,
         )
         mandates = AuditMandateHunt(
             tracker=tracker,
@@ -196,7 +196,7 @@ async def setup(tracker, server):
             git=selected_git,
             cache=selected_cache,
             operation=selected_op,
-            remote=config.git_remote,
+            remote=config.git.remote,
         )
         overclaims = (
             AuditOverclaimVerifier(
@@ -207,7 +207,7 @@ async def setup(tracker, server):
                     source=selected_source or Source(),
                     cache=selected_cache,
                     operation=selected_op,
-                    remote=config.git_remote,
+                    remote=config.git.remote,
                 ),
                 sessions=FreshAuditSession(
                     git=selected_git,
@@ -231,7 +231,7 @@ async def setup(tracker, server):
                     source=selected_source or Source(),
                     cache=selected_cache,
                     operation=selected_op,
-                    remote=config.git_remote,
+                    remote=config.git.remote,
                 ),
                 sessions=FreshAuditSession(
                     git=selected_git,
@@ -256,7 +256,7 @@ async def setup(tracker, server):
             terminals=terminals,
             git=selected_git,
             cache=selected_cache,
-            remote=config.git_remote,
+            remote=config.git.remote,
             overclaims=overclaims,
             removals=removals,
             forge=selected_forge,

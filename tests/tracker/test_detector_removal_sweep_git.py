@@ -73,8 +73,6 @@ async def test_actual_scope_reports_lost_detection_but_not_a_retained_guard(
     workspace = GitWorktreeProvider(
         git=native,
         cache=cache,
-        committer_name="Fixture",
-        committer_email="fixture@example.invalid",
     )
     selected_op = operation.model_copy(
         update={

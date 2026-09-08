@@ -348,7 +348,12 @@ async def run_arm(
         skills=skills,
         log=log,
     )
-    stack = build_git_stack(config=config, prompts=prompts, gate=gate)
+    stack = build_git_stack(
+        settings=config.git,
+        github_token=config.github_token,
+        prompts=prompts,
+        gate=gate,
+    )
     engine = build_workflow_engine(
         repositories=(),
         config=config,
@@ -356,7 +361,7 @@ async def run_arm(
             executor=executor,
             workspace=stack.workspace,
             persister=stack.persister,
-            git_base_url=config.git_base_url,
+            git_base_url=config.git.base_url,
         ),
         git=stack.git,
         cache=stack.cache,

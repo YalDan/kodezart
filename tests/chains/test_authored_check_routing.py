@@ -371,7 +371,7 @@ def built_workflow(monkeypatch, ci, *, config, repositories=()):
         config=config,
         repositories=repositories,
         agent_service=AgentService(
-            git_base_url=config.git_base_url,
+            git_base_url=config.git.base_url,
             executor=FakeAgentExecutor(events=[]),
             workspace=workspace,
             persister=FakeChangePersister(),

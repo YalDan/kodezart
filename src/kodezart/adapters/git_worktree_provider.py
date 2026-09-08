@@ -42,13 +42,9 @@ class GitWorktreeProvider:
         self,
         git: GitService,
         cache: RepoCache,
-        committer_name: str,
-        committer_email: str,
     ) -> None:
         self._git: GitService = git
         self._cache: RepoCache = cache
-        self._committer_name: str = committer_name
-        self._committer_email: str = committer_email
         self._workspaces: dict[str, _WorkspaceInfo] = {}
         self._log: BoundLogger = get_logger(__name__)
 

@@ -16,7 +16,7 @@ from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.github_token_auth import GitHubTokenAuth
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
-from kodezart.core.config import AppConfig
+from kodezart.core.git_settings import GitSettings
 from kodezart.core.protocols import (
     ArtifactPersister,
     BranchMerger,
@@ -51,34 +51,33 @@ class GitStack:
 
 def build_git_stack(
     *,
-    config: AppConfig,
+    settings: GitSettings,
+    github_token: str | None,
     prompts: PromptSetProvider,
     gate: OutboundContentGate,
 ) -> GitStack:
     """Git, its clone cache, and the writers that work through them."""
-    auth = GitHubTokenAuth(token=config.github_token) if config.github_token else None
-    git = SubprocessGitService(remote=config.git_remote, auth=auth)
-    cache = LocalBareRepoCache(git=git, base_dir=config.clone_cache_dir)
+    auth = GitHubTokenAuth(token=github_token) if github_token else None
+    git = SubprocessGitService(remote=settings.remote, auth=auth)
+    cache = LocalBareRepoCache(git=git, base_dir=settings.clone_cache_dir)
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name=config.git_committer_name,
-        committer_email=config.git_committer_email,
     )
     persister = GitChangePersister(
         git=git,
-        committer_name=config.git_committer_name,
-        committer_email=config.git_committer_email,
-        remote=config.git_remote,
+        committer_name=settings.committer_name,
+        committer_email=settings.committer_email,
+        remote=settings.remote,
         prompts=prompts,
         gate=gate,
     )
-    merger = GitBranchMerger(git=git, workspace=workspace, remote=config.git_remote)
+    merger = GitBranchMerger(git=git, workspace=workspace, remote=settings.remote)
     artifact_persister = GitArtifactPersister(
         git=git,
         workspace=workspace,
-        committer_name=config.git_committer_name,
-        committer_email=config.git_committer_email,
+        committer_name=settings.committer_name,
+        committer_email=settings.committer_email,
     )
     ref_publisher = GitRefPublisher(git=git, workspace=workspace)
     return GitStack(

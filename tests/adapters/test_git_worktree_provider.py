@@ -42,8 +42,6 @@ def provider(tmp_path: Path) -> GitWorktreeProvider:
     return GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="test@test.dev",
     )
 
 
@@ -100,8 +98,6 @@ async def test_release_dirty_emits_warning_no_push() -> None:
     p = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="bot",
-        committer_email="b@t.dev",
     )
     wt = await p.acquire(repo_path="/repo", ref="HEAD", branch_name="feat")
     await p.release(wt)
@@ -123,8 +119,6 @@ async def test_release_clean_no_push() -> None:
     p = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="bot",
-        committer_email="b@t.dev",
     )
     wt = await p.acquire(repo_path="/repo", ref="HEAD", branch_name="feat")
     await p.release(wt)
@@ -144,8 +138,6 @@ async def test_release_detached_no_push() -> None:
     p = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="bot",
-        committer_email="b@t.dev",
     )
     wt = await p.acquire(repo_path="/repo", ref="HEAD")  # no branch_name → detached
     await p.release(wt)
@@ -173,8 +165,6 @@ async def test_release_has_changes_failure_does_not_crash() -> None:
     p = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="bot",
-        committer_email="b@t.dev",
     )
     wt = await p.acquire(repo_path="/repo", ref="HEAD", branch_name="feat")
     await p.release(wt)  # should NOT raise
@@ -210,8 +200,6 @@ async def test_acquire_with_explicit_ref_uses_branch_content(
     p = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     file_url = f"file://{upstream}"
 

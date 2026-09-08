@@ -41,8 +41,6 @@ async def test_historical_forge_sha_is_not_restamped_to_current_head(
     workspace = GitWorktreeProvider(
         git=native,
         cache=cache,
-        committer_name="Fixture",
-        committer_email="fixture@example.invalid",
     )
     op = operation.model_copy(
         update={"repos": [REPOSITORY.model_copy(update={"url": remote.as_uri()})]}

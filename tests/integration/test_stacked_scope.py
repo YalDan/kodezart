@@ -133,8 +133,6 @@ def _engine(repo: Path, tmp_path: Path) -> AuthoredDeliveryCoordinator:
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitChangePersister(
         gate=PassThroughGate(),

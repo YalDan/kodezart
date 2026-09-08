@@ -46,13 +46,13 @@ def test_removed_setting_refuses_all_supported_sources(
 def test_retained_remote_override_loads_at_the_same_config_boundary(
     source, tmp_path, monkeypatch
 ):
-    config = _from_source(source, "git_remote", "upstream", tmp_path, monkeypatch)
-    assert config.git_remote == "upstream"
+    config = _from_source(source, "git", {"remote": "upstream"}, tmp_path, monkeypatch)
+    assert config.git.remote == "upstream"
 
 
 def test_default_config_exposes_no_removed_setting():
     config = AppConfig(_env_file=None)
-    assert config.git_remote == "origin"
+    assert config.git.remote == "origin"
     assert "organize_max_admission_rounds" not in config.model_dump()
     assert "organize_max_convergence_rounds" not in config.model_dump()
     assert "union_check_cleanup_poll_interval_seconds" not in config.model_dump()
@@ -77,7 +77,7 @@ def test_unrelated_unprefixed_names_are_not_retired_settings(
     else:
         (tmp_path / name).write_text("synthetic-unrelated-value")
         config = AppConfig(_env_file=None, _secrets_dir=tmp_path)
-    assert config.git_remote == "origin"
+    assert config.git.remote == "origin"
 
 
 @pytest.mark.parametrize(
@@ -111,7 +111,7 @@ def test_aggregate_retirement_is_an_exact_name_not_a_prefix_rule(
     else:
         (tmp_path / name).write_text("synthetic-unrelated-value")
         config = AppConfig(_env_file=None, _secrets_dir=tmp_path)
-    assert config.git_remote == "origin"
+    assert config.git.remote == "origin"
 
 
 def test_a_retired_aggregate_secret_is_rejected_without_reading_its_value(
