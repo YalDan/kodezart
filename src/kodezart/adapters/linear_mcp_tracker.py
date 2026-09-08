@@ -32,6 +32,7 @@ from typing import Final, assert_never
 
 from pydantic import ValidationError
 
+from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
 from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
 from kodezart.core.errors import (
@@ -44,7 +45,11 @@ from kodezart.core.errors import (
 )
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
-from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
+from kodezart.domain.errors import (
+    DuplicateIssueIdentityError,
+    DuplicateWorkRefError,
+    TransientAPIError,
+)
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
@@ -53,6 +58,7 @@ from kodezart.domain.tracker_writes import (
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
@@ -74,6 +80,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearUserWire,
     LinearWireModel,
 )
+from kodezart.types.domain.linear_scope import LinearScopeIssuesWire
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.tracker import (
@@ -153,6 +160,9 @@ _READ_TOOLS: Final[frozenset[str]] = SCOPE_READ_TOOLS | frozenset(
 #: The probe is about reachability, so a second row would be paid for and
 #: read by nobody.
 _SCOPE_PROBE_LIMIT = 1
+
+# The vendor's maximum issue page, not a bound on the identity lookup.
+_ISSUE_IDENTITY_PAGE_SIZE = 250
 
 #: What the vendor's own diagnosis says when a credential lacks the scope a
 #: tool needs.  Matched on the error the transport already carries, because
@@ -408,6 +418,7 @@ class LinearMcpTracker:
     ) -> None:
         self._caller: McpToolCaller = caller
         self._markers = LinearMarkers(marker_prefixes)
+        self._issue_identity = LinearIssueIdentityCarrier(marker_prefixes)
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._clock: Callable[[], datetime] = clock
@@ -688,9 +699,96 @@ class LinearMcpTracker:
         if title is not None:
             arguments["title"] = title
         if body is not None:
+            current = await self._read_issue_wire(issue_key)
+            identity = self._issue_identity.decode(
+                current.description or "", issue_key=issue_key
+            )
+            if identity is not None:
+                body = self._issue_identity.encode(
+                    identity, body=body, issue_key=issue_key
+                )
             arguments["description"] = body
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
         return self._saved_issue(payload)
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        self._issue_identity.require_prefix()
+        current = await self._read_issue_wire(issue_key)
+        return self._issue_identity.decode(
+            current.description or "", issue_key=issue_key
+        )
+
+    async def upsert_issue(
+        self,
+        *,
+        scope_key: ScopeRef,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
+        self._issue_identity.require_prefix()
+        current = await self._find_issue_identity(identity)
+        content = self._issue_identity.encode(
+            identity, body=body, issue_key=current.issue_key if current else "new issue"
+        )
+        if current is None:
+            return await self.create_issue(
+                title=title, body=content, team_key=team_key, priority=priority
+            )
+        if current.body != content:
+            await self.edit_description(
+                target=current.issue_key, expected=current.body, replacement=content
+            )
+        if current.title != title:
+            await self.update_issue(issue_key=current.issue_key, title=title)
+        return await self.read_issue(issue_key=current.issue_key)
+
+    async def _find_issue_identity(
+        self, identity: IssueIdentity
+    ) -> TrackerIssue | None:
+        arguments: dict[str, object] = {
+            "includeArchived": True,
+            "limit": _ISSUE_IDENTITY_PAGE_SIZE,
+            "fields": ["id"],
+        }
+        seen_keys: set[str] = set()
+        seen_cursors: set[str] = set()
+        matches: list[TrackerIssue] = []
+        while True:
+            payload = await self._call(_TOOL_LIST_ISSUES, arguments)
+            page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+            for entry in page.issues:
+                if entry.id in seen_keys:
+                    continue
+                seen_keys.add(entry.id)
+                # Listing descriptions truncate even with fields=['description'];
+                # only the full read can establish that a carrier is absent.
+                wire = await self._read_issue_wire(entry.id)
+                held = self._issue_identity.decode(
+                    wire.description or "", issue_key=wire.id
+                )
+                if held == identity:
+                    matches.append(self._to_issue(wire))
+            if not page.has_next_page:
+                break
+            if not page.cursor or page.cursor in seen_cursors:
+                raise TrackerProtocolError(
+                    "issue identity lookup pagination cannot advance",
+                    tool=_TOOL_LIST_ISSUES,
+                    detail="missing or repeated cursor",
+                )
+            seen_cursors.add(page.cursor)
+            arguments["cursor"] = page.cursor
+        if len(matches) > 1:
+            raise DuplicateIssueIdentityError(
+                scope_key=identity.scope_key,
+                deliverable_key=identity.deliverable_key,
+                issue_keys=[issue.issue_key for issue in matches],
+            )
+        return matches[0] if matches else None
 
     async def edit_description(
         self, *, target: str, expected: str, replacement: str

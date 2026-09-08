@@ -27,6 +27,7 @@ import pytest
 
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueQuery,
@@ -324,6 +325,15 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         ),
     )
     await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    keyed = await tracker.upsert_issue(
+        scope_key=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope"),
+        deliverable_key="fixture-deliverable",
+        title="keyed",
+        body="keyed body",
+        team_key="engineering",
+        priority=IssuePriority.LOW,
+    )
+    await tracker.read_issue_identity(issue_key=keyed.issue_key)
     await tracker.create_issue(
         title="t",
         body="b",

@@ -130,7 +130,13 @@ def test_static_detector_accepts_explicit_comparison_and_unrelated_boolean():
 @pytest.mark.parametrize(
     "verdict,fields",
     [
-        ("not_buildable", {"invented_decision": "choose a storage model"}),
+        (
+            "not_buildable",
+            {
+                "invented_decision": "choose a storage model",
+                "refusal_kind": "spec_gap",
+            },
+        ),
         (
             "unverifiable",
             {"missing_artifact": "schema", "pending_blocker_id": "ISSUE-9"},
@@ -169,6 +175,8 @@ def test_admission_refusal_requires_actionable_fields(verdict, fields):
 
     from kodezart.types.domain.organize import AdmissionResult
 
+    if verdict == "not_buildable":
+        fields = {**fields, "refusal_kind": "spec_gap"}
     with pytest.raises(ValidationError):
         AdmissionResult(
             issue_id="ISSUE-1",
@@ -176,3 +184,197 @@ def test_admission_refusal_requires_actionable_fields(verdict, fields):
             evidence="observed",
             **fields,
         )
+
+
+def test_defect_role_has_exact_instance_and_mandate_members():
+    from kodezart.types.domain.organize import DefectRole
+
+    assert {member.name: member.value for member in DefectRole} == {
+        "INSTANCE": "instance",
+        "MANDATE": "mandate",
+    }
+
+
+@pytest.mark.parametrize("mandate_text", [None, "", " ", "\n\t"])
+def test_mandate_finding_requires_a_quoted_sentence(mandate_text):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    with pytest.raises(ValidationError, match="MANDATE requires"):
+        SpecFinding(
+            issue_id="ISSUE-1",
+            defect_class="self-sufficiency",
+            evidence="The instruction asks writers to leave the choice open.",
+            role=DefectRole.MANDATE,
+            mandate_text=mandate_text,
+        )
+
+
+@pytest.mark.parametrize("mandate_text", ["", " ", "Repeat this defect."])
+def test_instance_finding_refuses_any_mandate_text(mandate_text):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    with pytest.raises(ValidationError, match="INSTANCE requires"):
+        SpecFinding(
+            issue_id="ISSUE-1",
+            defect_class="self-sufficiency",
+            evidence="The body leaves an implementation choice open.",
+            role=DefectRole.INSTANCE,
+            mandate_text=mandate_text,
+        )
+
+
+@pytest.mark.parametrize(
+    "role,mandate_text",
+    [("instance", None), ("mandate", "  Repeat this defect verbatim.\n")],
+)
+def test_finding_round_trip_keeps_role_and_verbatim_instruction(role, mandate_text):
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    finding = SpecFinding(
+        issue_id="ISSUE-1",
+        defect_class="self-sufficiency",
+        evidence="Observed on the issue body.",
+        role=DefectRole(role),
+        mandate_text=mandate_text,
+    )
+    restored = SpecFinding.model_validate_json(finding.model_dump_json(by_alias=True))
+    assert restored == finding
+    assert restored.mandate_text == mandate_text
+
+
+def test_instance_finding_needs_no_mandate_text():
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    finding = SpecFinding(
+        issue_id="ISSUE-1",
+        defect_class="self-sufficiency",
+        evidence="Observed on the issue body.",
+        role=DefectRole.INSTANCE,
+    )
+    assert finding.mandate_text is None
+
+
+def test_finding_is_frozen_and_rejects_unknown_fields():
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import DefectRole, SpecFinding
+
+    fields = {
+        "issue_id": "ISSUE-1",
+        "defect_class": "self-sufficiency",
+        "evidence": "Observed on the issue body.",
+        "role": DefectRole.INSTANCE,
+    }
+    finding = SpecFinding.model_validate(fields)
+    with pytest.raises(ValidationError, match="frozen"):
+        finding.role = DefectRole.MANDATE
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        SpecFinding.model_validate({**fields, "instruction": "Not a defined field"})
+
+
+def test_refusal_kind_has_exact_spec_gap_and_human_decision_members():
+    from kodezart.types.domain.organize import RefusalKind
+
+    assert {member.name: member.value for member in RefusalKind} == {
+        "SPEC_GAP": "spec_gap",
+        "HUMAN_DECISION": "human_decision",
+    }
+
+
+@pytest.mark.parametrize("extra_fields", [{}, {"refusal_kind": None}])
+def test_not_buildable_requires_an_explicit_refusal_kind(extra_fields):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import AdmissionResult
+
+    with pytest.raises(ValidationError, match="NOT_BUILDABLE requires refusal_kind"):
+        AdmissionResult.model_validate(
+            {
+                "issue_id": "ISSUE-1",
+                "verdict": "not_buildable",
+                "invented_decision": "Choose the storage model.",
+                "evidence": "The specification leaves that choice open.",
+                **extra_fields,
+            }
+        )
+
+
+@pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+@pytest.mark.parametrize("refusal_kind", ["spec_gap", "human_decision"])
+def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import AdmissionResult
+
+    with pytest.raises(ValidationError, match="refusal_kind must be None"):
+        AdmissionResult.model_validate(
+            {
+                "issue_id": "ISSUE-1",
+                "verdict": verdict,
+                "missing_artifact": "schema",
+                "pending_blocker_id": "ISSUE-9",
+                "evidence": "Observed on the issue body.",
+                "refusal_kind": refusal_kind,
+            }
+        )
+
+
+@pytest.mark.parametrize("verdict", ["buildable", "unverifiable"])
+def test_non_refusals_round_trip_with_no_refusal_kind(verdict):
+    from kodezart.types.domain.organize import AdmissionResult
+
+    result = AdmissionResult.model_validate(
+        {
+            "issue_id": "ISSUE-1",
+            "verdict": verdict,
+            "missing_artifact": "schema",
+            "pending_blocker_id": "ISSUE-9",
+            "evidence": "Observed on the issue body.",
+        }
+    )
+    restored = AdmissionResult.model_validate_json(
+        result.model_dump_json(by_alias=True)
+    )
+    assert restored == result
+    assert restored.refusal_kind is None
+
+
+@pytest.mark.parametrize(
+    "refusal_kind,expected",
+    [("spec_gap", "reauthor"), ("human_decision", "escalate")],
+)
+@pytest.mark.parametrize(
+    "invented_decision",
+    ["URGENT HUMAN APPROVAL REQUIRED", "The author can easily repair this gap."],
+)
+def test_admission_refusal_route_uses_kind_without_reading_tone(
+    refusal_kind, expected, invented_decision
+):
+    from kodezart.domain.organize import admission_route
+    from kodezart.types.domain.organize import AdmissionResult
+    from tests.fakes import make_tracker_issue
+
+    result = AdmissionResult.model_validate(
+        {
+            "issue_id": "ISSUE-1",
+            "verdict": "not_buildable",
+            "invented_decision": invented_decision,
+            "evidence": "The same evidence is used for either classification.",
+            "refusal_kind": refusal_kind,
+        }
+    )
+    before = result.model_dump_json()
+    assert (
+        admission_route(
+            result,
+            issue=make_tracker_issue("ISSUE-1"),
+            scope_issue_keys=frozenset({"ISSUE-1"}),
+        ).value
+        == expected
+    )
+    assert result.model_dump_json() == before
+    assert AdmissionResult.model_validate_json(before) == result

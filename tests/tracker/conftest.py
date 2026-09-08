@@ -342,6 +342,7 @@ def tracker_writes(
         return lambda: (
             *tracker.comment_writes,
             *tracker.issue_writes,
+            *tracker.issue_creations,
             *tracker.workflow_writes,
             *tracker.restored_states,
             *tracker.queue_writes,

@@ -21,6 +21,7 @@ from kodezart.types.domain.gating import (
     ScanResult,
     WriterShape,
 )
+from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.operation import (
     LifecycleStage,
@@ -690,6 +691,30 @@ class TrackerPort(Protocol):
         """Update the given fields; ``None`` leaves a field untouched."""
         ...
 
+    async def upsert_issue(
+        self,
+        *,
+        scope_key: ScopeRef,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        """Find the persisted identity before creating an issue for it.
+
+        Team and priority govern creation. On a hit, converge title and
+        description, with description changes going through edit_description.
+        Duplicate identities refuse before any write. Callers serialize
+        concurrent creation of the same identity. The backend owns the
+        identity carrier; descriptions retain its raw representation.
+        """
+        ...
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        """The issue's recorded deliverable identity, or no owned identity."""
+        ...
+
     async def set_workflow_state(
         self,
         *,
@@ -1097,6 +1122,7 @@ class WorkflowEngine(Protocol):
         self,
         *,
         prompt: str,
+        issue_key: str | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
@@ -1110,6 +1136,8 @@ class WorkflowEngine(Protocol):
 
         ``scope`` explicitly selects addressed input or the legacy prompt
         workflow. An engine must consume an addressed scope or refuse it.
+        ``issue_key`` is the producer's optional tracker identity, carried
+        independently of the prompt and scope address.
         ``cache_key`` IS the LangGraph thread id, so the caller's job id
         addresses the run's checkpoints.
         """

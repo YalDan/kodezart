@@ -5,4 +5,5 @@ MARKER_PREFIXES: dict[str, str] = {
     "work_ref": "kodezart-workref",
     "base_spec": "kodezart-basespec",
     "repository": "kodezart-repo",
+    "issue_identity": "kodezart-issue",
 }

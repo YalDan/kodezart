@@ -19,7 +19,7 @@ from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
-from kodezart.core.protocols import AgentExecutor, TicketGenerator
+from kodezart.core.protocols import AgentExecutor, OutboundContentGate, TicketGenerator
 from kodezart.core.retry import DelayFloor
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.errors import (
@@ -136,6 +136,7 @@ def _make_engine(
     retry_initial_interval: float = 1.0,
     retry_max_attempts: int = 3,
     delay_floor_for: DelayFloor = no_delay_floor,
+    outbound_gate: OutboundContentGate | None = None,
 ) -> RalphWorkflowEngine:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -152,7 +153,7 @@ def _make_engine(
         persister=FakeChangePersister(),
     )
     return RalphWorkflowEngine(
-        gate=PassThroughGate(),
+        gate=PassThroughGate() if outbound_gate is None else outbound_gate,
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
         service=service,
@@ -1992,6 +1993,7 @@ def test_route_after_ci_no_pr_number_routes_complete() -> None:
         remediator=None,
     )
     state: WorkflowState = {
+        "issue_key": None,
         "feature_branch": "kodezart/test",
         "ralph_branch": "kodezart/test-ralph-abc",
         "ticket": None,
@@ -3326,6 +3328,7 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
     # from the RunnableConfig configurable, so we build that mapping
     # explicitly.
     state: WorkflowState = {
+        "issue_key": None,
         "feature_branch": "kodezart/test",
         "ralph_branch": "kodezart/test-ralph-abc",
         "ticket": None,
@@ -3401,6 +3404,7 @@ class TestForgeNodePreconditions:
 
     def _state(self) -> WorkflowState:
         state: WorkflowState = {
+            "issue_key": None,
             "feature_branch": "kodezart/test",
             "ralph_branch": "kodezart/test-ralph-abc",
             "feature_tip_sha": "a" * 40,
@@ -5066,6 +5070,7 @@ class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
 
     def _state(self, *, accepted: bool) -> WorkflowState:
         state: WorkflowState = {
+            "issue_key": None,
             "feature_branch": "kodezart/test-12345678",
             "ralph_branch": "kodezart/test-12345678-ralph-abcdef01",
             "work_base_ref": "main",

@@ -447,6 +447,7 @@ class FireDispatcher:
             lane=self._lane,
             request=WorkflowSubmission(
                 prompt=context.render(),
+                issue_key=winner.issue_key,
                 repo_path=None,
                 repo_url=self._repo_url,
                 base_spec=spec,

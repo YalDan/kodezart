@@ -356,12 +356,24 @@ role, a queue key, the checkpoint document — refuses at the point of need with
 a typed error naming what is missing and what stops working, never as a boot
 failure. Structural validation applies to what IS present.
 
-Tracker comments take their identity prefixes from `marker_prefixes`.
+Tracker carriers take their identity prefixes from `marker_prefixes`.
 Declare `claim`, `work_ref`, `base_spec` and `repository` for the corresponding
 tracker operations. When upgrading an existing operation, copy the example's
 values for these keys to keep addressing its stored markers. Additional
 purposes such as `run_state`, `decision` and `escalation` use the same mapping;
 missing purposes are refused when read or written.
+
+Declare `issue_identity` to use keyed issue upsert. The Linear adapter records
+the scope kind, scope key and deliverable key in a hidden first description
+line in the initial create request. A retry reads that persisted identity,
+including after a lost create response; matching issues receive guarded
+description edits and title updates. Team and priority apply at creation.
+Ordinary description updates preserve the carrier, and `read_issue_identity`
+returns its decoded value. Descriptions otherwise retain the backend's raw
+representation. Lookup includes archived issues and fully reads every listed
+issue because Linear's listing descriptions can be truncated. Callers must
+serialize concurrent creation of the same key; this lookup cannot provide an
+atomic uniqueness constraint. Duplicate recorded identities refuse any write.
 
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the

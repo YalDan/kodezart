@@ -87,6 +87,7 @@ class OriginRoutedWorkflowEngine:
         self,
         *,
         prompt: str,
+        issue_key: str | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
@@ -123,6 +124,7 @@ class OriginRoutedWorkflowEngine:
         )
         async for event in arm.run(
             prompt=prompt,
+            issue_key=issue_key,
             repo_path=repo_path,
             repo_url=repo_url,
             base_spec=base_spec,

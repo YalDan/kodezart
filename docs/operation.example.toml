@@ -35,7 +35,7 @@ agent_identities = ["@example-agent", "example-agent"]
 # KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED without one aborts boot.
 private_surface = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
 
-# Stable comment identities. Preserve the existing prefixes when adopting
+# Stable tracker identities. Preserve the existing prefixes when adopting
 # a tracker with recorded work: changing one addresses a different marker.
 # Every used purpose needs an entry; an absent purpose is refused at use.
 [marker_prefixes]
@@ -43,6 +43,7 @@ claim = "kodezart-claim"
 work_ref = "kodezart-workref"
 base_spec = "kodezart-basespec"
 repository = "kodezart-repo"
+issue_identity = "kodezart-issue"
 run_state = "run-state"
 decision = "decision"
 escalation = "escalation"
