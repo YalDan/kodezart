@@ -55,7 +55,8 @@ async def test_composed_grooming_renders_without_copied_initiative_ids_or_dates(
         for required in (
             "every issue in the declared teams, narrowed by their declared scopes",
             "discover their projects and initiatives from the current tracker",
-            "read each applicable initiative and project's current target date from the tracker",
+            "read each applicable initiative and project's current target date "
+            "from the tracker",
             "an absent target stays absent, never invented or borrowed",
             "never move a date",
         ):
