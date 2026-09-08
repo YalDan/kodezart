@@ -407,7 +407,9 @@ Issue approval covers descendants across projects; project approval follows
 actual project membership. Every call reads again, so reparenting and removal
 of an ancestor's label affect the next answer without copying labels onto
 children. Missing labels, malformed identities or unreadable ancestry refuse
-instead of appearing unapproved. An absent scope mapping remains legal at boot
+instead of appearing unapproved. A reported project without its canonical key
+also refuses; omitted or null project fields retain the native unassigned form.
+An absent scope mapping remains legal at boot
 and refuses when this capability is called. This reader neither writes labels
 nor supplies a provenance carrier; the actual per-dispatch caller remains a
 separate integration.

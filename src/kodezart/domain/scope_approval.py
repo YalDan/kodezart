@@ -43,6 +43,10 @@ async def resolve_execution_approval(
                 raise ScopeReadError(
                     "milestone member has no owning project", ref=requested
                 )
+            if issue.project is not None and project is None:
+                raise ScopeReadError(
+                    "project membership has no canonical key", ref=requested
+                )
         if approved:
             return True
         key = issue.parent_key

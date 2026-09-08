@@ -62,11 +62,12 @@ class ApprovalFixture:
 
     def project(self, key: str, project: str | None) -> None:
         self.server.issue_detail_updates[key] = {
+            "project": project,
             "projectId": project,
             "projectMilestone": None,
         }
         self.fake.issues[key] = self.fake.issues[key].model_copy(
-            update={"project_id": project, "milestone_key": None}
+            update={"project": project, "project_id": project, "milestone_key": None}
         )
 
 
@@ -168,6 +169,38 @@ async def test_issue_without_container_can_be_unapproved_or_inherit_issue_label(
     assert await approval.tracker.execution_approved(issue_key=CHILD.key) is False
     approval.labels(ROOT, ScopeLabel.APPROVED)
     assert await approval.tracker.execution_approved(issue_key=CHILD.key) is True
+
+
+async def test_reported_project_without_canonical_key_refuses(
+    approval: ApprovalFixture,
+) -> None:
+    approval.project(CHILD.key, None)
+    approval.server.issue_detail_updates[CHILD.key]["project"] = "Reported project"
+    approval.fake.issues[CHILD.key] = approval.fake.issues[CHILD.key].model_copy(
+        update={"project": "Reported project"}
+    )
+    with pytest.raises(ScopeReadError, match="canonical key"):
+        await approval.tracker.execution_approved(issue_key=CHILD.key)
+
+
+@pytest.mark.parametrize("omitted", [False, True])
+async def test_native_no_project_retains_omitted_and_null_compatibility(
+    omitted: bool,
+) -> None:
+    class UnassignedServer(ScopeMcpServer):
+        def _tool_get_issue(
+            self, arguments: Mapping[str, object]
+        ) -> Mapping[str, object]:
+            result = dict(super()._tool_get_issue(arguments))
+            for field in ("project", "projectId", "projectMilestone"):
+                if omitted:
+                    result.pop(field)
+                else:
+                    result[field] = None
+            return result
+
+    tracker = linear_over_fake_mcp(UnassignedServer(), scope_labels=APPROVAL_LABELS)
+    assert await tracker.execution_approved(issue_key=CHILD.key) is False
 
 
 async def test_nested_initiative_is_read_and_reparenting_changes_next_resolution(
