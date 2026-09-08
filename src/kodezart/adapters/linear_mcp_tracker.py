@@ -83,6 +83,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearLabelListWire,
     LinearLabelWire,
     LinearNamedWire,
+    LinearPlanningIssueWire,
     LinearProjectWire,
     LinearTeamListWire,
     LinearTeamWire,
@@ -623,6 +624,14 @@ class LinearMcpTracker:
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
         return self._to_issue(await self._read_issue_wire(issue_key))
+
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        return self._to_issue(
+            self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
+        )
 
     def require_scope_plan_reads(self) -> None:
         """A clean plan must be able to see both criteria and open decisions."""

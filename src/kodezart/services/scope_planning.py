@@ -17,6 +17,9 @@ async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSn
     """
     tracker.require_scope_plan_reads()
     members = await read_scope_members(tracker=tracker, scope=ref)
+    for key, issue in members.items():
+        if await tracker.read_planning_issue(issue_key=key) != issue:
+            raise ScopeReadError(f"scope fact changed during planning: {key}", ref=ref)
     facts = dict(members)
     pending = list(members.values())
     while pending:
@@ -24,7 +27,7 @@ async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSn
         for key in blocker_keys(issue):
             if key in facts:
                 continue
-            dependency = await tracker.read_issue(issue_key=key)
+            dependency = await tracker.read_planning_issue(issue_key=key)
             if dependency.issue_key != key:
                 raise ScopeReadError(
                     "dependency read changed the requested identity", ref=ref
@@ -34,7 +37,7 @@ async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSn
     # Check the native observations again before either a refusal or a plan.
     # A missing or moved dependency is never interpreted as a closed blocker.
     for key, issue in facts.items():
-        if key not in members and await tracker.read_issue(issue_key=key) != issue:
+        if await tracker.read_planning_issue(issue_key=key) != issue:
             raise ScopeReadError(f"dependency changed during planning: {key}", ref=ref)
     if await read_scope_members(tracker=tracker, scope=ref) != members:
         raise ScopeReadError("scope family changed during planning", ref=ref)

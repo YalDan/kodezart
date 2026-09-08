@@ -770,6 +770,10 @@ class TrackerPort(Protocol):
         """The full issue — body, state, relations, parent, assignee."""
         ...
 
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        """Read reported labels and full dependency relations; omission refuses."""
+        ...
+
     def require_scope_plan_reads(self) -> None:
         """Require semantic criterion and decision reads before scope planning.
 

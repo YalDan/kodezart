@@ -3419,6 +3419,9 @@ class FakeTrackerPort:
         self.issue_reads.append(issue_key)
         return self.issues[issue_key]
 
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        return await self.read_issue(issue_key=issue_key)
+
     def require_scope_plan_reads(self) -> None:
         """Supported: fixture issues retain their semantic label keys."""
 

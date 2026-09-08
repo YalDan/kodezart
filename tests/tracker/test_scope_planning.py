@@ -4,7 +4,9 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.composition.engine import OriginRoutedWorkflowEngine
+from kodezart.core.errors import TrackerProtocolError
 from kodezart.domain.errors import (
+    CriterionReadError,
     ScopeCycleError,
     ScopePlanRefusalError,
     ScopeReadError,
@@ -173,7 +175,7 @@ async def test_unstable_native_facts_never_return_a_plan(build, monkeypatch, dam
             row("new", parent="root"),
         ]
     )
-    original_read, original_scope = tracker.read_issue, tracker.scope_issues
+    original_read, original_scope = tracker.read_planning_issue, tracker.scope_issues
     reads = []
 
     async def read(*, issue_key):
@@ -198,7 +200,7 @@ async def test_unstable_native_facts_never_return_a_plan(build, monkeypatch, dam
                 values[0] = values[0].model_copy(update={"body": "changed"})
         return values
 
-    monkeypatch.setattr(tracker, "read_issue", read)
+    monkeypatch.setattr(tracker, "read_planning_issue", read)
     monkeypatch.setattr(tracker, "scope_issues", scoped)
     with pytest.raises(ScopeReadError):
         await read_scope_plan(ref=SCOPE, tracker=tracker)
@@ -245,3 +247,45 @@ async def test_every_barrier_kind_is_named_together(build):
     assert caught.value.open_decisions == ("question",)
     assert caught.value.backlog_criteria == ("criterion",)
     assert caught.value.cross_subtree_edges == (("criterion", "outside"),)
+
+
+@pytest.mark.parametrize("field", ["labels", "relations"])
+@pytest.mark.parametrize("affected", ["root", "external", "criterion"])
+async def test_native_planning_requires_reported_labels_and_relations(field, affected):
+    class Omitted(ScopeMcpServer):
+        def _tool_get_issue(self, arguments):
+            value = dict(super()._tool_get_issue(arguments))
+            if arguments["id"] == affected:
+                value.pop(field, None)
+            return value
+
+    server = Omitted()
+    server.state_types.update(STATE_TYPES)
+    server.issues = {
+        "root": row("root", blockers=("external",)),
+        "external": row("external"),
+        "criterion": row("criterion", parent="root", label="criterion"),
+    }
+    tracker = native_tracker(server, LABELS)
+    with pytest.raises((TrackerProtocolError, ScopeReadError, CriterionReadError)):
+        await read_scope_plan(ref=SCOPE, tracker=tracker)
+
+
+@pytest.mark.parametrize("damage", ["null-relations", "missing-arm"])
+async def test_native_planning_requires_all_requested_relation_arms(damage):
+    class Damaged(ScopeMcpServer):
+        def _tool_get_issue(self, arguments):
+            value = dict(super()._tool_get_issue(arguments))
+            if arguments["id"] == "root":
+                if damage == "null-relations":
+                    value["relations"] = None
+                else:
+                    value["relations"] = dict(value["relations"])
+                    value["relations"].pop("blockedBy")
+            return value
+
+    server = Damaged()
+    server.state_types.update(STATE_TYPES)
+    server.issues = {"root": row("root")}
+    with pytest.raises((TrackerProtocolError, ScopeReadError)):
+        await read_scope_plan(ref=SCOPE, tracker=native_tracker(server, LABELS))

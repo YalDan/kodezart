@@ -129,8 +129,10 @@ cannot turn an open decision into an empty set. The shared `read_scope_members`
 reader preserves direct criterion children even when container filtering omits
 them, and serves audit collection as well as planning.
 
-Planning follows all referenced issue dependencies, rechecks outside dependency
-facts and the scope family, and refuses changed observations. Open decisions,
+The explicit `read_planning_issue` port read requires reported semantic labels
+and full requested dependency relations. Planning re-reads every enumerated
+member through that strict boundary before following dependencies, rechecks all
+facts and the scope family, and refuses omissions or changed observations. Open decisions,
 backlog-kind criteria and criterion edges leaving their parent's subtree yield
 `ScopePlanRefusalError` with the offending native keys. Existing topology
 arithmetic owns cycle detection. A successful snapshot is not approval or a
