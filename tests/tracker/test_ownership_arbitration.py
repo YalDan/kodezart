@@ -732,3 +732,54 @@ async def test_a_refused_acquisition_answers_the_refusal_a_delete_cannot_reach()
             surfaces=spanning, holder="job-c", lease_seconds=LEASE_SECONDS
         )
     assert after.value.current_holder == "job-a"
+
+
+async def test_a_delayed_lease_renewal_stamped_after_the_lapse_grants_nothing() -> None:
+    """The claim interleaving, run over the lease vocabulary that shares it.
+
+    A lease renewal is the same extension published against the same
+    deadline, and the set it covers is what a lease adds: the holder that
+    took the surfaces while the extension was in flight keeps them, and
+    the lapsed holder is told it holds nothing rather than left owning a
+    set it stopped paying for.
+    """
+    server = fixture_server()
+    now = FIXTURE_NOW
+    server.comment_instants = [
+        FIXTURE_NOW + SERVER_SKEW,
+        FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1) + SERVER_SKEW,
+        FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 2) + SERVER_SKEW,
+    ]
+    paused = _PausedRenewal(server)
+    held = frozenset({ISSUE_DESCRIPTION, MARKER_A})
+    lapsing = tracker_over(server, caller=paused, clock=lambda: now)
+    await lapsing.acquire_surfaces(
+        surfaces=held, holder="job-a", lease_seconds=LEASE_SECONDS
+    )
+    now = FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS / 2)
+    paused.holding = True
+    renewal = asyncio.create_task(
+        lapsing.renew_surfaces(
+            surfaces=held, holder="job-a", lease_seconds=LEASE_SECONDS
+        )
+    )
+    await asyncio.wait_for(paused.reached.wait(), 5)
+    now = FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1)
+    successor = await tracker_over(server, clock=lambda: now).acquire_surfaces(
+        surfaces=held, holder="job-b", lease_seconds=LEASE_SECONDS
+    )
+    assert successor.holder == "job-b"
+
+    async def late_arrival() -> str | None:
+        """Whom a third holder is refused in the name of, right now."""
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker_over(server, clock=lambda: now).acquire_surfaces(
+                surfaces=held, holder="job-c", lease_seconds=LEASE_SECONDS
+            )
+        return refused.value.current_holder
+
+    paused.through = _ArrivesWhileWithdrawing(server, arrival=late_arrival)
+    paused.resume.set()
+
+    assert await asyncio.wait_for(renewal, 5) is None
+    assert paused.through.holders == ["job-b"]
