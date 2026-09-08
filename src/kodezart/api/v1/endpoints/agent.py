@@ -2,15 +2,14 @@
 
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
+from kodezart.api.dependencies import ConfigDep, QueryHandlerDep, WorkflowHandlerDep
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import JobQueue
 from kodezart.domain.errors import QueueFullError
-from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.requests.agent import QueryRequest, WorkflowRequest
 from kodezart.types.responses.common import BaseResponse
@@ -47,8 +46,15 @@ def _queue_full_response(exc: QueueFullError) -> JSONResponse:
     )
 
 
-@router.post("/query", summary="Stream agent query via SSE")
-async def stream_query(body: QueryRequest, request: Request) -> StreamingResponse:
+@router.post(
+    "/query",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}},
+    summary="Stream agent query via SSE",
+)
+async def stream_query(
+    body: QueryRequest, handler: QueryHandlerDep
+) -> StreamingResponse:
     """``POST /api/v1/agent/query``. Streams SSE events.
 
     Unqueued and deliberately so: a one-shot query holds no branch and no
@@ -56,10 +62,6 @@ async def stream_query(body: QueryRequest, request: Request) -> StreamingRespons
     of 1 would be a regression.
     """
     await _log.adebug("stream_query_endpoint")
-    handler = AgentHandler(
-        service=request.app.state.agent_service,
-        skills=request.app.state.skills,
-    )
 
     async def generate() -> AsyncGenerator[str, None]:
         async for event in handler.stream_query(body):
@@ -68,10 +70,19 @@ async def stream_query(body: QueryRequest, request: Request) -> StreamingRespons
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@router.post("/workflow", summary="Run iterative workflow via SSE")
+@router.post(
+    "/workflow",
+    response_class=StreamingResponse,
+    responses={
+        200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}},
+        429: {"model": BaseResponse, "description": "Workflow queue is full"},
+    },
+    summary="Run iterative workflow via SSE",
+)
 async def stream_workflow(
     body: WorkflowRequest,
-    request: Request,
+    handler: WorkflowHandlerDep,
+    config: ConfigDep,
 ) -> Response:
     """``POST /api/v1/agent/workflow``. Enqueues, then attaches.
 
@@ -80,13 +91,6 @@ async def stream_workflow(
     the run.  Every following frame is what the run emits, unchanged.
     """
     await _log.adebug("stream_workflow_endpoint")
-    config: AppConfig = request.app.state.config
-    queue: JobQueue = request.app.state.job_queue
-    handler = AgentHandler(
-        service=request.app.state.agent_service,
-        skills=request.app.state.skills,
-        queue=queue,
-    )
     try:
         record = await handler.submit_workflow(body, lane=DEFAULT_LANE)
     except QueueFullError as exc:
@@ -105,24 +109,25 @@ async def stream_workflow(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@router.post("/fire", status_code=202, summary="Queue a workflow run, no stream")
-async def fire_workflow(body: WorkflowRequest, request: Request) -> Response:
+@router.post(
+    "/fire",
+    status_code=202,
+    response_model=FireAcceptedResponse,
+    responses={429: {"model": BaseResponse, "description": "Workflow queue is full"}},
+    summary="Queue a workflow run, no stream",
+)
+async def fire_workflow(
+    body: WorkflowRequest, handler: WorkflowHandlerDep, config: ConfigDep
+) -> FireAcceptedResponse | JSONResponse:
     """``POST /api/v1/agent/fire``. Returns the job handle and nothing else."""
     await _log.adebug("fire_workflow_endpoint")
-    config: AppConfig = request.app.state.config
-    queue: JobQueue = request.app.state.job_queue
-    handler = AgentHandler(
-        service=request.app.state.agent_service,
-        skills=request.app.state.skills,
-        queue=queue,
-    )
     try:
         record = await handler.submit_workflow(body, lane=DEFAULT_LANE)
     except QueueFullError as exc:
         return _queue_full_response(exc)
 
     status_url, stream_url = _job_urls(config, record.job_id)
-    accepted = FireAcceptedResponse(
+    return FireAcceptedResponse(
         job_id=record.job_id,
         lane=record.lane,
         state=record.state,
@@ -130,8 +135,4 @@ async def fire_workflow(body: WorkflowRequest, request: Request) -> Response:
         submitted_at=record.submitted_at,
         status_url=status_url,
         stream_url=stream_url,
-    )
-    return JSONResponse(
-        status_code=202,
-        content=accepted.model_dump(by_alias=True, mode="json"),
     )

@@ -8,6 +8,15 @@ http://localhost:8000/api/v1
 
 The prefix is configurable via `KODEZART_API_V1_PREFIX` (default `/api/v1`).
 
+`/agent/fire` and job status declare their existing success models in OpenAPI
+and return those models through FastAPI response validation. Queue-full `429`
+and unknown-job `404` responses retain the `BaseResponse` JSON envelope. Query,
+workflow and job attachment advertise `text/event-stream` and keep streaming
+explicit. The HTTP dependency providers in `api/dependencies.py` read resources
+owned by the lifespan; route tests can replace them with FastAPI dependency
+overrides. A one-shot query has no workflow-queue dependency.
+
+
 ## GET /api/v1/health
 
 Health check endpoint.
