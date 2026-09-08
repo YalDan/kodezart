@@ -847,6 +847,11 @@ make check        # lint + type-check + test (same as CI)
 make format       # auto-format with ruff
 ```
 
+CI installs with `uv sync --locked --all-groups`, and the verification targets
+use `uv run --locked` so stale dependency metadata fails without rewriting
+`uv.lock`. CI and Docker pin uv to `0.11.6`. For intentional dependency changes,
+use `uv add` / `uv lock` or `make install`, then review and commit the lock change.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer guide.
 
 The callable [delivery coordinator boundary](docs/delivery.md) opens lane PRs
