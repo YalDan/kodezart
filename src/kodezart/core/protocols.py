@@ -1075,7 +1075,8 @@ class TrackerPort(Protocol):
         This is the read D2 requires: *which refs deliver issue X, in which
         roles, at which shas* is answerable through the port, so no code
         anywhere derives an issue identity, a role or a parent from a
-        branch name.
+        branch name. Recorded landing remains LANDED, NOT_LANDED or UNKNOWN;
+        an older record without that fact reads UNKNOWN, never NOT_LANDED.
         """
         ...
 

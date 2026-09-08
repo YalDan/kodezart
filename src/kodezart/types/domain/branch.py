@@ -74,6 +74,14 @@ class BranchAssociation(CamelCaseModel):
     run_id: str = Field(min_length=1)
 
 
+class WorkRefLanding(StrEnum):
+    """An observer's recorded landing fact; never inferred from a branch."""
+
+    LANDED = "landed"
+    NOT_LANDED = "not_landed"
+    UNKNOWN = "unknown"
+
+
 class WorkRef(CamelCaseModel):
     """One ref an issue carries, at the role it plays.
 
@@ -81,6 +89,10 @@ class WorkRef(CamelCaseModel):
     ``None`` means "not pushed", which is a different fact from "pushed at
     an unknown sha" and from any sha value.  A resolution that read it as
     a boolean would treat an unpushed ref as present.
+
+    ``landing`` is the observer's explicit record, independent of that sha.
+    Old records without the field read as UNKNOWN. Recording another
+    landing value is a changed record, not an idempotent replay.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -89,16 +101,23 @@ class WorkRef(CamelCaseModel):
     role: WorkRefRole
     branch: str = Field(min_length=1)
     pushed_head_sha: str | None = None
+    landing: WorkRefLanding = WorkRefLanding.UNKNOWN
     recorded_at: datetime
 
-    def identity(self) -> tuple[str, WorkRefRole, str, str | None]:
+    def identity(self) -> tuple[str, WorkRefRole, str, str | None, WorkRefLanding]:
         """What makes this ref THIS ref, ``recorded_at`` excluded.
 
         The recording instant is assigned by the backend, so two adapters
         storing the same ref may return different ones.  Recording a ref
         that is already recorded is idempotent and is decided here.
         """
-        return (self.issue_id, self.role, self.branch, self.pushed_head_sha)
+        return (
+            self.issue_id,
+            self.role,
+            self.branch,
+            self.pushed_head_sha,
+            self.landing,
+        )
 
 
 class BaseInput(CamelCaseModel):

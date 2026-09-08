@@ -521,6 +521,15 @@ readings and has no threshold bound. Event-to-target projection and complete
 record collection belong to their producers and are not supplied by this
 predicate; it adds no competing event vocabulary or inferred target mapping.
 
+The existing `WorkRef` carries the observer's `landing` fact as `landed`,
+`not_landed` or `unknown`, alongside its branch and pushed head. The native
+work-ref marker serializes that field; older markers without it read as
+unknown, and malformed values refuse. Observers amend the existing record
+when they record a landing. The append-only `record_work_ref` operation
+retains its one-deliverable rule and never silently replaces that record.
+No landing fact is inferred from a merge strategy, Git ancestry or forge
+state, and no second landing carrier is introduced on the lane run record.
+
 `commits_ahead_of_record` compares four projections from one lane record:
 lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.
 Each frozen row carries exactly `sha`, `subject` and `issue_id`. Either
