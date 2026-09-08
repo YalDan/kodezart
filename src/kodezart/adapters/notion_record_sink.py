@@ -66,7 +66,7 @@ class NotionRecordSink:
         source carries.  The window alone answered for the whole log — two
         fires swept at one shutdown produced one row, the first answering
         for the second — and a title CONTAINING the name answered for
-        every longer name it prefixed (KOD-288).  Page one of size one is
+        every longer name it prefixed.  Page one of size one is
         all the answer needs.
         """
         if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:

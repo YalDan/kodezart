@@ -8,7 +8,7 @@ was when it went wrong:
 * the session was gone before the request was written — nothing reached
   the server, and making the call again on a fresh session is safe;
 * the request was written and no answer ever came — the server may have
-  run it, and making it again could run it twice (KOD-305);
+  run it, and making it again could run it twice;
 * the session stood and the call simply failed — the server said no, or
   answered something unusable, and a fresh session would repair nothing.
 
@@ -38,7 +38,7 @@ class SessionGone(CallFailure):
     """The session was gone before the request was written.
 
     Nothing reached the server, so the call may be made again on a fresh
-    session: this is the arm the measured 18:22 death took (KOD-286).
+    session: this is the arm the measured 18:22 death took.
     """
 
     kind: Literal["session_gone"] = "session_gone"
@@ -50,7 +50,7 @@ class CallUnanswered(CallFailure):
 
     Whether the server ran it is UNKNOWN, so the call is not made again:
     a write the server performed and then died before acknowledging would
-    be performed twice (KOD-305).  The session may or may not have died
+    be performed twice.  The session may or may not have died
     with it — a read timeout leaves it standing, the server's exit does
     not — and the member says which.
     """

@@ -14,8 +14,8 @@ to, and the queue state to its terminal member.
 
 **The pull-request arm also records the delivery — when there is one.**  A
 ``DELIVERABLE`` work ref is what a dependent lane's base resolves through,
-and until KOD-149 nothing in the process wrote one: every issue with a
-blocker failed base resolution, because the ref the resolver walks the
+and before this writer existed nothing in the process wrote one: every
+issue with a blocker failed base resolution, because the ref the resolver walks the
 chain looking for was never recorded by anything.  The open pull request
 is the moment the branch and its pushed tip both exist, so this is where
 it is written — for the pull request that DELIVERS.  The stall exit opens
@@ -62,7 +62,7 @@ class TrackerLifecycleWriter:
     operation declares a board that mirrors publicly beside a board that
     syncs to a private surface, and the write-backs onto an issue belong to
     the surface its own board mirrors to.  Absent or unresolved is public —
-    over-scrubbing is the arm that costs nothing but a redaction (KOD-157).
+    over-scrubbing is the arm that costs nothing but a redaction.
     """
 
     def __init__(
@@ -158,14 +158,13 @@ class TrackerLifecycleWriter:
         in-progress, in-review and done — so the issue goes back to the
         state the pass found it in, and a comment carries the rest.  The
         in-progress stage with nothing running is the lie the criterion
-        exists to prevent, and a comment alone does not remove it
-        (KOD-146, ruled 2026-08-26: option (a)).
+        exists to prevent, and a comment alone does not remove it.
 
         Order matches the success path: the state lands before the comment
         reports it, so no reader sees the note beside a stale state.  The
         claim is released by the watcher after every stream end the process
         survives, this arm included, so the next pass is free to re-fire as
-        soon as it ticks rather than waiting a lease out (KOD-152).
+        soon as it ticks rather than waiting a lease out.
         """
         await self._tracker.restore_workflow_state(
             issue_key=issue_key,

@@ -65,7 +65,7 @@ class OriginRoutedWorkflowEngine:
     wired together.  The forge adapter is unchanged and still raises on
     URLs it does not own; it is simply never reached for an origin it
     could not have served, instead of being reached on the last act after
-    a hundred minutes of correct work (KOD-148).
+    a hundred minutes of correct work.
     """
 
     def __init__(

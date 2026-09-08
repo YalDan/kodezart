@@ -5,16 +5,16 @@ record is one line appended to it — the same shape the scan checkpoint
 carries, so a tracker-side log reads as a plain dated list.  The append
 rides the vendor's patch operation rather than a read-modify-write of the
 whole content: two writers appending concurrently must not lose each
-other's lines (KOD-170).
+other's lines.
 
 Verification reads the document itself and looks for THIS run's row.  The
 document's ``updatedAt`` was the earlier answer — it moves on every write,
 so any run in the window answered for every other, and two fires swept at
-one shutdown produced one row (KOD-288).  What identifies a run in a log
+one shutdown produced one row.  What identifies a run in a log
 of runs is the record's own TITLE, and a row is a LINE that begins with
 it: the run's kind, its name and the instant it began, matched whole.  A
-substring of the log was the second wrong answer — a row for ``KOD-170``
-verified away the record owed to ``KOD-17``.
+substring of the log was the second wrong answer: a row for a longer
+issue key incorrectly verified a record owed to its shorter prefix.
 """
 
 from kodezart.core.errors import McpTransportError
@@ -47,7 +47,7 @@ class LinearRecordSink:
         line and against the whole title, because the title carries the
         run's own start stamp: that is what keeps a neighbour's row, a row
         for a longer name this one prefixes, and the same name from
-        another window out of this run's answer (KOD-288).
+        another window out of this run's answer.
         """
         payload = await self._caller.call_tool(
             name=_TOOL_GET_DOCUMENT,

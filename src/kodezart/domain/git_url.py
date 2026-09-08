@@ -44,7 +44,7 @@ def is_forge_less_origin(url: str) -> bool:
     ``file://`` is the one forge-less scheme this deployment uses — a
     local bare repository, the sanctioned smoke shape — and every other
     URL is treated as forge-shaped and left to the adapter that owns it,
-    which raises on the ones it does not (KOD-145).
+    which raises on the ones it does not.
     """
     return url.startswith("file://")
 

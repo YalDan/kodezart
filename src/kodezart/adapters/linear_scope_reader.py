@@ -128,7 +128,7 @@ class LinearScopeReader:
                 raise ScopeReadError("container parent cycle", ref=ref)
             seen.add(ancestor)
             _, ancestor = await self._metadata(ancestor)
-        # KOD-374: Linear exposes no canonical milestone URL. Keep its
+        # Linear exposes no canonical milestone URL. Keep its
         # absence rather than borrowing a containing project's address.
         url = None if ref.kind is ScopeKind.MILESTONE else wire.url
         if ref.kind is not ScopeKind.MILESTONE and not url:

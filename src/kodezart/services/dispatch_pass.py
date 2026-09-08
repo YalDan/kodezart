@@ -8,7 +8,7 @@ spend that work to discover nothing moved, every tick, forever.
 What the tick DID is reported through the log — it is driven by the
 scheduler, which has no caller to hand a report to.  What it returns is
 one bit narrower and belongs to the driver: whether a tick ran at all, so
-a skipped one is never recorded as a run (KOD-176).
+a skipped one is never recorded as a run.
 """
 
 from datetime import datetime
@@ -41,7 +41,7 @@ class GatedDispatchPass:
         The scheduler's start stamp is the run identity a pass prescribes
         its record's title from, and this pass has no record: a dispatch
         tick's outcome is the FIRE it starts, whose own run is recorded by
-        the watch that follows it (KOD-170).  The argument is taken and
+        the watch that follows it.  The argument is taken and
         not read, because every tick on the scheduler is driven the same
         way.
 
