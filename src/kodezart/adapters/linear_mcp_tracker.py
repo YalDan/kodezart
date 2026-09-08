@@ -52,6 +52,7 @@ from kodezart.domain.errors import (
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     EscalationReadError,
+    IssueLabelReadError,
     TransientAPIError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
@@ -642,6 +643,58 @@ class LinearMcpTracker:
         return self._to_issue(
             self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
         )
+
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        label = self._issue_labels.get(classification)
+        if label is None or not label.strip():
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels[{classification!r}]",
+                stops="complete labeled issue membership cannot be read",
+            )
+        arguments: dict[str, object] = {
+            "label": label,
+            "includeArchived": True,
+            "fields": ["id"],
+            "limit": _ISSUE_IDENTITY_PAGE_SIZE,
+        }
+        members: dict[str, TrackerIssue] = {}
+        cursors: set[str] = set()
+        try:
+            while True:
+                payload = await self._call(_TOOL_LIST_ISSUES, arguments)
+                page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+                for entry in page.issues:
+                    if entry.id in members:
+                        raise IssueLabelReadError(
+                            classification=classification,
+                            reason=f"duplicate listed identity {entry.id!r}",
+                        )
+                    issue = await self.read_planning_issue(issue_key=entry.id)
+                    if (
+                        issue.issue_key != entry.id
+                        or classification not in issue.issue_labels
+                    ):
+                        raise IssueLabelReadError(
+                            classification=classification,
+                            reason=f"listed identity or label changed for {entry.id!r}",
+                        )
+                    members[entry.id] = issue
+                if not page.has_next_page:
+                    return tuple(members[key] for key in sorted(members))
+                if not page.cursor or page.cursor in cursors:
+                    raise IssueLabelReadError(
+                        classification=classification,
+                        reason="membership pagination cannot advance",
+                    )
+                cursors.add(page.cursor)
+                arguments["cursor"] = page.cursor
+        except (McpTransportError, TrackerProtocolError) as exc:
+            raise IssueLabelReadError(
+                classification=classification,
+                reason="the tracker membership read failed or was incomplete",
+            ) from exc
 
     def require_scope_plan_reads(self) -> None:
         """A clean plan must be able to see both criteria and open decisions."""

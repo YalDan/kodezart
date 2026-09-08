@@ -7,6 +7,15 @@ from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
 
 
+class IssueLabelReadError(Exception):
+    """A configured classification cannot establish complete issue membership."""
+
+    def __init__(self, *, classification: str, reason: str) -> None:
+        self.classification = classification
+        self.reason = reason
+        super().__init__(f"issue label {classification!r} could not be read: {reason}")
+
+
 class GitSourceReadError(Exception):
     """The requested immutable repository object cannot supply source bytes."""
 

@@ -41,6 +41,7 @@ from kodezart.domain.errors import (
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     EscalationReadError,
+    IssueLabelReadError,
     MergeConflictError,
     PRContentConflictError,
     PRStateReadError,
@@ -3469,6 +3470,31 @@ class FakeTrackerPort:
 
     async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
         return await self.read_issue(issue_key=issue_key)
+
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        keys = sorted(
+            key
+            for key, issue in self.issues.items()
+            if classification in issue.issue_labels
+        )
+        members = []
+        for key in keys:
+            try:
+                issue = await self.read_planning_issue(issue_key=key)
+            except KeyError as exc:
+                raise IssueLabelReadError(
+                    classification=classification,
+                    reason=f"listed issue {key!r} is absent",
+                ) from exc
+            if issue.issue_key != key or classification not in issue.issue_labels:
+                raise IssueLabelReadError(
+                    classification=classification,
+                    reason=f"listed identity or label changed for {key!r}",
+                )
+            members.append(issue)
+        return tuple(members)
 
     def require_scope_plan_reads(self) -> None:
         """Supported: fixture issues retain their semantic label keys."""

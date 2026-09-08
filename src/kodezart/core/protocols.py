@@ -773,6 +773,17 @@ class TrackerPort(Protocol):
         """Read reported labels and full dependency relations; omission refuses."""
         ...
 
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        """Read every issue with a configured semantic label, including archived.
+
+        This is a complete, strict membership read, independent of queue state.
+        Missing configuration, incomplete pagination or contradictory membership
+        refuses instead of returning a truncated or filtered set.
+        """
+        ...
+
     def require_scope_plan_reads(self) -> None:
         """Require semantic criterion and decision reads before scope planning.
 
