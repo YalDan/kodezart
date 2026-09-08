@@ -32,7 +32,7 @@ RETIRED: dict[str, str] = {
     "WorkflowCompleteEvent.error": r"WorkflowCompleteEvent[^\n]*\.error\b",
 }
 
-#: The terminal-outcome member and both producers during delivery extraction.
+#: The terminal-outcome member, its producers and the delivery content route.
 #: The legacy fire remains until its graph is extracted; the coordinator's
 #: assignment names the same preserved outcome, not the retired CI field.
 _OUTCOME_MEMBER: frozenset[str] = frozenset(
@@ -40,6 +40,7 @@ _OUTCOME_MEMBER: frozenset[str] = frozenset(
         'ci_passed = "ci_passed"',
         "return WorkflowOutcome.ci_passed",
         "outcome = WorkflowOutcome.ci_passed",
+        "WorkflowOutcome.ci_passed,",
     },
 )
 
