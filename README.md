@@ -947,6 +947,7 @@ Security issues go through [private vulnerability reporting](https://github.com/
 
 [MIT](LICENSE)
 
-Knowledge configuration now uses `KODEZART_KNOWLEDGE__...` nested variables.
+Knowledge configuration now uses nested variables such as
+`KODEZART_KNOWLEDGE__SESSION_GRANTS`.
 See [the migration table](docs/configuration.md#knowledge-environment-migration);
 old flat knowledge variables are rejected instead of silently disabling grants.

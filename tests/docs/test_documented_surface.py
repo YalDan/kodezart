@@ -104,11 +104,7 @@ def _config_variables_named_in(path: Path) -> set[str]:
                         f"| `{old}` | `{new}` |", f"| removed | `{new}` |"
                     )
             text = text[: match.start("body")] + section + text[match.end("body") :]
-    return {
-        name
-        for name in re.findall(rf"{ENV_PREFIX}[A-Z0-9_]+", text)
-        if not name.endswith("_")
-    }
+    return set(re.findall(rf"{ENV_PREFIX}[A-Z0-9_]+", text))
 
 
 def _documented_endpoints() -> set[tuple[str, str]]:
@@ -526,6 +522,7 @@ def test_documented_retired_name_is_actually_refused(name, monkeypatch):
     "extra",
     [
         "KODEZART_KNOWLEDGE__CONNECTION__SERVRE_URL",
+        "KODEZART_NOT_A_SHIPPED_FIELD_",
         "| `KODEZART_KNOWLEDGE_MCP_TOKEN` | "
         "`KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` |",
     ],
