@@ -275,7 +275,9 @@ async def test_returned_identity_must_match_the_address(
 async def test_unmapped_approval_refuses_before_any_native_read() -> None:
     server = ScopeMcpServer()
     with pytest.raises(OperationMemberAbsentError, match=r"scope_labels\.approved"):
-        await linear_over_fake_mcp(server).execution_approved(issue_key=CHILD.key)
+        await linear_over_fake_mcp(server, scope_labels={}).execution_approved(
+            issue_key=CHILD.key
+        )
     assert server.calls == []
 
 

@@ -15,7 +15,7 @@ from tests.fakes import (
     FakeTrackerPort,
     FakeWorkspaceProvider,
 )
-from tests.tracker.conftest import fixture_server
+from tests.tracker.conftest import FIRE_ENTRY_LABELS, fixture_server
 from tests.tracker.test_criterion_reader_boundary import ChildPagesServer
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
@@ -27,7 +27,7 @@ LABEL = "acceptance-condition"
 @pytest.fixture
 def server():
     server = fixture_server()
-    server.issues[PARENT] = FakeMcpIssue(id=PARENT)
+    server.issues[PARENT] = FakeMcpIssue(id=PARENT, labels=FIRE_ENTRY_LABELS)
     return server
 
 
@@ -98,6 +98,7 @@ async def test_incomplete_successful_first_page_never_becomes_empty(reader):
             "last": {"issues": [], "hasNextPage": True},
         }
     )
+    server.issues["PARENT/1"].labels = FIRE_ENTRY_LABELS
     with pytest.raises(CriterionReadError, match="pagination"):
         await getattr(tracker_over(server), reader)(issue_key="PARENT/1")
     assert server.tool_calls("save_issue") == []

@@ -101,8 +101,12 @@ def tracker_over(server: FakeLinearMcpServer, **overrides: object) -> LinearMcpT
     kwargs: dict[str, object] = {
         "caller": server,
         "marker_prefixes": MARKER_PREFIXES,
-        "issue_labels": {"criterion": "acceptance-condition"},
-        "scope_labels": {},
+        "issue_labels": {
+            "criterion": "acceptance-condition",
+            "criteria_ready": "criteria-prepared",
+        },
+        "scope_labels": {"approved": "execution-consent"},
+        "criteria_stage_label_key": "criteria_ready",
         "queue_state_labels": QUEUE_STATE_LABELS,
         "workflow_state_names": WORKFLOW_STATE_NAMES,
         "team_identifiers": TEAM_IDENTIFIERS,

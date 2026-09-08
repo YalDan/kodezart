@@ -424,9 +424,15 @@ criterion sub-issue keys, and raises `EmptyFireCriteriaError` if that query
 finds none. A criterion without one nonempty Check field raises
 `InvalidFireCriterionError`; unknown backend workflow states retain the
 typed read failure. Declared states are decoded without deciding their
-eligibility for a fire. This source read does not grant staging approval
-or authorize scope execution; the current workflow boundary continues to
-refuse it.
+eligibility for a fire. The same captured subject must carry the configured
+CRITERIA phase's terminal marker from `organize_mandates`, and live
+`execution_approved` ancestry must supply human approval. Missing facts raise
+`FireSpecEntryError`; absent phase or label configuration raises
+`OperationMemberAbsentError` at this read. Other phase markers, queue labels,
+and body text cannot substitute. Approval may inherit, but phase completion
+belongs to the addressed subject. Each call reads current facts, including
+revocation, and never reruns ORGANIZE admission. Legal criterion-state policy
+and the complete scoped workflow remain separate implementation work.
 
 `set_issue_classification` adds a configured semantic issue classification
 without replacing approval or unrelated labels; an identical replay writes

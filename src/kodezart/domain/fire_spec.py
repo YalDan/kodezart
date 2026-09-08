@@ -4,8 +4,13 @@ import re
 from collections.abc import Sequence
 from typing import Literal
 
-from kodezart.domain.errors import EmptyFireCriteriaError, InvalidFireCriterionError
+from kodezart.domain.errors import (
+    EmptyFireCriteriaError,
+    FireSpecEntryError,
+    InvalidFireCriterionError,
+)
 from kodezart.types.domain.fire_spec import CriterionRef, IssueRef, TrackerSpec
+from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.tracker import TrackerIssue
 
 _CRITERION_ROW = re.compile(r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$")
@@ -102,3 +107,22 @@ def criterion_check(*, criterion: TrackerIssue, issue_key: str) -> str:
             reason="one nonempty Check field is required",
         )
     return checks[0]
+
+
+def require_fire_entry(
+    *, subject: TrackerIssue, approved: bool, criteria_stage_label_key: str | None
+) -> None:
+    """Require the configured phase completion and the live approval fact."""
+    if criteria_stage_label_key is None:
+        raise OperationMemberAbsentError(
+            missing="organize_mandates criteria terminal_marker_key",
+            stops="cannot establish criteria-stage completion at fire entry",
+        )
+    if criteria_stage_label_key not in subject.issue_labels:
+        raise FireSpecEntryError(
+            issue_key=subject.issue_key, reason="criteria-stage completion is absent"
+        )
+    if not approved:
+        raise FireSpecEntryError(
+            issue_key=subject.issue_key, reason="execution approval is absent"
+        )

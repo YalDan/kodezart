@@ -4,7 +4,7 @@ import pytest
 
 from tests.fakes import FakeMcpIssue
 from tests.tracker import test_fire_spec_reader as fixtures
-from tests.tracker.conftest import fixture_server
+from tests.tracker.conftest import FIRE_ENTRY_LABELS, fixture_server
 
 SUBJECT = fixtures.SUBJECT
 SECOND = "condition/second"
@@ -14,7 +14,9 @@ SAME = "**Check:** The identical text describes two separately owned conditions.
 @pytest.fixture
 def server():
     value = fixture_server()
-    value.issues[SUBJECT] = FakeMcpIssue(id=SUBJECT, description=fixtures.BODY)
+    value.issues[SUBJECT] = FakeMcpIssue(
+        id=SUBJECT, labels=FIRE_ENTRY_LABELS, description=fixtures.BODY
+    )
     for key in (SECOND, fixtures.CRITERION):
         value.issues[key] = FakeMcpIssue(
             id=key,

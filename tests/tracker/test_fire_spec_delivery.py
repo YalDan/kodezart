@@ -16,7 +16,7 @@ from kodezart.types.domain.prompts import PromptKey
 from tests.chains.test_delivery_runtime import context, deliver, setup
 from tests.fakes import FakeMcpIssue, make_criteria
 from tests.prompts.sets import OPUS_SET, V5_SET
-from tests.tracker.conftest import FIXTURE_NOW, fixture_server
+from tests.tracker.conftest import FIRE_ENTRY_LABELS, FIXTURE_NOW, fixture_server
 
 SUBJECT = "subject/42"
 CHILD = "condition/café"
@@ -28,7 +28,7 @@ CHECK = "**Check:** Preserve whitespace and own identity.\n\n**Evidence:** recor
 def server():
     server = fixture_server()
     server.issues[SUBJECT] = FakeMcpIssue(
-        id=SUBJECT, description=BODY, updated_at=FIXTURE_NOW
+        id=SUBJECT, labels=FIRE_ENTRY_LABELS, description=BODY, updated_at=FIXTURE_NOW
     )
     server.issues[CHILD] = FakeMcpIssue(
         id=CHILD,
