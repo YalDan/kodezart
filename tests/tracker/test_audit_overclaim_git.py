@@ -39,7 +39,9 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
     (author / "source.md").write_text("A café\nAll required topics are covered.\n")
     (author / "adopted.md").write_bytes((author / "source.md").read_bytes())
     (author / "charter.txt").write_text(
-        "Every task decision is computed, never judged.\nTask suitability requires evaluating the specification, not its word count.\n"
+        "Every task decision is computed, never judged.\nTask "
+        "suitability requires evaluating the specification, "
+        "not its word count.\n"
     )
     (author / "dispatch.py").write_text(
         "def choose(task, evaluate):\n    return evaluate(task)\n"
@@ -69,9 +71,18 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
     command(author, "push", "-q", "configured-remote", "ordinary-name")
     check = {
         OverclaimKind.AGGREGATE: "The member count in claim.txt matches members.json.",
-        OverclaimKind.COMPLETENESS: "All tasks were handled, witnessed by the independently enumerable roster.json.",
-        OverclaimKind.ADOPTION: "adopted.md adopts source.md verbatim, with all topics covered.",
-        OverclaimKind.SELF_RULE: "The dispatch.py artifact complies with charter.txt, including its own unscoped computed, never judged claim.",
+        OverclaimKind.COMPLETENESS: (
+            "All tasks were handled, witnessed by the "
+            "independently enumerable roster.json."
+        ),
+        OverclaimKind.ADOPTION: (
+            "adopted.md adopts source.md verbatim, with all topics covered."
+        ),
+        OverclaimKind.SELF_RULE: (
+            "The dispatch.py artifact complies with charter.txt, "
+            "including its own unscoped computed, never judged "
+            "claim."
+        ),
     }[kind]
     await tracker.update_issue(
         issue_key=fixtures.fixtures.CHILD,
@@ -93,33 +104,23 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
     verification = tmp_path / "verification"
     acquired, released = [], []
 
+    repositories = []
+
     async def acquire(**kwargs):
         assert kwargs["ref"] == head and kwargs["create_branch"] is False
         acquired.append(head)
+        repositories.append(kwargs["repo_path"])
         await native.create_worktree(
             kwargs["repo_path"], head, str(verification), create_branch=False
         )
         return str(verification)
 
     async def release(path):
-        await native.remove_worktree(str(author), path)
-        released.append(path)
-
-    monkeypatch.setattr(workspace, "acquire", acquire)
-    # remove_worktree needs the actual cache repository, retained at acquisition.
-    repositories = []
-    original_acquire = acquire
-
-    async def owned_acquire(**kwargs):
-        repositories.append(kwargs["repo_path"])
-        return await original_acquire(**kwargs)
-
-    async def owned_release(path):
         await native.remove_worktree(repositories[-1], path)
         released.append(path)
 
-    monkeypatch.setattr(workspace, "acquire", owned_acquire)
-    monkeypatch.setattr(workspace, "release", owned_release)
+    monkeypatch.setattr(workspace, "acquire", acquire)
+    monkeypatch.setattr(workspace, "release", release)
     observations = []
 
     async def during():
@@ -151,9 +152,11 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
             # differing actual Git bytes despite the complete-coverage claim.
             row["evidence"] = "Every source topic is covered."
             output["bytePairs"] = [
-                dict(
-                    sourceSha=graded, sourcePath="source.md", artifactPath="adopted.md"
-                )
+                {
+                    "sourceSha": graded,
+                    "sourcePath": "source.md",
+                    "artifactPath": "adopted.md",
+                }
             ]
         else:
             assert "computed, never judged" in (path / "charter.txt").read_text()
@@ -161,7 +164,10 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
             if "len(task.split())" in code:
                 row.update(
                     verdict="refuted",
-                    evidence="dispatch.py substitutes word count for the specification evaluation its own charter requires.",
+                    evidence=(
+                        "dispatch.py substitutes word count for the "
+                        "specification evaluation its own charter requires."
+                    ),
                 )
         observations.append(output)
         fixtures.answer(runner, output)

@@ -28,7 +28,9 @@ class AuditBytePair(CamelCaseModel):
         description="Canonical repository-relative path of the adopted source."
     )
     artifact_path: str = Field(
-        description="Canonical repository-relative path of the current rendered artifact."
+        description=(
+            "Canonical repository-relative path of the current rendered artifact."
+        )
     )
 
     @model_validator(mode="after")
@@ -53,18 +55,29 @@ class OverclaimReading(CamelCaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     kind: OverclaimKind = Field(description="The standing proposition being checked.")
     verdict: AuditVerdict = Field(
-        description="Whether this category of claim holds, is refuted, or cannot be verified."
+        description=(
+            "Whether this category of claim holds, is refuted, or cannot be verified."
+        )
     )
     evidence: str = Field(
         min_length=1,
         pattern=r"\S",
-        description="Concrete observed source facts; explain absence when no claim of this kind exists.",
+        description=(
+            "Concrete observed source facts; explain absence when"
+            " no claim of this kind exists."
+        ),
     )
     recomputed_value: str | None = Field(
-        description="The independently recomputed aggregate, required for an aggregate refutation; otherwise null."
+        description=(
+            "The independently recomputed aggregate, required for"
+            " an aggregate refutation; otherwise null."
+        )
     )
     missing_artifact: str | None = Field(
-        description="The specific missing or unreadable falsifying artifact for an unverifiable result; otherwise null."
+        description=(
+            "The specific missing or unreadable falsifying "
+            "artifact for an unverifiable result; otherwise null."
+        )
     )
 
     @model_validator(mode="after")
@@ -95,10 +108,16 @@ class AuditOverclaimJudgment(CamelCaseModel):
         min_length=1, description="The exact dispatched native criterion key."
     )
     checks: tuple[OverclaimReading, ...] = Field(
-        description="Exactly one reading for each of the four standing over-claim categories."
+        description=(
+            "Exactly one reading for each of the four standing over-claim categories."
+        )
     )
     byte_pairs: tuple[AuditBytePair, ...] = Field(
-        description="Every repository adoption pair cited by the adoption check, for native byte comparison; empty when none is claimed or readable."
+        description=(
+            "Every repository adoption pair cited by the adoption"
+            " check, for native byte comparison; empty when none "
+            "is claimed or readable."
+        )
     )
 
     @model_validator(mode="after")

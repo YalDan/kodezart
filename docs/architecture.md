@@ -657,6 +657,32 @@ Callers supply a prompt and output schema and validate the returned structured
 value; the helpers neither inherit prior conclusions nor publish a verdict.
 
 
+## Standing over-claim observations
+
+`AuditOverclaimVerifier.observe` reads the criterion through `AuditSourceReader`
+and obtains one fresh `FreshAuditSession` judgment at the measured head. Its
+schema requires exactly one reading for each standing check: recomputed
+aggregates, independently witnessed completeness, verbatim adoption and
+compliance with the artifact's own rules. Refuted aggregates name the recomputed
+value; unverifiable readings name the missing artifact. Prior grading prose,
+author reasoning and old verdicts are not session inputs.
+
+For adoption, the session identifies source and artifact paths at the graded
+or current revisions. The harness reads their immutable Git objects and compares
+actual bytes independently of the session's coverage assessment. A differing
+pair refutes adoption even if the session reported all topics covered. Missing
+native objects remain unverifiable, foreign revisions and self-witnesses refuse,
+and equal pairs cannot fill a separately missing external witness. The model
+still owns semantic claim discovery and witness selection; a list of matching
+pairs is not proof that every possible adoption claim was discovered.
+
+The observation derives its overall three-state verdict from all four readings,
+then rechecks native criterion, lane-record and remote-head identity. It performs
+no tracker writes. Full sweep invocation, mandatory mandate completion and leased
+publication remain separate consumers. Native Git fixtures exercise all four
+categories using a scripted external judgment boundary; they validate execution
+and evidence handling without claiming live-model detection accuracy.
+
 ## Recorded criterion Evidence and lapse observations
 
 `AuditEvidenceVerifier.observe` reads the requested criterion's current full

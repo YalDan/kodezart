@@ -1,7 +1,7 @@
 """Fresh over-claim judgments, with native byte checks for adopted artifacts."""
 
 from kodezart.core.protocols import GitSourceReader, PromptSetProvider
-from kodezart.domain.errors import AuditClaimReadError, AssertionComparisonError
+from kodezart.domain.errors import AssertionComparisonError, AuditClaimReadError
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.services.audit_sources import AuditSourceReader, AuditSourceSnapshot
 from kodezart.types.domain.agent import AUDIT_OVERCLAIM_SCHEMA

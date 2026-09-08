@@ -8,7 +8,6 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.types.domain.agent import AUDIT_OVERCLAIM_SCHEMA
-from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_overclaim import OverclaimKind
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from tests.fakes import SUPPRESS_ALL_SKILLS
@@ -24,17 +23,17 @@ server = fixtures.server
 def payload(kind=None, **changes):
     rows = []
     for category in OverclaimKind:
-        row = dict(
-            kind=category.value,
-            verdict="holds",
-            evidence="No violating claim of this kind was observed.",
-            recomputedValue=None,
-            missingArtifact=None,
-        )
+        row = {
+            "kind": category.value,
+            "verdict": "holds",
+            "evidence": "No violating claim of this kind was observed.",
+            "recomputedValue": None,
+            "missingArtifact": None,
+        }
         if category is kind:
             row.update(changes)
         rows.append(row)
-    return dict(criterionKey=fixtures.CHILD, checks=rows, bytePairs=[])
+    return {"criterionKey": fixtures.CHILD, "checks": rows, "bytePairs": []}
 
 
 def build(setup, tracker, *, set_name="anthropic_v5", source=None):
@@ -66,9 +65,10 @@ async def test_each_standing_judgment_uses_current_native_source_and_fresh_sessi
     setup, tracker, tracker_writes, kind, set_name
 ):
     _, runner, _, _, _, workspace, stored, *_ = setup
-    fields = dict(
-        verdict="refuted", evidence="The current source contradicts this claim."
-    )
+    fields = {
+        "verdict": "refuted",
+        "evidence": "The current source contradicts this claim.",
+    }
     if kind is OverclaimKind.AGGREGATE:
         fields["recomputedValue"] = "3"
     elif kind is OverclaimKind.COMPLETENESS:
