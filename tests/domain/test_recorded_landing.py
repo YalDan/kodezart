@@ -169,6 +169,20 @@ def landing_derivation_violations(source, module):
                 or ast.dump(node.value) != wire_read
             ):
                 failures.append(node.lineno)
+        elif isinstance(node, ast.Dict) and any(
+            isinstance(key, ast.Constant) and key.value == "landing"
+            for key in node.keys
+        ):
+            # Both model_validate and model_copy accept mapping-based values.
+            failures.append(node.lineno)
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "landing"
+            for target in node.targets
+        ):
+            if module != "adapters/linear_mcp_tracker.py" or ast.dump(
+                node.value
+            ) != ast.dump(ast.parse('match.group("landing")', mode="eval").body):
+                failures.append(node.lineno)
         elif (
             isinstance(node, ast.AnnAssign)
             and ast.unparse(node.annotation) == "WorkRefLanding"
@@ -263,3 +277,26 @@ def test_mapping_get_cannot_collapse_landing_to_a_boolean():
         "def new_read(ref):\n    return bool(ref.model_dump().get('landing'))",
         "new_reader.py",
     )
+
+
+@pytest.mark.parametrize(
+    "construction",
+    [
+        "WorkRef.model_validate({'landing': 'landed' if ancestry else 'unknown'})",
+        "ref.model_copy(update={'landing': WorkRefLanding.LANDED "
+        "if ancestry else WorkRefLanding.UNKNOWN})",
+    ],
+)
+def test_pydantic_mapping_inputs_cannot_derive_a_recorded_fact(construction):
+    assert landing_derivation_violations(construction, "new_reader.py")
+
+
+def test_native_constructor_must_consume_the_recorded_landing_attribute():
+    source = (ROOT / "adapters/linear_mcp_tracker.py").read_text()
+    assert not landing_derivation_violations(source, "adapters/linear_mcp_tracker.py")
+    derived = source.replace(
+        'landing = match.group("landing")',
+        'landing = "landed" if match.group("branch") else None',
+    )
+    assert derived != source
+    assert landing_derivation_violations(derived, "adapters/linear_mcp_tracker.py")
