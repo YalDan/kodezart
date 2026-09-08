@@ -8,6 +8,7 @@ from pydantic_settings import (
     EnvSettingsSource,
     InitSettingsSource,
     PydanticBaseSettingsSource,
+    SecretsSettingsSource,
     SettingsConfigDict,
 )
 
@@ -72,13 +73,26 @@ class AppConfig(BaseSettings):
                     ) and not key.casefold().startswith(prefix + "_"):
                         # Preserve retired names for extra=forbid; never expose values.
                         values[key] = value
+            if (
+                isinstance(source, SecretsSettingsSource)
+                and source.secrets_dir is not None
+            ):
+                prefix = f"{source.env_prefix}knowledge_".casefold()
+                for directory in source.secrets_paths:
+                    for path in directory.iterdir():
+                        key = path.name
+                        if key.casefold().startswith(
+                            prefix
+                        ) and not key.casefold().startswith(prefix + "_"):
+                            # Reject the retired name without reading its secret value.
+                            values[key] = None
             return InitSettingsSource(settings_cls, init_kwargs=values)
 
         return (
             init_settings,
             checked(env_settings),
             checked(dotenv_settings),
-            file_secret_settings,
+            checked(file_secret_settings),
         )
 
     project_name: str = Field(

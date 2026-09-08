@@ -215,7 +215,9 @@ def test_nested_env_overrides_json_and_preserves_normal_source_precedence(
         "kodezart_knowledge_mcp_command",
     ],
 )
-@pytest.mark.parametrize("source", ["environment", "dotenv", "initializer"])
+@pytest.mark.parametrize(
+    "source", ["environment", "dotenv", "initializer", "file-secret"]
+)
 def test_removed_names_fail_instead_of_silently_disabling_knowledge(
     monkeypatch, tmp_path, name, source
 ):
@@ -226,6 +228,9 @@ def test_removed_names_fail_instead_of_silently_disabling_knowledge(
         file = tmp_path / ".env"
         file.write_text(f"{name}={TOKEN}\n")
         kwargs["_env_file"] = file
+    elif source == "file-secret":
+        (tmp_path / name).write_text(TOKEN)
+        kwargs["_secrets_dir"] = tmp_path
     else:
         kwargs[name.removeprefix("KODEZART_").removeprefix("kodezart_").lower()] = TOKEN
     with pytest.raises(ValidationError) as caught:
@@ -288,3 +293,15 @@ def test_nested_unknown_fields_are_refused_without_exposing_credentials(
         AppConfig()
     assert "misspelled" in str(caught.value).lower()
     assert TOKEN not in str(caught.value)
+
+
+@pytest.mark.parametrize("connection", [http(), stdio()])
+def test_credentials_are_excluded_from_settings_and_grant_serialization(connection):
+    config = AppConfig(
+        knowledge={"session_grants": ["ticket_fire"], "connection": connection}
+    )
+    grant = config.knowledge.grant(knowledge_map="Map")
+    for value in (config.knowledge, grant):
+        for serialized in (value.model_dump(), json.loads(value.model_dump_json())):
+            assert "credential" not in serialized["connection"]
+            assert "gateway_credential" not in serialized["connection"]
