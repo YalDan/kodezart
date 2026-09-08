@@ -12,6 +12,7 @@ from kodezart.core.constants import ARTIFACT_DIR, EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
@@ -46,6 +47,8 @@ from kodezart.domain.pr_body import (
     require_tracker_issue,
 )
 from kodezart.domain.ticket import format_fire_spec
+from kodezart.services.git_observations import read_remote_head
+from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.agent import PR_DESCRIPTION_SCHEMA, PRDescriptionOutput
 from kodezart.types.domain.delivery import (
     CheckRedClass,
@@ -410,14 +413,20 @@ class DeliveryCoordinator:
                     issue_id=dispatch.issue_id,
                     reason="remote branch lookup requires a repository",
                 )
-            cwd = await self._cache.ensure_available(
-                execution.repo_url, execution.cache_key
+            cwd = await ensure_repository(
+                cache=self._cache,
+                repo_url=execution.repo_url,
+                cache_key=execution.cache_key,
             )
-        head = await self._git.remote_branch_sha(
-            cwd=cwd, remote=self._git_remote, branch=dispatch.head_branch
+        head = await read_remote_head(
+            git=self._git,
+            repository=cwd,
+            remote=self._git_remote,
+            branch=dispatch.head_branch,
         )
-        base = await self._git.remote_branch_sha(
-            cwd=cwd,
+        base = await read_remote_head(
+            git=self._git,
+            repository=cwd,
             remote=self._git_remote,
             branch=dispatch.resolved_base.base_branch,
         )
@@ -448,14 +457,21 @@ class DeliveryCoordinator:
         retains the earlier fire SHA; it may accept that metadata-only
         descendant, but never a rewind, unrelated head or changed code.
         """
-        await self._git.fetch(cwd)
-        if not await self._git.is_ancestor(cwd, fire_sha, observed_sha):
-            return False
-        changes = await self._git.diff_summary(cwd, fire_sha, observed_sha)
-        return bool(changes.file_paths) and all(
-            path == ARTIFACT_DIR or path.startswith(f"{ARTIFACT_DIR}/")
-            for path in changes.file_paths
-        )
+
+        async def observe() -> bool:
+            await self._git.fetch(cwd)
+            if not await self._git.is_ancestor(cwd, fire_sha, observed_sha):
+                return False
+            changes = await self._git.diff_summary(cwd, fire_sha, observed_sha)
+            return bool(changes.file_paths) and all(
+                path == ARTIFACT_DIR or path.startswith(f"{ARTIFACT_DIR}/")
+                for path in changes.file_paths
+            )
+
+        replay, cancelled = await finish_owned(asyncio.create_task(observe()))
+        if cancelled:
+            raise asyncio.CancelledError
+        return replay
 
     async def _description(
         self, context: DeliveryContext, *, feature_branch: str

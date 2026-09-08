@@ -49,6 +49,11 @@ changes. A missing ref raises `BaseResolutionError`; an inconsistent handoff
 raises `DeliveryContextError`. A dependent lane can open against its blocker's
 branch before that blocker has a PR.
 
+Cache acquisition, remote-head lookups and the replay Git observation settle
+their native processes before caller cancellation returns. Repeated cancellation
+cannot interrupt that ownership; delivery propagates cancellation before any
+subsequent description session, outbound gate or PR write.
+
 `DeliveryContext.from_terminal` copies the existing terminal outcome,
 iteration count and trajectory. It adds no terminal fields. An authored stalled
 handoff requires nonempty recorded work, known criterion identities and consistent
