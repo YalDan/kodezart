@@ -1,6 +1,8 @@
 """GitHub API response shapes — Pydantic validation at the adapter boundary."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CheckSuiteIdentity(BaseModel):
@@ -149,3 +151,35 @@ class WorkflowJobsResponse(BaseModel):
 
     total_count: int = Field(ge=0)
     jobs: list[WorkflowJob]
+
+
+class PullRequestHeadRepository(BaseModel):
+    """Native repository identity for the PR head, rather than its base."""
+
+    model_config = ConfigDict(frozen=True, strict=True)
+    html_url: str = Field(min_length=1)
+    full_name: str = Field(min_length=1)
+
+
+class PullRequestHeadState(BaseModel):
+    model_config = ConfigDict(frozen=True, strict=True)
+    ref: str = Field(min_length=1)
+    sha: str = Field(min_length=1)
+    repo: PullRequestHeadRepository | None
+
+
+class PullRequestStateResponse(BaseModel):
+    """Required native lifecycle facts; omitted merge status is not false."""
+
+    model_config = ConfigDict(frozen=True, strict=True)
+    number: int = Field(gt=0)
+    html_url: str = Field(min_length=1)
+    state: Literal["open", "closed"]
+    merged: bool
+    head: PullRequestHeadState
+
+    @model_validator(mode="after")
+    def _merge_requires_closed(self) -> Self:
+        if self.merged and self.state != "closed":
+            raise ValueError("a merged pull request cannot be open")
+        return self

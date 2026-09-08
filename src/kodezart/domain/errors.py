@@ -663,3 +663,7 @@ class WriteBackReadError(ValueError):
 
 class TrackerFeasibilityReadError(Exception):
     """The selected tracker family or repository changed before judgment settled."""
+
+
+class PRStateReadError(ValueError):
+    """A native PR observation cannot establish the requested identity."""

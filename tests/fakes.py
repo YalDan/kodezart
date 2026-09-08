@@ -42,6 +42,7 @@ from kodezart.domain.errors import (
     EscalationReadError,
     MergeConflictError,
     PRContentConflictError,
+    PRStateReadError,
     RateLimitError,
     ScopeReadError,
     TransientAPIError,
@@ -108,6 +109,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_content import PRContent
+from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
@@ -4490,3 +4492,32 @@ def write_stdio_fake_server(directory: Path) -> Path:
     script = directory / "fake_mcp_server.py"
     script.write_text(STDIO_FAKE_SERVER_SOURCE, encoding="utf-8")
     return script
+
+
+class FakePRStateReader:
+    """Read-only exact-identity double for the native PR state boundary."""
+
+    def __init__(self, *, records: dict[tuple[str, int], PRState]) -> None:
+        self.records = records
+        self.calls: list[tuple[str, int]] = []
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        if (
+            not isinstance(pr_number, int)
+            or isinstance(pr_number, bool)
+            or pr_number <= 0
+        ):
+            raise PRStateReadError("a PR number must be a positive integer")
+        self.calls.append((repo_url, pr_number))
+        try:
+            result = self.records[(repo_url, pr_number)]
+        except KeyError as exc:
+            raise PRStateReadError("native PR is unavailable") from exc
+        if result.number != pr_number:
+            raise PRStateReadError("native PR has another identity")
+        if (
+            result.head_repo_url.casefold()
+            != repo_url.rstrip("/").removesuffix(".git").casefold()
+        ):
+            raise PRStateReadError("native PR head belongs to another repository")
+        return result
