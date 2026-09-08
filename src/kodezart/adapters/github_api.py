@@ -31,6 +31,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.github import (
     CheckRun,
     CheckRunsResponse,
+    DeclaredWorkflowsResponse,
     PullRequestResponse,
     PullRequestSummary,
     RepositoryResponse,
@@ -503,6 +504,8 @@ class GitHubAPIClient:
         owner: str,
         repo: str,
         ref: str,
+        *,
+        require_stable_total: bool = False,
     ) -> CheckRunsResponse | None:
         """Fetch every check-runs page for *ref*, or ``None`` when it 404s.
 
@@ -547,6 +550,16 @@ class GitHubAPIClient:
                 if exc.status_code == self._NOT_FOUND_STATUS:
                     return None
                 raise
+            if (
+                require_stable_total
+                and page_number > 1
+                and page.total_count != reported_total
+            ):
+                raise ForgeAPIError(
+                    "Check listing changed during pagination",
+                    status_code=None,
+                    detail="CI observation",
+                )
             reported_total = page.total_count
             collected.extend(page.check_runs)
             if not page.check_runs or len(collected) >= reported_total:
@@ -602,6 +615,102 @@ class GitHubAPIClient:
             grace_polls=self._grace_polls_for(probe),
         )
         return probe
+
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        """Whether an active Actions workflow is actually declared.
+
+        The advisory grace-window probe cannot answer this contract: an
+        unreadable or incomplete declaration is an error, never absence.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        seen: set[int] = set()
+        expected_total: int | None = None
+        for page_number in range(1, self._ci_check_runs_max_pages + 1):
+            page = await self._parsed_with_retry(
+                "GET",
+                f"/repos/{owner}/{repo}/actions/workflows",
+                DeclaredWorkflowsResponse.model_validate,
+                params={"per_page": self._PAGE_SIZE, "page": page_number},
+            )
+            if any(
+                item.state == self._ACTIVE_WORKFLOW_STATE for item in page.workflows
+            ):
+                return True
+            if expected_total is not None and page.total_count != expected_total:
+                raise ForgeAPIError(
+                    "Workflow declaration changed during pagination",
+                    status_code=None,
+                    detail="CI observation",
+                )
+            expected_total = page.total_count
+            if any(
+                item.state
+                not in {
+                    "deleted",
+                    "disabled_fork",
+                    "disabled_inactivity",
+                    "disabled_manually",
+                }
+                for item in page.workflows
+            ):
+                raise ForgeAPIError(
+                    "Workflow declaration contained an unknown state",
+                    status_code=None,
+                    detail="CI observation",
+                )
+            identities = {item.id for item in page.workflows}
+            if identities & seen or len(identities) != len(page.workflows):
+                raise ForgeAPIError(
+                    "Workflow declaration pagination repeated an identity",
+                    status_code=None,
+                    detail="CI observation",
+                )
+            seen.update(identities)
+            if len(seen) == page.total_count:
+                return False
+            if not identities or len(seen) > page.total_count:
+                raise ForgeAPIError(
+                    "Workflow declaration listing was incomplete",
+                    status_code=None,
+                    detail="CI observation",
+                )
+        raise ForgeAPIError(
+            "Workflow declaration exceeded pagination bound",
+            status_code=None,
+            detail="CI observation",
+        )
+
+    async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
+        """Read failing names from a complete terminal check observation."""
+        owner, repo = extract_owner_repo(repo_url)
+        page = await self._fetch_check_runs(owner, repo, ref, require_stable_total=True)
+        if page is None or len(page.check_runs) != page.total_count:
+            raise ForgeAPIError(
+                "Failed check names were not completely observable",
+                status_code=None,
+                detail="CI observation",
+            )
+        if len({run.id for run in page.check_runs}) != page.total_count:
+            raise ForgeAPIError(
+                "Failed check listing repeated a check identity",
+                status_code=None,
+                detail="CI observation",
+            )
+        if any(
+            run.status != "completed"
+            or run.conclusion not in self._FAILURE_CONCLUSIONS | self._OK_CONCLUSIONS
+            for run in page.check_runs
+        ):
+            raise ForgeAPIError(
+                "Failed check names require a terminal check observation",
+                status_code=None,
+                detail="CI observation",
+            )
+        return frozenset(
+            run.name
+            for run in page.check_runs
+            if run.conclusion in self._FAILURE_CONCLUSIONS
+        )
 
     async def wait_for_checks(
         self,

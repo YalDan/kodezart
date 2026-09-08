@@ -62,13 +62,13 @@ watcher's own memory of which of them ever began.
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Self
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
+from kodezart.services.fire_record_facts import observe_fire_facts
 from kodezart.services.run_recorder import RunRecorder, report_record_failure
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
@@ -79,7 +79,9 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import RunKind
+from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import (
+    FireRecordFacts,
     RunOutcome,
     RunRecord,
     RunRecordResult,
@@ -118,9 +120,8 @@ class _UnrecordedFire:
     issue_key: str
     dequeued: bool
 
-    def running(self) -> Self:
-        """The same fire, with its dequeue remembered."""
-        return replace(self, dequeued=True)
+    facts: FireRecordFacts = field(default_factory=FireRecordFacts)
+    terminal_outcome: WorkflowOutcome | None = None
 
 
 def _fire_outcome(*, started: bool, terminal: bool) -> RunOutcome:
@@ -254,16 +255,15 @@ class LifecycleWatcher:
                 error_kind=type(exc).__name__,
             )
 
-    def _remember_dequeue(self, job_id: str) -> None:
-        """Note that this job's run began, for a sweep the stop has blinded.
-
-        Nothing to remember for a watch nobody followed — a direct
-        :meth:`watch` call has no shutdown half to answer to.
-        """
+    def _remember_facts(
+        self, job_id: str, facts: FireRecordFacts, terminal: WorkflowOutcome | None
+    ) -> None:
+        """Remember observations before lifecycle writes can raise."""
         fire = self._unrecorded.get(job_id)
-        if fire is None:
-            return
-        self._unrecorded[job_id] = fire.running()
+        if fire is not None:
+            self._unrecorded[job_id] = replace(
+                fire, dequeued=True, facts=facts, terminal_outcome=terminal
+            )
 
     @property
     def following(self) -> frozenset[asyncio.Task[None]]:
@@ -324,10 +324,9 @@ class LifecycleWatcher:
         nothing else: a process that is killed outright records none of
         this, and the durable registry that would is v0.3's.
         """
-        now = datetime.now(UTC)
         for job_id, fire in list(self._unrecorded.items()):
-            started_at = await self._run_started_at(job_id)
-            if started_at is None:
+            job = await self._registry.get(job_id=job_id)
+            if job is None:
                 # A fire this process started, that nothing recorded, and
                 # that the registry has since evicted: its submission is the
                 # left edge of the window a row is verified in, and without
@@ -340,12 +339,16 @@ class LifecycleWatcher:
                     dequeued=fire.dequeued,
                 )
                 continue
-            outcome = _fire_outcome(started=fire.dequeued, terminal=False)
+            started_at = job.submitted_at
+            outcome = _fire_outcome(
+                started=fire.dequeued, terminal=fire.terminal_outcome is not None
+            )
             placed = await self._record_fire(
                 issue_key=fire.issue_key,
                 outcome=outcome,
-                duration_seconds=(now - started_at).total_seconds(),
                 started_at=started_at,
+                facts=fire.facts,
+                workflow_outcome=fire.terminal_outcome or job.outcome,
             )
             if placed is not RunRecordResult.WRITTEN:
                 continue
@@ -384,19 +387,21 @@ class LifecycleWatcher:
         # process that watches all day would hold every failed watch's
         # exception — and the frames under it — until it stopped.
         await self._report_raised()
-        loop = asyncio.get_running_loop()
-        watch_started = loop.time()
         started = False
         terminal = False
+        terminal_outcome: WorkflowOutcome | None = None
+        facts = FireRecordFacts()
         failure: ErrorEvent | None = None
         async with self._heartbeat.renewing(issue_key=issue_key):
             async for event in self._queue.attach(job_id=job_id):
-                if not started:
-                    started = True
-                    self._remember_dequeue(job_id)
-                    await self._writer.on_dequeue(issue_key=issue_key)
+                facts = observe_fire_facts(facts, event)
                 if isinstance(event, WorkflowCompleteEvent):
                     terminal = True
+                    terminal_outcome = event.outcome
+                self._remember_facts(job_id, facts, terminal_outcome)
+                if not started:
+                    started = True
+                    await self._writer.on_dequeue(issue_key=issue_key)
                 if isinstance(event, ErrorEvent):
                     failure = event
                 await self._apply(
@@ -444,8 +449,8 @@ class LifecycleWatcher:
             outcome,
             None if failure is None else failure.error_kind,
         )
-        started_at = await self._run_started_at(job_id)
-        if started_at is None:
+        job = await self._registry.get(job_id=job_id)
+        if job is None:
             # The same absence the sweep names, met at the other end: a run
             # whose submission the registry no longer holds has no window,
             # and a row stamped with anything else would be a second run in
@@ -460,33 +465,23 @@ class LifecycleWatcher:
             await self._record_fire(
                 issue_key=issue_key,
                 outcome=outcome,
-                duration_seconds=loop.time() - watch_started,
-                started_at=started_at,
+                started_at=job.submitted_at,
+                facts=facts,
+                workflow_outcome=terminal_outcome or job.outcome,
             )
         # Forgotten on either arm: a watch that reached its end has ruled on
         # its fire, and a sweep meeting the fire again would announce the
         # same absence a second time, as unfinished.
         self._unrecorded.pop(job_id, None)
 
-    async def _run_started_at(self, job_id: str) -> datetime | None:
-        """When the run this job carries BEGAN — its submission, or nothing.
-
-        ONE reading for both producers.  A fire's record identity is its
-        kind, its issue and this instant, so a watch stamping its own start
-        while the shutdown sweep read the submission would title the same
-        run two ways, and the log would hold it twice — which is the defect
-        the exact identity was introduced to end (KOD-288, KOD-178).
-        """
-        record = await self._registry.get(job_id=job_id)
-        return None if record is None else record.submitted_at
-
     async def _record_fire(
         self,
         *,
         issue_key: str,
         outcome: RunOutcome,
-        duration_seconds: float,
         started_at: datetime,
+        facts: FireRecordFacts,
+        workflow_outcome: WorkflowOutcome | None,
     ) -> RunRecordResult | None:
         """The fire's structural run record — the RUNNER's obligation.
 
@@ -511,15 +506,18 @@ class LifecycleWatcher:
         it PLACED can tell them from the ones it only found, and ``None``
         for a record that never landed at all.
         """
+        recorded_at = datetime.now(UTC)
         try:
             return await self._recorder.record(
                 RunRecord(
                     kind=RunKind.FIRE,
                     name=issue_key,
                     outcome=outcome,
-                    duration_seconds=duration_seconds,
+                    duration_seconds=(recorded_at - started_at).total_seconds(),
                     started_at=started_at,
-                    recorded_at=datetime.now(UTC),
+                    recorded_at=recorded_at,
+                    fire_facts=facts,
+                    workflow_outcome=workflow_outcome,
                 ),
             )
         except Exception as exc:

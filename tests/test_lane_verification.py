@@ -16,7 +16,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.prompts import PromptKey
 from tests.fakes import pass_render_variables
-from tests.prompt_census import PROMPT_FUNCTION_COUNT
+from tests.prompt_census import PROMPT_FUNCTION_NAMES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
@@ -61,7 +61,7 @@ def test_claude_opus_completeness_check_passes_at_the_full_census() -> None:
     """Loading succeeds only because the default set supplies every key."""
     registry = default_registry()
     table = registry.resolution_table()
-    assert len(table) == PROMPT_FUNCTION_COUNT
+    assert {key.value for key in table} == PROMPT_FUNCTION_NAMES
     assert set(table) == set(PromptKey)
 
 

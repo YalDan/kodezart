@@ -51,6 +51,7 @@ from kodezart.domain.errors import (
     DuplicateWorkRefError,
     TransientAPIError,
 )
+from kodezart.domain.fire_spec import tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
@@ -59,6 +60,7 @@ from kodezart.domain.tracker_writes import (
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
@@ -720,20 +722,31 @@ class LinearMcpTracker:
         return self._saved_issue(payload)
 
     async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        _, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return criteria
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        subject, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return tracker_spec_from_issues(subject=subject, criteria=criteria)
+
+    async def _read_criterion_family(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
         if "criterion" not in self._issue_labels:
             raise OperationMemberAbsentError(
                 missing="issue_labels['criterion']",
                 stops="criterion sub-issue membership cannot be read",
             )
         try:
-            return await self._read_criteria(issue_key=issue_key)
+            parent = await self.read_issue(issue_key=issue_key)
+            return parent, await self._read_criteria(parent=parent)
         except (McpTransportError, TrackerProtocolError) as exc:
             raise CriterionReadError(
                 issue_key=issue_key, reason="the tracker read failed or was incomplete"
             ) from exc
 
-    async def _read_criteria(self, *, issue_key: str) -> tuple[TrackerIssue, ...]:
-        parent = await self.read_issue(issue_key=issue_key)
+    async def _read_criteria(self, *, parent: TrackerIssue) -> tuple[TrackerIssue, ...]:
+        issue_key = parent.issue_key
         arguments: dict[str, object] = {
             "parentId": parent.issue_key,
             "includeArchived": True,

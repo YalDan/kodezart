@@ -73,6 +73,27 @@ class CriterionReadError(Exception):
         super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
 
 
+class EmptyFireCriteriaError(Exception):
+    """A successful tracker spec read found no criterion sub-issues."""
+
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(f"fire subject {issue_key!r} has no criterion sub-issues")
+
+
+class InvalidFireCriterionError(Exception):
+    """A criterion cannot supply its required specification at fire entry."""
+
+    def __init__(self, *, issue_key: str, criterion_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(
+            f"criterion {criterion_key!r} of fire subject {issue_key!r} "
+            f"cannot be consumed: {reason}"
+        )
+
+
 class DuplicateIssueIdentityError(Exception):
     """Several issues claim one scope-and-deliverable identity."""
 

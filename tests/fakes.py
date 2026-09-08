@@ -43,6 +43,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WorkspaceError,
 )
+from kodezart.domain.fire_spec import tracker_spec_from_issues
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -77,6 +78,7 @@ from kodezart.types.domain.criteria import (
     ValidatedCriterion,
 )
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
     ContentClass,
@@ -1713,11 +1715,29 @@ class FakeCIMonitor:
         passed: bool | None = True,
         summary: str = "All CI checks passed.",
         fail: Exception | None = None,
+        declared: bool = True,
+        failed_names: frozenset[str] = frozenset(),
     ) -> None:
         self._passed = passed
         self._summary = summary
         self._fail = fail
+        self._declared = declared
+        self._failed_names = failed_names
+        self.declaration_calls: list[str] = []
+        self.failed_name_calls: list[tuple[str, str]] = []
         self.calls: list[dict[str, object]] = []
+
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        self.declaration_calls.append(repo_url)
+        if self._fail is not None:
+            raise self._fail
+        return self._declared
+
+    async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
+        self.failed_name_calls.append((repo_url, ref))
+        if self._fail is not None:
+            raise self._fail
+        return self._failed_names
 
     async def wait_for_checks(
         self,
@@ -1736,7 +1756,7 @@ class FakeCIMonitor:
         return (self._passed, self._summary)
 
 
-class SequentialCIMonitor:
+class SequentialCIMonitor(FakeCIMonitor):
     """CIMonitor that returns a different result on each call.
 
     Takes a list of ``(passed, summary)`` tuples and pops the first entry
@@ -1745,6 +1765,7 @@ class SequentialCIMonitor:
     """
 
     def __init__(self, results: list[tuple[bool | None, str]]) -> None:
+        super().__init__()
         self._results = list(results)
         self.calls: list[dict[str, object]] = []
 
@@ -3188,12 +3209,22 @@ class FakeTrackerPort:
         return issue
 
     async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        _, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return criteria
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        subject, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return tracker_spec_from_issues(subject=subject, criteria=criteria)
+
+    async def _read_criterion_family(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
         if issue_key not in self.issues:
             raise CriterionReadError(
                 issue_key=issue_key, reason="parent issue is absent"
             )
         parent = await self.read_issue(issue_key=issue_key)
-        return tuple(
+        return parent, tuple(
             sorted(
                 (
                     issue

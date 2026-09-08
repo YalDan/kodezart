@@ -57,6 +57,12 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         # The row title a scheduled pass's own record must carry: per call
         # because it spells the instant that run began (KOD-290).
         "record_title",
+        "mandate_rubric",
+        "issue_body",
+        "linked_issue_bodies",
+        "refusal_evidence",
+        "defect_classes",
+        "criterion_issue_bodies",
     }
 )
 
@@ -398,5 +404,7 @@ def bindings_for(config: OperationConfig | None) -> Mapping[str, object]:
         assert_namespaces_disjoint(())
         return {}
     bindings = operation_bindings(config)
-    assert_namespaces_disjoint(sorted(bindings))
+    # Check declared roots too: a new configuration field must not collide
+    # even before its projection into operation_bindings is implemented.
+    assert_namespaces_disjoint(sorted(set(type(config).model_fields) | set(bindings)))
     return bindings

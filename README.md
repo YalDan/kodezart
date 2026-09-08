@@ -382,6 +382,15 @@ labelled direct sub-issues, with their own keys, full bodies and workflow
 states. The parent description supplies no criterion identity or membership.
 An empty set is a successful read; incomplete or failed reads raise an error.
 
+`read_fire_spec` captures the subject's body and version once, with its
+criterion sub-issue keys, and raises `EmptyFireCriteriaError` if that query
+finds none. A criterion without one nonempty Check field raises
+`InvalidFireCriterionError`; unknown backend workflow states retain the
+typed read failure. Declared states are decoded without deciding their
+eligibility for a fire. This source read does not grant staging approval
+or authorize scope execution; the current workflow boundary continues to
+refuse it.
+
 `set_issue_classification` adds a configured semantic issue classification
 without replacing approval or unrelated labels; an identical replay writes
 nothing. `LaneEscalationWriter` requires `issue_labels.decision` and
@@ -434,8 +443,9 @@ founder's own boards and codebases), and shaped by that setup's rulings:
 - **One record row per run, and it is also the window.** Each run kind
   (`fire_prep`, `grooming`, `fire`) declares one `[records.<kind>]`
   destination. The session's own row IS the record — the runner verifies
-  one exists and backfills a bare structural line only when the session
-  skipped it — and the newest row's start time is the next pass's
+  the row and fills the declared structured Fire Log properties, preserving
+  session prose. Scheduled passes retain their structural line contract,
+  and the newest row's start time is the next pass's
   sweep-window boundary. There is no separate checkpoint document.
 - **Per-key engines.** `KODEZART_SESSION_MODELS` (env, JSON) pins named
   prompt keys' sessions to an engine — e.g. every fire-path and utility
@@ -589,11 +599,35 @@ id = "<the document id>"
 
 Do the same for the run-record destinations under `[records.<kind>]`, one per
 run kind you want recorded — `fire_prep`, `grooming` or `fire`; any other key
-is refused at load. A record declared `append_only` is never rewritten, only
-added to.
+is refused at load. A record declared `append_only` is retained; scheduled
+records are only added to.
 
 *Observable result:* a `[documents.checkpoint]` block and one
 `[records.<kind>]` block per recorded run kind, each naming its `system`.
+
+A knowledge Fire Log requires an explicit outcome select mapping. Each key
+names its observed source, for example `"workflow.pr_opened" = "PR opened"`
+or `"run.failed" = "Failed"` under `[records.fire.outcome_mapping.options]`;
+`[records.fire.outcome_mapping]` declares the destination `property` name.
+These are example options, not an assumed destination vocabulary. A completed
+runner does not imply a PR: declare workflow outcomes individually when that
+is the distinction the destination records. Unmapped outcomes, conflicting
+matches, wrong column types, and absent destination options refuse with
+`mapping_invalid` before writing. The sink rereads the live select options
+at this boundary. A session-created row with the exact run identity is filled
+in place; its narrative is preserved. Duplicate identity rows refuse with
+`identity_conflict` instead of selecting one arbitrarily.
+
+Declare `[records.fire.columns]` to bind `repo`, `pr_url`, `base_branch`,
+`started`, `ended`, `duration`, `iterations`, and `what_happened` to their
+actual destination properties. `duration_unit` is `seconds` or `minutes`;
+`repo_options` maps observed repository URLs to the destination's select names.
+The watcher carries facts from workflow events and computes duration from the
+same submission and terminal recording timestamps used by Started and Ended.
+Unavailable PR, repository, branch, or iteration facts stay unwritten; an
+observed zero iterations is a number, while an unknown count is absent.
+The runner preserves `what_happened` for the session's account of its work.
+These properties are checked against the live schema before writing.
 
 **5. Write the operation config.** Copy
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated

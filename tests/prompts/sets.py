@@ -44,7 +44,21 @@ AUDIT_DESTINATION = "a public code-hosting surface"
 #: The keys the wiring suite's roster leaves to the operation namespace:
 #: rendered from the same kind of fixed fixtures, plus the operation the
 #: two pass keys and the knowledge map address.
+ORGANIZE_CASE: dict[str, object] = {
+    "mandate_rubric": "Golden mandate rubric",
+    "issue_body": "Golden source issue body",
+    "linked_issue_bodies": ["Golden linked issue body"],
+    "criterion_issue_bodies": ["Golden criterion issue body"],
+    "refusal_evidence": "Golden refusal evidence",
+    "defect_classes": ["Golden defect class"],
+    "base_ref": "main",
+}
+
 EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
+    "organize_assess": (PromptKey.ORGANIZE_ASSESS, ORGANIZE_CASE),
+    "organize_author": (PromptKey.ORGANIZE_AUTHOR, ORGANIZE_CASE),
+    "organize_verify": (PromptKey.ORGANIZE_VERIFY, ORGANIZE_CASE),
+    "organize_criteria_author": (PromptKey.ORGANIZE_CRITERIA_AUTHOR, ORGANIZE_CASE),
     "content_audit": (
         PromptKey.CONTENT_AUDIT,
         {"content": AUDITED_PAYLOAD, "destination": AUDIT_DESTINATION},

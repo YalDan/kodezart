@@ -153,6 +153,30 @@ label cannot gate a phase or be its completion marker, including when another
 key aliases that label. Each phase completes with an issue marker. The table
 validates phase configuration; it does not schedule an organize pass.
 
+## Organize prompt roles
+
+Every prompt set supplies a separate data file for each organize role:
+
+| Key | Role |
+| -- | -- |
+| `organize_assess` | Assess the current issue against its mandate |
+| `organize_author` | Propose specification repairs |
+| `organize_verify` | Independently verify the current issue |
+| `organize_criteria_author` | Propose criterion sub-issues |
+
+The registry resolves each role independently. Removing any required file
+from the selected set aborts prompt boot and names the missing key. The
+roles inherit the set's existing authoring or judgment session policy.
+These templates supply prompt content; organizer session dispatch and
+tracker mutation remain the caller's responsibility.
+
+The rubric and issue evidence vary per call: `mandate_rubric`, `issue_body`,
+`linked_issue_bodies`, `criterion_issue_bodies`, `refusal_evidence`, and
+`defect_classes`. They are reserved outside operation configuration and set
+fragments. Boot rejects a colliding configuration root or projected binding.
+Refusal evidence carries the admission result for an authoring repair; assess
+and verify render the current source bodies without that prior refusal.
+
 ## The knowledge-server grant
 
 `KODEZART_KNOWLEDGE_SESSION_GRANTS` names, one by one, the kinds of agent

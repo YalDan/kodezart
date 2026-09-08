@@ -12,6 +12,7 @@ from kodezart.types.domain.consolidation import (
 )
 from kodezart.types.domain.criteria import ValidatedCriterion
 from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -453,6 +454,14 @@ class ForgeQuery(Protocol):
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
 
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        """Read whether checks are declared; failed reads never mean absent."""
+        ...
+
+    async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
+        """Names from a complete terminal observation, independent of log prose."""
+        ...
+
     async def wait_for_checks(
         self,
         *,
@@ -718,6 +727,15 @@ class TrackerPort(Protocol):
         carry specification and evidence. A successful empty read returns
         an empty sequence. A failed or incomplete lookup raises; it never
         becomes an empty answer. No parent-body syntax supplies membership.
+        """
+        ...
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        """Capture the subject once and read its full criterion membership.
+
+        Empty membership or missing Check content raises at this boundary.
+        This captures source text and provenance; staging approval and
+        criterion-state eligibility remain separate admission requirements.
         """
         ...
 
