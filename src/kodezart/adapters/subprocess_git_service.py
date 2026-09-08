@@ -61,7 +61,7 @@ class SubprocessGitService:
         Path(target).parent.mkdir(parents=True, exist_ok=True)
         effective_url = self._auth.authenticated_url(url) if self._auth else url
         await self._run(
-            ["git", "clone", "--bare", effective_url, target],
+            ["git", "clone", "--bare", "--origin", self._remote, effective_url, target],
             cwd=str(Path(target).parent),
             env=self._auth.subprocess_env() if self._auth else None,
         )
