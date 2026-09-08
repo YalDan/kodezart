@@ -133,7 +133,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_TRACKER_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the tracker credential is presented in. |
 | `KODEZART_TRACKER_MCP_ERROR_DETAIL_LIMIT` | `int` | `500` | >= 80, <= 8000 | Characters of the server's OWN error text carried into a tracker MCP transport failure. A refusal that drops the vendor's diagnosis costs a whole boot cycle to recover it. |
 | `KODEZART_TRACKER_MCP_AUTH_SCHEME` | `str` | `Bearer` | min length 1 | Scheme prefixing the tracker credential in its auth header. |
-| `KODEZART_TRACKER_MCP_SERVER_NAME` | `str` | `linear` |  | Identity of the vendor MCP server the tracker adapter dials. One consumer: the transport factory building the programmatic client on the deterministic path, which stamps this name on every transport log line and error. |
+| `KODEZART_TRACKER_MCP_SERVER_NAME` | `str` | `linear` |  | MCP server identity used by the tracker transport and, through startup value injection, the tracker-side record sink. |
 | `KODEZART_TRACKER_MCP_SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
 | `KODEZART_TRACKER_TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
@@ -203,21 +203,30 @@ repeated cancellation cannot interrupt that cleanup.
 
 ## Knowledge environment migration
 
-The former `KODEZART_KNOWLEDGE_MCP_*` and
-`KODEZART_KNOWLEDGE_SESSION_GRANTS` variables are removed. They refuse in
-process environment, dotenv and initializer inputs, including an old name
-alongside a new one. Rename the values using this table; do not keep inert
-HTTP settings when selecting stdio. Other subsystem variables are unchanged.
+The left column lists removed variables, rejected in the process environment,
+dotenv, initializer and file-secret sources. Rename each value to its replacement;
+do not keep HTTP-only settings when selecting stdio.
 
-| Previous suffix after `KODEZART_KNOWLEDGE_` | New suffix after `KODEZART_KNOWLEDGE__` |
+| Removed variable | Replacement variable |
 | --- | --- |
-| `SESSION_GRANTS` | `SESSION_GRANTS` |
-| `MCP_SERVER_NAME` | `SERVER_NAME` |
-| `MCP_CALL_TIMEOUT_SECONDS` | `CALL_TIMEOUT_SECONDS` |
-| `MCP_ERROR_DETAIL_LIMIT` | `ERROR_DETAIL_LIMIT` |
-| `MCP_TOKEN` | `CONNECTION__CREDENTIAL` |
-| `MCP_GATEWAY_TOKEN` | `CONNECTION__GATEWAY_CREDENTIAL` |
-| Other `MCP_<FIELD>` | `CONNECTION__<FIELD>` |
+| `KODEZART_KNOWLEDGE_SESSION_GRANTS` | `KODEZART_KNOWLEDGE__SESSION_GRANTS` |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_NAME` | `KODEZART_KNOWLEDGE__SERVER_NAME` |
+| `KODEZART_KNOWLEDGE_MCP_CALL_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CALL_TIMEOUT_SECONDS` |
+| `KODEZART_KNOWLEDGE_MCP_ERROR_DETAIL_LIMIT` | `KODEZART_KNOWLEDGE__ERROR_DETAIL_LIMIT` |
+| `KODEZART_KNOWLEDGE_MCP_TRANSPORT` | `KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT` |
+| `KODEZART_KNOWLEDGE_MCP_SERVER_URL` | `KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL` |
+| `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER` | `KODEZART_KNOWLEDGE__CONNECTION__AUTH_HEADER` |
+| `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` | `KODEZART_KNOWLEDGE__CONNECTION__AUTH_SCHEME` |
+| `KODEZART_KNOWLEDGE_MCP_TOKEN` | `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` |
+| `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN` | `KODEZART_KNOWLEDGE__CONNECTION__GATEWAY_CREDENTIAL` |
+| `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `KODEZART_KNOWLEDGE__CONNECTION__INTERACTIVE_AUTH_HOSTS` |
+| `KODEZART_KNOWLEDGE_MCP_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CONNECTION__TIMEOUT_SECONDS` |
+| `KODEZART_KNOWLEDGE_MCP_SSE_READ_TIMEOUT_SECONDS` | `KODEZART_KNOWLEDGE__CONNECTION__SSE_READ_TIMEOUT_SECONDS` |
+| `KODEZART_KNOWLEDGE_MCP_COMMAND` | `KODEZART_KNOWLEDGE__CONNECTION__COMMAND` |
+| `KODEZART_KNOWLEDGE_MCP_ARGS` | `KODEZART_KNOWLEDGE__CONNECTION__ARGS` |
+| `KODEZART_KNOWLEDGE_MCP_ENV` | `KODEZART_KNOWLEDGE__CONNECTION__ENV` |
+| `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV` | `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL_ENV` |
+| `KODEZART_KNOWLEDGE_MCP_STDERR_TAIL_LIMIT` | `KODEZART_KNOWLEDGE__CONNECTION__STDERR_TAIL_LIMIT` |
 
 `knowledge.connection` is absent by default. Selecting one requires its
 explicit `transport` discriminator and `server_url` (HTTP) or `command`
@@ -228,6 +237,7 @@ same credential headers; stdio clients use the same command and environment.
 
 Pydantic Settings keeps initializer > process environment > dotenv > file
 secret > default precedence. `KODEZART_KNOWLEDGE` accepts one JSON object;
+`KODEZART_KNOWLEDGE__CONNECTION` accepts a transport JSON object;
 `__` nested environment values override corresponding JSON members. `null`
 expresses absence, including a raw HTTP `AUTH_SCHEME=null` header. Session
 grants default to `[]`, server name to `notion`, call timeout to60 seconds
