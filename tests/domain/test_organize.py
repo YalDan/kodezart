@@ -378,3 +378,325 @@ def test_admission_refusal_route_uses_kind_without_reading_tone(
     )
     assert result.model_dump_json() == before
     assert AdmissionResult.model_validate_json(before) == result
+
+
+def mandate_fields(**overrides):
+    return {
+        "kind": "groom",
+        "gate_label_key": "scope_labels.triage",
+        "rubric_prompt_key": "grooming_pass",
+        "admission_prompt_key": "ticket_review",
+        "terminal_marker_key": "issue_labels.groomed",
+        **overrides,
+    }
+
+
+def test_mandate_kind_names_and_values_are_the_three_organize_phases():
+    from kodezart.types.domain.organize import MandateKind
+
+    assert {member.name: member.value for member in MandateKind} == {
+        "GROOM": "groom",
+        "TICKET": "ticket",
+        "CRITERIA": "criteria",
+    }
+
+
+def test_mandate_has_only_its_five_configured_differences():
+    from kodezart.types.domain.organize import MandateSpec
+
+    assert set(MandateSpec.model_fields) == {
+        "kind",
+        "gate_label_key",
+        "rubric_prompt_key",
+        "admission_prompt_key",
+        "terminal_marker_key",
+    }
+
+
+@pytest.mark.parametrize("missing", list(mandate_fields()))
+def test_every_mandate_field_is_required(missing):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import MandateSpec
+
+    fields = mandate_fields()
+    del fields[missing]
+    with pytest.raises(ValidationError, match="Field required"):
+        MandateSpec.model_validate(fields)
+
+
+def test_mandate_is_frozen_closed_and_round_trips_qualified_keys():
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import MandateSpec
+
+    spec = MandateSpec.model_validate(mandate_fields())
+    assert MandateSpec.model_validate_json(spec.model_dump_json(by_alias=True)) == spec
+    with pytest.raises(ValidationError, match="frozen"):
+        spec.gate_label_key = "scope_labels.proposed"
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        MandateSpec.model_validate(mandate_fields(mode="ticket"))
+
+
+@pytest.mark.parametrize("field", ["gate_label_key", "terminal_marker_key"])
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "triage",
+        "scope:triage",
+        "queue_states.triage",
+        "issue_labels.",
+        "issue_labels. ",
+    ],
+)
+def test_mandate_refs_name_an_explicit_supported_mapping(field, reference):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import MandateSpec
+
+    with pytest.raises(ValidationError):
+        MandateSpec.model_validate(mandate_fields(**{field: reference}))
+
+
+@pytest.mark.parametrize("namespace", ["scope_labels", "issue_labels"])
+def test_gate_reference_can_name_either_label_family_without_guessing(namespace):
+    from kodezart.types.domain.organize import MandateSpec, split_label_key
+
+    reference = f"{namespace}.body.complete"
+    spec = MandateSpec.model_validate(mandate_fields(gate_label_key=reference))
+    family, key = split_label_key(spec.gate_label_key)
+    assert family.value == namespace
+    assert key == "body.complete"
+
+
+@pytest.mark.parametrize(
+    "reference", ["scope_labels.proposed", "scope_labels.approved"]
+)
+def test_phase_completion_is_an_issue_marker_not_scope_approval(reference):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import MandateSpec
+
+    with pytest.raises(ValidationError, match="issue_labels marker"):
+        MandateSpec.model_validate(mandate_fields(terminal_marker_key=reference))
+
+
+@pytest.mark.parametrize("field", ["rubric_prompt_key", "admission_prompt_key"])
+def test_mandate_prompt_references_must_be_registered_prompt_roles(field):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import MandateSpec
+
+    with pytest.raises(ValidationError):
+        MandateSpec.model_validate(mandate_fields(**{field: "invented_prompt_role"}))
+
+
+def mandate_operation_fields():
+    return {
+        "operation_name": "fixture",
+        "workspace": "workspace",
+        "scope_labels": {
+            "triage": "candidate scope",
+            "proposed": "proposed scope",
+            "approved": "approved scope",
+        },
+        "issue_labels": {
+            "criterion": "check",
+            "triage": "candidate issue",
+            "groomed": "graph complete",
+            "body": "body complete",
+            "criteria": "criteria complete",
+        },
+        "organize_mandates": [
+            mandate_fields(),
+            mandate_fields(
+                kind="ticket",
+                gate_label_key="issue_labels.groomed",
+                terminal_marker_key="issue_labels.body",
+            ),
+            mandate_fields(
+                kind="criteria",
+                gate_label_key="issue_labels.body",
+                terminal_marker_key="issue_labels.criteria",
+            ),
+        ],
+    }
+
+
+def test_all_phase_references_resolve_to_operation_values_at_construction():
+    from kodezart.types.domain.operation import OperationConfig
+
+    operation = OperationConfig.model_validate(mandate_operation_fields())
+    phases = operation.resolve_organize_mandates()
+    assert [
+        (phase.spec.kind.value, phase.gate_label, phase.terminal_marker)
+        for phase in phases
+    ] == [
+        ("groom", "candidate scope", "graph complete"),
+        ("ticket", "graph complete", "body complete"),
+        ("criteria", "body complete", "criteria complete"),
+    ]
+    restored = OperationConfig.model_validate_json(operation.model_dump_json())
+    assert restored.resolve_organize_mandates() == phases
+
+
+def test_absent_mandate_table_is_legal_without_any_label_mapping():
+    from kodezart.types.domain.operation import OperationConfig
+
+    operation = OperationConfig(operation_name="fixture", workspace="workspace")
+    assert operation.organize_mandates == ()
+    assert operation.resolve_organize_mandates() == ()
+
+
+@pytest.mark.parametrize("missing", ["groom", "ticket", "criteria"])
+def test_a_declared_table_cannot_omit_a_phase(missing):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"] = [
+        spec for spec in fields["organize_mandates"] if spec["kind"] != missing
+    ]
+    with pytest.raises(ValidationError, match=f"missing phase '{missing}'"):
+        OperationConfig.model_validate(fields)
+
+
+def test_duplicate_phases_are_rejected_even_with_every_phase_present():
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"].append(fields["organize_mandates"][1])
+    with pytest.raises(ValidationError, match="repeats phase 'ticket'"):
+        OperationConfig.model_validate(fields)
+
+
+@pytest.mark.parametrize("phase", [0, 1, 2])
+@pytest.mark.parametrize("field", ["gate_label_key", "terminal_marker_key"])
+def test_unmapped_keys_fail_while_constructing_the_operation(phase, field):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"][phase][field] = "issue_labels.missing"
+    with pytest.raises(
+        ValidationError, match=r"no nonempty mapping.*issue_labels.missing"
+    ):
+        OperationConfig.model_validate(fields)
+
+
+def test_all_bad_references_are_reported_in_the_same_load_error():
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"][0]["gate_label_key"] = "scope_labels.missing_gate"
+    fields["organize_mandates"][2]["terminal_marker_key"] = "issue_labels.missing_end"
+    with pytest.raises(ValidationError) as caught:
+        OperationConfig.model_validate(fields)
+    assert "scope_labels.missing_gate" in str(caught.value)
+    assert "issue_labels.missing_end" in str(caught.value)
+
+
+def test_qualified_reference_selects_the_mapping_even_when_keys_overlap():
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"][0]["gate_label_key"] = "issue_labels.triage"
+    operation = OperationConfig.model_validate(fields)
+    assert operation.resolve_organize_mandates()[0].gate_label == "candidate issue"
+
+
+@pytest.mark.parametrize("field", ["gate_label_key", "terminal_marker_key"])
+def test_scope_approval_cannot_be_used_through_an_issue_label_alias(field):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["issue_labels"]["approval_alias"] = fields["scope_labels"]["approved"]
+    fields["organize_mandates"][1][field] = "issue_labels.approval_alias"
+    with pytest.raises(ValidationError, match="scope approval, which ends organize"):
+        OperationConfig.model_validate(fields)
+
+
+def test_scope_approval_is_not_an_organize_gate():
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"][0]["gate_label_key"] = "scope_labels.approved"
+    with pytest.raises(ValidationError, match="scope approval, which ends organize"):
+        OperationConfig.model_validate(fields)
+
+
+def test_blank_scope_label_is_not_a_resolved_gate():
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.operation import OperationConfig
+
+    fields = mandate_operation_fields()
+    fields["scope_labels"]["triage"] = " "
+    with pytest.raises(ValidationError, match="no nonempty mapping"):
+        OperationConfig.model_validate(fields)
+
+
+def write_mandate_operation(path, fields):
+    import json
+
+    lines = [
+        f"operation_name = {json.dumps(fields['operation_name'])}",
+        f"workspace = {json.dumps(fields['workspace'])}",
+    ]
+    for namespace in ("scope_labels", "issue_labels"):
+        lines.append(f"[{namespace}]")
+        lines.extend(
+            f"{json.dumps(key)} = {json.dumps(value)}"
+            for key, value in fields[namespace].items()
+        )
+    for spec in fields["organize_mandates"]:
+        lines.append("[[organize_mandates]]")
+        lines.extend(f"{key} = {json.dumps(value)}" for key, value in spec.items())
+    path.write_text("\n".join(lines))
+
+
+def test_normal_toml_loader_resolves_the_declared_phase_table(tmp_path):
+    from kodezart.adapters.toml_operation_config import load_operation_config
+
+    path = tmp_path / "operation.toml"
+    write_mandate_operation(path, mandate_operation_fields())
+    operation = load_operation_config(path)
+    assert (
+        operation.resolve_organize_mandates()[2].terminal_marker == "criteria complete"
+    )
+
+
+@pytest.mark.parametrize("field", ["gate_label_key", "terminal_marker_key"])
+async def test_invalid_table_stops_normal_boot_before_tracker_or_dispatch(
+    tmp_path, monkeypatch, field
+):
+    from kodezart.core.config import AppConfig
+    from kodezart.core.errors import OperationConfigError
+    from kodezart.main import create_app, lifespan
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"][0][field] = "issue_labels.absent_at_boot"
+    path = tmp_path / "operation.toml"
+    write_mandate_operation(path, fields)
+
+    async def unexpected_tracker_boot(**kwargs):
+        pytest.fail("tracker boot started with an unresolved mandate reference")
+
+    monkeypatch.setattr("kodezart.main.boot_tracker", unexpected_tracker_boot)
+    app = create_app()
+    app.state.config = AppConfig(operation_config=str(path), github_token=None)
+    with pytest.raises(OperationConfigError, match=r"operation\.toml is invalid"):
+        async with lifespan(app):
+            pytest.fail(
+                "dispatch became available with an unresolved mandate reference"
+            )

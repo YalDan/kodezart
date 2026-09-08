@@ -138,6 +138,8 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "teams",
         "queue_states",
         "scope_labels",
+        "issue_labels",
+        "organize_mandates",
         "workflow_states",
         "marker_prefixes",
         "repos",
@@ -153,6 +155,8 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
     assert isinstance(config.workspace, str)
     assert isinstance(config.queue_states, dict)
     assert isinstance(config.scope_labels, dict)
+    assert config.organize_mandates == ()
+    assert isinstance(config.issue_labels, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
     assert config.initiatives[0].target_date == date(2026, 12, 31)
     assert config.repos[0].checks

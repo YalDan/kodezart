@@ -201,6 +201,7 @@ def linear_over_fake_mcp(server: FakeLinearMcpServer) -> TrackerPort:
     """The shipped Linear adapter, dialing the in-process fake MCP server."""
     return LinearMcpTracker(
         marker_prefixes=MARKER_PREFIXES,
+        issue_labels={"criterion": "acceptance-condition"},
         caller=server,
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
@@ -346,6 +347,7 @@ def tracker_writes(
             *tracker.workflow_writes,
             *tracker.restored_states,
             *tracker.queue_writes,
+            *tracker.classification_writes,
         )
     return lambda: tuple(
         call for call in server.calls if call[0] in {"save_comment", "save_issue"}

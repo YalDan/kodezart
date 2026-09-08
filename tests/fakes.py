@@ -34,6 +34,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import (
+    CriterionReadError,
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     MergeConflictError,
@@ -2406,7 +2407,14 @@ class FakeLinearMcpServer:
         if handler is None:
             msg = f"fake MCP server exposes no tool named {name!r}"
             raise LookupError(msg)
-        result: McpToolResult = handler(arguments)
+        try:
+            result: McpToolResult = handler(arguments)
+        except LookupError as exc:
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {exc}",
+                server_name="fake-linear",
+                tool_name=name,
+            ) from exc
         return result
 
     def tool_calls(self, name: str) -> list[Mapping[str, object]]:
@@ -2451,11 +2459,13 @@ class FakeLinearMcpServer:
     ) -> Mapping[str, object]:
         label = arguments.get("label")
         team = arguments.get("team")
+        parent = arguments.get("parentId")
         selected = [
             issue
             for issue in self.issues.values()
             if (label is None or label in issue.labels)
             and (team is None or issue.team == team)
+            and (parent is None or issue.parent_id == parent)
         ]
         limit = int(str(arguments.get("limit", len(selected))))
         return {
@@ -2513,6 +2523,10 @@ class FakeLinearMcpServer:
             assert isinstance(raw_labels, list)
             new_labels = [str(entry) for entry in raw_labels]
             issue.labels = new_labels
+        if "addLabels" in arguments:
+            additions = arguments["addLabels"]
+            assert isinstance(additions, list)
+            issue.labels = list(dict.fromkeys([*issue.labels, *map(str, additions)]))
         self._moved(issue.id)
         return issue.wire()
 
@@ -2970,6 +2984,7 @@ class FakeTrackerPort:
             issue.state_name: issue.state_kind for issue in issues
         }
         self.queue_writes: list[tuple[str, QueueState]] = []
+        self.classification_writes: list[tuple[str, str]] = []
         self.scans: list[IssueQuery] = []
         #: Every issue this double was asked to READ, in order.  A scan is
         #: one call whatever it returns and a read is one call per issue,
@@ -3172,6 +3187,24 @@ class FakeTrackerPort:
         self.issue_creations.append(issue.issue_key)
         return issue
 
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        if issue_key not in self.issues:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
+            )
+        parent = await self.read_issue(issue_key=issue_key)
+        return tuple(
+            sorted(
+                (
+                    issue
+                    for issue in self.issues.values()
+                    if issue.parent_key == parent.issue_key
+                    and "criterion" in issue.issue_labels
+                ),
+                key=lambda issue: issue.issue_key,
+            )
+        )
+
     async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
         await self.read_issue(issue_key=issue_key)
         return self.issue_identities.get(issue_key)
@@ -3295,6 +3328,20 @@ class FakeTrackerPort:
             return issue
         self.queue_writes.append((issue_key, state))
         updated = issue.model_copy(update={"queue_states": frozenset({state})})
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str
+    ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if classification in issue.issue_labels:
+            return issue
+        self.classification_writes.append((issue_key, classification))
+        updated = issue.model_copy(
+            update={"issue_labels": issue.issue_labels | {classification}}
+        )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
         return updated
