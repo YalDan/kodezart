@@ -50,6 +50,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import tracker_spec_from_issues
+from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -106,6 +107,7 @@ from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
     RecordDestination,
+    ScopeLabel,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_content import PRContent
@@ -3234,6 +3236,7 @@ class FakeTrackerPort:
         marker_prefixes: Mapping[str, str] | None = None,
         scope_containers: Sequence[ScopeContainer] = (),
         scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
+        scope_label_members: Mapping[ScopeRef, frozenset[ScopeLabel]] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         document_titles: Mapping[str, str] | None = None,
@@ -3259,6 +3262,7 @@ class FakeTrackerPort:
         self.scope_memberships: dict[ScopeRef, tuple[str, ...]] = {
             ref: tuple(keys) for ref, keys in (scope_memberships or {}).items()
         }
+        self.scope_label_members = dict(scope_label_members or {})
         self.recorded_work_refs: dict[str, list[WorkRef]] = {
             key: list(value) for key, value in (recorded_work_refs or {}).items()
         }
@@ -3415,6 +3419,12 @@ class FakeTrackerPort:
         self.issue_reads.append(issue_key)
         return self.issues[issue_key]
 
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        return await self.read_issue(issue_key=issue_key)
+
+    def require_scope_plan_reads(self) -> None:
+        """Supported: fixture issues retain their semantic label keys."""
+
     def require_criterion_reads(self) -> None:
         """Supported: the fake reads independently stored criterion children."""
 
@@ -3490,6 +3500,34 @@ class FakeTrackerPort:
         if not container.url:
             raise ScopeReadError("container URL was not reported", ref=ref)
         return container
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            ref = ScopeRef(kind=ScopeKind.ISSUE, key=key)
+            if key not in self.issues:
+                raise ScopeReadError("issue is missing", ref=ref)
+            return (
+                await self.read_issue(issue_key=key),
+                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
+            )
+
+        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
+            await asyncio.sleep(0)
+            if ref not in self.scope_containers:
+                raise ScopeReadError("container is missing", ref=ref)
+            container = self.scope_containers[ref]
+            if container.ref != ref:
+                raise ScopeReadError("container approval identity changed", ref=ref)
+            return (
+                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
+                container.parent,
+            )
+
+        return await resolve_execution_approval(
+            issue_key=issue_key,
+            read_issue=read_issue,
+            read_container=read_container,
+        )
 
     async def create_issue(
         self,

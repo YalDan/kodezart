@@ -310,6 +310,36 @@ class ScopeReadError(Exception):
         self.ref: ScopeRef = ref
 
 
+class ScopePlanRefusalError(ScopeReadError):
+    """Live scope facts violate the stage barrier before dispatch can begin."""
+
+    def __init__(
+        self,
+        *,
+        ref: ScopeRef,
+        open_decisions: Sequence[str],
+        backlog_criteria: Sequence[str],
+        cross_subtree_edges: Sequence[tuple[str, str]],
+    ) -> None:
+        self.open_decisions = tuple(open_decisions)
+        self.backlog_criteria = tuple(backlog_criteria)
+        self.cross_subtree_edges = tuple(cross_subtree_edges)
+        details = []
+        if self.open_decisions:
+            details.append("open decisions: " + ", ".join(self.open_decisions))
+        if self.backlog_criteria:
+            details.append("backlog-kind criteria: " + ", ".join(self.backlog_criteria))
+        if self.cross_subtree_edges:
+            details.append(
+                "cross-subtree criterion edges: "
+                + ", ".join(
+                    f"{source} -> {target}"
+                    for source, target in self.cross_subtree_edges
+                )
+            )
+        super().__init__("scope plan refused; " + "; ".join(details), ref=ref)
+
+
 class ScopedExecutionUnavailableError(Exception):
     """An addressed scope cannot execute through the legacy workflow pipeline."""
 
@@ -651,6 +681,38 @@ class CheckChainExecutionError(Exception):
         self.step_name = step_name
         self.reason = reason
         super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")
+
+
+class UnionHeadReadError(Exception):
+    """Current remote heads could not establish a complete union snapshot."""
+
+    def __init__(self, *, scope_key: str, branch: str | None, reason: str) -> None:
+        self.scope_key = scope_key
+        self.branch = branch
+        self.reason = reason
+        super().__init__(f"Union head observation for {scope_key!r} refused: {reason}")
+
+
+class UnionUnstableError(Exception):
+    """Every allowed union attempt was superseded by current remote heads."""
+
+    def __init__(
+        self,
+        *,
+        scope_key: str,
+        attempts: int,
+        lane_keys: tuple[str, ...],
+        measured_shas: tuple[str, ...],
+        current_shas: tuple[str, ...],
+    ) -> None:
+        self.scope_key = scope_key
+        self.attempts = attempts
+        self.lane_keys = lane_keys
+        self.measured_shas = measured_shas
+        self.current_shas = current_shas
+        super().__init__(
+            f"Union heads for {scope_key!r} changed across {attempts} attempts"
+        )
 
 
 class AuditClaimReadError(ValueError):

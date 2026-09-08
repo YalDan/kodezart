@@ -579,6 +579,7 @@ class TestQueueVocabularyPerDeclaredTeam:
         return LinearMcpTracker(
             marker_prefixes=MARKER_PREFIXES,
             issue_labels={"criterion": "acceptance-condition"},
+            scope_labels={},
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
@@ -706,6 +707,7 @@ class TestWorkflowStatesResolvePerTeam:
         return LinearMcpTracker(
             marker_prefixes=MARKER_PREFIXES,
             issue_labels={"criterion": "acceptance-condition"},
+            scope_labels={},
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,

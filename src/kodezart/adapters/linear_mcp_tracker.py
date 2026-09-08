@@ -56,12 +56,13 @@ from kodezart.domain.errors import (
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
     marked_comment_body,
 )
-from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefLanding, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
@@ -82,6 +83,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearLabelListWire,
     LinearLabelWire,
     LinearNamedWire,
+    LinearPlanningIssueWire,
     LinearProjectWire,
     LinearTeamListWire,
     LinearTeamWire,
@@ -90,11 +92,15 @@ from kodezart.types.domain.linear_mcp import (
     LinearUserWire,
     LinearWireModel,
 )
-from kodezart.types.domain.linear_scope import LinearScopeIssuesWire
+from kodezart.types.domain.linear_scope import (
+    LinearApprovalIssueWire,
+    LinearScopeIssuesWire,
+)
 from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationMemberAbsentError,
     QueueState,
+    ScopeLabel,
 )
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.tracker import (
@@ -424,6 +430,7 @@ class LinearMcpTracker:
         *,
         caller: McpToolCaller,
         queue_state_labels: Mapping[str, str],
+        scope_labels: Mapping[str, str],
         issue_labels: Mapping[str, str],
         workflow_state_names: Mapping[LifecycleStage, str],
         marker_prefixes: Mapping[str, str],
@@ -438,6 +445,7 @@ class LinearMcpTracker:
         self._markers = LinearMarkers(marker_prefixes)
         self._issue_identity = LinearIssueIdentityCarrier(marker_prefixes)
         self._issue_labels = dict(issue_labels)
+        self._scope_labels = dict(scope_labels)
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._clock: Callable[[], datetime] = clock
@@ -617,6 +625,23 @@ class LinearMcpTracker:
         """The full issue — body, state, relations, parent, assignee."""
         return self._to_issue(await self._read_issue_wire(issue_key))
 
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        return self._to_issue(
+            self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
+        )
+
+    def require_scope_plan_reads(self) -> None:
+        """A clean plan must be able to see both criteria and open decisions."""
+        for classification in ("criterion", "decision"):
+            if classification not in self._issue_labels:
+                raise OperationMemberAbsentError(
+                    missing=f"issue_labels[{classification!r}]",
+                    stops="scope plan barriers cannot be read",
+                )
+
     def require_criterion_reads(self) -> None:
         """Supported: read_criteria hydrates the issue's criterion children."""
 
@@ -677,6 +702,32 @@ class LinearMcpTracker:
             call=self._call,
             read_issue=self.read_issue,
         ).scope_issues(ref=ref)
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve configured label presence through fresh native ancestry."""
+        label = self._scope_labels.get(ScopeLabel.APPROVED.value)
+        if not label:
+            raise OperationMemberAbsentError(
+                missing=f"scope_labels.{ScopeLabel.APPROVED.value}",
+                stops="cannot resolve scope approval",
+            )
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            payload = await self._call(
+                _TOOL_GET_ISSUE, {"id": key, "includeRelations": True}
+            )
+            wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
+            return self._to_issue(wire), label in wire.labels
+
+        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
+            return await reader.approval_parent(ref=ref, approved_label=label)
+
+        return await resolve_execution_approval(
+            issue_key=issue_key,
+            read_issue=read_issue,
+            read_container=read_container,
+        )
 
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         """Read a container without fabricating a URL or choosing a parent."""
@@ -1342,10 +1393,18 @@ class LinearMcpTracker:
         """Every work ref recorded on the issue, oldest first."""
         refs: list[WorkRef] = []
         pattern = self._markers.work_ref_pattern
+        marker = self._markers.work_ref_marker_pattern
         for wire in await self._comment_wires(issue_key):
-            match = pattern.search(wire.body)
-            if match is None:
+            occurrences = tuple(marker.finditer(wire.body))
+            if not occurrences:
                 continue
+            match = pattern.search(wire.body)
+            if match is None or len(occurrences) != 1:
+                raise TrackerProtocolError(
+                    "work-ref marker is malformed or repeated",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=wire.id,
+                )
             role = _WORK_REF_ROLE_BY_VALUE.get(match.group("role"))
             if role is None:
                 raise TrackerProtocolError(
@@ -1353,15 +1412,27 @@ class LinearMcpTracker:
                     tool=_TOOL_LIST_COMMENTS,
                     detail=match.group("role"),
                 )
-            refs.append(
-                WorkRef(
+            try:
+                landing = match.group("landing")
+                ref = WorkRef(
                     issue_id=issue_key,
                     role=role,
                     branch=match.group("branch"),
                     pushed_head_sha=match.group("sha"),
+                    landing=(
+                        WorkRefLanding.UNKNOWN
+                        if landing is None
+                        else WorkRefLanding(landing)
+                    ),
                     recorded_at=wire.created_at,
-                ),
-            )
+                )
+            except ValueError as exc:
+                raise TrackerProtocolError(
+                    "work-ref marker does not match its declared shape",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=wire.id,
+                ) from exc
+            refs.append(ref)
         return tuple(refs)
 
     async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:

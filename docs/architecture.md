@@ -122,6 +122,25 @@ the opened transport before mapping reconciliation or execution can start.
 The declaration itself performs no writes or lease acquisition. Scope-walker
 dispatch remains a separate unfinished consumer of this mandatory boot boundary.
 
+`read_scope_plan` applies native stage barriers at the actual scoped engine
+entry before any execution arm is selected. Its `require_scope_plan_reads`
+declaration requires semantic criterion and decision mappings; a missing mapping
+cannot turn an open decision into an empty set. The shared `read_scope_members`
+reader preserves direct criterion children even when container filtering omits
+them, and serves audit collection as well as planning.
+
+The explicit `read_planning_issue` port read requires reported semantic labels
+and full requested dependency relations. Planning re-reads every enumerated
+member through that strict boundary before following dependencies, rechecks all
+facts and the scope family, and refuses omissions or changed observations. Open decisions,
+backlog-kind criteria and criterion edges leaving their parent's subtree yield
+`ScopePlanRefusalError` with the offending native keys. Existing topology
+arithmetic owns cycle detection. A successful snapshot is not approval or a
+ready-set claim: approval-qualified selection, full walker dispatch and pre-loop
+criterion revalidation remain separate. Valid scoped entries still raise the
+explicit unavailable-walker error, while invalid scopes now fail earlier with
+their measured stage-barrier reasons.
+
 `LaneRecordReader` reads the owning issue's complete comment listing through
 `TrackerPort`, locates the exact configured `marker_prefixes.run_state` marker,
 and returns the native comment and decoded `LaneRunState` from that same read.
@@ -502,6 +521,21 @@ readings and has no threshold bound. Event-to-target projection and complete
 record collection belong to their producers and are not supplied by this
 predicate; it adds no competing event vocabulary or inferred target mapping.
 
+The existing `WorkRef` carries the observer's `landing` fact as `landed`,
+`not_landed` or `unknown`, alongside its branch and pushed head. The native
+work-ref marker serializes that field; older markers without it read as
+unknown, and malformed values refuse. Observers amend the existing record
+when they record a landing. The append-only `record_work_ref` operation
+retains its one-deliverable rule and never silently replaces that record.
+No landing fact is inferred from a merge strategy, Git ancestry or forge
+state, and no second landing carrier is introduced on the lane run record.
+The base resolver discards explicitly landed inputs before looking up their
+remote branch. An all-landed input set therefore uses the configured trunk;
+a mixed set retains only the other recorded inputs. Unknown and not-landed
+inputs keep the existing resolution path, including a typed refusal when
+their branch is missing. Multiple deliverable records refuse as ambiguous
+before choosing a base.
+
 `commits_ahead_of_record` compares four projections from one lane record:
 lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.
 Each frozen row carries exactly `sha`, `subject` and `issue_id`. Either
@@ -562,6 +596,16 @@ reset the baseline. The actual ruling node, verified leased artifact writes,
 lane-membership producer and persisted window advancement remain separate
 implementation work.
 
+The criterion-lifecycle code conformance module checks both identity owners:
+`CriterionRef` is constructed by the full tracker-spec reader and `RulingId`
+by the ruling mint. Its shared static guard covers direct, qualified, imported
+and assigned constructor aliases, including calls in function headers. Ruling
+address fields retain the minted type through containers and forward references;
+text, other untyped values and rebinding the identity name fail the guard.
+Native and fake tracker fixtures show that duplicate or amended criterion text
+does not change the addressed keys. Evaluator state/body writer adoption and
+the separate model-membership and spec-backend invariants remain unfinished.
+
 `structural_write_uncrosses_milestone` compares complete lane membership
 snapshots. The collector reads both the fire subtree and native milestone
 membership through the port, including archived issues, and preserves the
@@ -610,6 +654,20 @@ The runner returns failed names and ordered outputs without classifying roots
 or cascades. Union composition and its result publication are separate consumers.
 
 `UnionComposition.verify` consumes the planner's ordered lane-head snapshot
+through an immutable measurement boundary. `UnionTick.verify` is its current-head
+consumer: one instance fixes the scope, repository configuration and selected
+base; each call supplies the complete ordered lane-branch roster. It reads the
+current remote SHAs, reuses its own unchanged result, and otherwise fetches with
+matching head reads on both sides before invoking the actual scratch composition.
+It re-reads every head before reporting a new result
+and repeats a stale attempt. The configured attempt bound produces
+`UnionUnstableError` if the heads keep moving, and an absent or unreadable head
+produces `UnionHeadReadError`. Native reads settle before cancellation returns;
+concurrent calls on one instance share the result. These are repeat-read
+observations, without atomic exclusion of a writer after the last read. The
+scope-walker tick invocation and durable result persistence remain separate work.
+
+The pinned composition consumes the ordered lane-head snapshot
 and an immutable selected base. It creates a detached Git worktree, merges
 those exact commit IDs in planner order, runs `RepoEntry.checks`, and removes
 the tree on return, refusal, exception, or cancellation. Scratch merges have

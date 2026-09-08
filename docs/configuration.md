@@ -28,6 +28,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_RUN_ALARM_BARREN_TICK_MAX_COMMITS_AHEAD` | `int` | `5` | >= 0 | Recorded commits ahead of the lane base allowed on a tick closing no previously-open reference. |
 | `KODEZART_RUN_ALARM_MAX_SURFACE_HOLDERS` | `int` | `1` | >= 0 | Distinct recorded run holders allowed on one complete writable-surface address. |
 | `KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` | `float` | `1800` | > 0 | Wall-clock bound for one check step of a union composition. |
+| `KODEZART_UNION_STALE_MAX_ATTEMPTS` | `int` | `3` | >= 1 | Maximum union attempts before continuously moving lane heads refuse. |
 | `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` | `float` | `0.01` | finite, > 0 | Seconds between repeated check-process group termination signals while canceled or timed-out output is still draining. |
 | `KODEZART_RUN_ALARM_MAX_RULINGS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Distinct machine-authored ruling identities allowed since the lane last closed a previously-open obligation. |
 | `KODEZART_DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |

@@ -45,3 +45,12 @@ class ResolvedScope(CamelCaseModel):
 
     ref: ScopeRef
     issues: tuple[TrackerIssue, ...]
+
+
+class ScopePlanSnapshot(CamelCaseModel):
+    """A coherent scope family and the outside dependency facts it consulted."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scope: ResolvedScope
+    dependencies: tuple[TrackerIssue, ...]

@@ -770,6 +770,18 @@ class TrackerPort(Protocol):
         """The full issue — body, state, relations, parent, assignee."""
         ...
 
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        """Read reported labels and full dependency relations; omission refuses."""
+        ...
+
+    def require_scope_plan_reads(self) -> None:
+        """Require semantic criterion and decision reads before scope planning.
+
+        Missing configuration or capability raises rather than projecting an
+        empty decision set. This declaration performs no tracker write.
+        """
+        ...
+
     def require_criterion_reads(self) -> None:
         """Require criterion-child reads before boot can enable execution.
 
@@ -816,6 +828,16 @@ class TrackerPort(Protocol):
         Container scopes resolve by membership; issue scopes resolve to
         the issue and its descendant issues. No bounded scan substitutes
         for the complete scope.
+        """
+        ...
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve the configured scope approval label from current ancestry.
+
+        Check the issue and parent issues, then its own project and initiative
+        ancestry. Milestone members use their project approval. Label presence
+        decides; there is no approval-actor carrier. Every call reads again,
+        and missing or unreadable ancestry raises instead of returning false.
         """
         ...
 
@@ -1053,7 +1075,8 @@ class TrackerPort(Protocol):
         This is the read D2 requires: *which refs deliver issue X, in which
         roles, at which shas* is answerable through the port, so no code
         anywhere derives an issue identity, a role or a parent from a
-        branch name.
+        branch name. Recorded landing remains LANDED, NOT_LANDED or UNKNOWN;
+        an older record without that fact reads UNKNOWN, never NOT_LANDED.
         """
         ...
 

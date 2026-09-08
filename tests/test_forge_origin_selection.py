@@ -289,7 +289,7 @@ async def test_scoped_queue_jobs_resolve_then_publish_the_typed_refusal(
         )
         async with asyncio.timeout(SETTLE_SECONDS):
             events = [event async for event in queue.attach(job_id=record.job_id)]
-        assert tracker.scope_reads == [ref]
+        assert tracker.scope_reads == [ref, ref]
         (error,) = events
         assert isinstance(error, ErrorEvent)
         assert error.error_kind == "ScopedExecutionUnavailableError"
@@ -462,7 +462,7 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
         ref = ScopeRef(kind=ScopeKind.PROJECT, key="configured-project")
         with pytest.raises(ScopedExecutionUnavailableError, match="not implemented"):
             await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
-        assert tracker.scope_reads == [ref]
+        assert tracker.scope_reads == [ref, ref]
     finally:
         await client.close()
 

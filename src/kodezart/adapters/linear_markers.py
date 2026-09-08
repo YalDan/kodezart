@@ -35,11 +35,16 @@ class LinearMarkers:
         )
 
     @property
+    def work_ref_marker_pattern(self) -> re.Pattern[str]:
+        return self._pattern("work_ref", r"(?=\s|-->)")
+
+    @property
     def work_ref_pattern(self) -> re.Pattern[str]:
         return self._pattern(
             "work_ref",
             r'\s+role="(?P<role>[^"]+)"\s+branch="(?P<branch>[^"]+)"'
-            r'(?:\s+pushed-head-sha="(?P<sha>[^"]+)")?\s*-->',
+            r'(?:\s+pushed-head-sha="(?P<sha>[^"]+)")?'
+            r'(?:\s+landing="(?P<landing>[^"]*)")?\s*-->',
         )
 
     def work_ref_body(self, ref: WorkRef) -> str:
@@ -50,7 +55,7 @@ class LinearMarkers:
         )
         return (
             f'<!-- {self._prefix("work_ref")} role="{ref.role.value}" '
-            f'branch="{ref.branch}"{sha} -->'
+            f'branch="{ref.branch}"{sha} landing="{ref.landing.value}" -->'
         )
 
     @property

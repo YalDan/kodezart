@@ -10,6 +10,8 @@ from kodezart.core.protocols import McpToolResult
 from kodezart.domain.errors import ScopeReadError
 from kodezart.types.domain.linear_mcp import LinearWireModel
 from kodezart.types.domain.linear_scope import (
+    LinearApprovalInitiativeWire,
+    LinearApprovalProjectWire,
     LinearScopeIdentityWire,
     LinearScopeInitiativeWire,
     LinearScopeIssuesWire,
@@ -79,6 +81,37 @@ class LinearScopeReader:
                 assert_never(ref.kind)
         self._check_issue_parents(issues, ref)
         return tuple(issues.values())
+
+    async def approval_parent(
+        self, *, ref: ScopeRef, approved_label: str
+    ) -> tuple[bool, ScopeRef | None]:
+        """Read labels and the same native parent edge used by metadata.
+
+        Display URLs are not approval evidence. Milestones have no label
+        capability; their issue members already report the owning project.
+        """
+        match ref.kind:
+            case ScopeKind.PROJECT:
+                project = await self._read(
+                    LinearApprovalProjectWire, _TOOL_GET_PROJECT, {"query": ref.key}
+                )
+                key, labels = project.id, project.labels
+                parent = self._parent(project.initiatives, ref)
+            case ScopeKind.INITIATIVE:
+                initiative = await self._read(
+                    LinearApprovalInitiativeWire,
+                    _TOOL_GET_INITIATIVE,
+                    {"query": ref.key, "includeSubInitiatives": True},
+                )
+                key, labels = initiative.id, initiative.labels
+                parent = self._parent(initiative.parent_initiatives, ref)
+            case ScopeKind.ISSUE | ScopeKind.MILESTONE:
+                raise ScopeReadError("not an approval container", ref=ref)
+            case _:
+                assert_never(ref.kind)
+        if key != ref.key:
+            raise ScopeReadError("container approval identity changed", ref=ref)
+        return approved_label in labels, parent
 
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         if ref.kind is ScopeKind.ISSUE:

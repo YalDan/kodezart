@@ -382,6 +382,13 @@ class AppConfig(BaseSettings):
         gt=0,
         description="Wall-clock bound for one check step of a union composition.",
     )
+    union_stale_max_attempts: int = Field(
+        default=3,
+        ge=1,
+        description=(
+            "Maximum union attempts before continuously moving lane heads refuse."
+        ),
+    )
     union_check_cleanup_poll_interval_seconds: float = Field(
         default=0.01,
         gt=0,

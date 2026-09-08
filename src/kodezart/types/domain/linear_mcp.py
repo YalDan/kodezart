@@ -177,6 +177,13 @@ class LinearIssueDetailWire(LinearIssueWire):
     documents: list[LinearAssetWire]
 
 
+class LinearPlanningIssueWire(LinearIssueDetailWire):
+    """Planning cannot interpret unreported labels or relations as empty."""
+
+    labels: list[str]
+    relations: LinearIssueRelationsWire
+
+
 class LinearHistoryStateWire(LinearWireModel):
     """State identity reported by get_issue's native stateHistory entries."""
 
