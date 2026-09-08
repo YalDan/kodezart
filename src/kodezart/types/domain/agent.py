@@ -17,6 +17,7 @@ from kodezart.types.domain.audit import (
     AuditMandateJudgment,
     WriteBackJudgment,
 )
+from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
@@ -66,6 +67,7 @@ RaiseSite = Literal[
     "organize_assess",
     "organize_verify",
     "audit_claim",
+    "audit_overclaim",
     "write_back_verify",
     "audit_mandate",
     "branch_name",
@@ -1043,6 +1045,7 @@ DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema
 AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
 WRITE_BACK_SCHEMA: dict[str, object] = WriteBackJudgment.model_json_schema()
 
+AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_schema()
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
 
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
@@ -1064,6 +1067,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
     "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
+    "AUDIT_OVERCLAIM_SCHEMA": AUDIT_OVERCLAIM_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
 }

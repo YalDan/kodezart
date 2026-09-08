@@ -37,6 +37,7 @@ from kodezart.types.domain.audit import (
     AuditMandateJudgment,
     WriteBackJudgment,
 )
+from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
     TrackerCriteriaValidationOutput,
@@ -78,6 +79,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
     "ORGANIZE_ADMISSION_SCHEMA": AdmissionJudgment,
     "AUDIT_CLAIM_SCHEMA": AuditClaimJudgment,
+    "AUDIT_OVERCLAIM_SCHEMA": AuditOverclaimJudgment,
     "AUDIT_MANDATE_SCHEMA": AuditMandateJudgment,
     "WRITE_BACK_SCHEMA": WriteBackJudgment,
 }
