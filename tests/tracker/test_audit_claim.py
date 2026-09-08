@@ -541,9 +541,9 @@ async def test_parsed_remote_value_reaches_the_actual_claim_reads(
     setup, monkeypatch, configured
 ):
     if configured is None:
-        monkeypatch.delenv("KODEZART_GIT_REMOTE", raising=False)
+        monkeypatch.delenv("KODEZART_GIT__REMOTE", raising=False)
     else:
-        monkeypatch.setenv("KODEZART_GIT_REMOTE", configured)
+        monkeypatch.setenv("KODEZART_GIT__REMOTE", configured)
     remote = AppConfig(_env_file=None).git.remote
     build, _, git, *_ = setup
     observed = await build(remote=remote).verify(REQUEST)

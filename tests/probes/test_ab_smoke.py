@@ -255,8 +255,8 @@ def arm_environment(arm: Arm, root: Path) -> dict[str, str]:
     return {
         "KODEZART_PROMPT_SET": arm.prompt_set,
         "KODEZART_TICKET_REVIEW_MODE": arm.review_mode.value,
-        "KODEZART_CLONE_CACHE_DIR": str(root / "cache"),
-        "KODEZART_INTEGRATION_WORKSPACE_DIR": str(root / "integration"),
+        "KODEZART_GIT__CLONE_CACHE_DIR": str(root / "cache"),
+        "KODEZART_GIT__INTEGRATION_WORKSPACE_DIR": str(root / "integration"),
     }
 
 
