@@ -65,6 +65,7 @@ from tests.services.test_dispatch_pass import (
     RENEWAL_FRACTION,
     TICK_STARTED_AT,
     TRUNK,
+    fire_dispatcher,
     operation_config,
 )
 
@@ -581,3 +582,33 @@ async def test_an_open_criterion_holds_a_dependent_whatever_its_refs_say():
         )
         in report.exclusions
     )
+
+
+async def test_a_one_issue_scope_dispatches_exactly_as_the_unscoped_pass_does():
+    """A scope of one degenerates onto the authored fire path, field for field."""
+    single = (
+        lane_issue("K-1"),
+        criterion("K-1-check", parent="K-1"),
+    )
+    unscoped_tracker = board(*single)
+    unscoped_queue = FakeJobQueue()
+    scoped_tracker = board(*single)
+
+    unscoped = await fire_dispatcher(unscoped_tracker, unscoped_queue).run_pass()
+    walker, scoped_queue, _ = walk(
+        scoped_tracker,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key="K-1"),
+    )
+    scoped = await walker.run_pass()
+
+    assert unscoped.outcome is DispatchOutcome.fire_enqueued
+    assert scoped.outcome is DispatchOutcome.fire_enqueued
+    assert unscoped_queue.submissions == scoped_queue.submissions
+    assert [request.scope for _, request in scoped_queue.submissions] == [None]
+    assert unscoped_tracker.recorded_base_specs == scoped_tracker.recorded_base_specs
+    assert unscoped_tracker.claims["K-1"].holder == scoped_tracker.claims["K-1"].holder
+    assert unscoped.claimed_state_name == scoped.claimed_state_name
+    assert unscoped.claimed_visibility == scoped.claimed_visibility
+    assert unscoped.base == scoped.base
+    assert unscoped.criterion_keys == ()
+    assert scoped.criterion_keys == ("K-1-check",)
