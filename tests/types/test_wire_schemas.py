@@ -477,7 +477,7 @@ def test_actual_schema_census_rejects_damaged_source(monkeypatch, damage, guard)
         path = "services/audit_sessions.py"
         old, new = '"schema": output_schema', '"schema": sanitize_schema(output_schema)'
     elif damage == "missing_schema":
-        path = "chains/authored_delivery.py"
+        path = "chains/authored_publication.py"
         old, new = '"schema": PR_DESCRIPTION_SCHEMA', '"schema": COMMIT_MESSAGE_SCHEMA'
     elif damage == "unrelated_forwarder":
         sources["chains/unrelated.py"] = (
