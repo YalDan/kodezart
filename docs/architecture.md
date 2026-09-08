@@ -620,7 +620,10 @@ The check-chain runner executes each declared command through the host shell,
 in the supplied directory and in declared order. Earlier failures do not hide
 later observations. The configured per-step deadline includes launch and kills the shell process
 group while retaining partial output. Repeated cancellation cannot interrupt
-eventual-process cleanup; cancellation propagates after the attempt is reaped. Empty or ambiguous step identities refuse before execution.
+eventual-process cleanup; cancellation propagates after the attempt is reaped.
+Cleanup repeats group termination at its configured polling cadence until
+captured output reaches EOF, covering a child created during the first signal.
+Empty or ambiguous step identities refuse before execution.
 The runner returns failed names and ordered outputs without classifying roots
 or cascades. Union composition and its result publication are separate consumers.
 
