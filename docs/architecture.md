@@ -739,11 +739,17 @@ ordered branch/head pairs, the selected base, and the discarded scratch
 path and commit. A conflict reports only its successfully merged prefix;
 infrastructure errors remain errors. Executed checks use the restored
 historical root/cascade classifier, and a red check result carries one
-`UnionRemediationEntry` naming those roots and cascades. This scope outcome
+`UnionRemediationEntry` naming those roots and cascades. A measured merge
+conflict carries one entry naming its actual conflicting lane and paths, with
+no invented check failures. The shared result validates that every red has
+exactly its matching remediation and every green has none. This scope outcome
 is independent of lane outcomes. The result is available to any caller;
 it does not itself publish a tracker remediation record or scope terminal.
-Walker tick scheduling, stale-head re-entry, and terminal residual
-publication remain separate integration work.
+Walker invocation and terminal residual publication remain separate integration
+work. The union residual's readable owning-issue carrier is still undeclared;
+an ordinary red union also supplies no fired stopping bound for the existing
+terminal convergence validator. The returned remediation supplies neither a
+fabricated record reference nor a terminal outcome.
 
 
 ## Current-head audit claim sessions
