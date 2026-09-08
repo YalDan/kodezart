@@ -18,7 +18,7 @@ import ast
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -52,7 +52,7 @@ from kodezart.core.protocols import (
     RepoVisibilityResolver,
     WorkflowEngine,
 )
-from kodezart.domain.errors import ScopedExecutionUnavailableError, ScopeReadError
+from kodezart.domain.errors import ScopedExecutionUnavailableError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -66,7 +66,6 @@ from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.ticket_review import TicketReviewMode
-from kodezart.types.domain.tracker import TrackerIssue
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -79,12 +78,10 @@ from tests.fakes import (
     FakeRefPublisher,
     FakeRepoCache,
     FakeTicketGenerator,
-    FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
     make_passing_evaluation,
     make_prompt_provider,
-    make_tracker_issue,
     no_delay_floor,
 )
 
@@ -240,37 +237,19 @@ class ForbiddenWorkflowEngine:
         raise AssertionError("a scoped submission entered the legacy workflow arm")
 
 
-class RecordingScopeTracker(FakeTrackerPort):
-    """Record the exact scope address the production resolver receives."""
-
-    def __init__(self, *, failure: ScopeReadError | None = None) -> None:
-        super().__init__(issues=[make_tracker_issue("ENG-1")])
-        self.scope_reads: list[ScopeRef] = []
-        self.failure = failure
-
-    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
-        self.scope_reads.append(ref)
-        if self.failure is not None:
-            raise self.failure
-        return tuple(self.issues.values())
-
-
 @pytest.mark.parametrize("kind", tuple(ScopeKind))
 @pytest.mark.parametrize("repo_url", [FILE_ORIGIN, FORGE_ORIGIN])
-async def test_scoped_queue_jobs_resolve_then_publish_the_typed_refusal(
+async def test_scoped_queue_jobs_publish_typed_refusal_without_resolving(
     kind: ScopeKind,
     repo_url: str,
 ) -> None:
-    """Scope is consumed at dequeue and never runs the legacy prompt pipeline."""
+    """Unsupported scopes fail at dequeue before I/O or the legacy pipeline."""
     ref = ScopeRef(kind=kind, key="opaque-address")
-    tracker = RecordingScopeTracker()
     queue = build_job_queue(
         config=AppConfig(),
         workflow_engine=OriginRoutedWorkflowEngine(
             forge_arm=ForbiddenWorkflowEngine(),
             forge_less_arm=ForbiddenWorkflowEngine(),
-            tracker=tracker,
-            tracker_preparer=None,
         ),
     )
     await queue.start()
@@ -290,17 +269,6 @@ async def test_scoped_queue_jobs_resolve_then_publish_the_typed_refusal(
         )
         async with asyncio.timeout(SETTLE_SECONDS):
             events = [event async for event in queue.attach(job_id=record.job_id)]
-        subtree = ScopeRef(kind=ScopeKind.ISSUE, key="ENG-1")
-        assert tracker.scope_reads == [
-            ref,
-            ref,
-            subtree,
-            subtree,
-            subtree,
-            subtree,
-            ref,
-            ref,
-        ]
         (error,) = events
         assert isinstance(error, ErrorEvent)
         assert error.error_kind == "ScopedExecutionUnavailableError"
@@ -314,34 +282,14 @@ async def test_scoped_queue_jobs_resolve_then_publish_the_typed_refusal(
         await queue.stop()
 
 
-async def test_scope_read_failure_propagates_without_a_legacy_run() -> None:
-    ref = ScopeRef(kind=ScopeKind.PROJECT, key="unreadable")
-    failure = ScopeReadError("scope membership cannot be read", ref=ref)
-    tracker = RecordingScopeTracker(failure=failure)
-    engine = OriginRoutedWorkflowEngine(
-        forge_arm=ForbiddenWorkflowEngine(),
-        forge_less_arm=ForbiddenWorkflowEngine(),
-        tracker=tracker,
-        tracker_preparer=None,
-    )
-
-    with pytest.raises(ScopeReadError) as caught:
-        await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
-
-    assert caught.value is failure
-    assert tracker.scope_reads == [ref]
-
-
 async def test_scope_without_a_tracker_refuses_before_selecting_a_legacy_arm() -> None:
     ref = ScopeRef(kind=ScopeKind.ISSUE, key="ENG-1")
     engine = OriginRoutedWorkflowEngine(
         forge_arm=ForbiddenWorkflowEngine(),
         forge_less_arm=ForbiddenWorkflowEngine(),
-        tracker=None,
-        tracker_preparer=None,
     )
 
-    with pytest.raises(ScopedExecutionUnavailableError, match="configured tracker"):
+    with pytest.raises(ScopedExecutionUnavailableError, match="not implemented"):
         await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
 
 
@@ -372,8 +320,6 @@ async def test_a_fire_over_a_file_origin_reaches_the_no_pull_request_terminal() 
     engine = OriginRoutedWorkflowEngine(
         forge_arm=_arm(forge=forge),
         forge_less_arm=_arm(forge=None),
-        tracker=None,
-        tracker_preparer=None,
     )
 
     events = await _drive(engine, repo_url=FILE_ORIGIN)
@@ -392,8 +338,6 @@ async def test_a_fire_over_a_forge_shaped_origin_still_opens_its_pull_request() 
     engine = OriginRoutedWorkflowEngine(
         forge_arm=_arm(forge=forge),
         forge_less_arm=_arm(forge=None),
-        tracker=None,
-        tracker_preparer=None,
     )
 
     events = await _drive(engine, repo_url=FORGE_ORIGIN)
@@ -413,8 +357,6 @@ def test_a_forge_less_origin_gets_the_forge_less_arm() -> None:
     engine = OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,
         forge_less_arm=forge_less_arm,
-        tracker=None,
-        tracker_preparer=None,
     )
 
     assert engine.arm_for(FILE_ORIGIN) is forge_less_arm
@@ -435,34 +377,35 @@ def test_everything_else_keeps_the_forge_arm(repo_url: str | None) -> None:
     engine = OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,
         forge_less_arm=forge_less_arm,
-        tracker=None,
-        tracker_preparer=None,
     )
 
     assert engine.arm_for(repo_url) is forge_arm
 
 
-async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
+@pytest.mark.parametrize("kind", tuple(ScopeKind))
+async def test_the_builder_wires_both_arms_and_refuses_scope_without_io(kind) -> None:
     """The composition root's own builder, not a hand-assembled analogue."""
     client = build_forge_client(config=AppConfig(github_token=FAKE_TOKEN))
     assert client is not None
-    tracker = RecordingScopeTracker()
+    executor = FakeAgentExecutor(events=[])
+    workspace = FakeWorkspaceProvider()
+    cache = FakeRepoCache()
+    git = FakeGitService()
     try:
         engine = build_workflow_engine(
-            operation=None,
             # The shared prompt fixture resolves its set for the reviewed
             # mode, and the ticket loop refuses a config that asks for a
             # guarantee the resolved set cannot deliver.
             config=AppConfig(ticket_review_mode=TicketReviewMode.REVIEWED),
             agent_service=AgentService(
                 git_base_url="https://github.com",
-                executor=FakeAgentExecutor(events=[]),
-                workspace=FakeWorkspaceProvider(),
+                executor=executor,
+                workspace=workspace,
                 persister=FakeChangePersister(),
             ),
-            git=FakeGitService(),
-            cache=FakeRepoCache(),
-            workspace=FakeWorkspaceProvider(),
+            git=git,
+            cache=cache,
+            workspace=workspace,
             merger=FakeBranchMerger(),
             artifact_persister=FakeArtifactPersister(),
             ref_publisher=FakeRefPublisher(),
@@ -471,26 +414,18 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
             gate=PassThroughGate(),
             github_api=client,
             checkpointer=None,
-            tracker=tracker,
         )
 
         assert isinstance(engine, OriginRoutedWorkflowEngine)
         assert engine.arm_for(FILE_ORIGIN) is not engine.arm_for(FORGE_ORIGIN)
         assert engine.arm_for(None) is engine.arm_for(FORGE_ORIGIN)
-        ref = ScopeRef(kind=ScopeKind.PROJECT, key="configured-project")
+        ref = ScopeRef(kind=kind, key="opaque-scope")
         with pytest.raises(ScopedExecutionUnavailableError, match="not implemented"):
             await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
-        subtree = ScopeRef(kind=ScopeKind.ISSUE, key="ENG-1")
-        assert tracker.scope_reads == [
-            ref,
-            ref,
-            subtree,
-            subtree,
-            subtree,
-            subtree,
-            ref,
-            ref,
-        ]
+        assert executor.calls == []
+        assert workspace.calls == []
+        assert cache.calls == []
+        assert git.calls == []
     finally:
         await client.close()
 

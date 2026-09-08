@@ -145,7 +145,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.checkpointer = checkpointer
         workflow_engine = build_workflow_engine(
             config=config,
-            operation=operation,
             agent_service=agent_service,
             git=stack.git,
             cache=stack.cache,
@@ -158,7 +157,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             gate=gate,
             github_api=github_api,
             checkpointer=checkpointer,
-            tracker=tracker,
         )
         app.state.workflow_engine = workflow_engine
 

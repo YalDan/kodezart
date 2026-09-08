@@ -29,7 +29,6 @@ from kodezart.types.domain.agent import (
     DraftCritiqueOutput,
     GeneratedCriteriaOutput,
     PRDescriptionOutput,
-    RulingProposalOutput,
     TicketDraftOutput,
     TicketReviewOutput,
 )
@@ -42,7 +41,6 @@ from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgmen
 from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
-    TrackerCriteriaValidationOutput,
 )
 from kodezart.types.domain.organize import AdmissionJudgment
 from tests.types.schema_nodes import DEFS, schema_nodes
@@ -73,7 +71,6 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "BRANCH_NAME_SCHEMA": BranchNameOutput,
     "GENERATED_CRITERIA_SCHEMA": GeneratedCriteriaOutput,
     "CRITERIA_VALIDATION_SCHEMA": CriteriaValidationOutput,
-    "TRACKER_CRITERIA_VALIDATION_SCHEMA": TrackerCriteriaValidationOutput,
     "TICKET_DRAFT_SCHEMA": TicketDraftOutput,
     "TICKET_REVIEW_SCHEMA": TicketReviewOutput,
     "PR_DESCRIPTION_SCHEMA": PRDescriptionOutput,
@@ -85,7 +82,6 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "AUDIT_MANDATE_SCHEMA": AuditMandateJudgment,
     "DETECTOR_REMOVAL_SCHEMA": DetectorRemovalJudgment,
     "WRITE_BACK_SCHEMA": WriteBackJudgment,
-    "RULING_PROPOSAL_SCHEMA": RulingProposalOutput,
 }
 
 

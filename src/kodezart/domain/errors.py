@@ -35,10 +35,6 @@ class AuditEvidenceReadError(Exception):
         super().__init__(f"Evidence for {criterion_key!r} could not be read: {reason}")
 
 
-class RulingProposalError(Exception):
-    """Current native sources or the session cannot establish a ruling proposal."""
-
-
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
@@ -759,19 +755,6 @@ class AuditClaimReadError(ValueError):
 
 class WriteBackReadError(ValueError):
     """An addressed artifact cannot be re-read completely for verification."""
-
-
-class TrackerFeasibilityReadError(Exception):
-    """The selected tracker family or repository changed before judgment settled."""
-
-
-class TrackerFirePreparationError(Exception):
-    """An addressed fire cannot establish its native first-entry source facts."""
-
-    def __init__(self, *, issue_key: str, reason: str) -> None:
-        self.issue_key = issue_key
-        self.reason = reason
-        super().__init__(f"tracker fire {issue_key!r} cannot prepare: {reason}")
 
 
 class PRStateReadError(ValueError):

@@ -4870,8 +4870,6 @@ def _dispatch_sites() -> list[tuple[str, str]]:
 #: The dispatch census this suite expects to find, so a site that stops
 #: resolving a template cannot silently leave the check.
 KEYED_DISPATCH_COUNTS = {
-    "tracker_feasibility.py": 1,
-    "rule_open_questions.py": 1,
     "audit_pass.py": 2,
     "audit_sessions.py": 1,
     "write_back_verifier.py": 1,

@@ -70,9 +70,6 @@ does not exist.
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
-| TrackerCriteriaValidator | TrackerFeasibilityValidator | Fresh native criterion judgment at an explicitly pinned head |
-| ValidatedRulingProposer | TrackerRulingProposer | Fresh native ruling proposal from the retained feasibility observation |
-| TrackerFirePreparer | AddressedTrackerFirePreparation | Read-only preparation of one addressed ready issue from its verified repository route and recorded base |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
@@ -671,24 +668,6 @@ reset the baseline. The actual ruling node, verified leased artifact writes,
 lane-membership producer and persisted window advancement remain separate
 implementation work.
 
-`TrackerRulingProposer` now consumes a fresh native feasibility observation at
-an explicitly resolved full commit SHA. It rereads the current fire spec and
-criterion family, collects the full native issue subtree, and runs the
-`fire_time_ruling` template through a fresh read-only ticket-fire session.
-Unchanged source snapshots, a clean detached worktree and absence of Git
-replacement objects are required before returning. Cache acquisition and
-workspace acquisition, reads and release settle repeated cancellation.
-
-The session supplies only proposed answer fields and unresolved questions.
-Canonical ruling identities and machine authorship are supplied by the harness,
-using the existing mint and ruling validators. Foreign or duplicate questions,
-missing or erroneous output, nonfeasible entry observations and unresolved
-questions refuse. The returned `RulingOutput` is a proposal, never read-back
-evidence: this consumer writes no tracker surface and authorizes no loop entry.
-The graph node, escalation publication, idempotent leased writes and read-back
-gate remain separate implementation work. Protected-test designation remains
-unknown on these proposals; test ownership is never inferred from evidence prose.
-
 The criterion-lifecycle code conformance module checks both identity owners:
 `CriterionRef` is constructed by the full tracker-spec reader and `RulingId`
 by the ruling mint. Its shared static guard covers direct, qualified, imported
@@ -1002,83 +981,18 @@ It performs no tracker writes, correction or remediation. Scheduled sweep
 composition, mandate completion for refutations, lease-protected state changes
 and publication remain separate consumers.
 
-## Tracker feasibility at the selected head
+## Scoped execution boundary
 
-`TrackerFeasibilityValidator.validate` is the read-only criterion-validation
-consumer for a tracker subject. It accepts an issue key and a previously
-resolved dispatch SHA, obtains the subject once through `read_fire_spec`,
-and matches a fresh full criterion-family read to that captured identity set.
-Only the backend's unstarted (Todo) children enter its feasibility session;
-other criterion states are retained in the observation without re-authoring.
-The session receives the captured subject and current Check fields, with native
-sub-issue keys and no recorded Evidence or criterion-author rationale.
+The public workflow router raises `ScopedExecutionUnavailableError` immediately
+for every addressed scope. It does not read the tracker, clone a repository,
+resolve a remote head, start a judgment session or dispatch an authored loop.
+Unscoped authored jobs keep their existing forge routing and execution.
 
-The validator uses the existing evidence classifier and permutation/conjunction
-arithmetic. A native schema carries those same grounded three-state findings
-without constructing authored AC-n identities or a ticket draft. The authored
-schemas and rendered prompt bytes remain unchanged. Flags remain observations;
-they cannot remove a tracker criterion from its obligations. The existing
-`fan_in_max_attempts` bounds fresh corrective sessions. A missing, foreign,
-duplicate or ungrounded response refuses on exhaustion.
-
-The selected SHA is checked in a detached workspace before each session and
-after validation. Active Git replacement refs refuse through the existing
-replacement-ref read, preventing a reused cache from substituting another
-commit's bytes under the selected identity. That read also settles before
-workspace release on cancellation. Ordinary tracked, staged or untracked changes refuse through
-`GitService.has_changes`; ignored test outputs follow Git's existing ignore
-behavior. The full criterion family is read again before returning, and any
-observed change refuses. This is optimistic source coherence, not an atomic
-tracker snapshot or an immutable-filesystem claim. Owned acquisition and
-release settle through repeated cancellation. An empty Todo subset opens no
-session and leaves every state untouched.
-
-This consumer returns a source-addressed observation. It does not apply
-amendments, cancellations or state transitions, authorize dispatch, persist an
-artifact, or supply the missing full FIRE composition. Approval eligibility,
-leased authoring and the live iteration-exit path remain separate consumers.
-
-
-The public `OriginRoutedWorkflowEngine.run` now prepares an explicitly addressed
-scoped FIRE through `AddressedTrackerFirePreparation` when a tracker is composed.
-The existing complete readiness read must uniquely select the issue. Its FIRE
-run identity and recorded `BaseSpec` must agree with the queued inputs before
-repository access. The loaded operation reaches this actual entry from application
-composition. Its existing `teams_scanned_by` and `teams_bound_to` rules require a
-known team and declared target repository. Explicit and implicit single-repository
-bindings select that repository without reading an issue route marker; unbound
-teams require the native recorded repository to agree with the queued target.
-A stale marker cannot override configured routing.
-This bounded first-entry arm refuses
-existing deliverable, iteration, recovery or best-iteration refs until scoped
-resume-head selection is implemented. An integration ref remains base provenance.
-
-The preparer pins the actual remote head of the recorded base branch and calls
-the same native feasibility validator through the real `AgentService`. The
-existing approval and configured criteria-stage check admits the native source;
-no separate staging toggle is introduced. It retains that one `TrackerSpec` and
-feasibility observation for `TrackerRulingProposer.propose_validated`, without a
-second validation or spec capture. Native body/version, approval and complete
-child-family rereads test coherence rather than replacing the captured input.
-
-After feasibility and again after the ruling session, one shared guard rereads
-the repository/base/work refs, complete readiness and remote head, and compares
-the original team identity/binding and declared repository URLs. An observed
-change refuses the prepared result. Both fresh sessions receive the original
-FIRE run identity, so a granted SDK session's Record clause addresses the same
-run row; no session token or run identity is minted at this boundary. Cache and remote reads settle owned
-subprocesses through cancellation, and validation retains the existing detached
-workspace, fresh-session and complete-family guards. Caller prompt text and
-write-capable tools never replace native criterion sources or evaluation tools.
-
-Both configured and recorded repository routes prepare first-entry fires.
-Scoped resume-head selection, automatic broad-scope dispatch, ruling application,
-leased state/Evidence writes and the native loop remain separate work. After a
-coherent proposal, including an empty one, the public entry explicitly refuses
-unavailable ruling publication and loop execution. No proposal is treated as a
-publication receipt; it does not dispatch legacy ticket generation or report a
-completed FIRE. The authored entry path retains its existing behavior.
-
+Scope readers, planning and readiness remain available to their current
+consumers. A tracker-native execution loop is still unfinished. The former
+preparation, feasibility and ruling-proposal stack ran work only to refuse;
+its exclusive ports, transient schema and prompt role have been retired.
+They are not an alternate execution path or evidence of a completed fire.
 
 The scheduled pass gate keeps its vendor timestamp window for reply and
 mention scanning. Atomic issue-write responses can identify their own

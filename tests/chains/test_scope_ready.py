@@ -367,7 +367,7 @@ async def test_native_outside_descendant_omission_cannot_close_blocker(missing):
         await read_scope_ready(ref=PROJECT, tracker=tracker)
 
 
-async def test_actual_scoped_entry_reads_readiness_before_existing_walker_refusal(
+async def test_unavailable_scoped_entry_does_not_read_readiness(
     ready_fixture, monkeypatch
 ):
     fixture = await ready_fixture(pair())
@@ -382,12 +382,10 @@ async def test_actual_scoped_entry_reads_readiness_before_existing_walker_refusa
     engine = OriginRoutedWorkflowEngine(
         forge_arm=ForbiddenWorkflowEngine(),
         forge_less_arm=ForbiddenWorkflowEngine(),
-        tracker=fixture.tracker,
-        tracker_preparer=None,
     )
     with pytest.raises(ScopedExecutionUnavailableError, match="Scoped graph execution"):
         await _drive(engine, repo_url=FORGE_ORIGIN, scope=PROJECT)
-    assert reads == ["blocker", "lane", "blocker", "lane"]
+    assert reads == []
     fixture.assert_read_only()
 
 

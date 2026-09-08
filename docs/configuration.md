@@ -532,16 +532,8 @@ clean status. The native namespace read settles before cancellation releases
 the workspace; an unreadable namespace cannot establish a valid observation.
 
 
-### Fire-time ruling prompt
+### Scoped workflow requests
 
-Both shipped prompt sets supply `fire_time_ruling` through the existing prompt
-registry. The role receives the native `issue_key`, `issue_body`, full keyed
-`criteria`, resolved `base_ref` and independent `validation_findings` per call.
-The default set must contain the template. The v5 set assigns it the existing
-evaluative policy; the session contract is fresh, read-only and without
-subagents. Generator reasoning and transcripts are excluded.
-
-The template covers the four ruling classes and refuses self-authorized work
-outside the issue's deliverables. This registry contract adds no ruling graph
-transition or tracker writer. Durable ruling identities, verified publication
-and the pre-loop read-back gate remain the harness's obligations.
+Scoped execution is currently unavailable and refuses before tracker,
+repository or judgment work. There is no fire-time ruling prompt setting or
+preparation-only session. Authored workflow prompt configuration is unchanged.

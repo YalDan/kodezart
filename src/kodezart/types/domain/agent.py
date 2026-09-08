@@ -32,7 +32,6 @@ from kodezart.types.domain.criteria import (
     DraftedCriterion,
     FanInReport,
     GeneratedCriterion,
-    TrackerCriteriaValidationOutput,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.node_session import NodeInvocation
@@ -78,7 +77,6 @@ RaiseSite = Literal[
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",
-    "fire_time_ruling",
     "ralph_evaluator",
     "post_merge_review",
     "pr_description",
@@ -787,57 +785,6 @@ class Ruling(CamelCaseModel):
         return self
 
 
-class RulingProposal(CamelCaseModel):
-    """Session-authored answer fields; identity and authorship are harness-owned."""
-
-    issue_ref: str = Field(
-        min_length=1,
-        pattern=r"\S",
-        description="The owning native issue key from the supplied fire subtree.",
-    )
-    question: str = Field(
-        min_length=1, pattern=r"\S", description="The exact question being ruled on."
-    )
-    ruling_class: RulingClass = Field(
-        description="Which of the four permitted defects this proposal resolves."
-    )
-    resolution: str = Field(
-        min_length=1,
-        pattern=r"\S",
-        description="The proposed answer within the issue's declared deliverables.",
-    )
-    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
-        Field(
-            description=(
-                "The losing reading or side of a contradiction; required for "
-                "pin_reading and resolve_contradiction, otherwise explicit null "
-                "when there is no rejected alternative."
-            )
-        )
-    )
-    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
-        Field(
-            description="Repository evidence references supporting the proposed answer."
-        )
-    )
-
-
-class RulingProposalOutput(CamelCaseModel):
-    """Transient proposals, explicitly distinct from pinned tracker records."""
-
-    rulings: tuple[RulingProposal, ...] = Field(
-        description=(
-            "One proposed answer per ruled question; empty means no rulings. "
-            "These proposals are not published records or loop authorization."
-        )
-    )
-    unresolved_questions: tuple[
-        Annotated[str, Field(min_length=1, pattern=r"\S")], ...
-    ] = Field(
-        description="Unresolved questions, including consequences outside deliverables."
-    )
-
-
 class RulingOutput(CamelCaseModel):
     """The complete structured result of a fire-time ruling session."""
 
@@ -1127,9 +1074,6 @@ GENERATED_CRITERIA_SCHEMA: dict[str, object] = (
 CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
     CriteriaValidationOutput.model_json_schema()
 )
-TRACKER_CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
-    TrackerCriteriaValidationOutput.model_json_schema()
-)
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
 # Schema for structured ticket review output
@@ -1147,7 +1091,6 @@ AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_sc
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
 DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_schema()
 
-RULING_PROPOSAL_SCHEMA: dict[str, object] = RulingProposalOutput.model_json_schema()
 
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 
@@ -1160,7 +1103,6 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
-    "TRACKER_CRITERIA_VALIDATION_SCHEMA": TRACKER_CRITERIA_VALIDATION_SCHEMA,
     "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
@@ -1172,5 +1114,4 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "DETECTOR_REMOVAL_SCHEMA": DETECTOR_REMOVAL_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
-    "RULING_PROPOSAL_SCHEMA": RULING_PROPOSAL_SCHEMA,
 }

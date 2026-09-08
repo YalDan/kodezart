@@ -55,7 +55,6 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
     LimitArm,
     RepairKind,
-    TrackerCriterionFinding,
 )
 
 
@@ -74,7 +73,7 @@ class ContradictionRefs(Protocol):
 
 
 def _observed_flags(
-    finding: CriterionFinding | TrackerCriterionFinding,
+    finding: CriterionFinding,
 ) -> list[CriterionFlag]:
     """The two observations that are not feasibility faults.
 
@@ -105,7 +104,7 @@ def _weigh_cost(claim: CostClaim | None) -> CostMeasurement | None:
     return None if claim.measurement.affordable else claim.measurement
 
 
-def _ungradeable(finding: CriterionFinding | TrackerCriterionFinding) -> bool:
+def _ungradeable(finding: CriterionFinding) -> bool:
     """Whether the finding reports something the loop could never grade.
 
     A forbidden class other than ``literal_count`` names a criterion about
@@ -124,7 +123,7 @@ def _ungradeable(finding: CriterionFinding | TrackerCriterionFinding) -> bool:
 
 
 def classify_finding(
-    finding: CriterionFinding | TrackerCriterionFinding,
+    finding: CriterionFinding,
 ) -> DerivedFeasibility:
     """Derive one criterion's verdict from its evidence alone.
 
@@ -163,7 +162,7 @@ def classify_finding(
 
 
 def _classify_criterion_side(
-    finding: CriterionFinding | TrackerCriterionFinding,
+    finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
     flags: tuple[CriterionFlag, ...],
 ) -> DerivedFeasibility:
@@ -208,7 +207,7 @@ def _classify_environment_side(
 
 
 def _classify_no_repair(
-    finding: CriterionFinding | TrackerCriterionFinding,
+    finding: CriterionFinding,
     surviving_cost: CostMeasurement | None,
     flags: tuple[CriterionFlag, ...],
 ) -> DerivedFeasibility:
@@ -226,7 +225,7 @@ def _classify_no_repair(
 
 
 def grounded_finding(
-    finding: CriterionFinding | TrackerCriterionFinding,
+    finding: CriterionFinding,
 ) -> DerivedFeasibility:
     """The derivation, checked against the statement it sits beside."""
     derived = classify_finding(finding)
