@@ -63,12 +63,14 @@ async def test_repeated_cancellation_settles_native_worktree(
     original_acquire = provider.acquire
     original_remove = native.remove_worktree
     acquired = []
+    acquire_calls = []
     released = []
     entered = asyncio.Event()
     finish = asyncio.Event()
     session_entered = asyncio.Event()
 
     async def acquire(**kwargs):
+        acquire_calls.append(kwargs)
         path = await original_acquire(**kwargs)
         acquired.append(path)
         if phase == "acquire":
@@ -98,6 +100,9 @@ async def test_repeated_cancellation_settles_native_worktree(
             task.cancel()
         await asyncio.wait_for(entered.wait(), 5)
         assert len(acquired) == 1 and Path(acquired[0]).is_dir()
+        assert acquire_calls == [
+            {"repo_path": str(git_repo), "ref": head, "create_branch": False}
+        ]
         assert await native.current_sha(acquired[0]) == head
         branch = subprocess.run(
             ["git", "symbolic-ref", "-q", "HEAD"],
