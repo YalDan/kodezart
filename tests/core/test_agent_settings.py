@@ -276,3 +276,27 @@ def test_defaults_and_source_precedence(tmp_path, monkeypatch):
     monkeypatch.delenv("KODEZART_AGENT__MODEL")
     assert AppConfig(**kwargs).agent.model == "dotenv"
     assert AppConfig(_env_file=None, _secrets_dir=secrets).agent.model == "secret"
+
+
+async def test_provisioned_allowlist_missing_role_skills_refuses_at_boot(tmp_path):
+    home, _ = provisioned_home(tmp_path)
+    config = AppConfig(
+        _env_file=None,
+        agent={
+            "home_dir": str(home),
+            "skills": {"mode": "explicit", "allowlist": ["fixture"]},
+        },
+    )
+    with pytest.raises(SkillPreflightError, match="Prompt-set"):
+        await boot_skills(
+            settings=config.agent,
+            prompts=make_prompt_provider(),
+            log=get_logger(__name__),
+        )
+
+
+def test_unknown_agent_field_refuses_without_echoing_value():
+    with pytest.raises(ValidationError, match="Extra inputs") as caught:
+        AppConfig(_env_file=None, agent={"modle": "private-model-value"})
+    assert "modle" in str(caught.value)
+    assert "private-model-value" not in str(caught.value)
