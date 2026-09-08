@@ -33,7 +33,13 @@ def render_ruling(
     )
     return marked_comment_body(
         marker=marker,
-        body=f"```json\n{ruling.model_dump_json(by_alias=True, indent=2)}\n```",
+        body="```json\n"
+        + ruling.model_dump_json(
+            by_alias=True,
+            indent=2,
+            exclude={"protected_tests"} if ruling.protected_tests is None else set(),
+        )
+        + "\n```",
     )
 
 

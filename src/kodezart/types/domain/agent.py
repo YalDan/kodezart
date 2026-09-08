@@ -12,6 +12,7 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
+from kodezart.types.domain.assertion_drift import ProtectedTestRef
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditMandateJudgment,
@@ -727,6 +728,14 @@ class Ruling(CamelCaseModel):
     authored_by: RulingAuthor = Field(
         description="Explicit machine or principal authorship, independent of account."
     )
+    protected_tests: tuple[ProtectedTestRef, ...] | None = Field(
+        default=None,
+        description=(
+            "Tests explicitly designated as encoding this ruling. Each source_ref "
+            "is this ruling's identity. Null means designation was not recorded; "
+            "an empty list explicitly declares no protected tests."
+        ),
+    )
 
     @model_validator(mode="after")
     def name_rejected_reading(self) -> Self:
@@ -739,6 +748,20 @@ class Ruling(CamelCaseModel):
             and self.rejected_alternative is None
         ):
             raise ValueError("this ruling class must name its rejected alternative")
+        return self
+
+    @model_validator(mode="after")
+    def own_protected_tests(self) -> Self:
+        if self.protected_tests is None:
+            return self
+        addresses = set()
+        for reference in self.protected_tests:
+            if reference.source_ref != self.ruling_id:
+                raise ValueError("a protected test must name its owning ruling")
+            address = (reference.path, reference.qualified_name)
+            if address in addresses:
+                raise ValueError("duplicate protected test in one ruling")
+            addresses.add(address)
         return self
 
 
