@@ -456,7 +456,10 @@ async def test_recorded_marker_cannot_override_operation_routing(prepared, route
     elif route == "missing-team":
         operation["teams"] = {}
     else:
-        operation["repos"] = operation["repos"][1:]
+        operation["repos"] = [
+            *operation["repos"][1:],
+            {"url": "https://forge.invalid/third/repository", "trunk": "main"},
+        ]
     prepared.operation = OperationConfig.model_validate(operation)
     with pytest.raises(TrackerFirePreparationError, match="recorded-route"):
         await prepared.drive()
