@@ -607,9 +607,9 @@ correct destination for this service. It is not reachable today: those tokens
 **expire after 24 hours**, and this service has no refresh mechanism, no
 callback route and no token storage — so adopting it now buys correct identity
 and a service that stops overnight. Use the scoped personal key, know what it
-costs, and read the open identity question on the tracker: it is the `decision`
-escalation recorded on KOD-123, which that issue's cancellation explicitly did
-not close.
+costs, and keep the identity question explicit: who provisions an attributable
+machine identity, and by what act? That decision remains open on the tracker;
+canceling the earlier implementation investigation did not resolve it.
 
 **The forge token is separate.** `KODEZART_GITHUB_TOKEN` is a fine-grained PAT
 and its required permissions are listed under

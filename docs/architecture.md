@@ -72,7 +72,7 @@ does not exist.
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
-| RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
+| RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
 | TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |

@@ -21,12 +21,11 @@ sentence.
 
 ## How the rows were derived
 
-The derivation rule is KOD-60 R1's and it is mechanical rather than tasteful:
-**every imperative clause** of the two routine documents becomes a row. R1
-enumerates the obligations that are structurally load-bearing and says of them
-that *a checklist missing any of them is incomplete on its face*; every one has
-a row here. That correspondence is read against the ruling on the issue and is
-not machine-checked: nothing transcribes R1's floor into a test, and the module
+The recorded derivation rule is mechanical: **every imperative clause** of the
+two routine documents becomes a row. The source ruling enumerates the required
+obligations; a checklist missing any of them is incomplete. Every one has a row
+here. That correspondence is read against the source ruling and is not
+machine-checked: no test transcribes its minimum obligation list, and the module
 that checks this document says so in its own docstring.
 
 Three things follow, and they are the reason this table is longer than the
