@@ -38,8 +38,10 @@ branch before that blocker has a PR.
 
 `DeliveryContext.from_terminal` copies the existing terminal outcome,
 iteration count and trajectory. It adds no terminal fields. An authored stalled
-handoff requires nonempty recorded work, known criterion identities and matching
-iteration/count facts. Its description is the existing factual stall report,
+handoff requires nonempty recorded work, known criterion identities and consistent
+iteration/count facts. Total iterations accumulate across remediation rounds;
+the terminal trajectory retains only the latest quality-gate invocation. Its
+record count must not exceed that cumulative total. The description is the existing factual stall report,
 with the observed published head SHA after the ordinary artifact cleanup. No
 description session runs on this path. Both presentations pass through the same
 title/body gate, PR create-or-edit route and check watcher. The required stalled
