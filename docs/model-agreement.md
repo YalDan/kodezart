@@ -18,6 +18,11 @@ become invented deliverable definitions.
 
 Reference forms cover native issue mentions, Markdown links displaying the
 issue key, and a backtick-quoted issue key followed by an explicit D number.
+Native mention IDs resolve through the port and must return the displayed
+canonical key. Hyperlinks must agree with the target's reported URL; this
+checker does not invent URL aliases. For an ambiguous unnumbered comment link,
+the existing criterion-label query distinguishes native criterion identities
+from contextual prose. The consulted census is checked again before return.
 Parenthesized D-number lists are checked member by member. Unexpanded ranges
 refuse; this checker does not guess the meaning of arbitrary prose or infer a
 definition from implementation code. Source text, model membership, criterion
@@ -39,7 +44,7 @@ The separate live test uses the existing operation configuration, tracker
 credential and MCP transport. It performs no boot reconciliation or tracker
 writes. Supply `KODEZART_MODEL_SNAPSHOT` as the path to a previously captured JSON
 projection returned by `model_agreement`; the snapshot contains the queried
-member keys, body/parent/label facts and criterion family keys. Capture and review
+member keys, body/parent/label/URL facts and criterion family keys. Capture and review
 the baseline separately. The comparison never refreshes its expected snapshot.
 
 ```sh

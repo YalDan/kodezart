@@ -42,6 +42,8 @@ class Pointer:
     number: str | None
     spelling: str
     comment_target: bool = False
+    native_id: str | None = None
+    url: str | None = None
 
 
 def _visible_lines(body: str) -> list[str]:
@@ -100,8 +102,9 @@ def numbered_deliverables(body: str) -> Counter[str]:
 def explicit_pointers(issue: TrackerIssue) -> tuple[Pointer, ...]:
     """Read native issue mentions and Markdown references with D-n surfaces.
 
-    The displayed issue key is the public port address; internal IDs and URL
-    path layouts never become an identifier parser. Ordinary issue citations
+    An explicit native mention ID is resolved by the port and compared with
+    its displayed canonical key; URL path layouts are never parsed as IDs.
+    Ordinary issue citations
     have no numbered target; the reader recognizes a native criterion target
     from its actual membership, not from an identifier-shaped title.
     """
@@ -164,7 +167,11 @@ def explicit_pointers(issue: TrackerIssue) -> tuple[Pointer, ...]:
                 fragment = href[1] if href else ""
             anchor = urlsplit(unescape(fragment).strip("<>")).fragment
             comment = "commentId=" in fragment
-            if not numbers and (" " in target or anchor or comment):
+            native_id = None
+            if match.re is _ISSUE_LINK:
+                identity = re.search(r"""\bid\s*=\s*["']([^"']*)["']""", match["attrs"])
+                native_id = unescape(identity[1]) if identity else None
+            if not numbers and " " in target:
                 continue
             for number in numbers or [None]:
                 end = match.end() + (
@@ -181,6 +188,8 @@ def explicit_pointers(issue: TrackerIssue) -> tuple[Pointer, ...]:
                         number,
                         line[match.start() : end],
                         comment or bool(anchor and anchor.casefold() != f"d{number}"),
+                        native_id=native_id,
+                        url=unescape(fragment).strip("<>") or None,
                     )
                 )
     return tuple(pointers)
@@ -191,6 +200,7 @@ def _document_projection(document):
         "body": document.body,
         "parent": document.parent_key,
         "labels": sorted(document.issue_labels),
+        "url": document.url,
     }
 
 
@@ -239,13 +249,36 @@ async def model_agreement(tracker: TrackerPort, *, classification: str):
     )
     captured_model = _projection(members, documents, criteria)
     failures = []
+    consulted_criteria = None
+    native_mentions = {}
     pointers = tuple(
         pointer
         for document in documents.values()
         for pointer in explicit_pointers(document)
     )
     for pointer in pointers:
-        if pointer.comment_target:
+        if pointer.native_id is not None:
+            try:
+                native_target = await tracker.read_planning_issue(
+                    issue_key=pointer.native_id
+                )
+            except Exception as exc:
+                raise AssertionError(
+                    f"{pointer.source}: {pointer.spelling} -> {pointer.target}: "
+                    "native target could not be read"
+                ) from exc
+            if native_target.issue_key != pointer.target:
+                raise AssertionError(
+                    f"{pointer.source}: {pointer.spelling}: native mention identity "
+                    f"differs from displayed key {pointer.target}"
+                )
+            if pointer.target in documents and _document_projection(
+                documents[pointer.target]
+            ) != _document_projection(native_target):
+                raise AssertionError(f"model snapshot drift: target {pointer.target}")
+            documents[pointer.target] = native_target
+            native_mentions[pointer.native_id] = native_target
+        if pointer.comment_target and pointer.number is not None:
             failures.append(
                 f"{pointer.source}: {pointer.spelling} -> {pointer.target}: "
                 "comment or unnumbered fragment is not a deliverable"
@@ -256,6 +289,21 @@ async def model_agreement(tracker: TrackerPort, *, classification: str):
                 f"{pointer.source}: {pointer.spelling}: target issue key is absent"
             )
             continue
+        if pointer.target not in documents:
+            if pointer.comment_target:
+                # A comment link's prose label is not an issue-key grammar.
+                # Consult actual criterion identities only when needed to
+                # distinguish an external native criterion from that prose.
+                if consulted_criteria is None:
+                    consulted_criteria = {
+                        issue.issue_key: issue
+                        for issue in await tracker.read_labeled_issues(
+                            classification="criterion"
+                        )
+                    }
+                if pointer.target not in consulted_criteria:
+                    continue
+                documents[pointer.target] = consulted_criteria[pointer.target]
         if pointer.target not in documents:
             try:
                 documents[pointer.target] = await tracker.read_planning_issue(
@@ -270,6 +318,22 @@ async def model_agreement(tracker: TrackerPort, *, classification: str):
         if target.issue_key != pointer.target:
             raise AssertionError(
                 f"pointer target identity differs for {pointer.target}"
+            )
+        if (
+            not pointer.comment_target
+            and pointer.url is not None
+            and urlsplit(pointer.url)._replace(fragment="").geturl() != target.url
+        ):
+            raise AssertionError(
+                f"{pointer.source}: {pointer.spelling}: pointer URL differs from "
+                f"the reported URL of {pointer.target}"
+            )
+        if pointer.comment_target:
+            if "criterion" not in target.issue_labels:
+                continue
+            failures.append(
+                f"{pointer.source}: {pointer.spelling} -> {pointer.target}: "
+                "comment or unnumbered fragment is not a criterion"
             )
         if pointer.number is not None:
             count = numbered_deliverables(target.body)[pointer.number]
@@ -314,6 +378,18 @@ async def model_agreement(tracker: TrackerPort, *, classification: str):
             criteria[parent]
         ):
             raise AssertionError(f"model snapshot drift: criterion family {parent}")
+    if consulted_criteria is not None:
+        current_criteria = await tracker.read_labeled_issues(classification="criterion")
+        if sorted(issue.issue_key for issue in current_criteria) != sorted(
+            consulted_criteria
+        ):
+            raise AssertionError("model snapshot drift: consulted criterion census")
+    for native_id, captured in native_mentions.items():
+        current = await tracker.read_planning_issue(issue_key=native_id)
+        if current.issue_key != captured.issue_key or _document_projection(
+            current
+        ) != _document_projection(captured):
+            raise AssertionError(f"model snapshot drift: native mention {native_id}")
     return tuple(failures), _projection(members, documents, criteria)
 
 
@@ -401,11 +477,12 @@ async def test_absent_unnumbered_quoted_and_ambiguous_targets_fail(
 
 
 async def test_comment_pointer_fails_naming_its_source_and_target(workspace):
+    url = (await workspace.tracker.read_issue(issue_key="member/beta")).url
     await workspace.seed(
         [
             {
                 "key": "member/new",
-                "body": "[member/beta D2](https://tracker.invalid/issue/beta#comment-snapshot)",
+                "body": f"[member/beta D2]({url}#comment-snapshot)",
                 "labels": [CLASSIFICATION],
             }
         ]
@@ -420,13 +497,14 @@ async def test_comment_pointer_fails_naming_its_source_and_target(workspace):
 
 
 async def test_native_mention_cannot_hide_a_comment_target(workspace):
+    url = (await workspace.tracker.read_issue(issue_key="member/beta")).url
     await workspace.seed(
         [
             {
                 "key": "member/new",
                 "body": (
                     '<issue id="member/beta" '
-                    'href="https://tracker.invalid/issue/beta#comment-old">'
+                    f'href="{url}#comment-old">'
                     "member/beta</issue> D2"
                 ),
                 "labels": [CLASSIFICATION],
@@ -546,11 +624,16 @@ async def test_external_native_criterion_is_resolved_by_its_own_parent(workspace
                 "parent": "outside/parent",
                 "labels": ["criterion"],
             },
+        ]
+    )
+    url = (await workspace.tracker.read_issue(issue_key="outside/criterion")).url
+    await workspace.seed(
+        [
             {
                 "key": "member/new",
-                "body": "[outside/criterion](https://tracker.invalid/condition)",
+                "body": f"[outside/criterion]({url})",
                 "labels": [CLASSIFICATION],
-            },
+            }
         ]
     )
     failures, snapshot = await model_agreement(
@@ -565,12 +648,15 @@ async def test_external_native_criterion_is_resolved_by_its_own_parent(workspace
     "reference",
     [
         "`member/beta` D2",
-        "[member/beta D2](https://tracker.invalid/issue/beta)",
-        "[member/beta](https://tracker.invalid/issue/beta) D2",
+        "[member/beta D2]({url})",
+        "[member/beta]({url}) D2",
         '<issue id="member/beta">member/beta</issue> D2',
     ],
 )
 async def test_reference_forms_retain_exact_source_span(workspace, reference):
+    reference = reference.format(
+        url=(await workspace.tracker.read_issue(issue_key="member/beta")).url
+    )
     await workspace.seed(
         [{"key": "member/new", "body": reference, "labels": [CLASSIFICATION]}]
     )
@@ -638,11 +724,12 @@ async def test_opaque_criterion_key_is_not_parsed_as_a_deliverable_number(worksp
 async def test_link_anchor_cannot_redirect_a_numbered_reference(
     workspace, anchor, valid
 ):
+    url = (await workspace.tracker.read_issue(issue_key="member/beta")).url
     await workspace.seed(
         [
             {
                 "key": "member/new",
-                "body": f"[member/beta D2](https://tracker.invalid/issue/beta#{anchor})",
+                "body": f"[member/beta D2]({url}#{anchor})",
                 "labels": [CLASSIFICATION],
             }
         ]
@@ -711,6 +798,241 @@ def test_fenced_comment_opener_does_not_consume_later_real_definitions():
     assert numbered_deliverables(
         "```\n<!-- an example\n```\n## D2 — Actual definition"
     ) == Counter({"2": 1})
+
+
+@pytest.mark.parametrize("external", [False, True])
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "[{key}]({url}#comment-old)",
+        "[{key}]({url}?commentId=old)",
+        '<issue id="{key}" href="{url}#section">{key}</issue>',
+    ],
+)
+async def test_unnumbered_criterion_comment_redirect_refuses(
+    workspace, external, reference
+):
+    key = "outside/criterion" if external else "criterion/alpha"
+    if external:
+        await workspace.seed(
+            [
+                {"key": "outside/parent", "body": "Owner", "labels": []},
+                {
+                    "key": key,
+                    "body": "**Check:** External condition",
+                    "parent": "outside/parent",
+                    "labels": ["criterion"],
+                },
+            ]
+        )
+    await workspace.seed(
+        [
+            {
+                "key": "member/new",
+                "body": reference.format(
+                    key=key, url=(await workspace.tracker.read_issue(issue_key=key)).url
+                ),
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, snapshot = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert len(failures) == 1
+    assert all(part in failures[0] for part in ("member/new", key, "comment"))
+    assert key in snapshot["criteria"]["outside/parent" if external else "member/alpha"]
+    workspace.read_only()
+
+
+async def test_contextual_comment_label_is_not_guessed_to_be_a_native_key(workspace):
+    await workspace.seed(
+        [
+            {
+                "key": "member/new",
+                "body": "[ruling](https://tracker.invalid/issue/owner#comment-old)",
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    assert (await model_agreement(workspace.tracker, classification=CLASSIFICATION))[
+        0
+    ] == ()
+    workspace.read_only()
+
+
+async def test_consulted_criterion_census_cannot_change_during_resolution(
+    workspace, monkeypatch
+):
+    await workspace.seed(
+        [
+            {
+                "key": "member/new",
+                "body": "[ruling](https://tracker.invalid/issue/owner#comment-old)",
+                "labels": [CLASSIFICATION],
+            },
+            {"key": "outside/parent", "body": "Unmarked owner", "labels": []},
+        ]
+    )
+    original = workspace.tracker.read_labeled_issues
+    changed = False
+
+    async def changing(*, classification):
+        nonlocal changed
+        result = await original(classification=classification)
+        if classification == "criterion" and not changed:
+            changed = True
+            await workspace.seed(
+                [
+                    {
+                        "key": "ruling",
+                        "body": "**Check:** Actually a criterion",
+                        "parent": "outside/parent",
+                        "labels": ["criterion"],
+                    }
+                ]
+            )
+        return result
+
+    monkeypatch.setattr(workspace.tracker, "read_labeled_issues", changing)
+    with pytest.raises(AssertionError, match="model snapshot drift"):
+        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_criterion_lookup_failure_is_not_contextual_prose(
+    workspace, monkeypatch, cancel
+):
+    import asyncio
+
+    await workspace.seed(
+        [
+            {
+                "key": "member/new",
+                "body": "[ruling](https://tracker.invalid/issue/owner#comment-old)",
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    original = workspace.tracker.read_labeled_issues
+
+    async def failed(*, classification):
+        if classification == "criterion":
+            if cancel:
+                raise asyncio.CancelledError
+            raise RuntimeError("native criterion census unavailable")
+        return await original(classification=classification)
+
+    monkeypatch.setattr(workspace.tracker, "read_labeled_issues", failed)
+    with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
+        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+
+
+async def test_native_mention_cannot_redirect_a_different_issue(workspace):
+    await workspace.seed(
+        [
+            {"key": "wrong/target", "body": "No definition here", "labels": []},
+            {
+                "key": "member/new",
+                "body": '<issue id="wrong/target">member/beta</issue> D2',
+                "labels": [CLASSIFICATION],
+            },
+        ]
+    )
+    with pytest.raises(AssertionError, match=r"native mention identity.*member/beta"):
+        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+    workspace.read_only()
+
+
+@pytest.mark.parametrize("remap", [False, True])
+async def test_native_alias_is_resolved_to_its_canonical_key_and_rechecked(
+    workspace, monkeypatch, remap
+):
+    await workspace.seed(
+        [
+            {"key": "wrong/target", "body": "## D2 — Another owner", "labels": []},
+            {
+                "key": "member/new",
+                "body": '<issue id="opaque-native-id">member/beta</issue> D2',
+                "labels": [CLASSIFICATION],
+            },
+        ]
+    )
+    original = workspace.tracker.read_planning_issue
+    aliases = 0
+
+    async def native_alias(*, issue_key):
+        nonlocal aliases
+        if issue_key == "opaque-native-id":
+            aliases += 1
+            issue_key = "wrong/target" if remap and aliases > 1 else "member/beta"
+        return await original(issue_key=issue_key)
+
+    monkeypatch.setattr(workspace.tracker, "read_planning_issue", native_alias)
+    if remap:
+        with pytest.raises(
+            AssertionError, match="model snapshot drift: native mention"
+        ):
+            await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+    else:
+        failures, _ = await model_agreement(
+            workspace.tracker, classification=CLASSIFICATION
+        )
+        assert failures == ()
+    assert aliases == 2
+    workspace.read_only()
+
+
+@pytest.mark.parametrize("native", [False, True])
+async def test_hyperlink_cannot_redirect_the_displayed_target(workspace, native):
+    await workspace.seed(
+        [{"key": "wrong/target", "body": "No definition", "labels": []}]
+    )
+    url = (await workspace.tracker.read_issue(issue_key="wrong/target")).url
+    body = (
+        f'<issue id="member/beta" href="{url}">member/beta</issue> D2'
+        if native
+        else f"[member/beta D2]({url})"
+    )
+    await workspace.seed(
+        [{"key": "member/new", "body": body, "labels": [CLASSIFICATION]}]
+    )
+    with pytest.raises(AssertionError, match=r"pointer URL differs.*member/beta"):
+        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+    workspace.read_only()
+
+
+async def test_target_url_change_refuses_the_retained_pointer(workspace, monkeypatch):
+    await workspace.seed(
+        [{"key": "external", "body": "## D2 — Original target", "labels": []}]
+    )
+    url = (await workspace.tracker.read_issue(issue_key="external")).url
+    await workspace.seed(
+        [
+            {
+                "key": "member/new",
+                "body": f"[external D2]({url})",
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    original = workspace.tracker.read_planning_issue
+    reads = 0
+
+    async def redirecting(*, issue_key):
+        nonlocal reads
+        issue = await original(issue_key=issue_key)
+        if issue_key == "external":
+            reads += 1
+            if reads > 1:
+                return issue.model_copy(
+                    update={"url": "https://tracker.invalid/changed"}
+                )
+        return issue
+
+    monkeypatch.setattr(workspace.tracker, "read_planning_issue", redirecting)
+    with pytest.raises(AssertionError, match="model snapshot drift: target external"):
+        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
 
 
 @pytest.mark.live
