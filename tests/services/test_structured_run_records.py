@@ -368,6 +368,9 @@ async def test_cancelled_record_query_restarts_with_its_own_cursor_history():
         async with asyncio.timeout(2):
             await server.entered.wait()
         task.cancel()
+        # A swallowed cancellation must finish and fail the verdict assertion,
+        # rather than hanging on a second query in a broken implementation.
+        server.pause = False
         with pytest.raises(asyncio.CancelledError):
             await task
         assert server.writes() == []
