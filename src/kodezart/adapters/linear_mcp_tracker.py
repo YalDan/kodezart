@@ -1,17 +1,23 @@
 """Linear tracker adapter behind the programmatic MCP port.
 
 The adapter owns native identifiers, label/state mappings and tool calls.
-Comment updates lack an atomic owner/version precondition, so acquisition
-and renewal explicitly refuse. Legacy claim records remain readable and
-releasable; their timestamp order does not establish safe ownership writes.
+Ownership — a claim on an issue, a lease over a set of write surfaces —
+is arbitrated by what the backend actually provides: creations it orders
+and stamps, a listing that answers with what it holds, an edit that keeps
+a comment's place, and deletion.  There is no conditional write, so no
+grant is believed from the echo of its own write: every holder re-reads
+the whole live set and keeps only what that read confirms.
 """
 
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from hashlib import sha256
 from typing import Final, assert_never
+from urllib.parse import quote
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -37,14 +43,14 @@ from kodezart.domain.errors import (
     DuplicateWorkRefError,
     EscalationReadError,
     IssueLabelReadError,
+    SurfaceLeaseError,
     TransientAPIError,
-    UnsupportedClaimError,
-    UnsupportedLeaseError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.scope_approval import resolve_execution_approval
+from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -91,7 +97,7 @@ from kodezart.types.domain.operation import (
     QueueState,
     ScopeLabel,
 )
-from kodezart.types.domain.scope import ScopeContainer, ScopeRef
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import (
     CommentValues,
     IssueMovementSnapshot,
@@ -392,14 +398,154 @@ class _LabelListings:
             self.by_team.setdefault(scope, set()).add(name)
 
 
-@dataclass(frozen=True)
-class _ClaimMarker:
-    """One parsed claim marker from the issue comment log. Adapter-private."""
+class _GrantKind(StrEnum):
+    """The two ownership questions, held under markers that never intersect.
 
-    created_at: datetime
+    A claim answers which deployment may fire an issue; a lease answers
+    which run may write a surface.  One mechanism arbitrates both, and the
+    kind on the marker is what keeps the two vocabularies from meeting.
+    """
+
+    CLAIM = "claim"
+    LEASE = "lease"
+
+
+_GRANT_KIND_BY_VALUE: Final[Mapping[str, _GrantKind]] = {
+    kind.value: kind for kind in _GrantKind
+}
+
+#: Which parent a comment is created under, per scope kind.  A container
+#: surface parks its marker on the container it addresses, so a lease over
+#: an issue and a project writes one marker on each.
+_COMMENT_PARENT_BY_SCOPE_KIND: Final[Mapping[ScopeKind, str]] = {
+    ScopeKind.ISSUE: "issueId",
+    ScopeKind.PROJECT: "projectId",
+    ScopeKind.INITIATIVE: "initiativeId",
+    ScopeKind.MILESTONE: "milestoneId",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _Target:
+    """The comment parent one grant marker is written on. Adapter-private."""
+
+    field: str
+    key: str
+
+
+@dataclass(frozen=True, slots=True)
+class _WrittenMarker:
+    """One marker this holder put on the board, and where to take it off."""
+
+    target: _Target
     comment_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class _GrantMarker:
+    """One ownership marker as the backend holds it, parsed. Adapter-private."""
+
+    target: _Target
+    comment_key: str
+    created_at: datetime
+    kind: _GrantKind
     holder: str
+    nonce: str
+    granted_at: datetime
     expires_at: datetime
+    addresses: frozenset[str]
+
+    @property
+    def order(self) -> tuple[datetime, str]:
+        """Server order first, identity to settle an instant it shared."""
+        return (self.created_at, self.comment_key)
+
+    @property
+    def written(self) -> _WrittenMarker:
+        """Where this marker is, for the one holder allowed to take it off."""
+        return _WrittenMarker(target=self.target, comment_key=self.comment_key)
+
+
+@dataclass(frozen=True, slots=True)
+class _Granted:
+    """A grant that survived its own read-back."""
+
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _Conflict[AddressT]:
+    """A requested address another holder's marker already covers."""
+
+    address: AddressT
+    holder: str
+    tied: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _Refused[AddressT]:
+    """A grant that withdrew, and the holder the read-back turned it on."""
+
+    address: AddressT
+    holder: str
+    tied: bool
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _Addressing[AddressT]:
+    """How one grant kind spells, orders and locates what it takes."""
+
+    kind: _GrantKind
+    encode: Callable[[AddressT], str]
+    target: Callable[[AddressT], _Target]
+    order: Callable[[AddressT], tuple[str, ...]]
+
+    def lines(self, addresses: frozenset[AddressT]) -> tuple[str, ...]:
+        """The address set as a marker carries it, in the canonical order.
+
+        Two holders racing for one set write it the same way round, so
+        neither can read the other's marker as covering something else.
+        """
+        return tuple(
+            self.encode(address) for address in sorted(addresses, key=self.order)
+        )
+
+    def targets(self, addresses: frozenset[AddressT]) -> tuple[_Target, ...]:
+        """Each parent this grant writes a marker on, once, in that order."""
+        return tuple(
+            dict.fromkeys(
+                self.target(address) for address in sorted(addresses, key=self.order)
+            )
+        )
+
+
+def _surface_line(surface: WritableSurface) -> str:
+    """One surface as a marker line; each component escaped, so a separator
+    inside a marker name cannot read as the separator between components."""
+    return "|".join(quote(component, safe="") for component in surface_address(surface))
+
+
+def _surface_target(surface: WritableSurface) -> _Target:
+    return _Target(
+        field=_COMMENT_PARENT_BY_SCOPE_KIND[surface.ref.kind],
+        key=surface.ref.key,
+    )
+
+
+_CLAIM_ADDRESSING: Final[_Addressing[str]] = _Addressing(
+    kind=_GrantKind.CLAIM,
+    encode=lambda issue_key: issue_key,
+    target=lambda issue_key: _Target(field="issueId", key=issue_key),
+    order=lambda issue_key: (issue_key,),
+)
+
+_LEASE_ADDRESSING: Final[_Addressing[WritableSurface]] = _Addressing(
+    kind=_GrantKind.LEASE,
+    encode=_surface_line,
+    target=_surface_target,
+    order=surface_address,
+)
 
 
 def _may_resend(tool: str, exc: Exception) -> bool:
@@ -1425,11 +1571,26 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> ClaimResult:
-        """Refuse acquisition without a native atomic ownership primitive."""
-        raise UnsupportedClaimError(
-            f"Linear MCP cannot fence claim acquisition for {issue_key!r}, "
-            f"holder {holder!r}, duration {lease_seconds:g}s; "
-            "comment creation and renewal have no conditional ownership check"
+        """Take the issue for *holder*, decided by re-reading what was written."""
+        outcome = await self._grant(
+            addressing=_CLAIM_ADDRESSING,
+            addresses=frozenset({issue_key}),
+            holder=holder,
+            lease_seconds=lease_seconds,
+        )
+        if isinstance(outcome, _Refused):
+            return ClaimResult(
+                issue_key=issue_key,
+                status=(ClaimStatus.CONTENDED if outcome.tied else ClaimStatus.LOST),
+                holder=holder,
+                expires_at=outcome.expires_at,
+                current_holder=outcome.holder,
+            )
+        return ClaimResult(
+            issue_key=issue_key,
+            status=ClaimStatus.GRANTED,
+            holder=holder,
+            expires_at=outcome.expires_at,
         )
 
     async def renew_claim(
@@ -1439,11 +1600,64 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> ClaimResult | None:
-        """Never resurrect an expired marker with an unfenced native write."""
-        raise UnsupportedClaimError(
-            f"Linear MCP cannot fence claim renewal for {issue_key!r}, "
-            f"holder {holder!r}, duration {lease_seconds:g}s; "
-            "save_comment has no expected owner or version"
+        """Extend the claim *holder* still holds; a lapsed one stays lapsed."""
+        extended = await self._extend(
+            addressing=_CLAIM_ADDRESSING,
+            addresses=frozenset({issue_key}),
+            holder=holder,
+            lease_seconds=lease_seconds,
+        )
+        if extended is None:
+            return None
+        return ClaimResult(
+            issue_key=issue_key,
+            status=ClaimStatus.GRANTED,
+            holder=holder,
+            expires_at=extended.expires_at,
+        )
+
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        """Delete every claim marker *holder* wrote on the issue."""
+        await self._withdraw(
+            addressing=_CLAIM_ADDRESSING,
+            addresses=frozenset({issue_key}),
+            holder=holder,
+        )
+
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        """The earliest live claim on the issue, or ``None`` when unclaimed.
+
+        Two holders whose markers carry one instant are an order the
+        backend did not settle, and reporting either of them as the owner
+        would be this adapter inventing one: the issue reads unclaimed
+        until they withdraw.
+        """
+        now = self._clock()
+        target = _CLAIM_ADDRESSING.target(issue_key)
+        markers = [
+            marker
+            for marker in (await self._markers_on(_GrantKind.CLAIM, targets=(target,)))
+            if marker.expires_at > now
+        ]
+        if not markers:
+            return None
+        earliest = min(markers, key=lambda marker: marker.order)
+        tying = {
+            marker.holder
+            for marker in markers
+            if marker.created_at == earliest.created_at
+        }
+        if len(tying) > 1:
+            return None
+        return ClaimResult(
+            issue_key=issue_key,
+            status=ClaimStatus.GRANTED,
+            holder=earliest.holder,
+            expires_at=max(
+                marker.expires_at
+                for marker in markers
+                if marker.holder == earliest.holder
+            ),
         )
 
     async def acquire_surfaces(
@@ -1453,11 +1667,27 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> SurfaceLease:
-        """Refuse acquisition without a native atomic ownership primitive."""
-        raise UnsupportedLeaseError(
-            f"Linear MCP cannot fence surface-lease acquisition for holder "
-            f"{holder!r}, {len(surfaces)} surface(s), duration {lease_seconds:g}s; "
-            "save_comment and save_issue carry no conditional ownership check"
+        """Take the WHOLE set for *holder*, or take nothing and name the owner."""
+        outcome = await self._grant(
+            addressing=_LEASE_ADDRESSING,
+            addresses=surfaces,
+            holder=holder,
+            lease_seconds=lease_seconds,
+        )
+        if isinstance(outcome, _Refused):
+            raise SurfaceLeaseError(
+                (
+                    "surface set ties another holder's grant"
+                    if outcome.tied
+                    else "surface set intersects a live lease"
+                ),
+                surface=outcome.address,
+                current_holder=outcome.holder,
+            )
+        return SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=outcome.expires_at,
         )
 
     async def renew_surfaces(
@@ -1467,11 +1697,19 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> SurfaceLease | None:
-        """Never extend a lease this backend could not have fenced."""
-        raise UnsupportedLeaseError(
-            f"Linear MCP cannot fence surface-lease renewal for holder "
-            f"{holder!r}, {len(surfaces)} surface(s), duration {lease_seconds:g}s; "
-            "save_comment and save_issue carry no conditional ownership check"
+        """Extend the lease *holder* holds over the whole set, or nothing."""
+        extended = await self._extend(
+            addressing=_LEASE_ADDRESSING,
+            addresses=surfaces,
+            holder=holder,
+            lease_seconds=lease_seconds,
+        )
+        if extended is None:
+            return None
+        return SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=extended.expires_at,
         )
 
     async def release_surfaces(
@@ -1480,65 +1718,381 @@ class LinearMcpTracker:
         surfaces: frozenset[WritableSurface],
         holder: str,
     ) -> None:
-        """Release nothing: acquisition is refused, so nothing is ever held."""
+        """Delete the markers *holder* wrote over any of these surfaces."""
+        await self._withdraw(
+            addressing=_LEASE_ADDRESSING,
+            addresses=surfaces,
+            holder=holder,
+        )
 
-    async def _unexpired_claim_markers(
+    async def _grant[AddressT](
         self,
-        issue_key: str,
-    ) -> tuple[_ClaimMarker, ...]:
-        """Every claim marker on the issue that has not yet lapsed."""
+        *,
+        addressing: _Addressing[AddressT],
+        addresses: frozenset[AddressT],
+        holder: str,
+        lease_seconds: float,
+    ) -> _Granted | _Refused[AddressT]:
+        """Write the grant, then decide it by reading the whole live set back.
+
+        The backend orders creations and answers a listing with what it
+        has; it offers no conditional write.  So ownership is not claimed
+        from the echo of the write: the markers go on, every target is read
+        again, and the grant survives only where no other holder's live
+        marker over a requested address was created no later than this
+        one.  Anything else withdraws what it wrote and holds nothing —
+        strictly earlier is an owner to name, an equal instant is an order
+        the backend did not settle and both sides stand back.
+        """
         now = self._clock()
-        markers: list[_ClaimMarker] = []
-        pattern = self._markers.claim_pattern
-        for wire in await self._comment_wires(issue_key):
-            match = pattern.search(wire.body)
-            if match is None:
-                continue
-            expires_at = self._parse_instant(
-                match.group("expires_at"),
-                _TOOL_LIST_COMMENTS,
+        expires_at = now + timedelta(seconds=lease_seconds)
+        nonce = uuid4().hex
+        encoded = addressing.lines(addresses)
+        targets = addressing.targets(addresses)
+        body = self._grant_body(
+            addressing=addressing,
+            holder=holder,
+            nonce=nonce,
+            granted_at=now,
+            expires_at=expires_at,
+            addresses=encoded,
+        )
+        written = {
+            target: await self._write_marker(target=target, body=body)
+            for target in targets
+        }
+        markers = await self._markers_on(addressing.kind, targets=targets)
+        mine = {
+            marker.target: marker
+            for marker in markers
+            if marker.holder == holder and marker.nonce == nonce
+        }
+        if set(mine) != set(written):
+            await self._delete_markers(
+                tuple(
+                    _WrittenMarker(target=target, comment_key=key)
+                    for target, key in written.items()
+                )
             )
-            if expires_at <= now:
+            raise TrackerProtocolError(
+                "the grant marker is absent from the log it was written to",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=f"holder={holder!r}; kind={addressing.kind.value}",
+            )
+        conflict = self._conflict(
+            addressing=addressing,
+            addresses=addresses,
+            markers=markers,
+            mine=mine,
+            holder=holder,
+            now=self._clock(),
+        )
+        if conflict is not None:
+            await self._delete_markers(
+                tuple(marker.written for marker in mine.values())
+            )
+            return _Refused(
+                address=conflict.address,
+                holder=conflict.holder,
+                tied=conflict.tied,
+                expires_at=expires_at,
+            )
+        # Its own predecessor for exactly this set — the marker a restart
+        # left behind — is a duplicate of this grant, never a competitor.
+        await self._delete_markers(
+            tuple(
+                marker.written
+                for marker in markers
+                if marker.holder == holder
+                and marker.nonce != nonce
+                and marker.addresses == frozenset(encoded)
+            )
+        )
+        return _Granted(expires_at=expires_at)
+
+    async def _extend[AddressT](
+        self,
+        *,
+        addressing: _Addressing[AddressT],
+        addresses: frozenset[AddressT],
+        holder: str,
+        lease_seconds: float,
+    ) -> _Granted | None:
+        """Move this holder's own marker forward, or report holding nothing.
+
+        Renewal extends and never acquires, so it starts by reading: a
+        holder without a live marker over the whole set writes nothing at
+        all.  The write itself can outlive the lease it was extending —
+        that is the delayed renewal — so after the edit lands the holder
+        checks its own clock against the expiry it HAD: a lease that
+        lapsed while the write was in flight is handed back, whoever took
+        it meanwhile, and the marker goes with it.
+        """
+        now = self._clock()
+        encoded = frozenset(addressing.lines(addresses))
+        targets = addressing.targets(addresses)
+        markers = await self._markers_on(addressing.kind, targets=targets)
+        mine: dict[_Target, _GrantMarker] = {}
+        for marker in markers:
+            if (
+                marker.holder != holder
+                or not encoded <= marker.addresses
+                or marker.expires_at <= now
+            ):
                 continue
-            markers.append(
-                _ClaimMarker(
-                    created_at=wire.created_at,
-                    comment_key=wire.id,
-                    holder=match.group("holder"),
+            standing = mine.get(marker.target)
+            if standing is None or marker.order < standing.order:
+                mine[marker.target] = marker
+        if set(mine) != set(targets):
+            return None
+        if (
+            self._conflict(
+                addressing=addressing,
+                addresses=addresses,
+                markers=markers,
+                mine=mine,
+                holder=holder,
+                now=now,
+            )
+            is not None
+        ):
+            return None
+        previous = min(marker.expires_at for marker in mine.values())
+        expires_at = max(now + timedelta(seconds=lease_seconds), previous)
+        for target, marker in mine.items():
+            await self._edit_marker(
+                target=target,
+                comment_key=marker.comment_key,
+                body=self._grant_body(
+                    addressing=addressing,
+                    holder=holder,
+                    nonce=marker.nonce,
+                    granted_at=marker.granted_at,
                     expires_at=expires_at,
+                    addresses=addressing.lines(addresses),
                 ),
             )
-        return tuple(markers)
-
-    async def release_claim(self, *, issue_key: str, holder: str) -> None:
-        """Delete every claim marker *holder* wrote on the issue."""
-        pattern = self._markers.claim_pattern
-        for wire in await self._comment_wires(issue_key):
-            match = pattern.search(wire.body)
-            if match is not None and match.group("holder") == holder:
-                await self._delete_own_comment(issue_key=issue_key, comment_key=wire.id)
-
-    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
-        """The earliest unexpired claim marker's holder, or ``None``."""
-        candidates = await self._unexpired_claim_markers(issue_key)
-        if not candidates:
+        withdrawn = tuple(marker.written for marker in mine.values())
+        if self._clock() >= previous:
+            await self._delete_markers(withdrawn)
             return None
-        # Total order over an append-only log: server timestamp first, comment
-        # key to break a same-instant tie, so every claimant computes the same
-        # winner from the same log.
-        winner = min(
-            candidates, key=lambda marker: (marker.created_at, marker.comment_key)
+        after = await self._markers_on(addressing.kind, targets=targets)
+        renewed = {
+            marker.target: marker
+            for marker in after
+            if marker.target in mine
+            and marker.nonce == mine[marker.target].nonce
+            and marker.holder == holder
+            and marker.expires_at == expires_at
+        }
+        if set(renewed) != set(targets) or (
+            self._conflict(
+                addressing=addressing,
+                addresses=addresses,
+                markers=after,
+                mine=renewed,
+                holder=holder,
+                now=self._clock(),
+            )
+            is not None
+        ):
+            await self._delete_markers(withdrawn)
+            return None
+        return _Granted(expires_at=expires_at)
+
+    async def _withdraw[AddressT](
+        self,
+        *,
+        addressing: _Addressing[AddressT],
+        addresses: frozenset[AddressT],
+        holder: str,
+    ) -> None:
+        """Delete this holder's markers over these addresses; never another's."""
+        encoded = frozenset(addressing.lines(addresses))
+        await self._delete_markers(
+            tuple(
+                marker.written
+                for marker in await self._markers_on(
+                    addressing.kind, targets=addressing.targets(addresses)
+                )
+                if marker.holder == holder and marker.addresses & encoded
+            )
         )
-        return ClaimResult(
-            issue_key=issue_key,
-            status=ClaimStatus.GRANTED,
-            holder=winner.holder,
-            expires_at=max(
-                marker.expires_at
-                for marker in candidates
-                if marker.holder == winner.holder
+
+    def _conflict[AddressT](
+        self,
+        *,
+        addressing: _Addressing[AddressT],
+        addresses: frozenset[AddressT],
+        markers: Sequence[_GrantMarker],
+        mine: Mapping[_Target, _GrantMarker],
+        holder: str,
+        now: datetime,
+    ) -> _Conflict[AddressT] | None:
+        """The requested address another holder's earlier marker already covers."""
+        held: dict[AddressT, _GrantMarker] = {}
+        for address in addresses:
+            target = addressing.target(address)
+            own = mine[target]
+            covering = [
+                marker
+                for marker in markers
+                if marker.target == target
+                and marker.holder != holder
+                and addressing.encode(address) in marker.addresses
+                and marker.created_at <= own.created_at
+            ]
+            if covering:
+                held[address] = min(covering, key=lambda marker: marker.order)
+        conflict = live_conflict(
+            requested=addresses,
+            held=held,
+            holder=holder,
+            now=now,
+            order=addressing.order,
+        )
+        if conflict is None:
+            return None
+        address, owner = conflict
+        return _Conflict(
+            address=address,
+            holder=owner,
+            tied=held[address].created_at
+            == mine[addressing.target(address)].created_at,
+        )
+
+    def _grant_body[AddressT](
+        self,
+        *,
+        addressing: _Addressing[AddressT],
+        holder: str,
+        nonce: str,
+        granted_at: datetime,
+        expires_at: datetime,
+        addresses: Sequence[str],
+    ) -> str:
+        """One marker's whole state, so any reader decides from the marker."""
+        return self._markers.grant_body(
+            lines={
+                "kind": addressing.kind.value,
+                "holder": holder,
+                "nonce": nonce,
+                "granted-at": granted_at.isoformat(),
+                "expires-at": expires_at.isoformat(),
+            },
+            addresses=addresses,
+        )
+
+    async def _markers_on(
+        self, kind: _GrantKind, *, targets: Sequence[_Target]
+    ) -> tuple[_GrantMarker, ...]:
+        """Every ownership marker of *kind* currently on these targets."""
+        found: list[_GrantMarker] = []
+        pattern = self._markers.grant_pattern
+        for target in targets:
+            for wire in await self._comment_wires(
+                target.key, parent_field=target.field
+            ):
+                match = pattern.search(wire.body)
+                if match is None:
+                    continue
+                marker = self._parsed_marker(match["payload"], wire=wire, target=target)
+                if marker.kind is kind:
+                    found.append(marker)
+        return tuple(found)
+
+    def _parsed_marker(
+        self, payload: str, *, wire: LinearCommentWire, target: _Target
+    ) -> _GrantMarker:
+        """One marker's declared fields and addresses, or a protocol refusal."""
+        stated: dict[str, str] = {}
+        addresses: list[str] = []
+        listing = False
+        for line in payload.splitlines():
+            if listing:
+                if not line.startswith("- "):
+                    raise self._malformed_marker(wire, detail=f"address line {line!r}")
+                addresses.append(line.removeprefix("- "))
+                continue
+            if line == "surfaces:":
+                listing = True
+                continue
+            name, separator, value = line.partition(": ")
+            if not separator:
+                raise self._malformed_marker(wire, detail=f"field line {line!r}")
+            stated[name] = value
+        missing = {"kind", "holder", "nonce", "granted-at", "expires-at"} - set(stated)
+        if missing or not addresses:
+            raise self._malformed_marker(
+                wire, detail=f"absent: {', '.join(sorted(missing) or ['surfaces'])}"
+            )
+        if stated["kind"] not in _GRANT_KIND_BY_VALUE:
+            raise self._malformed_marker(wire, detail=f"kind {stated['kind']!r}")
+        return _GrantMarker(
+            target=target,
+            comment_key=wire.id,
+            created_at=wire.created_at,
+            kind=_GRANT_KIND_BY_VALUE[stated["kind"]],
+            holder=stated["holder"],
+            nonce=stated["nonce"],
+            granted_at=self._parse_instant(stated["granted-at"], _TOOL_LIST_COMMENTS),
+            expires_at=self._parse_instant(stated["expires-at"], _TOOL_LIST_COMMENTS),
+            addresses=frozenset(addresses),
+        )
+
+    def _malformed_marker(
+        self, wire: LinearCommentWire, *, detail: str
+    ) -> TrackerProtocolError:
+        return TrackerProtocolError(
+            "ownership marker does not carry the fields it is read by",
+            tool=_TOOL_LIST_COMMENTS,
+            detail=f"comment={wire.id}; {detail}",
+        )
+
+    async def _write_marker(self, *, target: _Target, body: str) -> str:
+        """Create one marker on *target* and answer the identity it was given."""
+        payload = await self._call(
+            _TOOL_SAVE_COMMENT, {target.field: target.key, "body": body}
+        )
+        wire = self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
+        assert isinstance(payload, Mapping)
+        self._self_writes.record_mutation(
+            issue_key=target.key,
+            mutation=OwnMutation(created=((wire.id, field_values(payload)),)),
+        )
+        return wire.id
+
+    async def _edit_marker(
+        self, *, target: _Target, comment_key: str, body: str
+    ) -> None:
+        """Rewrite one marker in place, which is what preserves its order."""
+        payload = await self._call(
+            _TOOL_SAVE_COMMENT, {"id": comment_key, "body": body}
+        )
+        assert isinstance(payload, Mapping)
+        self._self_writes.record_mutation(
+            issue_key=target.key,
+            mutation=OwnMutation(
+                edited=(
+                    (
+                        comment_key,
+                        field_values(
+                            {
+                                key: value
+                                for key, value in payload.items()
+                                if key in {"body", "updatedAt"}
+                            }
+                        ),
+                    ),
+                )
             ),
         )
+
+    async def _delete_markers(self, markers: Sequence[_WrittenMarker]) -> None:
+        for marker in markers:
+            await self._delete_own_comment(
+                issue_key=marker.target.key, comment_key=marker.comment_key
+            )
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
         """Attachment and document metadata referenced by the issue."""
@@ -2276,9 +2830,13 @@ class LinearMcpTracker:
         return self._validate(LinearIssueDetailWire, payload, _TOOL_GET_ISSUE)
 
     async def _comment_wires(
-        self, issue_key: str, *, require_reply_links: bool = False
+        self,
+        issue_key: str,
+        *,
+        parent_field: str = "issueId",
+        require_reply_links: bool = False,
     ) -> Sequence[LinearCommentWire]:
-        arguments: dict[str, object] = {"issueId": issue_key}
+        arguments: dict[str, object] = {parent_field: issue_key}
         comments: dict[str, LinearCommentWire] = {}
 
         async def read(

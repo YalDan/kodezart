@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from kodezart.domain.surface_lease import live_conflict
+from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 
@@ -35,6 +35,7 @@ def test_a_free_set_has_no_conflict() -> None:
             held={},
             holder="job-a",
             now=NOW,
+            order=surface_address,
         )
         is None
     )
@@ -48,6 +49,7 @@ def test_another_holders_live_lease_is_the_conflict() -> None:
         held={MARKER_A: held},
         holder="job-a",
         now=NOW,
+        order=surface_address,
     ) == (MARKER_A, "job-b")
 
 
@@ -60,6 +62,7 @@ def test_an_expired_lease_is_no_conflict() -> None:
             held={MARKER_A: held},
             holder="job-a",
             now=NOW,
+            order=surface_address,
         )
         is None
     )
@@ -74,6 +77,7 @@ def test_the_same_holders_live_lease_is_no_conflict() -> None:
             held={MARKER_A: held},
             holder="job-a",
             now=NOW,
+            order=surface_address,
         )
         is None
     )
@@ -91,6 +95,7 @@ def test_the_first_conflict_in_address_order_is_named() -> None:
         held=held,
         holder="job-a",
         now=NOW,
+        order=surface_address,
     ) == (MARKER_A, "job-b")
 
 

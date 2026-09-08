@@ -354,12 +354,14 @@ class FireDispatcher:
             holder=self._holder,
             lease_seconds=self._claim_lease_seconds,
         )
-        if claim.status is ClaimStatus.LOST:
+        if claim.status is not ClaimStatus.GRANTED:
             await self._log.ainfo(
                 "dispatch_claim_lost",
                 outcome=DispatchOutcome.claim_lost.value,
                 issue_key=selection.winner_key,
                 holder=self._holder,
+                status=claim.status.value,
+                current_holder=claim.current_holder,
             )
             return DispatchReport(
                 outcome=DispatchOutcome.claim_lost,

@@ -1013,9 +1013,11 @@ class TrackerPort(
         """Attempt an exactly-once claim.
 
         Concurrent claimants on one issue produce exactly one
-        ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
-        value, never an exception. An adapter without atomic/fenced
-        ownership refuses with ``UnsupportedClaimError`` before mutation.
+        ``GRANTED``; every other claimant observes ``LOST``, or
+        ``CONTENDED`` where the backend settled no order between them and
+        nobody holds the issue. Neither is an exception: both are values
+        the caller routes on, and both name the other party in
+        ``current_holder``.
 
         *holder* is the deployment's PROCESS identity, the value
         ``core/config.py::dispatch_holder`` carries. It answers which
@@ -1040,9 +1042,8 @@ class TrackerPort(
         Renewal EXTENDS and never acquires.  A claim that has already
         lapsed stays lapsed and the issue stays claimable: the lapse is how
         a process that died mid-run hands its work back, and a renewal that
-        could resurrect one would take that recovery away. An adapter
-        without atomic/fenced renewal raises ``UnsupportedClaimError``
-        before mutation; that permanent refusal is not transient failure.
+        could resurrect one would take that recovery away — including a
+        renewal whose own write outlived the lease it was extending.
         """
         ...
 
@@ -1073,8 +1074,7 @@ class TrackerPort(
         that surface and its current holder, releases whatever it took, and
         holds nothing afterwards. A surface *holder* itself holds live is
         not contention — re-acquisition succeeds and re-times the whole
-        set — and an expired lease is free to anyone. An adapter without
-        fenced ownership raises ``UnsupportedLeaseError`` before mutation.
+        set — and an expired lease is free to anyone.
 
         *holder* is the writing run's job id (``JobRecord.job_id``), never
         the claim's process identity.
@@ -1094,8 +1094,7 @@ class TrackerPort(
         *lease_seconds* from now. Returns ``None``, writing NOTHING, when
         *holder* does not hold every one of them live: renewal EXTENDS and
         never acquires, so a lapsed lease stays lapsed and its surfaces stay
-        free. An adapter without fenced ownership raises
-        ``UnsupportedLeaseError`` before mutation.
+        free.
         """
         ...
 

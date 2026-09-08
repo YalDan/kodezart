@@ -53,7 +53,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.scope_approval import resolve_execution_approval
-from kodezart.domain.surface_lease import live_conflict
+from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -2765,7 +2765,7 @@ class FakeLinearMcpServer:
                 raise KeyError(f"no parent comment {parent_id}")
             issue_id = parent.issue_id
         else:
-            issue_id = str(arguments["issueId"])
+            issue_id = self._comment_parent(arguments)
         created_at = self._next_instant()
         self._sequence += 1
         comment = FakeMcpComment(
@@ -2795,15 +2795,30 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        issue_id = str(arguments["issueId"])
+        parent = self._comment_parent(arguments)
         return {
             "comments": [
                 comment.wire()
                 for comment in self.comments
-                if comment.issue_id == issue_id
+                if comment.issue_id == parent
             ],
             "hasNextPage": False,
         }
+
+    @staticmethod
+    def _comment_parent(arguments: Mapping[str, object]) -> str:
+        """The container a comment call addresses.
+
+        The vendor takes a comment under an issue, a project, an
+        initiative or a milestone, and answers each listing with that
+        parent's own log.  A fake that knew only the issue arm would let
+        an adapter parking a marker on a container pass here and fail
+        against the real server.
+        """
+        for parent in ("issueId", "projectId", "initiativeId", "milestoneId"):
+            if parent in arguments:
+                return str(arguments[parent])
+        raise LookupError(f"no comment parent among {sorted(arguments)}")
 
     def _tool_delete_comment(
         self,
@@ -3832,6 +3847,7 @@ class FakeTrackerPort:
                 status=ClaimStatus.LOST,
                 holder=holder,
                 expires_at=expires_at,
+                current_holder=held.holder,
             )
         granted = ClaimResult(
             issue_key=issue_key,
@@ -3887,7 +3903,11 @@ class FakeTrackerPort:
         await asyncio.sleep(0)
         now = self._clock()
         conflict = live_conflict(
-            requested=surfaces, held=self.leases, holder=holder, now=now
+            requested=surfaces,
+            held=self.leases,
+            holder=holder,
+            now=now,
+            order=surface_address,
         )
         if conflict is not None:
             raise SurfaceLeaseError(

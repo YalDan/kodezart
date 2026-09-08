@@ -1,12 +1,29 @@
-"""The all-or-nothing arithmetic every surface-lease implementation shares."""
+"""The all-or-nothing arithmetic every ownership implementation shares."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Hashable, Mapping
 from datetime import datetime
+from typing import Protocol
 
-from kodezart.types.domain.surface import SurfaceLease, WritableSurface
+from kodezart.types.domain.surface import WritableSurface
 
 
-def _address(surface: WritableSurface) -> tuple[str, str, str, str]:
+class LiveGrant(Protocol):
+    """What the arithmetic needs of a grant: whose it is, and until when.
+
+    A surface lease satisfies it, and so does an adapter's own record of
+    one holder's marker, so a backend that stores ownership as comments
+    and a registry that stores it in memory decide contention by the same
+    function rather than by two statements of one rule.
+    """
+
+    @property
+    def holder(self) -> str: ...
+
+    @property
+    def expires_at(self) -> datetime: ...
+
+
+def surface_address(surface: WritableSurface) -> tuple[str, str, str, str]:
     """A total order over surfaces, so every holder names the same conflict."""
     return (
         surface.kind.value,
@@ -16,21 +33,24 @@ def _address(surface: WritableSurface) -> tuple[str, str, str, str]:
     )
 
 
-def live_conflict(
+def live_conflict[AddressT: Hashable](
     *,
-    requested: frozenset[WritableSurface],
-    held: Mapping[WritableSurface, SurfaceLease],
+    requested: frozenset[AddressT],
+    held: Mapping[AddressT, LiveGrant],
     holder: str,
     now: datetime,
-) -> tuple[WritableSurface, str] | None:
-    """The first requested surface another holder still holds, and who holds it.
+    order: Callable[[AddressT], tuple[str, ...]],
+) -> tuple[AddressT, str] | None:
+    """The first requested address another holder still holds, and who holds it.
 
-    ``None`` when every requested surface is free, expired, or already held
+    ``None`` when every requested address is free, expired, or already held
     by *holder* itself: re-acquisition by the same holder is not contention.
+    *order* makes the answer deterministic across holders, which is what
+    lets two of them name the same conflict from the same state.
     """
-    for surface in sorted(requested, key=_address):
-        lease = held.get(surface)
-        if lease is None or lease.expires_at <= now or lease.holder == holder:
+    for address in sorted(requested, key=order):
+        grant = held.get(address)
+        if grant is None or grant.expires_at <= now or grant.holder == holder:
             continue
-        return surface, lease.holder
+        return address, grant.holder
     return None
