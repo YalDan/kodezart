@@ -140,6 +140,28 @@ class WriteBackResult(CamelCaseModel):
         return self
 
 
+class AuditMandateContext(CamelCaseModel):
+    """Fresh refutation evidence and the exact repository/text set to examine.
+
+    This invocation has no criterion identity: both criterion judgments and
+    native issue-terminal observations use the same mandate hunt.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    defect_class: str = Field(min_length=1, pattern=r"\S")
+    refutation_evidence: str = Field(min_length=1, pattern=r"\S")
+    head_sha: str = Field(min_length=1, pattern=r"\S")
+    surfaces: tuple[WritableSurface, ...] = Field(min_length=1)
+    repo_url: str = Field(min_length=1, pattern=r"\S")
+    cache_key: str | None = None
+
+    @model_validator(mode="after")
+    def _unique_surfaces(self) -> Self:
+        if len(set(self.surfaces)) != len(self.surfaces):
+            raise ValueError("the audited surface set contains duplicates")
+        return self
+
+
 class AuditMandateRequest(CamelCaseModel):
     """Explicit audited text set and this invocation's observed defect."""
 
