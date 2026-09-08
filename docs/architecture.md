@@ -925,6 +925,11 @@ the live remote branch head, and verifies both immutable commit identities and
 their ancestry. A completed claim at an older commit yields `unverifiable`,
 naming the original criterion, recorded SHA and current head, without a grading
 session. An off-branch or unreadable commit causes a typed read refusal.
+Active Git replacement references also refuse before ancestry is inspected
+and before the observation returns: substituted parent history cannot establish
+that the Evidence SHA belongs to the current branch. Both replacement reads
+settle through cancellation, including the lapse arm that starts no session.
+An unreadable replacement namespace is a typed read failure, never an empty set.
 
 A current completed claim, or a claim in the configured review state, goes
 through the existing fresh `AuditClaimVerifier`. Review re-verification does not
