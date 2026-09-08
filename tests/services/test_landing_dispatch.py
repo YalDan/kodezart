@@ -2,6 +2,8 @@
 
 import pytest
 
+from kodezart.domain.errors import BaseResolutionError
+from kodezart.services.base_resolver import BaseResolver
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefLanding, WorkRefRole
 from kodezart.types.domain.dispatch import DispatchOutcome
 from kodezart.types.domain.operation import QueueState
@@ -12,6 +14,7 @@ from tests.fakes import (
     FakeTrackerPort,
     make_tracker_issue,
 )
+from tests.services import test_fire_dispatcher as dispatch_fixtures
 from tests.services.test_fire_dispatcher import BLOCKER_SHA, TRUNK, dispatcher
 
 
@@ -115,3 +118,32 @@ async def test_unknown_present_preserves_the_prechange_dispatch_record(case):
     assert queue.submissions[0][1].base_spec == result.base
     assert queue.submissions[0][1].implied_base == result.base
     assert result.superseded_base is None
+
+
+async def test_unknown_missing_names_the_typed_refusal_and_never_dispatches(
+    monkeypatch,
+):
+    refusals = []
+
+    class ObservedResolver(BaseResolver):
+        async def resolve(self, **kwargs):
+            try:
+                return await super().resolve(**kwargs)
+            except BaseResolutionError as error:
+                refusals.append(error)
+                raise
+
+    monkeypatch.setattr(dispatch_fixtures, "BaseResolver", ObservedResolver)
+    tracker = tracker_with({"K-2": recorded("K-2", "missing-remote-ref")})
+    git = FakeGitService(remote_branch_shas={"missing-remote-ref": None})
+    fire, queue, _ = dispatcher(tracker, git=git)
+    result = await fire.run_pass()
+    assert result.outcome is DispatchOutcome.base_unresolved
+    assert result.base is None
+    assert queue.submissions == []
+    assert await tracker.read_base_spec(issue_key="K-1") is None
+    (refusal,) = refusals
+    assert refusal.issue_id == "K-1"
+    assert refusal.blocker_issue_ids == ("K-2",)
+    assert refusal.branches == ("missing-remote-ref",)
+    assert await tracker.active_claim(issue_key="K-1") is None

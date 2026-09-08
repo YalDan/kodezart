@@ -2,6 +2,7 @@
 
 import pytest
 
+from kodezart.domain.errors import BaseResolutionError
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.types.domain.branch import WorkRef, WorkRefLanding, WorkRefRole
 from tests.fakes import FakeGitService
@@ -65,6 +66,22 @@ async def test_recorded_landed_blockers_contribute_nothing_before_any_git_read(
     assert result.base_role is None
     assert result.inputs == ()
     assert git.calls == []
+    assert tracker_writes() == before
+
+
+@pytest.mark.parametrize("blockers", [(CLAIMED_ISSUE,)])
+async def test_unknown_absent_raises_the_addressed_error_and_records_no_base(
+    tracker, tracker_writes
+):
+    await record(tracker, CLAIMED_ISSUE, landing=WorkRefLanding.UNKNOWN)
+    before = tracker_writes()
+    git = FakeGitService(remote_branch_shas={f"work/{CLAIMED_ISSUE}": None})
+    with pytest.raises(BaseResolutionError) as caught:
+        await resolve(tracker, git)
+    assert caught.value.issue_id == APPROVED_ISSUE
+    assert caught.value.blocker_issue_ids == (CLAIMED_ISSUE,)
+    assert caught.value.branches == (f"work/{CLAIMED_ISSUE}",)
+    assert await tracker.read_base_spec(issue_key=APPROVED_ISSUE) is None
     assert tracker_writes() == before
 
 
