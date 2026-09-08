@@ -7,8 +7,8 @@ undeclared key before opening the tracker transport. `DERIVED` and
 both supervisor events and `node_session_started`. Other rows select an
 existing semantic workflow state. The table classifies events; it does not
 introduce a workflow-state writer or override criterion rollup. An operation
-without a configured tracker can retain an absent table. Both shipped operation
-examples show the complete declaration.
+without a configured tracker can retain an absent table. The annotated operation
+example shows the complete declaration; the minimal floor keeps collections empty.
 
 ## Overview
 
