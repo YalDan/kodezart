@@ -400,6 +400,18 @@ labelled direct sub-issues, with their own keys, full bodies and workflow
 states. The parent description supplies no criterion identity or membership.
 An empty set is a successful read; incomplete or failed reads raise an error.
 
+`execution_approved(issue_key=...)` resolves the configured `scope_labels`
+approval member from current label presence. It reads the addressed issue and
+its parent issues, then that issue's own project and initiative ancestry.
+Issue approval covers descendants across projects; project approval follows
+actual project membership. Every call reads again, so reparenting and removal
+of an ancestor's label affect the next answer without copying labels onto
+children. Missing labels, malformed identities or unreadable ancestry refuse
+instead of appearing unapproved. An absent scope mapping remains legal at boot
+and refuses when this capability is called. This reader neither writes labels
+nor supplies a provenance carrier; the actual per-dispatch caller remains a
+separate integration.
+
 `read_fire_spec` captures the subject's body and version once, with its
 criterion sub-issue keys, and raises `EmptyFireCriteriaError` if that query
 finds none. A criterion without one nonempty Check field raises

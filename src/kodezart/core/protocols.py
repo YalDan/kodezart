@@ -819,6 +819,16 @@ class TrackerPort(Protocol):
         """
         ...
 
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve the configured scope approval label from current ancestry.
+
+        Check the issue and parent issues, then its own project and initiative
+        ancestry. Milestone members use their project approval. Label presence
+        decides; there is no approval-actor carrier. Every call reads again,
+        and missing or unreadable ancestry raises instead of returning false.
+        """
+        ...
+
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         """The container's ref, name, description, url and optional parent.
 

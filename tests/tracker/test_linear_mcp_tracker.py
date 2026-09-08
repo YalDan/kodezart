@@ -102,6 +102,7 @@ def tracker_over(server: FakeLinearMcpServer, **overrides: object) -> LinearMcpT
         "caller": server,
         "marker_prefixes": MARKER_PREFIXES,
         "issue_labels": {"criterion": "acceptance-condition"},
+        "scope_labels": {},
         "queue_state_labels": QUEUE_STATE_LABELS,
         "workflow_state_names": WORKFLOW_STATE_NAMES,
         "team_identifiers": TEAM_IDENTIFIERS,

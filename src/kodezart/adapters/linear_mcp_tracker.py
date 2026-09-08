@@ -56,6 +56,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -90,11 +91,15 @@ from kodezart.types.domain.linear_mcp import (
     LinearUserWire,
     LinearWireModel,
 )
-from kodezart.types.domain.linear_scope import LinearScopeIssuesWire
+from kodezart.types.domain.linear_scope import (
+    LinearApprovalIssueWire,
+    LinearScopeIssuesWire,
+)
 from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationMemberAbsentError,
     QueueState,
+    ScopeLabel,
 )
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.tracker import (
@@ -424,6 +429,7 @@ class LinearMcpTracker:
         *,
         caller: McpToolCaller,
         queue_state_labels: Mapping[str, str],
+        scope_labels: Mapping[str, str],
         issue_labels: Mapping[str, str],
         workflow_state_names: Mapping[LifecycleStage, str],
         marker_prefixes: Mapping[str, str],
@@ -438,6 +444,7 @@ class LinearMcpTracker:
         self._markers = LinearMarkers(marker_prefixes)
         self._issue_identity = LinearIssueIdentityCarrier(marker_prefixes)
         self._issue_labels = dict(issue_labels)
+        self._scope_labels = dict(scope_labels)
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._clock: Callable[[], datetime] = clock
@@ -677,6 +684,32 @@ class LinearMcpTracker:
             call=self._call,
             read_issue=self.read_issue,
         ).scope_issues(ref=ref)
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve configured label presence through fresh native ancestry."""
+        label = self._scope_labels.get(ScopeLabel.APPROVED.value)
+        if not label:
+            raise OperationMemberAbsentError(
+                missing=f"scope_labels.{ScopeLabel.APPROVED.value}",
+                stops="cannot resolve scope approval",
+            )
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            payload = await self._call(
+                _TOOL_GET_ISSUE, {"id": key, "includeRelations": True}
+            )
+            wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
+            return self._to_issue(wire), label in wire.labels
+
+        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
+            return await reader.approval_parent(ref=ref, approved_label=label)
+
+        return await resolve_execution_approval(
+            issue_key=issue_key,
+            read_issue=read_issue,
+            read_container=read_container,
+        )
 
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         """Read a container without fabricating a URL or choosing a parent."""
