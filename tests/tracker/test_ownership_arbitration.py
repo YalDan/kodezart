@@ -177,6 +177,83 @@ async def test_a_delayed_renewal_extends_nothing_after_the_lease_changed_hands()
     assert len(server.comments) == 1
 
 
+async def test_a_renewal_of_a_lapsed_lease_takes_its_own_marker_down() -> None:
+    """A holder told it owns nothing stops advertising that it does.
+
+    The marker outlives the lease it recorded, and its holder is the only
+    party allowed to take it off: every other holder reads it, finds it
+    expired and steps over it, so nothing else will ever remove it.  A
+    renewal is that holder's next appearance — if it leaves the marker
+    standing, a run that lapsed and never released has littered the issue
+    for good.
+    """
+    server = fixture_server()
+    now = [FIXTURE_NOW]
+    lapsed = tracker_over(server, clock=lambda: now[0])
+    successor = tracker_over(server, clock=lambda: now[0])
+    await lapsed.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
+    )
+    now[0] += timedelta(seconds=LEASE_SECONDS + 1)
+    inherited = await successor.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
+    )
+    assert inherited.status is ClaimStatus.GRANTED
+    assert len(server.comments) == 2
+
+    assert (
+        await lapsed.renew_claim(
+            issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
+        )
+        is None
+    )
+
+    assert [_holder_of(comment.body) for comment in server.comments] == ["runner-b"]
+    held = await successor.active_claim(issue_key=CLAIMED_ISSUE)
+    assert held is not None
+    assert held.holder == "runner-b"
+
+
+async def test_a_renewal_an_earlier_grant_outranks_withdraws_the_late_one() -> None:
+    """Two runners disagree about the clock; the earlier marker still wins.
+
+    Nothing keeps two deployments' clocks together, so a holder can take
+    an issue whose marker another holder still reads as its own live
+    grant.  Both markers then stand, and the rule that settles it is the
+    server's order, not either clock: the later holder finds itself
+    outranked on its own next renewal and takes its marker down rather
+    than leave the issue looking twice owned.
+    """
+    server = fixture_server()
+    early = [FIXTURE_NOW]
+    late = [FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS + 1)]
+    behind = tracker_over(server, clock=lambda: early[0])
+    ahead = tracker_over(server, clock=lambda: late[0])
+    await behind.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
+    )
+    taken = await ahead.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
+    )
+    assert taken.status is ClaimStatus.GRANTED
+    early[0] += timedelta(seconds=LEASE_SECONDS / 2)
+    assert (
+        await behind.renew_claim(
+            issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
+        )
+        is not None
+    )
+
+    assert (
+        await ahead.renew_claim(
+            issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
+        )
+        is None
+    )
+
+    assert [_holder_of(comment.body) for comment in server.comments] == ["runner-a"]
+
+
 async def test_a_grant_the_log_does_not_answer_with_is_not_a_grant() -> None:
     server = fixture_server()
     tracker = tracker_over(server, caller=_LosesTheWrite(server))

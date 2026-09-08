@@ -1822,11 +1822,16 @@ class LinearMcpTracker:
 
         Renewal extends and never acquires, so it starts by reading: a
         holder without a live marker over the whole set writes nothing at
-        all.  The write itself can outlive the lease it was extending —
-        that is the delayed renewal — so after the edit lands the holder
-        checks its own clock against the expiry it HAD: a lease that
-        lapsed while the write was in flight is handed back, whoever took
-        it meanwhile, and the marker goes with it.
+        all.  Whatever it reports holding nothing over, it also stops
+        advertising — a lapsed marker of its own comes off the board, and
+        so does a live one another holder outranks — because a marker left
+        standing for a holder that has been told it owns nothing is a
+        claim nobody will ever withdraw.  The write itself can outlive the
+        lease it was extending — that is the delayed renewal — so after
+        the edit lands the holder checks its own clock against the expiry
+        it HAD: a lease that lapsed while the write was in flight is
+        handed back, whoever took it meanwhile, and the marker goes with
+        it.
         """
         now = self._clock()
         encoded = frozenset(addressing.lines(addresses))
@@ -1844,6 +1849,15 @@ class LinearMcpTracker:
             if standing is None or marker.order < standing.order:
                 mine[marker.target] = marker
         if set(mine) != set(targets):
+            await self._delete_markers(
+                tuple(
+                    marker.written
+                    for marker in markers
+                    if marker.holder == holder
+                    and marker.addresses & encoded
+                    and marker.expires_at <= now
+                )
+            )
             return None
         if (
             self._conflict(
@@ -1856,6 +1870,9 @@ class LinearMcpTracker:
             )
             is not None
         ):
+            await self._delete_markers(
+                tuple(marker.written for marker in mine.values())
+            )
             return None
         previous = min(marker.expires_at for marker in mine.values())
         expires_at = max(now + timedelta(seconds=lease_seconds), previous)
