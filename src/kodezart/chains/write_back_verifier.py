@@ -17,6 +17,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WriteBackReadError
+from kodezart.services.git_observations import read_workspace_head
 from kodezart.services.tracker_artifacts import (
     read_tracker_artifact,
     require_artifact_read,
@@ -128,11 +129,14 @@ class TrackerWriteBackVerifier:
                 raise asyncio.CancelledError
 
     async def _require_head(self, workspace: str, head_sha: str) -> None:
-        if await self._git.current_sha(workspace) != head_sha:
+        observed_head, dirty = await read_workspace_head(
+            git=self._git, workspace=workspace
+        )
+        if observed_head != head_sha:
             raise WriteBackReadError(
                 "verification workspace does not match the selected SHA"
             )
-        if await self._git.has_changes(workspace):
+        if dirty:
             raise WriteBackReadError("verification workspace has uncommitted changes")
 
     async def _judge(

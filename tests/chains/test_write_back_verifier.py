@@ -461,3 +461,22 @@ async def test_repair_cannot_start_next_judgment_in_mutated_workspace(setup):
         await build().verify(REQUEST, write=write, repair=repair)
     assert len(runner.arguments) == 1
     assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
+@pytest.mark.parametrize("phase", ["current_sha", "has_changes"])
+@pytest.mark.parametrize("read_number", [1, 3])
+async def test_native_git_read_cancellation_settles_before_workspace_release(
+    setup, monkeypatch, tmp_path, phase, read_number
+):
+    from tests.git_read_cancellation import assert_git_read_settles_before_release
+
+    build, _, git, workspace, _, write, repair = setup
+    await assert_git_read_settles_before_release(
+        invoke=lambda: build().verify(REQUEST, write=write, repair=repair),
+        git=git,
+        workspace=workspace,
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        phase=phase,
+        read_number=read_number,
+    )

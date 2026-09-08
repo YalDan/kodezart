@@ -17,6 +17,7 @@ from kodezart.core.protocols import (
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.git_observations import read_workspace_head
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA
 from kodezart.types.domain.audit import (
@@ -107,9 +108,10 @@ class AuditClaimVerifier:
         try:
             if cancelled:
                 raise asyncio.CancelledError
-            if await self._git.current_sha(
-                workspace
-            ) != head or await self._git.has_changes(workspace):
+            if await read_workspace_head(git=self._git, workspace=workspace) != (
+                head,
+                False,
+            ):
                 raise AuditClaimReadError(
                     "the audit workspace is not clean at the selected head"
                 )
@@ -152,14 +154,11 @@ class AuditClaimVerifier:
             )
             if latest != (comment, record):
                 raise AuditClaimReadError("the lane record changed during verification")
-            if (
-                await self._git.remote_branch_sha(
-                    repository, self._remote, record.branch
-                )
-                != head
-                or await self._git.current_sha(workspace) != head
-                or await self._git.has_changes(workspace)
-            ):
+            if await self._git.remote_branch_sha(
+                repository, self._remote, record.branch
+            ) != head or await read_workspace_head(
+                git=self._git, workspace=workspace
+            ) != (head, False):
                 raise AuditClaimReadError(
                     "the branch or workspace changed during verification"
                 )
