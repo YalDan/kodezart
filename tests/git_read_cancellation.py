@@ -4,11 +4,20 @@ import asyncio
 import os
 import sys
 
+from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 
 
 async def assert_git_read_settles_before_release(
-    *, invoke, git, workspace, monkeypatch, tmp_path, phase, read_number
+    *,
+    invoke,
+    git,
+    workspace,
+    monkeypatch,
+    tmp_path,
+    phase,
+    read_number,
+    expect_release=True,
 ):
     """A controllable actual child must finish before its workspace is released."""
     native = SubprocessGitService(remote="fixture-remote")
@@ -20,7 +29,7 @@ async def assert_git_read_settles_before_release(
     releases = []
     count = 0
 
-    async def observe(path):
+    async def observe(*args):
         nonlocal count
         count += 1
         if count == read_number:
@@ -33,7 +42,7 @@ async def assert_git_read_settles_before_release(
                 f"Path({str(completed)!r}).write_text('complete')\n"
             )
             await native._run_output([sys.executable, "-c", program], cwd=str(tmp_path))
-        return await original_read(path)
+        return await original_read(*args)
 
     async def release(path):
         releases.append(completed.exists())
@@ -60,7 +69,7 @@ async def assert_git_read_settles_before_release(
             pass
         else:
             raise AssertionError("caller cancellation did not propagate")
-        assert releases == [True]
+        assert releases == ([True] if expect_release else [])
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
@@ -77,3 +86,29 @@ async def assert_git_read_settles_before_release(
         async with asyncio.timeout(5):
             while started.exists() and not completed.exists():
                 await asyncio.sleep(0.01)
+
+
+async def assert_cache_read_settles(
+    *, invoke, cache, workspace, monkeypatch, tmp_path, existing
+):
+    """Exercise actual cache fetch/clone dispatch around an owned native child."""
+    native = SubprocessGitService(remote="fixture-remote")
+    actual_cache = LocalBareRepoCache(git=native, base_dir=str(tmp_path / "cache"))
+    phase = "fetch" if existing else "clone_bare"
+
+    async def settled(*_args):
+        pass
+
+    monkeypatch.setattr(native, "is_repo", lambda _path: existing)
+    monkeypatch.setattr(native, phase, settled)
+    monkeypatch.setattr(cache, "ensure_available", actual_cache.ensure_available)
+    await assert_git_read_settles_before_release(
+        invoke=invoke,
+        git=native,
+        workspace=workspace,
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        phase=phase,
+        read_number=1,
+        expect_release=False,
+    )

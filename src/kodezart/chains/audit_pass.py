@@ -18,8 +18,9 @@ from kodezart.core.protocols import (
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.fire_spec import criterion_check
-from kodezart.services.git_observations import read_workspace_head
+from kodezart.services.git_observations import read_remote_head, read_workspace_head
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.repo_observations import ensure_repository
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import (
@@ -94,11 +95,14 @@ class AuditClaimVerifier:
             lane_key=request.lane_key,
             record_ref=request.record_ref,
         )
-        repository = await self._cache.ensure_available(
-            request.repo_url, request.cache_key
+        repository = await ensure_repository(
+            cache=self._cache, repo_url=request.repo_url, cache_key=request.cache_key
         )
-        head = await self._git.remote_branch_sha(
-            repository, self._remote, record.branch
+        head = await read_remote_head(
+            git=self._git,
+            repository=repository,
+            remote=self._remote,
+            branch=record.branch,
         )
         if head is None or not head.strip():
             raise AuditClaimReadError("the recorded branch has no live remote head")
@@ -164,8 +168,11 @@ class AuditClaimVerifier:
             )
             if latest != (comment, record):
                 raise AuditClaimReadError("the lane record changed during verification")
-            if await self._git.remote_branch_sha(
-                repository, self._remote, record.branch
+            if await read_remote_head(
+                git=self._git,
+                repository=repository,
+                remote=self._remote,
+                branch=record.branch,
             ) != head or await read_workspace_head(
                 git=self._git, workspace=workspace
             ) != (head, False):

@@ -6,6 +6,18 @@ from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import GitService
 
 
+async def read_remote_head(
+    *, git: GitService, repository: str, remote: str, branch: str
+) -> str | None:
+    """Finish the native remote lookup before cancellation leaves its caller."""
+    head, cancelled = await finish_owned(
+        asyncio.create_task(git.remote_branch_sha(repository, remote, branch))
+    )
+    if cancelled:
+        raise asyncio.CancelledError
+    return head
+
+
 async def read_workspace_head(*, git: GitService, workspace: str) -> tuple[str, bool]:
     """Return current commit and dirtiness before cancellation can release it."""
 
