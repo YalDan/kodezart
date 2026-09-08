@@ -435,6 +435,12 @@ class TrackerContradiction(CamelCaseModel):
         description="Why no single implementation can satisfy that subset.",
     )
 
+    @model_validator(mode="after")
+    def members_are_distinct(self) -> Self:
+        if len(set(self.criterion_ids)) != len(self.criterion_ids):
+            raise ValueError("a conflicting subset requires distinct criterion keys")
+        return self
+
 
 class TrackerCriteriaValidationOutput(CamelCaseModel):
     """The native-key answer from a tracker feasibility session."""

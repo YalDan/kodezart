@@ -35,6 +35,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.domain.ticket import format_fire_spec
+from kodezart.services.git_observations import read_workspace_head
 from kodezart.types.domain.agent import TRACKER_CRITERIA_VALIDATION_SCHEMA
 from kodezart.types.domain.criteria import TrackerCriteriaValidationOutput
 from kodezart.types.domain.fire_spec import TrackerSpec
@@ -111,11 +112,12 @@ class TrackerFeasibilityValidator:
         self._log = get_logger(__name__)
 
     async def _require_head(self, workspace: str, head: str) -> None:
-        if await self._git.current_sha(workspace) != head:
+        observed, dirty = await read_workspace_head(git=self._git, workspace=workspace)
+        if observed != head:
             raise TrackerFeasibilityReadError(
                 "the workspace moved from the dispatch head"
             )
-        if await self._git.has_changes(workspace):
+        if dirty:
             raise TrackerFeasibilityReadError(
                 "the verification workspace contains changes"
             )

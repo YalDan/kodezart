@@ -147,6 +147,12 @@ def test_conjunction_and_permutation_keep_native_keys_and_nonlexical_order():
         )
 
 
+@pytest.mark.parametrize("keys", [["condition/1", "condition/1"], ["a", "b", "a"]])
+def test_a_native_conflict_cannot_repeat_a_member_to_satisfy_its_cardinality(keys):
+    with pytest.raises(ValidationError, match="distinct criterion keys"):
+        TrackerContradiction(criterion_ids=keys, explanation="purported conjunction")
+
+
 @pytest.mark.parametrize(
     "model,key", [(CriterionFinding, "AC-1"), (TrackerCriterionFinding, "EXT/42")]
 )

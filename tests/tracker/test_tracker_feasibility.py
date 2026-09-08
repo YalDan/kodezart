@@ -380,6 +380,43 @@ async def test_corrected_native_finding_keeps_ids_order_and_fresh_context(setup)
     assert all(args["session_id"] is None for args in runner.arguments)
 
 
+async def test_duplicate_conflict_members_require_a_fresh_corrected_judgment(setup):
+    build, runner, *_ = setup
+    runner.answers = [
+        output(
+            contradictions=[
+                {"criterionIds": [KEYS[0], KEYS[0]], "explanation": "not a subset"}
+            ]
+        ),
+        output(),
+    ]
+    observed = await build().validate(REQUEST)
+    assert observed.judgment.contradictions == []
+    assert observed.correction.attempts == 2
+    assert len(runner.arguments) == 2
+    assert "distinct criterion keys" in runner.arguments[-1]["prompt"]
+    assert all(args["session_id"] is None for args in runner.arguments)
+
+
+@pytest.mark.parametrize("phase", ["current_sha", "has_changes"])
+@pytest.mark.parametrize("read_number", [1, 2, 3])
+async def test_actual_git_reads_settle_before_cancelled_workspace_release(
+    setup, monkeypatch, tmp_path, phase, read_number
+):
+    from tests.git_read_cancellation import assert_git_read_settles_before_release
+
+    build, _, git, _, workspace = setup
+    await assert_git_read_settles_before_release(
+        invoke=lambda: build().validate(REQUEST),
+        git=git,
+        workspace=workspace,
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        phase=phase,
+        read_number=read_number,
+    )
+
+
 async def test_no_todo_children_requires_no_session_and_keeps_prior_states(
     setup, tracker, tracker_writes
 ):
