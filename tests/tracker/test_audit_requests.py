@@ -314,3 +314,61 @@ async def test_native_container_request_census_preserves_addressed_membership(
         )
         assert root.request.lane_key == "opaque:lane λ"
     await reader.require_unchanged(snapshot)
+
+
+@pytest.mark.parametrize(
+    "neighbour",
+    ["intro\n{body}", " {body}", "[audit-native-other:elsewhere]\nignored", ""],
+)
+async def test_lane_namespace_ignores_nonfirst_line_and_prefix_neighbours(
+    tracker, tracker_writes, neighbour
+):
+    stored = await lane_record(tracker)
+    await tracker.post_comment(issue_key=ROOT, body=neighbour.format(body=stored.body))
+    before = tracker_writes()
+    snapshot = await AuditRequestReader(tracker=tracker, operation=operation()).read(
+        scope=SCOPE
+    )
+    assert all(row.request.record_ref == stored.comment_key for row in snapshot.targets)
+    assert all(row.unavailable_reason is None for row in snapshot.targets)
+    assert tracker_writes() == before
+
+
+@pytest.mark.parametrize("ending", ["\r\n", "\r", "\u2028"])
+async def test_lane_prefix_discovery_keeps_canonical_lf_record_identity(
+    tracker, tracker_writes, ending
+):
+    record = LaneRunState.model_validate(record_data())
+    body = render_lane_record(record=record, marker_prefixes=PREFIXES)
+    marker, _, payload = body.partition("\n")
+    await tracker.post_comment(issue_key=ROOT, body=f"{marker}{ending}{payload}")
+    before = tracker_writes()
+    snapshot = await AuditRequestReader(tracker=tracker, operation=operation()).read(
+        scope=SCOPE
+    )
+    assert all(row.request is None for row in snapshot.targets)
+    assert all(
+        row.unavailable_reason
+        == "AuditClaimReadError: the lane marker has no canonical identity"
+        for row in snapshot.targets
+    )
+    assert tracker_writes() == before
+
+
+@pytest.mark.parametrize("copies", [0, 2, 3])
+async def test_missing_or_duplicate_lane_prefix_retains_native_refusal(
+    tracker, tracker_writes, copies
+):
+    for _ in range(copies):
+        await lane_record(tracker)
+    before = tracker_writes()
+    snapshot = await AuditRequestReader(tracker=tracker, operation=operation()).read(
+        scope=SCOPE
+    )
+    assert all(row.request is None for row in snapshot.targets)
+    assert all(
+        row.unavailable_reason
+        == "AuditClaimReadError: the issue has no unique native lane record"
+        for row in snapshot.targets
+    )
+    assert tracker_writes() == before
