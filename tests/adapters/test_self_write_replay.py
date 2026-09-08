@@ -422,3 +422,21 @@ async def test_the_native_snapshot_itself_refuses_a_changed_bounding_issue() -> 
         await tracker.read_issue_movement(issue_key=ISSUE)
     stable = await tracker.read_issue_movement(issue_key=ISSUE)
     assert stable.updated_at == server.issues[ISSUE].updated_at
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+async def test_label_addition_never_claims_other_labels_from_the_response(
+    foreign: bool,
+) -> None:
+    server = _server()
+    ledger = SelfWriteLedger()
+    tracker = _tracker(server, ledger)
+    gate = _gate(tracker, ledger)
+    await gate.delta()
+    if foreign:
+        await server.call_tool(
+            name="save_issue", arguments={"id": ISSUE, "addLabels": ["principal label"]}
+        )
+    await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")
+    await tracker.post_comment(issue_key=ISSUE, body="ours after the issue stamp")
+    assert (await gate.delta()).changed == ((ISSUE,) if foreign else ())
