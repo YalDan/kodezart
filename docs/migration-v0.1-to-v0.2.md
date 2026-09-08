@@ -1,5 +1,10 @@
 # Migrating from v0.1 to v0.2
 
+For the subsequent v0.3 knowledge environment rename, use the
+[current migration table](configuration.md#knowledge-environment-migration).
+The v0.2 names below describe that historical release.
+
+
 ## Who this is for
 
 Two readers:

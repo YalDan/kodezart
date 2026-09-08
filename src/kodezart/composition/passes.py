@@ -20,6 +20,7 @@ from kodezart.core.errors import (
     PassKnowledgeCapabilityError,
     PromptRenderError,
 )
+from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
@@ -614,7 +615,7 @@ def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionTy
 
 def _verify_knowledge_destinations(
     *,
-    config: AppConfig,
+    knowledge: KnowledgeSettings,
     operation: OperationConfig | None,
 ) -> None:
     """Refuse to boot when a session is sent to a store it cannot open.
@@ -646,7 +647,7 @@ def _verify_knowledge_destinations(
     """
     if operation is None:
         return
-    granted = set(config.knowledge_session_grants)
+    granted = set(knowledge.session_grants)
     unreachable = [
         (surface, session_type)
         for surface, session_type in _knowledge_surfaces(operation)
@@ -657,7 +658,7 @@ def _verify_knowledge_destinations(
     ungranted = sorted({session_type.value for _, session_type in unreachable})
     raise PassKnowledgeCapabilityError(
         f"the operation declares {DocumentSystem.KNOWLEDGE.value} surfaces read "
-        f"by sessions knowledge_session_grants does not name ({', '.join(ungranted)}), "
+        f"by sessions knowledge.session_grants does not name ({', '.join(ungranted)}), "
         f"so the session that reaches one holds no capability for it",
         destinations=[
             f"{surface} → {session_type.value}" for surface, session_type in unreachable
@@ -692,7 +693,7 @@ async def verify_pass_preflight(
     :func:`build_prompt_passes`), and rendering a template it will never
     send would refuse a boot over a hole nothing reaches.
     """
-    _verify_knowledge_destinations(config=config, operation=operation)
+    _verify_knowledge_destinations(knowledge=config.knowledge, operation=operation)
     await _verify_wired_gates(
         config=config,
         operation=operation,

@@ -994,7 +994,8 @@ class TrackerPort(Protocol):
 
         Concurrent claimants on one issue produce exactly one
         ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
-        value, never an exception.
+        value, never an exception. An adapter without atomic/fenced
+        ownership refuses with ``UnsupportedClaimError`` before mutation.
         """
         ...
 
@@ -1014,7 +1015,9 @@ class TrackerPort(Protocol):
         Renewal EXTENDS and never acquires.  A claim that has already
         lapsed stays lapsed and the issue stays claimable: the lapse is how
         a process that died mid-run hands its work back, and a renewal that
-        could resurrect one would take that recovery away.
+        could resurrect one would take that recovery away. An adapter
+        without atomic/fenced renewal raises ``UnsupportedClaimError``
+        before mutation; that permanent refusal is not transient failure.
         """
         ...
 

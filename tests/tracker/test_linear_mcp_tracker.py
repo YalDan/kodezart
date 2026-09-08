@@ -9,7 +9,6 @@ what THIS adapter does to get there.
 
 import json
 from collections.abc import Mapping
-from datetime import timedelta
 from http import HTTPStatus
 
 import httpx
@@ -17,7 +16,6 @@ import pytest
 import structlog
 
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.errors import (
     McpCallUnansweredError,
@@ -31,7 +29,6 @@ from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
-    ClaimStatus,
     EnsureAction,
     IssuePriority,
     IssueQuery,
@@ -58,8 +55,6 @@ from tests.tracker.conftest import (
 )
 from tests.tracker.marker_config import MARKER_PREFIXES
 
-_CLAIM_MARKER = LinearMarkers(MARKER_PREFIXES).claim_pattern
-
 RAW_PRIORITY_BY_DOMAIN_MEMBER: dict[int, IssuePriority] = {
     0: IssuePriority.NONE,
     1: IssuePriority.URGENT,
@@ -67,33 +62,6 @@ RAW_PRIORITY_BY_DOMAIN_MEMBER: dict[int, IssuePriority] = {
     3: IssuePriority.MEDIUM,
     4: IssuePriority.LOW,
 }
-
-
-#: Renewals a measured fire makes: the ninety-one-minute run of KOD-147
-#: against the configured fifteen-minute lease, renewed on a quarter of
-#: it.  Every one of them used to leave a comment on the issue.
-RENEWALS_OF_A_MEASURED_RUN = 24
-
-
-def claim_markers(server: FakeLinearMcpServer) -> list[FakeMcpComment]:
-    """Every claim marker on the fake workspace's comment log.
-
-    Matched with the adapter's OWN pattern rather than a second spelling
-    of it here: a test that recognised markers by a shape the writer had
-    moved off would count nothing and pass.
-    """
-    return [
-        comment
-        for comment in server.comments
-        if _CLAIM_MARKER.search(comment.body) is not None
-    ]
-
-
-def holder_of(comment: FakeMcpComment) -> str:
-    """The holder a claim marker names."""
-    match = _CLAIM_MARKER.search(comment.body)
-    assert match is not None
-    return match.group("holder")
 
 
 def tracker_over(server: FakeLinearMcpServer, **overrides: object) -> LinearMcpTracker:
@@ -616,167 +584,6 @@ class TestARefusedCredentialIsNeverRetried:
         assert all(entry["tool"] == "get_issue" for entry in retries)
 
 
-class TestClaimMechanism:
-    """The comment-log claim, including the same-instant tie-break."""
-
-    async def test_same_instant_claims_still_produce_one_winner(self) -> None:
-        """Server timestamps can collide; the comment key breaks the tie."""
-        server = fixture_server()
-        server.comment_instants = [FIXTURE_NOW] * 4
-        tracker = linear_over_fake_mcp(server)
-        first = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        second = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-        assert first.status is ClaimStatus.GRANTED
-        assert second.status is ClaimStatus.LOST
-
-    async def test_an_expired_lease_frees_the_issue(self) -> None:
-        server = fixture_server()
-        early = linear_over_fake_mcp(server)
-        await early.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        later = tracker_over(
-            server,
-            clock=lambda: FIXTURE_NOW + timedelta(seconds=120),
-        )
-        assert await later.active_claim(issue_key=CLAIMED_ISSUE) is None
-        won = await later.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-        assert won.status is ClaimStatus.GRANTED
-
-
-class TestClaimMarkerVolume:
-    """What a claim COSTS the issue's comment log, over a whole run.
-
-    The log is a surface a person reads and a board that mirrors publicly,
-    and every marker on it is a machine comment.  The measured shape
-    (KOD-152): a renewal appended, so a long fire wrote dozens of them, and
-    a claimant that lost the race left its marker there for the whole lease
-    — a claim nobody held, outranking every later claimant and surviving
-    the winner's own release.
-
-    Counted on the fake server's log rather than through the port, because
-    the port cannot express "how many comments did this cost" and that is
-    exactly the question.
-    """
-
-    async def test_a_claim_renewed_through_a_long_run_leaves_one_marker(self) -> None:
-        server = fixture_server()
-        tracker = linear_over_fake_mcp(server)
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-
-        for _ in range(RENEWALS_OF_A_MEASURED_RUN):
-            renewed = await tracker.renew_claim(
-                issue_key=CLAIMED_ISSUE,
-                holder="pass-a",
-                lease_seconds=60.0,
-            )
-            assert renewed is not None, "the claim lapsed under a run still going"
-
-        assert len(claim_markers(server)) == 1
-
-    async def test_a_renewal_across_a_competitors_claim_keeps_the_order(self) -> None:
-        """The renewal edits in place, so the holder keeps where it stood.
-
-        The competitor arrives BETWEEN renewals, which is the ordering the
-        edit exists for: an appended renewal would carry a later timestamp
-        than the competitor's marker and could lose the log to it.
-        """
-        server = fixture_server()
-        tracker = linear_over_fake_mcp(server)
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        (first,) = claim_markers(server)
-        loser = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-        await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=120.0,
-        )
-
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-
-        assert loser.status is ClaimStatus.LOST
-        assert held is not None
-        assert held.holder == "pass-a"
-        assert held.expires_at == FIXTURE_NOW + timedelta(seconds=120.0)
-        # The place in the order is the marker's creation instant, and the
-        # renewal did not move it: an appended renewal would carry a later
-        # one than the competitor's arrival.
-        (carried,) = claim_markers(server)
-        assert carried.created_at == first.created_at
-
-    async def test_a_losing_claimant_leaves_no_marker_behind(self) -> None:
-        """The loser deletes its own append; the winner's is untouched."""
-        server = fixture_server()
-        tracker = linear_over_fake_mcp(server)
-        won = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        lost = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-
-        assert lost.status is ClaimStatus.LOST
-        assert [holder_of(marker) for marker in claim_markers(server)] == ["pass-a"]
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-        assert held is not None
-        assert held.expires_at == won.expires_at
-
-    async def test_the_loser_leaves_nothing_that_outlives_the_winner(self) -> None:
-        """The measured consequence: the winner's release frees the issue.
-
-        An orphaned marker made the release a half-measure — the issue went
-        on being unclaimable, by a marker nobody was renewing, until the
-        loser's own lease ran out.
-        """
-        server = fixture_server()
-        tracker = linear_over_fake_mcp(server)
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
-        )
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=60.0,
-        )
-
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
-
-        assert claim_markers(server) == []
-        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
-
-
 class TestDeterministicPath:
     """No model is in this loop — every call is a named tool invocation."""
 
@@ -1223,10 +1030,12 @@ class TestACommentTheVendorAttributesToNobody:
         """
         server = fixture_server()
         tracker = linear_over_fake_mcp(server)
-        await tracker.claim_issue(
+        await tracker.post_comment(
             issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=60.0,
+            body=(
+                f'<!-- {MARKER_PREFIXES["claim"]} holder="pass-a" '
+                'expires-at="2099-01-01T00:00:00+00:00" -->'
+            ),
         )
         await tracker.record_work_ref(
             ref=WorkRef(
@@ -1394,12 +1203,10 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         caller = HttpMcpToolCaller(
             url="https://tracker.invalid/mcp",
             server_name="fake-linear",
-            token=self.FIXTURE_TOKEN,
+            headers={"Authorization": "Bearer" + " " + self.FIXTURE_TOKEN},
             timeout_seconds=5.0,
             call_timeout_seconds=5.0,
             sse_read_timeout_seconds=300.0,
-            auth_header_name="Authorization",
-            auth_scheme="Bearer",
             error_detail_limit=500,
             client_factory=client_over(endpoint.transport),
         )

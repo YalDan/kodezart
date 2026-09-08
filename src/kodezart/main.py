@@ -102,7 +102,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             prompts=prompts,
         )
         built_recorder = await build_run_recorder(
-            config=config,
+            knowledge=config.knowledge,
+            tracker_server_name=config.tracker_mcp_server_name,
             operation=operation,
             tracker_caller=mcp_caller,
             log=log,
@@ -120,13 +121,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             model=config.model,
             setting_sources=config.setting_sources,
             knowledge_grant=await boot_knowledge_grant(
-                config=config,
+                knowledge=config.knowledge,
                 prompts=prompts,
                 log=log,
             ),
             output_style=config.claude_output_style,
             fire_record=fire_record_template(
-                config=config, operation=operation, prompts=prompts
+                knowledge=config.knowledge, operation=operation, prompts=prompts
             ),
         )
         gate = await build_outbound_gate(

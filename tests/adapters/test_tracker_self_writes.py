@@ -19,7 +19,6 @@ from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
-from kodezart.types.domain.tracker import ClaimStatus
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
 from tests.tracker.marker_config import MARKER_PREFIXES
 
@@ -210,38 +209,18 @@ LEASE_SECONDS: Final[float] = 60.0
 Write = Callable[[LinearMcpTracker], Awaitable[None]]
 
 
-async def _claim_granted(tracker: LinearMcpTracker) -> None:
-    result = await tracker.claim_issue(
+async def _legacy_claim(tracker: LinearMcpTracker) -> None:
+    await tracker.post_comment(
         issue_key=ISSUE,
-        holder=HOLDER,
-        lease_seconds=LEASE_SECONDS,
+        body=(
+            f'<!-- {MARKER_PREFIXES["claim"]} holder="{HOLDER}" '
+            'expires-at="2099-01-01T00:00:00+00:00" -->'
+        ),
     )
-    assert result.status is ClaimStatus.GRANTED
-
-
-async def _claim_lost(tracker: LinearMcpTracker) -> None:
-    """The loser appends and deletes its own marker; replay preserves both."""
-    await _claim_granted(tracker)
-    lost = await tracker.claim_issue(
-        issue_key=ISSUE,
-        holder=RIVAL,
-        lease_seconds=LEASE_SECONDS,
-    )
-    assert lost.status is ClaimStatus.LOST
-
-
-async def _renewal(tracker: LinearMcpTracker) -> None:
-    await _claim_granted(tracker)
-    renewed = await tracker.renew_claim(
-        issue_key=ISSUE,
-        holder=HOLDER,
-        lease_seconds=LEASE_SECONDS,
-    )
-    assert renewed is not None
 
 
 async def _release(tracker: LinearMcpTracker) -> None:
-    await _claim_granted(tracker)
+    await _legacy_claim(tracker)
     await tracker.release_claim(issue_key=ISSUE, holder=HOLDER)
 
 
@@ -264,27 +243,22 @@ async def _work_ref(tracker: LinearMcpTracker) -> None:
 @pytest.mark.parametrize(
     "write",
     [
-        _claim_granted,
-        _claim_lost,
-        _renewal,
+        _legacy_claim,
         _release,
         _plain_comment,
         _work_ref,
     ],
-    ids=["claim-granted", "claim-lost", "renew", "release", "comment", "work-ref"],
+    ids=["legacy-marker", "release", "comment", "work-ref"],
 )
 async def test_every_comment_shaped_write_records_only_its_own_mutations(
     write: Write,
 ) -> None:
     """The paths the measured incident actually rode (KOD-175).
 
-    30 of 31 dispatch ticks on the measured boot found a delta of the
-    service's own making, and what made it was these writes: a claim, its
-    renewal, its release, the marker a lost claim withdraws, a recorded
-    work ref.  Proven here over the SHIPPED adapter against the fake MCP
-    server, because ``FakeTrackerPort`` records into its ledger
-    unconditionally — a double that cannot fail to record proves nothing
-    about the adapter that can.
+    These supported native writes retain their own receipt attribution.
+    Unfenced acquisition and renewal now refuse before mutation; their
+    former successful-write fixtures cannot establish supported behavior.
+    Legacy marker cleanup remains a real native delete path.
     """
     ledger = SelfWriteLedger()
     server = _server()

@@ -32,7 +32,7 @@ from kodezart.core.protocols import AgentExecutor
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.credentials import REDACTION_SENTINEL
-from kodezart.types.domain.session import KnowledgeGrant, SessionType
+from kodezart.types.domain.session import HttpKnowledge, KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -446,9 +446,12 @@ async def test_a_granted_session_carries_the_knowledge_server(module) -> None:
     assert set(options.mcp_servers) == {FIXTURE_KNOWLEDGE_SERVER}
     definition = options.mcp_servers[FIXTURE_KNOWLEDGE_SERVER]
     assert definition["type"] == "http"
-    assert definition["url"] == grant.server_url
+    assert definition["url"] == grant.connection.server_url
     assert definition["headers"] == {
-        grant.auth_header: f"{grant.auth_scheme} {grant.credential.get_secret_value()}",
+        grant.connection.auth_header: (
+            f"{grant.connection.auth_scheme} "
+            f"{grant.connection.credential.get_secret_value()}"
+        ),
     }
 
 
@@ -555,7 +558,8 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
             "url": "https://knowledge.invalid/mcp",
             "headers": {
                 "Authorization": (
-                    f"Bearer {knowledge_grant_for().credential.get_secret_value()}"
+                    "Bearer "
+                    + knowledge_grant_for().connection.credential.get_secret_value()
                 )
             },
         },
@@ -564,18 +568,13 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
 
 def test_a_grant_without_a_credential_never_builds_a_header() -> None:
     """The dead configuration fails loudly rather than dialling unauthenticated."""
-    grant = KnowledgeGrant(
-        granted=(SessionType.TICKET_FIRE,),
-        server_name=FIXTURE_KNOWLEDGE_SERVER,
-        server_url="https://knowledge.invalid/mcp",
-        auth_header="Authorization",
-        auth_scheme="Bearer",
-        credential=None,
-        knowledge_map=FIXTURE_KNOWLEDGE_MAP,
-    )
-
-    with pytest.raises(ValueError, match="carries no credential"):
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
+    with pytest.raises(ValueError, match="authenticated knowledge connection"):
+        KnowledgeGrant(
+            granted=(SessionType.TICKET_FIRE,),
+            server_name=FIXTURE_KNOWLEDGE_SERVER,
+            connection=HttpKnowledge(server_url="https://knowledge.invalid/mcp"),
+            knowledge_map=FIXTURE_KNOWLEDGE_MAP,
+        )
 
 
 def test_the_mapping_describes_no_server_for_a_type_the_grant_does_not_name() -> None:

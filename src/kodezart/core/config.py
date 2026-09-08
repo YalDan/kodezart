@@ -3,8 +3,16 @@
 from typing import Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    EnvSettingsSource,
+    InitSettingsSource,
+    PydanticBaseSettingsSource,
+    SecretsSettingsSource,
+    SettingsConfigDict,
+)
 
+from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
@@ -13,11 +21,6 @@ from kodezart.types.domain.gating import (
     RedactionCategory,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import (
-    KnowledgeGrant,
-    KnowledgeTransport,
-    SessionType,
-)
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
@@ -36,6 +39,7 @@ class AppConfig(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="KODEZART_",
+        env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
@@ -47,6 +51,49 @@ class AppConfig(BaseSettings):
         env_parse_none_str="null",
         hide_input_in_errors=True,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Keep normal precedence; make retired knowledge variables visible errors."""
+
+        def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
+            values = source()
+            if isinstance(source, EnvSettingsSource):
+                prefix = f"{source.env_prefix}knowledge_".casefold()
+                for key, value in source.env_vars.items():
+                    if key.casefold().startswith(
+                        prefix
+                    ) and not key.casefold().startswith(prefix + "_"):
+                        # Preserve retired names for extra=forbid; never expose values.
+                        values[key] = value
+            if (
+                isinstance(source, SecretsSettingsSource)
+                and source.secrets_dir is not None
+            ):
+                prefix = f"{source.env_prefix}knowledge_".casefold()
+                for directory in source.secrets_paths:
+                    for path in directory.iterdir():
+                        key = path.name
+                        if key.casefold().startswith(
+                            prefix
+                        ) and not key.casefold().startswith(prefix + "_"):
+                            # Reject the retired name without reading its secret value.
+                            values[key] = None
+            return InitSettingsSource(settings_cls, init_kwargs=values)
+
+        return (
+            init_settings,
+            checked(env_settings),
+            checked(dotenv_settings),
+            checked(file_secret_settings),
+        )
 
     project_name: str = Field(
         default="kodezart",
@@ -308,7 +355,7 @@ class AppConfig(BaseSettings):
     def _session_model_keys_name_prompt_keys(cls, value: object) -> object:
         """Name every offending key, deliberately and safely.
 
-        The same carve-out ``knowledge_session_grants`` documents: the
+        The same carve-out ``knowledge.session_grants`` documents: the
         legal vocabulary is the closed ``PromptKey`` enum, so an offender
         is by definition not a secret, and naming it is what turns a typo
         into a one-line fix instead of a key nothing ever reads.
@@ -801,200 +848,9 @@ class AppConfig(BaseSettings):
         le=300.0,
         description="Time one asset fetch may take before the fire fails to build.",
     )
-    knowledge_mcp_token: SecretStr | None = Field(
-        default=None,
-        exclude=True,
-        description=(
-            "Credential for the knowledge MCP server. "
-            "Environment only, and excluded from serialization: a dumped "
-            "config is copied into logs, fixtures and error payloads."
-        ),
-    )
-    knowledge_session_grants: list[SessionType] = Field(
-        default_factory=list,
-        description=(
-            "Session types the knowledge MCP server is attached to, "
-            "named one by one. There is no wildcard value. Ships empty: "
-            "the mechanism ships and the grant is operator configuration. "
-            "A non-empty list with neither KODEZART_KNOWLEDGE_MCP_TOKEN nor "
-            "KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN set aborts boot rather "
-            "than attaching an unauthenticated server."
-        ),
-    )
-
-    @field_validator("knowledge_session_grants", mode="before")
-    @classmethod
-    def _grant_entries_name_session_types(cls, value: object) -> object:
-        """Name every offending grant entry, deliberately and safely.
-
-        ``hide_input_in_errors`` keeps raw input out of every validation
-        message because an arbitrary env value can be a credential.  A
-        grant entry is the one input that must come BACK in the error —
-        the boot contract names the offender and the legal values — and
-        it is safe to name, because the legal vocabulary is a closed enum
-        and an offender is by definition not a secret this field accepts.
-        So this field names its own offenders before the enum coercion
-        would hide them, and the global rule stays intact for every
-        other field.
-        """
-        if not isinstance(value, list):
-            return value
-        legal = {member.value for member in SessionType}
-        offending = [
-            str(entry)
-            for entry in value
-            if not isinstance(entry, SessionType)
-            if str(entry) not in legal
-        ]
-        if offending:
-            named = ", ".join(repr(entry) for entry in offending)
-            allowed = ", ".join(sorted(legal))
-            msg = (
-                f"knowledge_session_grants names no session type: {named} "
-                f"— the legal values are: {allowed}"
-            )
-            raise ValueError(msg)
-        return value
-
-    knowledge_mcp_server_name: str = Field(
-        default="notion",
-        min_length=1,
-        description="Identity the knowledge MCP server carries in a granted session.",
-    )
-    knowledge_mcp_server_url: str | None = Field(
-        default=None,
-        min_length=1,
-        description=(
-            "Endpoint of the knowledge MCP server a granted session dials "
-            "under the http transport. Unset means no knowledge server "
-            "endpoint is configured; a granted http session then aborts "
-            "boot naming the absence."
-        ),
-    )
-    knowledge_mcp_auth_header: str = Field(
-        default="Authorization",
-        min_length=1,
-        description="Request header the knowledge credential is presented in.",
-    )
-    knowledge_mcp_auth_scheme: str | None = Field(
-        default="Bearer",
-        min_length=1,
-        description=(
-            "Scheme prefixing the knowledge credential in its auth header. "
-            "The literal value null means no scheme: the credential rides "
-            "raw in its header."
-        ),
-    )
-    knowledge_mcp_transport: KnowledgeTransport = Field(
-        default=KnowledgeTransport.HTTP,
-        description=(
-            "How a granted session reaches the knowledge MCP server: http "
-            "dials the configured endpoint with headers, stdio spawns the "
-            "configured command. The route is stated, never inferred from "
-            "which optional fields happen to be set."
-        ),
-    )
-    knowledge_mcp_gateway_token: SecretStr | None = Field(
-        default=None,
-        exclude=True,
-        description=(
-            "Gateway credential a client presents to a SELF-HOSTED knowledge "
-            "server, as a bearer in the Authorization header. Distinct from "
-            "the upstream credential the server uses against the vendor API. "
-            "Environment only, and excluded from serialization."
-        ),
-    )
-    knowledge_mcp_command: str | None = Field(
-        default=None,
-        description=(
-            "Absolute path of the self-hosted knowledge server binary a "
-            "granted session spawns under the stdio transport. Package "
-            "runners are refused by name: they resolve or fetch their "
-            "payload at spawn time, in a working directory a cloned "
-            "repository controls."
-        ),
-    )
-    knowledge_mcp_args: list[str] = Field(
-        default_factory=list,
-        description="Arguments the stdio knowledge server is spawned with.",
-    )
-    knowledge_mcp_env: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "Non-secret environment entries for the stdio knowledge server. "
-            "The credential never rides here — it is delivered separately, "
-            "under the entry KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV names."
-        ),
-    )
-    knowledge_mcp_credential_env: str | None = Field(
-        default=None,
-        min_length=1,
-        description=(
-            "Name of the environment entry the stdio knowledge server reads "
-            "its credential from. The value comes from "
-            "KODEZART_KNOWLEDGE_MCP_TOKEN; this names only where it lands."
-        ),
-    )
-    knowledge_mcp_timeout_seconds: float = Field(
-        default=30.0,
-        ge=5.0,
-        le=120.0,
-        description=(
-            "Timeout the knowledge MCP transport gives one HTTP exchange "
-            "with the server on the programmatic record path."
-        ),
-    )
-    knowledge_mcp_call_timeout_seconds: float = Field(
-        default=60.0,
-        ge=1.0,
-        le=120.0,
-        description=(
-            "Seconds one knowledge MCP tool call may wait for its answer "
-            "before it is abandoned as the typed transport failure. The "
-            "same bound the tracker transport carries, on the same "
-            "transport class: a record write on a torn-down session hangs "
-            "the pass holding it exactly as a tracker scan does."
-        ),
-    )
-    knowledge_mcp_sse_read_timeout_seconds: float = Field(
-        default=300.0,
-        ge=30.0,
-        le=3600.0,
-        description=(
-            "Seconds the knowledge MCP session's event stream may go quiet "
-            "before its read is abandoned, when the record path is reached "
-            "over HTTP. The same bound the tracker transport carries, on "
-            "the same transport class."
-        ),
-    )
-    knowledge_mcp_error_detail_limit: int = Field(
-        default=500,
-        ge=80,
-        le=8000,
-        description=(
-            "Characters of the server's OWN error text carried into a "
-            "knowledge MCP transport failure on the programmatic record "
-            "path."
-        ),
-    )
-    knowledge_mcp_stderr_tail_limit: int = Field(
-        default=2000,
-        ge=200,
-        le=20000,
-        description=(
-            "Bytes of the spawned knowledge MCP server's OWN stderr carried "
-            "into the process log when its session fails or ends. The TAIL, "
-            "because a server that dies says why in its last lines."
-        ),
-    )
-    knowledge_mcp_interactive_auth_hosts: list[str] = Field(
-        default_factory=lambda: ["mcp.notion.com"],
-        description=(
-            "Hosts that authenticate interactively (OAuth) and accept no "
-            "static credential. A granted endpoint on one of these paired "
-            "with a static credential aborts boot, naming the conflict. The "
-            "vendor lives in the value, never in the schema."
-        ),
+    knowledge: KnowledgeSettings = Field(
+        default_factory=KnowledgeSettings,
+        description="Knowledge session grants and typed MCP connection.",
     )
     checkpoint_url: str | None = Field(
         default=None,
@@ -1288,150 +1144,6 @@ class AppConfig(BaseSettings):
             raise ValueError(msg)
         return self
 
-    @model_validator(mode="after")
-    def _check_knowledge_grant_carries_its_credential(self) -> Self:
-        """A granted session without a credential aborts boot.
-
-        The alternative is a session configured with a knowledge server it
-        cannot authenticate against, which fails at the first tool call
-        with a vendor error rather than at boot with a configuration one.
-        """
-        if (
-            self.knowledge_session_grants
-            and self.knowledge_mcp_token is None
-            and self.knowledge_mcp_gateway_token is None
-        ):
-            granted = ", ".join(
-                session_type.value for session_type in self.knowledge_session_grants
-            )
-            msg = (
-                f"KODEZART_KNOWLEDGE_SESSION_GRANTS names {granted} but "
-                f"KODEZART_KNOWLEDGE_MCP_TOKEN is unset: a granted session would "
-                f"attach an unauthenticated knowledge server. Set the "
-                f"credential (or, for a self-hosted http server holding its "
-                f"own upstream token, KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN), "
-                f"or empty the grant list."
-            )
-            raise ValueError(msg)
-        return self
-
-    @model_validator(mode="after")
-    def _check_the_knowledge_transport_reads_what_is_set(self) -> Self:
-        """A field the declared route never reads is refused, never ignored.
-
-        Configuration dialled by nothing is the defect class the knowledge
-        connection was refiled over, so a stray member under the wrong
-        transport aborts boot naming it.  Fields that carry shipped
-        defaults are judged by whether a source actually SET them — an
-        inert default under the other route is legal, an explicit value is
-        not.
-
-        BOTH arms ask the same question, of the set rather than of the
-        value.  A truthiness test cannot tell an unset list from one an
-        operator wrote ``[]`` into, so the empty collections a source
-        explicitly declared under the route that never reads them used to
-        pass as untouched defaults — the exact escape this docstring
-        promises to refuse.
-        """
-        if self.knowledge_mcp_transport is KnowledgeTransport.HTTP:
-            stray = [
-                name
-                for field, name in (
-                    ("knowledge_mcp_command", "KODEZART_KNOWLEDGE_MCP_COMMAND"),
-                    (
-                        "knowledge_mcp_credential_env",
-                        "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV",
-                    ),
-                    ("knowledge_mcp_args", "KODEZART_KNOWLEDGE_MCP_ARGS"),
-                    ("knowledge_mcp_env", "KODEZART_KNOWLEDGE_MCP_ENV"),
-                )
-                if field in self.model_fields_set
-            ]
-            if stray:
-                msg = (
-                    f"the http knowledge transport reads none of: "
-                    f"{', '.join(stray)}. These belong to the stdio "
-                    f"transport; set KODEZART_KNOWLEDGE_MCP_TRANSPORT=stdio "
-                    f"or unset them."
-                )
-                raise ValueError(msg)
-            return self
-        if self.knowledge_mcp_command is None:
-            msg = (
-                "KODEZART_KNOWLEDGE_MCP_TRANSPORT is stdio but "
-                "KODEZART_KNOWLEDGE_MCP_COMMAND is unset: there is no process "
-                "for a granted session to spawn."
-            )
-            raise ValueError(msg)
-        if self.knowledge_mcp_gateway_token is not None:
-            msg = (
-                "KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN is set under the stdio "
-                "knowledge transport: a spawned process has no headers to "
-                "present a gateway credential in."
-            )
-            raise ValueError(msg)
-        stray = [
-            name
-            for field, name in (
-                ("knowledge_mcp_server_url", "KODEZART_KNOWLEDGE_MCP_SERVER_URL"),
-                ("knowledge_mcp_auth_header", "KODEZART_KNOWLEDGE_MCP_AUTH_HEADER"),
-                ("knowledge_mcp_auth_scheme", "KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME"),
-            )
-            if field in self.model_fields_set
-        ]
-        if stray:
-            msg = (
-                f"the stdio knowledge transport has no endpoint and no "
-                f"headers, so it reads none of: {', '.join(stray)}. Unset "
-                f"them, or use the http transport."
-            )
-            raise ValueError(msg)
-        return self
-
-    @model_validator(mode="after")
-    def _check_a_stdio_credential_has_exactly_one_delivery_entry(self) -> Self:
-        """The credential and its landing entry are a pair, both or neither.
-
-        A credential with nowhere to land and an entry with nothing to
-        deliver are the two half-shapes; a delivery entry that collides
-        with a declared env member is two writers of one entry.
-        """
-        if self.knowledge_mcp_transport is not KnowledgeTransport.STDIO:
-            return self
-        if (
-            self.knowledge_mcp_token is not None
-            and self.knowledge_mcp_credential_env is None
-        ):
-            msg = (
-                "KODEZART_KNOWLEDGE_MCP_TOKEN is set under the stdio "
-                "knowledge transport but KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV "
-                "is not: the credential has no environment entry to be "
-                "delivered under."
-            )
-            raise ValueError(msg)
-        if (
-            self.knowledge_mcp_credential_env is not None
-            and self.knowledge_mcp_token is None
-        ):
-            msg = (
-                "KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV is set but "
-                "KODEZART_KNOWLEDGE_MCP_TOKEN is not: a delivery entry with "
-                "no credential to deliver."
-            )
-            raise ValueError(msg)
-        if (
-            self.knowledge_mcp_credential_env is not None
-            and self.knowledge_mcp_credential_env in self.knowledge_mcp_env
-        ):
-            msg = (
-                f"KODEZART_KNOWLEDGE_MCP_ENV already carries "
-                f"{self.knowledge_mcp_credential_env!r}, the entry "
-                f"KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV names: two writers "
-                f"of one environment entry."
-            )
-            raise ValueError(msg)
-        return self
-
     def skills_selection(self) -> SkillsSelection:
         """The typed three-state selection threaded to executor sessions."""
         return SkillsSelection(
@@ -1449,41 +1161,6 @@ class AppConfig(BaseSettings):
         the only place that knows which fields were supplied.
         """
         return self.max_reviews if "max_reviews" in self.model_fields_set else None
-
-    def knowledge_grant(self, *, knowledge_map: str) -> KnowledgeGrant:
-        """The resolved grant threaded to executor sessions.
-
-        *knowledge_map* is the rendered what-lives-where prelude a granted
-        session's prompt receives — supplied by the caller rather than
-        derived here, because rendering it needs the prompt registry and
-        this model knows nothing about prompts.  It has no default: a
-        defaulted map is a grant that silently attaches a server and tells
-        the session nothing about what it reaches.
-        """
-        if self.knowledge_mcp_transport is KnowledgeTransport.STDIO:
-            return KnowledgeGrant(
-                granted=tuple(self.knowledge_session_grants),
-                transport=KnowledgeTransport.STDIO,
-                server_name=self.knowledge_mcp_server_name,
-                command=self.knowledge_mcp_command,
-                args=tuple(self.knowledge_mcp_args),
-                env=dict(self.knowledge_mcp_env),
-                credential_env=self.knowledge_mcp_credential_env,
-                credential=self.knowledge_mcp_token,
-                knowledge_map=knowledge_map,
-            )
-        return KnowledgeGrant(
-            granted=tuple(self.knowledge_session_grants),
-            transport=KnowledgeTransport.HTTP,
-            server_name=self.knowledge_mcp_server_name,
-            server_url=self.knowledge_mcp_server_url,
-            auth_header=self.knowledge_mcp_auth_header,
-            auth_scheme=self.knowledge_mcp_auth_scheme,
-            credential=self.knowledge_mcp_token,
-            gateway_credential=self.knowledge_mcp_gateway_token,
-            interactive_auth_hosts=tuple(self.knowledge_mcp_interactive_auth_hosts),
-            knowledge_map=knowledge_map,
-        )
 
     @classmethod
     def from_env(cls) -> Self:

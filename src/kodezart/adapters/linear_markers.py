@@ -2,7 +2,6 @@
 
 import re
 from collections.abc import Mapping
-from datetime import datetime
 
 from kodezart.domain.comment_markers import configured_marker_prefix
 from kodezart.types.domain.branch import BaseSpec, WorkRef
@@ -26,12 +25,6 @@ class LinearMarkers:
             "claim",
             r'\s+holder="(?P<holder>[^"]+)"\s+'
             r'expires-at="(?P<expires_at>[^"]+)"\s*-->',
-        )
-
-    def claim_body(self, *, holder: str, expires_at: datetime) -> str:
-        return (
-            f'<!-- {self._prefix("claim")} holder="{holder}" '
-            f'expires-at="{expires_at.isoformat()}" -->'
         )
 
     @property

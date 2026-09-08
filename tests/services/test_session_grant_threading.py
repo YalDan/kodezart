@@ -141,6 +141,14 @@ def _dispatch_calls_missing_a_session_type() -> list[str]:
     return offenders
 
 
+@pytest.fixture(autouse=True)
+def _knowledge_http(monkeypatch):
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL", "https://knowledge.invalid/mcp"
+    )
+
+
 def test_no_dispatching_call_in_the_source_omits_its_session_type() -> None:
     """Census, not a spot check: a new call site cannot inherit a default."""
     assert _dispatch_calls_missing_a_session_type() == []
@@ -167,23 +175,25 @@ async def test_the_grant_reaching_the_options_is_the_one_app_config_resolved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AppConfig is the origin: one configuration change, one decision."""
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", "ntn_" + ("R" * 44))
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__SESSION_GRANTS", '["ticket_fire"]')
     monkeypatch.setenv(
-        "KODEZART_KNOWLEDGE_MCP_SERVER_URL",
+        "KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL", "ntn_" + ("R" * 44)
+    )
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL",
         "https://knowledge.invalid/mcp",
     )
     config = AppConfig()
 
-    grant = config.knowledge_grant(knowledge_map="── fixture map ──")
+    grant = config.knowledge.grant(knowledge_map="── fixture map ──")
     executor = ClaudeClientExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
         knowledge_grant=grant,
     )
 
-    assert grant.server_name == config.knowledge_mcp_server_name
-    assert grant.server_url == config.knowledge_mcp_server_url
-    assert grant.credential == config.knowledge_mcp_token
+    assert grant.server_name == config.knowledge.server_name
+    assert grant.connection.server_url == config.knowledge.connection.server_url
+    assert grant.connection.credential == config.knowledge.connection.credential
     assert grant.grants(SessionType.TICKET_FIRE) is True
     assert executor is not None
 
@@ -192,6 +202,6 @@ def test_a_grant_never_serializes_its_credential() -> None:
     """The resolved value is passed around; the secret is not part of it."""
     grant = knowledge_grant_for(SessionType.TICKET_FIRE)
 
-    assert grant.credential is not None
-    assert grant.credential.get_secret_value() not in grant.model_dump_json()
+    assert grant.connection.credential is not None
+    assert grant.connection.credential.get_secret_value() not in grant.model_dump_json()
     assert NO_KNOWLEDGE_GRANT.granted == ()

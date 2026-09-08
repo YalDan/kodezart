@@ -969,12 +969,10 @@ def _caller_over(endpoint: _Endpoint, *, token: str) -> HttpMcpToolCaller:
     return HttpMcpToolCaller(
         url="https://tracker.invalid/mcp",
         server_name="fixture-server",
-        token=token,
+        headers={"Authorization": "Bearer" + " " + token},
         timeout_seconds=5.0,
         call_timeout_seconds=5.0,
         sse_read_timeout_seconds=300.0,
-        auth_header_name="Authorization",
-        auth_scheme="Bearer",
         error_detail_limit=500,
         client_factory=client_over(endpoint.transport),
     )

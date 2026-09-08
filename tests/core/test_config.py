@@ -1,7 +1,7 @@
 """Configuration criteria — the fan-out cap, and the two flipped defaults.
 
-KOD-89-AC-5: every numeric constant in this project is an ``AppConfig``
-field with the ``KODEZART_`` prefix, so the cap is asserted the same way —
+The configured investigation cap is an ``AppConfig`` field with the
+``KODEZART_`` prefix, so the operator choice is asserted directly —
 it reads from the environment, it refuses values outside its declared range
 at construction, and the range itself is the one the fire-time ruling
 recorded.
@@ -215,10 +215,7 @@ def test_a_declared_style_loads_verbatim(monkeypatch: pytest.MonkeyPatch) -> Non
     assert AppConfig().claude_output_style == "Concise"
 
 
-SSE_READ_FIELDS = (
-    "tracker_mcp_sse_read_timeout_seconds",
-    "knowledge_mcp_sse_read_timeout_seconds",
-)
+SSE_READ_FIELDS = ("tracker_mcp_sse_read_timeout_seconds",)
 #: The bounds the sibling timeouts are declared with, and the default the
 #: session ran on while the value came from a private vendor constant
 #: (KOD-299).

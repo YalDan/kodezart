@@ -9,10 +9,17 @@ type had to be guessed is a session whose grant was guessed.
 
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Final, Self
+from typing import Annotated, Final, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from kodezart.types.base import CamelCaseModel
 
@@ -59,172 +66,130 @@ PACKAGE_RUNNER_COMMANDS: Final[frozenset[str]] = frozenset(
 )
 
 
-class KnowledgeGrant(CamelCaseModel):
-    """The resolved knowledge-server grant threaded to executor sessions.
+class HttpKnowledge(BaseModel):
+    """One HTTP endpoint and the credentials it receives."""
 
-    Carries the whole server definition alongside the session types it is
-    granted to, so the membership question and the definition it selects
-    answer from one value rather than from two that can disagree.
+    model_config = ConfigDict(frozen=True, hide_input_in_errors=True, extra="forbid")
 
-    ``knowledge_map`` is the second consequence of that same decision: the
-    rendered what-lives-where prelude a granted session's prompt receives.
-    It rides HERE rather than beside the grant because a grant that attaches
-    the server without telling the session what lives where, or a map handed
-    to sessions nothing was granted to, are exactly the two switches
-    disagreeing — and the rule below makes both unconstructible.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    granted: tuple[SessionType, ...] = ()
-    transport: KnowledgeTransport = KnowledgeTransport.HTTP
-    server_name: str
-    server_url: str | None = None
-    auth_header: str | None = None
-    auth_scheme: str | None = None
+    transport: Literal[KnowledgeTransport.HTTP] = KnowledgeTransport.HTTP
+    server_url: str = Field(min_length=1)
+    auth_header: str = Field(default="Authorization", min_length=1)
+    auth_scheme: str | None = Field(default="Bearer", min_length=1)
     credential: SecretStr | None = Field(default=None, exclude=True)
     gateway_credential: SecretStr | None = Field(default=None, exclude=True)
-    command: str | None = None
+    interactive_auth_hosts: tuple[str, ...] = ("mcp.notion.com",)
+    timeout_seconds: float = Field(default=30, ge=5, le=120)
+    sse_read_timeout_seconds: float = Field(default=300, ge=30, le=3600)
+
+    @model_validator(mode="after")
+    def _authentication_is_coherent(self) -> Self:
+        if self.credential is not None and self.gateway_credential is not None:
+            if self.auth_header.casefold() == "authorization":
+                raise ValueError(
+                    "auth_header collides with the gateway Authorization header"
+                )
+        if (
+            self.authenticated
+            and urlsplit(self.server_url).hostname in self.interactive_auth_hosts
+        ):
+            raise ValueError(
+                "server_url authenticates interactively (OAuth) "
+                "and accepts no static credential"
+            )
+        return self
+
+    @property
+    def authenticated(self) -> bool:
+        """Whether at least one configured credential reaches the server."""
+        return self.credential is not None or self.gateway_credential is not None
+
+    def headers(self) -> dict[str, str]:
+        """The same complete header mapping for SDK and programmatic clients."""
+        headers = {}
+        if self.gateway_credential is not None:
+            headers["Authorization"] = (
+                f"Bearer {self.gateway_credential.get_secret_value()}"
+            )
+        if self.credential is not None:
+            token = self.credential.get_secret_value()
+            headers[self.auth_header] = (
+                token if self.auth_scheme is None else f"{self.auth_scheme} {token}"
+            )
+        return headers
+
+
+class StdioKnowledge(BaseModel):
+    """One installed process and its explicit credential environment entry."""
+
+    model_config = ConfigDict(frozen=True, hide_input_in_errors=True, extra="forbid")
+
+    transport: Literal[KnowledgeTransport.STDIO] = KnowledgeTransport.STDIO
+    command: str = Field(min_length=1)
     args: tuple[str, ...] = ()
     env: dict[str, str] = Field(default_factory=dict)
-    credential_env: str | None = None
-    interactive_auth_hosts: tuple[str, ...] = ()
+    credential: SecretStr | None = Field(default=None, exclude=True)
+    credential_env: str | None = Field(default=None, min_length=1)
+    stderr_tail_limit: int = Field(default=2000, ge=200, le=20000)
+
+    @field_validator("command")
+    @classmethod
+    def _installed_absolute_command(cls, command: str) -> str:
+        path = PurePosixPath(command)
+        if not path.is_absolute():
+            raise ValueError("stdio command must be an absolute installed binary path")
+        if path.name in PACKAGE_RUNNER_COMMANDS:
+            raise ValueError("stdio command cannot be a package runner")
+        return command
+
+    @model_validator(mode="after")
+    def _credential_has_one_delivery_entry(self) -> Self:
+        if (self.credential is None) != (self.credential_env is None):
+            raise ValueError("credential and credential_env must be supplied together")
+        if self.credential_env is not None and self.credential_env in self.env:
+            raise ValueError("credential_env collides with an existing env entry")
+        return self
+
+    @property
+    def authenticated(self) -> bool:
+        """Whether the credential has a validated delivery entry."""
+        return self.credential is not None
+
+    def environment(self) -> dict[str, str]:
+        """A fresh process environment with the explicit credential inserted."""
+        env = dict(self.env)
+        if self.credential_env is not None and self.credential is not None:
+            env[self.credential_env] = self.credential.get_secret_value()
+        return env
+
+
+KnowledgeConnection = Annotated[
+    HttpKnowledge | StdioKnowledge, Field(discriminator="transport")
+]
+
+
+class KnowledgeGrant(CamelCaseModel):
+    """One resolved capability decision and its rendered knowledge map."""
+
+    model_config = ConfigDict(frozen=True, hide_input_in_errors=True, extra="forbid")
+
+    granted: tuple[SessionType, ...] = ()
+    server_name: str
+    connection: KnowledgeConnection | None = None
     knowledge_map: str = ""
 
     @model_validator(mode="after")
-    def _the_shape_matches_its_transport(self) -> Self:
-        """Each transport carries its own fields, and only its own.
-
-        A value the declared route never reads is the defect class this
-        model was refiled over — configuration dialled by nothing — so a
-        stray member is a refusal naming it, never an ignored field.
-
-        The endpoint is owed where a session would dial it: a grant naming
-        no session type dials nothing, and carries none.
-        """
-        if self.transport is KnowledgeTransport.HTTP:
-            if self.server_url is None and self.granted:
-                msg = (
-                    "an http knowledge transport carries no server_url: "
-                    "there is no endpoint for a granted session to dial"
-                )
-                raise ValueError(msg)
-            stray = self._set_fields(
-                command=self.command,
-                credential_env=self.credential_env,
-                args=self.args or None,
-                env=self.env or None,
-            )
-            if stray:
-                msg = (
-                    f"an http knowledge transport reads none of: {stray}. "
-                    f"These fields belong to the stdio transport"
-                )
-                raise ValueError(msg)
-            return self
-        if self.command is None:
-            msg = (
-                "a stdio knowledge transport carries no command: "
-                "there is no process for a granted session to spawn"
-            )
-            raise ValueError(msg)
-        stray = self._set_fields(
-            server_url=self.server_url,
-            auth_header=self.auth_header,
-            auth_scheme=self.auth_scheme,
-            gateway_credential=self.gateway_credential,
-            interactive_auth_hosts=self.interactive_auth_hosts or None,
-        )
-        if stray:
-            msg = (
-                f"a stdio knowledge transport has no endpoint and no headers, "
-                f"so it reads none of: {stray}"
-            )
-            raise ValueError(msg)
-        return self
-
-    @model_validator(mode="after")
-    def _an_interactive_host_takes_no_static_credential(self) -> Self:
-        """A host that authenticates its clients receives no header from here.
-
-        The exchange is the operator's, in a browser, and the server takes
-        no token from configuration — so a granted endpoint on such a host
-        paired with a statically composed header cannot succeed at any
-        credential value.  It is refused where the grant is built, which
-        for the configured grant is boot, rather than at the first session
-        that would carry it.
-        """
-        if not self.granted or self.transport is not KnowledgeTransport.HTTP:
-            return self
-        if self.server_url is None:
-            return self
-        if self.credential is None and self.gateway_credential is None:
-            return self
-        host = urlsplit(self.server_url).hostname
-        if host is None or host not in self.interactive_auth_hosts:
-            return self
-        msg = (
-            f"KODEZART_KNOWLEDGE_MCP_SERVER_URL names {host}, which "
-            f"authenticates interactively (OAuth) and accepts no static "
-            f"credential, but KODEZART_KNOWLEDGE_MCP_TOKEN / "
-            f"KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN compose one. This "
-            f"combination cannot succeed at any credential value: point the "
-            f"url at a self-hosted server, or use the stdio transport"
-        )
-        raise ValueError(msg)
-
-    @model_validator(mode="after")
-    def _a_stdio_command_resolves_nowhere_but_itself(self) -> Self:
-        """The spawned server is named absolutely and is not a package runner.
-
-        Fire sessions run in cloned, attacker-authored working directories:
-        a relative command resolves against them, and a package runner
-        resolves or fetches its payload at spawn time.  Both are refused by
-        the value itself, wherever it was built.
-        """
-        if self.command is None:
-            return self
-        if not PurePosixPath(self.command).is_absolute():
-            msg = (
-                f"stdio knowledge command {self.command!r} is not an absolute "
-                f"path: a relative command resolves against the session's "
-                f"working directory, which a cloned repository controls"
-            )
-            raise ValueError(msg)
-        basename = PurePosixPath(self.command).name
-        if basename in PACKAGE_RUNNER_COMMANDS:
-            msg = (
-                f"stdio knowledge command {self.command!r} is a package "
-                f"runner ({basename}): it resolves or fetches its payload at "
-                f"spawn time. Name the installed server binary absolutely"
-            )
-            raise ValueError(msg)
-        return self
-
-    @staticmethod
-    def _set_fields(**candidates: object) -> str:
-        """The names among *candidates* whose value is present, joined."""
-        return ", ".join(
-            name for name, value in candidates.items() if value is not None
-        )
-
-    @model_validator(mode="after")
     def _the_map_rides_with_the_grant(self) -> Self:
-        """A grant names session types and carries a map, or neither."""
-        if bool(self.granted) == bool(self.knowledge_map):
-            return self
-        named = ", ".join(session_type.value for session_type in self.granted)
-        msg = (
-            f"grant names {named} but carries no knowledge map: a granted "
-            f"session would be configured with the knowledge server and told "
-            f"nothing about what lives where"
-            if self.granted
-            else (
-                "grant names no session type but carries a knowledge map: "
-                "nothing would ever render it"
+        if bool(self.granted) != bool(self.knowledge_map):
+            raise ValueError(
+                "knowledge_map and granted session types must be supplied together"
             )
-        )
-        raise ValueError(msg)
+        if self.granted and (
+            self.connection is None or not self.connection.authenticated
+        ):
+            raise ValueError(
+                "granted session types require an authenticated knowledge connection"
+            )
+        return self
 
     def grants(self, session_type: SessionType) -> bool:
         """Whether *session_type* receives the knowledge server."""

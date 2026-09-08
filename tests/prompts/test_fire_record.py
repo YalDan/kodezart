@@ -27,11 +27,18 @@ def template(set_name="claude-opus", *, configured=True):
     config = operation()
     prompts = load_registry(default_set=set_name, bindings=dict(bindings_for(config)))
     return fire_record_template(
-        config=AppConfig(
-            knowledge_session_grants=(SessionType.TICKET_FIRE,),
-            knowledge_mcp_token=SecretStr("ntn_" + "F" * 44),
-            knowledge_mcp_server_url="https://knowledge.invalid/mcp",
-        ),
+        knowledge=(
+            AppConfig(
+                knowledge={
+                    "session_grants": (SessionType.TICKET_FIRE,),
+                    "connection": {
+                        "transport": "http",
+                        "server_url": "https://knowledge.invalid/mcp",
+                        "credential": SecretStr("ntn_" + "F" * 44),
+                    },
+                },
+            )
+        ).knowledge,
         operation=config if configured else example_config(),
         prompts=prompts,
     )
