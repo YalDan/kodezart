@@ -7,6 +7,12 @@ lane dispatched" is observed as a job on the queue and "the lane was held"
 as a claim that was never spent.
 """
 
+import ast
+import inspect
+
+from kodezart.chains import scope_walker
+from kodezart.domain import issue_tree, topology
+from kodezart.services import scope_dispatcher
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -34,6 +40,7 @@ from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
     FakeJobQueue,
+    FakePRStateReader,
     FakeRepoCache,
     FakeTrackerPort,
     PassThroughGate,
@@ -200,6 +207,41 @@ def enqueued(queue):
     return [request.issue_key for _, request in queue.submissions]
 
 
+def chain():
+    """A <- B <- C: each lane's premise is the one before it."""
+    return board(
+        lane_issue("A"),
+        criterion("A-check", parent="A"),
+        lane_issue("B", blocked_by=("A",)),
+        criterion("B-check", parent="B"),
+        lane_issue("C", blocked_by=("B",)),
+        criterion("C-check", parent="C"),
+    )
+
+
+async def walk_chain(tracker, walker, queue, probe, *, open_prs=False):
+    """Tick until the scope is at rest, finishing each lane the walk launches.
+
+    Exactly what a graded fire leaves behind: the criterion closed, the
+    branch recorded as the lane's deliverable ref, the claim released and
+    the job terminal.  With *open_prs* the delivery is opened too and never
+    merged, which is the steady state of every finished lane on the
+    founder's boards.
+    """
+    reports = []
+    for _ in range(len(tracker.scope_memberships[PROJECT]) + 1):
+        report = await walker.run_pass()
+        reports.append(report)
+        if report.claimed_issue_key is None:
+            break
+        close(tracker, f"{report.claimed_issue_key}-check")
+        deliver(tracker, report.claimed_issue_key)
+        if open_prs:
+            probe.delivered.add(report.claimed_issue_key)
+        finish(tracker, queue, report)
+    return reports
+
+
 async def test_a_blocked_lane_is_held_across_ticks_until_its_blockers_subtree_closes():
     """The lane waits on the blocker's CRITERIA, not on the blocker's state."""
     tracker = board(
@@ -339,3 +381,46 @@ async def test_ready_selection_makes_no_writes_before_the_claim():
     assert tracker.queue_writes == []
     assert tracker.lease_writes == []
     assert tracker.claim_writes == ["lane"]
+
+
+async def test_a_full_walk_reads_no_pull_request_merge_state():
+    """The whole graph walks with the merge-state boundary standing idle."""
+    tracker = chain()
+    walker, queue, probe = walk(tracker)
+    reader = FakePRStateReader(records={})
+
+    reports = await walk_chain(tracker, walker, queue, probe)
+
+    assert [report.claimed_issue_key for report in reports] == ["A", "B", "C", None]
+    assert enqueued(queue) == ["A", "B", "C"]
+    assert reader.calls == []
+    assert reports[-1].outcome is DispatchOutcome.empty_eligible_set
+
+
+def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
+    """No module on the walk can ask a pull request anything, statically."""
+    modules = [scope_walker, topology, issue_tree, scope_dispatcher]
+    forbidden_names = {"PRStateReader", "PRState", "PRLifecycle"}
+    for module in modules:
+        tree = ast.parse(inspect.getsource(module))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                assert node.module != "kodezart.types.domain.pr_state"
+                assert {alias.name for alias in node.names} & forbidden_names == set()
+            if isinstance(node, ast.Attribute):
+                assert node.attr not in {"read_pr_state", "lifecycle", "merged"}
+
+    imported = {
+        node.module
+        for node in ast.walk(ast.parse(inspect.getsource(scope_dispatcher)))
+        if isinstance(node, ast.ImportFrom)
+    }
+    assert imported == {
+        "kodezart.chains.scope_walker",
+        "kodezart.core.logging",
+        "kodezart.core.protocols",
+        "kodezart.services.fire_dispatcher",
+        "kodezart.types.domain.dispatch",
+        "kodezart.types.domain.run_records",
+        "kodezart.types.domain.scope",
+    }
