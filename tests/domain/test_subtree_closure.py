@@ -2,10 +2,11 @@
 
 An issue is finished when everything under it is finished, so what a
 candidate still owes and whether a blocker is discharged are one recursive
-read asked twice.  Every fixture here pins the gap, an independently
-written state rollup over the same subtree, and the closure together — the
-row that used to part the two, a lane whose own checks are graded over a
-deliverable that still owes one, included.
+read asked twice.  Each row below authors both expectations as literals —
+the open-key tuple and the Done verdict — so the equivalence is read
+against the fixture rather than against either computation restated, and
+the row that used to part the two, a lane whose own checks are graded over
+a deliverable that still owes one, can fail like any other.
 """
 
 import ast
@@ -99,32 +100,6 @@ def a_cancellation_without_a_supersession() -> tuple[
     return facts_of(lane, met, canceled), ("lane-AC-2",)
 
 
-def descends_from(facts: dict[str, TrackerIssue], key: str, ancestor: str) -> bool:
-    """Walk parentage upward, so descent is read off the records themselves."""
-    current = facts[key].parent_key
-    while current is not None and current in facts:
-        if current == ancestor:
-            return True
-        current = facts[current].parent_key
-    return False
-
-
-def subtree_is_done(facts: dict[str, TrackerIssue], key: str) -> bool:
-    """Done over every criterion record under *key*, from states alone.
-
-    Written from the state vocabulary and from parentage rather than through
-    the gap, so the row-by-row agreement below is an observation about two
-    computations and not a restatement of one.  A cancellation carries no
-    supersession reference on these fixtures and never reaches this rollup.
-    """
-    return all(
-        issue.state_kind is WorkflowStateKind.COMPLETED
-        for issue in facts.values()
-        if "criterion" in issue.issue_labels
-        and descends_from(facts, issue.issue_key, key)
-    )
-
-
 @pytest.mark.parametrize(
     "row,open_keys,unresolved,subtree_closed",
     [
@@ -153,9 +128,8 @@ def test_gap_is_empty_iff_the_subtree_rollup_is_done(
         return
     gap = closure.gap("lane")
     assert tuple(issue.issue_key for issue in gap) == open_keys
-    assert (gap == ()) == subtree_is_done(facts, "lane")
     assert closure.is_closed("lane") is subtree_closed
-    assert closure.is_closed("lane") is (gap == ())
+    assert (gap == ()) is closure.is_closed("lane")
 
 
 def test_the_lane_gap_and_the_blocker_closure_are_one_read():
@@ -174,7 +148,6 @@ def test_the_lane_gap_and_the_blocker_closure_are_one_read():
     assert closure.is_closed("lane") is False
     assert closure.is_closed("child") is False
     assert open_criteria(closure.criteria("lane"), ref=REF) == ()
-    assert subtree_is_done(facts, "lane") is False
 
 
 def test_a_closure_over_a_narrower_criterion_set_disagrees_with_the_gap():
