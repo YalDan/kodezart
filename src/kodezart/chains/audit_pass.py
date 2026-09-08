@@ -2,8 +2,6 @@
 
 import json
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
-from kodezart.core.errors import soft_failure
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
@@ -12,9 +10,9 @@ from kodezart.core.protocols import (
     TrackerPort,
     WorkspaceProvider,
 )
-from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import (
     read_remote_head,
@@ -42,7 +40,6 @@ from kodezart.types.domain.audit import (
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.surface import WritableSurface
 from kodezart.types.domain.tracker import TrackerIssue
 
@@ -125,34 +122,19 @@ class AuditClaimVerifier:
                 raise AuditClaimReadError(
                     "the audit workspace is not clean at the selected head"
                 )
-            result, rate_limited = await drain(
-                self._runner.stream_in_workspace(
-                    prompt=prompt,
-                    workspace_path=workspace,
-                    permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=list(EVAL_TOOLS),
-                    skills=self._prompts.session_skills(key, self._skills),
-                    session_type=SessionType.SCHEDULED_PASS,
-                    agents=NO_SUBAGENTS,
-                    session_policy=self._prompts.session_policy(key),
-                    session_id=None,
-                    output_format={"type": "json_schema", "schema": AUDIT_CLAIM_SCHEMA},
-                ),
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=AUDIT_CLAIM_SCHEMA,
                 site="audit_claim",
+                session_type=SessionType.SCHEDULED_PASS,
+                failure_message="Audit claim produced no structured judgment.",
             )
-            if (
-                result is None
-                or result.structured_output is None
-                or result.is_error
-                or rate_limited
-            ):
-                raise soft_failure(
-                    "Audit claim produced no structured judgment.",
-                    raise_site="audit_claim",
-                    result_event=result,
-                    rate_limit_rejected=rate_limited,
-                )
-            judgment = AuditClaimJudgment.model_validate(result.structured_output)
+            judgment = AuditClaimJudgment.model_validate(structured)
             if judgment.criterion_key != criterion.issue_key:
                 raise AuditClaimReadError("the judgment names a different criterion")
             if await self._criterion(request) != criterion:
@@ -294,37 +276,19 @@ class AuditMandateHunt:
                     ),
                 }
             )
-            result, limited = await drain(
-                self._runner.stream_in_workspace(
-                    prompt=prompt,
-                    workspace_path=workspace,
-                    permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=list(EVAL_TOOLS),
-                    skills=self._prompts.session_skills(key, self._skills),
-                    session_type=SessionType.SCHEDULED_PASS,
-                    agents=NO_SUBAGENTS,
-                    session_policy=self._prompts.session_policy(key),
-                    session_id=None,
-                    output_format={
-                        "type": "json_schema",
-                        "schema": AUDIT_MANDATE_SCHEMA,
-                    },
-                ),
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=AUDIT_MANDATE_SCHEMA,
                 site="audit_mandate",
+                session_type=SessionType.SCHEDULED_PASS,
+                failure_message="Mandate hunt produced no structured judgment.",
             )
-            if (
-                result is None
-                or result.structured_output is None
-                or result.is_error
-                or limited
-            ):
-                raise soft_failure(
-                    "Mandate hunt produced no structured judgment.",
-                    raise_site="audit_mandate",
-                    result_event=result,
-                    rate_limit_rejected=limited,
-                )
-            judgment = AuditMandateJudgment.model_validate(result.structured_output)
+            judgment = AuditMandateJudgment.model_validate(structured)
             if await read_replace_refs(git=self._git, workspace=workspace):
                 raise AuditClaimReadError(
                     "the mandate repository substitutes Git objects"

@@ -22,6 +22,54 @@ from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 
 
+async def judge_in_workspace(
+    *,
+    runner: AgentRunner,
+    prompts: PromptSetProvider,
+    skills: SkillsSelection,
+    workspace: str,
+    key: PromptKey,
+    prompt: str,
+    output_schema: dict[str, object],
+    site: RaiseSite,
+    session_type: SessionType,
+    failure_message: str,
+) -> dict[str, object]:
+    """Run a fresh read-only judgment inside the caller's owned workspace.
+
+    The caller retains workspace/source validation and output interpretation.
+    Session type and error context belong to that caller's phase.
+    """
+    result, rate_limited = await drain(
+        runner.stream_in_workspace(
+            prompt=prompt,
+            workspace_path=workspace,
+            permission_mode=EVAL_PERMISSION_MODE,
+            allowed_tools=list(EVAL_TOOLS),
+            skills=prompts.session_skills(key, skills),
+            session_type=session_type,
+            agents=NO_SUBAGENTS,
+            session_policy=prompts.session_policy(key),
+            session_id=None,
+            output_format={"type": "json_schema", "schema": output_schema},
+        ),
+        site=site,
+    )
+    if (
+        result is None
+        or result.structured_output is None
+        or result.is_error
+        or rate_limited
+    ):
+        raise soft_failure(
+            failure_message,
+            raise_site=site,
+            result_event=result,
+            rate_limit_rejected=rate_limited,
+        )
+    return result.structured_output
+
+
 class FreshAuditSession:
     """Own a clean immutable workspace without any prior-session input."""
 
@@ -71,32 +119,17 @@ class FreshAuditSession:
             self._workspace, repo_path=repository, ref=head_sha
         ) as workspace:
             await self._require_head(workspace, head_sha)
-            result, rate_limited = await drain(
-                self._runner.stream_in_workspace(
-                    prompt=prompt,
-                    workspace_path=workspace,
-                    permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=list(EVAL_TOOLS),
-                    skills=self._prompts.session_skills(key, self._skills),
-                    session_type=SessionType.SCHEDULED_PASS,
-                    agents=NO_SUBAGENTS,
-                    session_policy=self._prompts.session_policy(key),
-                    session_id=None,
-                    output_format={"type": "json_schema", "schema": output_schema},
-                ),
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=output_schema,
                 site=site,
+                session_type=SessionType.SCHEDULED_PASS,
+                failure_message="Audit session produced no structured judgment.",
             )
-            if (
-                result is None
-                or result.structured_output is None
-                or result.is_error
-                or rate_limited
-            ):
-                raise soft_failure(
-                    "Audit session produced no structured judgment.",
-                    raise_site=site,
-                    result_event=result,
-                    rate_limit_rejected=rate_limited,
-                )
             await self._require_head(workspace, head_sha)
-            return result.structured_output
+            return structured

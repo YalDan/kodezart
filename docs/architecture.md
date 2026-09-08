@@ -1068,3 +1068,10 @@ fresh session policy stay inside each caller's workspace lifetime.
 record acquisition or retain cleanup-error precedence: scratch worktree
 creation, process startup, tracker boot and application shutdown. Those cases
 cannot propagate cancellation immediately after acquisition.
+
+Fresh audit and admission judgments share `judge_in_workspace` in the existing
+audit-session module. It sends no previous session identifier, uses the
+read-only tool and permission policy, drains the result and preserves typed
+soft failures. The caller supplies its phase, prompt policy and error context,
+and retains the workspace through its own before/after source checks. ORGANIZE
+keeps its own session type and requires no Git dependency for this reuse.
