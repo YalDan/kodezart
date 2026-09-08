@@ -279,3 +279,40 @@ async def test_failed_native_read_is_never_a_healthy_terminal(
     monkeypatch.setattr(target, method, AsyncMock(side_effect=failure))
     with pytest.raises(RuntimeError, match="unavailable"):
         await reader.observe(REQUEST)
+
+
+async def test_missing_recorded_pr_is_unresolved_without_forge_lookup(
+    setup, tracker, forge
+):
+    reader, _, record, comment = setup
+    changed = record.model_copy(update={"pr": None})
+    await tracker.upsert_comment(
+        target=ISSUE,
+        marker=comment.body.splitlines()[0],
+        body=render_lane_record(record=changed, marker_prefixes=PREFIXES).partition(
+            "\n"
+        )[2],
+    )
+    result = await reader.observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert result.discrepancies == (TerminalDiscrepancy.UNRESOLVED_ASSOCIATION,)
+    assert result.pr is None
+    assert forge[2] == []
+
+
+async def test_current_native_pr_sha_must_equal_its_resolved_branch(setup, forge):
+    reader, *_ = setup
+    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(update={"head_sha": "b" * 40})
+    with pytest.raises(AuditClaimReadError, match="do not agree"):
+        await reader.observe(REQUEST)
+
+
+@pytest.mark.parametrize("subject", [ISSUE, CHILD])
+async def test_expected_review_requires_parent_state_and_every_completed_criterion(
+    setup, tracker, forge, subject
+):
+    reader, git, *_ = setup
+    await tracker.restore_workflow_state(issue_key=subject, state_name="Todo")
+    with pytest.raises(AuditClaimReadError, match="expected review terminal"):
+        await reader.observe(REQUEST)
+    assert not git.calls and not forge[2]
