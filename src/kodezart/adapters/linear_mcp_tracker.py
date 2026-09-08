@@ -702,12 +702,6 @@ class LinearMcpTracker:
                     stops="required issue classifications cannot be read",
                 )
 
-    def require_criterion_reads(self) -> None:
-        """Supported: read_criteria hydrates the issue's criterion children."""
-
-    def require_body_digest_stability(self) -> None:
-        """Supported: full-read body bytes alone determine this adapter's digest."""
-
     async def read_issue_state_change(
         self, *, issue_key: str
     ) -> TrackerIssueStateChange:

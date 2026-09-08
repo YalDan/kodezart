@@ -4,7 +4,11 @@ import asyncio
 from typing import assert_never
 
 from kodezart.core.config import AppConfig
-from kodezart.core.protocols import CIMonitor, CIObservationReader, TrackerPort
+from kodezart.core.protocols import (
+    CIMonitor,
+    CIObservationReader,
+    TrackerCriteriaReader,
+)
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.git_url import resolve_repo_url
@@ -31,7 +35,7 @@ class AuditForgeVerifier:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: TrackerCriteriaReader,
         ci: CIMonitor | None,
         observations: CIObservationReader | None,
         operation: OperationConfig,

@@ -3,7 +3,12 @@
 from dataclasses import dataclass
 
 from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import GitService, GitSourceReader, RepoCache, TrackerPort
+from kodezart.core.protocols import (
+    GitService,
+    GitSourceReader,
+    RepoCache,
+    TrackerCriteriaReader,
+)
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
@@ -42,7 +47,7 @@ class AuditSourceReader:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: TrackerCriteriaReader,
         records: LaneRecordReader,
         git: GitService,
         source: GitSourceReader,

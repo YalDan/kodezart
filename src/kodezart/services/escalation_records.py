@@ -9,7 +9,7 @@ from kodezart.core.errors import (
     McpTransportError,
     TrackerProtocolError,
 )
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import TrackerCommentReader
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import (
     DuplicateCommentMarkerError,
@@ -25,7 +25,9 @@ from kodezart.types.domain.tracker import TrackerComment
 class EscalationRecordReader:
     """An occurrence is identified by its configured marker, never its prose."""
 
-    def __init__(self, *, tracker: TrackerPort, operation: OperationConfig) -> None:
+    def __init__(
+        self, *, tracker: TrackerCommentReader, operation: OperationConfig
+    ) -> None:
         self._tracker = tracker
         self._prefixes = dict(operation.marker_prefixes)
 
