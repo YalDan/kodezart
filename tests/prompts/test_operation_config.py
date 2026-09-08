@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
@@ -40,6 +38,7 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
+from tests.outbound import make_admission
 from tests.prompt_census import PROMPT_FUNCTION_NAMES
 from tests.prompts.sets import PER_RUN
 from tests.prompts.test_prompt_wiring import load_registry
@@ -549,17 +548,12 @@ def test_claude_opus_completeness_passes_at_the_full_census() -> None:
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)
-async def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
+async def test_ported_templates_contain_no_resolved_org_values(key: PromptKey) -> None:
     """Zero resolved org-shaped values in repository content."""
-    config = AppConfig()
-    gate = PatternOutboundContentGate(
-        scanners=[
-            RegexContentScanner(patterns=config.deny_patterns),
-            RegexContentScanner(patterns=ORG_SHAPED_PATTERNS),
-        ],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    gate = make_admission()
     body = (SET_DIR / f"{key.value}.md").read_text(encoding="utf-8")
+    for patterns in ORG_SHAPED_PATTERNS.values():
+        assert not any(re.search(pattern, body) for pattern in patterns)
     decision = await gate.gate(
         content=body,
         visibility=RepoVisibility.PUBLIC,

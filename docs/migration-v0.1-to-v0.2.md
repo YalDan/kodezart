@@ -143,8 +143,6 @@ otherwise.
 | `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` | not present | `86400.0` (60 to 604800) | Nothing. |
 | `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` | not present | `900.0` (0 to 86400; must not exceed the record retention) | Nothing. |
 | `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` | not present | `512` (1 to 10000) | Nothing. |
-| `KODEZART_DENY_PATTERNS` | not present | every category `[]` except `credentials`, which carries the credential-shape regexes | Nothing; `{}` would delete the credential category, and the `org_private` key is refused. |
-| `KODEZART_DENY_PATTERN_VERDICTS` | not present | `redacted` for `cross_repo_names`, `tracker_urls`, `email_handles`, `org_private`; `blocked` for `infra_endpoints`, `credentials` | Nothing. |
 | `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` | not present | `false` | Nothing; `true` requires an operation config with `private_surface`. |
 | `KODEZART_CONTENT_SCAN_RETRY_MAX_ATTEMPTS` | not present | `2` (1 to 10) | Nothing. |
 | `KODEZART_CONTENT_SCAN_RETRY_INITIAL_INTERVAL` | not present | `1.0` (at least 0.1) | Nothing. |
@@ -376,9 +374,9 @@ message shapes:
 - `KODEZART_SKILLS_MODE=explicit` with an empty allowlist:
   `KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty KODEZART_SKILLS_ALLOWLIST`;
   the reverse: `KODEZART_SKILLS_ALLOWLIST must be empty when KODEZART_SKILLS_MODE=none`.
-- An `org_private` key in `KODEZART_DENY_PATTERNS`:
-  `KODEZART_DENY_PATTERNS must not carry a pattern list for org_private: ...`,
-  pointing to `OperationConfig.private_surface`.
+- Removed `deny_patterns` or `deny_pattern_verdicts` settings: an extra-input
+  validation error. Local credential checks and six category consequences are
+  now fixed; deployment facts and semantic privacy remain in `private_surface`.
 - A non-empty `KODEZART_KNOWLEDGE_SESSION_GRANTS` with no credential, an entry
   that is not a session type, or a field the declared transport never reads:
   a validation error naming the variable and the legal values.

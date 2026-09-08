@@ -91,9 +91,8 @@ does not exist.
 | PromptSetProvider | InRepoPromptRegistry     | Set content belonging to no key: lens definitions, the system-prompt append |
 | SkillInventory    | HostSkillInventory       | What the host provisions; kodezart installs nothing  |
 | RepoVisibilityResolver | GitHubAPIClient     | Resolves PRIVATE / PUBLIC / UNKNOWN once per run     |
-| ContentScanner    | RegexContentScanner      | The deterministic pattern half of the outbound gate  |
-| ContentScanner    | AgentContentScanner      | The judgment half, ordered after the patterns        |
-| OutboundContentGate | PatternOutboundContentGate | CLEAN / REDACTED / BLOCKED over N scanners      |
+| ContentJudgment | AgentContentScanner | Fresh semantic judgment after fixed local checks |
+| OutboundContentGate | OutboundAdmission | Fixed credentials, references and authored admission |
 | RefPublisher      | GitRefPublisher          | Points a named ref at an existing commit on the remote |
 | CheckChainRunner | SubprocessCheckChainRunner | Runs the ordered declared check steps in a scratch directory and captures every result |
 | Remediator        | RemediationChain         | One remediation round: failure evidence in, one targeted ticket out |

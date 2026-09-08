@@ -1,16 +1,11 @@
 """The actual redacting gate cannot publish a damaged tracker identity."""
 
-import re
-
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.domain.errors import PRTrackerIdentityError
 from kodezart.domain.pr_body import require_tracker_issue
 from kodezart.types.domain.agent import ErrorEvent
 from kodezart.types.domain.gating import (
-    GateVerdict,
     OutboundDestination,
     RedactionCategory,
     ScanResult,
@@ -25,12 +20,13 @@ from tests.integration.test_issue_key_carriage import (
     finish,
     workflow_harness,
 )
+from tests.outbound import LiteralJudgment, make_admission
 from tests.services.test_fire_dispatcher import LANE
 
 
-class ObservedScanner(RegexContentScanner[RedactionCategory]):
+class ObservedScanner(LiteralJudgment):
     def __init__(self, text):
-        super().__init__(patterns={RedactionCategory.TRACKER_URLS: [re.escape(text)]})
+        super().__init__({RedactionCategory.TRACKER_URLS: [text]})
         self.bodies = []
 
     async def scan(
@@ -43,10 +39,7 @@ class ObservedScanner(RegexContentScanner[RedactionCategory]):
 
 def redacting_gate(text):
     scanner = ObservedScanner(text)
-    return scanner, PatternOutboundContentGate(
-        scanners=[scanner],
-        verdicts={RedactionCategory.TRACKER_URLS: GateVerdict.REDACTED},
-    )
+    return scanner, make_admission(scanner)
 
 
 @pytest.mark.parametrize("stalled", [False, True])

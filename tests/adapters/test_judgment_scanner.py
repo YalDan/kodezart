@@ -26,18 +26,17 @@ import pytest
 
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.git_change_persister import GitChangePersister
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.composition.gating import outbound_scanners
+from kodezart.composition.gating import build_outbound_gate
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import ContentScannerBootError
+from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
-from kodezart.core.protocols import ContentScanner, OutboundContentGate
+from kodezart.core.protocols import ContentJudgment, OutboundContentGate
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.gating import (
-    UNCONDITIONAL_ROUTING,
     ContentClass,
     GateVerdict,
     OutboundDestination,
@@ -56,7 +55,8 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-from tests.fakes import FAKE_SESSION_TYPE, FakeContentScanner
+from tests.fakes import FAKE_SESSION_TYPE, FakeContentJudgment
+from tests.outbound import make_admission
 from tests.prompts.test_prompt_wiring import load_registry
 
 # A SYNTHETIC organisation. A fixture built from the real description would
@@ -167,12 +167,8 @@ def scanner_for(
     )
 
 
-def gate_over(scanners: list[ContentScanner]) -> PatternOutboundContentGate:
-    """A gate over *scanners* with the shipped category verdicts."""
-    return PatternOutboundContentGate(
-        scanners=scanners,
-        verdicts=AppConfig().deny_pattern_verdicts,
-    )
+def gate_over(judgment: ContentJudgment | None = None) -> OutboundAdmission:
+    return make_admission(judgment)
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +292,7 @@ async def test_every_failure_kind_blocks_and_names_itself(
     kind: ScanFailureKind,
 ) -> None:
     """No member yields CLEAN, none yields REDACTED, none is skipped."""
-    gate = gate_over([FakeContentScanner(failure=kind)])
+    gate = gate_over(FakeContentJudgment(failure=kind))
     decision = await gate.gate(
         content=PROSE,
         visibility=RepoVisibility.PUBLIC,
@@ -312,7 +308,7 @@ async def test_every_failure_kind_blocks_and_names_itself(
 async def test_did_not_answer_and_said_clean_are_different_states() -> None:
     """The three-state discipline, asserted as an inequality of observables."""
     silent = await gate_over(
-        [FakeContentScanner(failure=ScanFailureKind.TIMEOUT)],
+        FakeContentJudgment(failure=ScanFailureKind.TIMEOUT),
     ).gate(
         content=PROSE,
         visibility=RepoVisibility.PUBLIC,
@@ -320,7 +316,7 @@ async def test_did_not_answer_and_said_clean_are_different_states() -> None:
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
     )
-    clean = await gate_over([FakeContentScanner(hits=[])]).gate(
+    clean = await gate_over(FakeContentJudgment(hits=[])).gate(
         content=PROSE,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
@@ -338,7 +334,7 @@ async def test_did_not_answer_and_said_clean_are_different_states() -> None:
 
 
 async def gate_once(
-    scanner: FakeContentScanner,
+    scanner: FakeContentJudgment,
     *,
     content: str,
     destination: OutboundDestination,
@@ -351,7 +347,7 @@ async def gate_once(
     ``content_class`` has no default here either: a helper that supplied one
     would hide the very declaration these routing tests measure.
     """
-    await gate_over([scanner]).gate(
+    await gate_over(scanner).gate(
         content=content,
         visibility=visibility,
         shape=shape,
@@ -362,7 +358,7 @@ async def gate_once(
 
 async def test_a_derived_evaluator_cadence_payload_costs_nothing() -> None:
     """R: zero calls — by declared provenance, never by exemption."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content='{"criterion": "AC-1", "passed": true, "sha": "a1b2c3d"}',
@@ -374,7 +370,7 @@ async def test_a_derived_evaluator_cadence_payload_costs_nothing() -> None:
 
 async def test_an_authored_pull_request_body_costs_exactly_one() -> None:
     """R: one call."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=PROSE,
@@ -386,7 +382,7 @@ async def test_an_authored_pull_request_body_costs_exactly_one() -> None:
 
 async def test_a_branch_name_is_audited_despite_being_an_identifier() -> None:
     """R: one call per run — the routing rule is frequency x prose origin."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content="kodezart/quarry-works-pricing-pilot",
@@ -402,7 +398,7 @@ async def test_a_private_target_costs_nothing_at_every_destination(
     destination: OutboundDestination,
 ) -> None:
     """R: zero calls — the gate returns before any scanner runs."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=PROSE,
@@ -415,7 +411,7 @@ async def test_a_private_target_costs_nothing_at_every_destination(
 
 async def test_the_repository_surface_is_out_of_scope_for_the_judgment_path() -> None:
     """R: a commit message is carried in history, not published at write time."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=PROSE,
@@ -426,20 +422,9 @@ async def test_the_repository_surface_is_out_of_scope_for_the_judgment_path() ->
 
 
 async def test_a_deterministic_block_short_circuits_the_model_call() -> None:
-    """R: a credential is caught with no network call, ordering preserved."""
-    judgment = FakeContentScanner(hits=[])
-    gate = gate_over(
-        [
-            RegexContentScanner(
-                patterns={
-                    RedactionCategory.CREDENTIALS: [r"\bgh[posu]_[A-Za-z0-9]{36,}"]
-                },
-            ),
-            judgment,
-        ],
-    )
-    decision = await gate.gate(
-        content="deploy with ghp_" + "a" * 36 + " and tell nobody",
+    judgment = FakeContentJudgment(hits=[])
+    decision = await make_admission(judgment).gate(
+        content="deploy with ghp_" + "a" * 36,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
@@ -456,12 +441,8 @@ async def test_a_deterministic_block_short_circuits_the_model_call() -> None:
 
 async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
     """D: one invocation, one verdict, no second cost."""
-    scanner = FakeContentScanner(hits=[])
-    gate = PatternOutboundContentGate(
-        scanners=[scanner],
-        verdicts=AppConfig().deny_pattern_verdicts,
-        fragment_digest="digest-a",
-    )
+    scanner = FakeContentJudgment(hits=[])
+    gate = make_admission(scanner, fragment_digest="digest-a")
     first = await gate.gate(
         content=PROSE,
         visibility=RepoVisibility.PUBLIC,
@@ -482,13 +463,9 @@ async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
 
 async def test_a_changed_fragment_digest_invalidates_the_answer() -> None:
     """D: the memo is keyed on the fragment, so a changed one re-invokes."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     for digest in ("digest-a", "digest-b"):
-        gate = PatternOutboundContentGate(
-            scanners=[scanner],
-            verdicts=AppConfig().deny_pattern_verdicts,
-            fragment_digest=digest,
-        )
+        gate = make_admission(scanner, fragment_digest=digest)
         await gate.gate(
             content=PROSE,
             visibility=RepoVisibility.PUBLIC,
@@ -501,8 +478,8 @@ async def test_a_changed_fragment_digest_invalidates_the_answer() -> None:
 
 async def test_a_changed_destination_is_a_different_question() -> None:
     """D: the memo key carries the destination, never the payload alone."""
-    scanner = FakeContentScanner(hits=[])
-    gate = gate_over([scanner])
+    scanner = FakeContentJudgment(hits=[])
+    gate = gate_over(scanner)
     for destination in (
         OutboundDestination.PR_BODY,
         OutboundDestination.TRACKER_COMMENT,
@@ -518,25 +495,23 @@ async def test_a_changed_destination_is_a_different_question() -> None:
 
 
 async def test_a_changed_content_class_is_a_different_question() -> None:
-    """D: the memo key carries the declared class, never the bytes alone.
-
-    Two writes identical in payload and destination but declared with
-    different provenance are routed differently, so a shared memo entry
-    would hand one of them the other's verdict.  The scanner here declares
-    UNCONDITIONAL routing so that both calls reach it and the only thing
-    being measured is the memo key.
-    """
-    scanner = FakeContentScanner(hits=[], routing=UNCONDITIONAL_ROUTING)
-    gate = gate_over([scanner])
-    for content_class in (ContentClass.AUTHORED, ContentClass.DERIVED):
+    judgment = FakeContentJudgment(failure=ScanFailureKind.REFUSAL)
+    gate = make_admission(judgment)
+    results = [
         await gate.gate(
             content=PROSE,
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
-            content_class=content_class,
+            content_class=kind,
         )
-    assert len(scanner.calls) == 2
+        for kind in (ContentClass.DERIVED, ContentClass.AUTHORED)
+    ]
+    assert [result.verdict for result in results] == [
+        GateVerdict.CLEAN,
+        GateVerdict.BLOCKED,
+    ]
+    assert judgment.calls == [PROSE]
 
 
 # ---------------------------------------------------------------------------
@@ -567,7 +542,7 @@ async def test_a_credential_shaped_payload_declared_authored_is_audited() -> Non
     rule treated as safe.  Under a declared class the writer's provenance
     decides, and the scanner sees it.
     """
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=CREDENTIAL_SHAPED,
@@ -579,7 +554,7 @@ async def test_a_credential_shaped_payload_declared_authored_is_audited() -> Non
 
 async def test_a_machine_derived_note_declared_derived_is_not_audited() -> None:
     """P: the other direction — a sentence that costs nothing."""
-    scanner = FakeContentScanner(hits=[])
+    scanner = FakeContentJudgment(hits=[])
     await gate_once(
         scanner,
         content=DERIVED_NOTE,
@@ -605,7 +580,7 @@ def test_the_declared_class_can_never_be_omitted() -> None:
     """
     surfaces = (
         OutboundContentGate.gate,
-        PatternOutboundContentGate.gate,
+        OutboundAdmission.gate,
         gated_write,
         GitChangePersister._gated_message,
     )
@@ -615,7 +590,7 @@ def test_the_declared_class_can_never_be_omitted() -> None:
         assert parameter.annotation in (ContentClass, "ContentClass"), surface
 
     with pytest.raises(TypeError, match="content_class"):
-        gate_over([]).gate(  # type: ignore[call-arg]
+        gate_over().gate(  # type: ignore[call-arg]
             content=PROSE,
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
@@ -640,27 +615,16 @@ def test_no_module_reconstructs_the_class_from_the_payload_bytes() -> None:
 # ---------------------------------------------------------------------------
 
 
-def conformance_adapters() -> list[ContentScanner]:
-    """Every registered ``ContentScanner`` implementation, both of them.
-
-    The judgment adapter is driven by a scripted session reporting a real
-    span; what conforms or fails to conform here is the port contract, not
-    the verdict.
-    """
+def conformance_adapters() -> list[ContentJudgment]:
     executor = ScriptedAuditExecutor(
-        [audit_result([{"start": 4, "end": 16, "rationale": "workspace segment"}])],
+        [audit_result([{"start": 4, "end": 16, "rationale": "workspace segment"}])]
     )
-    return [
-        RegexContentScanner(
-            patterns={RedactionCategory.TRACKER_URLS: [r"quarry-works"]},
-        ),
-        scanner_for(executor),
-    ]
+    return [scanner_for(executor), FakeContentJudgment()]
 
 
 @pytest.mark.parametrize("scanner", conformance_adapters())
 async def test_every_returned_span_lies_inside_the_payload(
-    scanner: ContentScanner,
+    scanner: ContentJudgment,
 ) -> None:
     """S: a span that cannot be excised is not a hit."""
     result = await scanner.scan(
@@ -675,7 +639,7 @@ async def test_every_returned_span_lies_inside_the_payload(
 
 
 @pytest.mark.parametrize("scanner", conformance_adapters())
-async def test_no_scanner_raises_across_the_port(scanner: ContentScanner) -> None:
+async def test_no_scanner_raises_across_the_port(scanner: ContentJudgment) -> None:
     """S: a failure is a typed value, never an exception at the seam."""
     for destination in OutboundDestination:
         result = await scanner.scan(content="", destination=destination)
@@ -684,10 +648,10 @@ async def test_no_scanner_raises_across_the_port(scanner: ContentScanner) -> Non
 
 @pytest.mark.parametrize("scanner", conformance_adapters())
 async def test_a_private_visibility_call_invokes_no_scanner_at_all(
-    scanner: ContentScanner,
+    scanner: ContentJudgment,
 ) -> None:
     """S: the gate returns CLEAN before the ordered list is entered."""
-    decision = await gate_over([scanner]).gate(
+    decision = await gate_over(scanner).gate(
         content=PROSE,
         visibility=RepoVisibility.PRIVATE,
         shape=WriterShape.PROSE,
@@ -696,17 +660,6 @@ async def test_a_private_visibility_call_invokes_no_scanner_at_all(
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == PROSE
-
-
-def test_the_deterministic_adapter_declares_unconditional_routing() -> None:
-    """S: the port widening did not become a judgment-only port."""
-    scanner = RegexContentScanner(patterns={})
-    for destination in OutboundDestination:
-        for content_class in ContentClass:
-            assert scanner.routing.applies(
-                destination=destination,
-                content_class=content_class,
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -723,52 +676,42 @@ def operation_with(private_surface: str | None) -> OperationConfig:
     )
 
 
-def boot_scanners(
-    *,
-    enabled: bool,
-    private_surface: str | None,
-) -> tuple[list[ContentScanner], str]:
-    """Resolve the ordered scanner list exactly as the lifespan does."""
-    return outbound_scanners(
+async def boot_admission(*, enabled: bool, private_surface: str | None):
+    executor = ScriptedAuditExecutor([audit_result([])])
+    gate = await build_outbound_gate(
         config=AppConfig(agentic_content_scanner_enabled=enabled),
         operation=operation_with(private_surface),
-        executor=ScriptedAuditExecutor([]),
-        prompts=load_registry(),
+        executor=executor,
+        prompts=load_registry(bindings={"private_surface": private_surface}),
         skills=NO_SKILLS,
+        log=get_logger(__name__),
     )
+    return gate, executor
 
 
-def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment() -> None:
-    """Only organization-privacy judgment is optional; aggregate admission ships."""
-    scanners, digest = boot_scanners(
-        enabled=False,
-        private_surface=FIXTURE_PRIVATE_SURFACE,
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment(
+    enabled,
+) -> None:
+    gate, executor = await boot_admission(
+        enabled=enabled, private_surface=FIXTURE_PRIVATE_SURFACE
     )
-    assert [type(scanner).__name__ for scanner in scanners] == [
-        "RegexContentScanner",
-        "ReferenceContentScanner",
-        "AgentContentScanner",
-    ]
-    assert digest
-
-
-def test_enabled_with_a_description_registers_the_judgment_scanner_second() -> None:
-    """State 2: deterministic FIRST, and that ordering is load-bearing."""
-    scanners, digest = boot_scanners(
-        enabled=True,
-        private_surface=FIXTURE_PRIVATE_SURFACE,
+    result = await gate.gate(
+        content=PROSE,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
     )
-    assert [type(scanner).__name__ for scanner in scanners] == [
-        "RegexContentScanner",
-        "ReferenceContentScanner",
-        "AgentContentScanner",
-    ]
-    assert digest
+    assert result.verdict is GateVerdict.CLEAN
+    assert len(executor.calls) == 1
 
 
 @pytest.mark.parametrize("private_surface", [None, "", "   \n "])
-def test_enabled_without_a_description_aborts_boot(private_surface: str | None) -> None:
+async def test_enabled_without_a_description_aborts_boot(
+    private_surface: str | None,
+) -> None:
     """State 3: NOT_CONFIGURED never degrades into a quietly missing scanner."""
     with pytest.raises(ContentScannerBootError) as excinfo:
-        boot_scanners(enabled=True, private_surface=private_surface)
+        await boot_admission(enabled=True, private_surface=private_surface)
     assert excinfo.value.missing == "OperationConfig.private_surface"

@@ -16,13 +16,7 @@ from kodezart.core.http_settings import HttpSettings
 from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging_settings import LoggingSettings
-from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.dispatch import PassSignal
-from kodezart.types.domain.gating import (
-    PATTERNLESS_CATEGORIES,
-    GateVerdict,
-    RedactionCategory,
-)
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.ticket_review import (
@@ -85,6 +79,8 @@ class AppConfig(BaseSettings):
                 "queue_terminal_retention_seconds",
                 "queue_event_buffer_retention_seconds",
                 "queue_event_buffer_capacity",
+                "deny_patterns",
+                "deny_pattern_verdicts",
                 "aggregate_count_token_distance",
                 "aggregate_identifier_roster_min_length",
                 "aggregate_tracker_object_nouns",
@@ -911,40 +907,6 @@ class AppConfig(BaseSettings):
             "the skills knob never silently narrows loaded settings."
         ),
     )
-    # Credential shapes share the wire-egress table. Workspace classification
-    # uses parsed native references and OperationConfig deployment facts.
-    deny_patterns: dict[RedactionCategory, list[str]] = Field(
-        default_factory=lambda: {
-            RedactionCategory.CROSS_REPO_NAMES: [],
-            RedactionCategory.TRACKER_URLS: [],
-            RedactionCategory.EMAIL_HANDLES: [],
-            RedactionCategory.INFRA_ENDPOINTS: [],
-            RedactionCategory.CREDENTIALS: [
-                shape.pattern for shape in CREDENTIAL_SHAPES
-            ],
-        },
-        description=(
-            "JSON object mapping a redaction category to its regex pattern "
-            "list. Ships credential shapes; other "
-            "deployment-specific sets are empty. The "
-            "org_private category is REJECTED as a key: a pattern naming an "
-            "organisation contains the string it names."
-        ),
-    )
-    deny_pattern_verdicts: dict[RedactionCategory, GateVerdict] = Field(
-        default_factory=lambda: {
-            RedactionCategory.CROSS_REPO_NAMES: GateVerdict.REDACTED,
-            RedactionCategory.TRACKER_URLS: GateVerdict.REDACTED,
-            RedactionCategory.EMAIL_HANDLES: GateVerdict.REDACTED,
-            RedactionCategory.INFRA_ENDPOINTS: GateVerdict.BLOCKED,
-            RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED,
-            RedactionCategory.ORG_PRIVATE: GateVerdict.REDACTED,
-        },
-        description=(
-            "JSON object mapping a redaction category to the verdict a hit "
-            "in that category yields. A payload takes the max severity."
-        ),
-    )
     operation_config: str | None = Field(
         default=None,
         description=(
@@ -978,30 +940,6 @@ class AppConfig(BaseSettings):
                 "audit_full_sweep_interval_seconds must not be shorter than "
                 "audit_sweep_interval_seconds"
             )
-        return self
-
-    @model_validator(mode="after")
-    def _reject_a_pattern_list_for_a_patternless_category(self) -> Self:
-        """A category describing the organisation can never carry a pattern.
-
-        Enforced rather than remembered: the deny-pattern mechanism defeats
-        itself for this class, because writing the pattern publishes the
-        string it protects.  A configuration that tries it aborts boot.
-        """
-        offenders = sorted(
-            category.value
-            for category in self.deny_patterns
-            if category in PATTERNLESS_CATEGORIES
-        )
-        if offenders:
-            msg = (
-                f"KODEZART_DENY_PATTERNS must not carry a pattern list for "
-                f"{', '.join(offenders)}: a pattern describing this "
-                f"organisation contains the string it describes, so it "
-                f"cannot live in a repository. Describe the class in "
-                f"OperationConfig.private_surface instead."
-            )
-            raise ValueError(msg)
         return self
 
     @model_validator(mode="after")

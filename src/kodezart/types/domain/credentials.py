@@ -1,8 +1,8 @@
 """The credential shapes this build can hold, and what replaces each one.
 
 One table, read by both surfaces that stand between a credential and the
-outside world: the shipped ``credentials`` deny patterns the outbound gate
-scans with (:mod:`kodezart.core.config`), and the scrubber applied at wire
+outside world: the fixed local credential check in the outbound gate
+(:mod:`kodezart.adapters.outbound_admission`), and the scrubber applied at wire
 egress (:mod:`kodezart.core.error_egress`).  Held as two tables, covering a
 vendor meant editing both, and the vendor whose credential this deployment
 actually dials was the one that fell through the gap.

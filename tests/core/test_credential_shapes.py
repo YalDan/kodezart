@@ -16,8 +16,7 @@ from typing import Final
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.adapters.outbound_admission import _CREDENTIAL_PATTERNS, OutboundAdmission
 from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import _COMPILED_CREDENTIAL_SHAPES, redact_credentials
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES, REDACTION_SENTINEL
@@ -31,6 +30,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.session import HttpKnowledge, StdioKnowledge
 from kodezart.types.domain.tracker import TrackerBackend
+from tests.outbound import make_admission
 
 # Each fixture is assembled by concatenation so no literal in this file has
 # the shape of a real credential, and each names the AppConfig field whose
@@ -52,17 +52,14 @@ _HELD_CREDENTIALS: Final[tuple[tuple[str, str], ...]] = (
 )
 
 
-def _gate(config: AppConfig) -> PatternOutboundContentGate:
-    return PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
+def _gate(config: AppConfig) -> OutboundAdmission:
+    return make_admission()
 
 
 @pytest.mark.usefixtures("_pristine_environment")
 def test_the_gate_and_the_scrubber_read_the_same_table() -> None:
     """Both surfaces derive from the table, so neither can drift off it."""
-    shipped = AppConfig().deny_patterns[RedactionCategory.CREDENTIALS]
+    shipped = [pattern.pattern for pattern in _CREDENTIAL_PATTERNS]
     compiled = [pattern.pattern for pattern, _ in _COMPILED_CREDENTIAL_SHAPES]
 
     assert shipped == [shape.pattern for shape in CREDENTIAL_SHAPES]

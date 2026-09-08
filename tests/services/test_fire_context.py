@@ -18,8 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import OutboundContentGate
 from kodezart.domain.errors import AssetFetchError
@@ -35,6 +34,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.tracker import TrackerAsset
 from tests.fakes import FakeTrackerPort, make_tracker_issue
+from tests.outbound import make_admission
 
 ISSUE = "K-1"
 BODY = "the ticket body"
@@ -68,13 +68,9 @@ def tracker_serving(documents: dict[str, str]) -> FakeTrackerPort:
     )
 
 
-def shipped_gate() -> PatternOutboundContentGate:
+def shipped_gate() -> OutboundAdmission:
     """The gate as a deployment gets it: shipped patterns, shipped verdicts."""
-    config = AppConfig()
-    return PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    return make_admission()
 
 
 def assembler(

@@ -131,3 +131,20 @@ def test_a_retired_aggregate_secret_is_rejected_without_reading_its_value(
     with pytest.raises(ValidationError, match="Extra inputs") as caught:
         AppConfig(_env_file=None, _secrets_dir=tmp_path)
     assert "synthetic-secret-value" not in str(caught.value)
+
+
+@pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("deny_patterns", {"credentials": []}),
+        ("deny_pattern_verdicts", {"credentials": "clean"}),
+    ],
+)
+def test_removed_deny_policy_refuses_previously_valid_overrides(
+    source, field, value, tmp_path, monkeypatch
+):
+    with pytest.raises(ValidationError, match="Extra inputs") as caught:
+        _from_source(source, field, value, tmp_path, monkeypatch)
+    assert field in str(caught.value).casefold()
+    assert "input_value" not in str(caught.value)

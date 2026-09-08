@@ -27,6 +27,15 @@ this API narrowing does not add an audit setting or compose a new scheduler.
 
 ## Removed implementation settings
 
+The former `deny_patterns` and `deny_pattern_verdicts` fields are also removed.
+Delete their uppercase environment assignments with the `KODEZART` prefix and
+separator. Constructor, process environment, dotenv and file-secret inputs now
+reject these exact names. Credential matching uses the shared fixed credential
+table; the six privacy consequences are fixed in code. Deployment hosts and
+workspaces remain `OperationConfig.private_surface` facts, and its description
+still supplies the existing semantic privacy judgment. There is no regex or
+severity override and no replacement scanner registry.
+
 The unconsumed `organize_max_admission_rounds` and
 `organize_max_convergence_rounds` settings were removed. Delete their
 constructor arguments and corresponding uppercase `KODEZART_` assignments
@@ -121,8 +130,6 @@ and leased alarm writer remain separate work.
 | `KODEZART_CONTENT_SCAN_RETRY_MAX_ATTEMPTS` | `int` | `2` | >= 1, <= 10 | Attempts a judgment content scanner makes before declaring a timeout, rate limit or transport failure. Exhaustion BLOCKS. |
 | `KODEZART_CONTENT_SCAN_TIMEOUT_SECONDS` | `float` | `120.0` | >= 1.0 | Wall-clock bound on one judgment content-scan session. Exceeding it is TIMEOUT, which BLOCKS. |
 | `KODEZART_CONTENT_AUDIT_WORKING_DIR` | `str` | `/tmp/kodezart-content-audit` |  | Working directory the audit session runs in. Deliberately not the cloned target repository: an auditor whose working directory is attacker-writable is not an auditor. |
-| `KODEZART_DENY_PATTERNS` | `dict[RedactionCategory, list[str]]` | credential shapes; other deployment-specific sets empty |  | JSON object mapping a redaction category to its regex pattern list. Ships credential shapes; other deployment-specific sets are empty. The `org_private` category is REJECTED as a key: a pattern naming an organisation contains the string it names. |
-| `KODEZART_DENY_PATTERN_VERDICTS` | `dict[RedactionCategory, GateVerdict]` | `redacted` everywhere except `infra_endpoints` and `credentials`: `blocked` |  | JSON object mapping a redaction category to the verdict a hit in that category yields. A payload takes the max severity. |
 | `KODEZART_DISPATCH_HOLDER` | `str` | `kodezart` | min length 1 | Identity this deployment holds atomic claims under. Names the PROCESS, not the tracker account: two deployments sharing one workspace must carry different values or they cannot race. |
 | `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
 | `KODEZART_DISPATCH_RATE_LIMIT_COOLDOWN_SECONDS` | `float` | `1800.0` | >= 60.0, <= 86400.0 | Seconds the dispatch lane fires nothing after a run dies on a provider rate-limit rejection. The limit belongs to the account, not to the issue, so the next-ranked candidate would meet it unchanged: measured 2026-09-01, a run that died at 17:57 on a rejection was re-fired whole four minutes later. Lifted by the clock alone — nothing on the board clears a rate limit — and the lower bound keeps a cooldown longer than the tick that would otherwise re-fire. |

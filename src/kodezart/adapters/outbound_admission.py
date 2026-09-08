@@ -1,62 +1,66 @@
-"""Outbound content gate — verdict assignment over an ordered scanner list.
+"""Fixed outbound admission: credentials, native references, authored judgment."""
 
-Runs an ORDERED LIST of ``ContentScanner``s.  Deterministic scanners come
-first and that ordering is load-bearing rather than cosmetic: it is what
-keeps a credential caught with no network call when the judgment path is
-degraded, and it is what makes the short-circuit below legal.
+import re
+from collections.abc import Sequence
 
-Verdict assignment is per configured category with max-severity-wins.
-Identifier-shaped writers block on any hit regardless of the category's
-declared verdict — a git ref cannot carry a placeholder.  A hit that
-localizes to no span also blocks: redaction is span surgery, and there is
-nothing to excise.
-
-A scanner that cannot answer BLOCKS.  It is never skipped and its verdict is
-never downgraded to CLEAN, so "did not answer" and "said it is clean" stay
-two distinct observable states.
-"""
-
-from collections.abc import Mapping, Sequence
-
-from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import ContentScanner
+from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
+from kodezart.core.protocols import ContentJudgment
+from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.gating import (
+    REDACTION_VERDICTS,
     ContentClass,
     GateDecision,
     GateVerdict,
     OutboundDestination,
+    OutboundSurface,
     RedactionCategory,
     RepoVisibility,
     ScanHit,
+    ScanResult,
+    SurfaceDurability,
     WriterShape,
     content_digest,
+    durability_of,
     max_verdict,
+    surface_of,
 )
 
 _PLACEHOLDER = "[REDACTED:{category}]"
 
-#: What makes two gate calls the same question.  The declared class is part
-#: of it: two payloads identical in bytes but declared with different
-#: provenance are routed to different scanners, so they must not share a
-#: verdict.
-type _MemoKey = tuple[str, OutboundDestination, str, ContentClass]
+#: A decision depends on the exact text, source facts, destination, provenance
+#: and writer shape. Prose redaction must never authorize an identifier.
+type _MemoKey = tuple[str, OutboundDestination, str, ContentClass, WriterShape]
 
 
-class PatternOutboundContentGate:
-    """``OutboundContentGate`` over configured scanners and category verdicts."""
+_CREDENTIAL_PATTERNS = tuple(re.compile(shape.pattern) for shape in CREDENTIAL_SHAPES)
+
+
+def credential_hits(content: str) -> tuple[ScanHit, ...]:
+    """Local matches from the same credential table used by error egress."""
+    return tuple(
+        ScanHit(
+            category=RedactionCategory.CREDENTIALS, start=match.start(), end=match.end()
+        )
+        for pattern in _CREDENTIAL_PATTERNS
+        for match in pattern.finditer(content)
+        if match.end() > match.start()
+    )
+
+
+class OutboundAdmission:
+    """Admit an actual write using the fixed local and semantic checks."""
 
     def __init__(
         self,
         *,
-        scanners: Sequence[ContentScanner],
-        verdicts: Mapping[RedactionCategory, GateVerdict],
+        references: ReferenceContentScanner,
+        judgment: ContentJudgment,
         fragment_digest: str = "",
     ) -> None:
-        self._scanners: tuple[ContentScanner, ...] = tuple(scanners)
-        self._verdicts: Mapping[RedactionCategory, GateVerdict] = verdicts
-        self._fragment_digest: str = fragment_digest
+        self._references = references
+        self._judgment = judgment
+        self._fragment_digest = fragment_digest
         self._memo: dict[_MemoKey, GateDecision] = {}
-        self._log: BoundLogger = get_logger(__name__)
 
     async def gate(
         self,
@@ -76,6 +80,7 @@ class PatternOutboundContentGate:
             destination,
             self._fragment_digest,
             content_class,
+            shape,
         )
         memoized = self._memo.get(key)
         if memoized is not None:
@@ -98,26 +103,32 @@ class PatternOutboundContentGate:
         destination: OutboundDestination,
         content_class: ContentClass,
     ) -> GateDecision:
-        """Run the routed scanners in order, stopping at the first BLOCKED."""
-        hits: list[ScanHit] = []
-        for scanner in self._scanners:
-            if not scanner.routing.applies(
-                destination=destination,
-                content_class=content_class,
-            ):
-                continue
-            result = await scanner.scan(content=content, destination=destination)
-            if result.failure is not None:
-                return GateDecision(
-                    verdict=GateVerdict.BLOCKED,
-                    content="",
-                    categories=(),
-                    hits=(),
-                    failure=result.failure,
+        """Credentials block locally before references or any model call."""
+        hits = list(credential_hits(content))
+        if not hits:
+            references = await self._references.scan(
+                content=content, destination=destination
+            )
+            if references.failure is not None:
+                return _failed(references)
+            hits.extend(references.hits)
+            if (
+                self._fold(hits, shape=shape) is not GateVerdict.BLOCKED
+                and (
+                    content_class is ContentClass.AUTHORED
+                    or destination is OutboundDestination.BRANCH_NAME
                 )
-            hits.extend(result.hits)
-            if self._fold(hits, shape=shape) is GateVerdict.BLOCKED:
-                break
+                and (
+                    durability_of(destination) is SurfaceDurability.DURABLE
+                    or surface_of(destination) is not OutboundSurface.REPOSITORY
+                )
+            ):
+                judgment = await self._judgment.scan(
+                    content=content, destination=destination
+                )
+                if judgment.failure is not None:
+                    return _failed(judgment)
+                hits.extend(judgment.hits)
 
         if not hits:
             return GateDecision(verdict=GateVerdict.CLEAN, content=content)
@@ -144,7 +155,7 @@ class PatternOutboundContentGate:
         verdict = GateVerdict.CLEAN
         for hit in hits:
             declared = (
-                self._verdicts.get(hit.category, GateVerdict.BLOCKED)
+                REDACTION_VERDICTS[hit.category]
                 if isinstance(hit.category, RedactionCategory)
                 else GateVerdict.BLOCKED
             )
@@ -152,6 +163,10 @@ class PatternOutboundContentGate:
                 declared = GateVerdict.BLOCKED
             verdict = max_verdict(verdict, declared)
         return verdict
+
+
+def _failed(result: ScanResult) -> GateDecision:
+    return GateDecision(verdict=GateVerdict.BLOCKED, content="", failure=result.failure)
 
 
 def _redact(content: str, hits: Sequence[ScanHit]) -> str:

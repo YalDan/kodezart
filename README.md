@@ -276,15 +276,24 @@ never silently posted:
 
 | Verdict | Meaning |
 | --- | --- |
-| `clean` | No deny-pattern hit. Written as-is. |
+| `clean` | All applicable checks completed without a finding. Written as-is. |
 | `redacted` | Each matched span replaced by `[REDACTED:<category>]`. |
 | `blocked` | The write fails loudly with `OutboundContentBlockedError`. Nothing is posted. |
 
-`KODEZART_DENY_PATTERNS` maps a category to its regex list;
-`KODEZART_DENY_PATTERN_VERDICTS` maps a category to the verdict a hit yields.
-A payload takes the **maximum** severity over all its hits. Identifier-shaped
-writers (a git ref cannot carry a placeholder) block on any hit regardless of
-the category's declared verdict.
+The fixed privacy policy has six rows:
+
+| Category | Prose consequence |
+| --- | --- |
+| `cross_repo_names` | `redacted` |
+| `tracker_urls` | `redacted` |
+| `email_handles` | `redacted` |
+| `infra_endpoints` | `blocked` |
+| `credentials` | `blocked` |
+| `org_private` | `redacted` |
+
+A payload takes the maximum severity over all findings. Identifier-shaped writers
+block on any finding; a git ref cannot carry a placeholder. Unlocated findings
+also block because no safe redaction span exists.
 
 Credential shapes remain deterministic. Reference privacy uses
 `OperationConfig.private_surface.hosts` for entire private hosts and
@@ -299,25 +308,19 @@ redacts the complete original span while preserving neighboring text.
 Opaque document URLs carry no inferred workspace; declare an entire private
 host when appropriate, or use the semantic privacy description.
 
-The remaining privacy regex overrides are transitional pending the structured
-writer-admission migration. The unused aggregate-pattern scanner and its five
-settings are removed; authored text uses the fresh judgment described below.
-Vendor URL patterns are absent from shipped defaults; the whole outbound
-admission replacement remains unfinished.
+The configurable regex gate and its seven settings are removed. The fixed
+composition checks credential shapes locally, classifies native references,
+then invokes the existing authored-text judgment when applicable. See the
+[configuration migration](docs/configuration.md#removed-implementation-settings)
+for retired inputs. Typed generated pre-render and terminal-writer admission
+remain unfinished.
 
-#### The judgment half
+#### Authored judgment
 
-The gate runs an **ordered list** of scanners and the patterns are only the
-first of them. A credential is arithmetic — `gh[posu]_` either matches or it
-does not — and stays deterministic so a token is caught with no network call.
-Whether a stranger would learn something from a payload that this operation
-did not choose to publish is not arithmetic: the set of private things is
-open-ended, a deny pattern naming an organisation *contains* the string it
-protects, and the same string can be unremarkable on one surface and a
-disclosure on another. `org_private` is therefore **rejected as a
-`KODEZART_DENY_PATTERNS` key** at boot, and answered by an audit session
-instead — a different session from the writer whose output it grades, with no
-shared context, no tools, and a neutral working directory.
+Credentials are detected before a model or network call. Organization privacy
+still needs an independent semantic judgment over its configured description.
+The session has no shared writer context, no tools, and a neutral working
+directory. No organization-specific regex or injected scanner list exists.
 
 Authored tracker aggregates are inspected on every durable PUBLIC/UNKNOWN write,
 including PR text and ticket/criteria artifact text. Worded counts with no issue

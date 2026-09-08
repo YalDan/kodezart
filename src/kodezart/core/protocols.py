@@ -22,7 +22,6 @@ from kodezart.types.domain.gating import (
     GateDecision,
     OutboundDestination,
     RepoVisibility,
-    ScannerRouting,
     ScanResult,
     WriterShape,
 )
@@ -1472,25 +1471,8 @@ class RepoVisibilityResolver(Protocol):
 
 
 @runtime_checkable
-class ContentScanner(Protocol):
-    """Finds outbound-content findings in one payload.
-
-    ``async`` because a judgment scanner cannot answer behind a ``def``; a
-    scanner that needs no I/O conforms with an ``async def`` awaiting
-    nothing, which is the honest shape rather than a concession.
-
-    ``destination`` is an input because the same string can be unremarkable
-    on one surface and a leak on another — a verdict that depends on where
-    the payload is going cannot be computed from the payload alone.
-
-    Returns a :class:`ScanResult`: hits or a typed failure, never an
-    exception crossing the port and never ``None``.
-    """
-
-    @property
-    def routing(self) -> ScannerRouting:
-        """When this scanner must be consulted."""
-        ...
+class ContentJudgment(Protocol):
+    """Judge authored outbound text using an independent session."""
 
     async def scan(
         self,
@@ -1498,7 +1480,7 @@ class ContentScanner(Protocol):
         content: str,
         destination: OutboundDestination,
     ) -> ScanResult:
-        """Every finding, or the typed reason there is no answer."""
+        """Findings or the typed reason judgment could not complete."""
         ...
 
 
