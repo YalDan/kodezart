@@ -168,7 +168,9 @@ async def test_unreadable_surface_names_coverage_failure_before_session(setup, d
     assert not runner.calls and not workspace.calls
 
 
-async def test_session_unverifiable_names_its_surface(setup):
+async def test_session_cannot_invent_unreadability_of_a_covered_source(
+    setup, tracker_writes
+):
     build, runner, *_ = setup
     runner._events[0] = result_event(
         subtype="success",
@@ -179,9 +181,10 @@ async def test_session_unverifiable_names_its_surface(setup):
             evidence="The instruction references an inaccessible ruling.",
         ),
     )
-    result = await build().complete(REQUEST)
-    assert result.mandate.verdict is AuditVerdict.UNVERIFIABLE
-    assert result.mandate.unreadable[0].surface == SURFACES[0]
+    before = tracker_writes()
+    with pytest.raises(AuditClaimReadError, match="successfully read"):
+        await build().complete(REQUEST)
+    assert tracker_writes() == before
 
 
 @pytest.mark.parametrize("damage", ["quote", "identity", "class", "index", "role"])
@@ -370,3 +373,21 @@ async def test_failed_session_never_completes_refutation(setup, damage):
     with pytest.raises((NoStructuredOutputError, ValidationError)):
         await build().complete(REQUEST)
     assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
+async def test_complete_report_cannot_claim_same_surface_read_and_unreadable(setup):
+    from kodezart.types.domain.audit import AuditMandateObservation
+
+    build, *_ = setup
+    actual = (await build().complete(REQUEST)).mandate
+    with pytest.raises(ValidationError, match="both covered and unreadable"):
+        AuditMandateObservation(
+            verdict=AuditVerdict.UNVERIFIABLE,
+            covered=actual.covered,
+            unreadable=[
+                {"surface": actual.covered[0].surface, "reason": "Invented failure"}
+            ],
+            finding=None,
+            finding_surface=None,
+            evidence="Contradictory provenance",
+        )

@@ -216,6 +216,10 @@ class AuditMandateObservation(CamelCaseModel):
 
     @model_validator(mode="after")
     def _coverage_matches_verdict(self) -> Self:
+        if {item.surface for item in self.covered} & {
+            item.surface for item in self.unreadable
+        }:
+            raise ValueError("a source cannot be both covered and unreadable")
         if self.verdict is AuditVerdict.HOLDS:
             if (
                 self.finding is None

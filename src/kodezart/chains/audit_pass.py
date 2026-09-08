@@ -352,10 +352,8 @@ class AuditMandateHunt:
                         )
                     finding_surface = source.surface
                 else:
-                    unreadable = (
-                        UnreadableAuditSurface(
-                            surface=source.surface, reason=judgment.evidence
-                        ),
+                    raise AuditClaimReadError(
+                        "session claims a successfully read source was unreadable"
                     )
             return AuditClaimReport(
                 claim=request.claim,
