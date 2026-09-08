@@ -491,6 +491,11 @@ whole-surface reads refuse before writing. The caller retains its required
 lease, authorization and outbound sanitization throughout; this component does
 not complete universal scope-writer adoption. Ignored generated outputs are
 outside the Git workspace-cleanliness check.
+The verifier also refuses active Git replacement references before the initial
+write and around every fresh judgment. A replacement introduced by a write,
+repair or session cannot yield a verified artifact, even at the expected SHA
+with a clean tree. Replacement reads settle before workspace release, and an
+unreadable namespace propagates instead of being treated as empty.
 
 
 The `audit_mandate` read-only role receives `defect_class`, `refutation_evidence`,
