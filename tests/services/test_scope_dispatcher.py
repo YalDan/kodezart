@@ -8,6 +8,7 @@ as a claim that was never spent.
 """
 
 import ast
+import importlib
 import inspect
 from datetime import datetime, timedelta
 
@@ -392,17 +393,69 @@ async def test_ready_selection_makes_no_writes_before_the_claim():
 
 
 async def test_a_full_walk_reads_no_pull_request_merge_state():
-    """The whole graph walks with the merge-state boundary standing idle."""
+    """The whole graph walks with the merge-state boundary standing idle.
+
+    The forge the walk is handed answers merge state as readily as it
+    answers deliveries — it is one object, as the native client is — so the
+    empty call list is a fact about the walk and not about a double nothing
+    could have reached.
+    """
     tracker = chain()
     walker, queue, probe = walk(tracker)
-    reader = FakePRStateReader(records={})
 
     reports = await walk_chain(tracker, walker, queue, probe)
 
     assert [report.claimed_issue_key for report in reports] == ["A", "B", "C", None]
     assert enqueued(queue) == ["A", "B", "C"]
-    assert reader.calls == []
+    assert set(probe.calls) == {"A", "B", "C"}
+    assert probe.merge_state.calls == []
     assert reports[-1].outcome is DispatchOutcome.empty_eligible_set
+
+
+def walk_import_closure() -> tuple[str, ...]:
+    """Every kodezart module the walk can reach, computed from its imports.
+
+    A hand-written module list is exactly the narrowness this criterion is
+    about: it names what the author remembered.  This follows the import
+    edges out of the producer instead, so a merge-state read added anywhere
+    the walk can reach is in scope of the assertion below.
+    """
+    seen: set[str] = set()
+    pending = [scope_dispatcher.__name__]
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        tree = ast.parse(inspect.getsource(importlib.import_module(name)))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module is not None:
+                if node.module.startswith("kodezart"):
+                    pending.append(node.module)
+            if isinstance(node, ast.Import):
+                pending.extend(
+                    alias.name
+                    for alias in node.names
+                    if alias.name.startswith("kodezart")
+                )
+    return tuple(sorted(seen))
+
+
+def test_no_module_the_walk_can_reach_holds_a_merge_state_call_site():
+    """The whole reachable closure, computed: nobody on it asks a PR anything."""
+    closure = walk_import_closure()
+
+    assert scope_walker.__name__ in closure
+    assert "kodezart.services.fire_dispatcher" in closure
+    assert "kodezart.services.audit_terminal" not in closure
+    for name in closure:
+        tree = ast.parse(inspect.getsource(importlib.import_module(name)))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                assert node.attr != "read_pr_state", name
+            if isinstance(node, ast.ImportFrom):
+                held = {alias.name for alias in node.names}
+                assert held & {"PRStateReader", "PRLifecycle"} == set(), name
 
 
 def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():

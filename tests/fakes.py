@@ -4184,15 +4184,34 @@ class FakeTrackerPort:
 
 
 class FakeDeliveryProbe:
-    """``DeliveryProbe`` over a fixed set of issue keys with an open delivery."""
+    """One forge double, answering both questions the native client answers.
 
-    def __init__(self, *, delivered: Sequence[str] = ()) -> None:
+    The production client implements ``DeliveryProbe`` and ``PRStateReader``
+    on the same object, so a consumer handed this probe is holding the
+    merge-state boundary as well: ``calls`` records what it was asked about
+    deliveries, ``merge_state.calls`` what it was asked about pull requests.
+    That is what makes "the merge-state reader was never asked" an
+    observation about the consumer rather than about an unreachable double.
+    """
+
+    def __init__(
+        self,
+        *,
+        delivered: Sequence[str] = (),
+        pr_states: Mapping[tuple[str, int], PRState] | None = None,
+    ) -> None:
         self.delivered: set[str] = set(delivered)
         self.calls: list[str] = []
+        self.merge_state = FakePRStateReader(records=dict(pr_states or {}))
 
     async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
         self.calls.append(issue_key)
         return issue_key in self.delivered
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        return await self.merge_state.read_pr_state(
+            repo_url=repo_url, pr_number=pr_number
+        )
 
 
 def make_tracker_review(
