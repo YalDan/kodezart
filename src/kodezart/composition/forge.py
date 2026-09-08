@@ -6,15 +6,16 @@ than defines.
 
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.core.config import AppConfig
+from kodezart.core.protocols import ForgeQuery
+from kodezart.domain.git_url import is_forge_less_origin
 
 
 def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
     """The forge API client, or ``None`` when no credential is configured.
 
-    One client serves four protocols downstream — pull-request creation,
-    CI monitoring, repository visibility, and the forge-origin arm of
-    delivery probing — so it is built once here and handed to each of
-    them rather than dialled four times.
+    One client serves forge writes, queries, CI monitoring, repository
+    visibility and delivery probing. It is built once here and supplied
+    to the origin-specific capability selections.
     """
     return (
         GitHubAPIClient(
@@ -34,3 +35,17 @@ def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
         if config.github_token is not None
         else None
     )
+
+
+def forge_query_for_origin(
+    *,
+    client: ForgeQuery | None,
+    repo_url: str,
+) -> ForgeQuery | None:
+    """Select the read capability before a caller asks a forge-less origin.
+
+    Query consumers receive no capability for a local repository, using the
+    same origin predicate as workflow and delivery selection. A configured
+    credential alone never establishes that an origin has a forge.
+    """
+    return None if is_forge_less_origin(repo_url) else client

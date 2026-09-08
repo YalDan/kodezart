@@ -58,6 +58,7 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingRef,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 # --------------------------------------------------------------------------
 # Captures — vendor keys, synthesized values.
@@ -356,6 +357,7 @@ class CaptureCaller:
 
 def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
     return LinearMcpTracker(
+        marker_prefixes=MARKER_PREFIXES,
         caller=caller,
         queue_state_labels={
             QueueState.APPROVED.value: "queue:approved",

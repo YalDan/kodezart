@@ -124,6 +124,18 @@ class AppConfig(BaseSettings):
         le=10,
         description="Maximum ticket review rounds before accepting.",
     )
+    organize_max_admission_rounds: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum organize admission re-author and re-test rounds.",
+    )
+    organize_max_convergence_rounds: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum organize whole-scope convergence rounds.",
+    )
     ticket_review_mode: TicketReviewMode = Field(
         default=TicketReviewMode.CREATE_ONLY,
         description=(
@@ -490,6 +502,15 @@ class AppConfig(BaseSettings):
         description=(
             "Lease an atomic claim holds before it expires and the issue "
             "becomes eligible again."
+        ),
+    )
+    tracker_surface_lease_seconds: float = Field(
+        default=900.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Bound for write-surface leases held by a writing run's job id. "
+            "Renewal is explicit; no background task extends these leases."
         ),
     )
     tracker_claim_renewal_fraction: float = Field(
@@ -984,6 +1005,55 @@ class AppConfig(BaseSettings):
             "JSON object mapping a redaction category to the verdict a hit "
             "in that category yields. A payload takes the max severity."
         ),
+    )
+    aggregate_count_token_distance: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Maximum intervening tokens between a numeral and a tracker-object "
+            "noun in a durable aggregate claim. The adjacent-only default "
+            "leaves counts of tests, files and commits untouched."
+        ),
+    )
+    aggregate_identifier_roster_min_length: int = Field(
+        default=3,
+        ge=2,
+        description=(
+            "Minimum separated run of tracker issue identifiers that constitutes "
+            "a roster on a durable surface. A single reference is not a roster."
+        ),
+    )
+    aggregate_tracker_object_nouns: list[str] = Field(
+        default_factory=lambda: [
+            "issue",
+            "issues",
+            "ticket",
+            "tickets",
+            "lane",
+            "lanes",
+            "project",
+            "projects",
+            "milestone",
+            "milestones",
+            "sub-issue",
+            "sub-issues",
+            "PR",
+            "PRs",
+            "pull request",
+            "pull requests",
+        ],
+        min_length=1,
+        description="Tracker-object nouns counted by the durable aggregate scanner.",
+    )
+    aggregate_issue_identifier_pattern: str = Field(
+        default=r"\b[A-Z][A-Z0-9]*-\d+\b",
+        min_length=1,
+        description="Tracker issue-identifier regex used to recognize a roster.",
+    )
+    aggregate_identifier_separator_pattern: str = Field(
+        default=r"(?:[\s,;|/·•`*()\[\]-]+|\s+and\s+)",
+        min_length=1,
+        description="Regex separating consecutive identifiers in a tracker roster.",
     )
     operation_config: str | None = Field(
         default=None,

@@ -4,10 +4,77 @@ from collections.abc import Sequence
 
 from kodezart.types.domain.gating import ScanFailureKind, ScanHit
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.surface import WritableSurface
 
 
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
+
+
+class SurfaceLeaseError(Exception):
+    """A surface acquisition or write lacks the required live lease.
+
+    The address is snapshotted as primitive fields; no adapter object or
+    lease record crosses the boundary. ``current_holder=None`` reports that
+    no run currently holds the surface, including after a lease expired.
+    Contention is not transient: the caller decides its next action, and a
+    retry policy must not silently retry a failed acquisition.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        surface: WritableSurface,
+        current_holder: str | None,
+    ) -> None:
+        address = f"{surface.kind.value}:{surface.ref.kind.value}:{surface.ref.key}"
+        if surface.marker is not None:
+            address = f"{address} (marker: {surface.marker})"
+        holder = "none" if current_holder is None else current_holder
+        super().__init__(f"{message} (surface: {address}; current holder: {holder})")
+        self.surface_kind: str = surface.kind.value
+        self.scope_kind: str = surface.ref.kind.value
+        self.scope_key: str = surface.ref.key
+        self.marker: str | None = surface.marker
+        self.current_holder: str | None = current_holder
+
+
+class DuplicateCommentMarkerError(Exception):
+    """Several comments claim the same first-line marker on one target."""
+
+    def __init__(
+        self, *, target: str, marker: str, comment_keys: Sequence[str]
+    ) -> None:
+        super().__init__(
+            f"duplicate comment marker {marker!r} on {target!r}: "
+            f"{', '.join(comment_keys)}"
+        )
+        self.target = target
+        self.marker = marker
+        self.comment_keys = tuple(comment_keys)
+
+
+class StaleWriteError(Exception):
+    """Neither the asserted anchor nor its replacement is on the target."""
+
+    def __init__(self, *, target: str, expected: str) -> None:
+        super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
+        self.target = target
+        self.expected = expected
+
+
+class ScopeCycleError(Exception):
+    """A cycle in the scope's dependency graph prevents any plan being returned.
+
+    ``issue_keys`` is one offending directed cycle, without unrelated issues
+    that merely lead into it. No edge is removed or invented to produce an
+    order; the caller receives the tracker keys that require repair.
+    """
+
+    def __init__(self, *, issue_keys: Sequence[str]) -> None:
+        self.issue_keys: tuple[str, ...] = tuple(issue_keys)
+        super().__init__(f"scope dependency cycle: {', '.join(self.issue_keys)}")
 
 
 class ScopeReadError(Exception):
@@ -132,6 +199,12 @@ class OutboundContentBlockedError(Exception):
         detail = f"{message} (writer: {writer}; categories: {', '.join(categories)})"
         if failure is not None:
             detail = f"{detail} (scan failure: {failure.value})"
+        for hit in hits:
+            if hit.has_span and hit.matched_text is not None:
+                detail = (
+                    f"{detail} (start: {hit.start}; end: {hit.end}; "
+                    f"matched text: {hit.matched_text!r})"
+                )
         super().__init__(detail)
         self.writer: str = writer
         self.categories: tuple[str, ...] = tuple(categories)

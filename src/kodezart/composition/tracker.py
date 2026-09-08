@@ -104,6 +104,7 @@ def build_tracker(
                 caller=caller,
                 queue_state_labels=operation.queue_states,
                 workflow_state_names=operation.workflow_states,
+                marker_prefixes=operation.marker_prefixes,
                 team_identifiers={
                     team_key: entry.name for team_key, entry in operation.teams.items()
                 },

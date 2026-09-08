@@ -356,6 +356,13 @@ role, a queue key, the checkpoint document — refuses at the point of need with
 a typed error naming what is missing and what stops working, never as a boot
 failure. Structural validation applies to what IS present.
 
+Tracker comments take their identity prefixes from `marker_prefixes`.
+Declare `claim`, `work_ref`, `base_spec` and `repository` for the corresponding
+tracker operations. When upgrading an existing operation, copy the example's
+values for these keys to keep addressing its stored markers. Additional
+purposes such as `run_state`, `decision` and `escalation` use the same mapping;
+missing purposes are refused when read or written.
+
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the
 live workspace belongs to the tracker adapter, not to config load.

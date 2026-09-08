@@ -1,4 +1,4 @@
-"""GitHub REST API adapter — implements PRCreator and CIMonitor protocols.
+"""GitHub REST API adapter — implements forge write, query and CI protocols.
 
 ``httpx`` and this forge's wire shapes are the module's private business.
 No NON-DOMAIN exception leaves a port method: every request goes through
@@ -20,6 +20,7 @@ import secrets
 from collections.abc import Callable
 from enum import StrEnum
 from typing import Final, TypeVar
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -65,6 +66,14 @@ def _pull_request_listing(payload: object) -> tuple[PullRequestSummary, ...]:
     return tuple(PullRequestSummary.model_validate(entry) for entry in payload)
 
 
+def _pull_request_identities(payload: object) -> tuple[PullRequestResponse, ...]:
+    """Validate only the PR identity fields required by ForgeQuery."""
+    if not isinstance(payload, list):
+        msg = f"expected a pull request array, got {type(payload).__name__}"
+        raise ValueError(msg)
+    return tuple(PullRequestResponse.model_validate(entry) for entry in payload)
+
+
 class WorkflowsProbeResult(StrEnum):
     """Classification of a repository's GitHub Actions workflow listing.
 
@@ -78,7 +87,7 @@ class WorkflowsProbeResult(StrEnum):
 
 
 class GitHubAPIClient:
-    """Single adapter satisfying both PRCreator and CIMonitor protocols.
+    """Single adapter satisfying PRCreator, ForgeQuery and CIMonitor.
 
     Uses httpx.AsyncClient for async HTTP. API responses are validated
     via frozen Pydantic models (``CheckRunsResponse``, ``PullRequestResponse``,
@@ -371,6 +380,49 @@ class GitHubAPIClient:
             f"/repos/{owner}/{repo}/issues/{pr_number}/comments",
             json={"body": body},
         )
+
+    # -- ForgeQuery ----------------------------------------------------------
+
+    async def open_pr_for_head(
+        self,
+        *,
+        repo_url: str,
+        head: str,
+    ) -> tuple[str, int] | None:
+        """Read the newest open PR for a branch in this repository."""
+        owner, repo = extract_owner_repo(repo_url)
+        listing = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            _pull_request_identities,
+            params={
+                "state": self._OPEN_STATE,
+                "head": f"{owner}:{head}",
+                "per_page": 1,
+                "sort": "created",
+                "direction": "desc",
+            },
+        )
+        if not listing:
+            return None
+        return (listing[0].html_url, listing[0].number)
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """Compose a GitHub browser URL without treating ref text as URL syntax."""
+        owner, repo = extract_owner_repo(repo_url)
+        origin = urlsplit(repo_url)
+        if (
+            origin.scheme != "https"
+            or not origin.netloc
+            or origin.username is not None
+            or origin.password is not None
+        ):
+            msg = (
+                "Branch browser URLs require a full HTTPS repository URL "
+                "without userinfo"
+            )
+            raise ValueError(msg)
+        return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch, safe='')}"
 
     # -- DeliveryProbe -------------------------------------------------------
 

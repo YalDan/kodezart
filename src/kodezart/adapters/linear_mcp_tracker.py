@@ -25,7 +25,6 @@ records stays the order every claimant computes from it.
 """
 
 import asyncio
-import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -33,6 +32,7 @@ from typing import Final, assert_never
 
 from pydantic import ValidationError
 
+from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
 from kodezart.core.errors import (
     McpCallUnansweredError,
@@ -46,6 +46,11 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.tracker_writes import (
+    comment_under_marker,
+    description_replacement,
+    marked_comment_body,
+)
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.linear_mcp import (
@@ -90,6 +95,7 @@ from kodezart.types.domain.tracker import (
     TrackerReview,
     WorkflowStateKind,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 
 _TOOL_LIST_ISSUES = "list_issues"
 _TOOL_LIST_DIFFS = "list_diffs"
@@ -180,11 +186,6 @@ ACCEPTED_CREDENTIAL_SHAPE: Final[str] = (
     f"{_PERSONAL_KEY_PREFIX} followed by at least {_PERSONAL_KEY_MIN_BODY} characters"
 )
 
-_CLAIM_MARKER = re.compile(
-    r"<!--\s*kodezart-claim\s+holder=\"(?P<holder>[^\"]+)\"\s+"
-    r"expires-at=\"(?P<expires_at>[^\"]+)\"\s*-->",
-)
-
 _PRIORITY_BY_RAW: Mapping[int, IssuePriority] = {
     0: IssuePriority.NONE,
     1: IssuePriority.URGENT,
@@ -222,61 +223,9 @@ _MAPPING_TOOL_BY_KIND: Mapping[MappingKind, str] = {
     MappingKind.WORKFLOW_STATE: _TOOL_LIST_ISSUE_STATUSES,
 }
 
-_WORK_REF_MARKER = re.compile(
-    r"<!--\s*kodezart-workref\s+role=\"(?P<role>[^\"]+)\"\s+"
-    r"branch=\"(?P<branch>[^\"]+)\""
-    r"(?:\s+pushed-head-sha=\"(?P<sha>[^\"]+)\")?\s*-->",
-)
-
 _WORK_REF_ROLE_BY_VALUE: Mapping[str, WorkRefRole] = {
     role.value: role for role in WorkRefRole
 }
-
-#: The recorded ``BaseSpec``, on the same append-only, server-timestamped
-#: comment log the claim and the work refs already use.  A third marker on
-#: one surface rather than a third surface: the log is what this backend
-#: offers that is ordered and cannot be silently rewritten.
-_BASE_SPEC_MARKER = re.compile(
-    r"<!--\s*kodezart-basespec\s+(?P<payload>\{.*?\})\s*-->",
-    re.DOTALL,
-)
-
-#: The recorded target repository for a staged fire — judgment records it,
-#: the deterministic dispatch reads it (KOD-169).  The same HTML-comment
-#: idiom as the claim, work-ref and base-spec markers, and deliberately
-#: parseable whoever authored it: the fire-prep pass writes it through the
-#: rendered mechanism, and a principal can write one by hand.
-_REPO_MARKER = re.compile(
-    r"<!--\s*kodezart-repo\s+url=\"(?P<url>[^\"]+)\"\s*-->",
-)
-
-
-def _base_spec_marker(spec: BaseSpec) -> str:
-    """The marker comment body for *spec*, carrying its whole shape.
-
-    Serialized by alias so what goes onto the wire is the model's own
-    external form; a hand-rolled encoding here would be a second statement
-    of ``BaseSpec`` and a place for the two to disagree.
-    """
-    return f"<!-- kodezart-basespec {spec.model_dump_json(by_alias=True)} -->"
-
-
-def _work_ref_marker(ref: WorkRef) -> str:
-    """The marker comment body for *ref*.
-
-    ``pushed_head_sha`` at ``None`` omits the attribute entirely: an empty
-    attribute value would read back as ``""``, which is a fourth state the
-    domain does not have.
-    """
-    sha = (
-        ""
-        if ref.pushed_head_sha is None
-        else f' pushed-head-sha="{ref.pushed_head_sha}"'
-    )
-    return (
-        f'<!-- kodezart-workref role="{ref.role.value}" branch="{ref.branch}"{sha} -->'
-    )
-
 
 _RETRY_BACKOFF_BASE = 2.0
 
@@ -421,18 +370,6 @@ class _ClaimMarker:
     expires_at: datetime
 
 
-def _claim_marker_body(*, holder: str, expires_at: datetime) -> str:
-    """The marker's wire form, written once so the writer and the reader agree.
-
-    ``_CLAIM_MARKER`` parses what this produces; a second spelling of the
-    same comment is how the two drift apart.
-    """
-    return (
-        f'<!-- kodezart-claim holder="{holder}" '
-        f'expires-at="{expires_at.isoformat()}" -->'
-    )
-
-
 def _may_resend(tool: str, exc: Exception) -> bool:
     """Whether a call that failed this way may be made again.
 
@@ -462,6 +399,7 @@ class LinearMcpTracker:
         caller: McpToolCaller,
         queue_state_labels: Mapping[str, str],
         workflow_state_names: Mapping[LifecycleStage, str],
+        marker_prefixes: Mapping[str, str],
         team_identifiers: Mapping[str, str],
         max_retries: int,
         retry_backoff_factor: float,
@@ -469,6 +407,7 @@ class LinearMcpTracker:
         ledger: SelfWriteLedger,
     ) -> None:
         self._caller: McpToolCaller = caller
+        self._markers = LinearMarkers(marker_prefixes)
         self._max_retries: int = max_retries
         self._retry_backoff_factor: float = retry_backoff_factor
         self._clock: Callable[[], datetime] = clock
@@ -753,6 +692,19 @@ class LinearMcpTracker:
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
         return self._saved_issue(payload)
 
+    async def edit_description(
+        self, *, target: str, expected: str, replacement: str
+    ) -> DescriptionEditResult:
+        """Read and assert the anchor before a description-only write."""
+        current = await self.read_issue(issue_key=target)
+        body = description_replacement(
+            target=target, body=current.body, expected=expected, replacement=replacement
+        )
+        if body is None:
+            return DescriptionEditResult.UNCHANGED
+        await self.update_issue(issue_key=target, body=body)
+        return DescriptionEditResult.EDITED
+
     async def set_workflow_state(
         self,
         *,
@@ -779,7 +731,10 @@ class LinearMcpTracker:
         return await self._save_state(issue_key=issue_key, state_name=state_name)
 
     async def _save_state(self, *, issue_key: str, state_name: str) -> TrackerIssue:
-        """Write one backend state name. The two state writers' shared tail."""
+        """Read first; matching state writes produce no history entry."""
+        current = await self.read_issue(issue_key=issue_key)
+        if current.state_name == state_name:
+            return current
         payload = await self._call(
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},
@@ -794,6 +749,9 @@ class LinearMcpTracker:
     ) -> TrackerIssue:
         """Set the semantic queue state, replacing any other member."""
         current = await self._read_issue_wire(issue_key)
+        issue = self._to_issue(current)
+        if issue.queue_states == frozenset({state}):
+            return issue
         preserved = [
             label for label in current.labels if label not in self._queue_state_by_label
         ]
@@ -822,6 +780,30 @@ class LinearMcpTracker:
             self._to_comment(wire, issue_key=issue_key)
             for wire in await self._comment_wires(issue_key)
         )
+
+    async def upsert_comment(
+        self, *, target: str, marker: str, body: str
+    ) -> TrackerComment:
+        """Resolve the marker across the whole log before creating or editing."""
+        content = marked_comment_body(marker=marker, body=body)
+        existing = comment_under_marker(
+            target=target,
+            marker=marker,
+            comments=await self.list_comments(issue_key=target),
+        )
+        if existing is None:
+            return await self.post_comment(issue_key=target, body=content)
+        if existing.body == content:
+            return existing
+        payload = await self._call(
+            _TOOL_SAVE_COMMENT, {"id": existing.comment_key, "body": content}
+        )
+        comment = self._to_comment(
+            self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT),
+            issue_key=target,
+        )
+        await self._wrote_by_reading(target)
+        return comment
 
     async def claim_issue(
         self,
@@ -919,7 +901,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT,
             {
                 "id": earliest.comment_key,
-                "body": _claim_marker_body(holder=holder, expires_at=expires_at),
+                "body": self._markers.claim_body(holder=holder, expires_at=expires_at),
             },
         )
         for duplicate in duplicates:
@@ -948,7 +930,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT,
             {
                 "issueId": issue_key,
-                "body": _claim_marker_body(holder=holder, expires_at=expires_at),
+                "body": self._markers.claim_body(holder=holder, expires_at=expires_at),
             },
         )
         appended = self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT).id
@@ -962,8 +944,9 @@ class LinearMcpTracker:
         """Every claim marker on the issue that has not yet lapsed."""
         now = self._clock()
         markers: list[_ClaimMarker] = []
+        pattern = self._markers.claim_pattern
         for wire in await self._comment_wires(issue_key):
-            match = _CLAIM_MARKER.search(wire.body)
+            match = pattern.search(wire.body)
             if match is None:
                 continue
             expires_at = self._parse_instant(
@@ -985,8 +968,9 @@ class LinearMcpTracker:
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         """Delete every claim marker *holder* wrote on the issue."""
         released = False
+        pattern = self._markers.claim_pattern
         for wire in await self._comment_wires(issue_key):
-            match = _CLAIM_MARKER.search(wire.body)
+            match = pattern.search(wire.body)
             if match is not None and match.group("holder") == holder:
                 await self._call(_TOOL_DELETE_COMMENT, {"id": wire.id})
                 released = True
@@ -1060,7 +1044,7 @@ class LinearMcpTracker:
                 )
         payload = await self._call(
             _TOOL_SAVE_COMMENT,
-            {"issueId": ref.issue_id, "body": _work_ref_marker(ref)},
+            {"issueId": ref.issue_id, "body": self._markers.work_ref_body(ref)},
         )
         self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
         await self._wrote_by_reading(ref.issue_id)
@@ -1068,8 +1052,9 @@ class LinearMcpTracker:
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         """Every work ref recorded on the issue, oldest first."""
         refs: list[WorkRef] = []
+        pattern = self._markers.work_ref_pattern
         for wire in await self._comment_wires(issue_key):
-            match = _WORK_REF_MARKER.search(wire.body)
+            match = pattern.search(wire.body)
             if match is None:
                 continue
             role = _WORK_REF_ROLE_BY_VALUE.get(match.group("role"))
@@ -1101,7 +1086,7 @@ class LinearMcpTracker:
             return
         payload = await self._call(
             _TOOL_SAVE_COMMENT,
-            {"issueId": issue_key, "body": _base_spec_marker(spec)},
+            {"issueId": issue_key, "body": self._markers.base_spec_body(spec)},
         )
         self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
         await self._wrote_by_reading(issue_key)
@@ -1117,8 +1102,9 @@ class LinearMcpTracker:
         dispatch.
         """
         latest: BaseSpec | None = None
+        pattern = self._markers.base_spec_pattern
         for wire in await self._comment_wires(issue_key):
-            match = _BASE_SPEC_MARKER.search(wire.body)
+            match = pattern.search(wire.body)
             if match is None:
                 continue
             try:
@@ -1141,8 +1127,9 @@ class LinearMcpTracker:
         correct, so authorship is deliberately not checked here.
         """
         latest: str | None = None
+        pattern = self._markers.repository_pattern
         for wire in await self._comment_wires(issue_key):
-            match = _REPO_MARKER.search(wire.body)
+            match = pattern.search(wire.body)
             if match is not None:
                 latest = match.group("url")
         return latest
@@ -1716,9 +1703,27 @@ class LinearMcpTracker:
         return self._validate(LinearIssueDetailWire, payload, _TOOL_GET_ISSUE)
 
     async def _comment_wires(self, issue_key: str) -> Sequence[LinearCommentWire]:
-        payload = await self._call(_TOOL_LIST_COMMENTS, {"issueId": issue_key})
-        listing = self._validate(LinearCommentListWire, payload, _TOOL_LIST_COMMENTS)
-        return listing.comments
+        arguments: dict[str, object] = {"issueId": issue_key}
+        seen_cursors: set[str] = set()
+        comments: dict[str, LinearCommentWire] = {}
+        while True:
+            payload = await self._call(_TOOL_LIST_COMMENTS, arguments)
+            listing = self._validate(
+                LinearCommentListWire, payload, _TOOL_LIST_COMMENTS
+            )
+            comments.update((comment.id, comment) for comment in listing.comments)
+            if not listing.has_next_page:
+                return tuple(
+                    sorted(comments.values(), key=lambda c: (c.created_at, c.id))
+                )
+            if not listing.cursor or listing.cursor in seen_cursors:
+                raise TrackerProtocolError(
+                    "comment listing cannot advance to its next page",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=f"target={issue_key}; cursor={listing.cursor!r}",
+                )
+            seen_cursors.add(listing.cursor)
+            arguments["cursor"] = listing.cursor
 
     async def _call(
         self,

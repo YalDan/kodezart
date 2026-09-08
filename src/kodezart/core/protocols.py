@@ -52,6 +52,7 @@ from kodezart.types.domain.tracker import (
     TrackerIssue,
     TrackerReview,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 
 
@@ -426,6 +427,28 @@ class PRCreator(Protocol):
 
 
 @runtime_checkable
+class ForgeQuery(Protocol):
+    """Read forge identities before creating delivery artifacts."""
+
+    async def open_pr_for_head(
+        self,
+        *,
+        repo_url: str,
+        head: str,
+    ) -> tuple[str, int] | None:
+        """Return an open PR's (html_url, number), or None.
+
+        Head is a branch in the repository named by repo_url. Forge
+        transport and payload failures use the same domain errors as PRCreator.
+        """
+        ...
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """Compose the forge's browser URL for a repository branch."""
+        ...
+
+
+@runtime_checkable
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
 
@@ -673,7 +696,20 @@ class TrackerPort(Protocol):
         issue_key: str,
         stage: LifecycleStage,
     ) -> TrackerIssue:
-        """Move the issue to the state the configuration binds *stage* to."""
+        """Read first and move only if the configured state differs."""
+        ...
+
+    async def edit_description(
+        self, *, target: str, expected: str, replacement: str
+    ) -> DescriptionEditResult:
+        """Replace exact expected text in the issue's current description.
+
+        Expected present reports EDITED. Otherwise, replacement present
+        reports UNCHANGED with no write; neither raises StaleWriteError
+        naming target and expected with no write. State moves separately.
+        Callers serialize writes: this read-before-write detects stale
+        anchors, but is not a backend atomic compare-and-swap.
+        """
         ...
 
     async def restore_workflow_state(
@@ -701,11 +737,23 @@ class TrackerPort(Protocol):
         issue_key: str,
         state: QueueState,
     ) -> TrackerIssue:
-        """Set the semantic queue state, replacing any other member."""
+        """Read first; replace other queue states only if they differ."""
         ...
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""
+        ...
+
+    async def upsert_comment(
+        self, *, target: str, marker: str, body: str
+    ) -> TrackerComment:
+        """Create or edit the issue comment with *marker* as its first line.
+
+        *body* is the content following that line. An identical replay
+        writes nothing. Several comments under the marker raise
+        ``DuplicateCommentMarkerError`` before any write. Callers compose
+        the marker and serialize concurrent writers to the same target.
+        """
         ...
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:

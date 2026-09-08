@@ -13,27 +13,34 @@ to cover.
 """
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 
 from kodezart.types.domain.gating import (
     UNCONDITIONAL_ROUTING,
     OutboundDestination,
-    RedactionCategory,
+    ScanCategory,
     ScanHit,
     ScannerRouting,
     ScanResult,
 )
 
 
-class RegexContentScanner:
+def pattern_spans(pattern: re.Pattern[str], content: str) -> Iterator[tuple[int, int]]:
+    """The engine's non-empty matches, reusable before assigning a category."""
+    for match in pattern.finditer(content):
+        if match.end() > match.start():
+            yield match.start(), match.end()
+
+
+class RegexContentScanner[Category: ScanCategory]:
     """``ContentScanner`` over a configured category -> patterns mapping."""
 
     def __init__(
         self,
         *,
-        patterns: Mapping[RedactionCategory, Sequence[str]],
+        patterns: Mapping[Category, Sequence[str]],
     ) -> None:
-        self._compiled: dict[RedactionCategory, list[re.Pattern[str]]] = {
+        self._compiled: dict[Category, list[re.Pattern[str]]] = {
             category: [re.compile(pattern) for pattern in category_patterns]
             for category, category_patterns in patterns.items()
             if category_patterns
@@ -58,12 +65,11 @@ class RegexContentScanner:
                 hits.extend(
                     ScanHit(
                         category=category,
-                        start=match.start(),
-                        end=match.end(),
+                        start=start,
+                        end=end,
                         rationale=None,
                     )
-                    for match in pattern.finditer(content)
-                    if match.end() > match.start()
+                    for start, end in pattern_spans(pattern, content)
                 )
         hits.sort(key=lambda hit: hit.sort_key())
         return ScanResult(hits=tuple(hits))

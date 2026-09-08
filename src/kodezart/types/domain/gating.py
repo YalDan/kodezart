@@ -34,6 +34,13 @@ class GateVerdict(StrEnum):
     BLOCKED = "blocked"
 
 
+class SurfaceDurability(StrEnum):
+    """Whether a reader treats a write as current or as a past observation."""
+
+    DURABLE = "durable"
+    POINT_IN_TIME = "point_in_time"
+
+
 _SEVERITY: dict[GateVerdict, int] = {
     GateVerdict.CLEAN: 0,
     GateVerdict.REDACTED: 1,
@@ -67,6 +74,16 @@ class RedactionCategory(StrEnum):
     INFRA_ENDPOINTS = "infra_endpoints"
     CREDENTIALS = "credentials"
     ORG_PRIVATE = "org_private"
+
+
+class DurabilityCategory(StrEnum):
+    """Aggregate claims always block; redacting one would preserve the claim."""
+
+    OBJECT_COUNT = "object_count"
+    IDENTIFIER_ROSTER = "identifier_roster"
+
+
+type ScanCategory = RedactionCategory | DurabilityCategory
 
 
 #: The one category that carries NO pattern list, by construction.  A pattern
@@ -143,6 +160,31 @@ def surface_of(destination: OutboundDestination) -> OutboundSurface:
     return DESTINATION_SURFACE[destination]
 
 
+#: Classify real writers in code, alongside their surface classification.
+#: Descriptions and replaceable artifacts are read as current; appended
+#: comments and commit messages describe a particular event.
+DESTINATION_DURABILITY: Mapping[OutboundDestination, SurfaceDurability] = {
+    OutboundDestination.BRANCH_NAME: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_TITLE: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_BODY: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_COMMENT: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.COMMIT_MESSAGE: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY: (
+        SurfaceDurability.POINT_IN_TIME
+    ),
+    OutboundDestination.ARTIFACT_TICKET_JSON: SurfaceDurability.DURABLE,
+    OutboundDestination.ARTIFACT_CRITERIA_JSON: SurfaceDurability.DURABLE,
+    OutboundDestination.TRACKER_COMMENT: SurfaceDurability.POINT_IN_TIME,
+}
+
+
+def durability_of(destination: OutboundDestination | None) -> SurfaceDurability:
+    """An unclassified write is durable; every named writer has a mapping."""
+    if destination is None:
+        return SurfaceDurability.DURABLE
+    return DESTINATION_DURABILITY[destination]
+
+
 class ContentClass(StrEnum):
     """Where a payload CAME FROM, declared by the call site that built it.
 
@@ -197,10 +239,11 @@ class ScanHit(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    category: RedactionCategory
+    category: ScanCategory
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)
     rationale: str | None = None
+    matched_text: str | None = None
 
     @property
     def has_span(self) -> bool:
@@ -247,7 +290,7 @@ class GateDecision(CamelCaseModel):
 
     verdict: GateVerdict
     content: str
-    categories: tuple[RedactionCategory, ...] = ()
+    categories: tuple[ScanCategory, ...] = ()
     hits: tuple[ScanHit, ...] = ()
     failure: ScanFailureKind | None = None
 

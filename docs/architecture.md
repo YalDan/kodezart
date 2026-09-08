@@ -45,6 +45,7 @@ does not exist.
 | ChangePersister   | GitChangePersister       | Detects changes, generates commit message, commits, pushes |
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
+| ForgeQuery        | GitHubAPIClient          | Looks up an open PR by head and composes branch browser URLs |
 | CIMonitor         | GitHubAPIClient          | Polls check runs for a pushed head                   |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |

@@ -17,7 +17,8 @@ import pytest
 import structlog
 
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
-from kodezart.adapters.linear_mcp_tracker import _CLAIM_MARKER, LinearMcpTracker
+from kodezart.adapters.linear_markers import LinearMarkers
+from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpCredentialRefusedError,
@@ -55,6 +56,9 @@ from tests.tracker.conftest import (
     fixture_server,
     linear_over_fake_mcp,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
+
+_CLAIM_MARKER = LinearMarkers(MARKER_PREFIXES).claim_pattern
 
 RAW_PRIORITY_BY_DOMAIN_MEMBER: dict[int, IssuePriority] = {
     0: IssuePriority.NONE,
@@ -96,6 +100,7 @@ def tracker_over(server: FakeLinearMcpServer, **overrides: object) -> LinearMcpT
     """The adapter over *server*, with per-test constructor overrides."""
     kwargs: dict[str, object] = {
         "caller": server,
+        "marker_prefixes": MARKER_PREFIXES,
         "queue_state_labels": QUEUE_STATE_LABELS,
         "workflow_state_names": WORKFLOW_STATE_NAMES,
         "team_identifiers": TEAM_IDENTIFIERS,

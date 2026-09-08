@@ -28,6 +28,8 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_GIT_COMMITTER_EMAIL`    | `str`        | `kodezart@noreply.dev`   |             | Git committer email for auto-generated commits           |
 | `KODEZART_MAX_ITERATIONS`         | `int`        | `5`                      | 1-20        | Maximum Ralph loop iterations before stopping            |
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
+| `KODEZART_ORGANIZE_MAX_ADMISSION_ROUNDS` | `int` | `3` | 1-10 | Maximum organize admission re-author and re-test rounds; runtime organizer wiring is pending. |
+| `KODEZART_ORGANIZE_MAX_CONVERGENCE_ROUNDS` | `int` | `3` | 1-10 | Maximum organize whole-scope convergence rounds; runtime organizer wiring is pending. |
 | `KODEZART_TICKET_REVIEW_MODE`     | `str`        | `create_only`            | `reviewed`, `create_only` | Whether the ticket loop compiles a reviewer session or one creator session whose draft the set's draft-critic lens checks; setting `KODEZART_MAX_REVIEWS` under `create_only`, or `create_only` over a set declaring no such lens, is refused at boot |
 | `KODEZART_FALLBACK_MODEL`         | `str\|None`  | `None`                   |             | Engine a session falls back to when the primary declines a request; absent declares no fallback |
 | `KODEZART_SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary (KOD-161) |
@@ -96,6 +98,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_TRACKER_MCP_CALL_TIMEOUT_SECONDS` | `float` | `60.0` | >= 1.0, <= 120.0 | Seconds one tracker MCP tool call may wait for its answer before it is abandoned as the typed transport failure. A session torn down mid-call — the shape a refused credential arrives in, measured 2026-09-01 (KOD-171) — never sends the close its reader is waiting for, so without this bound the call in flight waits forever and the pass holding it never returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that bound is the transport's, on the HTTP exchange; this one is the session's, on the wait for one answer. |
 | `KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS` | `float` | `300.0` | >= 30.0, <= 3600.0 | Seconds the tracker MCP session's event stream may go quiet before its read is abandoned. The third bound on this transport and the only one about the STREAM: KODEZART_TRACKER_TIMEOUT_SECONDS bounds one HTTP exchange's connect and write phases, KODEZART_TRACKER_MCP_CALL_TIMEOUT_SECONDS bounds the wait for one answer, and this bounds how long the long-lived streamable-HTTP response may say nothing at all. The default is the value the session ran on while the bound came from a private vendor constant. |
 | `KODEZART_TRACKER_CLAIM_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Lease an atomic claim holds before it expires and the issue becomes eligible again. |
+| `KODEZART_TRACKER_SURFACE_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Bound for write-surface leases held by a writing run's job id. Renewal is explicit; no background task extends these leases. |
 | `KODEZART_TRACKER_CLAIM_RENEWAL_FRACTION` | `float` | `0.25` | > 0.0, <= 0.5 | Fraction of the claim lease at which a job in flight renews its claim. Expressed against the lease so renewal outpaces expiry by construction, whatever the lease is set to: at 0.25 three consecutive renewal failures are survivable before the claim lapses, and the 0.5 bound leaves at least one. |
 | `KODEZART_TRACKER_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the tracker credential is presented in. |
 | `KODEZART_TRACKER_MCP_ERROR_DETAIL_LIMIT` | `int` | `500` | >= 80, <= 8000 | Characters of the server's OWN error text carried into a tracker MCP transport failure. A refusal that drops the vendor's diagnosis costs a whole boot cycle to recover it. |
@@ -323,3 +326,15 @@ and `psycopg[binary]`); without it boot raises
 ```bash
 uv sync --all-groups --extra postgres
 ```
+
+### Durable aggregate scanning
+
+These settings configure the aggregate scanner on the existing outbound gate. Durable public or unknown-visibility surfaces are checked; appended event surfaces skip aggregate matching. The gate's existing private-repository bypass still applies.
+
+| Variable | Type | Default | Constraint | Meaning |
+| --- | --- | --- | --- | --- |
+| `KODEZART_AGGREGATE_COUNT_TOKEN_DISTANCE` | `int` | `0` | >= 0 | Maximum intervening tokens between a numeral and a tracker-object noun. |
+| `KODEZART_AGGREGATE_IDENTIFIER_ROSTER_MIN_LENGTH` | `int` | `3` | >= 2 | Minimum consecutive tracker references forming a roster. |
+| `KODEZART_AGGREGATE_TRACKER_OBJECT_NOUNS` | `list[str]` | Issue, ticket, lane, project, milestone, sub-issue, PR and pull-request nouns, singular and plural | Nonempty list | JSON list of object nouns; each is matched literally, without case sensitivity. |
+| `KODEZART_AGGREGATE_ISSUE_IDENTIFIER_PATTERN` | `str` | Uppercase issue prefix followed by a hyphen and digits | Nonempty regex | Identifier grammar used by roster matching. |
+| `KODEZART_AGGREGATE_IDENTIFIER_SEPARATOR_PATTERN` | `str` | Whitespace and punctuation separators, or “and” | Nonempty regex | Grammar separating consecutive references in a roster. |

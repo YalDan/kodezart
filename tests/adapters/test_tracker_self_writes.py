@@ -24,6 +24,7 @@ from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import ClaimStatus
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 ISSUE: Final[str] = "FIX-1"
 TEAM: Final[str] = "fixture-team"
@@ -63,6 +64,7 @@ def _server() -> FakeLinearMcpServer:
 
 def _tracker(server: FakeLinearMcpServer, ledger: SelfWriteLedger) -> LinearMcpTracker:
     return LinearMcpTracker(
+        marker_prefixes=MARKER_PREFIXES,
         caller=server,
         queue_state_labels={
             QueueState.APPROVED.value: APPROVED_LABEL,
@@ -175,6 +177,7 @@ async def test_a_read_back_that_fails_does_not_fail_the_write_it_recorded() -> N
     server = _server()
     ledger = SelfWriteLedger()
     tracker = LinearMcpTracker(
+        marker_prefixes=MARKER_PREFIXES,
         caller=_ReadBackGone(server),
         queue_state_labels={
             QueueState.APPROVED.value: APPROVED_LABEL,

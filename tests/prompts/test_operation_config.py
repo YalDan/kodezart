@@ -139,6 +139,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "queue_states",
         "scope_labels",
         "workflow_states",
+        "marker_prefixes",
         "repos",
         "documents",
         "records",

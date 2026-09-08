@@ -440,3 +440,18 @@ def test_scope_and_recorded_routing_render_into_the_roster(
         assert '<!-- kodezart-repo url="..." -->' in output
     else:
         assert "kodezart-repo" not in output
+
+
+@pytest.mark.parametrize("set_name", SHIPPED_SETS)
+def test_repository_marker_prefix_is_rendered_from_the_operation_mapping(
+    set_name: str, tmp_path: Path
+) -> None:
+    def configure(raw: dict[str, object]) -> None:
+        scoped_and_unbound(raw)
+        prefixes = raw["marker_prefixes"]
+        assert isinstance(prefixes, dict)
+        prefixes["repository"] = "deployment-repository"
+
+    output = rendered(written(tmp_path, configure), set_name, PromptKey.FIRE_PREP_PASS)
+    assert '<!-- deployment-repository url="..." -->' in output
+    assert "kodezart-repo" not in output

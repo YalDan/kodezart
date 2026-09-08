@@ -41,6 +41,11 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WorkspaceError,
 )
+from kodezart.domain.tracker_writes import (
+    comment_under_marker,
+    description_replacement,
+    marked_comment_body,
+)
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.prompt_pass import pass_render_bindings
 from kodezart.types.domain.agent import (
@@ -121,6 +126,7 @@ from kodezart.types.domain.tracker import (
     TrackerReview,
     WorkflowStateKind,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from tests.prompt_census import configured_investigation_cap
@@ -1664,6 +1670,37 @@ class FakePRCreator:
             raise self._fail_comment
 
 
+class FakeForgeQuery:
+    """Configured read results, isolated by repository and branch identity."""
+
+    def __init__(
+        self,
+        *,
+        open_prs: dict[tuple[str, str], tuple[str, int]] | None = None,
+        branch_urls: dict[tuple[str, str], str] | None = None,
+    ) -> None:
+        self.open_prs = dict(open_prs or {})
+        self.branch_urls = dict(branch_urls or {})
+        self.calls: list[dict[str, str]] = []
+
+    async def open_pr_for_head(
+        self,
+        *,
+        repo_url: str,
+        head: str,
+    ) -> tuple[str, int] | None:
+        self.calls.append(
+            {"method": "open_pr_for_head", "repo_url": repo_url, "head": head}
+        )
+        return self.open_prs.get((repo_url, head))
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        self.calls.append(
+            {"method": "branch_web_url", "repo_url": repo_url, "branch": branch}
+        )
+        return self.branch_urls[(repo_url, branch)]
+
+
 class FakeCIMonitor:
     """Fake CIMonitor for testing the outer workflow pipeline."""
 
@@ -2914,6 +2951,8 @@ class FakeTrackerPort:
         #: heartbeat still ticking against a claim it no longer holds.
         self.renewals: list[tuple[str, str]] = []
         self.comments: list[TrackerComment] = []
+        self.comment_writes: list[tuple[str, str]] = []
+        self.issue_writes: list[tuple[str, str | None, str | None]] = []
         self.workflow_writes: list[tuple[str, LifecycleStage]] = []
         #: Every put-back the failure arm made, as (issue, state name).
         #: Kept apart from ``workflow_writes`` because a restore names a
@@ -3131,6 +3170,7 @@ class FakeTrackerPort:
         title: str | None = None,
         body: str | None = None,
     ) -> TrackerIssue:
+        self.issue_writes.append((issue_key, title, body))
         issue = self.issues[issue_key]
         updated = issue.model_copy(
             update={
@@ -3142,14 +3182,28 @@ class FakeTrackerPort:
         self._wrote(issue_key)
         return updated
 
+    async def edit_description(
+        self, *, target: str, expected: str, replacement: str
+    ) -> DescriptionEditResult:
+        current = await self.read_issue(issue_key=target)
+        body = description_replacement(
+            target=target, body=current.body, expected=expected, replacement=replacement
+        )
+        if body is None:
+            return DescriptionEditResult.UNCHANGED
+        await self.update_issue(issue_key=target, body=body)
+        return DescriptionEditResult.EDITED
+
     async def set_workflow_state(
         self,
         *,
         issue_key: str,
         stage: LifecycleStage,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.state_name == stage.value:
+            return issue
         self.workflow_writes.append((issue_key, stage))
-        issue = self.issues[issue_key]
         self._state_kinds[issue.state_name] = issue.state_kind
         self._state_kinds[stage.value] = _STAGE_KIND[stage]
         updated = issue.model_copy(
@@ -3168,13 +3222,15 @@ class FakeTrackerPort:
         issue_key: str,
         state_name: str,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.state_name == state_name:
+            return issue
         # A backend knows the kind of every state it defines, so the fake
         # does too: seeded from the fixture's issues and extended by every
         # write. An unknown name is a state no backend defined, and it
         # raises rather than inventing a kind for it.
         kind = self._state_kinds[state_name]
         self.restored_states.append((issue_key, state_name))
-        issue = self.issues[issue_key]
         updated = issue.model_copy(
             update={"state_name": state_name, "state_kind": kind},
         )
@@ -3188,8 +3244,10 @@ class FakeTrackerPort:
         issue_key: str,
         state: QueueState,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.queue_states == frozenset({state}):
+            return issue
         self.queue_writes.append((issue_key, state))
-        issue = self.issues[issue_key]
         updated = issue.model_copy(update={"queue_states": frozenset({state})})
         self.issues[issue_key] = updated
         self._wrote(issue_key)
@@ -3205,8 +3263,28 @@ class FakeTrackerPort:
             created_at=self._clock(),
         )
         self.comments.append(comment)
+        self.comment_writes.append((comment.comment_key, body))
         self._wrote(issue_key)
         return comment
+
+    async def upsert_comment(
+        self, *, target: str, marker: str, body: str
+    ) -> TrackerComment:
+        content = marked_comment_body(marker=marker, body=body)
+        existing = comment_under_marker(
+            target=target,
+            marker=marker,
+            comments=await self.list_comments(issue_key=target),
+        )
+        if existing is None:
+            return await self.post_comment(issue_key=target, body=content)
+        if existing.body == content:
+            return existing
+        updated = existing.model_copy(update={"body": content})
+        self.comments[self.comments.index(existing)] = updated
+        self.comment_writes.append((existing.comment_key, content))
+        self._wrote(target)
+        return updated
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         return tuple(c for c in self.comments if c.issue_key == issue_key)
