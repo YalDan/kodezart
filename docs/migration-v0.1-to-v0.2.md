@@ -95,7 +95,7 @@ hidden from validation errors (`src/kodezart/core/config.py`,
 | `KODEZART_GITHUB_TOKEN` | `str \| None`, default `None`; the empty assignment `KODEZART_GITHUB_TOKEN=` meant unset | Same type and default, but `min_length=1`: an empty assignment is refused with `github_token: String should have at least 1 character` | Comment the line out or give it a real value. Unset means no forge client, no repository visibility lookup, no pull-request creation and no dispatch pass (`scheduled_passes_not_wired` with `delivery_probe_present: false`). |
 | `KODEZART_MAX_REVIEWS` | `int`, default `2`, range 1 to 10, always honoured | Same default and range, but a value you set explicitly is refused at boot under the new default `KODEZART_TICKET_REVIEW_MODE=create_only`, which compiles no reviewer session | Drop the line, or set `KODEZART_TICKET_REVIEW_MODE=reviewed` beside it. |
 | `KODEZART_CHECKPOINT_URL` | `str \| None`, default `None`; PostgreSQL via the sync `PostgresSaver` | Same contract (`None`, `:memory:`, PostgreSQL URL); PostgreSQL now uses `AsyncPostgresSaver` and needs the `kodezart[postgres]` extra | Install the extra if you use PostgreSQL. Do not share a checkpoint database between v0.1 and v0.2: the `WorkflowState` schema changed. |
-| `KODEZART_MODEL` | `str \| None`, default `None` = SDK/account default | Unchanged, but note that an empty assignment `KODEZART_MODEL=` is not refused and sends an empty model id to the SDK | Leave it commented out unless you are pinning a model. |
+| `KODEZART_AGENT__MODEL` | Former flat `model` field: `str \| None`, default `None` = SDK/account default | Same value contract, but note that an empty assignment `KODEZART_AGENT__MODEL=` is not refused and sends an empty model id to the SDK | Leave it commented out unless you are pinning a model. |
 | `KODEZART_CI_NO_CHECKS_GRACE_POLLS` | `int`, default `10` | Same default; now applies only when the repository has workflows or the workflows probe was indeterminate (the no-workflows case uses `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS`) | Nothing. |
 
 Unchanged in type and default (the current HTTP names are nested):
@@ -122,13 +122,13 @@ otherwise.
 | `KODEZART_PROMPT_SET_OVERRIDES` | not present | `{}` (JSON, prompt key to set name) | Nothing. |
 | `KODEZART_PROMPT_TEMPLATE_OVERRIDES` | not present | `{}` (JSON, prompt key to template file path) | Nothing. |
 | `KODEZART_INVESTIGATION_CAP` | not present | `5` (1 to 10) | Nothing. |
-| `KODEZART_SESSION_MODELS` | not present | `{}` (JSON, prompt key to engine; unknown key refused at boot) | Nothing, unless you want per-step engines. |
-| `KODEZART_FALLBACK_MODEL` | not present | unset (no fallback) | Nothing. |
-| `KODEZART_CLAUDE_OUTPUT_STYLE` | not present | unset (no style sent) | Nothing; a declared style the session does not confirm fails that session. |
-| `KODEZART_SKILLS_MODE` | not present | `none` (`none`, `all`, `explicit`) | Nothing; v0.1 sent no skills selection, v0.2 suppresses every skill by default. |
-| `KODEZART_SKILLS_ALLOWLIST` | not present | `[]` (must be empty unless mode is `explicit`) | Nothing. |
-| `KODEZART_SETTING_SOURCES` | not present | `["user","project","local"]` | Nothing. |
-| `KODEZART_CLAUDE_HOME_DIR` | not present | `~/.claude` | Nothing. |
+| `KODEZART_AGENT__SESSION_MODELS` | not present | `{}` (JSON, prompt key to engine; unknown key refused at boot) | Nothing, unless you want per-step engines. |
+| `KODEZART_AGENT__FALLBACK_MODEL` | not present | unset (no fallback) | Nothing. |
+| `KODEZART_AGENT__OUTPUT_STYLE` | not present | unset (no style sent) | Nothing; a declared style the session does not confirm fails that session. |
+| `KODEZART_AGENT__SKILLS__MODE` | not present | `none` (`none`, `all`, `explicit`) | Nothing; v0.1 sent no skills selection, v0.2 suppresses every skill by default. |
+| `KODEZART_AGENT__SKILLS__ALLOWLIST` | not present | `[]` (must be empty unless mode is `explicit`) | Nothing. |
+| `KODEZART_AGENT__SETTING_SOURCES` | not present | `["user","project","local"]` | Nothing. |
+| `KODEZART_AGENT__HOME_DIR` | not present | `~/.claude` | Nothing. |
 | `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS` | not present | `1` (0 to 5) | Nothing. |
 | `KODEZART_FAN_IN_MAX_ATTEMPTS` | not present | `2` (1 to 5) | Nothing. |
 | `KODEZART_LOOP_PLATEAU_WINDOW` | not present | `2` (2 to 10) | Nothing; the loop now stops early on a plateau. |
@@ -366,14 +366,14 @@ message shapes:
 - A `KODEZART_PROMPT_SET` naming no directory under
   `src/kodezart/prompts/sets/`:
   `PromptResolutionError: Default prompt set '<name>' not found under <sets_root>`.
-- A `KODEZART_SESSION_MODELS` key outside the prompt-function vocabulary:
-  `session_models names no prompt function key: '<key>' (allowed: acceptance_criteria, branch_name, commit_message, content_audit, criteria_validation, evaluation, fire_prep_pass, fix, grooming_pass, implementation, iteration_feedback, knowledge_map, post_merge_review, pr_description, remediation_ticket, ticket_create, ticket_review, ticket_revision)`.
+- A `KODEZART_AGENT__SESSION_MODELS` key outside the prompt-function vocabulary:
+  a validation error at `agent.session_models.<key>.[key]`, naming the rejected key and the current prompt-function vocabulary.
 - `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` above
   `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS`:
   `event_buffer_retention_seconds must not exceed terminal_retention_seconds: a replay buffer cannot outlive the job record that names it`.
-- `KODEZART_SKILLS_MODE=explicit` with an empty allowlist:
-  `KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty KODEZART_SKILLS_ALLOWLIST`;
-  the reverse: `KODEZART_SKILLS_ALLOWLIST must be empty when KODEZART_SKILLS_MODE=none`.
+- `KODEZART_AGENT__SKILLS__MODE=explicit` with an empty allowlist:
+  `skills mode EXPLICIT requires a non-empty allowlist`;
+  the reverse: `skills mode none must not carry an allowlist`.
 - Removed `deny_patterns` or `deny_pattern_verdicts` settings: an extra-input
   validation error. Local credential checks and six category consequences are
   now fixed; deployment facts and semantic privacy remain in `private_surface`.
@@ -396,29 +396,31 @@ message shapes:
   a gate signal the credential cannot answer: `PassGateCapabilityError`; a
   knowledge surface read by an ungranted session type:
   `PassKnowledgeCapabilityError`.
-- Under `KODEZART_SKILLS_MODE=explicit`, an allowlist name not provisioned
-  under `KODEZART_CLAUDE_HOME_DIR`:
+- Under `KODEZART_AGENT__SKILLS__MODE=explicit`, an allowlist name not provisioned
+  under `KODEZART_AGENT__HOME_DIR`:
   `SkillPreflightError: Configured skills are not provisioned on this host`.
 
 ## 5. Engine sessions
 
-- **Model selection.** `KODEZART_MODEL` is unchanged: unset means the SDK's
-  and therefore the account's default engine. `KODEZART_SESSION_MODELS` pins
+The names below use the current `agent` settings group. Existing installations
+using the former flat names must apply the [agent settings migration](configuration.md#agent-settings-migration); retired names are refused at startup.
+
+- **Model selection.** The current nested name is `KODEZART_AGENT__MODEL`: unset means the SDK's
+  and therefore the account's default engine. `KODEZART_AGENT__SESSION_MODELS` pins
   individual prompt-function keys to an engine (a JSON object such as
-  `{"implementation": "<model id>"}`; the vocabulary is the eighteen keys
-  listed in section 4). `KODEZART_FALLBACK_MODEL` is passed to the SDK as the
+  `{"implementation": "<model id>"}`; the vocabulary is the current `PromptKey` set). `KODEZART_AGENT__FALLBACK_MODEL` is passed to the SDK as the
   fallback engine; unset means no fallback. A prompt set declares the engines
   it was written for, and a mismatch with the configured model is logged as
   `prompt_set_engine_mismatch`, never refused.
-- **Output style.** `KODEZART_CLAUDE_OUTPUT_STYLE` names the Claude Code
+- **Output style.** `KODEZART_AGENT__OUTPUT_STYLE` names the Claude Code
   output style every session runs under; unset sends no style. The session's
   `init` frame is read back and reported as `system.outputStyle`; a declared
   style the session does not confirm fails that session with
   `OutputStyleNotConfirmedError`.
-- **Skills.** `KODEZART_SKILLS_MODE` is `none` by default (every skill
-  suppressed), `all`, or `explicit` with `KODEZART_SKILLS_ALLOWLIST`; explicit
-  names are pre-flighted at boot against `KODEZART_CLAUDE_HOME_DIR`.
-  `KODEZART_SETTING_SOURCES` (default `user`, `project`, `local`) is passed on
+- **Skills.** `KODEZART_AGENT__SKILLS__MODE` is `none` by default (every skill
+  suppressed), `all`, or `explicit` with `KODEZART_AGENT__SKILLS__ALLOWLIST`; explicit
+  names are pre-flighted at boot against `KODEZART_AGENT__HOME_DIR`.
+  `KODEZART_AGENT__SETTING_SOURCES` (default `user`, `project`, `local`) is passed on
   every session.
 - **Prompt set and ticket mode defaults at v0.2.** `KODEZART_PROMPT_SET`
   defaults to `anthropic_v5`: house rules as a system-prompt append, per-role

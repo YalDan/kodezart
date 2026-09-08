@@ -2,7 +2,7 @@
 
 from typing import Self
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import (
     BaseSettings,
     EnvSettingsSource,
@@ -12,14 +12,13 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from kodezart.core.agent_settings import AgentSettings
 from kodezart.core.git_settings import GitSettings
 from kodezart.core.http_settings import HttpSettings
 from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging_settings import LoggingSettings
 from kodezart.types.domain.dispatch import PassSignal
-from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
     TicketReviewMode,
@@ -76,6 +75,14 @@ class AppConfig(BaseSettings):
                 "integration_workspace_dir",
                 "git_committer_name",
                 "git_committer_email",
+                "model",
+                "fallback_model",
+                "session_models",
+                "claude_output_style",
+                "claude_home_dir",
+                "setting_sources",
+                "skills_mode",
+                "skills_allowlist",
                 "project_name",
                 "debug",
                 "api_v1_prefix",
@@ -298,66 +305,6 @@ class AppConfig(BaseSettings):
             "OperationConfig private_surface description when enabled. "
             "Authored aggregate admission on durable PUBLIC/UNKNOWN writes "
             "always runs independently of this setting."
-        ),
-    )
-    model: str | None = Field(
-        default=None,
-        description="Claude model override. None uses SDK default.",
-    )
-    fallback_model: str | None = Field(
-        default=None,
-        description=(
-            "Engine a session falls back to when the primary declines a "
-            "request. None declares no fallback, which is not a default "
-            "naming an engine: an installation that has not decided which "
-            "second engine it may reach sends none."
-        ),
-    )
-    session_models: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "JSON object mapping a prompt function key to the engine its "
-            "sessions run on, overriding the global model for those keys "
-            "only (KOD-161). Engine choice is deployment-shaped, so the "
-            "table lives here rather than in a prompt set, which only "
-            "DECLARES intended engines. Empty — the default — changes "
-            "nothing: every key resolves as before. No engine name is "
-            "defaulted anywhere."
-        ),
-    )
-
-    @field_validator("session_models", mode="before")
-    @classmethod
-    def _session_model_keys_name_prompt_keys(cls, value: object) -> object:
-        """Name every offending key, deliberately and safely.
-
-        The same carve-out ``knowledge.session_grants`` documents: the
-        legal vocabulary is the closed ``PromptKey`` enum, so an offender
-        is by definition not a secret, and naming it is what turns a typo
-        into a one-line fix instead of a key nothing ever reads.
-        """
-        if not isinstance(value, dict):
-            return value
-        legal = {member.value for member in PromptKey}
-        offending = [str(key) for key in value if str(key) not in legal]
-        if offending:
-            named = ", ".join(repr(entry) for entry in offending)
-            allowed = ", ".join(sorted(legal))
-            msg = (
-                f"session_models names no prompt function key: {named} "
-                f"(allowed: {allowed})"
-            )
-            raise ValueError(msg)
-        return value
-
-    claude_output_style: str | None = Field(
-        default=None,
-        description=(
-            "Claude Code output style every engine session runs under. None "
-            "sends no style at all and the CLI's own default stands; no "
-            "style is ever picked in code. A declared style the session's "
-            "own opening message does not confirm fails that session rather "
-            "than running it under some other system prompt."
         ),
     )
 
@@ -819,6 +766,8 @@ class AppConfig(BaseSettings):
         default_factory=KnowledgeSettings,
         description="Knowledge session grants and typed MCP connection.",
     )
+    agent: AgentSettings = Field(default_factory=AgentSettings)
+
     checkpoint_url: str | None = Field(
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
@@ -863,41 +812,12 @@ class AppConfig(BaseSettings):
         ),
     )
 
-    skills_mode: SkillsMode = Field(
-        default=SkillsMode.NONE,
-        description=(
-            "Three-state skill selection: NONE suppresses every skill, ALL "
-            "loads every discovered skill, EXPLICIT loads the allowlist."
-        ),
-    )
-    skills_allowlist: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Skill names loaded under EXPLICIT mode. Must be empty in every "
-            "other mode. Names are host-provisioned at user scope."
-        ),
-    )
-    setting_sources: list[SettingSource] = Field(
-        default_factory=lambda: [
-            SettingSource.USER,
-            SettingSource.PROJECT,
-            SettingSource.LOCAL,
-        ],
-        description=(
-            "Settings sources passed explicitly to agent sessions so enabling "
-            "the skills knob never silently narrows loaded settings."
-        ),
-    )
     operation_config: str | None = Field(
         default=None,
         description=(
             "Filesystem path to the operation config TOML. None means no "
             "operation config is loaded and its binding namespace is empty."
         ),
-    )
-    claude_home_dir: str = Field(
-        default="~/.claude",
-        description="Host directory holding user-scope skills and plugins.",
     )
     loop_plateau_window: int = Field(
         default=2,
@@ -922,30 +842,6 @@ class AppConfig(BaseSettings):
                 "audit_sweep_interval_seconds"
             )
         return self
-
-    @model_validator(mode="after")
-    def _check_skills_configuration(self) -> Self:
-        """Reject the two contradictory skill configurations at load time."""
-        if self.skills_mode is SkillsMode.EXPLICIT and not self.skills_allowlist:
-            msg = (
-                "KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty "
-                "KODEZART_SKILLS_ALLOWLIST"
-            )
-            raise ValueError(msg)
-        if self.skills_mode is not SkillsMode.EXPLICIT and self.skills_allowlist:
-            msg = (
-                f"KODEZART_SKILLS_ALLOWLIST must be empty when "
-                f"KODEZART_SKILLS_MODE={self.skills_mode.value}"
-            )
-            raise ValueError(msg)
-        return self
-
-    def skills_selection(self) -> SkillsSelection:
-        """The typed three-state selection threaded to executor sessions."""
-        return SkillsSelection(
-            mode=self.skills_mode,
-            allowlist=tuple(self.skills_allowlist),
-        )
 
     def explicit_max_reviews(self) -> int | None:
         """``max_reviews`` when the deployment configured one, else ``None``.

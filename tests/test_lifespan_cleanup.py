@@ -617,3 +617,90 @@ async def test_actual_lifespan_forwards_git_section_and_resolves_shorthand(
         "https://configured.example.invalid/group/owner/repo.git" in call
         for call in workspace.calls
     )
+
+
+@pytest.mark.parametrize("configured_agent", [False, True])
+async def test_actual_lifespan_agent_settings_reach_native_session(
+    resources, monkeypatch, tmp_path, configured_agent
+):
+    import json
+
+    from claude_agent_sdk import SystemMessage
+
+    from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
+    from kodezart.composition.preflight import boot_skills
+    from kodezart.composition.prompts import boot_prompts
+    from kodezart.types.domain.agent import SystemEvent
+    from kodezart.types.domain.prompts import PromptKey
+    from kodezart.types.domain.session import SessionType
+    from tests.core.test_agent_settings import configured
+    from tests.fakes import NO_KNOWLEDGE_GRANT, _recording_client
+
+    config = (
+        configured("env", tmp_path, monkeypatch)
+        if configured_agent
+        else AppConfig(_env_file=None)
+    )
+    resources.app.state.config = config
+    monkeypatch.setattr(main, "boot_prompts", boot_prompts)
+    monkeypatch.setattr(main, "boot_skills", boot_skills)
+    monkeypatch.setattr(main, "ClaudeClientExecutor", ClaudeClientExecutor)
+
+    async def grant(**kwargs):
+        return NO_KNOWLEDGE_GRANT
+
+    monkeypatch.setattr(main, "boot_knowledge_grant", grant)
+    observed_prompts = []
+
+    def engine(**kwargs):
+        observed_prompts.append(kwargs["prompts"])
+        return object()
+
+    monkeypatch.setattr(main, "build_workflow_engine", engine)
+    recorded = []
+    opening = {"model": "actual-native-model"}
+    if configured_agent:
+        opening["output_style"] = "Concise"
+    monkeypatch.setattr(
+        "kodezart.adapters.claude_client_executor.ClaudeSDKClient",
+        _recording_client(recorded, [SystemMessage(subtype="init", data=opening)]),
+    )
+    async with resources.app.router.lifespan_context(resources.app):
+        assert resources.app.state.skills is config.agent.skills
+        service = resources.app.state.agent_service
+        for key in (PromptKey.EVALUATION, PromptKey.IMPLEMENTATION):
+            events = [
+                event
+                async for event in service.stream_in_workspace(
+                    prompt="probe",
+                    workspace_path=str(tmp_path),
+                    permission_mode=PermissionMode.INTERACTIVE,
+                    allowed_tools=[],
+                    skills=resources.app.state.skills,
+                    session_type=SessionType.API_QUERY,
+                    session_policy=observed_prompts[0].session_policy(key),
+                )
+            ]
+            options = recorded[-1].options
+            assert options.model == (
+                ("role-engine" if key is PromptKey.IMPLEMENTATION else "primary-engine")
+                if configured_agent
+                else None
+            )
+            assert options.fallback_model == (
+                "fallback-engine" if configured_agent else None
+            )
+            assert options.setting_sources == (
+                ["user"] if configured_agent else ["user", "project", "local"]
+            )
+            assert options.skills == (
+                list(config.agent.skills.allowlist) if configured_agent else []
+            )
+            settings = (
+                json.loads(options.settings) if options.settings is not None else {}
+            )
+            assert settings.get("outputStyle") == (
+                "Concise" if configured_agent else None
+            )
+            (native,) = [event for event in events if isinstance(event, SystemEvent)]
+            assert native.data["model"] == "actual-native-model"

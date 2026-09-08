@@ -604,12 +604,12 @@ def test_the_declared_output_style_reaches_the_executor_through_composition() ->
     to end: the sessions run under the CLI's default and the board says
     they run under the declared one.
     """
-    assert _executor_keywords()["output_style"] == "config.claude_output_style"
+    assert _executor_keywords()["output_style"] == "config.agent.output_style"
 
 
 def test_the_executor_keywords_are_read_off_a_real_call() -> None:
     """Non-vacuity: an empty parse would let the rule above pass over nothing."""
-    assert _executor_keywords()["model"] == "config.model"
+    assert _executor_keywords()["model"] == "config.agent.model"
 
 
 #: The graphs composition builds, each of which takes the floor resolver as

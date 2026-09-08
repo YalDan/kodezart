@@ -134,8 +134,8 @@ def session_options(
         permission_mode=map_permission_mode(permission_mode),
         allowed_tools=allowed_tools,
         disallowed_tools=STALL_GUARD_DISALLOWED_TOOLS,
-        skills=map_skills(config.skills_selection()),
-        setting_sources=map_setting_sources(config.setting_sources),
+        skills=map_skills(config.agent.skills),
+        setting_sources=map_setting_sources(config.agent.setting_sources),
         max_turns=max_turns,
         agents=agents,
     )

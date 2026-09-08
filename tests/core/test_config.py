@@ -15,6 +15,7 @@ make this suite agree with whatever is already configured.
 import pytest
 from pydantic import ValidationError
 
+from kodezart.core.agent_settings import AgentSettings
 from kodezart.core.config import AppConfig
 from kodezart.types.domain.ticket_review import TicketReviewMode
 
@@ -152,7 +153,7 @@ def test_an_unset_forge_token_is_the_absent_state_and_still_loads() -> None:
 @pytest.mark.usefixtures("_pristine_environment")
 def test_session_models_ships_empty_and_loads() -> None:
     """The default pins nothing: every key resolves exactly as before."""
-    assert AppConfig().session_models == {}
+    assert AppConfig().agent.session_models == {}
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -162,7 +163,7 @@ def test_a_key_outside_the_prompt_vocabulary_is_refused_naming_it(
     """The closed-vocabulary refusal: a typo becomes a one-line fix, never
     a table entry nothing ever reads."""
     monkeypatch.setenv(
-        "KODEZART_SESSION_MODELS",
+        "KODEZART_AGENT__SESSION_MODELS",
         '{"implemenation": "engine-a"}',
     )
 
@@ -179,11 +180,11 @@ def test_a_table_of_prompt_keys_loads_verbatim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(
-        "KODEZART_SESSION_MODELS",
+        "KODEZART_AGENT__SESSION_MODELS",
         '{"implementation": "engine-a", "fix": "engine-b"}',
     )
 
-    assert AppConfig().session_models == {
+    assert AppConfig().agent.session_models == {
         "implementation": "engine-a",
         "fix": "engine-b",
     }
@@ -201,18 +202,18 @@ def test_no_output_style_is_declared_by_default() -> None:
     A shipped value here would be kodezart picking a system prompt for
     every deployment that never asked for one.
     """
-    field = AppConfig.model_fields["claude_output_style"]
+    field = AgentSettings.model_fields["output_style"]
 
     assert field.annotation == str | None
-    assert AppConfig().claude_output_style is None
+    assert AppConfig().agent.output_style is None
 
 
 @pytest.mark.usefixtures("_pristine_environment")
 def test_a_declared_style_loads_verbatim(monkeypatch: pytest.MonkeyPatch) -> None:
     """The operation's value reaches the adapter as the operator typed it."""
-    monkeypatch.setenv("KODEZART_CLAUDE_OUTPUT_STYLE", "Concise")
+    monkeypatch.setenv("KODEZART_AGENT__OUTPUT_STYLE", "Concise")
 
-    assert AppConfig().claude_output_style == "Concise"
+    assert AppConfig().agent.output_style == "Concise"
 
 
 SSE_READ_FIELDS = ("tracker_mcp_sse_read_timeout_seconds",)

@@ -45,7 +45,7 @@ def test_env_example_documents_every_prompt_knob() -> None:
         "KODEZART_PROMPT_SET",
         "KODEZART_PROMPT_SET_OVERRIDES",
         "KODEZART_PROMPT_TEMPLATE_OVERRIDES",
-        "KODEZART_MODEL",
+        "KODEZART_AGENT__MODEL",
     ):
         assert name in ENV_EXAMPLE
 
@@ -56,7 +56,7 @@ def test_readme_documents_the_prompt_set_axis() -> None:
         "KODEZART_PROMPT_SET",
         "KODEZART_PROMPT_SET_OVERRIDES",
         "KODEZART_PROMPT_TEMPLATE_OVERRIDES",
-        "KODEZART_MODEL",
+        "KODEZART_AGENT__MODEL",
     ):
         assert name in README
 
@@ -70,10 +70,10 @@ def test_readme_points_at_the_relocated_prompt_layout() -> None:
 def test_env_example_documents_every_skills_knob() -> None:
     """AC-4: both fields, the setting-sources field, and the host home dir."""
     for name in (
-        "KODEZART_SKILLS_MODE",
-        "KODEZART_SKILLS_ALLOWLIST",
-        "KODEZART_SETTING_SOURCES",
-        "KODEZART_CLAUDE_HOME_DIR",
+        "KODEZART_AGENT__SKILLS__MODE",
+        "KODEZART_AGENT__SKILLS__ALLOWLIST",
+        "KODEZART_AGENT__SETTING_SOURCES",
+        "KODEZART_AGENT__HOME_DIR",
     ):
         assert name in ENV_EXAMPLE
 
@@ -81,9 +81,9 @@ def test_env_example_documents_every_skills_knob() -> None:
 def test_readme_documents_the_skills_model() -> None:
     """AC-4: three-state semantics, the suppress-all default and its rationale."""
     for name in (
-        "KODEZART_SKILLS_MODE",
-        "KODEZART_SKILLS_ALLOWLIST",
-        "KODEZART_SETTING_SOURCES",
+        "KODEZART_AGENT__SKILLS__MODE",
+        "KODEZART_AGENT__SKILLS__ALLOWLIST",
+        "KODEZART_AGENT__SETTING_SOURCES",
     ):
         assert name in README
     assert "Shipped default" in README
@@ -127,7 +127,7 @@ def test_env_example_constructs_the_shipped_defaults() -> None:
     """
     config = config_from_env_example()
 
-    assert config.model is None
+    assert config.agent.model is None
     assert config.operation_config is None
 
 

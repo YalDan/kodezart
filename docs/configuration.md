@@ -84,6 +84,35 @@ file-secret sources; delete their corresponding uppercase prefixed assignments:
 - `aggregate_issue_identifier_pattern`
 - `aggregate_identifier_separator_pattern`
 
+## Agent settings migration
+
+Agent deployment choices are grouped under `AppConfig.agent`. The existing
+skill-selection model owns its three modes and allowlist validation directly;
+there is no separate configuration conversion. Defaults and session behavior
+are unchanged. Replace these former field names with the corresponding paths:
+
+| Former field | Current field |
+| --- | --- |
+| `model` | `agent.model` |
+| `fallback_model` | `agent.fallback_model` |
+| `session_models` | `agent.session_models` |
+| `claude_output_style` | `agent.output_style` |
+| `claude_home_dir` | `agent.home_dir` |
+| `setting_sources` | `agent.setting_sources` |
+| `skills_mode` | `agent.skills.mode` |
+| `skills_allowlist` | `agent.skills.allowlist` |
+
+For environment and dotenv entries, prefix the uppercase current path with
+`KODEZART_` and separate each path component with two underscores. File-secret
+sources use one `KODEZART_AGENT` file containing the corresponding JSON object;
+for example `{"skills":{"mode":"none"}}`. Environment and dotenv sources also
+accept `KODEZART_AGENT__SKILLS` as a JSON object for the selection alone.
+The exact former constructor,
+environment, dotenv and file-secret names are refused without exposing values.
+Prompt-key typos are refused by name against the current vocabulary. Explicit
+skills still require a nonempty allowlist provisioned under the configured home;
+other modes require an empty allowlist. JSON allowlists remain arrays.
+
 ## Settings Reference
 
 Escalation ageing uses recorded run progress. The implementation defaults
@@ -118,9 +147,9 @@ and leased alarm writer remain separate work.
 | `KODEZART_MAX_ITERATIONS`         | `int`        | `5`                      | 1-20        | Maximum Ralph loop iterations before stopping            |
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
 | `KODEZART_TICKET_REVIEW_MODE`     | `str`        | `create_only`            | `reviewed`, `create_only` | Whether the ticket loop compiles a reviewer session or one creator session whose draft the set's draft-critic lens checks; setting `KODEZART_MAX_REVIEWS` under `create_only`, or `create_only` over a set declaring no such lens, is refused at boot |
-| `KODEZART_FALLBACK_MODEL`         | `str\|None`  | `None`                   |             | Engine a session falls back to when the primary declines a request; absent declares no fallback |
-| `KODEZART_SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary (KOD-161) |
-| `KODEZART_CLAUDE_OUTPUT_STYLE`    | `str\|None`  | `None`                   |             | Claude Code output style every engine session runs under, e.g. `Concise`. Absent sends no style at all and the CLI's own default stands; no style is ever picked in code. The session's own init message is read back, and a declared style it does not confirm fails that session rather than running it under some other system prompt. Requires a bundled CLI new enough for the named style |
+| `KODEZART_AGENT__FALLBACK_MODEL`         | `str\|None`  | `None`                   |             | Engine a session falls back to when the primary declines a request; absent declares no fallback |
+| `KODEZART_AGENT__SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_AGENT__MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary |
+| `KODEZART_AGENT__OUTPUT_STYLE`    | `str\|None`  | `None`                   |             | Claude Code output style every engine session runs under, e.g. `Concise`. Absent sends no style at all and the CLI's own default stands; no style is ever picked in code. The session's own init message is read back, and a declared style it does not confirm fails that session rather than running it under some other system prompt. Requires a bundled CLI new enough for the named style |
 | `KODEZART_INVESTIGATION_CAP`      | `int`        | `5`                      | 1-10        | Read-only investigator sessions one generative dispatch may fan out to; substituted into the prompt set's investigation spec at set resolution |
 | `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS` | `int` | `1`                 | 0-5         | Regeneration rounds the criteria sweep may spend on infeasible criteria before halting the run |
 | `KODEZART_RETRY_MAX_ATTEMPTS`     | `int`        | `3`                      | 1-10        | LangGraph node retry attempts on failure                 |
@@ -149,7 +178,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` | `int` | `4` | >= 1, <= 32 | Maximum simultaneous delivery check watches across lanes. |
 | `KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS` | `int` | `1` | >= 0, <= 5 | Same-SHA reruns before a red check set is treated as reproduced. Zero disables flake re-observation; explicit unmet prerequisites consume no rerun. |
 | `KODEZART_CI_REF_NOT_FOUND_GRACE_POLLS` | `int` | `3` | >= 1, <= 20 | Consecutive check-runs 404s tolerated before the ref is treated as a transient API failure. |
-| `KODEZART_CLAUDE_HOME_DIR` | `str` | `~/.claude` |  | Host directory holding user-scope skills and plugins. |
+| `KODEZART_AGENT__HOME_DIR` | `str` | `~/.claude` |  | Host directory holding user-scope skills and plugins. |
 | `KODEZART_CONTENT_SCAN_RETRY_INITIAL_INTERVAL` | `float` | `1.0` | >= 0.1 | Initial backoff interval in seconds between content-scan attempts. |
 | `KODEZART_CONTENT_SCAN_RETRY_MAX_ATTEMPTS` | `int` | `2` | >= 1, <= 10 | Attempts a judgment content scanner makes before declaring a timeout, rate limit or transport failure. Exhaustion BLOCKS. |
 | `KODEZART_CONTENT_SCAN_TIMEOUT_SECONDS` | `float` | `120.0` | >= 1.0 | Wall-clock bound on one judgment content-scan session. Exceeding it is TIMEOUT, which BLOCKS. |
@@ -172,19 +201,19 @@ and leased alarm writer remain separate work.
 | `KODEZART_FORGE_API_RETRY_BACKOFF_FACTOR` | `float` | `1.0` | >= 0.1, <= 30.0 | Base backoff multiplier in seconds for code hosting platform API retries. |
 | `KODEZART_FORGE_API_TIMEOUT_SECONDS` | `float` | `30.0` | >= 5.0, <= 120.0 | HTTP timeout for code hosting platform API requests. |
 | `KODEZART_REMEDIATION_MAX_ROUNDS` | `int` | `1` | >= 1, <= 5 | Remediation rounds a run may spend, counted ONCE across every entry. A round costs roughly a whole baseline run — one generation session, the validation gate, and a full ralph loop — so the budget multiplies worst-case run cost by one plus its value. Zero is not offered: remediation replaces the failure path rather than supplementing it, so a budget of zero would delete that path and make the exhaustion outcome mean two different things. |
-| `KODEZART_MODEL` | `str \| None` | `None` |  | Claude model override. None uses SDK default. |
+| `KODEZART_AGENT__MODEL` | `str \| None` | `None` |  | Claude model override. None uses SDK default. |
 | `KODEZART_OPERATION_CONFIG` | `str \| None` | `None` |  | Filesystem path to the operation config TOML. None means no operation config is loaded and its binding namespace is empty. |
-| `KODEZART_PROMPT_SET` | `str` | `anthropic_v5` |  | Default prompt set name (a directory under prompts/sets/). A set is a corpus authored for one model, and this selects the one for the model in use; every shipped set is complete and held to the same rendering rules, and a new engine is a new directory, not a variant of an old one (KOD-306). |
+| `KODEZART_PROMPT_SET` | `str` | `anthropic_v5` |  | Default prompt set name (a directory under prompts/sets/). A set is a corpus authored for one model, and this selects the one for the model in use; every shipped set is complete and held to the same rendering rules, and a new engine is a new directory, not a variant of an old one. |
 | `KODEZART_PROMPT_SET_OVERRIDES` | `dict[str, str]` | `{}` |  | JSON object mapping a prompt function key to the set that serves it, overriding the default set for that key only. |
 | `KODEZART_PROMPT_TEMPLATE_OVERRIDES` | `dict[str, str]` | `{}` |  | JSON object mapping a prompt function key to a filesystem path of a template file. Highest precedence layer. |
-| `KODEZART_SETTING_SOURCES` | `list[SettingSource]` | `["user", "project", "local"]` |  | Settings sources passed explicitly to agent sessions so enabling the skills knob never silently narrows loaded settings. |
-| `KODEZART_SKILLS_ALLOWLIST` | `list[str]` | `[]` |  | Skill names loaded under EXPLICIT mode. Must be empty in every other mode. Names are host-provisioned at user scope. |
-| `KODEZART_SKILLS_MODE` | `SkillsMode` | `none` |  | Three-state skill selection: NONE suppresses every skill, ALL loads every discovered skill, EXPLICIT loads the allowlist. |
+| `KODEZART_AGENT__SETTING_SOURCES` | `list[SettingSource]` | `["user", "project", "local"]` |  | Settings sources passed explicitly to agent sessions so enabling the skills knob never silently narrows loaded settings. |
+| `KODEZART_AGENT__SKILLS__ALLOWLIST` | `list[str]` | `[]` |  | Skill names loaded under EXPLICIT mode. Must be empty in every other mode. Names are host-provisioned at user scope. |
+| `KODEZART_AGENT__SKILLS__MODE` | `SkillsMode` | `none` |  | Three-state skill selection: NONE suppresses every skill, ALL loads every discovered skill, EXPLICIT loads the allowlist. |
 | `KODEZART_TRACKER` | `TrackerBackend` | `linear` |  | Which tracker adapter implements TrackerPort. Adding a backend is a new adapter plus a member here — never a consumer change. |
 | `KODEZART_TRACKER_MAX_RETRIES` | `int` | `3` | >= 0, <= 10 | Maximum retry attempts for a transient tracker MCP failure. |
 | `KODEZART_TRACKER_RETRY_BACKOFF_FACTOR` | `float` | `1.0` | >= 0.1, <= 30.0 | Base backoff multiplier in seconds for tracker MCP retries. |
 | `KODEZART_TRACKER_TIMEOUT_SECONDS` | `float` | `30.0` | >= 5.0, <= 120.0 | Timeout the tracker MCP transport gives one HTTP exchange with the server, on every phase but the session stream's read: a streamable-HTTP response stays open across quiet minutes, and that phase is bounded by KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS instead. |
-| `KODEZART_TRACKER_MCP_CALL_TIMEOUT_SECONDS` | `float` | `60.0` | >= 1.0, <= 120.0 | Seconds one tracker MCP tool call may wait for its answer before it is abandoned as the typed transport failure. A session torn down mid-call — the shape a refused credential arrives in, measured 2026-09-01 (KOD-171) — never sends the close its reader is waiting for, so without this bound the call in flight waits forever and the pass holding it never returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that bound is the transport's, on the HTTP exchange; this one is the session's, on the wait for one answer. |
+| `KODEZART_TRACKER_MCP_CALL_TIMEOUT_SECONDS` | `float` | `60.0` | >= 1.0, <= 120.0 | Seconds one tracker MCP tool call may wait for its answer before it is abandoned as the typed transport failure. A session torn down mid-call — the shape a refused credential arrives in, measured 2026-09-01 — never sends the close its reader is waiting for, so without this bound the call in flight waits forever and the pass holding it never returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that bound is the transport's, on the HTTP exchange; this one is the session's, on the wait for one answer. |
 | `KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS` | `float` | `300.0` | >= 30.0, <= 3600.0 | Seconds the tracker MCP session's event stream may go quiet before its read is abandoned. The third bound on this transport and the only one about the STREAM: KODEZART_TRACKER_TIMEOUT_SECONDS bounds one HTTP exchange's connect and write phases, KODEZART_TRACKER_MCP_CALL_TIMEOUT_SECONDS bounds the wait for one answer, and this bounds how long the long-lived streamable-HTTP response may say nothing at all. The default is the value the session ran on while the bound came from a private vendor constant. |
 | `KODEZART_TRACKER_CLAIM_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Requested claim duration for a capable backend. Linear MCP currently refuses acquisition and renewal because it cannot fence ownership; changing this value cannot enable them. |
 | `KODEZART_TRACKER_SURFACE_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Bound for write-surface leases held by a writing run's job id. Renewal is explicit; no background task extends these leases. |

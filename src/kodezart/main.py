@@ -114,18 +114,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
             await built_recorder.knowledge_caller.open()
 
-        skills = await boot_skills(config=config, prompts=prompts, log=log)
+        skills = await boot_skills(settings=config.agent, prompts=prompts, log=log)
         app.state.skills = skills
 
         executor = ClaudeClientExecutor(
-            model=config.model,
-            setting_sources=config.setting_sources,
+            model=config.agent.model,
+            setting_sources=config.agent.setting_sources,
             knowledge_grant=await boot_knowledge_grant(
                 knowledge=config.knowledge,
                 prompts=prompts,
                 log=log,
             ),
-            output_style=config.claude_output_style,
+            output_style=config.agent.output_style,
             fire_record=fire_record_template(
                 knowledge=config.knowledge, operation=operation, prompts=prompts
             ),

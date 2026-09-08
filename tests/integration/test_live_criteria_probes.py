@@ -103,8 +103,8 @@ def _probe_service(tmp_path: Path) -> AgentService:
         cache=cache,
     )
     executor = ClaudeClientExecutor(
-        model=config.model,
-        setting_sources=config.setting_sources,
+        model=config.agent.model,
+        setting_sources=config.agent.setting_sources,
     )
     return AgentService(
         executor=executor,

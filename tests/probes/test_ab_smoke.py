@@ -235,8 +235,8 @@ async def production_executor(
 ) -> AgentExecutor:
     """The executor the composition root wires, built from the arm's config."""
     return ClaudeClientExecutor(
-        model=config.model,
-        setting_sources=config.setting_sources,
+        model=config.agent.model,
+        setting_sources=config.agent.setting_sources,
         knowledge_grant=await boot_knowledge_grant(
             knowledge=config.knowledge,
             prompts=prompts,
@@ -336,7 +336,7 @@ async def run_arm(
         raise AssertionError(msg)
 
     prompts = await boot_prompts(config=config, operation=None, log=log)
-    skills = await boot_skills(config=config, prompts=prompts, log=log)
+    skills = await boot_skills(settings=config.agent, prompts=prompts, log=log)
     resolution_sets = tuple(sorted(set(prompts.resolution_table().values())))
     executor = await executor_for(config, prompts)
 
