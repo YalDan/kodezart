@@ -129,6 +129,7 @@ async def test_public_ruling_settles_native_replacement_reads_before_release(
         tmp_path=tmp_path,
         phase="has_replace_refs",
         read_number=read_number,
+        prior_releases=1,
     )
     assert len(prepared.executor.calls) == (1 if read_number == 4 else 2)
     prepared.no_writes()
