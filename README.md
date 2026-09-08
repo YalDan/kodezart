@@ -412,6 +412,11 @@ and refuses when this capability is called. This reader neither writes labels
 nor supplies a provenance carrier; the actual per-dispatch caller remains a
 separate integration.
 
+A milestone-scoped `ScopeRef` narrows current membership while each member
+resolves project approval through the same method. There is no milestone label
+level or extra mapping. Approval needs no milestone display URL; a member that
+reports a milestone without its owning project refuses.
+
 `read_fire_spec` captures the subject's body and version once, with its
 criterion sub-issue keys, and raises `EmptyFireCriteriaError` if that query
 finds none. A criterion without one nonempty Check field raises
