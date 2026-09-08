@@ -28,6 +28,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_RUN_ALARM_BARREN_TICK_MAX_COMMITS_AHEAD` | `int` | `5` | >= 0 | Recorded commits ahead of the lane base allowed on a tick closing no previously-open reference. |
 | `KODEZART_RUN_ALARM_MAX_SURFACE_HOLDERS` | `int` | `1` | >= 0 | Distinct recorded run holders allowed on one complete writable-surface address. |
 | `KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` | `float` | `1800` | > 0 | Wall-clock bound for one check step of a union composition. |
+| `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` | `float` | `0.01` | finite, > 0 | Seconds between repeated check-process group termination signals while canceled or timed-out output is still draining. |
 | `KODEZART_RUN_ALARM_MAX_RULINGS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Distinct machine-authored ruling identities allowed since the lane last closed a previously-open obligation. |
 | `KODEZART_DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
 | `KODEZART_LOG_LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
@@ -201,7 +202,10 @@ source `issue_key` is supplied separately from the verbatim bodies. Each
 call acquires the requested repository base and starts a read-only
 `organize_pass` session, with no prior session or author transcript. These
 entry points return an admission result; they do not write phase markers or
-run the full organizer convergence loop.
+run the full organizer convergence loop. Caller cancellation waits for an
+in-flight workspace acquisition or release to settle. A cancellation during
+acquisition releases the resulting workspace without starting the session;
+repeated cancellation cannot interrupt that cleanup.
 
 ## The knowledge-server grant
 
@@ -439,3 +443,11 @@ whole-surface reads refuse before writing. The caller retains its required
 lease, authorization and outbound sanitization throughout; this component does
 not complete universal scope-writer adoption. Ignored generated outputs are
 outside the Git workspace-cleanliness check.
+
+
+The `audit_mandate` read-only role receives `defect_class`, `refutation_evidence`,
+`head_sha` and `audited_surfaces` per call. It completes a freshly refuted claim
+with an instruction verdict over an explicit addressed text set. A quoted
+mandate must occur exactly in its native source; absence requires full reads.
+Unsupported or unreachable surfaces yield unverifiable coverage. This consumer
+does not enumerate the full audit scope or publish/edit any tracker artifact.

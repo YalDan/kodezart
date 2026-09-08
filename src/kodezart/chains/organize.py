@@ -1,8 +1,11 @@
 """Tracker-backed admission sessions, independent on every assess and verify call."""
 
+import asyncio
+
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     AgentRunner,
     PromptSetProvider,
@@ -100,13 +103,19 @@ class OrganizeAdmission:
                 "base_ref": request.base_ref,
             }
         )
-        workspace = await self._workspace.acquire(
-            repo_url=request.repo_url,
-            ref=request.base_ref,
-            create_branch=False,
-            cache_key=request.cache_key,
+        workspace, cancelled = await finish_owned(
+            asyncio.create_task(
+                self._workspace.acquire(
+                    repo_url=request.repo_url,
+                    ref=request.base_ref,
+                    create_branch=False,
+                    cache_key=request.cache_key,
+                )
+            )
         )
         try:
+            if cancelled:
+                raise asyncio.CancelledError
             await self._log.ainfo(
                 "organize_admission_attempt",
                 issue_key=subject.issue_key,
@@ -154,4 +163,8 @@ class OrganizeAdmission:
                 **judgment.model_dump(), admitted_body_digest=revision.body_digest
             )
         finally:
-            await self._workspace.release(workspace)
+            _, cancelled = await finish_owned(
+                asyncio.create_task(self._workspace.release(workspace))
+            )
+            if cancelled:
+                raise asyncio.CancelledError

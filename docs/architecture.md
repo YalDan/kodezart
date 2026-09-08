@@ -48,6 +48,7 @@ does not exist.
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
 | ForgeQuery        | GitHubAPIClient          | Looks up an open PR by head and composes branch browser URLs |
 | WriteBackVerifier | TrackerWriteBackVerifier | Bounded native artifact re-read and fresh judgment around caller-owned write/repair actions; leases and universal adoption remain separate |
+| PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA and open/closed/merged lifecycle; refuses foreign or unavailable head repositories; no mutation authority |
 | PRContentEditor   | GitHubAPIClient          | Reads unique open PR content and edits changed title/body/base fields |
 | CIMonitor         | GitHubAPIClient          | Polls checks and re-observes Actions attempts at one commit |
 | CIObservationReader | GitHubAPIClient        | Reads the completed watch's commit identity and structured verdict |
@@ -619,7 +620,10 @@ The check-chain runner executes each declared command through the host shell,
 in the supplied directory and in declared order. Earlier failures do not hide
 later observations. The configured per-step deadline includes launch and kills the shell process
 group while retaining partial output. Repeated cancellation cannot interrupt
-eventual-process cleanup; cancellation propagates after the attempt is reaped. Empty or ambiguous step identities refuse before execution.
+eventual-process cleanup; cancellation propagates after the attempt is reaped.
+Cleanup repeats group termination at its configured polling cadence until
+captured output reaches EOF, covering a child created during the first signal.
+Empty or ambiguous step identities refuse before execution.
 The runner returns failed names and ordered outputs without classifying roots
 or cascades. Union composition and its result publication are separate consumers.
 
@@ -659,6 +663,51 @@ also runs on errors and cancellation. This is a repeat-read observation, not an
 atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
 report publication, write-back and scheduler registration remain separate work.
 
+
+## Recorded criterion Evidence and lapse observations
+
+`AuditEvidenceVerifier.observe` reads the requested criterion's current full
+record and its lane's addressed run-state comment. The existing Evidence field
+contains one explicit JSON block, rendered by `render_evidence_field`:
+
+````markdown
+**Evidence:**
+```json
+{
+  "gradedSha": "0123456789abcdef0123456789abcdef01234567",
+  "test": "tests/test_contract.py::test_current_check"
+}
+```
+````
+
+The complete Git commit identity and named test or recorded observation are the
+two stored fields. The codec refuses repeated fields/keys, ambiguous framing,
+extra verdicts and historical prose. It does not rewrite that prose or infer a
+SHA from it. The shared criterion-field parser keeps Check extraction separate
+from Evidence and ignores quoted field labels and HTML comments.
+
+For a completed criterion, the reader fetches the recorded repository, reads
+the live remote branch head, and verifies both immutable commit identities and
+their ancestry. A completed claim at an older commit yields `unverifiable`,
+naming the original criterion, recorded SHA and current head, without a grading
+session. An off-branch or unreadable commit causes a typed read refusal.
+
+A current completed claim, or a claim in the configured review state, goes
+through the existing fresh `AuditClaimVerifier`. Review re-verification does not
+require old history to remain reachable after a rewrite: it judges the current
+Check at the current remote head and retains the previous Evidence as a prior
+claim, without reestablishing it as proof. Recorded test prose and verdicts stay
+out of that session. The final source, lane record and remote head reads must
+agree; owned repository reads settle before cancellation returns.
+
+These are observations before correction and publication. Evaluator adoption
+of the codec, historical migration, Evidence test/observation admissibility,
+forge comparison, state transitions, mandate-complete reports and the scheduled
+sweep remain separate consumers. The reader acquires no authoring lease and
+performs no tracker write; the required correction writers must use the ruled
+lease and inline verification boundaries.
+
+## Tracker feasibility at the selected head
 
 `TrackerFeasibilityValidator.validate` is the read-only criterion-validation
 consumer for a tracker subject. It accepts an issue key and a previously

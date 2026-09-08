@@ -91,11 +91,11 @@ class DeliveryCoordinator:
         prompts: PromptSetProvider,
         skills: SkillsSelection,
         gate: OutboundContentGate,
-        pr_creator: PRCreator,
-        forge_query: ForgeQuery,
-        pr_editor: PRContentEditor,
-        ci: CIMonitor,
-        ci_observations: CIObservationReader,
+        pr_creator: PRCreator | None,
+        forge_query: ForgeQuery | None,
+        pr_editor: PRContentEditor | None,
+        ci: CIMonitor | None,
+        ci_observations: CIObservationReader | None,
         operation: OperationConfig,
         git: GitService,
         cache: RepoCache,
@@ -158,13 +158,52 @@ class DeliveryCoordinator:
                 reason="head, resolved base, final SHA and repository must agree",
             )
         require_deliverable_context(dispatch=dispatch, context=context)
-        existing = await self._forge_query.open_pr_for_head(
+        pr_creator = self._pr_creator
+        if pr_creator is None:
+            if context.fire_outcome is not WorkflowOutcome.handed_off_for_delivery:
+                raise DeliveryRouteUnavailableError(
+                    lane_key=dispatch.lane_key,
+                    issue_id=dispatch.issue_id,
+                    reason="this fire outcome requires a configured PR creator",
+                    pr_url=None,
+                    pr_number=None,
+                    checks_passed=None,
+                    checks_summary=None,
+                )
+            return LaneDelivery(
+                lane_key=dispatch.lane_key,
+                issue_id=dispatch.issue_id,
+                head_branch=feature_branch,
+                base_branch=dispatch.resolved_base.base_branch,
+                pr=None,
+                checks_passed=None,
+                checks_summary=None,
+                outcome=WorkflowOutcome.review_passed_no_pr_adapter,
+            )
+        forge_query = self._forge_query
+        pr_editor = self._pr_editor
+        ci = self._ci
+        ci_observations = self._ci_observations
+        if (
+            forge_query is None
+            or pr_editor is None
+            or ci is None
+            or ci_observations is None
+        ):
+            raise DeliveryContextError(
+                lane_key=dispatch.lane_key,
+                issue_id=dispatch.issue_id,
+                reason=(
+                    "configured PR delivery requires all forge read/check capabilities"
+                ),
+            )
+        existing = await forge_query.open_pr_for_head(
             repo_url=execution.repo_url, head=feature_branch
         )
         existing_content: PRContent | None = None
         if existing is not None:
             url, number = existing
-            existing_content = await self._pr_editor.read_open_pr(
+            existing_content = await pr_editor.read_open_pr(
                 repo_url=execution.repo_url, head=feature_branch, pr_number=number
             )
             if existing_content.url != url:
@@ -217,7 +256,7 @@ class DeliveryCoordinator:
         )
         base = dispatch.resolved_base.base_branch
         if existing_content is None:
-            url, number = await self._pr_creator.create_pr(
+            url, number = await pr_creator.create_pr(
                 repo_url=execution.repo_url,
                 title=title,
                 body=body,
@@ -241,7 +280,7 @@ class DeliveryCoordinator:
                         issue_id=dispatch.issue_id,
                         reason="outbound gate changed the dispatch-resolved base",
                     )
-            updated = await self._pr_editor.edit_pr(
+            updated = await pr_editor.edit_pr(
                 repo_url=execution.repo_url,
                 expected=existing_content,
                 title=title,
@@ -250,11 +289,11 @@ class DeliveryCoordinator:
             )
             url, number = updated.url, updated.number
         async with self._watch_slots:
-            passed, summary = await self._ci.wait_for_checks(
+            passed, summary = await ci.wait_for_checks(
                 repo_url=execution.repo_url, ref=feature_branch
             )
             if passed is False:
-                observation = await self._ci_observations.observed_checks(
+                observation = await ci_observations.observed_checks(
                     repo_url=execution.repo_url, ref=feature_branch
                 )
                 if observation.checks_passed or observation.commit_sha != remote_sha:
@@ -264,11 +303,11 @@ class DeliveryCoordinator:
                         reason="watched checks do not match the delivered red head",
                     )
                 classified = await classify_red_checks(
-                    ci=self._ci,
+                    ci=ci,
                     repository=self._repository(execution.repo_url),
                     final_commit_sha=observation.commit_sha,
                     initial_summary=summary,
-                    initial_failed_names=await self._ci.failed_check_names(
+                    initial_failed_names=await ci.failed_check_names(
                         repo_url=execution.repo_url, ref=feature_branch
                     ),
                     config=self._config,
@@ -293,7 +332,7 @@ class DeliveryCoordinator:
                 passed, summary = classified.checks_passed, classified.checks_summary
         if passed is True:
             outcome = WorkflowOutcome.ci_passed
-        elif passed is None and not await self._ci.checks_declared(
+        elif passed is None and not await ci.checks_declared(
             repo_url=execution.repo_url
         ):
             outcome = WorkflowOutcome.ci_not_configured
@@ -307,7 +346,7 @@ class DeliveryCoordinator:
                 checks_passed=passed,
                 checks_summary=summary,
             )
-        observed = await self._pr_editor.read_open_pr(
+        observed = await pr_editor.read_open_pr(
             repo_url=execution.repo_url, head=feature_branch, pr_number=number
         )
         if observed.url != url or observed.base_branch != base:

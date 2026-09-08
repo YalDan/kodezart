@@ -42,6 +42,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_content import PRContent
+from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
@@ -483,6 +484,15 @@ class ForgeQuery(Protocol):
 
     def branch_web_url(self, *, repo_url: str, branch: str) -> str:
         """Compose the forge's browser URL for a repository branch."""
+        ...
+
+
+@runtime_checkable
+class PRStateReader(Protocol):
+    """Read one PR's native lifecycle without edit, close or merge authority."""
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        """Require exact addressed identity; failed or missing reads refuse."""
         ...
 
 

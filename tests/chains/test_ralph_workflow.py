@@ -4870,7 +4870,7 @@ def _dispatch_sites() -> list[tuple[str, str]]:
 #: resolving a template cannot silently leave the check.
 KEYED_DISPATCH_COUNTS = {
     "tracker_feasibility.py": 1,
-    "audit_pass.py": 1,
+    "audit_pass.py": 2,
     "write_back_verifier.py": 1,
     "delivery_coordinator.py": 1,
     "agent_content_scanner.py": 1,

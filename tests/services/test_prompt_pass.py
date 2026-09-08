@@ -112,6 +112,7 @@ class HangingRunner:
 
     def __init__(self) -> None:
         self.cancelled: bool = False
+        self.entered = asyncio.Event()
 
     async def stream_in_workspace(
         self,
@@ -119,6 +120,7 @@ class HangingRunner:
     ) -> AsyncGenerator[AgentEvent, None]:
         yield AssistantTextEvent(text="working", model=MODEL)
         try:
+            self.entered.set()
             await asyncio.Event().wait()
         except asyncio.CancelledError:
             self.cancelled = True
@@ -631,9 +633,56 @@ class TestAFailedPassGivesTheWakeUpBack:
         gate = pass_gate(tracker, PassSignal.issues_changed)
         runner = HangingRunner()
 
-        with pytest.raises(TimeoutError):
-            async with asyncio.timeout(CANCEL_TIMEOUT):
-                await run(prompts=bound_registry(), runner=runner, gate=gate)
+        running = asyncio.create_task(
+            run(prompts=bound_registry(), runner=runner, gate=gate)
+        )
+        try:
+            await asyncio.wait_for(runner.entered.wait(), timeout=5.0)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(running, timeout=CANCEL_TIMEOUT)
+        finally:
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
 
         assert runner.cancelled
         assert gate.mark(PassSignal.issues_changed, container=team_key) is None
+
+    async def test_budget_cancellation_during_gate_logging_gives_the_window_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        team_key = example_config().team_keys()[0]
+        tracker = FakeTrackerPort(
+            issues=[make_tracker_issue("FIX-1", team_key=team_key, created_at=LATER)]
+        )
+        gate = pass_gate(tracker, PassSignal.issues_changed)
+        runner = FakeAgentRunner(events=[])
+        logging = asyncio.Event()
+        original = gate._log.ainfo
+
+        async def delayed(event: str, **fields: object) -> None:
+            await original(event, **fields)
+            if event == "pass_gate_delta":
+                logging.set()
+                await asyncio.Event().wait()
+
+        monkeypatch.setattr(gate._log, "ainfo", delayed)
+        running = asyncio.create_task(
+            run(prompts=bound_registry(), runner=runner, gate=gate)
+        )
+        try:
+            await asyncio.wait_for(logging.wait(), timeout=5.0)
+            assert gate.mark(PassSignal.issues_changed, container=team_key) == LATER
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(running, timeout=CANCEL_TIMEOUT)
+        finally:
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+
+        assert runner.calls == []
+        assert gate.mark(PassSignal.issues_changed, container=team_key) is None
+        monkeypatch.setattr(gate._log, "ainfo", original)
+        assert (
+            await run(prompts=bound_registry(), runner=runner, gate=gate) is PassRun.RAN
+        )
+        assert len(runner.calls) == 1
+        assert tracker.scans[-1].updated_since is None

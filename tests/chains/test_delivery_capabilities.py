@@ -22,19 +22,24 @@ def test_pr_creator_and_forge_double_expose_exactly_the_two_write_methods():
 
 def test_coordinator_has_no_merge_or_issue_mutation_dependency():
     constructor = inspect.signature(DeliveryCoordinator)
-    assert constructor.parameters["pr_creator"].annotation is PRCreator
-    assert constructor.parameters["forge_query"].annotation is ForgeQuery
-    assert constructor.parameters["pr_editor"].annotation is PRContentEditor
+    assert constructor.parameters["pr_creator"].annotation == PRCreator | None
+    assert constructor.parameters["forge_query"].annotation == ForgeQuery | None
+    assert constructor.parameters["pr_editor"].annotation == PRContentEditor | None
     assert "tracker" not in constructor.parameters
     tree = ast.parse(inspect.getsource(DeliveryCoordinator))
     creator_reads = {
         node.attr
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Attribute)
-        and isinstance(node.value.value, ast.Name)
-        and node.value.value.id == "self"
-        and node.value.attr == "_pr_creator"
+        and (
+            (
+                isinstance(node.value, ast.Attribute)
+                and isinstance(node.value.value, ast.Name)
+                and node.value.value.id == "self"
+                and node.value.attr == "_pr_creator"
+            )
+            or (isinstance(node.value, ast.Name) and node.value.id == "pr_creator")
+        )
     }
     assert creator_reads == {"create_pr"}
     assert not any(

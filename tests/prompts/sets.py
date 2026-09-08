@@ -56,6 +56,15 @@ ORGANIZE_CASE: dict[str, object] = {
 }
 
 EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
+    "audit_mandate": (
+        PromptKey.AUDIT_MANDATE,
+        {
+            "defect_class": "unsupported claim",
+            "refutation_evidence": "Observed counterexample.",
+            "head_sha": "exact-head",
+            "audited_surfaces": "[]",
+        },
+    ),
     "write_back_verify": (
         PromptKey.WRITE_BACK_VERIFY,
         {

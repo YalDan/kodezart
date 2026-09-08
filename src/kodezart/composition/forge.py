@@ -6,7 +6,12 @@ than defines.
 
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.core.config import AppConfig
-from kodezart.core.protocols import CIObservationReader, ForgeQuery, PRContentEditor
+from kodezart.core.protocols import (
+    CIObservationReader,
+    ForgeQuery,
+    PRContentEditor,
+    PRStateReader,
+)
 from kodezart.domain.git_url import is_forge_less_origin
 
 
@@ -37,6 +42,18 @@ def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
     )
 
 
+def delivery_client_for_origin(
+    *, client: GitHubAPIClient | None, repo_url: str
+) -> GitHubAPIClient | None:
+    """Select all delivery forge capabilities together for the supplied origin.
+
+    Pass this result into the coordinator's PR, content, query and check
+    slots. No configured client and a forge-less origin both establish
+    absence before the coordinator can ask a forge to act.
+    """
+    return None if is_forge_less_origin(repo_url) else client
+
+
 def forge_query_for_origin(
     *,
     client: ForgeQuery | None,
@@ -62,4 +79,11 @@ def ci_observation_reader_for_origin(
     *, client: CIObservationReader | None, repo_url: str
 ) -> CIObservationReader | None:
     """Select access to a forge watch's recorded commit evidence per origin."""
+    return None if is_forge_less_origin(repo_url) else client
+
+
+def pr_state_reader_for_origin(
+    *, client: PRStateReader | None, repo_url: str
+) -> PRStateReader | None:
+    """Select native PR lifecycle reads only for an origin with a forge."""
     return None if is_forge_less_origin(repo_url) else client

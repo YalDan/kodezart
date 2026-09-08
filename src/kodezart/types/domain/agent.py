@@ -12,7 +12,11 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
-from kodezart.types.domain.audit import AuditClaimJudgment, WriteBackJudgment
+from kodezart.types.domain.audit import (
+    AuditClaimJudgment,
+    AuditMandateJudgment,
+    WriteBackJudgment,
+)
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
@@ -63,6 +67,7 @@ RaiseSite = Literal[
     "organize_verify",
     "audit_claim",
     "write_back_verify",
+    "audit_mandate",
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",
@@ -1031,6 +1036,7 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
+AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
 WRITE_BACK_SCHEMA: dict[str, object] = WriteBackJudgment.model_json_schema()
 
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
@@ -1055,4 +1061,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
     "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
+    "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
 }

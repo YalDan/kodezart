@@ -31,6 +31,7 @@ from kodezart.domain.errors import (
     CheckObservationError,
     ForgeAPIError,
     PRContentConflictError,
+    PRStateReadError,
     RateLimitError,
     TransientAPIError,
 )
@@ -44,6 +45,7 @@ from kodezart.types.domain.github import (
     DeclaredWorkflowsResponse,
     PullRequestContentResponse,
     PullRequestResponse,
+    PullRequestStateResponse,
     PullRequestSummary,
     RepositoryResponse,
     WorkflowJob,
@@ -53,6 +55,7 @@ from kodezart.types.domain.github import (
     WorkflowsResponse,
 )
 from kodezart.types.domain.pr_content import PRContent
+from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
 
 #: Every root httpx derives an exception from.  ``HTTPError`` covers the
@@ -510,6 +513,75 @@ class GitHubAPIClient:
             )
             raise ValueError(msg)
         return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch, safe='')}"
+
+    # -- PRStateReader -------------------------------------------------------
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        """Read one native PR, without relying on an open-only listing."""
+        if (
+            not isinstance(pr_number, int)
+            or isinstance(pr_number, bool)
+            or pr_number <= 0
+        ):
+            raise PRStateReadError("a PR number must be a positive integer")
+        owner, repo = extract_owner_repo(repo_url)
+        native = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            PullRequestStateResponse.model_validate,
+        )
+        expected = urlsplit(repo_url)
+        try:
+            observed = urlsplit(native.html_url)
+        except ValueError as exc:
+            raise PRStateReadError("native PR URL is malformed") from exc
+        expected_path = f"/{owner}/{repo}/pull/{pr_number}"
+        if (
+            native.number != pr_number
+            or observed.scheme != "https"
+            or observed.netloc.casefold() != expected.netloc.casefold()
+            or observed.path.casefold() != expected_path.casefold()
+            or observed.query
+            or observed.fragment
+            or observed.username is not None
+            or observed.password is not None
+        ):
+            raise PRStateReadError("native PR identity differs from its address")
+        head_repo = native.head.repo
+        if head_repo is None:
+            raise PRStateReadError("native PR head repository is unavailable")
+        try:
+            head_origin = urlsplit(head_repo.html_url)
+        except ValueError as exc:
+            raise PRStateReadError(
+                "native PR head repository URL is malformed"
+            ) from exc
+        if (
+            head_origin.scheme != "https"
+            or head_origin.netloc.casefold() != expected.netloc.casefold()
+            or head_origin.path.casefold() != f"/{owner}/{repo}".casefold()
+            or head_origin.query
+            or head_origin.fragment
+            or head_origin.username is not None
+            or head_origin.password is not None
+            or head_repo.full_name.casefold() != f"{owner}/{repo}".casefold()
+        ):
+            raise PRStateReadError("native PR head belongs to another repository")
+        lifecycle = (
+            PRLifecycle.MERGED
+            if native.merged
+            else PRLifecycle.OPEN
+            if native.state == self._OPEN_STATE
+            else PRLifecycle.CLOSED
+        )
+        return PRState(
+            url=native.html_url,
+            number=native.number,
+            head_repo_url=head_repo.html_url,
+            head_branch=native.head.ref,
+            head_sha=native.head.sha,
+            lifecycle=lifecycle,
+        )
 
     # -- PRContentEditor -----------------------------------------------------
 
