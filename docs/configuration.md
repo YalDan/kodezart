@@ -20,6 +20,11 @@ for configuration. All settings are loaded from environment variables with the
 - **Extra fields forbidden**: a `KODEZART_` variable whose suffix names no
   field below raises a validation error at startup rather than being ignored
 
+Upgrading a v0.2 deployment: [migration-v0.2-to-v0.3.md](migration-v0.2-to-v0.3.md)
+carries every rename in one place, with the flat names that stay and the
+settings that are gone. The sections below are the per-subsystem detail behind
+that guide.
+
 Audit claim, Evidence, source, terminal and sweep consumers receive only the
 resolved Git remote name, rather than the application configuration object.
 `KODEZART_GIT__REMOTE` retains its existing default and environment override;
