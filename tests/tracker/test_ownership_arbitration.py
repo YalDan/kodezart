@@ -9,7 +9,7 @@ extending, and a marker the log does not answer with.
 
 import asyncio
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 
 import pytest
@@ -103,28 +103,29 @@ class _RefusesTheWithdrawal:
         return await self._server.call_tool(name=name, arguments=arguments)
 
 
-class _ReadsWhileWithdrawing:
-    """Read the board back in the window a compensating delete opens.
+class _ArrivesWhileWithdrawing:
+    """Let a third holder ask who owns the set, inside the withdrawal window.
 
     Between the write a holder publishes and the delete it compensates
     with, the board is whatever the write left there — and nothing but a
-    reader placed inside that window can say what a third party would
-    have seen.
+    party arriving inside that window can say what it names as the owner.
     """
 
     def __init__(
-        self, server: FakeLinearMcpServer, *, reader: LinearMcpTracker
+        self,
+        server: FakeLinearMcpServer,
+        *,
+        arrival: Callable[[], Awaitable[str | None]],
     ) -> None:
         self._server = server
-        self._reader = reader
+        self._arrival = arrival
         self.holders: list[str | None] = []
 
     async def call_tool(
         self, *, name: str, arguments: Mapping[str, object]
     ) -> McpToolResult:
         if name == "delete_comment":
-            held = await self._reader.active_claim(issue_key=CLAIMED_ISSUE)
-            self.holders.append(None if held is None else held.holder)
+            self.holders.append(await self._arrival())
         return await self._server.call_tool(name=name, arguments=arguments)
 
 
@@ -295,16 +296,20 @@ async def test_an_extension_the_backend_stamps_after_the_lapse_grants_nothing() 
     a reader holds it to that deadline and reads only the new holder.
     """
     delayed = _DelayedRenewal()
-    reader = _ReadsWhileWithdrawing(
-        delayed.server, reader=tracker_over(delayed.server, clock=delayed.clock)
-    )
-    delayed.paused.through = reader
+    reading = tracker_over(delayed.server, clock=delayed.clock)
+
+    async def named_holder() -> str | None:
+        held = await reading.active_claim(issue_key=CLAIMED_ISSUE)
+        return None if held is None else held.holder
+
+    arriving = _ArrivesWhileWithdrawing(delayed.server, arrival=named_holder)
+    delayed.paused.through = arriving
     renewal = await delayed.up_to_the_extension()
 
     delayed.paused.resume.set()
 
     assert await asyncio.wait_for(renewal, 5) is None
-    assert reader.holders == ["runner-b"]
+    assert arriving.holders == ["runner-b"]
     held = await tracker_over(delayed.server, clock=delayed.clock).active_claim(
         issue_key=CLAIMED_ISSUE
     )
@@ -375,6 +380,41 @@ async def test_a_renewal_of_a_lapsed_lease_takes_its_own_marker_down() -> None:
     held = await successor.active_claim(issue_key=CLAIMED_ISSUE)
     assert held is not None
     assert held.holder == "runner-b"
+
+
+async def test_a_marker_left_behind_does_not_answer_for_the_holder_after_it() -> None:
+    """A lapsed marker is litter at the earliest order there is.
+
+    Only its own holder may take one off, so a run that lapsed and never
+    released leaves its marker sitting in front of everything written
+    after it.  Weighing a request against the earliest marker of ANY kind
+    would let that one answer for the address — and, being expired,
+    answer that nobody holds it — handing a third holder the issue the
+    second one is holding right now.
+    """
+    server = fixture_server()
+    now = [FIXTURE_NOW]
+    lapsed = tracker_over(server, clock=lambda: now[0])
+    await lapsed.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=LEASE_SECONDS
+    )
+    now[0] += timedelta(seconds=LEASE_SECONDS + 1)
+    successor = await tracker_over(server, clock=lambda: now[0]).claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-b", lease_seconds=LEASE_SECONDS
+    )
+    assert successor.status is ClaimStatus.GRANTED
+    assert len(server.comments) == 2
+
+    third = await tracker_over(server, clock=lambda: now[0]).claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-c", lease_seconds=LEASE_SECONDS
+    )
+
+    assert third.status is ClaimStatus.LOST
+    assert third.current_holder == "runner-b"
+    assert [_holder_of(comment.body) for comment in server.comments] == [
+        "runner-a",
+        "runner-b",
+    ]
 
 
 async def test_a_renewal_an_earlier_grant_outranks_withdraws_the_late_one() -> None:

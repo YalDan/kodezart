@@ -1961,7 +1961,16 @@ class LinearMcpTracker:
         holder: str,
         now: datetime,
     ) -> _Conflict[AddressT] | None:
-        """The requested address another holder's earlier marker already covers."""
+        """The requested address another holder's earlier LIVE marker covers.
+
+        A lapsed marker is not a grant and is not what the address is
+        weighed against: only its own holder may take it off, so one left
+        behind sits on the log at the earliest order there is, and reading
+        the earliest marker of any kind would let it stand in front of the
+        holder that took the address after it — answering a live grant
+        with the expired one it outlived, and granting the same address
+        twice.
+        """
         held: dict[AddressT, _GrantMarker] = {}
         for address in addresses:
             target = addressing.target(address)
@@ -1973,6 +1982,7 @@ class LinearMcpTracker:
                 and marker.holder != holder
                 and addressing.encode(address) in marker.addresses
                 and marker.created_at <= own.created_at
+                and marker.expires_at > now
             ]
             if covering:
                 held[address] = min(covering, key=lambda marker: marker.order)
