@@ -48,6 +48,7 @@ from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
+from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -794,6 +795,10 @@ class TrackerPort(Protocol):
         said nothing about scope, and reporting it as a refusal would take
         a pass off the air for the length of an outage.
         """
+        ...
+
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        """Stable native field projection and complete comments for receipt replay."""
         ...
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:

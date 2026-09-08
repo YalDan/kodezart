@@ -1049,3 +1049,27 @@ leased state/Evidence writes and the native loop remain separate work. After a
 valid observation, the public entry explicitly refuses the unavailable ruling
 and loop graph; it does not dispatch legacy ticket generation or report a
 completed FIRE. The authored entry path retains its existing behavior.
+
+
+The scheduled pass gate keeps its vendor timestamp window for reply and
+mention scanning. Atomic issue-write responses can identify their own
+stamp. Comment creation, edit, and deletion instead record explicit native
+mutation receipts; no post-write issue read is attributed to that write.
+Each gate retains its own complete native issue/comment observation and
+receipt cursor, replays only declared changes, and compares the result.
+Native fields outside the configured label vocabulary remain in the opaque
+projection. Stable bounding issue reads and two complete comment listings
+must agree before a container mark advances; unreadability, pagination
+ambiguity, source movement, or cancellation leaves that window unspent.
+Rearming a failed pass restores both observations and marks. Receipts are
+process-local and independently readable by multiple gates; a new gate with
+no retained comment baseline conservatively wakes once.
+
+This suppresses unchanged own claim/renew/release, marker, base, and mixed
+lifecycle churn while retaining differing principal fields, comments,
+edits, and deletions. Timestamp-only movement without a new local receipt
+still wakes. Current snapshots cannot establish the causal author of
+indistinguishable transient histories, including a simultaneous mention-only
+ripple during otherwise identical own churn; this is not a vendor event
+history or a universal attribution proof. Admission continues to use its
+upstream body digest and gap, never this scan window or a second digest.

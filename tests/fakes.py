@@ -25,6 +25,7 @@ from kodezart.core.errors import (
     McpTransportError,
     RateLimitedSoftFailureError,
     TrackerEnsureConflictError,
+    TrackerProtocolError,
 )
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import (
@@ -115,6 +116,7 @@ from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -3370,6 +3372,33 @@ class FakeTrackerPort:
         stamp = max(self._clock(), issue.updated_at)
         self.issues[issue_key] = issue.model_copy(update={"updated_at": stamp})
         self.self_writes.record(issue_key=issue_key, updated_at=stamp)
+
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        issue = await self.read_issue(issue_key=issue_key)
+        comments = tuple(await self.list_comments(issue_key=issue_key))
+        repeated_comments = tuple(await self.list_comments(issue_key=issue_key))
+        final_issue = await self.read_issue(issue_key=issue_key)
+        if (
+            issue != final_issue
+            or comments != repeated_comments
+            or len({comment.comment_key for comment in comments}) != len(comments)
+        ):
+            raise TrackerProtocolError(
+                "issue movement changed or comments repeat",
+                tool="read_issue_movement",
+                detail=issue_key,
+            )
+        return IssueMovementSnapshot(
+            issue_key=issue_key,
+            updated_at=issue.updated_at,
+            fields=field_values(issue.model_dump(mode="json", exclude={"updated_at"})),
+            comments=tuple(
+                sorted(
+                    (comment.comment_key, field_values(comment.model_dump(mode="json")))
+                    for comment in comments
+                )
+            ),
+        )
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
         await asyncio.sleep(0)

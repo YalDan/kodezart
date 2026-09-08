@@ -18,6 +18,7 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.self_writes import OwnMutation
 from kodezart.types.domain.tracker import IssuePriority
 
 
@@ -271,33 +272,18 @@ class PassDelta(DispatchModel):
 
 
 class SelfWriteLedger:
-    """What THIS process last left on an issue, so its own churn is not news.
+    """Atomic issue stamps and ordered explicit mutation receipts.
 
-    A pass gate wakes on movement, and the movement it reads is the
-    vendor's ``updated_at``.  The operation's own deterministic writes move
-    it too — a claim marker, its renewal, its release, a recorded base
-    spec, a lifecycle transition — so a lane that claimed an issue woke
-    itself on the claim, and again on the release, forever: 30 of 31
-    dispatch ticks on the measured boot found a delta of the service's own
-    making, and five full judgment sessions ran on it in 53 minutes
-    (KOD-175).
-
-    The writers tell the gate, because nothing else can: the vendor's
-    listings carry no actor, so a reading alone cannot say whose edit it
-    is.  Each write path records the stamp its own write left, and an issue
-    whose newest stamp is EXACTLY that is not news.  A principal's edit is
-    strictly later than ours, so it still wakes the pass — which is why the
-    comparison is equality and never a window.
-
-    In-process and per issue: it holds one stamp for each issue this
-    process has written to, and it answers about nothing else.  A judgment
-    session's own MCP writes go around it and stay news (KOD-113 owns that
-    generalisation), and a restart starts empty, which costs exactly one
-    wake-up on whatever this process last wrote.
+    Only the native issue write response may supply an own issue stamp.
+    Comment writes have no such response: they record their exact create,
+    edit or delete instead. Each gate independently retains its observation
+    and receipt position; reading never consumes another gate's receipts.
+    Restarting with no retained observation conservatively wakes once.
     """
 
     def __init__(self) -> None:
         self._stamps: dict[str, datetime] = {}
+        self._mutations: dict[str, list[OwnMutation]] = {}
 
     def record(self, *, issue_key: str, updated_at: datetime) -> None:
         """Remember the stamp our own write left on *issue_key*."""
@@ -306,6 +292,17 @@ class SelfWriteLedger:
     def wrote(self, *, issue_key: str, updated_at: datetime) -> bool:
         """Whether *updated_at* is exactly what our own last write left."""
         return self._stamps.get(issue_key) == updated_at
+
+    def record_mutation(self, *, issue_key: str, mutation: OwnMutation) -> None:
+        """Append only the effects described by a successful native write."""
+        self._mutations.setdefault(issue_key, []).append(mutation)
+
+    def receipts(
+        self, *, issue_key: str, after: int = 0
+    ) -> tuple[int, tuple[OwnMutation, ...]]:
+        """Return a stable cursor and receipts without consuming them."""
+        mutations = self._mutations.get(issue_key, [])
+        return len(mutations), tuple(mutations[after:])
 
 
 class PassRun(StrEnum):

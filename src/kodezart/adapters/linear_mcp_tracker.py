@@ -103,6 +103,13 @@ from kodezart.types.domain.operation import (
     ScopeLabel,
 )
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
+from kodezart.types.domain.self_writes import (
+    CommentValues,
+    IssueMovementSnapshot,
+    OwnMutation,
+    field_value,
+    field_values,
+)
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -772,7 +779,9 @@ class LinearMcpTracker:
         self._self_writes.record(issue_key=issue.issue_key, updated_at=issue.updated_at)
         return issue
 
-    def _saved_issue(self, payload: McpToolResult) -> TrackerIssue:
+    def _saved_issue(
+        self, payload: McpToolResult, *, written: Mapping[str, object] | None = None
+    ) -> TrackerIssue:
         """The stored issue a save_issue answer carries, recorded as a write.
 
         The one tail every issue-write shares: validate the save_issue
@@ -780,41 +789,142 @@ class LinearMcpTracker:
         write left (:meth:`_wrote`).  One place, so a change to how a
         write is read back cannot land on three of four call sites.
         """
-        return self._wrote(
-            self._to_issue(self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)),
+        issue = self._to_issue(
+            self._validate(LinearIssueWire, payload, _TOOL_SAVE_ISSUE)
+        )
+        if written is not None:
+            assert isinstance(payload, Mapping)
+            fields: dict[str, object] = {
+                key: written[key]
+                for key in ("title", "description", "labels")
+                if key in written
+            }
+            if "state" in written:
+                fields.update(
+                    {
+                        key: payload[key]
+                        for key in (
+                            "status",
+                            "statusType",
+                            "startedAt",
+                            "completedAt",
+                            "canceledAt",
+                            "stateHistory",
+                        )
+                        if key in payload
+                    }
+                )
+            additions: tuple[tuple[str, tuple[str, ...]], ...] = ()
+            if "addLabels" in written:
+                values = written["addLabels"]
+                assert isinstance(values, list)
+                additions = (("labels", tuple(field_value(value) for value in values)),)
+            self._self_writes.record_mutation(
+                issue_key=str(payload["id"]),
+                mutation=OwnMutation(fields=field_values(fields), additions=additions),
+            )
+        return self._wrote(issue)
+
+    def _comment_written(
+        self, *, issue_key: str, payload: McpToolResult, created: bool
+    ) -> TrackerComment:
+        wire = self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
+        assert isinstance(payload, Mapping)
+        values = field_values(
+            payload
+            if created
+            else {
+                key: value
+                for key, value in payload.items()
+                if key in {"body", "updatedAt"}
+            }
+        )
+        mutation = (
+            OwnMutation(created=((wire.id, values),))
+            if created
+            else OwnMutation(edited=((wire.id, values),))
+        )
+        self._self_writes.record_mutation(issue_key=issue_key, mutation=mutation)
+        return self._to_comment(wire, issue_key=issue_key)
+
+    async def _delete_own_comment(self, *, issue_key: str, comment_key: str) -> None:
+        await self._call(_TOOL_DELETE_COMMENT, {"id": comment_key})
+        self._self_writes.record_mutation(
+            issue_key=issue_key, mutation=OwnMutation(deleted=(comment_key,))
         )
 
-    async def _wrote_by_reading(self, issue_key: str) -> None:
-        """Read the issue back to learn what this write left on it.
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        """Retain the whole native projection, including unconfigured fields.
 
-        The other half of :meth:`_wrote`, for the writes the backend
-        answers with something that is not the issue — every marker on the
-        comment log, which moves the issue's ``updated_at`` while answering
-        with a comment.  The read is the only place that stamp exists, and
-        without it the operation's own markers read as a principal's edit
-        on the next tick.
-
-        The read is BOOKKEEPING about a write that has already landed, so
-        its failure is not the write's failure and is contained here
-        (KOD-172).  A caller told that ``post_comment`` failed does what a
-        caller does with a failed write — it writes again — and the second
-        marker is a duplicate of one the log already carries, from a call
-        whose comment the caller never saw.  What a missing entry costs is
-        stated where the ledger is defined: one extra wake-up on this
-        operation's own churn, which is the direction the gate is allowed
-        to be wrong in.
+        The two complete comment listings and bounding full issue reads
+        must agree. Unknown fields are retained as opaque JSON, not dropped
+        by the normal domain projection. No read creates a write receipt.
         """
-        try:
-            issue = self._to_issue(await self._read_issue_wire(issue_key))
-        except Exception as exc:
-            await self._log.awarning(
-                "self_write_unrecorded",
-                issue_key=issue_key,
-                error=str(exc),
-                error_kind=type(exc).__name__,
+
+        async def issue_payload() -> tuple[McpToolResult, LinearPlanningIssueWire]:
+            payload = await self._call(
+                _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
             )
-            return
-        self._wrote(issue)
+            wire = self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
+            if wire.id != issue_key:
+                raise TrackerProtocolError(
+                    "movement read returned another issue",
+                    tool=_TOOL_GET_ISSUE,
+                    detail=issue_key,
+                )
+            return payload, wire
+
+        before, _ = await issue_payload()
+        assert isinstance(before, Mapping)
+        initial_fields = field_values(before)
+        comments = await self._movement_comments(issue_key)
+        repeated_comments = await self._movement_comments(issue_key)
+        after, issue = await issue_payload()
+        assert isinstance(after, Mapping)
+        if initial_fields != field_values(after) or comments != repeated_comments:
+            raise TrackerProtocolError(
+                "issue or comments changed during movement read",
+                tool=_TOOL_GET_ISSUE,
+                detail=issue_key,
+            )
+        assert isinstance(after, Mapping)
+        return IssueMovementSnapshot(
+            issue_key=issue.id,
+            updated_at=issue.updated_at,
+            fields=field_values(
+                {key: value for key, value in after.items() if key != "updatedAt"}
+            ),
+            comments=comments,
+        )
+
+    async def _movement_comments(self, issue_key: str) -> CommentValues:
+        arguments: dict[str, object] = {"issueId": issue_key}
+        comments: dict[str, tuple[tuple[str, str], ...]] = {}
+        cursors: set[str] = set()
+        while True:
+            payload = await self._call(_TOOL_LIST_COMMENTS, arguments)
+            page = self._validate(LinearCommentListWire, payload, _TOOL_LIST_COMMENTS)
+            assert isinstance(payload, Mapping)
+            raw_comments = payload["comments"]
+            assert isinstance(raw_comments, list)
+            for wire, raw in zip(page.comments, raw_comments, strict=True):
+                if wire.id in comments or not isinstance(raw, Mapping):
+                    raise TrackerProtocolError(
+                        "movement comments are repeated or malformed",
+                        tool=_TOOL_LIST_COMMENTS,
+                        detail=issue_key,
+                    )
+                comments[wire.id] = field_values(raw)
+            if not page.has_next_page:
+                return tuple(sorted(comments.items()))
+            if not page.cursor or page.cursor in cursors:
+                raise TrackerProtocolError(
+                    "movement comment pagination cannot advance",
+                    tool=_TOOL_LIST_COMMENTS,
+                    detail=issue_key,
+                )
+            cursors.add(page.cursor)
+            arguments["cursor"] = page.cursor
 
     async def create_issue(
         self,
@@ -858,7 +968,7 @@ class LinearMcpTracker:
                 )
             arguments["description"] = body
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
-        return self._saved_issue(payload)
+        return self._saved_issue(payload, written=arguments)
 
     async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
         _, criteria = await self._read_criterion_family(issue_key=issue_key)
@@ -1076,7 +1186,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},
         )
-        return self._saved_issue(payload)
+        return self._saved_issue(payload, written={"state": state_name})
 
     async def set_queue_state(
         self,
@@ -1096,7 +1206,9 @@ class LinearMcpTracker:
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "labels": [*preserved, self._label_for(state)]},
         )
-        return self._saved_issue(payload)
+        return self._saved_issue(
+            payload, written={"labels": [*preserved, self._label_for(state)]}
+        )
 
     async def set_issue_classification(
         self, *, issue_key: str, classification: str
@@ -1116,7 +1228,9 @@ class LinearMcpTracker:
                 "addLabels": [self._issue_labels[classification]],
             },
         )
-        return self._saved_issue(payload)
+        return self._saved_issue(
+            payload, written={"addLabels": [self._issue_labels[classification]]}
+        )
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""
@@ -1124,12 +1238,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT,
             {"issueId": issue_key, "body": body},
         )
-        comment = self._to_comment(
-            self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT),
-            issue_key=issue_key,
-        )
-        await self._wrote_by_reading(issue_key)
-        return comment
+        return self._comment_written(issue_key=issue_key, payload=payload, created=True)
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         """Every comment on the issue, oldest first."""
@@ -1187,12 +1296,7 @@ class LinearMcpTracker:
         payload = await self._call(
             _TOOL_SAVE_COMMENT, {"id": existing.comment_key, "body": content}
         )
-        comment = self._to_comment(
-            self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT),
-            issue_key=target,
-        )
-        await self._wrote_by_reading(target)
-        return comment
+        return self._comment_written(issue_key=target, payload=payload, created=False)
 
     async def claim_issue(
         self,
@@ -1226,8 +1330,7 @@ class LinearMcpTracker:
         winner = await self.active_claim(issue_key=issue_key)
         if winner is not None and winner.holder == holder:
             return winner
-        await self._call(_TOOL_DELETE_COMMENT, {"id": appended})
-        await self._wrote_by_reading(issue_key)
+        await self._delete_own_comment(issue_key=issue_key, comment_key=appended)
         return ClaimResult(
             issue_key=issue_key,
             status=ClaimStatus.LOST,
@@ -1286,16 +1389,18 @@ class LinearMcpTracker:
             *(marker.expires_at for marker in mine),
         )
         earliest, *duplicates = mine
-        await self._call(
+        payload = await self._call(
             _TOOL_SAVE_COMMENT,
             {
                 "id": earliest.comment_key,
                 "body": self._markers.claim_body(holder=holder, expires_at=expires_at),
             },
         )
+        self._comment_written(issue_key=issue_key, payload=payload, created=False)
         for duplicate in duplicates:
-            await self._call(_TOOL_DELETE_COMMENT, {"id": duplicate.comment_key})
-        await self._wrote_by_reading(issue_key)
+            await self._delete_own_comment(
+                issue_key=issue_key, comment_key=duplicate.comment_key
+            )
         return ClaimResult(
             issue_key=issue_key,
             status=ClaimStatus.GRANTED,
@@ -1322,9 +1427,9 @@ class LinearMcpTracker:
                 "body": self._markers.claim_body(holder=holder, expires_at=expires_at),
             },
         )
-        appended = self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT).id
-        await self._wrote_by_reading(issue_key)
-        return appended
+        return self._comment_written(
+            issue_key=issue_key, payload=payload, created=True
+        ).comment_key
 
     async def _unexpired_claim_markers(
         self,
@@ -1356,15 +1461,11 @@ class LinearMcpTracker:
 
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
         """Delete every claim marker *holder* wrote on the issue."""
-        released = False
         pattern = self._markers.claim_pattern
         for wire in await self._comment_wires(issue_key):
             match = pattern.search(wire.body)
             if match is not None and match.group("holder") == holder:
-                await self._call(_TOOL_DELETE_COMMENT, {"id": wire.id})
-                released = True
-        if released:
-            await self._wrote_by_reading(issue_key)
+                await self._delete_own_comment(issue_key=issue_key, comment_key=wire.id)
 
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
         """The earliest unexpired claim marker's holder, or ``None``."""
@@ -1435,8 +1536,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT,
             {"issueId": ref.issue_id, "body": self._markers.work_ref_body(ref)},
         )
-        self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
-        await self._wrote_by_reading(ref.issue_id)
+        self._comment_written(issue_key=ref.issue_id, payload=payload, created=True)
 
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         """Every work ref recorded on the issue, oldest first."""
@@ -1497,8 +1597,7 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT,
             {"issueId": issue_key, "body": self._markers.base_spec_body(spec)},
         )
-        self._validate(LinearCommentWire, payload, _TOOL_SAVE_COMMENT)
-        await self._wrote_by_reading(issue_key)
+        self._comment_written(issue_key=issue_key, payload=payload, created=True)
 
     async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
         """The latest recorded spec, or ``None`` when none was ever recorded.
