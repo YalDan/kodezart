@@ -14,6 +14,7 @@ from kodezart.adapters.linear_mcp_tracker import (
     LinearMcpTracker,
     is_long_lived_credential,
 )
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import TrackerCredentialShapeError
 from kodezart.core.logging import BoundLogger
@@ -117,8 +118,10 @@ def build_tracker(
                 team_identifiers={
                     team_key: entry.name for team_key, entry in operation.teams.items()
                 },
-                max_retries=config.tracker_max_retries,
-                retry_backoff_factor=config.tracker_retry_backoff_factor,
+                retry=RetryPolicy(
+                    attempts=config.tracker_max_retries + 1,
+                    initial_delay=config.tracker_retry_backoff_factor,
+                ),
                 ledger=ledger,
             )
             return adapter, ledger

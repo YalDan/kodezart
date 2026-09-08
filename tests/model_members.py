@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue, FakeTrackerPort
@@ -89,8 +90,7 @@ async def model_workspace(adapter: str) -> ModelWorkspace:
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
         team_identifiers=TEAM_IDENTIFIERS,
-        max_retries=0,
-        retry_backoff_factor=1,
+        retry=RetryPolicy(attempts=1, initial_delay=1),
     )
     fake = FakeTrackerPort()
     return ModelWorkspace(native if adapter == "native" else fake, native, fake, server)

@@ -26,6 +26,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.errors import (
     CheckObservationError,
@@ -167,8 +168,7 @@ class GitHubAPIClient:
         ci_ref_not_found_grace_polls: int,
         ci_check_runs_max_pages: int,
         timeout_seconds: float,
-        max_retries: int,
-        retry_backoff_factor: float,
+        retry: RetryPolicy,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._ci_poll_interval: float = ci_poll_interval_seconds
@@ -178,8 +178,7 @@ class GitHubAPIClient:
         self._ci_grace_poll_interval: float = ci_grace_poll_interval_seconds
         self._ci_ref_not_found_grace_polls: int = ci_ref_not_found_grace_polls
         self._ci_check_runs_max_pages: int = ci_check_runs_max_pages
-        self._max_retries: int = max_retries
-        self._retry_backoff_factor: float = retry_backoff_factor
+        self._retry = retry
         self._reruns: ContextVar[_RerunContext | None] = ContextVar(
             "github_ci_rerun_context", default=None
         )
@@ -211,7 +210,7 @@ class GitHubAPIClient:
         params: dict[str, str | int] | None = None,
         retryable: bool = True,
     ) -> httpx.Response:
-        """HTTP request with exponential backoff + 10% jitter.
+        """HTTP request with the configured bounded backoff and jitter.
 
         Raises ``RateLimitError`` / ``TransientAPIError`` once the retry
         budget is spent and ``ForgeAPIError`` on a failure no retry would
@@ -226,8 +225,8 @@ class GitHubAPIClient:
         identical request finds changed, and it carries no status
         because none was ever received.
         """
-        max_retries = self._max_retries if retryable else 0
-        for attempt in range(max_retries + 1):
+        attempts = self._retry.attempts if retryable else 1
+        for attempt in range(attempts):
             try:
                 response = await self._client.request(
                     method,
@@ -239,26 +238,16 @@ class GitHubAPIClient:
                 return response
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
-                is_last = attempt == max_retries
+                is_last = attempt + 1 == attempts
 
                 if status == 429 or status >= 500:
-                    if status == 429:
-                        header_wait = parse_retry_after(
-                            exc.response,
-                        )
-                        base_wait: float = (
-                            header_wait
-                            if header_wait is not None
-                            else self._retry_backoff_factor * (2**attempt)
-                        )
-                    else:
-                        base_wait = self._retry_backoff_factor * (2**attempt)
-
-                    jitter = self._rng.uniform(
-                        0.0,
-                        base_wait * 0.1,
+                    wait = self._retry.delay(
+                        attempt,
+                        retry_after=parse_retry_after(exc.response)
+                        if status == 429
+                        else None,
+                        rng=self._rng,
                     )
-                    wait = base_wait + jitter
 
                     await self._log.awarning(
                         "github_api_retry",
@@ -297,13 +286,8 @@ class GitHubAPIClient:
                 ) from exc
 
             except httpx.TransportError as exc:
-                is_last = attempt == max_retries
-                base_wait = self._retry_backoff_factor * (2**attempt)
-                jitter = self._rng.uniform(
-                    0.0,
-                    base_wait * 0.1,
-                )
-                wait = base_wait + jitter
+                is_last = attempt + 1 == attempts
+                wait = self._retry.delay(attempt, rng=self._rng)
 
                 await self._log.awarning(
                     "github_api_transport_error",

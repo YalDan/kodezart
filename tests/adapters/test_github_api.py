@@ -8,6 +8,7 @@ import structlog
 
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.composition.forge import build_forge_client
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.gating import RepoVisibility
@@ -33,6 +34,7 @@ def _make_client(
     timeout_seconds: float = 5.0,
     max_retries: int = 1,
     retry_backoff_factor: float = 0.01,
+    retry: RetryPolicy | None = None,
 ) -> GitHubAPIClient:
     """Create a GitHubAPIClient with a mock transport for testing."""
     mock_http = httpx.AsyncClient(
@@ -50,8 +52,10 @@ def _make_client(
         ci_ref_not_found_grace_polls=ci_ref_not_found_grace_polls,
         ci_check_runs_max_pages=ci_check_runs_max_pages,
         timeout_seconds=timeout_seconds,
-        max_retries=max_retries,
-        retry_backoff_factor=retry_backoff_factor,
+        retry=retry
+        or RetryPolicy(
+            attempts=max_retries + 1, initial_delay=retry_backoff_factor, jitter=0.1
+        ),
         client=mock_http,
     )
 

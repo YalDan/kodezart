@@ -144,6 +144,21 @@ and leased alarm writer remain separate work.
 | `KODEZART_TRACKER_TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
 | `KODEZART_KNOWLEDGE` | `KnowledgeSettings` | unconfigured | typed HTTP/stdio connection | Knowledge grants and server configuration; nested overrides below. |
 
+## Adapter retry timing
+
+GitHub, Linear and the content scanner receive one validated `RetryPolicy`
+value with total attempts, initial delay, exponential factor and fractional
+jitter. Existing environment names and units remain supported: forge/tracker
+`MAX_RETRIES` excludes the first request; content-scan `MAX_ATTEMPTS` includes
+the first session. Their composition converts those units once.
+
+The factor defaults to two. GitHub adds positive jitter up to ten percent;
+Linear and content scanning have no jitter. A GitHub `Retry-After` value
+replaces the exponential delay before jitter is applied. Retryable failures,
+unsafe write replays, response parsing and per-attempt timeouts remain owned
+by each adapter. Cancellation interrupts requests and backoff. LangGraph
+node retry policy is separate.
+
 ## Organize phase configuration
 
 The operation TOML may declare `[[organize_mandates]]` entries. Omission is

@@ -11,6 +11,7 @@ from kodezart.adapters.aggregate_content_scanner import AggregateContentScanner
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.logging import BoundLogger
@@ -70,8 +71,10 @@ def outbound_scanners(
             prompts=prompts,
             neutral_cwd=str(working_dir),
             skills=skills,
-            retry_max_attempts=config.content_scan_retry_max_attempts,
-            retry_initial_interval=config.content_scan_retry_initial_interval,
+            retry=RetryPolicy(
+                attempts=config.content_scan_retry_max_attempts,
+                initial_delay=config.content_scan_retry_initial_interval,
+            ),
             timeout_seconds=config.content_scan_timeout_seconds,
         ),
     )

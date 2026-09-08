@@ -5,6 +5,7 @@ than defines.
 """
 
 from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import (
     CIObservationReader,
@@ -32,8 +33,11 @@ def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
             ci_ref_not_found_grace_polls=config.ci_ref_not_found_grace_polls,
             ci_check_runs_max_pages=config.ci_check_runs_max_pages,
             timeout_seconds=config.forge_api_timeout_seconds,
-            max_retries=config.forge_api_max_retries,
-            retry_backoff_factor=config.forge_api_retry_backoff_factor,
+            retry=RetryPolicy(
+                attempts=config.forge_api_max_retries + 1,
+                initial_delay=config.forge_api_retry_backoff_factor,
+                jitter=0.1,
+            ),
         )
         if config.github_token is not None
         else None

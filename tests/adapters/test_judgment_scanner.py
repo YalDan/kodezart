@@ -31,6 +31,7 @@ from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.composition.gating import outbound_scanners
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.outbound_write import gated_write
@@ -141,6 +142,7 @@ def scanner_for(
     *,
     private_surface: str | None = FIXTURE_PRIVATE_SURFACE,
     retry_max_attempts: int = 1,
+    retry: RetryPolicy | None = None,
     timeout_seconds: float = 30.0,
 ) -> AgentContentScanner:
     """A judgment scanner over the REAL registry and template."""
@@ -152,8 +154,7 @@ def scanner_for(
         prompts=load_registry(bindings=bindings),
         neutral_cwd="/tmp/kodezart-content-audit-test",
         skills=NO_SKILLS,
-        retry_max_attempts=retry_max_attempts,
-        retry_initial_interval=0.01,
+        retry=retry or RetryPolicy(attempts=retry_max_attempts, initial_delay=0.01),
         timeout_seconds=timeout_seconds,
     )
 

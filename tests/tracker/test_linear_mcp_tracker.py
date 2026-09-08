@@ -17,6 +17,7 @@ import structlog
 
 from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpCredentialRefusedError,
@@ -64,7 +65,13 @@ RAW_PRIORITY_BY_DOMAIN_MEMBER: dict[int, IssuePriority] = {
 }
 
 
-def tracker_over(server: FakeLinearMcpServer, **overrides: object) -> LinearMcpTracker:
+def tracker_over(
+    server: FakeLinearMcpServer,
+    *,
+    max_retries: int = 0,
+    retry_backoff_factor: float = 0.0,
+    **overrides: object,
+) -> LinearMcpTracker:
     """The adapter over *server*, with per-test constructor overrides."""
     kwargs: dict[str, object] = {
         "caller": server,
@@ -78,8 +85,9 @@ def tracker_over(server: FakeLinearMcpServer, **overrides: object) -> LinearMcpT
         "queue_state_labels": QUEUE_STATE_LABELS,
         "workflow_state_names": WORKFLOW_STATE_NAMES,
         "team_identifiers": TEAM_IDENTIFIERS,
-        "max_retries": 0,
-        "retry_backoff_factor": 0.0,
+        "retry": RetryPolicy(
+            attempts=max_retries + 1, initial_delay=retry_backoff_factor
+        ),
         "clock": lambda: FIXTURE_NOW,
         "ledger": SelfWriteLedger(),
     }

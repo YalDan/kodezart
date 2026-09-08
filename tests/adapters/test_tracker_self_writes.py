@@ -13,6 +13,7 @@ from typing import Final
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import McpSessionClosedError
 from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.services.pass_gate import PassGate
@@ -71,8 +72,7 @@ def _tracker(server: McpToolCaller, ledger: SelfWriteLedger) -> LinearMcpTracker
         },
         workflow_state_names={LifecycleStage.DONE: DONE_STATE},
         team_identifiers={TEAM_KEY: TEAM},
-        max_retries=0,
-        retry_backoff_factor=1.0,
+        retry=RetryPolicy(attempts=1, initial_delay=1.0),
         ledger=ledger,
     )
 
@@ -181,8 +181,7 @@ async def test_a_read_back_that_fails_does_not_fail_the_write_it_recorded() -> N
         },
         workflow_state_names={LifecycleStage.DONE: DONE_STATE},
         team_identifiers={TEAM_KEY: TEAM},
-        max_retries=0,
-        retry_backoff_factor=1.0,
+        retry=RetryPolicy(attempts=1, initial_delay=1.0),
         ledger=ledger,
     )
 

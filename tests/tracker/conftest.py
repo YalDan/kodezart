@@ -13,6 +13,7 @@ from inspect import isawaitable
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
@@ -221,8 +222,7 @@ def linear_over_fake_mcp(
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
         team_identifiers=TEAM_IDENTIFIERS,
-        max_retries=0,
-        retry_backoff_factor=1.0,
+        retry=RetryPolicy(attempts=1, initial_delay=1.0),
         clock=lambda: FIXTURE_NOW,
         ledger=SelfWriteLedger(),
     )
