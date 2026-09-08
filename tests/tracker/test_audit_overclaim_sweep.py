@@ -240,15 +240,23 @@ async def test_cross_arm_source_drift_cannot_become_a_coherent_sweep(
     await completed(tracker, server)
     executor.overclaim_output = payload(OverclaimKind.SELF_RULE, verdict="refuted")
     sweep = build(include_overclaims=True)
+    observed_heads = []
     if change == "head-between-arms":
         original = sweep._overclaims.observe
 
         async def after_advance(request):
             second = "c" * 40
             git._remote_branch_shas["ordinary-name"] = second
-            git._current_sha = second
+
+            async def current_head(cwd):
+                return second
+
+            monkeypatch.setattr(git, "current_sha", current_head)
             git._ancestor_pairs.add((HEAD, second))
-            return await original(request)
+            observed = await original(request)
+            assert observed.head_sha == second
+            observed_heads.append(observed.head_sha)
+            return observed
 
         monkeypatch.setattr(sweep._overclaims, "observe", after_advance)
     else:
@@ -282,8 +290,11 @@ async def test_cross_arm_source_drift_cannot_become_a_coherent_sweep(
                 assert same.comment_key == stored.comment_key and parsed != before
 
         executor.during = during
-    with pytest.raises(AuditClaimReadError, match=r"changed|different branch heads"):
+    expected = "different branch heads" if change == "head-between-arms" else "changed"
+    with pytest.raises(AuditClaimReadError, match=expected):
         await sweep.run()
+    if change == "head-between-arms":
+        assert observed_heads == ["c" * 40]
 
 
 async def test_only_successful_detector_still_rechecks_its_observed_head(

@@ -36,10 +36,11 @@ async def test_actual_native_sweep_reports_each_counterexample_and_clean_control
     (author / "source.md").write_text("A café\nEvery source topic is covered.\n")
     (author / "adopted.md").write_bytes((author / "source.md").read_bytes())
     (author / "charter.txt").write_text(
-        "Every task decision is computed, never judged.\n"
+        "Member counts are computed, never judged.\n"
         "Task suitability requires evaluating the specification.\n"
     )
     (author / "dispatch.py").write_text(
+        "def count(members):\n    return len(members)\n\n"
         "def choose(task, evaluate):\n    return evaluate(task)\n"
     )
     command(author, "add", "--all")
@@ -55,6 +56,10 @@ async def test_actual_native_sweep_reports_each_counterexample_and_clean_control
                 "A cafe\u0301\nEvery source topic is covered.\n"
             )
         else:
+            (author / "charter.txt").write_text(
+                "Every task decision is computed, never judged.\n"
+                "Task suitability requires evaluating the specification.\n"
+            )
             (author / "dispatch.py").write_text(
                 "def choose(task, evaluate):\n    return len(task.split()) > 20\n"
             )
@@ -133,14 +138,20 @@ async def test_actual_native_sweep_reports_each_counterexample_and_clean_control
                 }
             ]
         else:
-            assert "computed, never judged" in (path / "charter.txt").read_text()
-            if "len(task.split())" in (path / "dispatch.py").read_text():
+            charter = (path / "charter.txt").read_text()
+            code = (path / "dispatch.py").read_text()
+            assert "Task suitability requires evaluating the specification." in charter
+            unscoped = "Every task decision is computed, never judged." in charter
+            if unscoped and "len(task.split())" in code:
                 row.update(
                     verdict="refuted",
                     evidence=(
                         "dispatch.py substitutes a word count for required evaluation."
                     ),
                 )
+            else:
+                assert "Member counts are computed, never judged." in charter
+                assert "return len(members)" in code and "return evaluate(task)" in code
         executor.overclaim_output = output
 
     executor.during = during
