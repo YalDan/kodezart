@@ -72,7 +72,7 @@ does not exist.
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
-| RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
+| RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
 | TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
@@ -91,9 +91,8 @@ does not exist.
 | PromptSetProvider | InRepoPromptRegistry     | Set content belonging to no key: lens definitions, the system-prompt append |
 | SkillInventory    | HostSkillInventory       | What the host provisions; kodezart installs nothing  |
 | RepoVisibilityResolver | GitHubAPIClient     | Resolves PRIVATE / PUBLIC / UNKNOWN once per run     |
-| ContentScanner    | RegexContentScanner      | The deterministic pattern half of the outbound gate  |
-| ContentScanner    | AgentContentScanner      | The judgment half, ordered after the patterns        |
-| OutboundContentGate | PatternOutboundContentGate | CLEAN / REDACTED / BLOCKED over N scanners      |
+| ContentJudgment | AgentContentScanner | Fresh semantic judgment after fixed local checks |
+| OutboundContentGate | OutboundAdmission | Fixed credentials, references and authored admission |
 | RefPublisher      | GitRefPublisher          | Points a named ref at an existing commit on the remote |
 | CheckChainRunner | SubprocessCheckChainRunner | Runs the ordered declared check steps in a scratch directory and captures every result |
 | Remediator        | RemediationChain         | One remediation round: failure evidence in, one targeted ticket out |
@@ -475,8 +474,19 @@ cannot quietly escape it.
 
 ### Permission Modes
 
-- `plan` - Read-only tools, agent cannot modify files
-- `bypassPermissions` - Full tool access including `Edit` and `Write`
+Application ports and execution contexts carry `PermissionMode` from the domain
+session vocabulary: `INTERACTIVE`, `ACCEPT_EDITS`, `PLAN`, or `UNATTENDED`.
+The Claude adapters translate these to `default`, `acceptEdits`, `plan`, and
+`bypassPermissions` respectively. Tool selection remains an independent input.
+
+HTTP retains its existing `plan` and `bypassPermissions` values and defaults
+(query: `plan`; workflow/fire: `bypassPermissions`). The handler translates them
+before invoking the application. HTTP responses do not expose the internal
+permission value. Checkpoint configuration round-trips the domain enum; there
+is no supported cross-version workflow-resume API.
+
+Tool-name presets and open `allowedTools` selectors still use SDK vocabulary;
+this permission boundary does not narrow or translate those selectors.
 
 ### Structured Output
 

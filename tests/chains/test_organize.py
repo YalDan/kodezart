@@ -27,7 +27,7 @@ from kodezart.types.domain.organize import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -161,7 +161,7 @@ class RecordingExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -592,7 +592,7 @@ async def test_session_type_is_required_by_the_actual_runner_call():
         runner.stream_in_workspace(
             prompt="fixture",
             workspace_path="/tmp/fixture",
-            permission_mode="plan",
+            permission_mode=PermissionMode.PLAN,
             allowed_tools=[],
             skills=SUPPRESS_ALL_SKILLS,
         )

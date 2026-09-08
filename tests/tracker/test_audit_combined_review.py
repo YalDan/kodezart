@@ -50,8 +50,6 @@ async def test_combined_native_arms_keep_their_own_revisions_and_lifetimes(
     workspace = GitWorktreeProvider(
         git=native,
         cache=cache,
-        committer_name="Fixture",
-        committer_email="fixture@example.invalid",
     )
     op = operation.model_copy(
         update={"repos": [REPOSITORY.model_copy(update={"url": remote.as_uri()})]}

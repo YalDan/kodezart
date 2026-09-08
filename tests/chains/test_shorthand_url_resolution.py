@@ -23,6 +23,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
 )
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.session import PermissionMode
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
@@ -100,7 +101,7 @@ async def test_merger_receives_resolved_url_not_shorthand() -> None:
             repo_path=None,
             repo_url="YalDan/kodezart",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -136,7 +137,7 @@ async def test_full_url_passes_through_unchanged() -> None:
             repo_path=None,
             repo_url="https://github.com/YalDan/kodezart",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -171,7 +172,7 @@ async def test_local_repo_path_not_affected() -> None:
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )

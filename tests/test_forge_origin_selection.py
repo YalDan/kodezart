@@ -60,6 +60,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
@@ -221,7 +222,7 @@ async def _drive(
             repo_url=repo_url,
             scope=scope,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -261,7 +262,7 @@ async def test_scoped_queue_jobs_publish_typed_refusal_without_resolving(
                 base_spec=trunk_base("main"),
                 implied_base=None,
                 scope=ref,
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Read"],
             ),
         )

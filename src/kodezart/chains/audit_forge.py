@@ -48,11 +48,11 @@ class AuditForgeVerifier:
         self._config = config
 
     def _repository(self, repo_url: str) -> RepoEntry:
-        normalized = resolve_repo_url(repo_url, self._config.git_base_url)
+        normalized = resolve_repo_url(repo_url, self._config.git.base_url)
         matches = [
             entry
             for entry in self._operation.repos
-            if resolve_repo_url(entry.url, self._config.git_base_url) == normalized
+            if resolve_repo_url(entry.url, self._config.git.base_url) == normalized
         ]
         try:
             (repository,) = matches

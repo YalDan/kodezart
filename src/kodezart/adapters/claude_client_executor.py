@@ -26,7 +26,7 @@ from kodezart.adapters._mcp_mapping import (
     map_knowledge_mcp,
     prompt_with_knowledge_map,
 )
-from kodezart.adapters._permission_modes import _validate_permission_mode
+from kodezart.adapters._permission_modes import map_permission_mode
 from kodezart.adapters._sdk_mapping import INIT_SUBTYPE, map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
 from kodezart.core.constants import STDERR_TAIL_BYTES
@@ -37,7 +37,7 @@ from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent, SystemEvent
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import KnowledgeGrant, SessionType
+from kodezart.types.domain.session import KnowledgeGrant, PermissionMode, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -125,7 +125,7 @@ class ClaudeClientExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -154,7 +154,7 @@ class ClaudeClientExecutor:
         knowledge = map_knowledge_mcp(self._knowledge_grant, session_type)
         options = ClaudeAgentOptions(
             cwd=cwd,
-            permission_mode=_validate_permission_mode(
+            permission_mode=map_permission_mode(
                 permission_mode,
             ),
             allowed_tools=allowed_tools,

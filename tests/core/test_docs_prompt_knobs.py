@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.composition.gating import build_outbound_gate
 from kodezart.core.config import AppConfig
+from kodezart.core.logging import get_logger
 from kodezart.types.domain.gating import (
     ContentClass,
     GateVerdict,
@@ -15,6 +15,9 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
+from tests.adapters.test_judgment_scanner import ScriptedAuditExecutor, audit_result
+from tests.fakes import SUPPRESS_ALL_SKILLS
+from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
@@ -88,10 +91,12 @@ def test_readme_documents_the_skills_model() -> None:
     assert "target repository's own `.claude/`" in README
 
 
-def test_env_example_documents_the_gate_knobs() -> None:
-    """AC-9: every pattern set and verdict mapping originates in AppConfig."""
-    assert "KODEZART_DENY_PATTERNS" in ENV_EXAMPLE
-    assert "KODEZART_DENY_PATTERN_VERDICTS" in ENV_EXAMPLE
+def test_env_example_keeps_fixed_admission_policy_out_of_configuration() -> None:
+    """Credential shapes and privacy severity are shipped policy."""
+    assert "KODEZART_DENY_PATTERNS" not in ENV_EXAMPLE
+    assert "KODEZART_DENY_PATTERN_VERDICTS" not in ENV_EXAMPLE
+    assert "KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED" in ENV_EXAMPLE
+    assert "fixed privacy policy has six rows" in README
 
 
 def test_readme_documents_the_three_verdicts_and_fail_closed_rule() -> None:
@@ -124,7 +129,6 @@ def test_env_example_constructs_the_shipped_defaults() -> None:
 
     assert config.model is None
     assert config.operation_config is None
-    assert config.deny_patterns[RedactionCategory.CREDENTIALS] != []
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -141,9 +145,13 @@ def test_env_example_is_indistinguishable_from_shipping_no_env_file_at_all() -> 
 async def test_credential_gating_survives_a_copy_of_the_example_file() -> None:
     """The concrete leak: a token-bearing URL on a PUBLIC target is blocked."""
     config = config_from_env_example()
-    gate = PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
+    gate = await build_outbound_gate(
+        config=config,
+        operation=None,
+        executor=ScriptedAuditExecutor([audit_result([])]),
+        prompts=load_registry(),
+        skills=SUPPRESS_ALL_SKILLS,
+        log=get_logger(__name__),
     )
 
     decision = await gate.gate(

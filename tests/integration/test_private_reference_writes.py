@@ -33,6 +33,7 @@ from tests.fakes import (
     FakeVisibilityResolver,
     make_prompt_provider,
 )
+from tests.outbound import LiteralJudgment, make_admission
 
 PUBLIC_URL = "https://linear.app/public-example/issue/PUB-7/details"
 PRIVATE_URL = "https://linear.app/private-example/issue/EX-4/details"
@@ -399,12 +400,9 @@ async def test_credentials_still_block_without_starting_the_configured_judge(tmp
 async def test_actual_pr_never_publishes_the_tail_of_an_overlapping_private_url(
     earlier_pattern,
 ):
-    config = AppConfig(
-        deny_patterns={RedactionCategory.TRACKER_URLS: [earlier_pattern]}
-    )
-    gate = await composed_gate(
-        operation_with_facts(workspaces={"linear.app": ["private-example"]}),
-        config,
+    gate = make_admission(
+        LiteralJudgment({RedactionCategory.ORG_PRIVATE: [earlier_pattern]}),
+        private_surface=PrivateSurface(workspaces={"linear.app": ["private-example"]}),
     )
     creator = FakePRCreator()
     engine = make_engine(

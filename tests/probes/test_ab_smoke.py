@@ -45,6 +45,7 @@ from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.workspace import build_git_stack
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor, PromptSetProvider
+from kodezart.handlers.agent_handler import _HTTP_PERMISSIONS
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -254,8 +255,8 @@ def arm_environment(arm: Arm, root: Path) -> dict[str, str]:
     return {
         "KODEZART_PROMPT_SET": arm.prompt_set,
         "KODEZART_TICKET_REVIEW_MODE": arm.review_mode.value,
-        "KODEZART_CLONE_CACHE_DIR": str(root / "cache"),
-        "KODEZART_INTEGRATION_WORKSPACE_DIR": str(root / "integration"),
+        "KODEZART_GIT__CLONE_CACHE_DIR": str(root / "cache"),
+        "KODEZART_GIT__INTEGRATION_WORKSPACE_DIR": str(root / "integration"),
     }
 
 
@@ -347,7 +348,12 @@ async def run_arm(
         skills=skills,
         log=log,
     )
-    stack = build_git_stack(config=config, prompts=prompts, gate=gate)
+    stack = build_git_stack(
+        settings=config.git,
+        github_token=config.github_token,
+        prompts=prompts,
+        gate=gate,
+    )
     engine = build_workflow_engine(
         repositories=(),
         config=config,
@@ -355,7 +361,7 @@ async def run_arm(
             executor=executor,
             workspace=stack.workspace,
             persister=stack.persister,
-            git_base_url=config.git_base_url,
+            git_base_url=config.git.base_url,
         ),
         git=stack.git,
         cache=stack.cache,
@@ -382,7 +388,7 @@ async def run_arm(
             repo_url=request.repo_url,
             scope=None,
             base_spec=trunk_base(request.base_branch),
-            permission_mode=request.permission_mode,
+            permission_mode=_HTTP_PERMISSIONS[request.permission_mode],
             allowed_tools=request.allowed_tools,
             cache_key=uuid.uuid4().hex,
         ):

@@ -138,13 +138,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             skills=skills,
             log=log,
         )
-        stack = build_git_stack(config=config, prompts=prompts, gate=gate)
+        stack = build_git_stack(
+            settings=config.git,
+            github_token=config.github_token,
+            prompts=prompts,
+            gate=gate,
+        )
 
         agent_service = AgentService(
             executor=executor,
             workspace=stack.workspace,
             persister=stack.persister,
-            git_base_url=config.git_base_url,
+            git_base_url=config.git.base_url,
         )
         app.state.agent_service = agent_service
 

@@ -47,8 +47,6 @@ async def test_native_terminal_mandate_observes_current_head_without_criterion_c
     workspace = GitWorktreeProvider(
         git=native,
         cache=cache,
-        committer_name="Fixture",
-        committer_email="fixture@example.invalid",
     )
     selected = operation.model_copy(
         update={

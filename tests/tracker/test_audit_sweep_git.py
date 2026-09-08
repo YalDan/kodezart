@@ -40,8 +40,6 @@ async def test_full_native_sweep_uses_real_cache_worktree_and_current_bytes(
     workspace = GitWorktreeProvider(
         git=native,
         cache=cache,
-        committer_name="Fixture",
-        committer_email="fixture@example.invalid",
     )
     selected_op = op.model_copy(
         update={"repos": [op.repos[0].model_copy(update={"url": remote.as_uri()})]}

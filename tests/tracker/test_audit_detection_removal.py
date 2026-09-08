@@ -204,8 +204,6 @@ async def build(tracker, tmp_path):
         workspace = GitWorktreeProvider(
             git=git,
             cache=cache,
-            committer_name="Fixture",
-            committer_email="fixture@example.invalid",
         )
         executor = NativeProbeExecutor()
         prompts = load_registry(default_set=set_name)
@@ -221,7 +219,7 @@ async def build(tracker, tmp_path):
             source=source,
             cache=cache,
             operation=fixtures.OPERATION,
-            remote=AppConfig(git_remote="configured-remote").git_remote,
+            remote=AppConfig(git={"remote": "configured-remote"}).git.remote,
         )
         sessions = FreshAuditSession(
             git=git,

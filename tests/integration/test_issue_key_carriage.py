@@ -1,7 +1,6 @@
 """Recorded tracker identity survives real queue and workflow boundaries."""
 
 import asyncio
-import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -9,8 +8,6 @@ from dataclasses import dataclass
 import pytest
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.composition.engine import OriginRoutedWorkflowEngine
 from kodezart.core.protocols import OutboundContentGate
 from kodezart.handlers.agent_handler import AgentHandler
@@ -23,7 +20,6 @@ from kodezart.types.domain.dispatch import DispatchOutcome
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
-    GateVerdict,
     OutboundDestination,
     RedactionCategory,
     RepoVisibility,
@@ -46,6 +42,7 @@ from tests.fakes import (
     PassThroughGate,
     make_tracker_issue,
 )
+from tests.outbound import LiteralJudgment, make_admission
 from tests.services.test_fire_dispatcher import (
     ASSET_FETCH_TIMEOUT_SECONDS,
     ASSET_MAX_BYTES,
@@ -77,14 +74,11 @@ class RecordingGate:
 
     def __init__(self, *, block_identity: bool = False) -> None:
         patterns = (
-            {RedactionCategory.CREDENTIALS: [re.escape(f"Tracker issue: {ISSUE_KEY}")]}
+            {RedactionCategory.CREDENTIALS: [f"Tracker issue: {ISSUE_KEY}"]}
             if block_identity
             else {}
         )
-        self._inner = PatternOutboundContentGate(
-            scanners=[RegexContentScanner(patterns=patterns)],
-            verdicts={RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED},
-        )
+        self._inner = make_admission(LiteralJudgment(patterns))
         self.bodies: list[str] = []
 
     async def gate(

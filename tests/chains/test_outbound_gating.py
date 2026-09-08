@@ -4,10 +4,7 @@ import uuid
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
-from kodezart.core.config import AppConfig
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -21,6 +18,7 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.fakes import (
     FakeAgentExecutor,
@@ -40,6 +38,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.outbound import LiteralJudgment, make_admission
 from tests.workflow_factory import make_authored_workflow
 
 
@@ -108,7 +107,7 @@ async def run_engine(
             repo_path=repo_path,
             repo_url=repo_url,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -241,11 +240,7 @@ async def test_writer_matrix_over_every_visibility(
     visibility: RepoVisibility,
 ) -> None:
     """AC-6: the full visibility x writer matrix runs clean unconfigured."""
-    config = AppConfig()
-    gate = PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    gate = make_admission()
     engine = make_engine(
         gate=gate,
         visibility_resolver=FakeVisibilityResolver(visibility),
@@ -258,13 +253,8 @@ async def test_writer_matrix_over_every_visibility(
 
 async def test_blocked_write_fails_loudly_and_posts_nothing() -> None:
     """BLOCKED raises the typed error; the forge client is never called."""
-    gate = PatternOutboundContentGate(
-        scanners=[
-            RegexContentScanner(
-                patterns={RedactionCategory.INFRA_ENDPOINTS: [r"test-branch"]},
-            )
-        ],
-        verdicts=AppConfig().deny_pattern_verdicts,
+    gate = make_admission(
+        LiteralJudgment({RedactionCategory.INFRA_ENDPOINTS: ["test-branch"]})
     )
     pr_creator = FakePRCreator()
     engine = make_engine(

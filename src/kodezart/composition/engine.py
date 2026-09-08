@@ -44,6 +44,7 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -100,7 +101,7 @@ class OriginRoutedWorkflowEngine:
         base_spec: BaseSpec,
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
@@ -239,7 +240,7 @@ def build_workflow_engine(
                     merger=merger,
                     git=git,
                     cache=cache,
-                    git_remote=config.git_remote,
+                    git_remote=config.git.remote,
                     ref_publisher=ref_publisher if forge is not None else None,
                 ),
                 review=FireReview(
@@ -254,7 +255,7 @@ def build_workflow_engine(
                     remediator=remediator,
                     remediation_max_rounds=config.remediation_max_rounds,
                 ),
-                git_base_url=config.git_base_url,
+                git_base_url=config.git.base_url,
                 checkpointer=checkpointer,
                 retry_max_attempts=config.retry_max_attempts,
                 retry_initial_interval=config.retry_initial_interval,
@@ -273,7 +274,7 @@ def build_workflow_engine(
             checks=AuthoredChecks(
                 ci_monitor=forge,
                 ci_observations=forge,
-                git_base_url=config.git_base_url,
+                git_base_url=config.git.base_url,
                 repositories=repositories,
                 max_concurrent_watches=config.delivery_max_concurrent_watches,
                 red_rerun_max_attempts=config.delivery_red_rerun_max_attempts,

@@ -3,17 +3,14 @@
 import pytest
 from pydantic import ValidationError
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.composition.gating import outbound_scanners
+from kodezart.adapters.outbound_admission import OutboundAdmission
+from kodezart.composition.gating import build_outbound_gate
 from kodezart.core.config import AppConfig
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
-from kodezart.core.protocols import ContentScanner
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.gating import (
     DESTINATION_DURABILITY,
-    UNCONDITIONAL_ROUTING,
     ContentClass,
     DurabilityCategory,
     GateDecision,
@@ -27,9 +24,11 @@ from kodezart.types.domain.gating import (
     WriterShape,
     durability_of,
 )
+from kodezart.types.domain.privacy import PrivateSurface
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.adapters.test_judgment_scanner import ScriptedAuditExecutor, audit_result
-from tests.fakes import FakeContentScanner
+from tests.fakes import FakeContentJudgment
+from tests.outbound import make_admission
 from tests.prompts.test_prompt_wiring import load_registry
 
 
@@ -46,7 +45,7 @@ from tests.prompts.test_prompt_wiring import load_registry
 )
 async def test_unconfigured_native_urls_carry_no_implicit_private_workspace(url):
     content = f"Read <{url}> before work."
-    decision = await configured_gate().gate(
+    decision = await (await configured_gate()).gate(
         content=content,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
@@ -74,7 +73,7 @@ async def test_unconfigured_native_urls_carry_no_implicit_private_workspace(url)
     ],
 )
 async def test_url_defaults_do_not_supply_workspace_name_patterns(content):
-    decision = await configured_gate().gate(
+    decision = await (await configured_gate()).gate(
         content=content,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
@@ -150,16 +149,13 @@ async def test_aggregate_categories_block_without_a_redaction_option(
 ) -> None:
     """The existing gate's non-redaction arm handles both added categories."""
     hit = ScanHit(category=category, start=0, end=8)
-    gate = PatternOutboundContentGate(
-        scanners=[FakeContentScanner([hit], routing=UNCONDITIONAL_ROUTING)],
-        verdicts=dict.fromkeys(RedactionCategory, GateVerdict.REDACTED),
-    )
+    gate = make_admission(FakeContentJudgment([hit]))
     decision = await gate.gate(
         content="3 issues remain",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
-        content_class=ContentClass.DERIVED,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.content == ""
@@ -167,55 +163,38 @@ async def test_aggregate_categories_block_without_a_redaction_option(
     assert GateDecision.model_validate_json(decision.model_dump_json()) == decision
 
 
-def configured_scanners(config: AppConfig) -> list[ContentScanner]:
-    """Exercise the same scanner assembly the application uses at boot."""
-    scanners, _ = outbound_scanners(
-        config=config,
+async def configured_gate(config: AppConfig | None = None) -> OutboundAdmission:
+    return await build_outbound_gate(
+        config=config or AppConfig(agentic_content_scanner_enabled=False),
         operation=None,
         executor=ScriptedAuditExecutor([audit_result([])]),
         prompts=load_registry(),
         skills=SkillsSelection(mode=SkillsMode.NONE),
-    )
-    return scanners
-
-
-def configured_gate(config: AppConfig | None = None) -> PatternOutboundContentGate:
-    selected = config or AppConfig(agentic_content_scanner_enabled=False)
-    return PatternOutboundContentGate(
-        scanners=configured_scanners(selected),
-        verdicts=selected.deny_pattern_verdicts,
+        log=get_logger(__name__),
     )
 
 
 async def test_aggregate_block_wins_over_an_earlier_redaction() -> None:
-    config = AppConfig(
-        agentic_content_scanner_enabled=False,
-        deny_patterns={RedactionCategory.TRACKER_URLS: [r"example\.invalid"]},
-    )
-    content = "example.invalid: 5 tickets remain"
+    content = "https://linear.app/private-example/issue/EX-3: 5 tickets remain"
     start = content.index("5 tickets")
-    gate = PatternOutboundContentGate(
-        scanners=[
-            RegexContentScanner(patterns=config.deny_patterns),
-            FakeContentScanner(
-                [
-                    ScanHit(
-                        category=DurabilityCategory.OBJECT_COUNT,
-                        start=start,
-                        end=start + len("5 tickets"),
-                    )
-                ],
-                routing=UNCONDITIONAL_ROUTING,
-            ),
-        ],
-        verdicts=config.deny_pattern_verdicts,
+    gate = make_admission(
+        FakeContentJudgment(
+            [
+                ScanHit(
+                    category=DurabilityCategory.OBJECT_COUNT,
+                    start=start,
+                    end=start + len("5 tickets"),
+                )
+            ]
+        ),
+        private_surface=PrivateSurface(workspaces={"linear.app": ["private-example"]}),
     )
     decision = await gate.gate(
         content=content,
         visibility=RepoVisibility.UNKNOWN,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
-        content_class=ContentClass.DERIVED,
+        content_class=ContentClass.AUTHORED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert set(decision.categories) == {
@@ -229,7 +208,7 @@ async def test_aggregate_block_wins_over_an_earlier_redaction() -> None:
 async def test_single_identifier_is_a_reference_on_every_surface(
     destination: OutboundDestination,
 ) -> None:
-    decision = await configured_gate().gate(
+    decision = await (await configured_gate()).gate(
         content="See ABC-42 for the details.",
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
@@ -243,7 +222,7 @@ async def test_privacy_match_text_is_not_copied_into_the_blocked_error() -> None
     secret = "ghp_" + "A" * 40
     with pytest.raises(OutboundContentBlockedError) as excinfo:
         await gated_write(
-            gate=configured_gate(),
+            gate=await configured_gate(),
             log=get_logger(__name__),
             content=f"credential={secret}",
             visibility=RepoVisibility.PUBLIC,

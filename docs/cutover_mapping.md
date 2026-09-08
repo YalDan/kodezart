@@ -18,7 +18,7 @@ live with the cutover work itself.
 | Which repositories a pass may act on, and how they are verified | `OperationConfig.repos` |
 | What counts as a mention of the operation | `OperationConfig.agent_identities` |
 | Whose word creates a reply obligation | `OperationConfig.principals` |
-| Which initiatives receive a status update | `OperationConfig.initiatives` |
+| Which initiatives receive a status update | Native membership read within the declared team/scope boundary |
 | Where the scan-window marker lives | `OperationConfig.records[<kind>]` — the most recent record row |
 | Reference material a pass reads | `OperationConfig.knowledge` |
 | Where escalations go | `OperationConfig.endpoints` |
@@ -112,9 +112,6 @@ registries.
 | endpoints.host_runner | endpoints |
 | endpoints.cloudflare_docs_mcp | endpoints |
 | endpoints.notion_connector | endpoints |
-| initiatives.0.id | initiatives |
-| initiatives.0.target_date | initiatives |
-| initiatives.1.id | initiatives |
 | private_surface | private_surface |
 
 ## What this lane does not claim

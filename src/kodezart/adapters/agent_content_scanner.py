@@ -27,24 +27,22 @@ from kodezart.core.protocols import AgentExecutor, PromptSetProvider
 from kodezart.core.stream_drain import drain
 from kodezart.types.domain.agent import CONTENT_AUDIT_SCHEMA, ContentAuditOutput
 from kodezart.types.domain.gating import (
-    JUDGMENT_ROUTING,
     TRACKER_ROSTER_MIN_REFERENCES,
-    ContentClass,
     DurabilityCategory,
     OutboundDestination,
     OutboundSurface,
     ScanFailureKind,
     ScanHit,
-    ScannerRouting,
     ScanResult,
     SurfaceDurability,
     durability_of,
+    surface_of,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
-_AUDIT_PERMISSION_MODE = "default"
+_AUDIT_PERMISSION_MODE = PermissionMode.INTERACTIVE
 
 #: Failure kinds a retry can plausibly change. Anything else is a settled
 #: answer of "no answer" and retrying it only spends money.
@@ -58,7 +56,7 @@ _RETRYABLE: frozenset[ScanFailureKind] = frozenset(
 
 
 class AgentContentScanner:
-    """``ContentScanner`` that dispatches an adversarial audit session."""
+    """``ContentJudgment`` that dispatches an adversarial audit session."""
 
     def __init__(
         self,
@@ -80,15 +78,6 @@ class AgentContentScanner:
         self._inspect_privacy = inspect_privacy
         self._log: BoundLogger = get_logger(__name__)
 
-    @property
-    def routing(self) -> ScannerRouting:
-        """Authored text may carry aggregates even inside repository artifacts."""
-        return ScannerRouting(
-            surfaces=frozenset(OutboundSurface),
-            content_classes=frozenset({ContentClass.AUTHORED}),
-            mandatory_destinations=JUDGMENT_ROUTING.mandatory_destinations,
-        )
-
     async def scan(
         self,
         *,
@@ -97,8 +86,9 @@ class AgentContentScanner:
     ) -> ScanResult:
         """Audit *content* for *destination*, or say why there is no answer."""
         aggregates = durability_of(destination) is SurfaceDurability.DURABLE
-        privacy = self._inspect_privacy and JUDGMENT_ROUTING.applies(
-            destination=destination, content_class=ContentClass.AUTHORED
+        privacy = (
+            self._inspect_privacy
+            and surface_of(destination) is not OutboundSurface.REPOSITORY
         )
         if not aggregates and not privacy:
             return ScanResult()

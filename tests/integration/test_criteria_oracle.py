@@ -30,7 +30,7 @@ from kodezart.types.domain.criteria import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -84,7 +84,7 @@ class MutatingEchoExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
@@ -245,7 +245,7 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key="oracle-run",
         )
@@ -341,7 +341,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key="oracle-feedback",
         )
@@ -390,7 +390,7 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
             ralph_branch="kodezart/oracle-12345678-ralph-abcdef01",
             base_spec=trunk_base("main"),
             work_base_ref="main",
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             acceptance_criteria=as_validated(
                 mint_criteria(

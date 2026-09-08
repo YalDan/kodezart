@@ -22,6 +22,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
@@ -57,7 +58,7 @@ class WorkflowSubmission(CamelCaseModel):
     base_spec: BaseSpec
     implied_base: BaseSpec | None
     scope: ScopeRef | None
-    permission_mode: str = Field(min_length=1)
+    permission_mode: PermissionMode
     allowed_tools: list[str]
 
 
@@ -101,7 +102,7 @@ class ExecutionContext(WorkflowContext):
     """
 
     base_spec: BaseSpec
-    permission_mode: str = Field(min_length=1)
+    permission_mode: PermissionMode
     allowed_tools: list[str]
 
     @property

@@ -8,13 +8,11 @@ from pydantic import AnyHttpUrl, TypeAdapter, ValidationError
 from kodezart.adapters.linear_references import LINEAR_WEB_HOSTS, linear_reference
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.types.domain.gating import (
-    UNCONDITIONAL_ROUTING,
     OutboundDestination,
     OutboundSurface,
     RedactionCategory,
     ScanFailureKind,
     ScanHit,
-    ScannerRouting,
     ScanResult,
     surface_of,
 )
@@ -76,10 +74,6 @@ class ReferenceContentScanner:
                 missing="private_surface.workspaces native parser",
             )
         self._private_surface = private_surface.model_copy(deep=True)
-
-    @property
-    def routing(self) -> ScannerRouting:
-        return UNCONDITIONAL_ROUTING
 
     async def scan(
         self, *, content: str, destination: OutboundDestination

@@ -13,6 +13,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from tests.fakes import (
     FakeAgentExecutor,
@@ -261,7 +262,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
             repo_url=None,
             base_spec=trunk_base("main"),
             scope=None,
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key="k",
         )
@@ -299,7 +300,7 @@ async def test_ralph_loop_threads_the_selection_into_stream_workflow() -> None:
                 ralph_branch="kodezart/f-ralph",
                 base_spec=trunk_base("main"),
                 work_base_ref="main",
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 acceptance_criteria=make_criteria("Tests pass"),
                 cache_key="k",

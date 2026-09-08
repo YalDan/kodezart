@@ -84,8 +84,6 @@ async def test_actual_native_sweep_reports_each_counterexample_and_clean_control
     workspace = GitWorktreeProvider(
         git=native,
         cache=cache,
-        committer_name="Fixture",
-        committer_email="fixture@example.invalid",
     )
     selected_op = operation.model_copy(
         update={

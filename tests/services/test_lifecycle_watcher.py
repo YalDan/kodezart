@@ -46,6 +46,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome, RunRecord, RunRecordFailure
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import ClaimStatus
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
@@ -454,7 +455,7 @@ class TestThePremiseAgainstTheShippedQueue:
                     base_spec=trunk_base("main"),
                     implied_base=None,
                     scope=None,
-                    permission_mode="bypassPermissions",
+                    permission_mode=PermissionMode.UNATTENDED,
                     allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
                 ),
             )
@@ -508,7 +509,7 @@ class TestThePremiseAgainstTheShippedQueue:
                     base_spec=trunk_base("main"),
                     implied_base=None,
                     scope=None,
-                    permission_mode="bypassPermissions",
+                    permission_mode=PermissionMode.UNATTENDED,
                     allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
                 ),
             )
@@ -580,7 +581,7 @@ class TestGracefulShutdownHandsTheClaimBack:
                 base_spec=trunk_base("main"),
                 implied_base=None,
                 scope=None,
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
             ),
         )

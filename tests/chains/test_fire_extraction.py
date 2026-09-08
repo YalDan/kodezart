@@ -18,6 +18,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.session import PermissionMode
 from tests.adapters.test_github_api import _completed_run, _empty_runs, _make_client
 from tests.chains.test_ralph_workflow import (
     _make_engine,
@@ -88,7 +89,7 @@ def request(*, issue_key=None):
         "repo_url": "https://github.com/owner/repo",
         "base_spec": trunk_base("main"),
         "scope": None,
-        "permission_mode": "bypassPermissions",
+        "permission_mode": PermissionMode.UNATTENDED,
         "allowed_tools": ["Bash"],
         "cache_key": "fire-extraction",
     }

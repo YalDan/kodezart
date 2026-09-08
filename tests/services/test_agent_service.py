@@ -6,6 +6,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
+from kodezart.types.domain.session import PermissionMode
 from tests.fakes import (
     FAKE_SESSION_TYPE,
     SUPPRESS_ALL_SKILLS,
@@ -52,7 +53,7 @@ async def test_stream_workflow_persists_changes() -> None:
             repo_path="/tmp/fake",
             branch_name="kodezart/test-branch-abc12345",
             ralph_branch="kodezart/test-branch-abc12345-ralph-def67890",
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             visibility=RepoVisibility.UNKNOWN,
         )
@@ -91,7 +92,7 @@ async def test_stream_passes_output_format() -> None:
             session_type=FAKE_SESSION_TYPE,
             prompt="x",
             repo_path="/tmp/fake",
-            permission_mode="plan",
+            permission_mode=PermissionMode.PLAN,
             allowed_tools=["Bash"],
             output_format=fmt,
         )
@@ -113,7 +114,7 @@ async def test_stream_propagates_executor_error() -> None:
                 session_type=FAKE_SESSION_TYPE,
                 prompt="x",
                 repo_path="/tmp/fake",
-                permission_mode="plan",
+                permission_mode=PermissionMode.PLAN,
                 allowed_tools=["Bash"],
             )
         ]

@@ -101,8 +101,6 @@ def _probe_service(tmp_path: Path) -> AgentService:
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="kodezart-live-probe",
-        committer_email="probe@kodezart-test.invalid",
     )
     executor = ClaudeClientExecutor(
         model=config.model,

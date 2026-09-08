@@ -377,7 +377,7 @@ async def test_actual_agent_service_forwards_fresh_dispatch_and_detached_workspa
         runner=service,
         prompts=load_registry(default_set=V5_SET),
         skills=SUPPRESS_ALL_SKILLS,
-        remote=AppConfig(git_remote="configured-remote").git_remote,
+        remote=AppConfig(git={"remote": "configured-remote"}).git.remote,
     )
     observation = await verifier.verify(REQUEST)
     assert observation.judgment.verdict is AuditVerdict.HOLDS
@@ -541,10 +541,10 @@ async def test_parsed_remote_value_reaches_the_actual_claim_reads(
     setup, monkeypatch, configured
 ):
     if configured is None:
-        monkeypatch.delenv("KODEZART_GIT_REMOTE", raising=False)
+        monkeypatch.delenv("KODEZART_GIT__REMOTE", raising=False)
     else:
-        monkeypatch.setenv("KODEZART_GIT_REMOTE", configured)
-    remote = AppConfig(_env_file=None).git_remote
+        monkeypatch.setenv("KODEZART_GIT__REMOTE", configured)
+    remote = AppConfig(_env_file=None).git.remote
     build, _, git, *_ = setup
     observed = await build(remote=remote).verify(REQUEST)
     assert observed.head_sha == HEAD

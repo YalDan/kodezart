@@ -93,7 +93,7 @@ async def native(claim_setup, tracker, repo, tmp_path):
                 source=git_source,
                 cache=cache,
                 operation=OPERATION,
-                remote=AppConfig(git_remote="configured-remote").git_remote,
+                remote=AppConfig(git={"remote": "configured-remote"}).git.remote,
             ),
             rulings=RulingRecordReader(tracker=port, operation=OPERATION),
             detector=detector or AssertionDriftDetector(git=git_source),

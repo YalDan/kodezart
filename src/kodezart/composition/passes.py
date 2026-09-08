@@ -433,7 +433,7 @@ async def build_dispatch_passes(
         max_bytes=config.tracker_asset_max_bytes,
         fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,
     )
-    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
+    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git.remote)
     # ONE cooldown for the whole operation: its dispatchers are one per
     # repository over a single provider account, so the limit one of them
     # meets is the limit all of them would meet next (KOD-281).
@@ -757,7 +757,7 @@ async def build_dispatch_runtime(
             gate=gate,
             git=git,
             cache=cache,
-            integration_workspace_dir=config.integration_workspace_dir,
+            integration_workspace_dir=config.git.integration_workspace_dir,
             recorder=recorder,
         )
     else:

@@ -47,6 +47,7 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import WorkflowSubmission
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
@@ -108,7 +109,7 @@ class GatedWorkflowEngine:
         scope: ScopeRef | None,
         issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
         run_identity: RunIdentity | None = None,
@@ -138,7 +139,7 @@ class ChattyWorkflowEngine:
         scope: ScopeRef | None,
         issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
         run_identity: RunIdentity | None = None,
@@ -245,7 +246,7 @@ def _request(prompt: str) -> WorkflowSubmission:
         base_spec=trunk_base("main"),
         implied_base=None,
         scope=None,
-        permission_mode="bypassPermissions",
+        permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
     )
 
@@ -331,7 +332,7 @@ class GatedQualityGate:
         base_spec: BaseSpec,
         work_base_ref: str,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
@@ -793,7 +794,7 @@ class RaisingWorkflowEngine:
         scope: ScopeRef | None,
         issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
         run_identity: RunIdentity | None = None,
@@ -1642,7 +1643,7 @@ class BaseRecordingEngine:
         scope: ScopeRef | None,
         issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
         run_identity: RunIdentity | None = None,

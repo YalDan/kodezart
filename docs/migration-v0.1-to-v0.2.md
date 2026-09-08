@@ -100,9 +100,9 @@ hidden from validation errors (`src/kodezart/core/config.py`,
 
 Unchanged in type and default (the current HTTP names are nested):
 `KODEZART_HTTP__PROJECT_NAME`, `KODEZART_HTTP__DEBUG`, `KODEZART_LOGGING__LEVEL`,
-`KODEZART_LOGGING__PRETTY`, `KODEZART_HTTP__API_V1_PREFIX`, `KODEZART_CLONE_CACHE_DIR`, `KODEZART_GIT_BASE_URL`,
-`KODEZART_GIT_REMOTE`, `KODEZART_GIT_COMMITTER_NAME`,
-`KODEZART_GIT_COMMITTER_EMAIL`, `KODEZART_MAX_ITERATIONS`,
+`KODEZART_LOGGING__PRETTY`, `KODEZART_HTTP__API_V1_PREFIX`, `KODEZART_GIT__CLONE_CACHE_DIR`, `KODEZART_GIT__BASE_URL`,
+`KODEZART_GIT__REMOTE`, `KODEZART_GIT__COMMITTER_NAME`,
+`KODEZART_GIT__COMMITTER_EMAIL`, `KODEZART_MAX_ITERATIONS`,
 `KODEZART_RETRY_MAX_ATTEMPTS`, `KODEZART_RETRY_INITIAL_INTERVAL`,
 `KODEZART_CI_POLL_INTERVAL_SECONDS`, `KODEZART_CI_POLL_MAX_ATTEMPTS`,
 `KODEZART_FORGE_API_TIMEOUT_SECONDS`, `KODEZART_FORGE_API_MAX_RETRIES`,
@@ -133,7 +133,7 @@ otherwise.
 | `KODEZART_FAN_IN_MAX_ATTEMPTS` | not present | `2` (1 to 5) | Nothing. |
 | `KODEZART_LOOP_PLATEAU_WINDOW` | not present | `2` (2 to 10) | Nothing; the loop now stops early on a plateau. |
 | `KODEZART_RETRY_RATE_LIMIT_FLOOR_SECONDS` | not present | `60.0` (1 to 3600) | Nothing. |
-| `KODEZART_INTEGRATION_WORKSPACE_DIR` | not present | `/tmp/kodezart-integration` | Nothing. |
+| `KODEZART_GIT__INTEGRATION_WORKSPACE_DIR` | not present | `/tmp/kodezart-integration` | Nothing. |
 | `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS` | not present | `3` (1 to 20) | Nothing. |
 | `KODEZART_CI_GRACE_POLL_INTERVAL_SECONDS` | not present | `10.0` (1 to 60) | Nothing. |
 | `KODEZART_CI_REF_NOT_FOUND_GRACE_POLLS` | not present | `3` (1 to 20) | Nothing. |
@@ -143,8 +143,6 @@ otherwise.
 | `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` | not present | `86400.0` (60 to 604800) | Nothing. |
 | `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` | not present | `900.0` (0 to 86400; must not exceed the record retention) | Nothing. |
 | `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` | not present | `512` (1 to 10000) | Nothing. |
-| `KODEZART_DENY_PATTERNS` | not present | every category `[]` except `credentials`, which carries the credential-shape regexes | Nothing; `{}` would delete the credential category, and the `org_private` key is refused. |
-| `KODEZART_DENY_PATTERN_VERDICTS` | not present | `redacted` for `cross_repo_names`, `tracker_urls`, `email_handles`, `org_private`; `blocked` for `infra_endpoints`, `credentials` | Nothing. |
 | `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` | not present | `false` | Nothing; `true` requires an operation config with `private_surface`. |
 | `KODEZART_CONTENT_SCAN_RETRY_MAX_ATTEMPTS` | not present | `2` (1 to 10) | Nothing. |
 | `KODEZART_CONTENT_SCAN_RETRY_INITIAL_INTERVAL` | not present | `1.0` (at least 0.1) | Nothing. |
@@ -376,9 +374,9 @@ message shapes:
 - `KODEZART_SKILLS_MODE=explicit` with an empty allowlist:
   `KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty KODEZART_SKILLS_ALLOWLIST`;
   the reverse: `KODEZART_SKILLS_ALLOWLIST must be empty when KODEZART_SKILLS_MODE=none`.
-- An `org_private` key in `KODEZART_DENY_PATTERNS`:
-  `KODEZART_DENY_PATTERNS must not carry a pattern list for org_private: ...`,
-  pointing to `OperationConfig.private_surface`.
+- Removed `deny_patterns` or `deny_pattern_verdicts` settings: an extra-input
+  validation error. Local credential checks and six category consequences are
+  now fixed; deployment facts and semantic privacy remain in `private_surface`.
 - A non-empty `KODEZART_KNOWLEDGE_SESSION_GRANTS` with no credential, an entry
   that is not a session type, or a field the declared transport never reads:
   a validation error naming the variable and the legal values.

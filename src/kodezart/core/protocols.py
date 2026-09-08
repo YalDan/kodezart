@@ -22,7 +22,6 @@ from kodezart.types.domain.gating import (
     GateDecision,
     OutboundDestination,
     RepoVisibility,
-    ScannerRouting,
     ScanResult,
     WriterShape,
 )
@@ -41,7 +40,7 @@ from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -295,7 +294,7 @@ class AgentExecutor(Protocol):
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -1180,7 +1179,7 @@ class AgentRunner(Protocol):
         repo_path: str | None = None,
         repo_url: str | None = None,
         branch: str | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -1203,7 +1202,7 @@ class AgentRunner(Protocol):
         base_branch: str = "main",
         branch_name: str | None = None,
         ralph_branch: str | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -1222,7 +1221,7 @@ class AgentRunner(Protocol):
         *,
         prompt: str,
         workspace_path: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -1269,7 +1268,7 @@ class QualityGate(Protocol):
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
@@ -1335,7 +1334,7 @@ class WorkflowEngine(Protocol):
         base_spec: BaseSpec,
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
@@ -1472,25 +1471,8 @@ class RepoVisibilityResolver(Protocol):
 
 
 @runtime_checkable
-class ContentScanner(Protocol):
-    """Finds outbound-content findings in one payload.
-
-    ``async`` because a judgment scanner cannot answer behind a ``def``; a
-    scanner that needs no I/O conforms with an ``async def`` awaiting
-    nothing, which is the honest shape rather than a concession.
-
-    ``destination`` is an input because the same string can be unremarkable
-    on one surface and a leak on another — a verdict that depends on where
-    the payload is going cannot be computed from the payload alone.
-
-    Returns a :class:`ScanResult`: hits or a typed failure, never an
-    exception crossing the port and never ``None``.
-    """
-
-    @property
-    def routing(self) -> ScannerRouting:
-        """When this scanner must be consulted."""
-        ...
+class ContentJudgment(Protocol):
+    """Judge authored outbound text using an independent session."""
 
     async def scan(
         self,
@@ -1498,7 +1480,7 @@ class ContentScanner(Protocol):
         content: str,
         destination: OutboundDestination,
     ) -> ScanResult:
-        """Every finding, or the typed reason there is no answer."""
+        """Findings or the typed reason judgment could not complete."""
         ...
 
 

@@ -8,13 +8,20 @@ import pytest
 import structlog
 
 from kodezart.composition.forge import build_forge_client
-from kodezart.composition.gating import outbound_scanners
+from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.tracker import build_tracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import McpCallUnansweredError, McpCredentialRefusedError
+from kodezart.core.logging import get_logger
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
-from kodezart.types.domain.gating import OutboundDestination, ScanFailureKind
+from kodezart.types.domain.gating import (
+    ContentClass,
+    OutboundDestination,
+    RepoVisibility,
+    ScanFailureKind,
+    WriterShape,
+)
 from kodezart.types.domain.privacy import PrivateSurface
 from tests.adapters.test_ci_rerun import REPO, SHA, ActionsAPI
 from tests.adapters.test_github_api import _make_client
@@ -376,7 +383,7 @@ async def test_composed_tracker_preserves_operator_retry_units(waits):
 
 async def test_composed_content_scanner_preserves_total_attempt_units(waits, tmp_path):
     executor = ScriptedAuditExecutor([], raises=OSError("temporary"))
-    scanners, _ = outbound_scanners(
+    gate = await build_outbound_gate(
         config=AppConfig(
             agentic_content_scanner_enabled=True,
             content_scan_retry_max_attempts=3,
@@ -391,9 +398,14 @@ async def test_composed_content_scanner_preserves_total_attempt_units(waits, tmp
         executor=executor,
         prompts=load_registry(bindings={"private_surface": FIXTURE_PRIVATE_SURFACE}),
         skills=NO_SKILLS,
+        log=get_logger(__name__),
     )
-    result = await scanners[-1].scan(
-        content=PROSE, destination=OutboundDestination.PR_BODY
+    result = await gate.gate(
+        content=PROSE,
+        destination=OutboundDestination.PR_BODY,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        content_class=ContentClass.AUTHORED,
     )
     assert result.failure is ScanFailureKind.TRANSPORT_ERROR
     assert len(executor.calls) == 3

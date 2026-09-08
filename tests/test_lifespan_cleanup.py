@@ -12,6 +12,7 @@ from kodezart import main
 from kodezart.composition.jobs import build_job_queue
 from kodezart.core.config import AppConfig
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
+from kodezart.types.domain.session import PermissionMode
 
 
 class LifecycleError(Exception):
@@ -416,7 +417,7 @@ async def test_actual_queue_watchers_finish_fire_records_before_transports_close
                             base_spec=trunk_base("main"),
                             implied_base=None,
                             scope=None,
-                            permission_mode="bypassPermissions",
+                            permission_mode=PermissionMode.UNATTENDED,
                             allowed_tools=["Read"],
                         ),
                     )
@@ -487,7 +488,7 @@ async def test_repeated_lifespan_cancellation_settles_the_actual_queue_worker(
                     base_spec=trunk_base("main"),
                     implied_base=None,
                     scope=None,
-                    permission_mode="bypassPermissions",
+                    permission_mode=PermissionMode.UNATTENDED,
                     allowed_tools=["Read"],
                 ),
             )
@@ -560,3 +561,59 @@ async def test_actual_lifespan_forwards_logging_choices(
         assert "logging_error_probe" in text
         assert ("\x1b[" in text) is pretty
         assert ('"event": "logging_error_probe"' in text) is (not pretty)
+
+
+async def test_actual_lifespan_forwards_git_section_and_resolves_shorthand(
+    resources, monkeypatch
+):
+    from dataclasses import replace
+
+    from kodezart.composition.workspace import build_git_stack as actual_stack
+    from kodezart.types.domain.session import SessionType
+    from tests.fakes import (
+        SUPPRESS_ALL_SKILLS,
+        FakeAgentExecutor,
+        FakeWorkspaceProvider,
+        PassThroughGate,
+        make_prompt_provider,
+    )
+
+    monkeypatch.setenv(
+        "KODEZART_GIT__BASE_URL", "https://configured.example.invalid/group"
+    )
+    monkeypatch.setenv("KODEZART_GIT__REMOTE", "configured")
+    monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-token")
+    seen = []
+    workspace = FakeWorkspaceProvider()
+
+    def stack(*, settings, github_token, prompts, gate):
+        seen.append((settings.model_dump(), github_token))
+        actual = actual_stack(
+            settings=settings,
+            github_token=github_token,
+            prompts=make_prompt_provider(),
+            gate=PassThroughGate(),
+        )
+        return replace(actual, workspace=workspace)
+
+    monkeypatch.setattr(main, "build_git_stack", stack)
+    monkeypatch.setattr(
+        main, "ClaudeClientExecutor", lambda **_kwargs: FakeAgentExecutor(events=[])
+    )
+    app = main.create_app()
+    async with app.router.lifespan_context(app):
+        async for _ in app.state.agent_service.stream(
+            prompt="probe",
+            repo_url="owner/repo",
+            permission_mode=PermissionMode.INTERACTIVE,
+            allowed_tools=[],
+            skills=SUPPRESS_ALL_SKILLS,
+            session_type=SessionType.API_QUERY,
+        ):
+            pass
+    assert seen[0][0]["remote"] == "configured"
+    assert seen[0][1] == "fixture-token"
+    assert any(
+        "https://configured.example.invalid/group/owner/repo.git" in call
+        for call in workspace.calls
+    )
