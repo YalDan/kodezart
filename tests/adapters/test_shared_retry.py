@@ -15,6 +15,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.errors import McpCallUnansweredError, McpCredentialRefusedError
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.gating import OutboundDestination, ScanFailureKind
+from kodezart.types.domain.privacy import PrivateSurface
 from tests.adapters.test_ci_rerun import REPO, SHA, ActionsAPI
 from tests.adapters.test_github_api import _make_client
 from tests.adapters.test_judgment_scanner import (
@@ -383,7 +384,9 @@ async def test_composed_content_scanner_preserves_total_attempt_units(waits, tmp
             content_audit_working_dir=str(tmp_path),
         ),
         operation=operation_config().model_copy(
-            update={"private_surface": FIXTURE_PRIVATE_SURFACE}
+            update={
+                "private_surface": PrivateSurface(description=FIXTURE_PRIVATE_SURFACE)
+            }
         ),
         executor=executor,
         prompts=load_registry(bindings={"private_surface": FIXTURE_PRIVATE_SURFACE}),
