@@ -789,3 +789,23 @@ async def test_a_preflight_refusal_strands_no_queue_and_no_open_transport(
     assert wired.closes == 1
     assert not hasattr(app.state, "job_queue")
     assert not hasattr(app.state, "pass_scheduler")
+
+
+async def test_loaded_operation_reaches_the_actual_addressed_engine(
+    monkeypatch, tmp_path, wired
+):
+    from kodezart.composition.engine import build_workflow_engine
+
+    received = []
+
+    def capture(**arguments):
+        received.append(arguments["operation"])
+        return build_workflow_engine(**arguments)
+
+    _configure(monkeypatch, tmp_path, _operation_toml())
+    monkeypatch.setattr("kodezart.main.build_workflow_engine", capture)
+    app = create_app()
+    async with lifespan(app):
+        operation = app.state.operation_config
+        assert operation is not None and "engineering" in operation.teams
+        assert len(received) == 1 and received[0] is operation

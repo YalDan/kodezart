@@ -103,6 +103,7 @@ class Fixture:
         config = AppConfig(_env_file=None, ticket_review_mode=TicketReviewMode.REVIEWED)
         return build_workflow_engine(
             config=config,
+            operation=self.operation,
             agent_service=AgentService(
                 git_base_url=config.git_base_url,
                 executor=self.executor,
@@ -201,6 +202,11 @@ async def prepared(request):
     fields = mandate_operation_fields()
     fields["issue_labels"].update({"decision": "question", "tracker": "record"})
     fields["marker_prefixes"] = MARKER_PREFIXES
+    fields["teams"] = {"board": {"name": "fixture-team", "key": "FIX"}}
+    fields["repos"] = [
+        {"url": REPOSITORY, "trunk": "main"},
+        {"url": "https://forge.invalid/other/repository", "trunk": "main"},
+    ]
     operation = OperationConfig.model_validate(fields)
     server = ScopeMcpServer()
     server.state_types.update({"Todo": "unstarted", "Done": "completed"})
@@ -432,4 +438,44 @@ async def test_validator_result_cannot_substitute_its_address(
         await prepared.drive()
     assert len(prepared.executor.calls) == 1
     assert prepared.workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+    prepared.no_writes()
+
+
+@pytest.mark.parametrize(
+    "route",
+    ["bound-here", "bound-elsewhere", "implicit", "missing-team", "missing-repo"],
+)
+async def test_recorded_marker_cannot_override_operation_routing(prepared, route):
+    operation = prepared.operation.model_dump()
+    if route == "bound-here":
+        operation["teams"]["board"]["repository"] = REPOSITORY
+    elif route == "bound-elsewhere":
+        operation["teams"]["board"]["repository"] = operation["repos"][1]["url"]
+    elif route == "implicit":
+        operation["repos"] = operation["repos"][:1]
+    elif route == "missing-team":
+        operation["teams"] = {}
+    else:
+        operation["repos"] = operation["repos"][1:]
+    prepared.operation = OperationConfig.model_validate(operation)
+    with pytest.raises(TrackerFirePreparationError, match="recorded-route"):
+        await prepared.drive()
+    assert not prepared.cache.calls and not prepared.executor.calls
+    prepared.no_writes()
+
+
+@pytest.mark.parametrize("missing", ["operation", "native-team"])
+async def test_absent_routing_authority_refuses_before_repository_access(
+    prepared, missing
+):
+    if missing == "operation":
+        prepared.operation = None
+    else:
+        prepared.server.issues[ISSUE].team = "outside-operation"
+        prepared.fake.issues[ISSUE] = prepared.fake.issues[ISSUE].model_copy(
+            update={"team_key": None}
+        )
+    with pytest.raises(TrackerFirePreparationError, match="recorded-route"):
+        await prepared.drive()
+    assert not prepared.cache.calls and not prepared.executor.calls
     prepared.no_writes()

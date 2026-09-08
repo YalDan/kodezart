@@ -957,7 +957,12 @@ The public `OriginRoutedWorkflowEngine.run` now prepares an explicitly addressed
 scoped FIRE through `AddressedTrackerFirePreparation` when a tracker is composed.
 The existing complete readiness read must uniquely select the issue. Its FIRE
 run identity, recorded repository and recorded `BaseSpec` must agree with the
-queued inputs before repository access. This bounded first-entry arm refuses
+queued inputs before repository access. The loaded operation reaches this actual
+entry from application composition. Its existing `teams_scanned_by` and
+`teams_bound_to` rules must establish a known unbound team and a declared target
+repository; missing authority, explicit bindings and the implicit single-repository
+binding refuse here. A stale marker cannot override configured routing.
+This bounded first-entry arm refuses
 existing deliverable, iteration, recovery or best-iteration refs until scoped
 resume-head selection is implemented. An integration ref remains base provenance.
 

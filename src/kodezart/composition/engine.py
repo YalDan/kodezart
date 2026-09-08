@@ -38,6 +38,7 @@ from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.skills import SkillsSelection
@@ -197,6 +198,7 @@ def rate_limit_delay_floor(config: AppConfig) -> DelayFloor:
 def build_workflow_engine(
     *,
     config: AppConfig,
+    operation: OperationConfig | None,
     agent_service: AgentService,
     git: GitService,
     cache: RepoCache,
@@ -294,6 +296,7 @@ def build_workflow_engine(
         if tracker is None
         else AddressedTrackerFirePreparation(
             tracker=tracker,
+            operation=operation,
             git=git,
             cache=cache,
             remote=config.git_remote,

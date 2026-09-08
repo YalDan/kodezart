@@ -449,6 +449,7 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
     tracker = RecordingScopeTracker()
     try:
         engine = build_workflow_engine(
+            operation=None,
             # The shared prompt fixture resolves its set for the reviewed
             # mode, and the ticket loop refuses a config that asks for a
             # guarantee the resolved set cannot deliver.

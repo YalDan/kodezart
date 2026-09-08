@@ -11,7 +11,7 @@ from kodezart.domain.errors import TrackerFirePreparationError
 from kodezart.services.git_observations import read_remote_head
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.branch import BaseSpec, WorkRefRole
-from kodezart.types.domain.operation import RunKind
+from kodezart.types.domain.operation import OperationConfig, RunKind
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.tracker_feasibility import (
@@ -33,12 +33,14 @@ class AddressedTrackerFirePreparation:
         self,
         *,
         tracker: TrackerPort,
+        operation: OperationConfig | None,
         git: GitService,
         cache: RepoCache,
         validator: TrackerCriteriaValidator,
         remote: str,
     ) -> None:
         self._tracker: TrackerPort = tracker
+        self._operation = operation
         self._git: GitService = git
         self._cache: RepoCache = cache
         self._validator: TrackerCriteriaValidator = validator
@@ -70,6 +72,16 @@ class AddressedTrackerFirePreparation:
         )
         if len(targets) != 1:
             raise refuse("the addressed issue is not uniquely ready in this scope")
+        operation = self._operation
+        if operation is None or repo_url not in {row.url for row in operation.repos}:
+            raise refuse("recorded-route preparation requires a declared repository")
+        team = targets[0].issue.team_key
+        if team is None or team not in operation.teams_scanned_by(repo_url):
+            raise refuse("recorded-route preparation requires a known unbound team")
+        if team in operation.teams_bound_to(repo_url):
+            raise refuse(
+                "recorded-route preparation cannot select a configured team route"
+            )
         repository_url = await self._tracker.recorded_repository(issue_key=issue_key)
         if repository_url is None or repository_url != repo_url:
             raise refuse("the queued repository differs from the native issue record")

@@ -51,6 +51,14 @@ async def native_repository(prepared, tmp_path):
     )
     url = bare.as_uri()
     prepared.repository(url)
+    prepared.operation = prepared.operation.model_copy(
+        update={
+            "repos": (
+                prepared.operation.repos[0].model_copy(update={"url": url}),
+                prepared.operation.repos[1],
+            )
+        }
+    )
     return prepared, url, bare, default_sha, dispatch_sha
 
 
