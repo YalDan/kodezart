@@ -148,3 +148,27 @@ def test_moving_the_only_construction_to_another_owner_fails(identity):
     sources["another.py"] = sources.pop(IDENTITY_OWNERS[identity])
     failures = identity_violations(sources)
     assert len(failures) == 1 and identity in failures[0]
+
+
+@pytest.mark.parametrize("declaration", ["RulingId = str", "RulingId: TypeAlias = str"])
+def test_qualified_shadow_cannot_make_text_an_identity(declaration):
+    source = (
+        f"class Types:\n    {declaration}\n"
+        "class BadRecord:\n    ruling_id: Types.RulingId\n"
+        "class GoodRecord:\n    ruling_id: RulingId\n"
+    )
+    assert invalid_ruling_fields(source) == (4,)
+    assert (
+        invalid_ruling_fields(
+            "import somewhere as namespace\nclass Record:\n"
+            "    ruling_id: namespace.RulingId"
+        )
+        == ()
+    )
+
+
+def test_aliasing_a_local_namespace_preserves_its_untyped_address_refusal():
+    assert invalid_ruling_fields(
+        "class Types:\n    RulingId = str\n"
+        "Alias = Types\nclass Record:\n    ruling_id: Alias.RulingId"
+    ) == (5,)
