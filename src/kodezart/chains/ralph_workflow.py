@@ -38,7 +38,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
-from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.workflow import (
     ExecutionContext,
     WorkflowState,
@@ -88,7 +88,7 @@ class RalphWorkflowEngine:
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         cache_key: str,
         run_identity: RunIdentity | None = None,
     ) -> AsyncIterator[AgentEvent]:
@@ -317,7 +317,7 @@ class RalphWorkflowEngine:
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         cache_key: str,
         run_identity: RunIdentity | None = None,
     ) -> tuple[WorkflowState, RunnableConfig]:

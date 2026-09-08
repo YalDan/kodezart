@@ -38,7 +38,7 @@ from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import PermissionMode, SessionType
+from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
 _log: BoundLogger = get_logger(__name__)
@@ -65,7 +65,7 @@ async def run_prompt_pass(
     gate: PassGate | None,
     workspace_path: str,
     permission_mode: PermissionMode,
-    allowed_tools: list[str],
+    allowed_tools: AllowedTools,
     skills: SkillsSelection,
     session_type: SessionType,
 ) -> PassRun:
@@ -79,7 +79,7 @@ async def run_prompt_pass(
     Which of the two happened is RETURNED rather than only logged, because
     the caller has an obligation that turns on it: a skipped tick produced
     no run, and the record its scheduler would otherwise backfill would
-    assert one (KOD-176).
+    assert one.
 
     Raises :class:`PromptRenderError` naming every unconditional
     placeholder without a config value — a pass whose identities cannot
@@ -118,7 +118,7 @@ async def run_prompt_pass(
     the runner will look for, off :meth:`RunIdentity.title` rather than a
     second spelling of it — a clause prescribing no title left every
     session-written row invisible to a runner matching per run, which
-    backfilled a second row beside each one (KOD-290).
+    backfilled a second row beside each one.
     """
     loop = asyncio.get_running_loop()
     started = loop.time()

@@ -2,8 +2,8 @@
 
 Identity is assigned at generation time, never by a model.  The sweep, the
 persisted artifact, evaluator dispatch and grading, and the re-injected
-feedback text all key off these ids and never off criterion text: an
-echoed string drifts, and KOD-11 measured it drifting.
+feedback text all key off these ids and never off criterion text: a
+model-echoed string can drift.
 """
 
 from collections.abc import Sequence

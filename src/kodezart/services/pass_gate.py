@@ -102,7 +102,7 @@ class PassGate:
         self._tracker: TrackerPort = tracker
         #: What this process's own writes left on the issues it touched.
         #: Shared with the writer, because a listing carries no actor and
-        #: the reading alone cannot say whose edit it is (KOD-175).
+        #: the reading alone cannot say whose edit it is.
         self._ledger: SelfWriteLedger = ledger
         self._signals: tuple[PassSignal, ...] = tuple(signals)
         self._team_keys: tuple[str, ...] = tuple(team_keys)

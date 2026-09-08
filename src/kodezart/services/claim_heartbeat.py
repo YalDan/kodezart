@@ -1,6 +1,6 @@
 """Keeping a claim live for exactly as long as the work it guards runs.
 
-Measured 2026-08-25 (KOD-147): a claim marker written with the configured
+Measured 2026-08-25: a claim marker written with the configured
 fifteen-minute lease guarded a fire that was still running ninety-one
 minutes later, and nothing renewed it.  Outliving the lease is the normal
 case rather than the exception, and the only thing that stopped a second
@@ -20,7 +20,7 @@ The interval is the lease times a configured FRACTION of it, so no
 deployment can be configured to renew more slowly than the lease it is
 renewing — the failure this whole module exists to remove.
 
-**The other end of the claim's life is here too** (KOD-152).  Renewal stops
+**The other end of the claim's life is here too**.  Renewal stops
 when the work stops, and the claim it was renewing is handed back in the
 same act, under the holder identity it was renewing with.  A lease left to
 run out is a RECOVERY and not a handover: it costs the issue the rest of
@@ -141,7 +141,7 @@ class ClaimHeartbeat:
                 # the credential: no later renewal can succeed, and every
                 # interval from now on would repeat this line forever.  It
                 # is said once, loudly, and the lease is left to lapse,
-                # which is the recovery this module rests on (KOD-171).
+                # which is the recovery this module rests on.
                 await self._log.aerror(
                     "claim_renewal_credential_refused",
                     issue_key=issue_key,

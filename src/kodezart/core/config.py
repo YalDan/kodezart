@@ -2,7 +2,7 @@
 
 from typing import Self
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import (
     BaseSettings,
     EnvSettingsSource,
@@ -12,19 +12,18 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from kodezart.core.agent_settings import AgentSettings
 from kodezart.core.git_settings import GitSettings
 from kodezart.core.http_settings import HttpSettings
 from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging_settings import LoggingSettings
+from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.types.domain.dispatch import PassSignal
-from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
     TicketReviewMode,
 )
-from kodezart.types.domain.tracker import TrackerBackend
 
 
 class AppConfig(BaseSettings):
@@ -67,6 +66,17 @@ class AppConfig(BaseSettings):
                 return False
             name = key.removeprefix(prefix)
             return name in {
+                "tracker_mcp_server_name",
+                "tracker_mcp_server_url",
+                "tracker_mcp_auth_header",
+                "tracker_mcp_auth_scheme",
+                "tracker_token",
+                "tracker_timeout_seconds",
+                "tracker_mcp_call_timeout_seconds",
+                "tracker_mcp_sse_read_timeout_seconds",
+                "tracker_mcp_error_detail_limit",
+                "tracker_max_retries",
+                "tracker_retry_backoff_factor",
                 "organize_max_admission_rounds",
                 "organize_max_convergence_rounds",
                 "union_check_cleanup_poll_interval_seconds",
@@ -76,6 +86,14 @@ class AppConfig(BaseSettings):
                 "integration_workspace_dir",
                 "git_committer_name",
                 "git_committer_email",
+                "model",
+                "fallback_model",
+                "session_models",
+                "claude_output_style",
+                "claude_home_dir",
+                "setting_sources",
+                "skills_mode",
+                "skills_allowlist",
                 "project_name",
                 "debug",
                 "api_v1_prefix",
@@ -300,66 +318,6 @@ class AppConfig(BaseSettings):
             "always runs independently of this setting."
         ),
     )
-    model: str | None = Field(
-        default=None,
-        description="Claude model override. None uses SDK default.",
-    )
-    fallback_model: str | None = Field(
-        default=None,
-        description=(
-            "Engine a session falls back to when the primary declines a "
-            "request. None declares no fallback, which is not a default "
-            "naming an engine: an installation that has not decided which "
-            "second engine it may reach sends none."
-        ),
-    )
-    session_models: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "JSON object mapping a prompt function key to the engine its "
-            "sessions run on, overriding the global model for those keys "
-            "only (KOD-161). Engine choice is deployment-shaped, so the "
-            "table lives here rather than in a prompt set, which only "
-            "DECLARES intended engines. Empty — the default — changes "
-            "nothing: every key resolves as before. No engine name is "
-            "defaulted anywhere."
-        ),
-    )
-
-    @field_validator("session_models", mode="before")
-    @classmethod
-    def _session_model_keys_name_prompt_keys(cls, value: object) -> object:
-        """Name every offending key, deliberately and safely.
-
-        The same carve-out ``knowledge.session_grants`` documents: the
-        legal vocabulary is the closed ``PromptKey`` enum, so an offender
-        is by definition not a secret, and naming it is what turns a typo
-        into a one-line fix instead of a key nothing ever reads.
-        """
-        if not isinstance(value, dict):
-            return value
-        legal = {member.value for member in PromptKey}
-        offending = [str(key) for key in value if str(key) not in legal]
-        if offending:
-            named = ", ".join(repr(entry) for entry in offending)
-            allowed = ", ".join(sorted(legal))
-            msg = (
-                f"session_models names no prompt function key: {named} "
-                f"(allowed: {allowed})"
-            )
-            raise ValueError(msg)
-        return value
-
-    claude_output_style: str | None = Field(
-        default=None,
-        description=(
-            "Claude Code output style every engine session runs under. None "
-            "sends no style at all and the CLI's own default stands; no "
-            "style is ever picked in code. A declared style the session's "
-            "own opening message does not confirm fails that session rather "
-            "than running it under some other system prompt."
-        ),
-    )
 
     remediation_max_rounds: int = Field(
         default=1,
@@ -499,112 +457,7 @@ class AppConfig(BaseSettings):
         default="https://api.github.com",
         description="Base URL for code hosting platform REST API.",
     )
-    tracker: TrackerBackend = Field(
-        default=TrackerBackend.LINEAR,
-        description=(
-            "Which tracker adapter implements TrackerPort. Adding a backend "
-            "is a new adapter plus a member here — never a consumer change."
-        ),
-    )
-    tracker_mcp_server_name: str = Field(
-        default="linear",
-        description=(
-            "Identity of the vendor MCP server the tracker adapter dials. Two "
-            "consumers: the transport factory building the programmatic client "
-            "on the deterministic path, which stamps this name on every "
-            "transport log line and error, and the tracker-side record sink "
-            "(KOD-170), whose verification refusals carry the same name."
-        ),
-    )
-    tracker_mcp_server_url: str = Field(
-        default="https://mcp.linear.app/mcp",
-        description="Endpoint of the vendor MCP server the tracker adapter dials.",
-    )
-    tracker_mcp_auth_header: str = Field(
-        default="Authorization",
-        min_length=1,
-        description="Request header the tracker credential is presented in.",
-    )
-    tracker_mcp_auth_scheme: str = Field(
-        default="Bearer",
-        min_length=1,
-        description="Scheme prefixing the tracker credential in its auth header.",
-    )
-    tracker_token: SecretStr | None = Field(
-        default=None,
-        exclude=True,
-        description=(
-            "Tracker credential for the MCP server. Environment only, "
-            "excluded from serialization, and masked in repr: a dumped "
-            "config is copied into logs, fixtures and error payloads."
-        ),
-    )
-    tracker_timeout_seconds: float = Field(
-        default=30.0,
-        ge=5.0,
-        le=120.0,
-        description=(
-            "Timeout the tracker MCP transport gives one HTTP exchange with "
-            "the server, on every phase but the session stream's read: a "
-            "streamable-HTTP response stays open across quiet minutes, and "
-            "that phase is bounded by "
-            "KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS instead."
-        ),
-    )
-    tracker_mcp_call_timeout_seconds: float = Field(
-        default=60.0,
-        ge=1.0,
-        le=120.0,
-        description=(
-            "Seconds one tracker MCP tool call may wait for its answer "
-            "before it is abandoned as the typed transport failure. A "
-            "session torn down mid-call — the shape a refused credential "
-            "arrives in, measured 2026-09-01 (KOD-171) — never sends the "
-            "close its reader is waiting for, so without this bound the "
-            "call in flight waits forever and the pass holding it never "
-            "returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that "
-            "bound is the transport's, on the HTTP exchange; this one is the "
-            "session's, on the wait for one answer."
-        ),
-    )
-    tracker_mcp_sse_read_timeout_seconds: float = Field(
-        default=300.0,
-        ge=30.0,
-        le=3600.0,
-        description=(
-            "Seconds the tracker MCP session's event stream may go quiet "
-            "before its read is abandoned. The third bound on this "
-            "transport and the only one about the STREAM: "
-            "KODEZART_TRACKER_TIMEOUT_SECONDS bounds one HTTP exchange's "
-            "connect and write phases, KODEZART_TRACKER_MCP_CALL_TIMEOUT_"
-            "SECONDS bounds the wait for one answer, and this bounds how "
-            "long the long-lived streamable-HTTP response may say nothing "
-            "at all. The default is the value the session ran on while the "
-            "bound came from a private vendor constant."
-        ),
-    )
-    tracker_mcp_error_detail_limit: int = Field(
-        default=500,
-        ge=80,
-        le=8000,
-        description=(
-            "Characters of the server's OWN error text carried into a "
-            "tracker MCP transport failure. A refusal that drops the "
-            "vendor's diagnosis costs a whole boot cycle to recover it."
-        ),
-    )
-    tracker_max_retries: int = Field(
-        default=3,
-        ge=0,
-        le=10,
-        description="Maximum retry attempts for a transient tracker MCP failure.",
-    )
-    tracker_retry_backoff_factor: float = Field(
-        default=1.0,
-        ge=0.1,
-        le=30.0,
-        description="Base backoff multiplier in seconds for tracker MCP retries.",
-    )
+    tracker: TrackerSettings = Field(default_factory=TrackerSettings)
     tracker_claim_lease_seconds: float = Field(
         default=900.0,
         ge=60.0,
@@ -819,6 +672,8 @@ class AppConfig(BaseSettings):
         default_factory=KnowledgeSettings,
         description="Knowledge session grants and typed MCP connection.",
     )
+    agent: AgentSettings = Field(default_factory=AgentSettings)
+
     checkpoint_url: str | None = Field(
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
@@ -863,41 +718,12 @@ class AppConfig(BaseSettings):
         ),
     )
 
-    skills_mode: SkillsMode = Field(
-        default=SkillsMode.NONE,
-        description=(
-            "Three-state skill selection: NONE suppresses every skill, ALL "
-            "loads every discovered skill, EXPLICIT loads the allowlist."
-        ),
-    )
-    skills_allowlist: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Skill names loaded under EXPLICIT mode. Must be empty in every "
-            "other mode. Names are host-provisioned at user scope."
-        ),
-    )
-    setting_sources: list[SettingSource] = Field(
-        default_factory=lambda: [
-            SettingSource.USER,
-            SettingSource.PROJECT,
-            SettingSource.LOCAL,
-        ],
-        description=(
-            "Settings sources passed explicitly to agent sessions so enabling "
-            "the skills knob never silently narrows loaded settings."
-        ),
-    )
     operation_config: str | None = Field(
         default=None,
         description=(
             "Filesystem path to the operation config TOML. None means no "
             "operation config is loaded and its binding namespace is empty."
         ),
-    )
-    claude_home_dir: str = Field(
-        default="~/.claude",
-        description="Host directory holding user-scope skills and plugins.",
     )
     loop_plateau_window: int = Field(
         default=2,
@@ -922,30 +748,6 @@ class AppConfig(BaseSettings):
                 "audit_sweep_interval_seconds"
             )
         return self
-
-    @model_validator(mode="after")
-    def _check_skills_configuration(self) -> Self:
-        """Reject the two contradictory skill configurations at load time."""
-        if self.skills_mode is SkillsMode.EXPLICIT and not self.skills_allowlist:
-            msg = (
-                "KODEZART_SKILLS_MODE=EXPLICIT requires a non-empty "
-                "KODEZART_SKILLS_ALLOWLIST"
-            )
-            raise ValueError(msg)
-        if self.skills_mode is not SkillsMode.EXPLICIT and self.skills_allowlist:
-            msg = (
-                f"KODEZART_SKILLS_ALLOWLIST must be empty when "
-                f"KODEZART_SKILLS_MODE={self.skills_mode.value}"
-            )
-            raise ValueError(msg)
-        return self
-
-    def skills_selection(self) -> SkillsSelection:
-        """The typed three-state selection threaded to executor sessions."""
-        return SkillsSelection(
-            mode=self.skills_mode,
-            allowlist=tuple(self.skills_allowlist),
-        )
 
     def explicit_max_reviews(self) -> int | None:
         """``max_reviews`` when the deployment configured one, else ``None``.

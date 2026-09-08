@@ -11,7 +11,7 @@ the retry-eligible failures and ``ForgeAPIError`` for the rest.
 The one deliberate exception is ``extract_owner_repo``'s ``ValueError``
 on an origin this forge does not own.  That is a domain refusal rather
 than a vendor leak, it is raised before any request, and the composition
-root routes such origins to another adapter rather than here (KOD-148).
+root routes such origins to another adapter rather than here.
 """
 
 import asyncio
@@ -501,8 +501,8 @@ class GitHubAPIClient:
 
         Matching lives here, not in the caller: the reference convention is
         a property of this forge's pull requests.  The key is matched as a
-        whole token in the title or body, so ``KOD-5`` never matches
-        ``KOD-58``.  A branch name is never parsed — an issue identity is
+        whole token in the title or body, never as the prefix of a longer
+        key.  A branch name is never parsed — an issue identity is
         not derivable from one.
         """
         owner, repo = extract_owner_repo(repo_url)

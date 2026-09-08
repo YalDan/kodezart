@@ -12,8 +12,7 @@ scope the boot entered stays on the boot's stack with nothing under it.
 So the session lives in a task of this module's own, and ``open``,
 ``call_tool`` and ``close`` are MESSAGES to it.  Every cancellation the
 SDK produces then lands inside that one task, every caller awaiting an
-answer is handed a typed error, and no task outside is touched
-(KOD-270, KOD-177).
+answer is handed a typed error, and no task outside is touched.
 
 What differs between one transport and another is stated in
 :class:`HostedSessionTransport` and nowhere else: how a session is
@@ -79,7 +78,7 @@ class _PendingCall:
     #: Whether the host has handed this call to the session.  A call still
     #: in the inbox when the session ends was never written and may be
     #: made again; one the session had was written, and whether the
-    #: server ran it is unknown (KOD-305).
+    #: server ran it is unknown.
     written: bool = False
 
 
@@ -107,7 +106,7 @@ def _died_of(exc: BaseException) -> str:
     task group, which collects whatever ended it into an exception GROUP,
     and a death a call discovered is carried in this module's own signal
     inside that group.  Neither wrapper is something an operator can act
-    on — the measured class is (KOD-286), and it is what a reopen names.
+    on; the underlying failure class is what a reopen names.
     """
     if isinstance(exc, _SessionGoneError):
         return exc.cause_name
@@ -137,8 +136,7 @@ class _SessionGoneError(Exception):
     serving loop to notice — it is waiting on its inbox, not on the
     server.  Left alone the host would go on accepting calls onto a dead
     session and answering each with the same death, and the reopen a call
-    is owed would never be reached because the phase never left SERVING
-    (KOD-177).
+    is owed would never be reached because the phase never left SERVING.
 
     Raised rather than handled here so the session ends the way every
     other session ends: the task group collapses, and the task that
@@ -159,7 +157,7 @@ async def _join(host: asyncio.Task[None]) -> None:
     has already told whoever was waiting on an answer, and the SDK's task
     group ends a broken session by CANCELLING — so re-raising here would
     carry that cancellation into a task that only asked to close, which is
-    the shape the hosting task exists to end (KOD-270).
+    the shape the hosting task exists to end.
 
     Waited on rather than gathered, because gathering CANCELS what it is
     waiting for when the waiter is cancelled: a shutdown that ran out of
@@ -198,9 +196,9 @@ class HostedSessionTransport(ABC):
 
         A VALUE and not a field set: spreading a per-transport mapping
         into the event gave ``mcp_session_opened`` one shape carrying a
-        url and another carrying a command, which is the divergence
-        KOD-192 forbids — and a spread is invisible to the census that
-        forbids it, so the guard could not have found this one.
+        url and another carrying a command, violating the shared event shape.
+        A spread is invisible to the field census, so that guard could
+        not have found this divergence.
         """
 
     @abstractmethod
@@ -250,7 +248,7 @@ class HostedSessionTransport(ABC):
         to leave to a default.  A transport that cannot tell answers
         :class:`CallFailed`, which replays nothing and ends nothing: a
         failure nobody could attribute to the session is not evidence the
-        session is gone (KOD-192).
+        session is gone.
         """
 
     def failure_for(
@@ -310,10 +308,10 @@ class HostedSessionTransport(ABC):
 
         Two arms, by whether the host had handed the call to the session.
         Not yet: nothing reached the server, and the closed-session class
-        lets the caller make it again (KOD-177).  Already: the request was
+        lets the caller make it again.  Already: the request was
         written and the server may have run it, so it leaves as unanswered
         and is not made again — on THIS transport too, which used to
-        re-send every call in flight when its stream dropped (KOD-305).
+        re-send every call in flight when its stream dropped.
         """
         ended = McpSessionClosedError("the session ended", server_name=self.server_name)
         return self.failure_for(
@@ -329,7 +327,7 @@ class HostedSessionTransport(ABC):
         A caller nobody opened, or one the shutdown already closed: there
         is no session to reopen and nobody is in service to reopen it for.
         An ENDED session is the other case and never reaches here — a call
-        meeting one reopens it (KOD-300).
+        meeting one reopens it.
         """
         return McpTransportError(
             "the MCP session is not open",
@@ -367,7 +365,7 @@ class HostedMcpSession:
         self._transport: HostedSessionTransport = transport
         #: The task that OWNS the session — opens it, answers calls on it,
         #: and closes it — so every cancellation the SDK's task group
-        #: produces lands inside this module (KOD-270).
+        #: produces lands inside this module.
         self._host: asyncio.Task[None] | None = None
         #: Where a call is posted to the host, and the calls it still owes
         #: answers to.  Both are replaced per session: an inbox outliving
@@ -385,7 +383,7 @@ class HostedMcpSession:
         #: cancelled before it could be joined — goes on unwinding, and
         #: what it unwinds is no longer anybody's session.  Measured
         #: 2026-09-04: the orphan's teardown ended the session opened
-        #: after it and failed the call in flight on that one (KOD-177).
+        #: after it and failed the call in flight on that one.
         self._generation: int = 0
         #: Hosts let go of but not yet joined — the join was cancelled
         #: under the caller — so ``close`` can wait for them.  A host
@@ -398,7 +396,7 @@ class HostedMcpSession:
         #: by one dropped stream reopen through it one at a time, and the
         #: first to reopen reopens for all of them; a shutdown that arrives
         #: mid-reopen waits for the fresh host so it is the one closed
-        #: rather than one left running (KOD-300).
+        #: rather than one left running.
         self._lifetime: asyncio.Lock = asyncio.Lock()
         self._log: BoundLogger = get_logger(__name__)
 
@@ -408,7 +406,7 @@ class HostedMcpSession:
         The dial and the handshake happen INSIDE the host, and what this
         awaits is a message from it — so a failure under the SDK's task
         group ends the host and is handed back here as a value, rather
-        than cancelling whichever task called ``open`` (KOD-270, KOD-271).
+        than cancelling whichever task called ``open``.
         """
         async with self._lifetime:
             await self._start()
@@ -418,8 +416,7 @@ class HostedMcpSession:
 
         A handshake that fails leaves the phase where it found it: a boot's
         open leaves the caller CLOSED as it was, and a reopen leaves it
-        ENDED — still in service, so the next call tries its own reopen
-        (KOD-287).
+        ENDED — still in service, so the next call tries its own reopen.
         """
         if self._host is not None:
             raise McpTransportError(
@@ -488,12 +485,12 @@ class HostedMcpSession:
         with the calls beside it.  What the join then waits for is the
         calls the session still owes, each bounded by the transport's own
         ``call_timeout`` — which is why that bound is required rather than
-        defaulted (KOD-177).
+        defaulted.
 
         The caller is CLOSED whether or not there was a host to join.  A
         caller whose last reopen failed holds no host and is still in
         service, and a call arriving after the shutdown must refuse rather
-        than dial a session nobody will close (KOD-300).
+        than dial a session nobody will close.
         """
         async with self._lifetime:
             host = self._host
@@ -527,13 +524,13 @@ class HostedMcpSession:
         A session that ENDS under a call in flight is answered rather than
         abandoned: every call the host still owes is resolved with the
         closed-session class on its way out, so a worker waiting here is
-        told rather than left (KOD-270, KOD-272).
+        told rather than left.
 
         Handing the call over is SYNCHRONOUS up to the wait, so a host
         that has already drained cannot be handed a call afterwards.
 
         A session that has ENDED is reopened and the call goes again —
-        once per call, never once per boot (KOD-300, KOD-177, KOD-287).
+        once per call, never once per boot.
         """
         inbox = self._inbox
         if inbox is None or self._phase is not _Phase.SERVING:
@@ -590,7 +587,7 @@ class HostedMcpSession:
         sessions to learn what the first attempt already said, and hide
         the failure an operator has to see.  A reopen that fails raises
         the closed-session class under the reopen's own words and leaves
-        the caller IN SERVICE, so the next call tries its own (KOD-287).
+        the caller IN SERVICE, so the next call tries its own.
 
         Under the lifetime lock, because a session ends under every call
         in flight at once: the first worker through reopens, and each one
@@ -742,7 +739,7 @@ class HostedMcpSession:
         cancels every answer, and every reply still owed is resolved with
         the closed-session class HERE, before the SDK's own contexts
         unwind — a session with an id is terminated over the wire on the
-        way out, and a worker is not made to wait on that (KOD-272).
+        way out, and a worker is not made to wait on that.
         """
         try:
             async with anyio.create_task_group() as answers:
@@ -781,7 +778,7 @@ class HostedMcpSession:
             # the CALLER makes the call again is the exception's class,
             # and whether the SESSION is over is this.  They came apart
             # the day a request written and never answered had to end the
-            # session without being replayed (KOD-305).
+            # session without being replayed.
             if became.session_died:
                 # The phase moves BEFORE this call's waiter can run again:
                 # both statements are synchronous, so the caller resumes
@@ -799,7 +796,7 @@ class HostedMcpSession:
 
         A task cancelled while it awaits a future cancels that future, so
         a worker whose pass ran out of budget mid-call leaves a reply
-        nothing may resolve: measured 2026-09-02 (KOD-270 review), the
+        nothing may resolve: measured 2026-09-02, the
         host resolved it anyway, raised ``InvalidStateError`` and ended,
         and one pass's timeout was the whole session's death.  The answer
         goes to nobody; the session stays.

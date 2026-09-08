@@ -12,6 +12,7 @@ from claude_agent_sdk import (
 
 from kodezart.adapters._agents_mapping import (
     map_agents,
+    map_allowed_tools,
     map_effort,
     map_model,
     map_settings,
@@ -31,7 +32,12 @@ from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import KnowledgeGrant, PermissionMode, SessionType
+from kodezart.types.domain.session import (
+    AllowedTools,
+    KnowledgeGrant,
+    PermissionMode,
+    SessionType,
+)
 from kodezart.types.domain.skills import SettingSource, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -67,7 +73,7 @@ class ClaudeAgentExecutor:
         prompt: str,
         cwd: str,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         run_identity: RunIdentity | None = None,
@@ -91,7 +97,7 @@ class ClaudeAgentExecutor:
         options = ClaudeAgentOptions(
             cwd=cwd,
             permission_mode=map_permission_mode(permission_mode),
-            allowed_tools=allowed_tools,
+            allowed_tools=map_allowed_tools(allowed_tools),
             resume=session_id,
             output_format=output_format,
             skills=map_skills(skills),

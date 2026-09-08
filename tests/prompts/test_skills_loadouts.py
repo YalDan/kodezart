@@ -65,9 +65,9 @@ class FakeSkillInventory:
 def test_shipped_default_is_suppress_all() -> None:
     """The shipped default registers nothing."""
     config = AppConfig()
-    assert config.skills_mode is SkillsMode.NONE
-    assert config.skills_allowlist == []
-    assert config.skills_selection().mode is SkillsMode.NONE
+    assert config.agent.skills.mode is SkillsMode.NONE
+    assert config.agent.skills.allowlist == ()
+    assert config.agent.skills.mode is SkillsMode.NONE
 
 
 def test_skills_mode_has_no_none_inhabitant() -> None:
@@ -80,7 +80,7 @@ def test_explicit_with_an_empty_allowlist_is_a_typed_config_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """EXPLICIT without names is a configuration error, not an empty session."""
-    monkeypatch.setenv("KODEZART_SKILLS_MODE", "explicit")
+    monkeypatch.setenv("KODEZART_AGENT__SKILLS__MODE", "explicit")
     with pytest.raises(ValueError, match="requires a non-empty"):
         AppConfig.from_env()
 
@@ -91,9 +91,9 @@ def test_non_explicit_with_an_allowlist_is_a_typed_config_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An allowlist that no mode consumes is a configuration error."""
-    monkeypatch.setenv("KODEZART_SKILLS_MODE", mode)
-    monkeypatch.setenv("KODEZART_SKILLS_ALLOWLIST", '["alpha"]')
-    with pytest.raises(ValueError, match="must be empty"):
+    monkeypatch.setenv("KODEZART_AGENT__SKILLS__MODE", mode)
+    monkeypatch.setenv("KODEZART_AGENT__SKILLS__ALLOWLIST", '["alpha"]')
+    with pytest.raises(ValueError, match="must not carry an allowlist"):
         AppConfig.from_env()
 
 
@@ -107,7 +107,7 @@ def test_selection_model_enforces_the_same_two_invariants() -> None:
 
 def test_setting_sources_default_to_all_three() -> None:
     """AC-1c: the default keeps every source, including local."""
-    assert AppConfig().setting_sources == [
+    assert AppConfig().agent.setting_sources == [
         SettingSource.USER,
         SettingSource.PROJECT,
         SettingSource.LOCAL,

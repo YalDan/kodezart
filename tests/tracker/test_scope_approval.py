@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from kodezart.composition.tracker import build_tracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import McpTransportError, TrackerProtocolError
 from kodezart.core.protocols import McpToolResult, TrackerPort
@@ -284,8 +285,13 @@ async def test_unmapped_approval_refuses_before_any_native_read() -> None:
 async def test_actual_composition_passes_the_remapped_scope_vocabulary() -> None:
     server = ScopeMcpServer()
     server.initiatives[INITIATIVE.key]["labels"] = [APPROVAL_LABELS["approved"]]
+    config = AppConfig()
     tracker, _ = build_tracker(
-        config=AppConfig(),
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
         operation=operation_config().model_copy(
             update={"scope_labels": APPROVAL_LABELS}
         ),

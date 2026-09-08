@@ -57,7 +57,7 @@ from kodezart.types.domain.dispatch import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.run_records import RunOutcome
-from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.tracker import ClaimStatus, IssueQuery, TrackerIssue
 from kodezart.types.domain.workflow import WorkflowSubmission
 
@@ -74,12 +74,12 @@ class _RememberedExclusion:
     ``updated_at`` is the issue's timestamp read AFTER the failure was
     complete — deliberately not the scan-time value, because the writes
     that accompany a failure move the timestamp themselves: the claim and
-    its release for a base that would not resolve (KOD-169: 15 claim
+    its release for a base that would not resolve (15 measured claim
     write-delete cycles, each feeding the next tick's gate delta), and the
-    put-back and terminal comment for a run that died (KOD-174).
+    put-back and terminal comment for a run that died.
     Remembered at scan time, this pass's own noise would re-admit the
     issue on the very next tick, which IS both measured loops.  The third
-    entrant — a winner the pre-claim read found blocked (KOD-173) — is
+    entrant — a winner the pre-claim read found blocked — is
     recorded off that same reading, which is already after everything
     this pass did to the issue, because that arm writes nothing at all.
 
@@ -102,7 +102,7 @@ class _LaneBackoff:
     would spend.  Measured 2026-09-01: the run that died at 17:57 on a
     rejection was followed by the next tick firing again into the same
     limit, and the creator's retry policy spawning sixteen empty sessions
-    under it (KOD-174).  Remembering the issue is not enough — the next
+    under it.  Remembering the issue is not enough — the next
     issue meets the same limit — so the lane itself stops until the
     cooldown lapses.
     """
@@ -122,9 +122,8 @@ class LaneCooldown:
     dispatchers are one per repository over that single account.  Held
     inside a dispatcher, the cooldown reached only the pass that happened
     to fire the run that met the limit, and the operation's other
-    repositories kept firing into it — the loop KOD-174 measured, one
-    dispatcher narrower (KOD-281).  Composition builds ONE of these per
-    operation and hands it to every dispatcher, so the first failure to
+    repositories kept firing into the same limit.  Composition builds ONE
+    of these per operation and hands it to every dispatcher, so the first failure to
     name the limit stops all of them.
 
     The clock is the same one the dispatcher reads: a cooldown is lifted
@@ -222,7 +221,7 @@ class FireDispatcher:
         self._remembered: dict[str, _RememberedExclusion] = {}
         #: One ``initiative_identifiers`` read per distinct project for
         #: this dispatcher's lifetime — membership does not move under a
-        #: running pass (KOD-169).
+        #: running pass.
         self._initiatives_by_project: dict[str, frozenset[str]] = {}
         #: The teams whose issues route to this repository by BINDING; an
         #: issue on any other scanned team routes by its recorded
@@ -238,8 +237,8 @@ class FireDispatcher:
         bound to its repository, plus every unbound team — whose issues
         route by the repository recorded on each one, so the
         recorded-repository clause keeps concurrent passes' claims
-        disjoint (KOD-169) rather than tick order deciding a routing
-        question (KOD-157).  The teams bound elsewhere are not this pass's
+        disjoint rather than tick order deciding a routing
+        question.  The teams bound elsewhere are not this pass's
         candidates.  A repository no team's issues can reach refuses here,
         before any query is issued.
         """
@@ -309,7 +308,7 @@ class FireDispatcher:
         # empty for every scanned issue and the live-blocker clause passed
         # vacuously over all of them — three winners in one afternoon were
         # claimed, failed base resolution and were released, with the edge
-        # that made them unfireable never read (KOD-173).  ONE read, on the
+        # that made them unfireable never read.  ONE read, on the
         # winner alone, is what gives that clause real edges to decide
         # over, and taking it before the claim is what makes a blocked
         # winner cost no claim/release pair.
@@ -373,7 +372,7 @@ class FireDispatcher:
 
         # The base is READ off the graph, never assumed — and BEFORE the
         # context is assembled, so the expensive assembly never runs for a
-        # candidate that cannot resolve (KOD-169). A lane whose premise is
+        # candidate that cannot resolve. A lane whose premise is
         # another issue's delivered branch is dispatched onto that branch;
         # only a lane with no blockers gets the repository's configured
         # trunk, and the resolver raises rather than falling back to trunk
@@ -399,7 +398,7 @@ class FireDispatcher:
             )
             # The exclusion timestamp is read AFTER the release, so this
             # pass's own claim-cycle writes sit inside it and only a real
-            # change re-admits the issue (KOD-169).
+            # change re-admits the issue.
             refreshed = await self._tracker.read_issue(issue_key=winner.issue_key)
             self._remembered[winner.issue_key] = _RememberedExclusion(
                 updated_at=refreshed.updated_at,
@@ -455,7 +454,7 @@ class FireDispatcher:
                 implied_base=spec,
                 scope=None,
                 permission_mode=PermissionMode.UNATTENDED,
-                allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                allowed_tools=ToolPreset.IMPLEMENTATION,
             ),
         )
         self._jobs_by_issue[winner.issue_key] = record.job_id
@@ -499,8 +498,8 @@ class FireDispatcher:
 
         The measured loop: a run was dispatched at 17:48, died at 17:57 on
         a provider rate-limit rejection, was put back correctly — and the
-        next tick re-selected the same issue and fired the whole run again
-        (KOD-174).  A pass had no memory of the run it started, so a
+        next tick re-selected the same issue and fired the whole run again.
+        A pass had no memory of the run it started, so a
         standing failure was a fresh run every interval.  A failed run
         joins the same remembered-exclusion mechanism a failed base
         resolution does, under its own clause and carrying what the run
@@ -522,8 +521,7 @@ class FireDispatcher:
         check, because it is not about the issue or about who fired it:
         the limit belongs to the account all of them spend.  Set after the
         check, it reached only the dispatcher that fired the run, and the
-        operation's other repositories went on firing into the same limit
-        (KOD-281).
+        operation's other repositories went on firing into the same limit.
         """
         if outcome is RunOutcome.COMPLETED:
             return
@@ -606,13 +604,13 @@ class FireDispatcher:
             # Re-admitted once the issue has CHANGED past the reading taken
             # after the failure — retrying an unchanged issue re-runs the
             # same failing resolution and re-writes the claim churn it
-            # produced (KOD-169), or fires the whole run again into the
-            # rejection that killed the last one (KOD-174) — or once the
+            # produced, or fires the whole run again into the
+            # rejection that killed the last one — or once the
             # memory no longer stands on its own terms: the blocked
             # winner's is about its BLOCKER, which ``_still_stands`` reads,
-            # so a blocker that closed re-admits an issue that never moved
-            # (KOD-285), while a standing one costs a read rather than the
-            # lane's whole throughput (KOD-173).
+            # so a blocker that closed re-admits an issue that never moved,
+            # while a standing one costs a read rather than the
+            # lane's whole throughput.
             if issue.updated_at <= remembered.updated_at and await self._still_stands(
                 remembered,
             ):
@@ -627,7 +625,7 @@ class FireDispatcher:
         # next-ranked candidate meets it unchanged and firing it is the
         # same failure with a different key on it — and so does the next
         # repository's candidate, which is why the cooldown asked here is
-        # the operation's rather than this dispatcher's (KOD-281).
+        # the operation's rather than this dispatcher's.
         # Evaluated after the issue's own memory so the issue that died
         # still reports what it died of, and lifted by the clock rather
         # than by a change on the board — nothing an issue does clears a
@@ -749,7 +747,7 @@ class FireDispatcher:
         since closed is a premise delivered — nothing the blocked issue
         does or fails to do bears on that.  Held to its own timestamp
         alone, a candidate whose blocker closed quietly stayed remembered
-        until something unrelated happened to touch it (KOD-285), which on
+        until something unrelated happened to touch it, which on
         a board where the blocker is the thing being worked is exactly the
         moment it becomes fireable.
 
@@ -768,7 +766,7 @@ class FireDispatcher:
         Each blocker is read, because whether an edge blocks is a fact
         about the issue at its far end — a closed blocker is a delivered
         premise, not a standing one.  The same reading serves the scan-time
-        clause and the pre-claim one (KOD-173).
+        clause and the pre-claim one.
         """
         blockers = {
             key: await self._tracker.read_issue(issue_key=key)

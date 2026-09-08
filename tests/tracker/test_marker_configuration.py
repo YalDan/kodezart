@@ -3,6 +3,7 @@
 import pytest
 
 from kodezart.composition.tracker import build_tracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
@@ -50,7 +51,16 @@ async def test_all_existing_marker_carriers_use_the_injected_operation_mapping()
         },
     )
     server = fixture_server()
-    tracker, _ = build_tracker(config=AppConfig(), operation=operation, caller=server)
+    config = AppConfig()
+    tracker, _ = build_tracker(
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=server,
+    )
     server.comments.append(
         FakeMcpComment(
             id="legacy-claim",
@@ -114,7 +124,16 @@ async def test_all_existing_marker_carriers_use_the_injected_operation_mapping()
 async def test_unconfigured_marker_write_fails_before_any_backend_mutation():
     operation = OperationConfig(operation_name="fixture", workspace="fixture")
     server = fixture_server()
-    tracker, _ = build_tracker(config=AppConfig(), operation=operation, caller=server)
+    config = AppConfig()
+    tracker, _ = build_tracker(
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=server,
+    )
     with pytest.raises(UnsupportedClaimError):
         await tracker.claim_issue(
             issue_key=CLAIMED_ISSUE, holder="one-job", lease_seconds=600
@@ -125,7 +144,16 @@ async def test_unconfigured_marker_write_fails_before_any_backend_mutation():
 async def test_empty_log_does_not_disguise_an_unconfigured_marker_reader():
     operation = OperationConfig(operation_name="fixture", workspace="fixture")
     server = fixture_server()
-    tracker, _ = build_tracker(config=AppConfig(), operation=operation, caller=server)
+    config = AppConfig()
+    tracker, _ = build_tracker(
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=server,
+    )
     for read in (
         tracker.active_claim,
         tracker.work_refs,

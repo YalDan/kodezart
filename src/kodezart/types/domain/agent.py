@@ -43,6 +43,7 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.session import SessionFailureKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
 
@@ -456,6 +457,11 @@ class ResultEvent(AgentEvent):
     """Terminal event with metrics, session ID, and output."""
 
     type: Literal["result"] = "result"
+    failure_kind: SessionFailureKind | None = Field(
+        default=None,
+        exclude=True,
+        description="Failure fact for live consumers; omitted from public result JSON.",
+    )
     subtype: str
     duration_ms: int
     duration_api_ms: int

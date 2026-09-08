@@ -153,8 +153,8 @@ _SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
 }
 
 #: The tools that change nothing on the board.  A call the server may have
-#: performed is made again only if performing it twice is the same as once
-#: (KOD-305): these are, and every other tool is a write.
+#: performed is made again only if performing it twice is the same as once:
+#: these are, and every other tool is a write.
 _READ_TOOLS: Final[frozenset[str]] = SCOPE_READ_TOOLS | frozenset(
     {
         _TOOL_LIST_ISSUES,
@@ -191,8 +191,8 @@ _ISSUE_IDENTITY_PAGE_SIZE = 250
 _SCOPE_REFUSAL_MARKER = "auth_insufficient_scope"
 
 #: The vendor's long-lived personal key: the prefix it is minted with, and
-#: the shortest body one has ever been measured at.  Measured 2026-09-01
-#: (KOD-171): the operator's live key is ``lin_api_`` followed by forty
+#: the shortest body one has ever been measured at.  Measured 2026-09-01:
+#: the operator's live key is ``lin_api_`` followed by forty
 #: characters and answered ``initialize`` with HTTP 200.  Wire format, not
 #: knobs — a deployment cannot choose what the vendor mints.
 #:
@@ -263,8 +263,7 @@ def _label_arguments(identifier: str, container: str | None) -> dict[str, object
     label)", and the live server answers a name with ``teamId must be a
     UUID`` and a 400.  ``None`` creates the label at workspace scope, which
     is what an operation declaring no team at all gets; a declared team's
-    ref names that team and the label is made inside it, one per board
-    (KOD-167).
+    ref names that team and the label is made inside it, one per board.
     """
     arguments: dict[str, object] = {"name": identifier}
     if container is not None:
@@ -280,7 +279,7 @@ def _without_mention_syntax(identity: str) -> str:
     config to hold the literal those texts substitute.  The ``@`` is
     SYNTAX and the identity is what follows it, so exactly one comes off:
     a second ``@`` belongs to the name being claimed, not to a second
-    mention marker (KOD-143 addendum 3).
+    mention marker.
 
     Nothing else is normalised here — case in particular.  Whether a
     lowercased identity is a config defect or a prose-versus-identity
@@ -294,7 +293,7 @@ def is_long_lived_credential(token: str) -> bool:
     """Whether *token* is the vendor's long-lived personal-key shape.
 
     The vendor takes exactly two kinds of credential in the same header,
-    measured 2026-09-01 (KOD-171): a personal key, which carries no expiry
+    measured 2026-09-01: a personal key, which carries no expiry
     at all, and an OAuth access token, which does and which nothing in this
     process refreshes.  The access token is OPAQUE — it declares nothing a
     reader can inspect — so the only sound split is the shape that is known
@@ -328,7 +327,7 @@ class _LabelListings:
     itself — it is either one workspace label reaching that board or a
     team-scoped copy sitting beside it — and only the ID tells those
     apart: one member came back from both boards under a single id, while
-    another came back under two distinct ones (KOD-167).
+    another came back under two distinct ones.
 
     ``by_team`` therefore holds each team's OWN labels: that team's
     listing MINUS the workspace listing, subtracted by id.  Taking the
@@ -338,8 +337,7 @@ class _LabelListings:
     The entries' ``teamId`` is never consulted for any of this.  No
     measured listing carries the field at all, so reading it would file
     every team-scoped label under workspace scope: the misreading that
-    made a freshly created label invisible to the boot that created it
-    (KOD-143, the label addendum of 2026-08-25).
+    made a freshly created label invisible to the boot that created it.
     """
 
     workspace: set[str]
@@ -400,7 +398,7 @@ def _may_resend(tool: str, exc: Exception) -> bool:
 
     The transport says when a request was written and never answered:
     the server may have performed it, and a reopened session making it
-    again would perform it twice (KOD-305).  The retry budget therefore
+    again would perform it twice.  The retry budget therefore
     buys a second attempt at a READ, which is harmless, and never at a
     write; a failure the transport could tell apart from that — the
     session gone before anything was written, or an answer that was a
@@ -453,12 +451,12 @@ class LinearMcpTracker:
         self._team_containers: Mapping[str, str] | None = None
         #: Where every write this adapter makes leaves the stamp it landed
         #: on, so the pass gates can tell the operation's own churn from a
-        #: principal's edit (KOD-175).  Handed in by the composition that
+        #: principal's edit.  Handed in by the composition that
         #: also hands it to the gates — one process, one record of what it
         #: wrote.  Required: a tracker holding a ledger nobody else can
         #: read is a tracker whose stamps reach no gate, and the pass that
-        #: waits on one would sleep through every edit it made itself
-        #: (KOD-175).  The caller that reads it is the caller that hands
+        #: waits on one would sleep through every edit it made itself.
+        #: The caller that reads it is the caller that hands
         #: it in.
         self._self_writes: SelfWriteLedger = ledger
         self._log: BoundLogger = get_logger(__name__)
@@ -482,7 +480,7 @@ class LinearMcpTracker:
         value the vendor sent, once per issue.  A scan reads a whole board,
         so one such issue took every pass that read it down with it, for as
         long as it sat there — one groomed duplicate crash-looped the
-        dispatch pass (KOD-156).
+        dispatch pass.
 
         The containment stops at this seam.  :meth:`read_issue` still
         raises on the same value, because there the issue the caller asked
@@ -808,7 +806,7 @@ class LinearMcpTracker:
         Threaded through the RESPONSE wherever the backend answers a write
         with the stored issue, because that answer already carries the
         stamp the write produced and a second read would be a round trip
-        for a value in hand (KOD-175).
+        for a value in hand.
         """
         self._self_writes.record(issue_key=issue.issue_key, updated_at=issue.updated_at)
         return issue
@@ -1645,7 +1643,7 @@ class LinearMcpTracker:
 
         Latest wins on the same append-only comment log the claim, the
         work refs and the base spec already ride: a re-staged fire is
-        re-routed by its newest record (KOD-169).  Read regardless of
+        re-routed by its newest record.  Read regardless of
         author — the marker is judgment's to write and anyone's to
         correct, so authorship is deliberately not checked here.
         """
@@ -1661,7 +1659,7 @@ class LinearMcpTracker:
         """Every name and id of every initiative the project belongs to.
 
         One ``get_project`` read per ask; the dispatch caller caches per
-        distinct project for its own lifetime (KOD-169), because
+        distinct project for its own lifetime, because
         initiative membership does not move under a running pass and a
         read per issue would pay the same answer repeatedly.
         """
@@ -1684,14 +1682,14 @@ class LinearMcpTracker:
 
         A USER resolves under either identity the workspace answers to,
         its account name or its mention handle, and the configured
-        spelling may carry the mention's leading ``@`` (KOD-143 addendum
-        3).  What comes BACK unresolved is the ref exactly as configured,
+        spelling may carry the mention's leading ``@``.  What comes BACK
+        unresolved is the ref exactly as configured,
         so the refusal names the spelling the operator wrote rather than
         an internal form nothing in their config contains.
 
         A workflow state is resolved PER TEAM and must resolve on EVERY
-        team the operation declares (the fire-ruling of 2026-08-25 on
-        KOD-143).  A state one declared team cannot express is not a
+        team the operation declares.  A state one declared team cannot
+        express is not a
         narrower vocabulary, it is a hole exactly where the lifecycle
         writer sets that state on an issue dispatched from that team, so
         a vocabulary the operation's teams do not share is refused HERE,
@@ -1767,7 +1765,7 @@ class LinearMcpTracker:
         is given its own, team-scoped.  Another declared team's copy is
         that board's definition and settles nothing here — an operation
         whose boards each carry their own queue vocabulary is the ordinary
-        two-team shape, not a conflict (KOD-167).
+        two-team shape, not a conflict.
 
         A workspace-level label is adopted by a ref of any scope: it is
         already addressable on every board.  What is refused is the pair —
@@ -1783,8 +1781,7 @@ class LinearMcpTracker:
         unobservable — no read this adapter is licensed to make reports it
         — and a name already defined in the container being written to is
         refused by the vendor itself, loudly.  Tolerating that refusal here
-        would be a guess about a container nothing observed (KOD-143
-        addendum 2 of 2026-08-25).
+        would be a guess about a container nothing observed.
 
         Documents are instated by TITLE and carry a server-assigned id, so
         their arm of R8's definition is ``(title, id)`` and the outcome
@@ -1951,7 +1948,7 @@ class LinearMcpTracker:
         operator did not ask for), and a create with no declared container
         (the backend files every document in one and refuses a bare create
         — refused HERE, before the call, rather than after the transport
-        retries a deterministic vendor refusal; KOD-166).
+        retries a deterministic vendor refusal).
         """
         if ref.identifier is not None:
             title = definitions.get(ref.identifier)
@@ -2021,8 +2018,8 @@ class LinearMcpTracker:
         DECLARED team, because the unscoped call answers with the
         workspace-level labels ALONE.  A boot that read only that one
         re-created the team-scoped label its own previous boot had made,
-        and the vendor refused it (KOD-143, the label addendum of
-        2026-08-25).  Idempotence comes from reading both listings, never
+        and the vendor refused it.  Idempotence comes from reading both
+        listings, never
         from forgiving that refusal.
 
         Not a union, though: a team's listing carries the workspace-level
@@ -2030,7 +2027,7 @@ class LinearMcpTracker:
         workspace one, subtracted BY ID.  By name would subtract nothing —
         the shared name is exactly what makes the two shapes look alike —
         and taking the listing whole makes every workspace label look
-        team-held, which refused a healthy workspace (KOD-167).
+        team-held, which refused a healthy workspace.
 
         One call per declared team, for the same reason the workflow-state
         vocabulary is read that way: the tool answers for one team, so
@@ -2283,7 +2280,7 @@ class LinearMcpTracker:
                 # Named once and raised, never retried: the refusal is the
                 # same on every attempt, so a budget spent on it buys the
                 # first answer again and delays the one event an operator
-                # can act on by the whole back-off (KOD-171).
+                # can act on by the whole back-off.
                 await self._log.aerror(
                     "tracker_credential_refused",
                     tool=tool,
@@ -2436,7 +2433,7 @@ class LinearMcpTracker:
         the port's ``author_key`` is ``None`` and no name is put in its
         place.  There is nothing to substitute that would be true, and a
         substitution would say a removed user's words were somebody
-        else's (KOD-172).
+        else's.
         """
         return TrackerComment(
             reply_to=wire.parent_id,

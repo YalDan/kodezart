@@ -29,6 +29,7 @@ from kodezart.core.protocols import (
     McpToolResult,
     TrackerPort,
 )
+from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.services.tracker_boot import (
     OWNED_REF_BUILDERS,
     configured_mappings,
@@ -885,9 +886,9 @@ class TestTheCredentialShapeBootRefuses:
         with pytest.raises(TrackerCredentialShapeError) as caught:
             refuse_foreign_credential(backend=TrackerBackend.LINEAR, token=token)
 
-        assert caught.value.field == "KODEZART_TRACKER_TOKEN"
+        assert caught.value.field == "KODEZART_TRACKER__TOKEN"
         assert caught.value.accepted_shape == ACCEPTED_CREDENTIAL_SHAPE
-        assert "KODEZART_TRACKER_TOKEN" in str(caught.value)
+        assert "KODEZART_TRACKER__TOKEN" in str(caught.value)
         assert ACCEPTED_CREDENTIAL_SHAPE in str(caught.value)
 
     def test_the_refusal_never_carries_the_credential_it_read(self) -> None:
@@ -908,13 +909,12 @@ class TestTheCredentialShapeBootRefuses:
         one.
         """
         config = AppConfig(
-            tracker_token=OAUTH_TOKEN,
-            tracker_mcp_server_url="https://tracker.invalid/mcp",
+            tracker={"token": OAUTH_TOKEN, "server_url": "https://tracker.invalid/mcp"},
         )
 
         with pytest.raises(TrackerCredentialShapeError):
             await boot_tracker(
-                config=config,
+                settings=config.tracker,
                 operation=operation_config(),
                 log=get_logger(__name__),
             )
@@ -1037,7 +1037,7 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
         endpoint = _Endpoint(HTTPStatus.UNAUTHORIZED)
         caller = _CountingCaller(_caller_over(endpoint, token=LONG_LIVED_KEY))
 
-        def factory(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+        def factory(*, settings: TrackerSettings, token: str) -> ManagedMcpToolCaller:
             return caller
 
         monkeypatch.setattr(
@@ -1045,13 +1045,15 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
             factory,
         )
         config = AppConfig(
-            tracker_token=LONG_LIVED_KEY,
-            tracker_mcp_server_url="https://tracker.invalid/mcp",
+            tracker={
+                "token": LONG_LIVED_KEY,
+                "server_url": "https://tracker.invalid/mcp",
+            },
         )
 
         with pytest.raises(McpCredentialRefusedError) as caught:
             await boot_tracker(
-                config=config,
+                settings=config.tracker,
                 operation=operation_config(),
                 log=get_logger(__name__),
             )
@@ -1072,7 +1074,9 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
         """The paired positive: an accepted credential boots, probe first."""
         server = _managed_fixture_server()
 
-        def factory(*, config: AppConfig, token: str) -> ManagedFakeLinearMcpServer:
+        def factory(
+            *, settings: TrackerSettings, token: str
+        ) -> ManagedFakeLinearMcpServer:
             return server
 
         monkeypatch.setattr(
@@ -1080,12 +1084,14 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
             factory,
         )
         config = AppConfig(
-            tracker_token=LONG_LIVED_KEY,
-            tracker_mcp_server_url="https://tracker.invalid/mcp",
+            tracker={
+                "token": LONG_LIVED_KEY,
+                "server_url": "https://tracker.invalid/mcp",
+            },
         )
 
         dialled = await boot_tracker(
-            config=config,
+            settings=config.tracker,
             operation=operation_config(),
             log=get_logger(__name__),
         )

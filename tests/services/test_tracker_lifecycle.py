@@ -498,13 +498,8 @@ class TestTheFailureArm:
         assert tracker.comments == []
 
 
-#: The ruling the failure arm runs under, as the docstring must name it:
-#: 2026-08-26, option (a) — restore the pre-claim state AND comment the
-#: failure, rather than comment alone.  A bare "(KOD-146, ruled)" sends a
-#: reader to an issue carrying several rulings with nothing saying which
-#: one this arm is, and the choice not taken is the one an operator is
-#: most likely to re-propose (KOD-266).
-FAILURE_ARM_RULING = ("KOD-146", "2026-08-26", "option (a)")
+#: The date and option identify the restore-state-and-comment ruling.
+FAILURE_ARM_RULING = ("2026-08-26", "option (a)")
 
 
 def test_the_failure_arms_docstring_cites_its_ruling_by_date() -> None:

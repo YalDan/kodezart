@@ -44,7 +44,7 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
-from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -65,7 +65,7 @@ class OriginRoutedWorkflowEngine:
     wired together.  The forge adapter is unchanged and still raises on
     URLs it does not own; it is simply never reached for an origin it
     could not have served, instead of being reached on the last act after
-    a hundred minutes of correct work (KOD-148).
+    a hundred minutes of correct work.
     """
 
     def __init__(
@@ -102,7 +102,7 @@ class OriginRoutedWorkflowEngine:
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: list[str],
+        allowed_tools: AllowedTools,
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Refuse unsupported scopes before any I/O; run authored jobs normally."""

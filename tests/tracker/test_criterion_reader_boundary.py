@@ -5,6 +5,7 @@ from collections.abc import Mapping
 import pytest
 
 from kodezart.composition.tracker import build_tracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import CriterionReadError
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
@@ -152,7 +153,16 @@ async def test_composition_injects_the_declared_criterion_label_spelling():
             FakeMcpIssue(id="OLD/1", parent_id=PARENT, labels=[LABEL, "criterion"]),
         ]
     )
-    tracker, _ = build_tracker(config=AppConfig(), operation=operation, caller=server)
+    config = AppConfig()
+    tracker, _ = build_tracker(
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=server,
+    )
     assert [
         criterion.issue_key
         for criterion in await tracker.read_criteria(issue_key=PARENT)

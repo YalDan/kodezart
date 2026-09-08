@@ -6,12 +6,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import ToolPreset
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from tests.fakes import SUPPRESS_ALL_SKILLS, FakeGitService, FakeWorkspaceProvider
 from tests.git_read_cancellation import assert_git_read_settles_before_release
@@ -55,7 +56,7 @@ async def test_success_keeps_exact_input_and_fresh_read_only_session(session):
     args = session._runner.arguments
     assert args["session_id"] is None
     assert args["permission_mode"] == EVAL_PERMISSION_MODE
-    assert args["allowed_tools"] == EVAL_TOOLS
+    assert args["allowed_tools"] == ToolPreset.EVALUATION
     assert args["agents"] == NO_SUBAGENTS
     assert args["prompt"] == "Fresh current source only."
     assert args["output_format"] == {"type": "json_schema", "schema": expected_schema}

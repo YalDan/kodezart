@@ -37,6 +37,34 @@ class PermissionMode(StrEnum):
     UNATTENDED = "unattended"
 
 
+class SessionFailureKind(StrEnum):
+    """A reported session failure, independent of provider error vocabulary."""
+
+    TIMEOUT = "timeout"
+    REFUSAL = "refusal"
+    RATE_LIMITED = "rate_limited"
+    TRANSPORT_ERROR = "transport_error"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    MALFORMED_OUTPUT = "malformed_output"
+    EXECUTION_ERROR = "execution_error"
+
+
+class ToolPreset(StrEnum):
+    """Existing application tool bundles, expanded by the session adapter.
+
+    Callers can instead supply an explicit list of selectors, including tools
+    this application does not name. Permission mode remains independent.
+    """
+
+    EVALUATION = "evaluation"
+    DELEGATED_EVALUATION = "delegated_evaluation"
+    AUTHORING = "authoring"
+    IMPLEMENTATION = "implementation"
+
+
+type AllowedTools = ToolPreset | list[str]
+
+
 class SessionType(StrEnum):
     """Every kind of agent session the service starts.
 

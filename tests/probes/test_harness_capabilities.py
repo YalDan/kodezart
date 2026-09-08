@@ -20,15 +20,12 @@ from pathlib import Path
 import pytest
 from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, query
 
+from kodezart.adapters._agents_mapping import map_allowed_tools
 from kodezart.adapters._permission_modes import map_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
 from kodezart.core.config import AppConfig
-from kodezart.core.constants import (
-    EVAL_PERMISSION_MODE,
-    EVAL_TOOLS,
-    TICKET_TOOLS,
-)
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.types.domain.agent import (
     AssistantTextEvent,
     ResultEvent,
@@ -39,7 +36,7 @@ from kodezart.types.domain.agent import (
     ToolResultEvent,
     ToolUseEvent,
 )
-from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.session import AllowedTools, PermissionMode, ToolPreset
 from tests.probes.recording import record
 
 # ---------------------------------------------------------------------------
@@ -59,7 +56,10 @@ VERDICT_ABSENT = "absent"
 # The probes that reach for the workflow primitive have to leave the
 # evaluative session shape in exactly two respects, one field at a time.
 UNGATED_PERMISSION_MODE = PermissionMode.INTERACTIVE
-WORKFLOW_ALLOWED_TOOLS: list[str] = [*TICKET_TOOLS, WORKFLOW_TOOL_NAME]
+WORKFLOW_ALLOWED_TOOLS: list[str] = [
+    *map_allowed_tools(ToolPreset.AUTHORING),
+    WORKFLOW_TOOL_NAME,
+]
 WORKFLOW_WRITE_ALLOWED_TOOLS: list[str] = [*WORKFLOW_ALLOWED_TOOLS, WRITE_TOOL_NAME]
 
 # A session that parks itself on a scheduled wakeup stops being a bounded
@@ -82,9 +82,9 @@ GRANTED_ARTIFACT = "kod86-granted.txt"
 PROBE_WORKFLOW_SOURCE = Path(__file__).parent / "workflows"
 
 EVALUATIVE_CONFIGURATION = (
-    "evaluative: plan mode, EVAL_TOOLS allowlist, no permission callback"
+    "evaluative: plan mode, ToolPreset.EVALUATION allowlist, no permission callback"
 )
-GENERATIVE_CONFIGURATION = "generative: plan mode, TICKET_TOOLS allowlist"
+GENERATIVE_CONFIGURATION = "generative: plan mode, ToolPreset.AUTHORING allowlist"
 
 ENUMERATION_PROMPT = "Reply with the single word: ok"
 
@@ -123,7 +123,7 @@ def session_options(
     *,
     cwd: Path,
     permission_mode: PermissionMode,
-    allowed_tools: list[str],
+    allowed_tools: AllowedTools,
     max_turns: int,
     agents: dict[str, AgentDefinition] | None = None,
 ) -> ClaudeAgentOptions:
@@ -132,10 +132,10 @@ def session_options(
     return ClaudeAgentOptions(
         cwd=str(cwd),
         permission_mode=map_permission_mode(permission_mode),
-        allowed_tools=allowed_tools,
+        allowed_tools=map_allowed_tools(allowed_tools),
         disallowed_tools=STALL_GUARD_DISALLOWED_TOOLS,
-        skills=map_skills(config.skills_selection()),
-        setting_sources=map_setting_sources(config.setting_sources),
+        skills=map_skills(config.agent.skills),
+        setting_sources=map_setting_sources(config.agent.setting_sources),
         max_turns=max_turns,
         agents=agents,
     )
@@ -146,7 +146,7 @@ def evaluator_options(*, cwd: Path, max_turns: int) -> ClaudeAgentOptions:
     return session_options(
         cwd=cwd,
         permission_mode=EVAL_PERMISSION_MODE,
-        allowed_tools=EVAL_TOOLS,
+        allowed_tools=ToolPreset.EVALUATION,
         max_turns=max_turns,
     )
 
@@ -156,7 +156,7 @@ def generative_options(*, cwd: Path, max_turns: int) -> ClaudeAgentOptions:
     return session_options(
         cwd=cwd,
         permission_mode=EVAL_PERMISSION_MODE,
-        allowed_tools=TICKET_TOOLS,
+        allowed_tools=ToolPreset.AUTHORING,
         max_turns=max_turns,
     )
 
@@ -269,11 +269,29 @@ def test_probe_config_matches_production(tmp_path: Path) -> None:
     options = evaluator_options(cwd=tmp_path, max_turns=ENUMERATION_TURNS)
 
     assert options.permission_mode == "plan"
-    assert options.allowed_tools is EVAL_TOOLS
+    assert options.allowed_tools == ["Read", "Glob", "Grep", "Bash"]
     assert options.can_use_tool is None
 
     assert EVAL_PERMISSION_MODE is PermissionMode.PLAN
-    assert EVAL_TOOLS == ["Read", "Glob", "Grep", "Bash"]
+    assert generative_options(cwd=tmp_path, max_turns=1).allowed_tools == [
+        "Read",
+        "Glob",
+        "Grep",
+        "Bash",
+        "Agent",
+        "WebSearch",
+        "WebFetch",
+    ]
+    assert WORKFLOW_ALLOWED_TOOLS == [
+        "Read",
+        "Glob",
+        "Grep",
+        "Bash",
+        "Agent",
+        "WebSearch",
+        "WebFetch",
+        WORKFLOW_TOOL_NAME,
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +385,7 @@ async def test_probe_c_workflow_tool_presence(probe_cwd: Path) -> None:
             f"{len(observation.session_tools)} tools enumerated; "
             f"{WORKFLOW_TOOL_NAME} in toolset: {present}; "
             f"{WORKFLOW_TOOL_NAME} in the allowlist: "
-            f"{WORKFLOW_TOOL_NAME in TICKET_TOOLS}"
+            f"{WORKFLOW_TOOL_NAME in map_allowed_tools(ToolPreset.AUTHORING)}"
         ),
         verdict=VERDICT_PRESENT if present else VERDICT_ABSENT,
     )
@@ -418,7 +436,7 @@ async def test_probe_d_named_workflow_invocation(probe_cwd: Path) -> None:
         configuration=(
             "matched pair, permission mode varied: "
             f"plan vs {UNGATED_PERMISSION_MODE}; "
-            f"TICKET_TOOLS + {WORKFLOW_TOOL_NAME} allowlist in both"
+            f"ToolPreset.AUTHORING + {WORKFLOW_TOOL_NAME} allowlist in both"
         ),
         observed=(
             f"plan mode: {len(plan_uses)} {WORKFLOW_TOOL_NAME} tool_use events, "
@@ -467,7 +485,7 @@ async def test_probe_e_agent_type_and_bounding(probe_cwd: Path) -> None:
             "does a definition's tool list bound the subagent?"
         ),
         configuration=(
-            f"{UNGATED_PERMISSION_MODE} mode, TICKET_TOOLS + "
+            f"{UNGATED_PERMISSION_MODE} mode, ToolPreset.AUTHORING + "
             f"{WORKFLOW_TOOL_NAME} + {WRITE_TOOL_NAME} allowlist, two typed "
             "definitions supplied through session options"
         ),
@@ -528,7 +546,7 @@ async def test_probe_f_origin_gate(probe_cwd: Path) -> None:
         ),
         configuration=(
             f"identical sessions, prompt varied: {UNGATED_PERMISSION_MODE} mode, "
-            f"TICKET_TOOLS + {WORKFLOW_TOOL_NAME} allowlist"
+            f"ToolPreset.AUTHORING + {WORKFLOW_TOOL_NAME} allowlist"
         ),
         observed=(
             f"bare token: {len(negative_uses)} {WORKFLOW_TOOL_NAME} tool_use "

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.audit_pass import AuditClaimVerifier
 from kodezart.core.config import AppConfig
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import AuditClaimReadError, InvalidFireCriterionError
 from kodezart.domain.lane_record import render_lane_record
@@ -21,7 +21,7 @@ from kodezart.types.domain.audit import (
 )
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_state import LaneRunState
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from tests.domain.test_lane_record import record_data
 from tests.fakes import (
@@ -146,7 +146,7 @@ async def test_actual_session_reads_current_check_and_live_head(
     assert args["session_id"] is None
     assert args["session_type"] is SessionType.SCHEDULED_PASS
     assert args["permission_mode"] == EVAL_PERMISSION_MODE
-    assert args["allowed_tools"] == list(EVAL_TOOLS)
+    assert args["allowed_tools"] == ToolPreset.EVALUATION
     assert args["agents"] == NO_SUBAGENTS
     assert args["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA
     assert cache.calls == [{"url": REQUEST.repo_url, "cache_key": REQUEST.cache_key}]
@@ -348,7 +348,7 @@ async def test_runner_double_records_stream_session_identity():
     async for _ in runner.stream(
         prompt="read claim",
         permission_mode=EVAL_PERMISSION_MODE,
-        allowed_tools=list(EVAL_TOOLS),
+        allowed_tools=ToolPreset.EVALUATION,
         session_id="writer-session",
     ):
         pass
@@ -391,7 +391,7 @@ async def test_actual_agent_service_forwards_fresh_dispatch_and_detached_workspa
     (call,) = executor.calls
     assert call["session_id"] is None
     assert call["permission_mode"] == EVAL_PERMISSION_MODE
-    assert call["allowed_tools"] == list(EVAL_TOOLS)
+    assert call["allowed_tools"] == ToolPreset.EVALUATION
     assert call["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA
     assert call["cwd"] == "/tmp/fake-workspace"
     assert "OLD_RED_VERDICT" not in call["prompt"]

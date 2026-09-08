@@ -12,7 +12,7 @@ from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.chains.audit_sweep import AuditReadSweep
 from kodezart.core.config import AppConfig
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.services.agent_service import AgentService
@@ -30,6 +30,7 @@ from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.session import ToolPreset
 from kodezart.types.domain.surface import SurfaceKind
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
@@ -298,7 +299,7 @@ async def test_every_state_reaches_actual_fresh_claim_dispatch(
     (call,) = executor.calls
     assert call["session_id"] is None
     assert call["permission_mode"] == EVAL_PERMISSION_MODE
-    assert call["allowed_tools"] == list(EVAL_TOOLS)
+    assert call["allowed_tools"] == ToolPreset.EVALUATION
     assert CHECK in call["prompt"] and HEAD in call["prompt"]
     assert (
         "AUTHOR_REASONING" not in call["prompt"]

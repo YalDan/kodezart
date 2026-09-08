@@ -1,9 +1,11 @@
 """Shared async test fixtures — no mocking, full chain exercised."""
 
+import logging
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 
 import pytest
+import structlog
 from httpx import ASGITransport, AsyncClient
 
 from kodezart.adapters.git_branch_merger import GitBranchMerger
@@ -28,6 +30,25 @@ from tests.fakes import (
 for _ambient in [name for name in os.environ if name.startswith("KODEZART_")]:
     del os.environ[_ambient]
 AppConfig.model_config["env_file"] = None
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging_configuration() -> Iterator[None]:
+    """A boot test must not leave handlers bound to its closed capture stream."""
+    root = logging.getLogger()
+    handlers = list(root.handlers)
+    levels = {
+        name: logging.getLogger(name).level
+        for name in ("", "uvicorn.access", "uvicorn.error")
+    }
+    configuration = structlog.get_config()
+    try:
+        yield
+    finally:
+        root.handlers = handlers
+        for name, level in levels.items():
+            logging.getLogger(name).setLevel(level)
+        structlog.configure(**configuration)
 
 
 @pytest.fixture(scope="session", autouse=True)

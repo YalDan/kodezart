@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.audit_pass import AuditMandateHunt
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import (
@@ -18,7 +18,7 @@ from kodezart.types.domain.audit import (
 )
 from kodezart.types.domain.organize import DefectRole, SpecFinding
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from tests.fakes import (
@@ -129,7 +129,7 @@ async def test_actual_source_instruction_is_quoted_without_writes(
     assert args["session_id"] is None
     assert args["session_type"] is SessionType.SCHEDULED_PASS
     assert args["permission_mode"] == EVAL_PERMISSION_MODE
-    assert args["allowed_tools"] == list(EVAL_TOOLS)
+    assert args["allowed_tools"] == ToolPreset.EVALUATION
     assert args["agents"] == NO_SUBAGENTS
     assert args["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA
     assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
@@ -354,7 +354,7 @@ async def test_actual_agent_service_gets_only_fresh_claim_and_native_sources(
     assert call["session_id"] is None
     assert call["cwd"] == "/tmp/fake-workspace"
     assert call["permission_mode"] == EVAL_PERMISSION_MODE
-    assert call["allowed_tools"] == list(EVAL_TOOLS)
+    assert call["allowed_tools"] == ToolPreset.EVALUATION
     assert call["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA
     assert QUOTE in call["prompt"]
 

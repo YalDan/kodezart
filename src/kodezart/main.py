@@ -82,7 +82,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # does not check adoption — the prompt passes are wired on the
         # operation's presence alone — and a reference the bound copy cannot
         # resolve is caught by their boot render (KOD-160).
-        dialled = await boot_tracker(config=config, operation=declared, log=log)
+        dialled = await boot_tracker(
+            settings=config.tracker, operation=declared, log=log
+        )
         operation = declared if dialled is None else dialled.operation
         tracker: TrackerPort | None = None if dialled is None else dialled.tracker
         mcp_caller: ManagedMcpToolCaller | None = (
@@ -103,7 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         built_recorder = await build_run_recorder(
             knowledge=config.knowledge,
-            tracker_server_name=config.tracker_mcp_server_name,
+            tracker_server_name=config.tracker.server_name,
             operation=operation,
             tracker_caller=mcp_caller,
             log=log,
@@ -114,18 +116,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
             await built_recorder.knowledge_caller.open()
 
-        skills = await boot_skills(config=config, prompts=prompts, log=log)
+        skills = await boot_skills(settings=config.agent, prompts=prompts, log=log)
         app.state.skills = skills
 
         executor = ClaudeClientExecutor(
-            model=config.model,
-            setting_sources=config.setting_sources,
+            model=config.agent.model,
+            setting_sources=config.agent.setting_sources,
             knowledge_grant=await boot_knowledge_grant(
                 knowledge=config.knowledge,
                 prompts=prompts,
                 log=log,
             ),
-            output_style=config.claude_output_style,
+            output_style=config.agent.output_style,
             fire_record=fire_record_template(
                 knowledge=config.knowledge, operation=operation, prompts=prompts
             ),

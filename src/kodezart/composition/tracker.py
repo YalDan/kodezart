@@ -15,7 +15,6 @@ from kodezart.adapters.linear_mcp_tracker import (
     is_long_lived_credential,
 )
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import TrackerCredentialShapeError
 from kodezart.core.logging import BoundLogger
 from kodezart.core.owned_tasks import finish_owned
@@ -24,6 +23,7 @@ from kodezart.core.protocols import (
     McpToolCaller,
     TrackerPort,
 )
+from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig
@@ -32,10 +32,12 @@ from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 
 #: Where the tracker credential is read from, named in the refusal because
 #: it is half of what an operator has to act on.
-CREDENTIAL_FIELD: Final[str] = "KODEZART_TRACKER_TOKEN"
+CREDENTIAL_FIELD: Final[str] = "KODEZART_TRACKER__TOKEN"
 
 
-def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+def make_mcp_tool_caller(
+    *, settings: TrackerSettings, token: str
+) -> ManagedMcpToolCaller:
     """The vendor MCP transport this deployment dials.
 
     One server definition, one consumer: this factory, which builds the
@@ -43,15 +45,13 @@ def make_mcp_tool_caller(*, config: AppConfig, token: str) -> ManagedMcpToolCall
     the tracker server.
     """
     return HttpMcpToolCaller(
-        url=config.tracker_mcp_server_url,
-        server_name=config.tracker_mcp_server_name,
-        headers={
-            config.tracker_mcp_auth_header: f"{config.tracker_mcp_auth_scheme} {token}"
-        },
-        timeout_seconds=config.tracker_timeout_seconds,
-        call_timeout_seconds=config.tracker_mcp_call_timeout_seconds,
-        sse_read_timeout_seconds=config.tracker_mcp_sse_read_timeout_seconds,
-        error_detail_limit=config.tracker_mcp_error_detail_limit,
+        url=settings.server_url,
+        server_name=settings.server_name,
+        headers={settings.auth_header: f"{settings.auth_scheme} {token}"},
+        timeout_seconds=settings.timeout_seconds,
+        call_timeout_seconds=settings.call_timeout_seconds,
+        sse_read_timeout_seconds=settings.sse_read_timeout_seconds,
+        error_detail_limit=settings.error_detail_limit,
     )
 
 
@@ -86,11 +86,12 @@ def refuse_foreign_credential(*, backend: TrackerBackend, token: str) -> None:
 
 def build_tracker(
     *,
-    config: AppConfig,
+    backend: TrackerBackend,
+    retry: RetryPolicy,
     operation: OperationConfig,
     caller: McpToolCaller,
 ) -> tuple[TrackerPort, SelfWriteLedger]:
-    """The ``TrackerPort`` implementation ``config.tracker`` selects.
+    """The ``TrackerPort`` implementation ``backend`` selects.
 
     Adding a backend is a new adapter plus a member on ``TrackerBackend``.
     Consumers hold the protocol and change by nothing at all.
@@ -102,7 +103,7 @@ def build_tracker(
     which a reader on it would break (KOD-175).
     """
     ledger = SelfWriteLedger()
-    match config.tracker:
+    match backend:
         case TrackerBackend.LINEAR:
             adapter = LinearMcpTracker(
                 caller=caller,
@@ -118,10 +119,7 @@ def build_tracker(
                 team_identifiers={
                     team_key: entry.name for team_key, entry in operation.teams.items()
                 },
-                retry=RetryPolicy(
-                    attempts=config.tracker_max_retries + 1,
-                    initial_delay=config.tracker_retry_backoff_factor,
-                ),
+                retry=retry,
                 ledger=ledger,
             )
             return adapter, ledger
@@ -148,7 +146,7 @@ class DialledTracker:
 
 async def boot_tracker(
     *,
-    config: AppConfig,
+    settings: TrackerSettings,
     operation: OperationConfig | None,
     log: BoundLogger,
 ) -> DialledTracker | None:
@@ -168,22 +166,26 @@ async def boot_tracker(
     refusal it is — a 401 met while the session opens says only that the
     session broke (KOD-268).
     """
-    if operation is None or config.tracker_token is None:
+    if operation is None or settings.token is None:
         await log.ainfo(
             "tracker_not_configured",
             operation_config_present=operation is not None,
-            tracker_token_present=config.tracker_token is not None,
+            tracker_token_present=settings.token is not None,
         )
         return None
     operation.require_run_event_table()
-    token = config.tracker_token.get_secret_value()
-    refuse_foreign_credential(backend=config.tracker, token=token)
-    caller = make_mcp_tool_caller(config=config, token=token)
+    token = settings.token.get_secret_value()
+    refuse_foreign_credential(backend=settings.backend, token=token)
+    caller = make_mcp_tool_caller(settings=settings, token=token)
     await caller.probe()
     try:
         await caller.open()
         tracker, ledger = build_tracker(
-            config=config,
+            backend=settings.backend,
+            retry=RetryPolicy(
+                attempts=settings.max_retries + 1,
+                initial_delay=settings.retry_backoff_factor,
+            ),
             operation=operation,
             caller=caller,
         )
@@ -193,7 +195,7 @@ async def boot_tracker(
         )
         await log.ainfo(
             "tracker_mappings_reconciled",
-            backend=config.tracker.value,
+            backend=settings.backend.value,
             adopted=[
                 item.ref.describe()
                 for item in reconciliation.outcomes

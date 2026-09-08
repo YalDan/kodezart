@@ -61,7 +61,7 @@ CITED_ERRORS: frozenset[str] = frozenset(
 #: does carry is checked against the shipped model by the test below.
 CITED_VARIABLES: frozenset[str] = frozenset(
     {
-        "KODEZART_TRACKER_TOKEN",
+        "KODEZART_TRACKER__TOKEN",
         "KODEZART_OPERATION_CONFIG",
         "KODEZART_GITHUB_TOKEN",
     },

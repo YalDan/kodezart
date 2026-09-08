@@ -47,7 +47,11 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import PermissionMode, SessionType
+from kodezart.types.domain.session import (
+    PermissionMode,
+    SessionFailureKind,
+    SessionType,
+)
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -78,10 +82,14 @@ def audit_result(
     *,
     is_error: bool = False,
     subtype: str = "success",
+    stop_reason: str | None = None,
+    failure_kind: SessionFailureKind | None = None,
 ) -> ResultEvent:
     """A terminal event carrying a structured audit verdict, or an error."""
     return ResultEvent(
         subtype=subtype,
+        stop_reason=stop_reason,
+        failure_kind=failure_kind,
         duration_ms=1,
         duration_api_ms=1,
         is_error=is_error,
@@ -194,7 +202,7 @@ async def test_a_session_that_never_answers_is_timeout() -> None:
 async def test_a_refused_session_is_refusal() -> None:
     """F/REFUSAL."""
     executor = ScriptedAuditExecutor(
-        [audit_result(None, is_error=True, subtype="refusal")],
+        [audit_result(None, failure_kind=SessionFailureKind.REFUSAL)],
     )
     result = await scanner_for(executor).scan(
         content=PROSE,
@@ -269,7 +277,11 @@ async def test_a_span_outside_the_payload_is_spans_unresolvable() -> None:
 async def test_an_exhausted_budget_is_budget_exhausted() -> None:
     """F/BUDGET_EXHAUSTED."""
     executor = ScriptedAuditExecutor(
-        [audit_result(None, is_error=True, subtype="budget_exceeded")],
+        [
+            audit_result(
+                None, is_error=True, failure_kind=SessionFailureKind.BUDGET_EXHAUSTED
+            )
+        ],
     )
     result = await scanner_for(executor).scan(
         content=PROSE,

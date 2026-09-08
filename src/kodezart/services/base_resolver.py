@@ -116,7 +116,7 @@ class BaseResolver:
         A resolution assuming otherwise would refuse to dispatch a lane
         whose premise is in fact present.
 
-        ``None`` is the ASSUMED-LANDED arm (KOD-169): a blocker that is
+        ``None`` is the ASSUMED-LANDED arm: a blocker that is
         TERMINAL and carries no deliverable ref anywhere on its ancestor
         chain finished outside kodezart's own delivery loop — the
         founder's boards merge pull requests by hand — so its work is on
