@@ -7,6 +7,7 @@ from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import GitService, PRStateReader, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_terminal import (
     AuditTerminalObservation,
@@ -80,8 +81,8 @@ class AuditTerminalReader:
             lane_key=request.lane_key,
             record_ref=request.record_ref,
         )
-        repository = await self._cache.ensure_available(
-            request.repo_url, request.cache_key
+        repository = await ensure_repository(
+            cache=self._cache, repo_url=request.repo_url, cache_key=request.cache_key
         )
         branch_head = await self._head(repository, record.branch)
         discrepancies: list[TerminalDiscrepancy] = []
