@@ -94,6 +94,10 @@ APPROVED_DESCRIPTION = WritableSurface(
 #: under the writing run's job id.
 JOB_A = "job-a"
 JOB_B = "job-b"
+#: The two holder vocabularies, side by side: a deployment's process
+#: identity holds a fire claim, a run's job id holds a write lease.
+PROCESS_HOLDER = "kodezart-process"
+JOB_HOLDER = "job-17"
 
 
 @contextmanager
@@ -1272,6 +1276,51 @@ class TestSurfaceLease:
                 lease_seconds=LEASE_SECONDS,
             )
             assert taken.holder == JOB_B
+
+    async def test_a_fire_claim_and_a_write_lease_are_held_under_distinct_identities(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """Two questions, two vocabularies, neither derived from the other.
+
+        A claim answers which DEPLOYMENT may fire an issue and is held
+        under a process identity; a lease answers which RUN may write a
+        surface and is held under a job id. Holding one confers nothing
+        about the other, on the same issue.
+        """
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
+            with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+                claimed = await tracker.claim_issue(
+                    issue_key=CLAIMED_ISSUE,
+                    holder=PROCESS_HOLDER,
+                    lease_seconds=LEASE_SECONDS,
+                )
+                lease = await tracker.acquire_surfaces(
+                    surfaces=frozenset({CLAIMED_DESCRIPTION}),
+                    holder=JOB_HOLDER,
+                    lease_seconds=LEASE_SECONDS,
+                )
+
+                assert claimed.status is ClaimStatus.GRANTED
+                held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+                assert held is not None
+                assert held.holder == PROCESS_HOLDER
+                assert lease.holder == JOB_HOLDER
+
+                with pytest.raises(SurfaceLeaseError) as refused:
+                    await tracker.acquire_surfaces(
+                        surfaces=frozenset({CLAIMED_DESCRIPTION}),
+                        holder=PROCESS_HOLDER,
+                        lease_seconds=LEASE_SECONDS,
+                    )
+                assert refused.value.current_holder == JOB_HOLDER
+                lost = await tracker.claim_issue(
+                    issue_key=CLAIMED_ISSUE,
+                    holder=JOB_HOLDER,
+                    lease_seconds=LEASE_SECONDS,
+                )
+                assert lost.status is ClaimStatus.LOST
 
 
 class TestAssets:

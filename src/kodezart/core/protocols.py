@@ -1002,6 +1002,11 @@ class TrackerPort(
         ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
         value, never an exception. An adapter without atomic/fenced
         ownership refuses with ``UnsupportedClaimError`` before mutation.
+
+        *holder* is the deployment's PROCESS identity, the value
+        ``core/config.py::dispatch_holder`` carries. It answers which
+        deployment may fire an issue; a surface lease's holder answers
+        which run may write a surface. Neither is derived from the other.
         """
         ...
 
