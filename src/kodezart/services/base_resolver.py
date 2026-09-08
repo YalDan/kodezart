@@ -16,6 +16,7 @@ not dispatch.
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import assert_never
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService, TrackerPort
@@ -25,7 +26,13 @@ from kodezart.domain.errors import (
     BaseResolutionError,
     MergeConflictError,
 )
-from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.branch import (
+    BaseInput,
+    BaseSpec,
+    WorkRef,
+    WorkRefLanding,
+    WorkRefRole,
+)
 from kodezart.types.domain.tracker import IssueRelationKind, is_open
 
 
@@ -135,6 +142,15 @@ class BaseResolver:
                 issue_id=issue_key,
                 blocker_issue_ids=(blocker_key,),
             )
+        match ref.landing:
+            case WorkRefLanding.LANDED:
+                return None
+            case WorkRefLanding.NOT_LANDED:
+                pass
+            case WorkRefLanding.UNKNOWN:
+                pass
+            case _:
+                assert_never(ref.landing)
         if ref.pushed_head_sha is None:
             raise BaseResolutionError(
                 "the blocker's deliverable ref has never been pushed",
