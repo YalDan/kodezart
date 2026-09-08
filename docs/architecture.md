@@ -1,5 +1,17 @@
 # Architecture
 
+The authored Ralph evaluator observes native SDK session openings at its
+actual dispatch boundary. A typed `node_session_started` stream occurrence
+carries the existing fire identity and explicit node invocation; each
+iteration, corrective dispatch and graph-level retry is a separate invocation. A repeated native
+opening frame is not a second session. Missing or malformed opening evidence
+is refused after draining the executor, preserving its cleanup. Generic calls
+without a fire identity retain their existing stream. Tracker publication and
+the supervisor's durable event reader remain unavailable until the universal
+surface-lease contract is satisfied; these stream occurrences are not a claim
+of persisted run history. The frozen alarm subject vocabulary also does not
+yet provide a per-node subject identity, which this producer does not invent.
+
 ## Overview
 
 Kodezart follows a hexagonal (ports-and-adapters) architecture with three

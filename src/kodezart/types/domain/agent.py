@@ -35,10 +35,12 @@ from kodezart.types.domain.criteria import (
     TrackerCriteriaValidationOutput,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.organize import AdmissionJudgment
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
 
@@ -302,6 +304,19 @@ class TaskUsageInfo(CamelCaseModel):
     total_tokens: int
     tool_uses: int
     duration_ms: int
+
+
+class NodeSessionStartedEvent(AgentEvent):
+    """An actual native opening, emitted by its addressed harness invocation.
+
+    This stream value does not assert that a tracker event was published.
+    Durable publication remains a separate leased and gated write.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    type: Literal[RunEventKind.NODE_SESSION_STARTED] = RunEventKind.NODE_SESSION_STARTED
+    invocation: NodeInvocation
+    session_id: str = Field(min_length=1, pattern=r"\S")
 
 
 class UserMessageEvent(AgentEvent):
