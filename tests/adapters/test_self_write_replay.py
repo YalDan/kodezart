@@ -409,3 +409,16 @@ async def test_comment_edit_receipt_does_not_absorb_other_response_fields() -> N
     server._moved(ISSUE)
     await tracker.upsert_comment(target=ISSUE, marker="<!-- note -->", body="our edit")
     assert (await gate.delta()).changed == (ISSUE,)
+
+
+async def test_the_native_snapshot_itself_refuses_a_changed_bounding_issue() -> None:
+    from kodezart.core.errors import TrackerProtocolError
+
+    server = _server()
+    boundary = NativeBoundary(server)
+    tracker = _tracker(boundary, SelfWriteLedger())
+    boundary.mode = "changing"
+    with pytest.raises(TrackerProtocolError, match="changed during movement read"):
+        await tracker.read_issue_movement(issue_key=ISSUE)
+    stable = await tracker.read_issue_movement(issue_key=ISSUE)
+    assert stable.updated_at == server.issues[ISSUE].updated_at
