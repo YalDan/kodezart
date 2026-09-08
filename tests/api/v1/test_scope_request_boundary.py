@@ -16,6 +16,7 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -64,7 +65,7 @@ class RecordingEngine:
         base_spec: BaseSpec,
         implied_base: BaseSpec | None = None,
         scope: ScopeRef | None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
         run_identity: RunIdentity | None = None,

@@ -24,6 +24,19 @@ from pydantic import (
 from kodezart.types.base import CamelCaseModel
 
 
+class PermissionMode(StrEnum):
+    """The approval behavior requested by an application session.
+
+    Adapters translate these choices to their engine's permission modes.
+    Tool selection remains a separate input; these values do not grant tools.
+    """
+
+    INTERACTIVE = "interactive"
+    ACCEPT_EDITS = "accept_edits"
+    PLAN = "plan"
+    UNATTENDED = "unattended"
+
+
 class SessionType(StrEnum):
     """Every kind of agent session the service starts.
 

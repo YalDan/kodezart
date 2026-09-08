@@ -34,6 +34,7 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -222,7 +223,7 @@ async def _run(
             repo_path=str(repo),
             repo_url=None,
             base_spec=base_spec,
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )

@@ -1,20 +1,19 @@
-"""Permission mode validation for Claude Agent SDK."""
+"""Translate application permission choices at the Claude SDK boundary."""
 
-from typing import Literal
+from claude_agent_sdk.types import PermissionMode as SDKPermissionMode
 
-PermissionMode = Literal["default", "acceptEdits", "plan", "bypassPermissions"]
+from kodezart.types.domain.session import PermissionMode
 
-_PERMISSION_MODE_MAP: dict[str, PermissionMode] = {
-    "default": "default",
-    "acceptEdits": "acceptEdits",
-    "plan": "plan",
-    "bypassPermissions": "bypassPermissions",
+_PERMISSION_MODE_MAP: dict[PermissionMode, SDKPermissionMode] = {
+    PermissionMode.INTERACTIVE: "default",
+    PermissionMode.ACCEPT_EDITS: "acceptEdits",
+    PermissionMode.PLAN: "plan",
+    PermissionMode.UNATTENDED: "bypassPermissions",
 }
 
 
-def _validate_permission_mode(mode: str) -> PermissionMode:
-    resolved = _PERMISSION_MODE_MAP.get(mode)
-    if resolved is None:
-        msg = f"Invalid permission mode: {mode}"
-        raise ValueError(msg)
-    return resolved
+def map_permission_mode(mode: PermissionMode) -> SDKPermissionMode:
+    """Reject untyped inputs before constructing or opening an SDK session."""
+    if not isinstance(mode, PermissionMode):
+        raise ValueError(f"Invalid permission mode: {mode}")
+    return _PERMISSION_MODE_MAP[mode]

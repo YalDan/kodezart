@@ -12,6 +12,7 @@ from kodezart import main
 from kodezart.composition.jobs import build_job_queue
 from kodezart.core.config import AppConfig
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
+from kodezart.types.domain.session import PermissionMode
 
 
 class LifecycleError(Exception):
@@ -416,7 +417,7 @@ async def test_actual_queue_watchers_finish_fire_records_before_transports_close
                             base_spec=trunk_base("main"),
                             implied_base=None,
                             scope=None,
-                            permission_mode="bypassPermissions",
+                            permission_mode=PermissionMode.UNATTENDED,
                             allowed_tools=["Read"],
                         ),
                     )
@@ -487,7 +488,7 @@ async def test_repeated_lifespan_cancellation_settles_the_actual_queue_worker(
                     base_spec=trunk_base("main"),
                     implied_base=None,
                     scope=None,
-                    permission_mode="bypassPermissions",
+                    permission_mode=PermissionMode.UNATTENDED,
                     allowed_tools=["Read"],
                 ),
             )

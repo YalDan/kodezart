@@ -57,6 +57,7 @@ from kodezart.types.domain.dispatch import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.run_records import RunOutcome
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import ClaimStatus, IssueQuery, TrackerIssue
 from kodezart.types.domain.workflow import WorkflowSubmission
 
@@ -453,7 +454,7 @@ class FireDispatcher:
                 base_spec=spec,
                 implied_base=spec,
                 scope=None,
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
             ),
         )

@@ -11,6 +11,7 @@ from kodezart.types.domain.agent import AuthoredWorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.operation import CheckPrerequisite, CheckStep, RepoEntry
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.session import PermissionMode
 from tests.adapters.test_ci_rerun import ActionsAPI
 from tests.adapters.test_github_api import _make_client
 from tests.chains.test_ralph_workflow import _make_engine, _stalled_gate
@@ -46,7 +47,7 @@ async def finish(workflow):
             repo_path="/fixture",
             repo_url=REPO,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )

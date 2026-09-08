@@ -41,10 +41,10 @@ from kodezart.types.domain.gating import (
     durability_of,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
-_AUDIT_PERMISSION_MODE = "default"
+_AUDIT_PERMISSION_MODE = PermissionMode.INTERACTIVE
 
 #: Failure kinds a retry can plausibly change. Anything else is a settled
 #: answer of "no answer" and retrying it only spends money.

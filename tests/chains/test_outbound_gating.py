@@ -21,6 +21,7 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.fakes import (
     FakeAgentExecutor,
@@ -108,7 +109,7 @@ async def run_engine(
             repo_path=repo_path,
             repo_url=repo_url,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )

@@ -44,6 +44,7 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -100,7 +101,7 @@ class OriginRoutedWorkflowEngine:
         base_spec: BaseSpec,
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:

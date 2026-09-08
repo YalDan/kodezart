@@ -48,7 +48,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -118,7 +118,7 @@ class ScriptedAuditExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType = FAKE_SESSION_TYPE,

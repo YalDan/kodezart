@@ -25,6 +25,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -170,7 +171,7 @@ async def setup(tmp_path, executor):
         "repo_url": None,
         "base_spec": trunk_base("main"),
         "scope": None,
-        "permission_mode": "bypassPermissions",
+        "permission_mode": PermissionMode.UNATTENDED,
         "allowed_tools": ["Bash"],
         "cache_key": "phase-run",
         "run_identity": identity,
@@ -217,11 +218,14 @@ async def test_production_wiring_runs_each_phase_once_with_fresh_judgment(
         executor.calls
     )
     for call in executor.calls:
+        assert isinstance(call["permission_mode"], PermissionMode)
+        if call["role"] == "implementation":
+            assert call["permission_mode"] is request["permission_mode"]
         if call["role"] != "other":
             assert call["run_identity"] == request["run_identity"]
         if call["role"] in {"validation", "evaluation", "review"}:
             assert call["session_id"] is None
-            assert call["permission_mode"] == "plan"
+            assert call["permission_mode"] is PermissionMode.PLAN
             assert call["cwd"] != next(
                 item["cwd"]
                 for item in executor.calls

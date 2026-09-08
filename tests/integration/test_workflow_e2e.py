@@ -39,7 +39,7 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistSource
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -270,7 +270,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
             repo_path=str(repo),
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -426,7 +426,7 @@ async def test_workflow_e2e_exhausts_iterations(
             repo_path=str(repo),
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -474,7 +474,7 @@ class _MarkerCapturingExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
@@ -637,7 +637,7 @@ async def test_workflow_e2e_divergent_base_branch(
             repo_path=str(repo),
             repo_url=None,
             base_spec=trunk_base("develop"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -942,7 +942,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
             repo_path=str(repo),
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1212,7 +1212,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
                 repo_path="/tmp/fake",
                 repo_url=None,
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
             )
@@ -1532,7 +1532,7 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
             repo_path=str(repo),
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1648,7 +1648,7 @@ class _RoundStackingExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
@@ -1823,7 +1823,7 @@ async def test_a_review_entry_round_is_built_on_the_consolidated_work(
             repo_path=str(repo),
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )

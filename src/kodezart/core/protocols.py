@@ -41,7 +41,7 @@ from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -295,7 +295,7 @@ class AgentExecutor(Protocol):
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -1180,7 +1180,7 @@ class AgentRunner(Protocol):
         repo_path: str | None = None,
         repo_url: str | None = None,
         branch: str | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -1203,7 +1203,7 @@ class AgentRunner(Protocol):
         base_branch: str = "main",
         branch_name: str | None = None,
         ralph_branch: str | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -1222,7 +1222,7 @@ class AgentRunner(Protocol):
         *,
         prompt: str,
         workspace_path: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
@@ -1269,7 +1269,7 @@ class QualityGate(Protocol):
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
@@ -1335,7 +1335,7 @@ class WorkflowEngine(Protocol):
         base_spec: BaseSpec,
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:

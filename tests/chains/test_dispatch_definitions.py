@@ -27,7 +27,7 @@ from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -132,7 +132,7 @@ class RecordingRunner:
         repo_path: str | None = None,
         repo_url: str | None = None,
         branch: str | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
@@ -153,7 +153,7 @@ class RecordingRunner:
         *,
         prompt: str,
         workspace_path: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
@@ -177,7 +177,7 @@ class RecordingRunner:
         base_branch: str = "main",
         branch_name: str | None = None,
         ralph_branch: str | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = SessionType.TICKET_FIRE,
@@ -406,7 +406,7 @@ async def evaluator_dispatches(provider: InRepoPromptRegistry) -> RecordingRunne
         ralph_branch="kodezart/test-12345678-ralph-abcdef01",
         base_spec=trunk_base("main"),
         work_base_ref="main",
-        permission_mode="bypassPermissions",
+        permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
         acceptance_criteria=criteria,
         cache_key="dispatch-fixture",

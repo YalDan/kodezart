@@ -475,8 +475,19 @@ cannot quietly escape it.
 
 ### Permission Modes
 
-- `plan` - Read-only tools, agent cannot modify files
-- `bypassPermissions` - Full tool access including `Edit` and `Write`
+Application ports and execution contexts carry `PermissionMode` from the domain
+session vocabulary: `INTERACTIVE`, `ACCEPT_EDITS`, `PLAN`, or `UNATTENDED`.
+The Claude adapters translate these to `default`, `acceptEdits`, `plan`, and
+`bypassPermissions` respectively. Tool selection remains an independent input.
+
+HTTP retains its existing `plan` and `bypassPermissions` values and defaults
+(query: `plan`; workflow/fire: `bypassPermissions`). The handler translates them
+before invoking the application. HTTP responses do not expose the internal
+permission value. Checkpoint configuration round-trips the domain enum; there
+is no supported cross-version workflow-resume API.
+
+Tool-name presets and open `allowedTools` selectors still use SDK vocabulary;
+this permission boundary does not narrow or translate those selectors.
 
 ### Structured Output
 

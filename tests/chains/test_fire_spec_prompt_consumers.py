@@ -17,6 +17,7 @@ from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import ConjunctionVerdict, CriteriaArtifact
 from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import ExecutionContext
 from tests.chains.test_ralph_workflow import _make_engine
 from tests.chains.test_remediation import _chain, _request, _ticket_result
@@ -44,7 +45,7 @@ async def capture_prompts(family, ticket, monkeypatch):
         repo_url="https://github.com/example/project",
         cache_key="original-job",
         base_spec=trunk_base("selected-base"),
-        permission_mode="acceptEdits",
+        permission_mode=PermissionMode.ACCEPT_EDITS,
         allowed_tools=["Read"],
     )
     quality_gate = FakeQualityGate(events=[], evaluation=make_passing_evaluation())

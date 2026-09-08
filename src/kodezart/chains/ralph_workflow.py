@@ -38,6 +38,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import (
     ExecutionContext,
     WorkflowState,
@@ -86,7 +87,7 @@ class RalphWorkflowEngine:
         base_spec: BaseSpec,
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
         run_identity: RunIdentity | None = None,
@@ -315,7 +316,7 @@ class RalphWorkflowEngine:
         base_spec: BaseSpec,
         scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
         run_identity: RunIdentity | None = None,

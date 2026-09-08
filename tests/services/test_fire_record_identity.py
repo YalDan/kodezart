@@ -11,7 +11,7 @@ from kodezart.types.domain.agent import AssistantTextEvent, WorkflowCompleteEven
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.chains.test_ralph_loop import _make_loop as quality_loop
 from tests.chains.test_ralph_loop import _run_kwargs as quality_kwargs
@@ -66,7 +66,7 @@ async def test_real_queue_router_workflow_and_ticket_sessions_share_submission_i
                 base_spec=trunk_base("main"),
                 implied_base=None,
                 scope=None,
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=[],
             ),
         )

@@ -38,6 +38,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import (
     ExecutionContext,
     WorkflowState,
@@ -76,7 +77,7 @@ class FireImplementation:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,

@@ -17,7 +17,7 @@ from kodezart.core.config import AppConfig
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AssistantTextEvent, ResultEvent
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
     NO_KNOWLEDGE_GRANT,
@@ -72,7 +72,7 @@ async def test_stream_carries_the_session_type_to_the_executor(
     async for _ in service.stream(
         prompt="p",
         repo_path="/tmp/fake",
-        permission_mode="plan",
+        permission_mode=PermissionMode.PLAN,
         allowed_tools=[],
         skills=SUPPRESS_ALL_SKILLS,
         session_type=session_type,
@@ -90,7 +90,7 @@ async def test_stream_in_workspace_carries_the_session_type(session_type) -> Non
     async for _ in service.stream_in_workspace(
         prompt="p",
         workspace_path="/tmp/fake",
-        permission_mode="plan",
+        permission_mode=PermissionMode.PLAN,
         allowed_tools=[],
         skills=SUPPRESS_ALL_SKILLS,
         session_type=session_type,
@@ -109,7 +109,7 @@ async def test_stream_workflow_carries_the_session_type(session_type) -> None:
         prompt="p",
         repo_path="/tmp/fake",
         branch_name="feature",
-        permission_mode="plan",
+        permission_mode=PermissionMode.PLAN,
         allowed_tools=[],
         skills=SUPPRESS_ALL_SKILLS,
         session_type=session_type,

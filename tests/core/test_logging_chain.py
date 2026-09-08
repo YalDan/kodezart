@@ -34,6 +34,7 @@ from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.services.test_pass_scheduler import Metronome
 
@@ -180,7 +181,7 @@ async def test_the_queues_failure_event_carries_the_traceback() -> None:
                     base_spec=trunk_base("main"),
                     implied_base=None,
                     scope=None,
-                    permission_mode="bypassPermissions",
+                    permission_mode=PermissionMode.UNATTENDED,
                     allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
                 ),
             )

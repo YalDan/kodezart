@@ -39,6 +39,7 @@ from kodezart.types.domain.agent import (
     ToolResultEvent,
     ToolUseEvent,
 )
+from kodezart.types.domain.session import PermissionMode
 from tests.probes.recording import record
 
 # ---------------------------------------------------------------------------
@@ -121,7 +122,7 @@ TYPED_AGENT_DEFINITIONS: dict[str, AgentDefinition] = {
 def session_options(
     *,
     cwd: Path,
-    permission_mode: str,
+    permission_mode: PermissionMode,
     allowed_tools: list[str],
     max_turns: int,
     agents: dict[str, AgentDefinition] | None = None,
