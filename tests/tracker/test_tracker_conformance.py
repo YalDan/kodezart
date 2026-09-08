@@ -19,10 +19,17 @@ import pytest
 
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import DuplicateWorkRefError, UnsupportedClaimError
+from kodezart.domain.errors import (
+    DuplicateWorkRefError,
+    SurfaceLeaseError,
+    UnsupportedClaimError,
+    UnsupportedLeaseError,
+)
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimStatus,
@@ -52,6 +59,7 @@ from tests.tracker.conftest import (
     FOREIGN_REVIEW,
     SCOPE_DIAGNOSIS,
     TEAM_IDENTIFIERS,
+    FixtureClock,
 )
 
 LEASE_SECONDS = 600.0
@@ -59,9 +67,45 @@ TEAM = TEAM_IDENTIFIERS["engineering"]
 #: The signal the refusing cases put out of the credential's reach.
 REFUSED = [PassSignal.reviews_changed]
 
+#: The lease fixture's surfaces: one issue carrying a description and two
+#: independently addressed marker comments, plus a second issue's
+#: description, so a disjoint set exists to acquire alongside.
+CLAIMED_REF = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+APPROVED_REF = ScopeRef(kind=ScopeKind.ISSUE, key=APPROVED_ISSUE)
+CLAIMED_DESCRIPTION = WritableSurface(
+    kind=SurfaceKind.ISSUE_DESCRIPTION,
+    ref=CLAIMED_REF,
+)
+MARKER_A = WritableSurface(
+    kind=SurfaceKind.MARKER_COMMENT,
+    ref=CLAIMED_REF,
+    marker="A",
+)
+MARKER_B = WritableSurface(
+    kind=SurfaceKind.MARKER_COMMENT,
+    ref=CLAIMED_REF,
+    marker="B",
+)
+APPROVED_DESCRIPTION = WritableSurface(
+    kind=SurfaceKind.ISSUE_DESCRIPTION,
+    ref=APPROVED_REF,
+)
+#: Holders are shaped as the identities the contract names: a lease is held
+#: under the writing run's job id.
+JOB_A = "job-a"
+JOB_B = "job-b"
+#: The two holder vocabularies, side by side: a deployment's process
+#: identity holds a fire claim, a run's job id holds a write lease.
+PROCESS_HOLDER = "kodezart-process"
+JOB_HOLDER = "job-17"
+
 
 @contextmanager
-def claim_contract(writes: Callable[[], tuple[object, ...]]) -> Iterator[None]:
+def refusal_contract(
+    writes: Callable[[], tuple[object, ...]],
+    *,
+    refusal: type[Exception],
+) -> Iterator[None]:
     """A permanent unsupported refusal must precede every mutation.
 
     A backend that grants acquisition but later cannot renew fails this
@@ -71,14 +115,14 @@ def claim_contract(writes: Callable[[], tuple[object, ...]]) -> Iterator[None]:
     before = writes()
     try:
         yield
-    except UnsupportedClaimError:
+    except refusal:
         assert writes() == before
 
 
-def test_claim_contract_rejects_a_refusal_after_a_mutation() -> None:
+def test_refusal_contract_rejects_a_refusal_after_a_mutation() -> None:
     changes: list[object] = []
     with pytest.raises(AssertionError):
-        with claim_contract(lambda: tuple(changes)):
+        with refusal_contract(lambda: tuple(changes), refusal=UnsupportedClaimError):
             changes.append("backend mutation")
             raise UnsupportedClaimError("cannot fence")
 
@@ -355,7 +399,7 @@ class TestAtomicClaim:
     async def test_claim_grants_then_reads_back(
         self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
     ) -> None:
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             granted = await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -378,7 +422,7 @@ class TestAtomicClaim:
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """AC: two simultaneous claimants -> one wins, the loser sees LOST."""
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             first, second = await asyncio.gather(
                 tracker.claim_issue(
                     issue_key=CLAIMED_ISSUE,
@@ -400,7 +444,7 @@ class TestAtomicClaim:
         tracker: TrackerPort,
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -419,7 +463,7 @@ class TestAtomicClaim:
         tracker: TrackerPort,
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -439,7 +483,7 @@ class TestAtomicClaim:
         tracker: TrackerPort,
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -461,7 +505,7 @@ class TestAtomicClaim:
         the watch releases what its job finished with; a second release is
         an ordinary state and not an error.
         """
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -484,7 +528,7 @@ class TestAtomicClaim:
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """Idempotence is not amnesia: a release frees THIS holder's claim."""
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -515,7 +559,7 @@ class TestAtomicClaim:
         later claimant, for the whole of a lease nobody was renewing
         (KOD-152).
         """
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -541,7 +585,7 @@ class TestAtomicClaim:
     async def test_the_lease_bounds_the_claim(
         self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
     ) -> None:
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             granted = await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -567,7 +611,7 @@ class TestRenewingAClaim:
         tracker: TrackerPort,
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -592,7 +636,7 @@ class TestRenewingAClaim:
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """A renewal nobody else can observe protects nothing."""
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -617,7 +661,7 @@ class TestRenewingAClaim:
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """The crash arm: a lapsed claim stays lapsed and stays claimable."""
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             assert (
                 await tracker.renew_claim(
                     issue_key=CLAIMED_ISSUE,
@@ -639,7 +683,7 @@ class TestRenewingAClaim:
         tracker: TrackerPort,
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -664,7 +708,7 @@ class TestRenewingAClaim:
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """The whole point: the TRACKER excludes the second claimant."""
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -695,7 +739,7 @@ class TestRenewingAClaim:
         claimant did while the run was working, the run that is still
         working is the one holding the issue.
         """
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -730,7 +774,7 @@ class TestRenewingAClaim:
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """Every write the renewals made goes, not merely the newest."""
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
@@ -745,6 +789,538 @@ class TestRenewingAClaim:
             await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
 
             assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+
+
+class TestSurfaceLease:
+    """All-or-nothing exclusion over a SET of write surfaces.
+
+    Extends the claim cases directly above: a claim answers which
+    deployment may fire an issue, a lease answers which run may write a
+    surface. An implementation that cannot fence set ownership refuses
+    before it takes anything, which is what the refusal contract observes.
+    """
+
+    async def test_acquire_grants_the_whole_set_and_reads_back(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+
+            lease = await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            assert lease.holder == JOB_A
+            assert lease.surfaces == requested
+            assert lease.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
+
+    async def test_an_intersecting_set_is_refused_naming_the_surface_and_holder(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({CLAIMED_DESCRIPTION, MARKER_A}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await tracker.acquire_surfaces(
+                    surfaces=frozenset({MARKER_A, MARKER_B}),
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                )
+
+            assert refused.value.surface_kind == "marker_comment"
+            assert refused.value.marker == "A"
+            assert refused.value.scope_key == CLAIMED_ISSUE
+            assert refused.value.current_holder == JOB_A
+
+    async def test_a_failed_acquisition_holds_nothing(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The refused holder took no part of the set it asked for."""
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({CLAIMED_DESCRIPTION, MARKER_A}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+            with pytest.raises(SurfaceLeaseError):
+                await tracker.acquire_surfaces(
+                    surfaces=frozenset({MARKER_A, MARKER_B}),
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                )
+
+            taken = await tracker.acquire_surfaces(
+                surfaces=frozenset({MARKER_B}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            assert taken.holder == JOB_A
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await tracker.acquire_surfaces(
+                    surfaces=frozenset({MARKER_B}),
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                )
+            assert refused.value.current_holder == JOB_A
+
+    async def test_two_holders_with_disjoint_sets_both_acquire(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            first = await tracker.acquire_surfaces(
+                surfaces=frozenset({CLAIMED_DESCRIPTION}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+            second = await tracker.acquire_surfaces(
+                surfaces=frozenset({APPROVED_DESCRIPTION}),
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            assert first.holder == JOB_A
+            assert second.holder == JOB_B
+
+    async def test_two_simultaneous_claimants_on_one_set_produce_exactly_one_lease(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            outcomes = await asyncio.gather(
+                tracker.acquire_surfaces(
+                    surfaces=requested,
+                    holder=JOB_A,
+                    lease_seconds=LEASE_SECONDS,
+                ),
+                tracker.acquire_surfaces(
+                    surfaces=requested,
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                ),
+                return_exceptions=True,
+            )
+            for outcome in outcomes:
+                if isinstance(outcome, UnsupportedLeaseError):
+                    raise outcome
+
+            assert sum(isinstance(one, SurfaceLease) for one in outcomes) == 1
+            assert sum(isinstance(one, SurfaceLeaseError) for one in outcomes) == 1
+
+    async def test_one_marker_is_refused_while_the_rest_of_the_issue_stays_acquirable(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """Surfaces on one issue are independent addresses, not one lock."""
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({MARKER_A}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            rest = await tracker.acquire_surfaces(
+                surfaces=frozenset({CLAIMED_DESCRIPTION, MARKER_B}),
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            assert rest.holder == JOB_B
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await tracker.acquire_surfaces(
+                    surfaces=frozenset({MARKER_A}),
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                )
+            assert refused.value.current_holder == JOB_A
+
+    async def test_release_frees_the_set_for_the_next_holder(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            await tracker.release_surfaces(surfaces=requested, holder=JOB_A)
+
+            taken = await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert taken.holder == JOB_B
+
+    async def test_release_by_a_non_holder_is_a_no_op(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            await tracker.release_surfaces(surfaces=requested, holder=JOB_B)
+
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await tracker.acquire_surfaces(
+                    surfaces=requested,
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                )
+            assert refused.value.current_holder == JOB_A
+
+    async def test_renewal_extends_a_lease_the_holder_holds(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            renewed = await tracker.renew_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS * 2,
+            )
+
+            assert renewed is not None
+            assert renewed.expires_at == FIXTURE_NOW + timedelta(
+                seconds=LEASE_SECONDS * 2,
+            )
+
+    async def test_renewal_by_a_non_holder_renews_nothing(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            refused_renewal = await tracker.renew_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS * 2,
+            )
+
+            assert refused_renewal is None
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await tracker.acquire_surfaces(
+                    surfaces=requested,
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                )
+            assert refused.value.current_holder == JOB_A
+
+    async def test_renewal_of_a_partially_held_set_renews_nothing(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """Renewal extends what the holder holds WHOLE, and never acquires."""
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({CLAIMED_DESCRIPTION}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            renewed = await tracker.renew_surfaces(
+                surfaces=frozenset({CLAIMED_DESCRIPTION, MARKER_A}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS * 2,
+            )
+
+            assert renewed is None
+            taken = await tracker.acquire_surfaces(
+                surfaces=frozenset({MARKER_A}),
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert taken.holder == JOB_B
+
+    async def test_same_holder_reacquisition_is_not_contention(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            again = await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            assert again.holder == JOB_A
+            assert again.surfaces == requested
+
+    async def test_a_non_default_duration_is_the_one_honored(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+    ) -> None:
+        """The duration the CALL supplies is the one the lease expires on."""
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            lease = await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS * 3,
+            )
+
+            clock.advance(seconds=LEASE_SECONDS * 2)
+
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await tracker.acquire_surfaces(
+                    surfaces=requested,
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                )
+            assert refused.value.current_holder == JOB_A
+            assert lease.expires_at == FIXTURE_NOW + timedelta(
+                seconds=LEASE_SECONDS * 3,
+            )
+
+    async def test_an_expired_lease_is_free_for_another_holder(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            clock.advance(seconds=LEASE_SECONDS + 1)
+
+            taken = await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert taken.holder == JOB_B
+
+    async def test_the_original_holder_reacquires_an_expired_lease_without_contention(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+    ) -> None:
+        """A run coming back to its own lapsed surfaces contends with nobody."""
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            clock.advance(seconds=LEASE_SECONDS + 1)
+
+            again = await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert again.holder == JOB_A
+            assert again.expires_at == clock.now + timedelta(seconds=LEASE_SECONDS)
+
+    async def test_a_renewal_after_expiry_and_reacquisition_cannot_steal(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+    ) -> None:
+        """The delayed renewal arrives after the set changed hands, and loses."""
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+            clock.advance(seconds=LEASE_SECONDS + 1)
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            stale = await tracker.renew_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            assert stale is None
+            held = await tracker.renew_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert held is not None
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await tracker.acquire_surfaces(
+                    surfaces=requested,
+                    holder=JOB_A,
+                    lease_seconds=LEASE_SECONDS,
+                )
+            assert refused.value.current_holder == JOB_B
+
+    async def test_a_renewal_before_expiry_keeps_the_holder_past_the_original_bound(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+    ) -> None:
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+            clock.advance(seconds=LEASE_SECONDS / 2)
+            await tracker.renew_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            clock.advance(seconds=LEASE_SECONDS / 2 + 1)
+
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await tracker.acquire_surfaces(
+                    surfaces=requested,
+                    holder=JOB_B,
+                    lease_seconds=LEASE_SECONDS,
+                )
+            assert refused.value.current_holder == JOB_A
+
+    async def test_a_lapsed_lease_is_not_renewable(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+    ) -> None:
+        """A lapse hands the surfaces back; renewal may not take them again."""
+        with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+            requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+            clock.advance(seconds=LEASE_SECONDS + 1)
+
+            assert (
+                await tracker.renew_surfaces(
+                    surfaces=requested,
+                    holder=JOB_A,
+                    lease_seconds=LEASE_SECONDS,
+                )
+                is None
+            )
+            taken = await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert taken.holder == JOB_B
+
+    async def test_a_fire_claim_and_a_write_lease_are_held_under_distinct_identities(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """Two questions, two vocabularies, neither derived from the other.
+
+        A claim answers which DEPLOYMENT may fire an issue and is held
+        under a process identity; a lease answers which RUN may write a
+        surface and is held under a job id. Holding one confers nothing
+        about the other, on the same issue.
+        """
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
+            with refusal_contract(tracker_writes, refusal=UnsupportedLeaseError):
+                claimed = await tracker.claim_issue(
+                    issue_key=CLAIMED_ISSUE,
+                    holder=PROCESS_HOLDER,
+                    lease_seconds=LEASE_SECONDS,
+                )
+                lease = await tracker.acquire_surfaces(
+                    surfaces=frozenset({CLAIMED_DESCRIPTION}),
+                    holder=JOB_HOLDER,
+                    lease_seconds=LEASE_SECONDS,
+                )
+
+                assert claimed.status is ClaimStatus.GRANTED
+                held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+                assert held is not None
+                assert held.holder == PROCESS_HOLDER
+                assert lease.holder == JOB_HOLDER
+
+                with pytest.raises(SurfaceLeaseError) as refused:
+                    await tracker.acquire_surfaces(
+                        surfaces=frozenset({CLAIMED_DESCRIPTION}),
+                        holder=PROCESS_HOLDER,
+                        lease_seconds=LEASE_SECONDS,
+                    )
+                assert refused.value.current_holder == JOB_HOLDER
+                lost = await tracker.claim_issue(
+                    issue_key=CLAIMED_ISSUE,
+                    holder=JOB_HOLDER,
+                    lease_seconds=LEASE_SECONDS,
+                )
+                assert lost.status is ClaimStatus.LOST
 
 
 class TestAssets:
@@ -1198,6 +1774,37 @@ class TestScanCapability:
         assert refusals == {}
 
 
+class TestWriterIdentity:
+    """Who the backend attributes this adapter's writes to.
+
+    A boot-time read, compared there against the operation's declared
+    non-human writer. It is stated at the port so every implementation
+    answers the same question, and it is a READ: asking must change
+    nothing.
+    """
+
+    async def test_the_writer_identity_carries_both_spellings_of_the_actor(
+        self,
+        tracker: TrackerPort,
+        server: FakeLinearMcpServer,
+    ) -> None:
+        assert await tracker.writer_identity() == {
+            server.actor,
+            server.display_name(server.actor),
+        }
+
+    async def test_the_writer_identity_is_read_not_written(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        before = tracker_writes()
+
+        await tracker.writer_identity()
+
+        assert tracker_writes() == before
+
+
 class TestSubstitutability:
     """No capability flags, no feature detection, no partial adapters."""
 
@@ -1334,7 +1941,7 @@ class TestWorkRefs:
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """Both live on the comment log; neither may see the other's markers."""
-        with claim_contract(tracker_writes):
+        with refusal_contract(tracker_writes, refusal=UnsupportedClaimError):
             await tracker.claim_issue(
                 issue_key=APPROVED_ISSUE,
                 holder="fixture-holder",

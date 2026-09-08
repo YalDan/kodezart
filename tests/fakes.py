@@ -46,12 +46,14 @@ from kodezart.domain.errors import (
     PRStateReadError,
     RateLimitError,
     ScopeReadError,
+    SurfaceLeaseError,
     TransientAPIError,
     WorkspaceError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.scope_approval import resolve_execution_approval
+from kodezart.domain.surface_lease import live_conflict
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -127,6 +129,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -2471,6 +2474,10 @@ class FakeMcpComment:
         }
 
 
+#: The query the vendor's user read answers the caller's own account for.
+_CURRENT_USER = "me"
+
+
 class FakeLinearMcpServer:
     """In-process MCP server satisfying ``McpToolCaller``.
 
@@ -2903,6 +2910,27 @@ class FakeLinearMcpServer:
             "hasNextPage": False,
         }
 
+    def _tool_get_user(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """One user, under BOTH identities, for the query the caller sends.
+
+        ``"me"`` answers the account this credential writes as, which is
+        the server's ``actor``; any other query is a lookup by name, and a
+        name the workspace does not hold is a tool error like any other.
+        """
+        query = str(arguments["query"])
+        name = self.actor if query == _CURRENT_USER else query
+        if name not in {self.actor, *self.users}:
+            msg = f"fake workspace has no user {query!r}"
+            raise LookupError(msg)
+        return {
+            "id": f"{name}-id",
+            "name": name,
+            "displayName": self.display_name(name),
+        }
+
     def _tool_list_teams(
         self,
         arguments: Mapping[str, object],
@@ -3153,6 +3181,7 @@ class FakeTrackerPort:
         recorded_repositories: Mapping[str, str] | None = None,
         initiative_identifiers: Mapping[str, frozenset[str]] | None = None,
         scan_refusals: Mapping[PassSignal, str] | None = None,
+        writer_identities: frozenset[str] = frozenset(),
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
@@ -3184,6 +3213,13 @@ class FakeTrackerPort:
             initiative_identifiers or {},
         )
         self.claims: dict[str, ClaimResult] = {}
+        #: The live lease per surface.  One SurfaceLease object is written
+        #: under every surface of the set it covers, so a partial release
+        #: or a partial renewal is visible as a set that no longer agrees.
+        self.leases: dict[WritableSurface, SurfaceLease] = {}
+        #: Every lease this double GRANTED, in order — kept past the release
+        #: that removes it, the way ``claim_writes`` outlives its claim.
+        self.lease_writes: list[SurfaceLease] = []
         #: Every renewal ATTEMPT, granted or refused, as (issue, holder).
         #: A heartbeat that has stopped is observed as a count that stopped
         #: growing, which a record of grants alone cannot tell from a
@@ -3230,6 +3266,8 @@ class FakeTrackerPort:
         self.scan_refusals: dict[PassSignal, str] = dict(scan_refusals or {})
         #: Every capability sweep this double was asked, in order.
         self.capability_probes: list[tuple[PassSignal, ...]] = []
+        #: Both spellings of the account this double's writes are signed by.
+        self.writer_identities: frozenset[str] = writer_identities
         self._assets: dict[str, tuple[TrackerAsset, ...]] = {
             key: tuple(value) for key, value in (assets or {}).items()
         }
@@ -3347,6 +3385,10 @@ class FakeTrackerPort:
             for signal in signals
             if (diagnosis := self.scan_refusals.get(signal)) is not None
         }
+
+    async def writer_identity(self) -> frozenset[str]:
+        await asyncio.sleep(0)
+        return self.writer_identities
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)
@@ -3832,6 +3874,77 @@ class FakeTrackerPort:
             del self.claims[issue_key]
             self._wrote(issue_key)
 
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        # The scheduling point is BEFORE the check-and-set, never inside it:
+        # a fake whose acquisition is not genuinely atomic proves nothing
+        # about the all-or-nothing contract.
+        await asyncio.sleep(0)
+        now = self._clock()
+        conflict = live_conflict(
+            requested=surfaces, held=self.leases, holder=holder, now=now
+        )
+        if conflict is not None:
+            raise SurfaceLeaseError(
+                "surface set intersects a live lease",
+                surface=conflict[0],
+                current_holder=conflict[1],
+            )
+        granted = SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=now + timedelta(seconds=lease_seconds),
+        )
+        for surface in surfaces:
+            self.leases[surface] = granted
+        self.lease_writes.append(granted)
+        return granted
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        await asyncio.sleep(0)
+        now = self._clock()
+        held = [self.leases.get(surface) for surface in surfaces]
+        if any(
+            lease is None or lease.holder != holder or lease.expires_at <= now
+            for lease in held
+        ):
+            return None
+        renewed = SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=max(
+                now + timedelta(seconds=lease_seconds),
+                *(lease.expires_at for lease in held if lease is not None),
+            ),
+        )
+        for surface in surfaces:
+            self.leases[surface] = renewed
+        self.lease_writes.append(renewed)
+        return renewed
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        await asyncio.sleep(0)
+        for surface in surfaces:
+            lease = self.leases.get(surface)
+            if lease is not None and lease.holder == holder:
+                del self.leases[surface]
+
     async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
         await asyncio.sleep(0)
         held = self.claims.get(issue_key)
@@ -4071,15 +4184,34 @@ class FakeTrackerPort:
 
 
 class FakeDeliveryProbe:
-    """``DeliveryProbe`` over a fixed set of issue keys with an open delivery."""
+    """One forge double, answering both questions the native client answers.
 
-    def __init__(self, *, delivered: Sequence[str] = ()) -> None:
+    The production client implements ``DeliveryProbe`` and ``PRStateReader``
+    on the same object, so a consumer handed this probe is holding the
+    merge-state boundary as well: ``calls`` records what it was asked about
+    deliveries, ``merge_state.calls`` what it was asked about pull requests.
+    That is what makes "the merge-state reader was never asked" an
+    observation about the consumer rather than about an unreachable double.
+    """
+
+    def __init__(
+        self,
+        *,
+        delivered: Sequence[str] = (),
+        pr_states: Mapping[tuple[str, int], PRState] | None = None,
+    ) -> None:
         self.delivered: set[str] = set(delivered)
         self.calls: list[str] = []
+        self.merge_state = FakePRStateReader(records=dict(pr_states or {}))
 
     async def open_delivery_exists(self, *, repo_url: str, issue_key: str) -> bool:
         self.calls.append(issue_key)
         return issue_key in self.delivered
+
+    async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
+        return await self.merge_state.read_pr_state(
+            repo_url=repo_url, pr_number=pr_number
+        )
 
 
 def make_tracker_review(
@@ -4106,6 +4238,7 @@ def make_tracker_issue(
     project: str | None = None,
     project_id: str | None = None,
     body: str = "fixture body",
+    issue_labels: frozenset[str] = frozenset(),
 ) -> TrackerIssue:
     """A domain issue for port-consumer fixtures."""
     return TrackerIssue(
@@ -4113,6 +4246,7 @@ def make_tracker_issue(
         parent_key=parent_key,
         title=issue_key,
         body=body,
+        issue_labels=issue_labels,
         priority=priority,
         state_name=state_name,
         state_kind=state_kind,

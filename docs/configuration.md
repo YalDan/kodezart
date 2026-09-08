@@ -256,7 +256,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_TRACKER__SERVER_NAME` | `str` | `linear` |  | MCP server identity used by the tracker transport and, through startup value injection, the tracker-side record sink. |
 | `KODEZART_TRACKER__SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
-| `KODEZART_TRACKER__TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
+| `KODEZART_TRACKER__TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. The account it belongs to must be one of the operation's `agent_identities`; boot refuses otherwise. |
 | `KODEZART_KNOWLEDGE` | `KnowledgeSettings` | unconfigured | typed HTTP/stdio connection | Knowledge grants and server configuration; nested overrides below. |
 
 ## Adapter retry timing

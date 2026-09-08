@@ -14,7 +14,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
 )
 from kodezart.types.domain.criteria import ValidatedCriterion
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import DispatchReport, PassSignal
 from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
@@ -37,7 +37,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
-from kodezart.types.domain.run_records import RunIdentity, RunRecord
+from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
@@ -48,6 +48,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
@@ -755,6 +756,20 @@ class TrackerPort(
         """
         ...
 
+    async def writer_identity(self) -> frozenset[str]:
+        """Every spelling the backend attributes this adapter's writes under.
+
+        Both the account name and the mention handle, because a configured
+        identity may legitimately be either and user resolution already
+        matches the union of the two.
+
+        Read once at boot and compared against the operation's declared
+        agent identities. It is never a flag a consumer reads: a deployment
+        whose credential no declared agent identity answers to does not
+        serve, so nothing downstream branches on the answer.
+        """
+        ...
+
     async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
         """Stable native field projection and complete comments for receipt replay."""
         ...
@@ -1001,6 +1016,11 @@ class TrackerPort(
         ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
         value, never an exception. An adapter without atomic/fenced
         ownership refuses with ``UnsupportedClaimError`` before mutation.
+
+        *holder* is the deployment's PROCESS identity, the value
+        ``core/config.py::dispatch_holder`` carries. It answers which
+        deployment may fire an issue; a surface lease's holder answers
+        which run may write a surface. Neither is derived from the other.
         """
         ...
 
@@ -1036,6 +1056,58 @@ class TrackerPort(
         ``expires_at`` is when the CLAIM lapses, not when any one write
         that carried it does: a holder that renewed holds until the last of
         its renewals runs out.
+        """
+        ...
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        """Take the WHOLE set exclusively for *holder*, or take nothing.
+
+        Acquisition never blocks and never retries: on intersection with
+        another holder's live lease it raises ``SurfaceLeaseError`` naming
+        that surface and its current holder, releases whatever it took, and
+        holds nothing afterwards. A surface *holder* itself holds live is
+        not contention — re-acquisition succeeds and re-times the whole
+        set — and an expired lease is free to anyone. An adapter without
+        fenced ownership raises ``UnsupportedLeaseError`` before mutation.
+
+        *holder* is the writing run's job id (``JobRecord.job_id``), never
+        the claim's process identity.
+        """
+        ...
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        """Extend a lease *holder* holds live on EVERY surface of the set.
+
+        Returns the lease as it now stands, expiring no earlier than
+        *lease_seconds* from now. Returns ``None``, writing NOTHING, when
+        *holder* does not hold every one of them live: renewal EXTENDS and
+        never acquires, so a lapsed lease stays lapsed and its surfaces stay
+        free. An adapter without fenced ownership raises
+        ``UnsupportedLeaseError`` before mutation.
+        """
+        ...
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        """Release the surfaces *holder* holds.
+
+        A surface it does not hold is a no-op, live or expired.
         """
         ...
 
@@ -1347,6 +1419,36 @@ class WorkflowEngine(Protocol):
         ``cache_key`` IS the LangGraph thread id, so the caller's job id
         addresses the run's checkpoints.
         """
+        ...
+
+
+@runtime_checkable
+class DispatchProducer(Protocol):
+    """Selects at most one issue per pass, and hears how its fire ended.
+
+    The seam between a scheduled tick and the arithmetic that decides what
+    goes next.  A tick composes a gate with a producer; it neither ranks a
+    board nor walks a scope, so the two producers that do are one port to
+    it rather than two branches inside it.
+
+    ``record_run_outcome`` is on the same port because the news travels
+    back the way the selection travelled out: the producer that started a
+    fire is the one that has to remember a failure, and a fan-out that had
+    to know which of them did would be a second copy of the routing the
+    passes already compute.
+    """
+
+    async def run_pass(self) -> DispatchReport:
+        """Run one selection pass and report exactly what it did."""
+        ...
+
+    async def record_run_outcome(
+        self,
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        """Take the news that a fire on *issue_key* ended."""
         ...
 
 

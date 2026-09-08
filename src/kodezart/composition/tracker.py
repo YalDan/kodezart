@@ -15,7 +15,10 @@ from kodezart.adapters.linear_mcp_tracker import (
     is_long_lived_credential,
 )
 from kodezart.core.backoff import RetryPolicy
-from kodezart.core.errors import TrackerCredentialShapeError
+from kodezart.core.errors import (
+    TrackerCredentialShapeError,
+    TrackerWriterAttributionError,
+)
 from kodezart.core.logging import BoundLogger
 from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
@@ -33,6 +36,14 @@ from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 #: Where the tracker credential is read from, named in the refusal because
 #: it is half of what an operator has to act on.
 CREDENTIAL_FIELD: Final[str] = "KODEZART_TRACKER__TOKEN"
+
+#: The operation field that declares who the non-human writer is, named in
+#: the refusal when the operation declares none at all.
+AGENT_IDENTITY_FIELD: Final[str] = "agent_identities"
+
+#: The capability every refusal below names, so an operator reading one
+#: knows which boot check spoke.
+ATTRIBUTABLE_WRITER: Final[str] = "attributable writer"
 
 
 def make_mcp_tool_caller(
@@ -81,6 +92,37 @@ def refuse_foreign_credential(*, backend: TrackerBackend, token: str) -> None:
             "and nothing here refreshes a credential that expires",
             field=CREDENTIAL_FIELD,
             accepted_shape=shape,
+        )
+
+
+async def refuse_unattributable_writer(
+    *, tracker: TrackerPort, operation: OperationConfig
+) -> None:
+    """Refuse a deployment whose writes no declared agent identity owns.
+
+    Read at boot and never again: every write this process makes is signed
+    by the credential's account, and an operation that cannot recognise
+    that account as its own agent reads its own writes as a principal's.
+    The comparison is over both spellings, since a declared identity may be
+    written as a mention or as the account name.
+    """
+    found = await tracker.writer_identity()
+    declared = {identity.lstrip("@") for identity in operation.agent_identities}
+    if not declared:
+        raise TrackerWriterAttributionError(
+            "the operation declares no non-human writer for this deployment",
+            capability=ATTRIBUTABLE_WRITER,
+            writer=sorted(found),
+            declared=(),
+            field=AGENT_IDENTITY_FIELD,
+        )
+    if {spelling.lstrip("@") for spelling in found}.isdisjoint(declared):
+        raise TrackerWriterAttributionError(
+            "the tracker credential is attributed to no declared agent identity",
+            capability=ATTRIBUTABLE_WRITER,
+            writer=sorted(found),
+            declared=sorted(declared),
+            field=CREDENTIAL_FIELD,
         )
 
 
@@ -189,6 +231,7 @@ async def boot_tracker(
             operation=operation,
             caller=caller,
         )
+        await refuse_unattributable_writer(tracker=tracker, operation=operation)
         reconciliation = await reconcile_tracker_mappings(
             tracker=tracker,
             config=operation,

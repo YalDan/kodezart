@@ -23,6 +23,7 @@ from tests.adapters.test_github_api import _make_client
 from tests.domain.test_lane_record import record_data
 from tests.fakes import FakeGitService, FakeMcpIssue, FakePRStateReader, FakeRepoCache
 from tests.tracker.conftest import WORKFLOW_STATE_NAMES, fixture_server
+from tests.tracker.conftest import clock as clock
 from tests.tracker.conftest import tracker as tracker
 from tests.tracker.conftest import tracker_writes as tracker_writes
 

@@ -414,6 +414,36 @@ class TrackerCredentialShapeError(Exception):
         self.accepted_shape: str = accepted_shape
 
 
+class TrackerWriterAttributionError(Exception):
+    """Raised at boot when no declared agent identity owns the credential.
+
+    Names the CAPABILITY, the identities the backend attributes this
+    deployment's writes to, the identities the operation declared, and the
+    field to act on — between them the whole of what an operator can do:
+    point the credential at the declared writer, or declare the writer the
+    credential belongs to.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        capability: str,
+        writer: Sequence[str],
+        declared: Sequence[str],
+        field: str,
+    ) -> None:
+        super().__init__(
+            f"{message} ({capability}: the credential writes as "
+            f"{', '.join(sorted(writer)) or 'nobody'}; the operation declares "
+            f"{', '.join(sorted(declared)) or 'nobody'}; act on {field})"
+        )
+        self.capability: str = capability
+        self.writer: tuple[str, ...] = tuple(writer)
+        self.declared: tuple[str, ...] = tuple(declared)
+        self.field: str = field
+
+
 class PromptNamespaceCollisionError(Exception):
     """Raised at boot when the three binding namespaces are not disjoint."""
 

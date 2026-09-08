@@ -39,6 +39,7 @@ from kodezart.domain.errors import (
     IssueLabelReadError,
     TransientAPIError,
     UnsupportedClaimError,
+    UnsupportedLeaseError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
@@ -98,6 +99,7 @@ from kodezart.types.domain.self_writes import (
     field_value,
     field_values,
 )
+from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -134,6 +136,7 @@ _TOOL_LIST_DOCUMENTS = "list_documents"
 _TOOL_SAVE_DOCUMENT = "save_document"
 _TOOL_GET_PROJECT = "get_project"
 _TOOL_LIST_USERS = "list_users"
+_TOOL_GET_USER = "get_user"
 _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
 _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
@@ -165,6 +168,7 @@ _READ_TOOLS: Final[frozenset[str]] = SCOPE_READ_TOOLS | frozenset(
         _TOOL_LIST_DOCUMENTS,
         _TOOL_GET_PROJECT,
         _TOOL_LIST_USERS,
+        _TOOL_GET_USER,
         _TOOL_LIST_TEAMS,
         _TOOL_LIST_ISSUE_LABELS,
         _TOOL_LIST_PROJECT_LABELS,
@@ -172,6 +176,11 @@ _READ_TOOLS: Final[frozenset[str]] = SCOPE_READ_TOOLS | frozenset(
         _TOOL_LIST_ISSUE_STATUSES,
     },
 )
+
+#: What the user read is asked for the account the credential belongs to:
+#: the tool takes one query and answers the caller's own user for this
+#: value.
+_CURRENT_USER_QUERY = "me"
 
 #: The page a capability probe asks for: the smallest a listing tool takes.
 #: The probe is about reachability, so a second row would be paid for and
@@ -884,6 +893,12 @@ class LinearMcpTracker:
             issue_key=issue_key, mutation=OwnMutation(deleted=(comment_key,))
         )
 
+    async def writer_identity(self) -> frozenset[str]:
+        """Both spellings of the account this credential writes as."""
+        payload = await self._call(_TOOL_GET_USER, {"query": _CURRENT_USER_QUERY})
+        wire = self._validate(LinearUserWire, payload, _TOOL_GET_USER)
+        return frozenset({wire.name, wire.display_name})
+
     async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
         """Retain the whole native projection, including unconfigured fields.
 
@@ -1430,6 +1445,42 @@ class LinearMcpTracker:
             f"holder {holder!r}, duration {lease_seconds:g}s; "
             "save_comment has no expected owner or version"
         )
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        """Refuse acquisition without a native atomic ownership primitive."""
+        raise UnsupportedLeaseError(
+            f"Linear MCP cannot fence surface-lease acquisition for holder "
+            f"{holder!r}, {len(surfaces)} surface(s), duration {lease_seconds:g}s; "
+            "save_comment and save_issue carry no conditional ownership check"
+        )
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        """Never extend a lease this backend could not have fenced."""
+        raise UnsupportedLeaseError(
+            f"Linear MCP cannot fence surface-lease renewal for holder "
+            f"{holder!r}, {len(surfaces)} surface(s), duration {lease_seconds:g}s; "
+            "save_comment and save_issue carry no conditional ownership check"
+        )
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        """Release nothing: acquisition is refused, so nothing is ever held."""
 
     async def _unexpired_claim_markers(
         self,

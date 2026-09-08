@@ -15,6 +15,7 @@ setup = fixtures.setup
 server = fixtures.server
 forge = fixtures.forge
 tracker = fixtures.tracker
+clock = fixtures.clock
 
 
 @pytest.mark.parametrize("existing", [False, True])

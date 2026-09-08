@@ -18,10 +18,12 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.composition.prompts import boot_prompts
+from kodezart.composition.tracker import CREDENTIAL_FIELD
 from kodezart.core.errors import (
     PassKnowledgeCapabilityError,
     TrackerBootValidationError,
     TrackerEnsureConflictError,
+    TrackerWriterAttributionError,
 )
 from kodezart.core.protocols import ManagedMcpToolCaller
 from kodezart.core.tracker_settings import TrackerSettings
@@ -30,6 +32,7 @@ from kodezart.services.pass_scheduler import PassScheduler
 from tests.fakes import FakeMcpDocument, ManagedFakeLinearMcpServer
 from tests.run_events import RUN_EVENT_TOML
 from tests.tracker.conftest import (
+    AGENT_IDENTITY,
     APPROVER,
     BYSTANDER,
     DOCUMENT_KEY,
@@ -68,6 +71,7 @@ TWO_TEAMS: dict[str, str] = {**ONE_TEAM, "platform": FOREIGN_TEAM}
 def _operation_toml(
     *,
     approver: str = APPROVER,
+    agent_identities: str = f'["{AGENT_IDENTITY}"]',
     queue_states: dict[str, str] | None = None,
     teams: dict[str, str] | None = None,
     document_title: str = DOCUMENT_TITLE,
@@ -113,7 +117,7 @@ def _operation_toml(
     return f"""
 operation_name = "fixture"
 workspace = "fixture-workspace"
-agent_identities = []
+agent_identities = {agent_identities}
 
 [[principals]]
 tracker_user = "{approver}"
@@ -171,7 +175,7 @@ def server() -> ManagedFakeLinearMcpServer:
     destination: the conformance suite is about the port, and a document
     added there would be one every adapter had to answer for.
     """
-    source = fixture_server()
+    source = fixture_server(actor=AGENT_IDENTITY)
     managed = ManagedFakeLinearMcpServer()
     managed.issues = source.issues
     managed.documents = {
@@ -294,6 +298,65 @@ async def test_boot_wires_the_tracker_and_owns_its_session_lifetime(
         assert wired.opens == 1
         assert wired.closes == 0
     assert wired.closes == 1
+
+
+async def test_a_credential_attributed_to_a_principal_aborts_boot_naming_the_capability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """A deployment writing as a human is refused before it writes anything.
+
+    Every write this process makes is signed by the credential's account.
+    One signed by a principal makes the operation's own churn read as that
+    principal's edits, so boot refuses rather than serve.
+    """
+    wired.actor = APPROVER
+    _configure(monkeypatch, tmp_path, _operation_toml())
+    app = create_app()
+    with pytest.raises(TrackerWriterAttributionError) as caught:
+        async with lifespan(app):
+            pass
+    assert caught.value.capability == "attributable writer"
+    assert APPROVER in caught.value.writer
+    assert AGENT_IDENTITY in caught.value.declared
+    assert caught.value.field == CREDENTIAL_FIELD
+    assert not [
+        call for tool, call in wired.calls if tool.startswith(("save_", "create_"))
+    ]
+    assert wired.closes == 1
+
+
+async def test_an_operation_declaring_no_agent_identity_aborts_boot_naming_the_field(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """An operation with no non-human writer has nobody to recognise."""
+    _configure(monkeypatch, tmp_path, _operation_toml(agent_identities="[]"))
+    app = create_app()
+    with pytest.raises(TrackerWriterAttributionError) as caught:
+        async with lifespan(app):
+            pass
+    assert caught.value.field == "agent_identities"
+    assert caught.value.declared == ()
+    assert wired.closes == 1
+
+
+async def test_a_mention_spelling_of_the_agent_identity_satisfies_the_check(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """Either spelling is the same declaration; boot accepts the mention."""
+    _configure(
+        monkeypatch,
+        tmp_path,
+        _operation_toml(agent_identities=f'["@{AGENT_IDENTITY}"]'),
+    )
+    app = create_app()
+    async with lifespan(app):
+        assert isinstance(app.state.tracker, LinearMcpTracker)
 
 
 async def test_one_unresolvable_principal_aborts_boot_naming_that_entry(
