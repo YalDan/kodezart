@@ -71,6 +71,7 @@ from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
+    LinearAssetWire,
     LinearCommentListWire,
     LinearCommentWire,
     LinearCriterionIssueWire,
@@ -1609,16 +1610,29 @@ class LinearMcpTracker:
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
         """Attachment and document metadata referenced by the issue."""
         wire = await self._read_issue_wire(issue_key)
-        return tuple(
-            TrackerAsset(
-                asset_key=asset.id,
-                title=asset.title,
-                url=asset.url,
-                content_type=asset.content_type,
-                size_bytes=asset.size,
+        assets = []
+        for asset in (*wire.attachments, *wire.documents):
+            url = asset.url
+            if url is None:
+                payload = await self._call(_TOOL_GET_DOCUMENT, {"id": asset.id})
+                document = self._validate(LinearAssetWire, payload, _TOOL_GET_DOCUMENT)
+                if document.id != asset.id or document.title != asset.title:
+                    raise TrackerProtocolError(
+                        "document metadata differs from the issue reference",
+                        tool=_TOOL_GET_DOCUMENT,
+                        detail=f"expected document {asset.id!r}",
+                    )
+                url = document.url
+            assets.append(
+                TrackerAsset(
+                    asset_key=asset.id,
+                    title=asset.title,
+                    url=url,
+                    content_type=asset.content_type,
+                    size_bytes=asset.size,
+                )
             )
-            for asset in (*wire.attachments, *wire.documents)
-        )
+        return tuple(assets)
 
     async def read_document(self, *, document_key: str) -> str:
         """The document's text content."""

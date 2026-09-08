@@ -97,8 +97,11 @@ class LinearIssueRelationsWire(LinearWireModel):
         )
 
 
-class LinearAssetWire(LinearWireModel):
-    """One attachment or document reference on an issue.
+class LinearDocumentReferenceWire(LinearWireModel):
+    """A document relation may contain only its native id and title.
+
+    Measured 2026-09-08: get_issue omits its URL; get_document supplies it.
+    Full issue reads retain this relation without inventing attachment facts.
 
     ``content_type`` and ``size`` are absent from every measured payload;
     they stay declared and optional because the port's asset carries them
@@ -108,9 +111,15 @@ class LinearAssetWire(LinearWireModel):
 
     id: str
     title: str
-    url: str
+    url: str | None = None
     content_type: str | None = None
     size: int | None = None
+
+
+class LinearAssetWire(LinearDocumentReferenceWire):
+    """An attachment or hydrated document reports its required URL."""
+
+    url: str
 
 
 class LinearProjectMilestoneWire(LinearWireModel):
@@ -174,7 +183,7 @@ class LinearIssueDetailWire(LinearIssueWire):
     """
 
     attachments: list[LinearAssetWire]
-    documents: list[LinearAssetWire]
+    documents: list[LinearDocumentReferenceWire]
 
 
 class LinearPlanningIssueWire(LinearIssueDetailWire):
