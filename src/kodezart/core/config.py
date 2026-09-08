@@ -382,6 +382,15 @@ class AppConfig(BaseSettings):
         gt=0,
         description="Wall-clock bound for one check step of a union composition.",
     )
+    union_check_cleanup_poll_interval_seconds: float = Field(
+        default=0.01,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "Seconds between repeated check-process group termination signals "
+            "while canceled or timed-out output is still draining."
+        ),
+    )
     delivery_max_concurrent_watches: int = Field(
         default=4,
         ge=1,

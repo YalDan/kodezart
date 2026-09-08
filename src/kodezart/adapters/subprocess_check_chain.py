@@ -34,15 +34,38 @@ async def _finish_cleanup[T](task: asyncio.Task[T]) -> tuple[T, bool]:
 async def _stop_attempt(
     spawning: asyncio.Task[asyncio.subprocess.Process],
     communication: asyncio.Task[tuple[bytes, bytes]] | None,
+    *,
+    poll_interval: float,
 ) -> tuple[asyncio.subprocess.Process, bytes]:
     process, spawn_canceled = await _finish_cleanup(spawning)
     _kill_group(process)
     if communication is None:
         communication = asyncio.create_task(process.communicate())
-    (output, _), read_canceled = await _finish_cleanup(communication)
+    draining = asyncio.create_task(
+        _drain_stopped_group(process, communication, poll_interval=poll_interval)
+    )
+    (output, _), read_canceled = await _finish_cleanup(draining)
     if spawn_canceled or read_canceled:
         raise asyncio.CancelledError
     return process, output
+
+
+async def _drain_stopped_group(
+    process: asyncio.subprocess.Process,
+    communication: asyncio.Task[tuple[bytes, bytes]],
+    *,
+    poll_interval: float,
+) -> tuple[bytes, bytes]:
+    """Cover children created while the first group signal was delivered.
+
+    Reaping the shell does not imply EOF: a surviving child can retain the
+    captured pipe. Keep owning that group until communication has settled.
+    """
+    while not communication.done():
+        await asyncio.wait({communication}, timeout=poll_interval)
+        if not communication.done():
+            _kill_group(process)
+    return communication.result()
 
 
 class SubprocessCheckChainRunner:
@@ -56,6 +79,7 @@ class SubprocessCheckChainRunner:
 
     def __init__(self, *, config: AppConfig) -> None:
         self._timeout = config.union_check_step_timeout_seconds
+        self._cleanup_poll_interval = config.union_check_cleanup_poll_interval_seconds
 
     async def run_chain(
         self, *, cwd: str, steps: Sequence[CheckStep]
@@ -106,9 +130,13 @@ class SubprocessCheckChainRunner:
                     output, _ = await asyncio.shield(communication)
             except TimeoutError:
                 timed_out = True
-                process, output = await _stop_attempt(spawning, communication)
+                process, output = await _stop_attempt(
+                    spawning, communication, poll_interval=self._cleanup_poll_interval
+                )
             except BaseException:
-                await _stop_attempt(spawning, communication)
+                await _stop_attempt(
+                    spawning, communication, poll_interval=self._cleanup_poll_interval
+                )
                 raise
         except OSError as exc:
             raise CheckChainExecutionError(
