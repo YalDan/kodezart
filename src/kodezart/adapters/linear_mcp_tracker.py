@@ -644,6 +644,14 @@ class LinearMcpTracker:
                     stops="scope plan barriers cannot be read",
                 )
 
+    def require_issue_classification_reads(self) -> None:
+        self.require_scope_plan_reads()
+        if "tracker" not in self._issue_labels:
+            raise OperationMemberAbsentError(
+                missing="issue_labels['tracker']",
+                stops="issue record classification cannot be read",
+            )
+
     def require_criterion_reads(self) -> None:
         """Supported: read_criteria hydrates the issue's criterion children."""
 

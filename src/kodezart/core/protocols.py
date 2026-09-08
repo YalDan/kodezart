@@ -782,6 +782,14 @@ class TrackerPort(Protocol):
         """
         ...
 
+    def require_issue_classification_reads(self) -> None:
+        """Require semantic criterion, tracker and decision classification.
+
+        Missing configuration refuses before a record issue can be mistaken
+        for a deliverable. This declaration performs no tracker write.
+        """
+        ...
+
     def require_criterion_reads(self) -> None:
         """Require criterion-child reads before boot can enable execution.
 

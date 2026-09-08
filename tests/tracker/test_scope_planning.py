@@ -32,7 +32,11 @@ from tests.tracker.marker_config import MARKER_PREFIXES
 from tests.tracker.test_scope_reads import MILESTONE, ScopeMcpIssue, ScopeMcpServer
 
 SCOPE = ScopeRef(kind=ScopeKind.ISSUE, key="root")
-LABELS = {"criterion": "acceptance-condition", "decision": "recorded-question"}
+LABELS = {
+    "criterion": "acceptance-condition",
+    "decision": "recorded-question",
+    "tracker": "execution-history",
+}
 
 
 def row(key, *, parent=None, kind="unstarted", label=None, blockers=()):
