@@ -152,6 +152,7 @@ async def test_open_unmerged_review_terminal_has_no_discrepancy(
     assert tracker_writes() == before
     assert forge[2] == [(REPO, 7), (REPO, 7)]
     assert {call[0] for call in git.calls} == {"remote_branch_sha"}
+    assert {call[2] for call in git.calls} == {"configured-remote"}
 
 
 async def test_closed_unmerged_pr_is_a_discrepancy_despite_recorded_pr_state(

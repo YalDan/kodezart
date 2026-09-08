@@ -269,7 +269,7 @@ async def setup(tracker, server):
 async def test_every_state_reaches_actual_fresh_claim_dispatch(
     setup, tracker, server, tracker_writes, kind
 ):
-    build, executor, _, _, workspace, *_ = setup
+    build, executor, git, _, workspace, *_ = setup
     await state(
         tracker,
         server,
@@ -305,6 +305,9 @@ async def test_every_state_reaches_actual_fresh_claim_dispatch(
         and "OLD_RECORDED_TEST" not in call["prompt"]
     )
     assert workspace.calls[-1][0] == "release"
+    assert {call[2] for call in git.calls if call[0] == "remote_branch_sha"} == {
+        "configured-remote"
+    }
     assert tracker_writes() == before
     assert not {"covered", "complete", "coverage"} & {
         field.name for field in fields(result)

@@ -117,6 +117,9 @@ async def test_the_same_criterion_lapses_then_is_reverified_at_head(
     assert lapsed.recorded_evidence.graded_sha == PRIOR and lapsed.head_sha == HEAD
     assert lapsed.record_ref == stored.comment_key and lapsed.current_claim is None
     assert not runner.calls and not workspace.calls
+    assert {call[2] for call in git.calls if call[0] == "remote_branch_sha"} == {
+        "configured-remote"
+    }
     assert source.calls == [("/tmp/fake-cache", HEAD), ("/tmp/fake-cache", PRIOR)]
     assert ("is_ancestor", "/tmp/fake-cache", PRIOR, HEAD) in git.calls
     assert tracker_writes() == writes
