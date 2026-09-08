@@ -65,16 +65,27 @@ def landing_read_violations(source, module):
             if not isinstance(node.ctx, ast.Load) or not permitted(node):
                 failures.append(node.lineno)
         elif (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "getattr"
-            and len(node.args) > 1
-            and isinstance(node.args[1], ast.Constant)
-            and node.args[1].value == "landing"
-        ) or (
-            isinstance(node, ast.Subscript)
-            and isinstance(node.slice, ast.Constant)
-            and node.slice.value == "landing"
+            (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and len(node.args) > 1
+                and isinstance(node.args[1], ast.Constant)
+                and node.args[1].value == "landing"
+            )
+            or (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value == "landing"
+            )
+            or (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.slice, ast.Constant)
+                and node.slice.value == "landing"
+            )
         ):
             failures.append(node.lineno)
     return tuple(failures)
@@ -244,4 +255,11 @@ def test_a_second_landing_carrier_and_changed_absence_default_fail():
     assert landing_derivation_violations(
         "class WorkRef:\n    landing: WorkRefLanding = WorkRefLanding.NOT_LANDED",
         "types/domain/branch.py",
+    )
+
+
+def test_mapping_get_cannot_collapse_landing_to_a_boolean():
+    assert landing_read_violations(
+        "def new_read(ref):\n    return bool(ref.model_dump().get('landing'))",
+        "new_reader.py",
     )
