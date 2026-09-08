@@ -4219,6 +4219,7 @@ def make_tracker_issue(
     project: str | None = None,
     project_id: str | None = None,
     body: str = "fixture body",
+    issue_labels: frozenset[str] = frozenset(),
 ) -> TrackerIssue:
     """A domain issue for port-consumer fixtures."""
     return TrackerIssue(
@@ -4226,6 +4227,7 @@ def make_tracker_issue(
         parent_key=parent_key,
         title=issue_key,
         body=body,
+        issue_labels=issue_labels,
         priority=priority,
         state_name=state_name,
         state_kind=state_kind,
