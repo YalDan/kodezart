@@ -3628,7 +3628,7 @@ class FakeTrackerPort:
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
-        return updated
+        return self.issues[issue_key]
 
     async def edit_description(
         self, *, target: str, expected: str, replacement: str
