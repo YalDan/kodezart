@@ -119,8 +119,6 @@ async def setup(tmp_path, executor):
     workspace = ObservedWorkspace(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="test@example.invalid",
     )
     prompts = make_prompt_provider()
     gate = PassThroughGate()

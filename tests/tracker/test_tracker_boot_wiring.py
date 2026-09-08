@@ -114,7 +114,6 @@ def _operation_toml(
 operation_name = "fixture"
 workspace = "fixture-workspace"
 agent_identities = []
-initiatives = []
 
 [[principals]]
 tracker_user = "{approver}"
