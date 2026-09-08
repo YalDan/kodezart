@@ -32,7 +32,7 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
-from kodezart.types.domain.run_records import RunRecord
+from kodezart.types.domain.run_records import RunIdentity, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -259,6 +259,7 @@ class AgentExecutor(Protocol):
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -453,6 +454,17 @@ class ForgeQuery(Protocol):
 @runtime_checkable
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
+
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        """Request re-observation at the same SHA.
+
+        Subsequent waits and failed-name reads on this monitor must observe
+        the requested attempt, never the completed checks preceding it.
+        An unsupported or incomplete rerun raises a domain error.
+        Each asynchronous task owns its rerun/read sequence; another task's
+        rerun must not replace its observation.
+        """
+        ...
 
     async def checks_declared(self, *, repo_url: str) -> bool:
         """Read whether checks are declared; failed reads never mean absent."""
@@ -1022,6 +1034,7 @@ class AgentRunner(Protocol):
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1044,6 +1057,7 @@ class AgentRunner(Protocol):
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         visibility: RepoVisibility,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
@@ -1062,6 +1076,7 @@ class AgentRunner(Protocol):
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1108,6 +1123,7 @@ class QualityGate(Protocol):
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Iterate execute/evaluate until pass or max."""
@@ -1125,6 +1141,7 @@ class TicketGenerator(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         base_branch: str,
     ) -> AsyncIterator[AgentEvent]:
         """Draft/review loop until approved or max reviews."""
@@ -1147,6 +1164,7 @@ class Remediator(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Draft the remediation ticket for one round."""
         ...
@@ -1161,6 +1179,7 @@ class WorkflowEngine(Protocol):
         *,
         prompt: str,
         issue_key: str | None = None,
+        run_identity: RunIdentity | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,

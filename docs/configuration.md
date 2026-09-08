@@ -57,6 +57,7 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS` | `int` | `3` | >= 1, <= 20 | Consecutive empty check-runs polls before concluding no CI when the repository has no active workflows. |
 | `KODEZART_CI_POLL_INTERVAL_SECONDS` | `float` | `30.0` | >= 5.0, <= 300.0 | Seconds between CI status check polls. |
 | `KODEZART_CI_POLL_MAX_ATTEMPTS` | `int` | `60` | >= 1, <= 600 | Maximum CI status check poll attempts before timeout. |
+| `KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS` | `int` | `1` | >= 0, <= 5 | Same-SHA reruns before a red check set is treated as reproduced. Zero disables flake re-observation; explicit unmet prerequisites consume no rerun. |
 | `KODEZART_CI_REF_NOT_FOUND_GRACE_POLLS` | `int` | `3` | >= 1, <= 20 | Consecutive check-runs 404s tolerated before the ref is treated as a transient API failure. |
 | `KODEZART_CLAUDE_HOME_DIR` | `str` | `~/.claude` |  | Host directory holding user-scope skills and plugins. |
 | `KODEZART_CONTENT_SCAN_RETRY_INITIAL_INTERVAL` | `float` | `1.0` | >= 0.1 | Initial backoff interval in seconds between content-scan attempts. |
@@ -177,6 +178,14 @@ fragments. Boot rejects a colliding configuration root or projected binding.
 Refusal evidence carries the admission result for an authoring repair; assess
 and verify render the current source bodies without that prior refusal.
 
+`OrganizeAdmission.assess` and `.verify` read the current subject, linked
+issues and criterion children through the tracker port on every call. The
+source `issue_key` is supplied separately from the verbatim bodies. Each
+call acquires the requested repository base and starts a read-only
+`organize_pass` session, with no prior session or author transcript. These
+entry points return an admission result; they do not write phase markers or
+run the full organizer convergence loop.
+
 ## The knowledge-server grant
 
 `KODEZART_KNOWLEDGE_SESSION_GRANTS` names, one by one, the kinds of agent
@@ -189,6 +198,7 @@ the `SessionType` enum, and it is closed:
 | `api_query` | the direct one-shot query a caller drives over HTTP |
 | `commit_message` | the change persister's utility session |
 | `content_audit` | the outbound gate's judgment session |
+| `organize_pass` | organize assessment, authoring and independent verification |
 | `scheduled_pass` | the passes the scheduler fires on their configured cadence |
 
 Three rules, each enforced at boot rather than documented and hoped for:

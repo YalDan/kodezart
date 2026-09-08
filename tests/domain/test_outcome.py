@@ -370,3 +370,16 @@ def test_unclassifiable_state_raises_there_is_no_default_arm() -> None:
     )
     with pytest.raises(ValueError, match="Unclassifiable terminal state"):
         classify_outcome(state)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "handed_off_for_delivery",
+        "ci_failed_environment_prerequisite",
+        "ci_failed_unclassified",
+        "ci_no_run_at_ref",
+    ],
+)
+def test_delivery_outcomes_append_with_exact_wire_values(name):
+    assert WorkflowOutcome[name].value == name

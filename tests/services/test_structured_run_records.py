@@ -1,5 +1,7 @@
 """Actual Notion property writes use explicitly selected outcome semantics."""
 
+from datetime import timedelta, timezone
+
 import pytest
 from pydantic import ValidationError
 
@@ -300,3 +302,39 @@ async def test_duration_unit_is_explicit_and_seconds_are_not_converted():
     await recorder(server, target).record(record)
     properties = next(iter(server.rows.values()))["properties"]
     assert properties["Minutes"]["number"] == record.duration_seconds
+
+
+async def test_two_same_issue_fires_in_one_second_remain_distinct_rows():
+    server = NotionLogServer()
+    first = _record(RunKind.FIRE)
+    first = first.model_copy(
+        update={"started_at": first.started_at.replace(microsecond=100000)}
+    )
+    second = first.model_copy(
+        update={"started_at": first.started_at.replace(microsecond=200000)}
+    )
+    service = recorder(server, destination())
+    assert await service.record(first) is RunRecordResult.WRITTEN
+    assert await service.record(second) is RunRecordResult.WRITTEN
+    assert len(server.rows) == 2
+    assert first.title() != second.title()
+    assert await service.record(first) is RunRecordResult.VERIFIED
+    assert await service.record(second) is RunRecordResult.VERIFIED
+
+
+async def test_same_instant_in_another_timezone_is_the_same_record_identity():
+    server = NotionLogServer()
+    original = _record(RunKind.FIRE)
+    offset = original.model_copy(
+        update={
+            "started_at": original.started_at.astimezone(timezone(timedelta(hours=2))),
+            "recorded_at": original.recorded_at.astimezone(
+                timezone(timedelta(hours=2))
+            ),
+        }
+    )
+    service = recorder(server, destination())
+    assert offset.title() == original.title()
+    assert await service.record(original) is RunRecordResult.WRITTEN
+    assert await service.record(offset) is RunRecordResult.VERIFIED
+    assert len(server.rows) == 1

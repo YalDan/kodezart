@@ -450,3 +450,14 @@ class StaleBaseError(Exception):
         self.recorded_ref: str = recorded_ref
         self.implied_ref: str = implied_ref
         self.changed_inputs: list[str] = list(changed_inputs)
+
+
+class OrganizeAdmissionIdentityError(Exception):
+    """The judgment did not address the source issue that was dispatched."""
+
+    def __init__(self, *, expected: str, observed: str) -> None:
+        self.expected = expected
+        self.observed = observed
+        super().__init__(
+            f"organize admission returned issue {observed!r}, expected {expected!r}"
+        )

@@ -46,6 +46,7 @@ from tests.prompts.test_prompt_wiring import load_registry
 #: not, and that difference is the point of listing them separately.
 ORGANIZE_INPUT_TAGS = (
     "mandate_rubric",
+    "issue_key",
     "issue_body",
     "linked_issue_bodies",
     "linked_issue",
@@ -76,6 +77,7 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "implementation": ("ticket",),
     "iteration_feedback": ("failed_criteria",),
     "knowledge_map": (),
+    "fire_record": (),
     "post_merge_review": ("acceptance_criteria", "changeset"),
     "pr_description": ("ticket", "acceptance_criteria"),
     "remediation_ticket": ("ticket", "done_work", "failure_evidence"),

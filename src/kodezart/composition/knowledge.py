@@ -7,9 +7,16 @@ same grant list, so both are resolved here, into one value.
 
 from kodezart.core.config import AppConfig
 from kodezart.core.logging import BoundLogger
+from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import PromptProvider
+from kodezart.types.domain.operation import (
+    DocumentSystem,
+    OperationConfig,
+    OperationMemberAbsentError,
+    RunKind,
+)
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import KnowledgeGrant
+from kodezart.types.domain.session import KnowledgeGrant, SessionType
 
 
 async def boot_knowledge_grant(
@@ -51,3 +58,23 @@ async def boot_knowledge_grant(
         characters=len(knowledge_map),
     )
     return config.knowledge_grant(knowledge_map=knowledge_map)
+
+
+def fire_record_template(
+    *, config: AppConfig, operation: OperationConfig | None, prompts: PromptProvider
+) -> PromptTemplate | None:
+    """Resolve the declared knowledge fire contract without inventing a run."""
+    if (
+        SessionType.TICKET_FIRE not in config.knowledge_session_grants
+        or operation is None
+    ):
+        return None
+    destination = operation.records.get(RunKind.FIRE.value)
+    if destination is None or destination.system is not DocumentSystem.KNOWLEDGE:
+        return None
+    if destination.columns is None:
+        raise OperationMemberAbsentError(
+            missing="records.fire.columns",
+            stops="the fire Record clause cannot name its narrative property",
+        )
+    return prompts.template_for(PromptKey.FIRE_RECORD)

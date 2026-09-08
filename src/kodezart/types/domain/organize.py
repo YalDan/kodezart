@@ -40,13 +40,29 @@ class AdmissionResult(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    issue_id: str = Field(min_length=1)
-    verdict: AdmissionVerdict
-    invented_decision: str | None = None
-    missing_artifact: str | None = None
-    pending_blocker_id: str | None = None
-    evidence: str
-    refusal_kind: RefusalKind | None = None
+    issue_id: str = Field(min_length=1, description="Identity of the issue assessed.")
+    verdict: AdmissionVerdict = Field(
+        description="Buildable, not buildable, or unverifiable from available evidence."
+    )
+    invented_decision: str | None = Field(
+        default=None,
+        description="Decision the implementer must invent; required for refusal.",
+    )
+    missing_artifact: str | None = Field(
+        default=None,
+        description="Unavailable evidence preventing verification; otherwise null.",
+    )
+    pending_blocker_id: str | None = Field(
+        default=None,
+        description="Existing blocker for unavailable evidence; otherwise null.",
+    )
+    evidence: str = Field(
+        description="Concrete source evidence supporting this judgment."
+    )
+    refusal_kind: RefusalKind | None = Field(
+        default=None,
+        description="Re-authoring or human decision required by refusal; else null.",
+    )
 
     @model_validator(mode="after")
     def _require_refusal_evidence(self) -> Self:
@@ -152,3 +168,16 @@ class ResolvedMandateSpec(CamelCaseModel):
     spec: MandateSpec
     gate_label: str
     terminal_marker: str
+
+
+class OrganizeAdmissionRequest(CamelCaseModel):
+    """Source identity, rubric and repository base for one fresh judgment."""
+
+    model_config = ConfigDict(frozen=True)
+
+    issue_key: str = Field(min_length=1)
+    mandate_rubric: str = Field(min_length=1)
+    repo_url: str = Field(min_length=1)
+    base_ref: str = Field(min_length=1)
+    cache_key: str | None = None
+    defect_classes: tuple[str, ...] = ()

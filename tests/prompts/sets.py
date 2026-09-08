@@ -47,6 +47,7 @@ AUDIT_DESTINATION = "a public code-hosting surface"
 ORGANIZE_CASE: dict[str, object] = {
     "mandate_rubric": "Golden mandate rubric",
     "issue_body": "Golden source issue body",
+    "issue_key": "external/42",
     "linked_issue_bodies": ["Golden linked issue body"],
     "criterion_issue_bodies": ["Golden criterion issue body"],
     "refusal_evidence": "Golden refusal evidence",
@@ -64,6 +65,7 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         {"content": AUDITED_PAYLOAD, "destination": AUDIT_DESTINATION},
     ),
     "knowledge_map": (PromptKey.KNOWLEDGE_MAP, {}),
+    "fire_record": (PromptKey.FIRE_RECORD, PER_RUN),
     "fire_prep_pass": (
         PromptKey.FIRE_PREP_PASS,
         pass_render_variables(PromptKey.FIRE_PREP_PASS),

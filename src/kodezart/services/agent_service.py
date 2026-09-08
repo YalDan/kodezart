@@ -11,6 +11,7 @@ from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -51,6 +52,7 @@ class AgentService:
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -73,6 +75,7 @@ class AgentService:
             allowed_tools=allowed_tools,
             skills=skills,
             session_type=session_type,
+            run_identity=run_identity,
             agents=agents,
             session_policy=session_policy,
             session_id=session_id,
@@ -90,6 +93,7 @@ class AgentService:
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -103,6 +107,7 @@ class AgentService:
             allowed_tools=allowed_tools,
             skills=skills,
             session_type=session_type,
+            run_identity=run_identity,
             agents=agents,
             session_policy=session_policy,
             session_id=session_id,
@@ -123,6 +128,7 @@ class AgentService:
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         visibility: RepoVisibility,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
@@ -143,6 +149,7 @@ class AgentService:
             allowed_tools=allowed_tools,
             skills=skills,
             session_type=session_type,
+            run_identity=run_identity,
             agents=agents,
             session_policy=session_policy,
             visibility=visibility,
@@ -168,6 +175,7 @@ class AgentService:
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -214,6 +222,7 @@ class AgentService:
                 allowed_tools=allowed_tools,
                 skills=skills,
                 session_type=session_type,
+                run_identity=run_identity,
                 agents=agents,
                 session_policy=session_policy,
                 session_id=session_id,

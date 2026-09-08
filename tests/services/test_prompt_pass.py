@@ -253,6 +253,7 @@ async def test_the_session_receives_the_rendered_prompt_and_its_grant() -> None:
             "workspace_path": WORKSPACE,
             "session_id": None,
             "session_type": SessionType.SCHEDULED_PASS,
+            "run_identity": None,
             "skills": SUPPRESS_ALL_SKILLS,
             "session_policy": registry.session_policy(PromptKey.GROOMING_PASS),
         },

@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -265,6 +266,7 @@ def executor_for(
     *,
     model: str | None = None,
     output_style: str | None = None,
+    fire_record: PromptTemplate | None = None,
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("claude_client_executor"):
@@ -272,11 +274,13 @@ def executor_for(
             model=model,
             setting_sources=DEFAULT_SETTING_SOURCES,
             knowledge_grant=grant,
+            fire_record=fire_record,
             output_style=output_style,
         )
     return ClaudeAgentExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
         knowledge_grant=grant,
+        fire_record=fire_record,
     )
 
 
@@ -360,6 +364,8 @@ async def recorded_session(
     model: str | None = None,
     output_style: str | None = None,
     messages: Sequence[object] = (),
+    fire_record: PromptTemplate | None = None,
+    run_identity: RunIdentity | None = None,
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -369,7 +375,9 @@ async def recorded_session(
         if target == "ClaudeSDKClient"
         else _recording_query(recorded, messages)
     )
-    executor = executor_for(module, grant, model=model, output_style=output_style)
+    executor = executor_for(
+        module, grant, model=model, output_style=output_style, fire_record=fire_record
+    )
     events: list[AgentEvent] = []
 
     with patch(f"{module}.{target}", replacement):
@@ -380,6 +388,7 @@ async def recorded_session(
             allowed_tools=[],
             skills=skills,
             session_type=session_type,
+            run_identity=run_identity,
             agents=agents,
             session_policy=session_policy,
         ):
@@ -698,6 +707,7 @@ class FakeAgentExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -713,6 +723,7 @@ class FakeAgentExecutor:
                 "permission_mode": permission_mode,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         if self._is_branch_name_schema(output_format):
@@ -868,6 +879,7 @@ class FakeRaisingExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -935,6 +947,7 @@ class FakeChangePersister:
         backup_ref_id_prefix: str,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -1032,6 +1045,7 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1044,6 +1058,7 @@ class FakeAgentRunner:
                 "prompt": prompt,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         for event in self._events:
@@ -1062,6 +1077,7 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -1089,6 +1105,7 @@ class FakeAgentRunner:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1101,6 +1118,7 @@ class FakeAgentRunner:
                 "workspace_path": workspace_path,
                 "session_id": session_id,
                 "session_type": session_type,
+                "run_identity": run_identity,
                 "skills": skills,
                 "session_policy": session_policy,
             }
@@ -1142,6 +1160,7 @@ class ScriptedFakeExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1157,6 +1176,7 @@ class ScriptedFakeExecutor:
                 "permission_mode": permission_mode,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         if output_format is None:
@@ -1492,6 +1512,7 @@ class FakeQualityGate:
         allowed_tools: list[str],
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -1509,6 +1530,7 @@ class FakeQualityGate:
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
                 "cache_key": cache_key,
+                "run_identity": run_identity,
             }
         )
         for event in self._events:
@@ -1604,6 +1626,7 @@ class FakeRemediator:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(request)
         yield WorkflowRemediationEvent(
@@ -1706,6 +1729,9 @@ class FakeForgeQuery:
         return self.branch_urls[(repo_url, branch)]
 
 
+type _FakeCIObservation = tuple[bool | None, str, frozenset[str]]
+
+
 class FakeCIMonitor:
     """Fake CIMonitor for testing the outer workflow pipeline."""
 
@@ -1717,15 +1743,45 @@ class FakeCIMonitor:
         fail: Exception | None = None,
         declared: bool = True,
         failed_names: frozenset[str] = frozenset(),
+        rerun_results: Sequence[tuple[bool | None, str, frozenset[str]]] = (),
     ) -> None:
         self._passed = passed
         self._summary = summary
         self._fail = fail
         self._declared = declared
         self._failed_names = failed_names
+        self._rerun_results = list(rerun_results)
+        self._attempts: ContextVar[
+            tuple[object, dict[tuple[str, str], _FakeCIObservation]] | None
+        ] = ContextVar("fake_ci_attempts", default=None)
+        self.rerun_calls: list[tuple[str, str]] = []
         self.declaration_calls: list[str] = []
         self.failed_name_calls: list[tuple[str, str]] = []
         self.calls: list[dict[str, object]] = []
+
+    def _attempt_context(self) -> dict[tuple[str, str], _FakeCIObservation]:
+        context = self._attempts.get()
+        if context is None or context[0] is not asyncio.current_task():
+            return {}
+        return dict(context[1])
+
+    def _observation(self, repo_url: str, ref: str) -> _FakeCIObservation:
+        return self._attempt_context().get(
+            (repo_url, ref), (self._passed, self._summary, self._failed_names)
+        )
+
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        self.rerun_calls.append((repo_url, ref))
+        if self._fail is not None:
+            raise self._fail
+        result = (
+            self._rerun_results.pop(0)
+            if self._rerun_results
+            else self._observation(repo_url, ref)
+        )
+        attempts = self._attempt_context()
+        attempts[(repo_url, ref)] = result
+        self._attempts.set((asyncio.current_task(), attempts))
 
     async def checks_declared(self, *, repo_url: str) -> bool:
         self.declaration_calls.append(repo_url)
@@ -1737,7 +1793,7 @@ class FakeCIMonitor:
         self.failed_name_calls.append((repo_url, ref))
         if self._fail is not None:
             raise self._fail
-        return self._failed_names
+        return self._observation(repo_url, ref)[2]
 
     async def wait_for_checks(
         self,
@@ -1753,7 +1809,8 @@ class FakeCIMonitor:
         )
         if self._fail is not None:
             raise self._fail
-        return (self._passed, self._summary)
+        passed, summary, _ = self._observation(repo_url, ref)
+        return (passed, summary)
 
 
 class SequentialCIMonitor(FakeCIMonitor):
@@ -1801,6 +1858,7 @@ class FakeTicketGenerator:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         base_branch: str,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -1809,6 +1867,7 @@ class FakeTicketGenerator:
                 "repo_path": repo_path,
                 "repo_url": repo_url,
                 "cache_key": cache_key,
+                "run_identity": run_identity,
                 "base_branch": base_branch,
             }
         )

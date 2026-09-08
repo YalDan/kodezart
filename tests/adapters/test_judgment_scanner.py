@@ -47,6 +47,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -112,6 +113,7 @@ class ScriptedAuditExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

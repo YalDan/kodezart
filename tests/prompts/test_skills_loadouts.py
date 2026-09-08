@@ -42,6 +42,7 @@ UTILITY_KEYS = (
     PromptKey.GROOMING_PASS,
     PromptKey.CONTENT_AUDIT,
     PromptKey.KNOWLEDGE_MAP,
+    PromptKey.FIRE_RECORD,
 )
 
 

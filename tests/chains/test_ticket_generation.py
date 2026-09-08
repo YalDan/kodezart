@@ -20,6 +20,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
     WorkflowTicketReviewEvent,
 )
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -150,6 +151,7 @@ class _ScriptedReviewExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -515,6 +517,7 @@ async def test_no_structured_output_from_creator_raises() -> None:
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -610,6 +613,7 @@ async def test_no_structured_output_from_reviewer_raises() -> None:
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -749,6 +753,7 @@ async def test_workspace_released_on_node_error() -> None:
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1206,6 +1211,7 @@ class _RejectedThenDraftingExecutor(_ScriptedReviewExecutor):
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

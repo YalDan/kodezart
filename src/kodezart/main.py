@@ -13,7 +13,7 @@ from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.forge import build_forge_client
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.jobs import build_job_queue, build_job_service
-from kodezart.composition.knowledge import boot_knowledge_grant
+from kodezart.composition.knowledge import boot_knowledge_grant, fire_record_template
 from kodezart.composition.passes import build_dispatch_runtime, verify_pass_preflight
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
@@ -119,6 +119,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             log=log,
         ),
         output_style=config.claude_output_style,
+        fire_record=fire_record_template(
+            config=config, operation=operation, prompts=prompts
+        ),
     )
     gate = await build_outbound_gate(
         config=config,

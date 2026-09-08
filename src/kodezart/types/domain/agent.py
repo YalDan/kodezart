@@ -25,6 +25,7 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.organize import AdmissionResult
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
@@ -45,6 +46,8 @@ from kodezart.types.domain.trajectory import LoopTrajectory
 RaiseSite = Literal[
     "ticket_creator",
     "ticket_reviewer",
+    "organize_assess",
+    "organize_verify",
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",
@@ -947,6 +950,8 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
+ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionResult.model_json_schema()
+
 #: Every wire schema this system dispatches, by constant name. The
 #: wire-contract tests and the dispatch-site guard both read this rather
 #: than keeping their own list.
@@ -961,4 +966,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
+    "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
 }

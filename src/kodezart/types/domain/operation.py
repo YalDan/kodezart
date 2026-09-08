@@ -271,6 +271,14 @@ class TeamEntry(OperationModel):
     visibility: RepoVisibility | None = None
 
 
+class CheckPrerequisite(StrEnum):
+    """Environment facts that a repository may explicitly declare."""
+
+    REPOSITORY_HISTORY = "repository_history"
+    NETWORK = "network"
+    CREDENTIALS = "credentials"
+
+
 class CheckStep(OperationModel):
     """One command in a repository's check chain, and what gates it.
 
@@ -288,6 +296,8 @@ class CheckStep(OperationModel):
     name: str
     command: str
     depends_on: str | None = None
+    requires: tuple[CheckPrerequisite, ...] = ()
+    forge_check: str | None = None
 
 
 class RepoEntry(OperationModel):
@@ -300,8 +310,9 @@ class RepoEntry(OperationModel):
     only plausible default is the literal the base resolver is required to
     prove it never reads.
 
-    ``checks`` is consumed by prompt rendering alone — no deterministic
-    path executes these commands — and EMPTY is a named absence, not a
+    Check commands are rendered into prompts, never executed by this
+    model. Delivery also reads explicit forge-name and prerequisite
+    declarations from the chain. EMPTY is a named absence, not a
     hole (founder ruling 2026-09-01): the repository's own CI defines its
     gate, and copying that structure here would be a second surface for
     facts the repository owns, drifting the day its CI changes.  Declare
@@ -313,6 +324,8 @@ class RepoEntry(OperationModel):
     url: str
     trunk: str = Field(min_length=1)
     checks: tuple[CheckStep, ...] = ()
+    runner_environment: dict[CheckPrerequisite, bool] = Field(default_factory=dict)
+    forge_exempt: bool = False
 
 
 class DocumentEntry(OperationModel):

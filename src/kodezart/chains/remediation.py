@@ -24,6 +24,7 @@ from kodezart.types.domain.agent import (
     WorkflowRemediationEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RemediationRequest
@@ -59,6 +60,7 @@ class RemediationChain:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Draft one remediation ticket for *request*."""
         prompt = self._prompts.template_for(PromptKey.REMEDIATION_TICKET).render(
@@ -81,6 +83,7 @@ class RemediationChain:
                     PromptKey.REMEDIATION_TICKET, self._skills
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=run_identity,
                 session_policy=self._prompts.session_policy(
                     PromptKey.REMEDIATION_TICKET,
                 ),

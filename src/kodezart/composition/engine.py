@@ -35,6 +35,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.scope_resolution import resolve_scope
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.skills import SkillsSelection
 
@@ -88,6 +89,7 @@ class OriginRoutedWorkflowEngine:
         *,
         prompt: str,
         issue_key: str | None = None,
+        run_identity: RunIdentity | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
@@ -125,6 +127,7 @@ class OriginRoutedWorkflowEngine:
         async for event in arm.run(
             prompt=prompt,
             issue_key=issue_key,
+            run_identity=run_identity,
             repo_path=repo_path,
             repo_url=repo_url,
             base_spec=base_spec,

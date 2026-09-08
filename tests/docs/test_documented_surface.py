@@ -47,8 +47,14 @@ _FORGE_PATH_PERMISSIONS: dict[str, str] = {
     "/repos/{}/{}": "Metadata: read",
     "/repos/{}/{}/pulls": "Pull requests: read/write",
     "/repos/{}/{}/issues/{}/comments": "Pull requests: read/write",
-    "/repos/{}/{}/commits/{}/check-runs": "Actions: read",
+    "/repos/{}/{}/commits/{}": "Contents: read",
+    "/repos/{}/{}/commits/{}/check-runs": "Checks: read",
+    "/repos/{}/{}/check-runs/{}": "Checks: read",
     "/repos/{}/{}/actions/workflows": "Actions: read",
+    "/repos/{}/{}/actions/runs": "Actions: read",
+    "/repos/{}/{}/actions/runs/{}/attempts/{}": "Actions: read",
+    "/repos/{}/{}/actions/runs/{}/attempts/{}/jobs": "Actions: read",
+    "/repos/{}/{}/actions/runs/{}/rerun": "Actions: read/write",
 }
 
 

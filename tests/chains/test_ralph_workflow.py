@@ -66,6 +66,7 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -644,6 +645,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1072,6 +1074,7 @@ async def test_no_ticket_event_raises() -> None:
             repo_path: str | None,
             repo_url: str | None,
             cache_key: str,
+            run_identity: RunIdentity | None = None,
             base_branch: str,
         ) -> AsyncGenerator[AgentEvent, None]:
             self.calls.append(
@@ -1125,6 +1128,7 @@ class _SequentialReviewExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -2295,6 +2299,7 @@ class _ScriptedCriteriaExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -3030,6 +3035,7 @@ class _SequentialQualityGate:
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -3584,6 +3590,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -4530,6 +4537,7 @@ class _ScriptedValidatorExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -4704,6 +4712,7 @@ class _ScriptedReviewExecutor:
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -4847,7 +4856,7 @@ def _dispatch_sites() -> list[tuple[str, str]]:
     sites: list[tuple[str, str]] = []
     for path in sorted(root.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
-        if "template_for(PromptKey." not in source:
+        if ".template_for(" not in source:
             continue
         for opener in (".stream(", ".stream_in_workspace(", ".stream_workflow("):
             start = 0
@@ -4859,7 +4868,16 @@ def _dispatch_sites() -> list[tuple[str, str]]:
 
 #: The dispatch census this suite expects to find, so a site that stops
 #: resolving a template cannot silently leave the check.
-KEYED_DISPATCH_COUNT = 12
+KEYED_DISPATCH_COUNTS = {
+    "agent_content_scanner.py": 1,
+    "git_change_persister.py": 1,
+    "organize.py": 1,
+    "ralph_loop.py": 2,
+    "ralph_workflow.py": 5,
+    "remediation.py": 1,
+    "ticket_generation.py": 2,
+    "prompt_pass.py": 1,
+}
 
 
 def test_house_rules_delivered_as_system_prompt_append() -> None:
@@ -4884,7 +4902,9 @@ def test_house_rules_delivered_as_system_prompt_append() -> None:
         assert registry.session_policy(key).system_prompt_append == house_rules
 
     sites = _dispatch_sites()
-    assert len(sites) == KEYED_DISPATCH_COUNT, [name for name, _ in sites]
+    from collections import Counter
+
+    assert Counter(name for name, _ in sites) == KEYED_DISPATCH_COUNTS
 
     carriers = [
         (name, block) for name, block in sites if "session_policy=" not in block

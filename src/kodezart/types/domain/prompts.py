@@ -47,6 +47,7 @@ class PromptKey(StrEnum):
     #: fragment metadata, so it enters this census and the set-completeness
     #: rule covers it like every other role.
     KNOWLEDGE_MAP = "knowledge_map"
+    FIRE_RECORD = "fire_record"
 
 
 class OrchestrationPrimitive(StrEnum):
