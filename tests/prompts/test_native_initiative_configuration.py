@@ -50,3 +50,13 @@ async def test_composed_grooming_renders_without_copied_initiative_ids_or_dates(
     assert "example-initiative" not in rendered
     assert re.search(r"\b\d{4}-\d{2}-\d{2}\b", rendered) is None
     assert operation.teams and operation.repos
+    if prompt_set == "claude-opus":
+        guidance = " ".join(rendered.lower().split())
+        for required in (
+            "every issue in the declared teams, narrowed by their declared scopes",
+            "discover their projects and initiatives from the current tracker",
+            "read each applicable initiative and project's current target date from the tracker",
+            "an absent target stays absent, never invented or borrowed",
+            "never move a date",
+        ):
+            assert required in guidance
