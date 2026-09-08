@@ -131,13 +131,20 @@ async def test_actual_pr_blocks_authored_aggregate_with_shipped_policy(
     assert hit.matched_text == claim
     assert hit.start == 0 and hit.end == len(claim)
     assert judge.calls
+    assert all("as `object_count`" in call["prompt"] for call in judge.calls)
+    assert all("no\nissue reference occurs" in call["prompt"] for call in judge.calls)
     assert all(call["allowed_tools"] == [] for call in judge.calls)
     assert all(call.get("session_id") is None for call in judge.calls)
 
 
 @pytest.mark.parametrize(
     "body",
-    ["3 tests passed.", "12 files changed.", "2 commits implement the fix."],
+    [
+        "3 tests passed.",
+        "12 files changed.",
+        "2 commits implement the fix.",
+        "The codec implements wire message types ABC-1, ABC-2, ABC-3.",
+    ],
 )
 async def test_actual_pr_preserves_ordinary_numeric_prose(tmp_path, body):
     judge = RecordedTextJudge(body, None)
@@ -380,3 +387,37 @@ async def test_derived_technical_values_keep_the_existing_no_session_route(tmp_p
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == "3 tests"
     assert judge.calls == []
+
+
+async def test_private_prose_opt_in_keeps_point_in_time_repository_cost_routing(
+    tmp_path,
+):
+    judge = RecordedTextJudge(COUNT_CLAIM, RedactionCategory.ORG_PRIVATE)
+    gate = await gate_with_judge(tmp_path, judge, privacy=True)
+    decision = await gate.gate(
+        content=COUNT_CLAIM,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.COMMIT_MESSAGE,
+        content_class=ContentClass.AUTHORED,
+    )
+    assert decision.verdict is GateVerdict.CLEAN
+    assert decision.content == COUNT_CLAIM
+    assert judge.calls == []
+
+
+async def test_actual_aggregate_only_judgment_cannot_answer_a_different_question(
+    tmp_path,
+):
+    judge = RecordedTextJudge(COUNT_CLAIM, RedactionCategory.ORG_PRIVATE)
+    creator = FakePRCreator()
+    engine = make_engine(
+        pr_creator=creator,
+        gate=await gate_with_judge(tmp_path, judge),
+        visibility_resolver=FakeVisibilityResolver(RepoVisibility.PUBLIC),
+        executor=DescriptionExecutor(COUNT_CLAIM),
+    )
+    with pytest.raises(OutboundContentBlockedError) as caught:
+        await run_engine(engine)
+    assert caught.value.failure is ScanFailureKind.MALFORMED_VERDICT
+    assert creator.calls == []
