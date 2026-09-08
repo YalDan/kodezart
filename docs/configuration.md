@@ -448,6 +448,11 @@ criterion request. Its four categories retain separate mandate-completed reports
 and their original source evidence. Missing configuration or unreadable revision
 inputs produce an explicit detector-unavailable reason alongside any successful
 ordinary claim. This introduces no configuration field or implicit detector.
+The optional detector-removal verifier likewise runs independently. Each
+source-checked removal retains an individual mandate-completed report; absent
+configuration or unreadable revision inputs remain explicit. Its successful
+observed head must agree with the other current-revision arms. Both optional
+detectors use their existing prompt roles and operation source bindings.
 
 This read attempt does not advance the completed-audit coverage cache, even
 when its individual observations succeed. Every invocation reads the full

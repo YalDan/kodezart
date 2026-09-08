@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
 from kodezart.chains.audit_evidence import AuditEvidenceVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
@@ -23,6 +24,10 @@ from kodezart.types.domain.audit import (
     AuditClaimRequest,
     AuditMandateRequest,
     AuditVerdict,
+)
+from kodezart.types.domain.audit_detection_removal import (
+    DetectorRemovalReport,
+    DetectorRemovalReportEntry,
 )
 from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
 from kodezart.types.domain.audit_overclaim import (
@@ -50,6 +55,8 @@ class AuditReadObservation:
     unavailable_reason: str | None = None
     overclaims: AuditOverclaimReport | None = None
     overclaim_unavailable_reason: str | None = None
+    detector_removal: DetectorRemovalReport | None = None
+    removal_unavailable_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +123,7 @@ class AuditReadSweep:
         cache: RepoCache,
         config: AppConfig,
         overclaims: AuditOverclaimVerifier | None = None,
+        removals: DetectorRemovalVerifier | None = None,
     ) -> None:
         self._scope = scope
         self._requests = AuditRequestReader(tracker=tracker, operation=operation)
@@ -128,6 +136,7 @@ class AuditReadSweep:
         self._cache = cache
         self._remote = config.git_remote
         self._overclaims = overclaims
+        self._removals = removals
 
     async def _observe(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
@@ -213,6 +222,31 @@ class AuditReadSweep:
             )
         return AuditOverclaimReport(observation=observed, reports=tuple(reports))
 
+    async def _observe_removals(
+        self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
+    ) -> DetectorRemovalReport:
+        request = target.request
+        if not isinstance(request, AuditClaimRequest):
+            raise AuditClaimReadError(
+                "detector-removal verification requires a native criterion request"
+            )
+        if self._removals is None:
+            raise AuditClaimReadError("the detector-removal verifier is not configured")
+        observed = await self._removals.observe(request)
+        reports = []
+        for finding in observed.judgment.findings or (None,):
+            report = await self._mandates.complete(
+                AuditMandateRequest(
+                    claim=observed.claim(finding),
+                    defect_class=observed.defect_class(finding),
+                    surfaces=surfaces,
+                    repo_url=request.repo_url,
+                    cache_key=request.cache_key,
+                )
+            )
+            reports.append(DetectorRemovalReportEntry(finding=finding, report=report))
+        return DetectorRemovalReport(observation=observed, reports=tuple(reports))
+
     async def _require_current(self, observation: AuditReadObservation) -> None:
         target = observation.target
         request = target.request
@@ -231,6 +265,8 @@ class AuditReadSweep:
             heads.add(observation.evidence.head_sha)
         if observation.overclaims is not None:
             heads.add(observation.overclaims.observation.head_sha)
+        if observation.detector_removal is not None:
+            heads.add(observation.detector_removal.observation.head_sha)
         if not heads:
             return
         if len(heads) != 1:
@@ -264,11 +300,17 @@ class AuditReadSweep:
                 )
             overclaims = None
             overclaim_reason = None
+            removals = None
+            removal_reason = None
             if "criterion" in target.issue.issue_labels:
                 try:
                     overclaims = await self._observe_overclaims(target, surfaces)
                 except Exception as exc:
                     overclaim_reason = f"{type(exc).__name__}: {exc}"
+                try:
+                    removals = await self._observe_removals(target, surfaces)
+                except Exception as exc:
+                    removal_reason = f"{type(exc).__name__}: {exc}"
             observations.append(
                 AuditReadObservation(
                     target=observation.target,
@@ -278,6 +320,8 @@ class AuditReadSweep:
                     unavailable_reason=observation.unavailable_reason,
                     overclaims=overclaims,
                     overclaim_unavailable_reason=overclaim_reason,
+                    detector_removal=removals,
+                    removal_unavailable_reason=removal_reason,
                 )
             )
         for observation in observations:

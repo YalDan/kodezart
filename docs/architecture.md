@@ -817,9 +817,23 @@ distinguishes an absent file from an unreadable commit or unsupported object.
 The session's semantic counterfactual remains a judgment: exact quotations do
 not prove the absence of all replacement detection. The test fixture executes
 the real current suite and baseline detector at the current head through the
-actual agent/workspace boundary; it does not call a live model. This component
-returns an observation, without scheduling a sweep, completing a mandate hunt,
-writing a refutation or bypassing required writer leases.
+actual agent/workspace boundary; it does not call a live model. The verifier
+returns a source-checked observation. `AuditReadSweep` invokes it independently
+for each native criterion request and completes a separate existing mandate
+report for every demonstrated loss. Each report retains the exact mechanism
+and detector quotations, their addresses and the absence demonstration; these
+remain evidence for a judgment rather than a new routing rule. A quiet or
+unverifiable detector produces its own non-refuted report without a mandate.
+
+Failure in the ordinary claim or over-claim arm does not suppress this detector.
+An unavailable revision or verifier is named separately, including states
+outside the revision reader's completed/configured-review contract. Final scope,
+record and current-head checks include every successful detector observation.
+The native sweep fixtures execute the current suite and old guard: deleting the
+last guard reports a loss, while retaining or replacing it keeps this arm quiet.
+There are no tracker writes, coverage marks or writer-lease bypasses here;
+scheduled publication and complete coverage of the other detectors remain
+separate consumers.
 
 
 ## Standing over-claim observations
