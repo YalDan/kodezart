@@ -254,9 +254,11 @@ async def test_native_read_preserves_exact_bytes_and_refuses_symlink_or_tree(rep
         )
 
 
-async def test_literal_path_identity_and_option_ref_are_not_reinterpreted(repo):
+@pytest.mark.parametrize("special", ["tests/test_[a].py", ":(glob)test_contract.py"])
+async def test_literal_path_identity_and_option_ref_are_not_reinterpreted(
+    repo, special
+):
     commit(repo, source(1))
-    special = "tests/test_[a].py"
     (repo / special).write_bytes(b"literal\n")
     (repo / "tests/test_a.py").write_bytes(b"other\n")
     git(repo, "add", "--all")
