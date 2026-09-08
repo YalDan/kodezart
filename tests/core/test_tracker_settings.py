@@ -154,6 +154,8 @@ async def test_four_sources_reach_native_http_boot_and_issue_read(
         assert endpoint.clients[1].timeout.read == 47
         assert dialled.caller._server.call_timeout().total_seconds() == 2
         assert dialled.caller._server._error_detail_limit == 91
+        assert "token" not in config.model_dump()["tracker"]
+        assert "token" not in json.loads(config.model_dump_json())["tracker"]
         assert TOKEN not in config.model_dump_json()
         assert TOKEN not in repr(config)
     finally:
