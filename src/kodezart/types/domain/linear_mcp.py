@@ -12,7 +12,7 @@ substituted default.  Vendor camelCase arrives through aliases so the
 Python surface stays snake_case.
 
 Every shape here is MEASURED against the live server, not reasoned from
-the vendor's documentation (KOD-143).  It has to be: no tool on that
+the vendor's documentation.  It has to be: no tool on that
 server declares an ``outputSchema``, so a payload's shape is knowable
 only by probing it, and the first version of this module — authored
 blind — got five of them structurally wrong.  A shape changed here
@@ -51,7 +51,7 @@ class LinearPriorityWire(LinearWireModel):
 class LinearRelatedIssueWire(LinearWireModel):
     """One issue on the far end of a relation edge.
 
-    ``id`` is the human identifier (``KOD-56``), the same spelling every
+    ``id`` is the human-readable issue identifier, the same spelling every
     other payload addresses an issue by, so a relation reads back through
     the same door it points at.
     """
@@ -151,7 +151,7 @@ class LinearIssueWire(LinearWireModel):
     team: str
     #: The project the issue belongs to, by display name and by id — both
     #: on every measured listing entry for an issue in a project, both
-    #: absent for an issue in none (KOD-169).  Free off the scan: scope
+    #: absent for an issue in none.  Free off the scan: scope
     #: membership is answered from these, never by a per-issue read.
     project: str | None = None
     project_id: str | None = None
@@ -243,7 +243,7 @@ class LinearProjectWire(LinearWireModel):
     """The ``get_project`` payload, in the fields the adapter reads.
 
     ``initiatives`` is required, measured populated on the live server
-    (2026-09-01, KOD-169); the no-initiative arm is unprobed, so a payload
+    (2026-09-01); the no-initiative arm is unprobed, so a payload
     omitting the key fails validation loudly here rather than being read
     as a project in no initiative — those are different facts and only a
     fresh capture may conflate them.
@@ -286,7 +286,7 @@ class LinearCommentWire(LinearWireModel):
     author arrives as an object, and which issue a comment belongs to is
     known by the caller that asked for it, never read back off the entry.
 
-    That object can be ``null``, measured 2026-09-01 (KOD-172): a removed
+    That object can be ``null``, measured 2026-09-01: a removed
     user or an integration leaves the key in place carrying nothing, and
     the log a dispatch tick was reading held one at index 8.  The key
     itself stays REQUIRED — a payload that dropped it would be saying
@@ -336,8 +336,8 @@ class LinearNamedWire(LinearWireModel):
     measured listing carries the field at all, so a reader of it would see
     every team-scoped label as workspace-level; the adapter takes the
     container from WHICH listing answered instead, that being the only
-    statement about scope these payloads actually make (KOD-143, the label
-    addendum of 2026-08-25).  The declaration stays because the field is
+    statement about scope these payloads actually make.  The declaration
+    stays because the field is
     the vendor's own and optional, as the asset wire's unmeasured fields
     are.
     """
@@ -357,7 +357,7 @@ class LinearLabelWire(LinearNamedWire):
     id is the only thing that separates those — measured 2026-09-01 on a
     two-board workspace, where one member came back from both boards under
     ONE id and from the unscoped listing too, while another came back
-    under TWO distinct ids and from no unscoped listing at all (KOD-167).
+    under TWO distinct ids and from no unscoped listing at all.
     """
 
     id: str
@@ -405,7 +405,7 @@ class LinearUserWire(LinearNamedWire):
     account name: every measured entry carries both and no measured entry
     has them equal.  It is declared because it is now READ — a configured
     identity may legitimately be either spelling, so user resolution
-    matches the union of the two (KOD-143 addendum 3).  Declaring it
+    matches the union of the two.  Declaring it
     before anything read it would have been the module's own rule broken.
     """
 

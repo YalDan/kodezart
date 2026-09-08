@@ -15,13 +15,13 @@ Two failure classes leave here, and the split is the whole of what a
 caller can act on.  Anything a second attempt might clear is an
 ``McpTransportError``; a server that refused the CREDENTIAL is an
 ``McpCredentialRefusedError``, which no retry loop above may treat as a
-blip (KOD-171).
+blip.
 
 The credential is asked about BEFORE any session exists.  ``probe`` sends
 one raw ``initialize`` over plain HTTP and reads the status code; a boot
 that learned the same thing from ``open`` would learn nothing at all,
 because a 401 met while the SDK opens cancels the task that opened and
-the status never reaches an awaiting caller (KOD-268).
+the status never reaches an awaiting caller.
 
 The session's whole life runs in ONE task, and ``open``, ``call_tool``
 and ``close`` are MESSAGES to it — the mechanism is
@@ -90,7 +90,7 @@ class HttpxClientFactory(Protocol):
     a transport is a client httpx will not fit into its environment:
     ``allow_env_proxies`` holds only while the client builds the transport
     itself, so an explicit one silently unset ``HTTPS_PROXY`` and
-    ``HTTP_PROXY`` for every tracker call (KOD-283).  A case that needs to
+    ``HTTP_PROXY`` for every tracker call.  A case that needs to
     answer the wire itself replaces the whole client and states the
     transport there, where nothing about a deployment is being decided.
     """
@@ -119,7 +119,7 @@ def pooled_http_client(
     No transport is named, deliberately.  httpx honours the environment's
     proxy variables only when it builds the transport itself, so naming one
     here would take the deployment's proxy configuration away from every
-    tracker and knowledge call (KOD-283).
+    tracker and knowledge call.
     """
     return httpx.AsyncClient(
         follow_redirects=follow_redirects,
@@ -157,7 +157,7 @@ class _RemoteServer(HostedSessionTransport):
         #: deployment gets httpx's own pool and its environment; a case puts
         #: an in-process responder behind a client of the same shape and
         #: exercises the probe over the very client the live session runs
-        #: on, rather than over one built beside it (KOD-268, KOD-283).
+        #: on, rather than over one built beside it.
         self._client_factory: HttpxClientFactory = client_factory
         #: Whether the server has answered this session's credential with a
         #: refusal.  Latched, because a credential does not heal: once it is
@@ -168,7 +168,7 @@ class _RemoteServer(HostedSessionTransport):
         #: answered with a status did not lose a request in flight — the
         #: server received it and refused it, and nothing ran — so the call
         #: may be made again; a collapse with no such answer is a request
-        #: written and never answered, which may not (KOD-305).  Cleared by
+        #: written and never answered, which may not.  Cleared by
         #: every response that is not an error, and at every dial.
         self._last_error_status: int | None = None
         self._log: BoundLogger = get_logger(__name__)
@@ -218,7 +218,7 @@ class _RemoteServer(HostedSessionTransport):
             # the read phase is bounded on its OWN configured value rather
             # than on the exchange bound every other phase takes: a bound
             # short enough for a request/response is a session torn down
-            # every time the board is quiet (KOD-299).
+            # every time the board is quiet.
             timeout=httpx.Timeout(
                 self._timeout_seconds,
                 read=self._sse_read_timeout_seconds,
@@ -241,13 +241,12 @@ class _RemoteServer(HostedSessionTransport):
         """A call carries a READ TIMEOUT, because a session can stop
         answering without ending.
 
-        Measured 2026-09-01 (KOD-171): the server began refusing the
+        Measured 2026-09-01: the server began refusing the
         credential, the reader driving this session was torn down, and the
         close that would have ended the awaited response was never sent —
         so the call in flight waited forever and the pass holding it never
         returned.  A bound turns that state into this module's own typed
-        failure, which every caller above already knows how to report
-        (KOD-269).
+        failure, which every caller above already knows how to report.
         """
         return timedelta(seconds=self._call_timeout_seconds)
 
@@ -274,8 +273,8 @@ class _RemoteServer(HostedSessionTransport):
         """Present the credential once, over plain HTTP, before any session.
 
         One ``initialize`` POST carrying the configured bearer, answered by
-        a status code this method can read.  Measured 2026-09-01 (KOD-171,
-        KOD-268): a 401 met while the SDK session opens cancels the task
+        a status code this method can read.  Measured 2026-09-01: a 401 met
+        while the SDK session opens cancels the task
         that opened it, so what reaches an awaiting caller is that
         cancellation and the status is legible nowhere above — a refused
         credential arrived as an ordinary broken connection and the boot
@@ -291,7 +290,7 @@ class _RemoteServer(HostedSessionTransport):
         stream it then holds open, and a probe reading to the end of that
         body would wait out the transport's read timeout and refuse a boot
         whose credential the server had already accepted.  The response is
-        streamed, classified from its headers and closed unread (KOD-284).
+        streamed, classified from its headers and closed unread.
         """
         async with self.http_client(
             headers={
@@ -334,7 +333,7 @@ class _RemoteServer(HostedSessionTransport):
 
         A refused credential is its own class even here: the status was
         observed on the response hook while the SDK was still opening, and
-        what reached the host was only the group's collapse (KOD-271).
+        what reached the host was only the group's collapse.
         """
         if self._credential_refused:
             return self._refusal()
@@ -442,7 +441,7 @@ class HttpMcpToolCaller:
         once per call, never once per boot.  Ending was terminal while the
         caller was in service, so one dropped stream or one transient
         vendor status left dispatch, claims, heartbeats and records dead
-        for the rest of the boot (KOD-300).  A server that ANSWERED with
+        for the rest of the boot.  A server that ANSWERED with
         an error reopens nothing — the transport was never the problem —
         and a refused credential reopens nothing either, because no fresh
         session mints a new one.

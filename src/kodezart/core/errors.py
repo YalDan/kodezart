@@ -341,7 +341,7 @@ class McpTransportError(Exception):
 class McpSessionClosedError(McpTransportError):
     """Raised when the SESSION is gone or could not be brought up.
 
-    The discriminator the record path reads (KOD-177): a server that
+    The discriminator the record path reads: a server that
     ANSWERED — with a result or with a tool error — is a server that is
     there, and the remedy is the payload or the destination; a session
     that is gone is a transport to reopen or a process to diagnose, and
@@ -360,8 +360,8 @@ class McpCallUnansweredError(McpTransportError):
     Whether the server ran it is unknown, and that is the whole of what
     this class says.  Not the closed-session class, deliberately: a caller
     that meets that class makes the call again on a fresh session, and a
-    write the server performed before dying would be performed twice
-    (KOD-305).  A record path that meets this one leaves the row to the
+    write the server performed before dying would be performed twice.
+    A record path that meets this one leaves the row to the
     verification that runs next, which finds it or does not.
     """
 
@@ -375,7 +375,7 @@ class McpCredentialRefusedError(Exception):
     same way, so retrying one spends a whole budget of sleeps to learn what
     the first answer already said.
 
-    Measured 2026-09-01 (KOD-171): fifty-one minutes into a live boot the
+    Measured 2026-09-01: fifty-one minutes into a live boot the
     tracker began answering HTTP 401, and claim renewals, gate scans and
     dispatch ticks each burned their full retry budget on it.
     """
@@ -405,7 +405,7 @@ class TrackerCredentialShapeError(Exception):
     not, and nothing in this process refreshes anything, so a boot that
     accepted the second would serve until the token died and then answer
     every tracker call with a refusal, hours later, on a board nobody is
-    watching — measured 2026-09-01 (KOD-171).
+    watching — measured 2026-09-01.
     """
 
     def __init__(self, message: str, *, field: str, accepted_shape: str) -> None:
@@ -500,7 +500,7 @@ class RunRecordWriteError(Exception):
     whose system holds it, and which of the three failure classes it was.
     The measured boot logged a bare error string per failed write, so a
     dead knowledge session and a refused page read identically and neither
-    named the log that went unwritten (KOD-177).
+    named the log that went unwritten.
 
     The fields are plain strings — the enum VALUES their producers carry —
     because this module is under the domain vocabulary rather than over

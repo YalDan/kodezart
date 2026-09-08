@@ -7,7 +7,7 @@ translation between these types and whatever their backend calls the
 same thing.
 
 Issues are addressed by ``issue_key``: the stable, human-readable
-identifier the backend already exposes (``KOD-57`` on Linear, ``#412``
+identifier the backend already exposes (a team-prefixed key on Linear, ``#412``
 on GitHub Issues, ``PROJ-8`` on Jira).  The adapter maps a key onto its
 backend's internal identifier; consumers never see one.
 """
@@ -104,7 +104,7 @@ class IssueRelationKind(StrEnum):
     port — an issue names its own parent through ``parent_key`` — and no
     backend measured so far reports children at all.  A member no
     adapter can emit and no consumer can branch on is vocabulary that
-    reads as a capability (KOD-143).
+    reads as a capability.
     """
 
     BLOCKED_BY = "blocked_by"
@@ -207,7 +207,7 @@ class TrackerIssue(TrackerModel):
     #: The project the issue belongs to, in both spellings the backend
     #: reports them — display name and id — or ``None`` for an issue in no
     #: project.  Carried off the scan so a team's declared scope is judged
-    #: without a per-issue read (KOD-169).
+    #: without a per-issue read.
     project: str | None = None
     project_id: str | None = None
     #: The milestone reported by the full issue read; omission means the
@@ -253,7 +253,7 @@ class TrackerComment(TrackerModel):
     ``author_key`` carries the backend's attribution, and ``None`` is a
     STATE of it rather than a missing value: the backend reported no
     author at all, which is what a removed user or an integration leaves
-    behind (KOD-172).  Every reader of attribution has to surface that as
+    behind.  Every reader of attribution has to surface that as
     itself — a substituted name would attribute a comment to somebody who
     did not write it, and a reader that cannot distinguish the two states
     would answer "who said this?" with a guess.  Required with no default,

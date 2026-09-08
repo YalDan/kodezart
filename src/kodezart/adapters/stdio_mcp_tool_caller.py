@@ -3,7 +3,7 @@
 The programmatic sibling of the stdio route granted sessions already ride:
 the same server definition — command, args, environment, credential — is
 dialled by THIS process for the deterministic paths that need no model in
-the loop, the run-record write first among them (KOD-170).
+the loop, the run-record write first among them.
 
 One session for the process, opened at boot and closed at shutdown, for
 the same reason the HTTP caller holds one: a session per call re-runs the
@@ -20,7 +20,7 @@ process.  A spawned server dies of its own accord — the measured boot lost
 the knowledge session at 18:22 to an ``anyio.ClosedResourceError`` after
 serving the same caller nine minutes earlier — and a boot-opened session
 with no way back left every later record write refusing on a transport
-nobody could revive (KOD-177).  So a call that meets a CLOSED session
+nobody could revive.  So a call that meets a CLOSED session
 reopens it and goes again; a call the server ANSWERED with an error
 reopens nothing, because the transport was never the problem.
 
@@ -30,7 +30,7 @@ that gave up on it would be back to the state this exists to end: the
 record path disabled for the rest of a boot by one bad moment.  While the
 caller is in service and holds no session, the next call spawns again —
 bounded by what one open costs, loud on its own, and gone the moment the
-server is back (KOD-287).
+server is back.
 
 The subprocess's own stderr is captured to a file this caller owns and its
 tail rides the process log when a session fails or ends.  A server that
@@ -73,7 +73,7 @@ from kodezart.types.domain.transport import (
 #: the stream's own vocabulary: the session's memory object streams are
 #: closed or broken.  This is the class the measured boot met —
 #: ``anyio.ClosedResourceError`` at 18:22 — and nothing reached the server,
-#: so the call may be made again (KOD-286).
+#: so the call may be made again.
 _GONE_BEFORE_WRITING: tuple[type[Exception], ...] = (
     anyio.BrokenResourceError,
     anyio.ClosedResourceError,
@@ -82,7 +82,7 @@ _GONE_BEFORE_WRITING: tuple[type[Exception], ...] = (
 
 
 def _became_of(exc: Exception) -> AnyCallFailure:
-    """What became of a stdio call that raised *exc* (KOD-192, KOD-305).
+    """What became of a stdio call that raised *exc*.
 
     Three arms, told apart by WHERE the call was: gone before the request
     was written (the stream classes above — replay is safe); written and
@@ -207,8 +207,7 @@ class _SpawnedServer(HostedSessionTransport):
         cancel scope in a task other than the one that entered it, so a
         session opened by the boot and torn down by a worker did not tear
         down at all: the teardown raised, the dead server was never
-        reaped, and the scope the boot entered stayed on the boot's stack
-        (KOD-177).
+        reaped, and the scope the boot entered stayed on the boot's stack.
         """
         path = _new_stderr_capture()
         #: Which of the four moments the tail below belongs to.  A spawn
@@ -253,7 +252,7 @@ class _SpawnedServer(HostedSessionTransport):
         The closed-session class, because that is what the record path
         reads as a transport to try again rather than a payload to fix —
         a spawn that failed at this instant is exactly the state the next
-        call's own reopen is for (KOD-287).
+        call's own reopen is for.
         """
         failure = McpSessionClosedError(
             "the MCP session could not be opened",
@@ -283,7 +282,7 @@ class _SpawnedServer(HostedSessionTransport):
         The closed-session class throughout this transport: every consumer
         of the record path routes on that one distinction, and a caller
         that answered "not open" in a second class would be asking them to
-        route on two (KOD-192).
+        route on two.
         """
         return McpSessionClosedError(
             "the MCP session is not open",
@@ -355,7 +354,7 @@ class StdioMcpToolCaller:
         A session that has CLOSED under this caller is reopened and the
         call goes again — the whole of what the measured boot needed, and
         the reason the reopen lives under the port rather than in every
-        consumer of it (KOD-177).  A server that ANSWERED with an error
+        consumer of it.  A server that ANSWERED with an error
         reopens nothing: the transport was never the problem.
         """
         return await self._hosted.call_tool(name=name, arguments=arguments)

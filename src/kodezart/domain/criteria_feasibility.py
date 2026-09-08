@@ -288,8 +288,7 @@ def reconcile(
     two rounds of a hallucinated one end a run over criteria that were
     never asked about.
 
-    This is one of the two fan-in channels KOD-91 deliverable 4 covers,
-    and it is the CHECK the node's bounded re-dispatch runs between
+    This is the fan-in CHECK the node's bounded re-dispatch runs between
     sessions: the error it raises is the shared one, built at the single
     site in :mod:`kodezart.domain.fan_in`.  A pure fold cannot re-run a
     session, so the bound lives in the node and the refusal lives here.

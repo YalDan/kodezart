@@ -4,7 +4,7 @@ One value, three producers: the two scheduled passes and the fire.  The
 runner's obligation is that ONE record exists per run: the session's rich
 row through the rendered mechanism IS the record when the session wrote
 one, and the runner verifies before writing rather than writing beside it
-— two rows per run made every log read as two runs (KOD-170, amended).  A
+— two rows per run made every log read as two runs.  A
 judgment session that decides "nothing to write" remains exactly the
 state the next window cannot tell apart from a pass that never ran, so
 the ABSENCE of a row after a run is what the runner repairs, with the
@@ -48,7 +48,7 @@ class RunRecordResult(StrEnum):
     VERIFIED the row the run already had, or the run's kind declares no
     destination at all.  A shutdown sweep announces the fires it recorded,
     and announcing one it only verified would report a row it did not
-    write (KOD-178).
+    write.
     """
 
     WRITTEN = "written"
@@ -64,7 +64,7 @@ class RunRecordFailure(StrEnum):
     said the session was GONE (reopen it, read the server's stderr), the
     request was written and never ANSWERED (leave the row to the next
     verification, which finds it or does not — writing again could write
-    it twice, KOD-305), the destination's system ANSWERED and would not
+    it twice), the destination's system ANSWERED and would not
     take the row (fix the payload or the destination), or this process
     holds no sink for the declared system at all (fix the wiring, or stop
     declaring it). Configuration and duplicate run identities have their own
@@ -87,7 +87,7 @@ class RunIdentity(BaseModel):
     the kind and the name.  It exists apart from :class:`RunRecord`
     because the identity is known at the START and the record only at the
     end — and the prompt the run is sent as has to prescribe the row's
-    title while the run is still going (KOD-290).
+    title while the run is still going.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -119,8 +119,8 @@ class RunRecord(BaseModel):
     WHEN it began — and :meth:`title` is the one string that spells all
     three.  A destination row carrying that title is this run's record and
     no other's: a neighbour's row, a row for a run whose name this one's
-    merely prefixes (``KOD-17`` against ``KOD-170``), and the same name
-    from another window are each a different title (KOD-288).
+    merely prefixes, and the same name
+    from another window are each a different title.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -149,7 +149,7 @@ class RunRecord(BaseModel):
         it and writes it, and the rendered Record clause prescribes the
         same string to the session that writes its own row — the SAME
         method, off the same identity, so the two cannot spell one run two
-        ways (KOD-288, KOD-290).  Two spellings of one run are two rows,
+        ways.  Two spellings of one run are two rows,
         which is the whole of what the measured substring match could not
         tell apart.
         """

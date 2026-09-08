@@ -3,7 +3,7 @@
 One recorder for the process, because the record registry is one
 configuration surface: the pass scheduler and the lifecycle watcher both
 report into it, and which backing system serves which kind is read off
-the declared entries rather than decided per producer (KOD-170).
+the declared entries rather than decided per producer.
 
 The sinks are built from what the deployment can actually dial: the
 tracker sink rides the SAME transport the tracker adapter holds, and the

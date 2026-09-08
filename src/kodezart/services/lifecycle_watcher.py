@@ -28,9 +28,9 @@ is a run that reached no terminal outcome, and the last thing the tracker
 was told — the in-progress stage — is contradicted by reality with nothing
 saying so.  The end of the stream is the exact signal: the queue closes it
 whether the run finished or raised, so no timeout and no second surface is
-involved (KOD-146).
+involved.
 
-**The claim heartbeat rides here** for the same reason (KOD-147).  A claim
+**The claim heartbeat rides here** for the same reason.  A claim
 has to stay live for exactly as long as the job does, and this watch is the
 one component whose lifetime already IS the job's: it begins when the
 dispatch pass enqueues, it ends when the stream ends, and it ends by both
@@ -38,7 +38,7 @@ paths.  The renewal starts before the first frame rather than after it,
 because a job sitting in the queue longer than the lease loses its issue
 just as surely as a job running longer than one.
 
-**And the claim is handed back here** (KOD-152), because this is where the
+**And the claim is handed back here**, because this is where the
 job's end is known.  The end of the stream is that end by every path the
 process survives — a terminal outcome, a run that reached none, and a
 graceful shutdown, which closes the stream of everything still queued or
@@ -49,7 +49,7 @@ one arm that may not change; the measured incident is the other one, an
 instance stopped and its replacement locked out of the issue for the rest
 of a lease nobody was working under.
 
-**And the run record has a shutdown half** (KOD-178).  Recording at the
+**And the run record has a shutdown half**.  Recording at the
 watch's end means a fire that is still queued or still running when the
 process goes down is recorded nowhere at all: three fires ran on the
 measured boot and the Fire Log held one line.  So the fires this process
@@ -98,8 +98,8 @@ from kodezart.types.domain.run_records import (
 #: after the put-back, the claim release and everything else the watch
 #: owes the run, so a hop that raised would unwind a watch whose work is
 #: done and lose the record that says the run is over — and the news it
-#: carries is an optimisation over the next tick, never the run's history
-#: (KOD-276).  The containment belongs to the implementation because only
+#: carries is an optimisation over the next tick, never the run's history.
+#: The containment belongs to the implementation because only
 #: the implementation knows what failed: the composed report fans out
 #: over every dispatcher on the lane and names the one that refused.
 type FireReport = Callable[[str, RunOutcome, str | None], Awaitable[None]]
@@ -114,7 +114,7 @@ class _UnrecordedFire:
     the queue marks every job it holds terminal, and the sweep reads after
     that stop.  Whether a run was dequeued is the whole difference between
     ``failed`` and ``never_started``, so it is remembered where it is
-    observed rather than inferred later (KOD-178).
+    observed rather than inferred later.
     """
 
     issue_key: str
@@ -153,15 +153,14 @@ class LifecycleWatcher:
         self._queue: JobQueue = queue
         #: Read only at shutdown, and only about fires this process
         #: started: what the sweep needs from it is when each job was
-        #: submitted, the left edge of the window its row is verified in
-        #: (KOD-178).
+        #: submitted, the left edge of the window its row is verified in.
         self._registry: JobRegistry = registry
         self._writer: TrackerLifecycleWriter = writer
         self._heartbeat: ClaimHeartbeat = heartbeat
         self._recorder: RunRecorder = recorder
         #: Where a finished fire's outcome goes — the dispatchers firing
         #: onto this lane, so a run that died is remembered instead of
-        #: being re-selected whole at the next tick (KOD-174).
+        #: being re-selected whole at the next tick.
         self._report: FireReport = report
         self._following: set[asyncio.Task[None]] = set()
         #: Watches that ended by RAISING, captured off each task the
@@ -170,13 +169,13 @@ class LifecycleWatcher:
         #: exception, and holding it for the drain is what keeps a
         #: watch that finished — and so pruned itself from the
         #: in-flight set — BEFORE the drain from being missed by a
-        #: drain that gathers only what is still in flight (KOD-303).
+        #: drain that gathers only what is still in flight.
         self._raised: list[BaseException] = []
         #: Every fire this process started, by job, until its watch has
         #: recorded it.  A watch records at its END, so a shutdown that
         #: arrives first — or a watch that raises on the way — leaves the
         #: run with no row at all, and the measured boot's Fire Log held
-        #: one row for three fires (KOD-178).
+        #: one row for three fires.
         self._unrecorded: dict[str, _UnrecordedFire] = {}
         self._log: BoundLogger = get_logger(__name__)
 
@@ -230,7 +229,7 @@ class LifecycleWatcher:
         it for the drain is what keeps a watch that finished before the
         drain — and so already pruned itself from the in-flight set —
         from being lost to a drain that gathers only what is still in
-        flight (KOD-303).
+        flight.
         """
         self._following.discard(task)
         if task.cancelled():
@@ -284,7 +283,7 @@ class LifecycleWatcher:
         exists to let happen.  What each watch raised is read off the
         task as it finished, not off this gather, so a watch that ended
         before the drain is reported here exactly as one still in flight
-        is: the gather only waits the rest out (KOD-303).
+        is: the gather only waits the rest out.
         """
         await asyncio.gather(*self._following, return_exceptions=True)
         await self._report_raised()
@@ -296,13 +295,13 @@ class LifecycleWatcher:
         END, so a job that is still queued or still running when the
         process goes down has no row and never will: the measured boot ran
         three fires — one finished, one killed mid-run, one never started —
-        and the Fire Log held one line (KOD-178).
+        and the Fire Log held one line.
 
         Called AFTER the queue is stopped and AFTER the watches are drained.
         After the stop, when the registry is quiescent: a job that finished
         between a read and the stop would otherwise be swept as failed, and
-        its own true row verified away by the sweep's (KOD-178, ruled
-        2026-09-02).  After the drain, so nothing records beside this: a
+        its own true row verified away by the sweep's.  After the drain, so
+        nothing records beside this: a
         watch ending on the stopped stream verifies the log and then
         writes, exactly as this does, and two of those interleaved over one
         run — each verifying before either has written — are two rows, the
@@ -434,7 +433,7 @@ class LifecycleWatcher:
         outcome = _fire_outcome(started=started, terminal=terminal)
         # The dispatcher hears first: it is in this process, it costs
         # nothing, and what it does with the news is decide whether the
-        # next tick may select this issue again (KOD-174).
+        # next tick may select this issue again.
         #
         # Uncontained here, because the report contains itself: the hop
         # fans out over N dispatchers and only the fan-out knows WHICH of
@@ -443,7 +442,7 @@ class LifecycleWatcher:
         # emitting one event name with two field sets, the outer one dead
         # in every composed system because the inner one never re-raises.
         # The contract is stated on ``FireReport`` and kept by the only
-        # thing that can keep it (KOD-276).
+        # thing that can keep it.
         await self._report(
             issue_key,
             outcome,
@@ -454,7 +453,7 @@ class LifecycleWatcher:
             # The same absence the sweep names, met at the other end: a run
             # whose submission the registry no longer holds has no window,
             # and a row stamped with anything else would be a second run in
-            # the log the moment the sweep wrote its own (KOD-288).
+            # the log the moment the sweep wrote its own.
             await self._log.aerror(
                 "finished_fire_unknown_to_registry",
                 issue_key=issue_key,
@@ -489,13 +488,13 @@ class LifecycleWatcher:
         is over.  A recording failure is its own loud event rather than a
         failure of the watch: the lifecycle write-back and the claim
         release already happened, and re-raising here would report a
-        finished run as a broken one (KOD-170).
+        finished run as a broken one.
 
         The event names the whole failure — which kind, which destination,
         whose system, and which class of failure — because the measured
         boot's ``run_record_write_failed`` carried an error string and
         nothing else, and a dead knowledge session read exactly like a
-        page the vendor refused (KOD-177).
+        page the vendor refused.
 
         A recorder that fails with anything else is a defect in the record
         path's own wiring rather than a destination refusing, and it is

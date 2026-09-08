@@ -551,7 +551,7 @@ class DeliveryProbe(Protocol):
 #: What a tool call answers with.  A JSON object OR a JSON array: the MCP
 #: spec constrains a tool result to neither shape, and a measured server
 #: answered some of its tools with a bare array carrying no envelope at
-#: all (KOD-143).  Narrowing this to an object would put those payloads
+#: all.  Narrowing this to an object would put those payloads
 #: out of reach of every adapter above the transport.  WHICH server and
 #: which tool is an adapter's knowledge; this seam holds only the fact
 #: that both shapes are legal.
@@ -566,14 +566,14 @@ class RunRecordSink(Protocol):
     because WHERE a row lands is vendor knowledge — a data-source page on
     one backend, a document append on another — while WHAT is written is
     the domain's one line.  The recorder service routes by the declared
-    system and never learns either vendor's shape (KOD-170).
+    system and never learns either vendor's shape.
 
     Verification is part of the same vendor knowledge, and it is asked
     PER RUN: whether THIS run's row is there, never whether the
     destination has been written to lately.  "Any row since" made every
     run after the first in a window a duplicate of its neighbour — two
     unfinished fires swept at one shutdown produced one row, because the
-    first row answered for the second (KOD-288).
+    first row answered for the second.
     """
 
     async def holds_record(
@@ -639,7 +639,7 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
         Silence means accepted.  A refused credential leaves as the typed
         credential error and anything else as the transport error, so boot
         can name a refusal — the status is legible here and not once a
-        session is being opened around it (KOD-268).
+        session is being opened around it.
         """
         ...
 
@@ -1062,7 +1062,7 @@ class TrackerPort(
     async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
         """Record the base *issue_key*'s lane was dispatched on.
 
-        KOD-67 R3: the spec is written THROUGH the port, on the dependent
+        The spec is written THROUGH the port, on the dependent
         issue.  Staleness compares a recorded spec against the one the
         blockers imply now, and with nothing recorded there is nothing to
         compare — the arithmetic would only ever compare a value with
@@ -1086,7 +1086,7 @@ class TrackerPort(
 
         Judgment records it when staging a fire on a team bound to no
         repository; the deterministic dispatch reads it and refuses by
-        name when it is missing (KOD-169).  ``None`` means no route was
+        name when it is missing.  ``None`` means no route was
         ever recorded — an exclusion the report names, never a claim by
         whichever pass's tick arrives first.
         """
@@ -1097,7 +1097,7 @@ class TrackerPort(
 
         Read for a team's declared scope: a scope entry may name an
         initiative in either spelling, and issue placement only carries
-        the project (KOD-169).
+        the project.
         """
         ...
 
