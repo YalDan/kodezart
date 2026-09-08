@@ -1,4 +1,12 @@
-"""A lane's gap is empty exactly when its whole criterion subtree is closed."""
+"""A lane's gap is empty exactly when the fire-state rollup returns Done.
+
+The rollup a lane's own gap answers ranges over that lane's criterion
+children.  Subtree closure is the other question the readiness chain asks,
+of a BLOCKER rather than of a candidate: whether everything under it is
+finished.  The two coincide on a lane whose children are all criteria and
+part on a lane that also parents a deliverable, so every fixture here pins
+both answers rather than one asserted to be the other.
+"""
 
 import ast
 import inspect
@@ -71,6 +79,17 @@ def every_criterion_completed() -> tuple[dict[str, TrackerIssue], tuple[str, ...
     return facts_of(lane, met, also_met), ()
 
 
+def a_met_lane_check_over_an_open_child_deliverable() -> tuple[
+    dict[str, TrackerIssue], tuple[str, ...]
+]:
+    """The lane owes nothing; the deliverable it parents still owes a check."""
+    lane = make_tracker_issue("lane")
+    child = make_tracker_issue("child", parent_key="lane")
+    child_open = criterion("child-AC-1", parent="child")
+    lane_met = criterion("lane-AC-1", parent="lane", state=WorkflowStateKind.COMPLETED)
+    return facts_of(lane, child, child_open, lane_met), ("child-AC-1",)
+
+
 def a_cancellation_without_a_supersession() -> tuple[
     dict[str, TrackerIssue], tuple[str, ...]
 ]:
@@ -80,16 +99,34 @@ def a_cancellation_without_a_supersession() -> tuple[
     return facts_of(lane, met, canceled), ("lane-AC-2",)
 
 
+def fire_state_is_done(facts: dict[str, TrackerIssue], key: str) -> bool:
+    """Done over *key*'s criterion children, read from their states alone.
+
+    Written from the state vocabulary rather than through the gap, so the
+    row-by-row agreement below is an observation about two computations and
+    not a restatement of one.  A cancellation carries no supersession
+    reference on these fixtures and never reaches this rollup.
+    """
+    return all(
+        issue.state_kind is WorkflowStateKind.COMPLETED
+        for issue in facts.values()
+        if issue.parent_key == key and "criterion" in issue.issue_labels
+    )
+
+
 @pytest.mark.parametrize(
-    "row,open_keys,unresolved",
+    "row,open_keys,unresolved,subtree_closed",
     [
-        (all_but_one_criterion_moved_back, ("lane-AC-3",), False),
-        (closed_child_with_an_open_lane_check, ("lane-AC-1",), False),
-        (every_criterion_completed, (), False),
-        (a_cancellation_without_a_supersession, (), True),
+        (all_but_one_criterion_moved_back, ("lane-AC-3",), False, False),
+        (closed_child_with_an_open_lane_check, ("lane-AC-1",), False, False),
+        (every_criterion_completed, (), False, True),
+        (a_met_lane_check_over_an_open_child_deliverable, (), False, False),
+        (a_cancellation_without_a_supersession, (), True, False),
     ],
 )
-def test_gap_is_empty_iff_the_subtree_is_done(row, open_keys, unresolved):
+def test_gap_is_empty_iff_the_fire_state_rollup_is_done(
+    row, open_keys, unresolved, subtree_closed
+):
     facts, _ = row()
     closure = SubtreeClosure(facts=facts, ref=REF)
     if unresolved:
@@ -100,7 +137,32 @@ def test_gap_is_empty_iff_the_subtree_is_done(row, open_keys, unresolved):
         return
     gap = open_criteria(closure.criteria("lane"), ref=REF)
     assert tuple(issue.issue_key for issue in gap) == open_keys
-    assert (gap == ()) == closure.is_closed("lane")
+    assert (gap == ()) == fire_state_is_done(facts, "lane")
+    assert closure.is_closed("lane") is subtree_closed
+
+
+def test_the_lane_gap_and_the_blocker_closure_answer_two_questions():
+    """A met lane over an open deliverable: nothing to fire, not yet finished.
+
+    The row where the two arithmetics part.  A lane whose own checks are met
+    is dispatched nothing — its gap is empty — while the same lane named as
+    somebody else's blocker is not closed, because the deliverable beneath it
+    still owes a check.  Neither answer may be substituted for the other.
+    """
+    facts, offending = a_met_lane_check_over_an_open_child_deliverable()
+    closure = SubtreeClosure(facts=facts, ref=REF)
+
+    assert open_criteria(closure.criteria("lane"), ref=REF) == ()
+    assert fire_state_is_done(facts, "lane") is True
+    assert closure.is_closed("lane") is False
+    assert closure.is_closed("child") is False
+    assert (
+        tuple(
+            issue.issue_key
+            for issue in open_criteria(closure.criteria("child"), ref=REF)
+        )
+        == offending
+    )
 
 
 def test_a_closure_over_a_narrower_criterion_set_disagrees_with_the_gap():
