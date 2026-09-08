@@ -221,6 +221,7 @@ keys = [
     "organize_verify",
     "audit_claim",
     "write_back_verify",
+    "audit_mandate",
 ]
 
 [session_roles.implementation]

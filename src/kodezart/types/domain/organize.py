@@ -103,11 +103,20 @@ class SpecFinding(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    issue_id: str = Field(min_length=1)
-    defect_class: str = Field(min_length=1)
-    evidence: str
-    role: DefectRole
-    mandate_text: str | None = None
+    issue_id: str = Field(
+        min_length=1, description="Tracker key owning the source finding."
+    )
+    defect_class: str = Field(
+        min_length=1, description="Defect class from the selected rubric."
+    )
+    evidence: str = Field(description="Concrete evidence establishing the finding.")
+    role: DefectRole = Field(
+        description="An instance or the instruction that mandates it."
+    )
+    mandate_text: str | None = Field(
+        default=None,
+        description="Exact instructing sentence for MANDATE, absent for INSTANCE.",
+    )
 
     @model_validator(mode="after")
     def _require_mandate_evidence(self) -> Self:

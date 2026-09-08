@@ -439,3 +439,11 @@ whole-surface reads refuse before writing. The caller retains its required
 lease, authorization and outbound sanitization throughout; this component does
 not complete universal scope-writer adoption. Ignored generated outputs are
 outside the Git workspace-cleanliness check.
+
+
+The `audit_mandate` read-only role receives `defect_class`, `refutation_evidence`,
+`head_sha` and `audited_surfaces` per call. It completes a freshly refuted claim
+with an instruction verdict over an explicit addressed text set. A quoted
+mandate must occur exactly in its native source; absence requires full reads.
+Unsupported or unreachable surfaces yield unverifiable coverage. This consumer
+does not enumerate the full audit scope or publish/edit any tracker artifact.
