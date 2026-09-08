@@ -59,7 +59,7 @@ class GatedDispatchPass:
         returning on it would leave a running fire with no watch and no
         way to be put back, which is the state the watch exists for.
 
-        Anything that raises beneath the gate RE-ARMS it before unwinding.
+        Anything that raises while reading or acting on the gate RE-ARMS it.
         The gate advanced its marks to ask the question; the pass that was
         supposed to read the window it opened did not, so leaving the marks
         forward would spend that wake-up on nothing and — at the shipped
@@ -69,13 +69,13 @@ class GatedDispatchPass:
         eat the wake-up either.
         """
         changed: tuple[str, ...] = ()
-        if self._gate is not None:
-            delta = await self._gate.delta()
-            if not delta.has_delta():
-                await self._log.ainfo("dispatch_pass_skipped_no_delta")
-                return PassRun.SKIPPED
-            changed = delta.changed
         try:
+            if self._gate is not None:
+                delta = await self._gate.delta()
+                if not delta.has_delta():
+                    await self._log.ainfo("dispatch_pass_skipped_no_delta")
+                    return PassRun.SKIPPED
+                changed = delta.changed
             await self._dispatch(changed=changed)
         except BaseException:
             if self._gate is not None:

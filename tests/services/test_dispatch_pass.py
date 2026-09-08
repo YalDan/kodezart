@@ -404,6 +404,7 @@ class _FailingDispatcher:
         error: Exception | None = None,
     ) -> None:
         self.calls: int = 0
+        self.entered = asyncio.Event()
         self._block: asyncio.Event | None = block
         self._error: Exception = (
             TimeoutError("the delivery probe could not be reached")
@@ -413,6 +414,7 @@ class _FailingDispatcher:
 
     async def run_pass(self) -> DispatchReport:
         self.calls += 1
+        self.entered.set()
         if self._block is not None:
             await self._block.wait()
         raise self._error
@@ -541,14 +543,61 @@ class TestAFailedPassGivesTheWakeUpBack:
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         pass_, guard, dispatcher = failing_tick(tracker, block=asyncio.Event())
 
-        with pytest.raises(TimeoutError):
+        running = asyncio.create_task(pass_.run(TICK_STARTED_AT))
+        try:
             await asyncio.wait_for(
-                pass_.run(TICK_STARTED_AT),
-                timeout=SETTLE_DELAY_SECONDS,
+                dispatcher.entered.wait(),
+                timeout=SETTLE_TRIES * SETTLE_DELAY_SECONDS,
             )
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(running, timeout=SETTLE_DELAY_SECONDS)
+        finally:
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
 
         assert dispatcher.calls == 1, "the pass was entered and then abandoned"
         assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+
+    async def test_budget_cancellation_during_gate_logging_gives_the_window_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The mark can advance before the dispatcher is entered."""
+        tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        block = asyncio.Event()
+        pass_, guard, dispatcher = failing_tick(tracker, block=block)
+        logging = asyncio.Event()
+        original = guard._log.ainfo
+
+        async def delayed(event: str, **fields: object) -> None:
+            await original(event, **fields)
+            if event == "pass_gate_delta":
+                logging.set()
+                await asyncio.Event().wait()
+
+        monkeypatch.setattr(guard._log, "ainfo", delayed)
+        running = asyncio.create_task(pass_.run(TICK_STARTED_AT))
+        try:
+            await asyncio.wait_for(
+                logging.wait(), timeout=SETTLE_TRIES * SETTLE_DELAY_SECONDS
+            )
+            assert (
+                guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0])
+                is not None
+            )
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(running, timeout=SETTLE_DELAY_SECONDS)
+        finally:
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+
+        assert dispatcher.calls == 0
+        assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
+        monkeypatch.setattr(guard._log, "ainfo", original)
+        block.set()
+        with pytest.raises(TimeoutError, match="delivery probe"):
+            await pass_.run(TICK_STARTED_AT)
+        assert dispatcher.calls == 1
+        assert tracker.scans[-1].updated_since is None
 
 
 async def test_a_second_tick_over_an_unchanged_board_costs_one_query() -> None:

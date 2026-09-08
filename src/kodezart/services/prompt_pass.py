@@ -122,13 +122,13 @@ async def run_prompt_pass(
     """
     loop = asyncio.get_running_loop()
     started = loop.time()
-    if gate is not None and not (await gate.delta()).has_delta():
-        await _log.ainfo("prompt_pass_skipped_no_delta", name=key.value)
-        return PassRun.SKIPPED
     counts: Counter[str] = Counter()
     failure: ErrorEvent | None = None
     result_observed = False
     try:
+        if gate is not None and not (await gate.delta()).has_delta():
+            await _log.ainfo("prompt_pass_skipped_no_delta", name=key.value)
+            return PassRun.SKIPPED
         identity = RunIdentity(kind=kind, name=key.value, started_at=started_at)
         prompt = prompts.template_for(key).render(pass_render_bindings(identity))
         async for event in runner.stream_in_workspace(
