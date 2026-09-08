@@ -7,6 +7,7 @@ from kodezart.domain.criterion_evidence import (
     render_evidence_field,
 )
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import FakeMcpIssue
 from tests.tracker.conftest import fixture_server
 
@@ -63,6 +64,7 @@ def server(body):
 async def test_every_native_state_and_evidence_survives_the_port_round_trip(
     tracker, tracker_writes, body, graded_sha
 ):
+    assert {kind for _, kind in STATES} == {kind.value for kind in WorkflowStateKind}
     writes_before = tracker_writes()
     rows = tuple(await tracker.read_criteria(issue_key=PARENT))
     assert {row.issue_key for row in rows} == {
