@@ -15,10 +15,11 @@ from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
     AlarmSubjectKind,
+    LaneFieldValue,
     RunAlarm,
     surface_alarm_member_id,
 )
-from kodezart.types.domain.run_state import LaneEscalation
+from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
 from kodezart.types.domain.surface import WritableSurface
 
 ESCALATION_COMMITS_BOUND = "run_alarm_escalation_age_max_commits"
@@ -35,6 +36,12 @@ _REFERENCES = TypeAdapter(
     tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...]
 )
 _SURFACE = TypeAdapter(WritableSurface)
+_PRESENT = TypeAdapter(bool)
+_IDENTITY: TypeAdapter[str] = TypeAdapter(
+    Annotated[str, Field(min_length=1, pattern=r"\S")]
+)
+_COMMIT_ROWS = TypeAdapter(tuple[LaneCommit, ...])
+_LANE_FIELD = TypeAdapter(LaneFieldValue)
 
 
 def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeReadError:
@@ -52,6 +59,181 @@ def _decode[T](
         return adapter.validate_json(reading.value, strict=True)
     except ValidationError as exc:
         raise _unreadable(signal, reading.source_ref, "invalid recorded value") from exc
+
+
+def record_superseded(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Compare one record field with a later event asserting that same field.
+
+    Three JSON readings: the record's LaneFieldValue, the event's
+    LaneFieldValue, and the lane record's ordered commit SHA projection.
+    The first two carry their asserted SHAs in at_sha; commit history names
+    the same source as the record. Lane and field keys match exactly.
+
+    Opaque values are compared after JSON decoding, never by interpreting
+    their prose. Only a contrary value at a strictly later recorded position
+    supersedes the record. Equal or earlier positions cannot do so. Missing
+    or repeated commit identities refuse observation, including when the
+    values agree, because incomplete history cannot establish a clean read.
+    """
+    signal = AlarmSignal.RECORD_SUPERSEDED
+    try:
+        record, event, commits = readings
+    except ValueError as exc:
+        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+    recorded = _decode(record, _LANE_FIELD, signal)
+    asserted = _decode(event, _LANE_FIELD, signal)
+    order = _decode(commits, _COMMITS, signal)
+    if (
+        subject.kind is not AlarmSubjectKind.LANE
+        or subject.lane_key != recorded.lane_key
+        or asserted.lane_key != recorded.lane_key
+    ):
+        raise _unreadable(signal, event.source_ref, "readings identify different lanes")
+    if asserted.field_key != recorded.field_key:
+        raise _unreadable(
+            signal, event.source_ref, "assertions identify different fields"
+        )
+    if commits.source_ref != record.source_ref:
+        raise _unreadable(
+            signal, commits.source_ref, "history identifies another record"
+        )
+    if len(set(order)) != len(order):
+        raise _unreadable(
+            signal, commits.source_ref, "recorded commit order repeats a SHA"
+        )
+    record_sha, event_sha = record.at_sha, event.at_sha
+    if record_sha is None or record_sha not in order:
+        raise _unreadable(
+            signal, record.source_ref, "assertion SHA is absent from recorded history"
+        )
+    if event_sha is None or event_sha not in order:
+        raise _unreadable(
+            signal, event.source_ref, "assertion SHA is absent from recorded history"
+        )
+    if recorded.value == asserted.value:
+        return None
+    if order.index(event_sha) <= order.index(record_sha):
+        return None
+    return RunAlarm(
+        subject=subject,
+        signal=signal,
+        readings=readings,
+        bound=None,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
+
+
+def write_back_missing(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Observe one event's explicit write obligation against a completed read.
+
+    Two JSON readings: the event's owed WritableSurface, then a strict
+    boolean recording whether its keyed record exists. The event reference
+    is the first source; the canonical complete surface address is the
+    second. The caller supplies the event's declared target and a successful
+    complete lookup, without deriving either from event prose. An unreadable
+    lookup cannot supply a false presence value.
+
+    Event vocabulary, event-to-target projection and record collection are
+    owned by their producers. This predicate consumes their explicit facts.
+    """
+    signal = AlarmSignal.WRITE_BACK_MISSING
+    try:
+        event_target, record_presence = readings
+    except ValueError as exc:
+        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+    owed = _decode(event_target, _SURFACE, signal)
+    address = surface_alarm_member_id(owed)
+    if subject.kind is not AlarmSubjectKind.SURFACE or subject.member_id != address:
+        raise _unreadable(
+            signal, event_target.source_ref, "subject identifies another surface"
+        )
+    if record_presence.source_ref != address:
+        raise _unreadable(
+            signal,
+            record_presence.source_ref,
+            "record lookup identifies another surface",
+        )
+    present = _decode(record_presence, _PRESENT, signal)
+    if present:
+        return None
+    return RunAlarm(
+        subject=subject,
+        signal=signal,
+        readings=readings,
+        bound=None,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
+
+
+def commits_ahead_of_record(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Compare the lane record's own count and enumerated commit rows.
+
+    Four JSON readings from the same record: lane key, declared head SHA,
+    commits-ahead count, and the ordered LaneCommit rows. A supplied reading
+    SHA must identify that declared head. The head is recorded evidence;
+    this predicate never resolves it against a repository. If the whole
+    record is stale and both counts still agree, this signal cannot see it.
+
+    Equality has no configured bound. Either direction of disagreement
+    violates it; repeated commit identities refuse an ambiguous observation.
+    """
+    signal = AlarmSignal.COMMITS_AHEAD_OF_RECORD
+    try:
+        lane, head, count, rows = readings
+    except ValueError as exc:
+        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+    lane_key = _decode(lane, _IDENTITY, signal)
+    declared_head = _decode(head, _IDENTITY, signal)
+    declared_count = _decode(count, _COUNT, signal)
+    commits = _decode(rows, _COMMIT_ROWS, signal)
+    if subject.kind is not AlarmSubjectKind.LANE or subject.lane_key != lane_key:
+        raise _unreadable(signal, lane.source_ref, "subject identifies another lane")
+    for reading in readings:
+        if reading.source_ref != lane.source_ref:
+            raise _unreadable(
+                signal, reading.source_ref, "readings identify different lane records"
+            )
+        if reading.at_sha is not None and reading.at_sha != declared_head:
+            raise _unreadable(
+                signal, reading.source_ref, "reading SHA differs from the declared head"
+            )
+    identities = tuple(commit.sha for commit in commits)
+    if any(not sha.strip() for sha in identities) or len(set(identities)) != len(
+        identities
+    ):
+        raise _unreadable(
+            signal, rows.source_ref, "ambiguous recorded commit identities"
+        )
+    if declared_count == len(commits):
+        return None
+    return RunAlarm(
+        subject=subject,
+        signal=signal,
+        readings=readings,
+        bound=None,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
 
 
 def escalation_ageing(

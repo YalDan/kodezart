@@ -175,6 +175,7 @@ async def boot_tracker(
             operation=operation,
             caller=caller,
         )
+        tracker.require_criterion_reads()
         tracker.require_body_digest_stability()
         reconciliation = await reconcile_tracker_mappings(
             tracker=tracker,

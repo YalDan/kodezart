@@ -101,6 +101,13 @@ hashes those exact UTF-8 body bytes; timestamps, comments, labels and workflow
 state do not participate. Each surface changes independently, and replaying
 an unchanged body preserves its digest.
 
+Tracker boot first requires `require_criterion_reads`. An adapter declaring
+that criterion-child reads are unavailable raises `CriterionReadCapabilityError`
+with its adapter identity and the `criterion_reads` capability. Boot closes
+the opened transport before mapping reconciliation or execution can start.
+The declaration itself performs no writes or lease acquisition. Scope-walker
+dispatch remains a separate unfinished consumer of this mandatory boot boundary.
+
 Tracker boot calls the required `require_body_digest_stability` contract before
 mapping reconciliation. An adapter that cannot guarantee those semantics
 raises `BodyDigestCapabilityError`, naming `body_digest_stability`, and boot
@@ -461,6 +468,44 @@ account authors and change timestamps cannot supply those run identities.
 The pure count and replay tests do not establish that producer, its port
 conformance, or a supervisor's leased alarm writer.
 
+`write_back_missing` compares one event's explicitly declared
+`WritableSurface` with a successful keyed-record presence reading. The
+presence source must be that complete canonical address, including its
+marker. Only a strict boolean is accepted; an unreadable or omitted lookup
+cannot become absence. The resulting surface alarm retains both raw
+readings and has no threshold bound. Event-to-target projection and complete
+record collection belong to their producers and are not supplied by this
+predicate; it adds no competing event vocabulary or inferred target mapping.
+
+`commits_ahead_of_record` compares four projections from one lane record:
+lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.
+Each frozen row carries exactly `sha`, `subject` and `issue_id`. Either
+direction of count disagreement raises the lane alarm, with no configured
+bound. Subject/source mismatches, inconsistent SHA stamps and ambiguous
+commit identities refuse observation. Commit subjects and issue mentions
+never affect the count. A wholly stale record whose terms agree remains
+invisible: the declared head is retained for replay and is never resolved
+against a repository. Both predicates are pure; neither implements the
+supervisor tick, a record collector or leased alarm publication.
+
+`record_superseded` compares explicit assertions about the same field in the
+same lane. Its three raw readings contain the record's `LaneFieldValue`, an
+event's `LaneFieldValue`, and the lane record's ordered commit SHA projection.
+The frozen field projection carries only `lane_key`, `field_key` and an
+opaque string `value`; each assertion's SHA remains on its `AlarmReading`.
+History must name the same record source, and both asserted SHAs must occur
+exactly once. Missing or ambiguous history refuses even when values agree.
+
+A differing decoded value raises `RECORD_SUPERSEDED` only when the event's
+SHA stands strictly after the record's SHA in that series. Earlier or equal
+positions cannot supersede it, and equal values stay clean. No timestamp,
+SHA spelling, event-body interpretation or repository read establishes the
+order. The alarm retains all original readings and has no threshold bound.
+The field projection is an observation input, not a new run-event vocabulary;
+the event/record readers must supply those assertions and the commit order.
+Their collectors, supervisor scheduling and leased publication remain
+separate consumers.
+
 ## Check-chain execution
 
 The check-chain runner executes each declared command through the host shell,
@@ -470,3 +515,21 @@ group while retaining partial output. Repeated cancellation cannot interrupt
 eventual-process cleanup; cancellation propagates after the attempt is reaped. Empty or ambiguous step identities refuse before execution.
 The runner returns failed names and ordered outputs without classifying roots
 or cascades. Union composition and its result publication are separate consumers.
+
+`UnionComposition.verify` consumes the planner's ordered lane-head snapshot
+and an immutable selected base. It creates a detached Git worktree, merges
+those exact commit IDs in planner order, runs `RepoEntry.checks`, and removes
+the tree on return, refusal, exception, or cancellation. Scratch merges have
+a separate Git operation; normal branch consolidation remains fast-forward
+only. Named branches and forge pull requests are untouched.
+
+The shared `UnionCompositionResult` retains scope and repository identity,
+ordered branch/head pairs, the selected base, and the discarded scratch
+path and commit. A conflict reports only its successfully merged prefix;
+infrastructure errors remain errors. Executed checks use the restored
+historical root/cascade classifier, and a red check result carries one
+`UnionRemediationEntry` naming those roots and cascades. This scope outcome
+is independent of lane outcomes. The result is available to any caller;
+it does not itself publish a tracker remediation record or scope terminal.
+Walker tick scheduling, stale-head re-entry, and terminal residual
+publication remain separate integration work.

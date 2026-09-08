@@ -202,6 +202,50 @@ class SubprocessGitService:
                 paths=_conflicting_paths(str(exc)),
             ) from exc
 
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        """Compose a commit without updating any named branch.
+
+        Sibling heads require a real merge; the existing fast-forward-only
+        consolidation operation deliberately retains its separate contract.
+        """
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head_sha) is None:
+            raise ValueError("scratch merge requires a full immutable commit SHA")
+        attached, _ = await self._run_with_exit_codes(
+            ["git", "symbolic-ref", "--quiet", "HEAD"],
+            cwd=cwd,
+            allowed=frozenset({0, 1}),
+        )
+        if attached == 0:
+            raise ValueError("scratch merge requires detached HEAD")
+        try:
+            await self._run(
+                [
+                    "git",
+                    "merge",
+                    "--no-ff",
+                    "--no-edit",
+                    "--no-gpg-sign",
+                    "--",
+                    head_sha,
+                ],
+                cwd=cwd,
+                env=self._author_env(author_name, author_email),
+            )
+        except RuntimeError as exc:
+            unmerged = await self._run_output(
+                ["git", "diff", "--name-only", "--diff-filter=U"],
+                cwd=cwd,
+            )
+            if not unmerged:
+                raise
+            raise MergeConflictError(
+                f"scratch merge of {head_sha} could not be completed",
+                source_branch=head_sha,
+                paths=tuple(unmerged.splitlines()),
+            ) from exc
+
     async def current_sha(self, cwd: str) -> str:
         """Return the current HEAD SHA."""
         return await self._run_output(["git", "rev-parse", "HEAD"], cwd=cwd)

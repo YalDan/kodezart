@@ -513,6 +513,20 @@ class FakeGitService:
                 paths=paths,
             )
 
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        self.calls.append(
+            ("merge_scratch_head", cwd, head_sha, author_name, author_email)
+        )
+        paths = self._merge_conflicts.get(head_sha)
+        if paths is not None:
+            raise MergeConflictError(
+                "scratch merge conflict",
+                source_branch=head_sha,
+                paths=paths,
+            )
+
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
         return "a" * 40
@@ -3202,6 +3216,9 @@ class FakeTrackerPort:
         await asyncio.sleep(0)
         self.issue_reads.append(issue_key)
         return self.issues[issue_key]
+
+    def require_criterion_reads(self) -> None:
+        """Supported: the fake reads independently stored criterion children."""
 
     def require_body_digest_stability(self) -> None:
         """The fake's revision reads derive their digest from the body alone."""

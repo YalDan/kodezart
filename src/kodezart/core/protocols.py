@@ -141,6 +141,12 @@ class GitService(Protocol):
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None: ...
 
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        """Merge a pinned commit in a detached scratch tree, never a branch."""
+        ...
+
     async def current_sha(self, cwd: str) -> str: ...
 
     async def head_commit_message(self, cwd: str) -> str:
@@ -676,6 +682,15 @@ class TrackerPort(Protocol):
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
+        ...
+
+    def require_criterion_reads(self) -> None:
+        """Require criterion-child reads before boot can enable execution.
+
+        Raise CriterionReadCapabilityError naming this adapter if absent.
+        This declaration never acquires leases or performs tracker writes.
+        It is mandatory, not a choice of a weaker criteria carrier.
+        """
         ...
 
     def require_body_digest_stability(self) -> None:
