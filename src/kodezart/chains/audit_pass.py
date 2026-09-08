@@ -19,7 +19,11 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.criterion_sources import resolve_criterion
-from kodezart.services.git_observations import read_remote_head, read_workspace_head
+from kodezart.services.git_observations import (
+    read_remote_head,
+    read_replace_refs,
+    read_workspace_head,
+)
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.services.tracker_artifacts import read_tracker_artifact
@@ -120,6 +124,10 @@ class AuditClaimVerifier:
         try:
             if cancelled:
                 raise asyncio.CancelledError
+            if await read_replace_refs(git=self._git, workspace=workspace):
+                raise AuditClaimReadError(
+                    "the audit repository substitutes Git objects"
+                )
             if await read_workspace_head(git=self._git, workspace=workspace) != (
                 head,
                 False,
@@ -166,6 +174,10 @@ class AuditClaimVerifier:
             )
             if latest != (comment, record):
                 raise AuditClaimReadError("the lane record changed during verification")
+            if await read_replace_refs(git=self._git, workspace=workspace):
+                raise AuditClaimReadError(
+                    "the audit repository substitutes Git objects"
+                )
             if await read_remote_head(
                 git=self._git,
                 repository=repository,
