@@ -91,6 +91,7 @@ registries.
 | workflow_states.in_progress | workflow_states |
 | workflow_states.in_review | workflow_states |
 | workflow_states.done | workflow_states |
+| run_event_states | run_event_states |
 | marker_prefixes.repository | marker_prefixes |
 | repos | repos |
 | documents.constitution.id | documents |

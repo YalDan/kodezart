@@ -32,6 +32,7 @@ from kodezart.domain.errors import (
 from kodezart.main import create_app, lifespan
 from kodezart.services.pass_scheduler import PassScheduler
 from tests.fakes import FakeMcpDocument, ManagedFakeLinearMcpServer
+from tests.run_events import RUN_EVENT_TOML
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
@@ -138,6 +139,8 @@ handle = "@bystander"
 in_progress = "In Progress"
 in_review = "In Review"
 done = "Done"
+
+{RUN_EVENT_TOML}
 
 [[repos]]
 url = "https://example.invalid/repo"

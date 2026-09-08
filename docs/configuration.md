@@ -1,5 +1,15 @@
 # Configuration Reference
 
+Tracker deployments require a complete `[run_event_states]` table. Its keys
+are the single `RunEventKind` vocabulary; startup names every missing or
+undeclared key before opening the tracker transport. `DERIVED` and
+`NO_TRANSITION` retain their ruled meanings, including `NO_TRANSITION` for
+both supervisor events and `node_session_started`. Other rows select an
+existing semantic workflow state. The table classifies events; it does not
+introduce a workflow-state writer or override criterion rollup. An operation
+without a configured tracker can retain an absent table. Both shipped operation
+examples show the complete declaration.
+
 ## Overview
 
 Kodezart uses [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
