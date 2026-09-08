@@ -169,7 +169,7 @@ async def setup(tracker, server):
             runner=runner,
             prompts=prompts,
             skills=SUPPRESS_ALL_SKILLS,
-            config=config,
+            remote=config.git_remote,
         )
         evidence = AuditEvidenceVerifier(
             tracker=tracker,
@@ -179,7 +179,7 @@ async def setup(tracker, server):
             source=selected_source or Source(),
             claims=claims,
             operation=selected_op,
-            config=config,
+            remote=config.git_remote,
         )
         mandates = AuditMandateHunt(
             tracker=tracker,
@@ -196,7 +196,7 @@ async def setup(tracker, server):
             git=selected_git,
             cache=selected_cache,
             operation=selected_op,
-            config=config,
+            remote=config.git_remote,
         )
         overclaims = (
             AuditOverclaimVerifier(
@@ -207,7 +207,7 @@ async def setup(tracker, server):
                     source=selected_source or Source(),
                     cache=selected_cache,
                     operation=selected_op,
-                    config=config,
+                    remote=config.git_remote,
                 ),
                 sessions=FreshAuditSession(
                     git=selected_git,
@@ -231,7 +231,7 @@ async def setup(tracker, server):
                     source=selected_source or Source(),
                     cache=selected_cache,
                     operation=selected_op,
-                    config=config,
+                    remote=config.git_remote,
                 ),
                 sessions=FreshAuditSession(
                     git=selected_git,
@@ -256,7 +256,7 @@ async def setup(tracker, server):
             terminals=terminals,
             git=selected_git,
             cache=selected_cache,
-            config=config,
+            remote=config.git_remote,
             overclaims=overclaims,
             removals=removals,
             forge=selected_forge,

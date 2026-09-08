@@ -27,7 +27,7 @@ def reader(setup, tracker):
         source=source,
         cache=cache,
         operation=fixtures.OPERATION,
-        config=AppConfig(git_remote="configured-remote"),
+        remote=AppConfig(git_remote="configured-remote").git_remote,
     )
 
 

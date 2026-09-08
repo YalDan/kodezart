@@ -134,7 +134,7 @@ async def setup(tracker, forge):
         git=git,
         cache=FakeRepoCache(),
         operation=OPERATION,
-        config=AppConfig(git_remote="configured-remote"),
+        remote=AppConfig(git_remote="configured-remote").git_remote,
     )
     return reader, git, record, comment
 

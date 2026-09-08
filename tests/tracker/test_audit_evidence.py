@@ -99,7 +99,7 @@ async def setup(claim_setup, tracker):
             "cache": cache,
             "claims": claims,
             "operation": OPERATION,
-            "config": AppConfig(git_remote="configured-remote"),
+            "remote": AppConfig(git_remote="configured-remote").git_remote,
         }
         return AuditEvidenceVerifier(**{**values, **changes})
 

@@ -3,7 +3,6 @@
 import asyncio
 import json
 
-from kodezart.core.config import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import soft_failure
 from kodezart.core.owned_tasks import finish_owned
@@ -67,7 +66,7 @@ class AuditClaimVerifier:
         runner: AgentRunner,
         prompts: PromptSetProvider,
         skills: SkillsSelection,
-        config: AppConfig,
+        remote: str,
     ) -> None:
         self._tracker = tracker
         self._records = records
@@ -77,7 +76,7 @@ class AuditClaimVerifier:
         self._runner = runner
         self._prompts = prompts
         self._skills = skills
-        self._remote = config.git_remote
+        self._remote = remote
 
     async def _criterion(self, request: AuditClaimRequest) -> TrackerIssue:
         try:

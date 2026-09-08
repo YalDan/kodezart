@@ -2,7 +2,6 @@
 
 import asyncio
 
-from kodezart.core.config import AppConfig
 from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import GitService, PRStateReader, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
@@ -35,14 +34,14 @@ class AuditTerminalReader:
         git: GitService,
         cache: RepoCache,
         operation: OperationConfig,
-        config: AppConfig,
+        remote: str,
     ) -> None:
         self._tracker = tracker
         self._records = records
         self._forge = forge
         self._git = git
         self._cache = cache
-        self._remote = config.git_remote
+        self._remote = remote
         self._review_state = operation.workflow_states[LifecycleStage.IN_REVIEW]
 
     async def _criteria(self, issue_key: str) -> tuple[TrackerIssue, ...]:

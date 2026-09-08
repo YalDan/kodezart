@@ -221,7 +221,7 @@ async def build(tracker, tmp_path):
             source=source,
             cache=cache,
             operation=fixtures.OPERATION,
-            config=AppConfig(git_remote="configured-remote"),
+            remote=AppConfig(git_remote="configured-remote").git_remote,
         )
         sessions = FreshAuditSession(
             git=git,

@@ -20,6 +20,11 @@ for configuration. All settings are loaded from environment variables with the
 - **Extra fields forbidden**: a `KODEZART_` variable whose suffix names no
   field below raises a validation error at startup rather than being ignored
 
+Audit claim, Evidence, source, terminal and sweep consumers receive only the
+resolved Git remote name, rather than the application configuration object.
+`KODEZART_GIT_REMOTE` retains its existing default and environment override;
+this API narrowing does not add an audit setting or compose a new scheduler.
+
 ## Settings Reference
 
 Escalation ageing uses recorded run progress. The implementation defaults
