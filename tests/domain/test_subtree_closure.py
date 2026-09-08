@@ -1,11 +1,11 @@
-"""A lane's gap is empty exactly when the fire-state rollup returns Done.
+"""One arithmetic: a gap is empty exactly when the subtree is Done.
 
-The rollup a lane's own gap answers ranges over that lane's criterion
-children.  Subtree closure is the other question the readiness chain asks,
-of a BLOCKER rather than of a candidate: whether everything under it is
-finished.  The two coincide on a lane whose children are all criteria and
-part on a lane that also parents a deliverable, so every fixture here pins
-both answers rather than one asserted to be the other.
+An issue is finished when everything under it is finished, so what a
+candidate still owes and whether a blocker is discharged are one recursive
+read asked twice.  Every fixture here pins the gap, an independently
+written state rollup over the same subtree, and the closure together — the
+row that used to part the two, a lane whose own checks are graded over a
+deliverable that still owes one, included.
 """
 
 import ast
@@ -99,18 +99,29 @@ def a_cancellation_without_a_supersession() -> tuple[
     return facts_of(lane, met, canceled), ("lane-AC-2",)
 
 
-def fire_state_is_done(facts: dict[str, TrackerIssue], key: str) -> bool:
-    """Done over *key*'s criterion children, read from their states alone.
+def descends_from(facts: dict[str, TrackerIssue], key: str, ancestor: str) -> bool:
+    """Walk parentage upward, so descent is read off the records themselves."""
+    current = facts[key].parent_key
+    while current is not None and current in facts:
+        if current == ancestor:
+            return True
+        current = facts[current].parent_key
+    return False
 
-    Written from the state vocabulary rather than through the gap, so the
-    row-by-row agreement below is an observation about two computations and
-    not a restatement of one.  A cancellation carries no supersession
-    reference on these fixtures and never reaches this rollup.
+
+def subtree_is_done(facts: dict[str, TrackerIssue], key: str) -> bool:
+    """Done over every criterion record under *key*, from states alone.
+
+    Written from the state vocabulary and from parentage rather than through
+    the gap, so the row-by-row agreement below is an observation about two
+    computations and not a restatement of one.  A cancellation carries no
+    supersession reference on these fixtures and never reaches this rollup.
     """
     return all(
         issue.state_kind is WorkflowStateKind.COMPLETED
         for issue in facts.values()
-        if issue.parent_key == key and "criterion" in issue.issue_labels
+        if "criterion" in issue.issue_labels
+        and descends_from(facts, issue.issue_key, key)
     )
 
 
@@ -120,49 +131,50 @@ def fire_state_is_done(facts: dict[str, TrackerIssue], key: str) -> bool:
         (all_but_one_criterion_moved_back, ("lane-AC-3",), False, False),
         (closed_child_with_an_open_lane_check, ("lane-AC-1",), False, False),
         (every_criterion_completed, (), False, True),
-        (a_met_lane_check_over_an_open_child_deliverable, (), False, False),
+        (
+            a_met_lane_check_over_an_open_child_deliverable,
+            ("child-AC-1",),
+            False,
+            False,
+        ),
         (a_cancellation_without_a_supersession, (), True, False),
     ],
 )
-def test_gap_is_empty_iff_the_fire_state_rollup_is_done(
+def test_gap_is_empty_iff_the_subtree_rollup_is_done(
     row, open_keys, unresolved, subtree_closed
 ):
     facts, _ = row()
     closure = SubtreeClosure(facts=facts, ref=REF)
     if unresolved:
         with pytest.raises(ScopeSupersessionReadError):
-            open_criteria(closure.criteria("lane"), ref=REF)
+            closure.gap("lane")
         with pytest.raises(ScopeSupersessionReadError):
             closure.is_closed("lane")
         return
-    gap = open_criteria(closure.criteria("lane"), ref=REF)
+    gap = closure.gap("lane")
     assert tuple(issue.issue_key for issue in gap) == open_keys
-    assert (gap == ()) == fire_state_is_done(facts, "lane")
+    assert (gap == ()) == subtree_is_done(facts, "lane")
     assert closure.is_closed("lane") is subtree_closed
+    assert closure.is_closed("lane") is (gap == ())
 
 
-def test_the_lane_gap_and_the_blocker_closure_answer_two_questions():
-    """A met lane over an open deliverable: nothing to fire, not yet finished.
+def test_the_lane_gap_and_the_blocker_closure_are_one_read():
+    """A met lane over an open deliverable owes the deliverable's check.
 
-    The row where the two arithmetics part.  A lane whose own checks are met
-    is dispatched nothing — its gap is empty — while the same lane named as
-    somebody else's blocker is not closed, because the deliverable beneath it
-    still owes a check.  Neither answer may be substituted for the other.
+    The row the ruling of 2026-09-09 was settled on.  The lane's own
+    criterion family is empty of open work, and reading that family alone is
+    the abolished answer: the lane is not finished while the deliverable
+    beneath it still owes a check, and it is dispatched exactly that check.
     """
     facts, offending = a_met_lane_check_over_an_open_child_deliverable()
     closure = SubtreeClosure(facts=facts, ref=REF)
 
-    assert open_criteria(closure.criteria("lane"), ref=REF) == ()
-    assert fire_state_is_done(facts, "lane") is True
+    assert tuple(issue.issue_key for issue in closure.gap("lane")) == offending
+    assert tuple(issue.issue_key for issue in closure.gap("child")) == offending
     assert closure.is_closed("lane") is False
     assert closure.is_closed("child") is False
-    assert (
-        tuple(
-            issue.issue_key
-            for issue in open_criteria(closure.criteria("child"), ref=REF)
-        )
-        == offending
-    )
+    assert open_criteria(closure.criteria("lane"), ref=REF) == ()
+    assert subtree_is_done(facts, "lane") is False
 
 
 def test_a_closure_over_a_narrower_criterion_set_disagrees_with_the_gap():

@@ -48,7 +48,12 @@ def index_issue_tree(
 def open_criteria(
     criteria: Sequence[TrackerIssue], *, ref: ScopeRef
 ) -> tuple[TrackerIssue, ...]:
-    """The still-open criterion records of one deliverable, in order."""
+    """The still-open records of one criterion family, in order.
+
+    The leaf the subtree gap is assembled from, never a reading of
+    finishedness on its own: what an issue owes is what its whole subtree
+    owes, so no caller may take one family for the answer.
+    """
     unresolved = tuple(
         issue.issue_key
         for issue in criteria
@@ -62,13 +67,20 @@ def open_criteria(
 
 
 class SubtreeClosure:
-    """All children decide closure; deliverable workflow fields never do."""
+    """One arithmetic over a subtree; deliverable workflow fields never decide.
+
+    What an issue still owes and whether it is finished are two readings of
+    the same tuple — every still-open criterion record anywhere beneath it.
+    ``is_closed`` is the emptiness of ``gap``, so a candidate's brief and a
+    blocker's discharge cannot part, and no call site can answer one of the
+    two questions with the other.
+    """
 
     def __init__(self, *, facts: Mapping[str, TrackerIssue], ref: ScopeRef) -> None:
         self.facts = facts
         self.ref = ref
         self.children: dict[str, list[TrackerIssue]] = {}
-        self.closed: dict[str, bool] = {}
+        self.gaps: dict[str, tuple[TrackerIssue, ...]] = {}
         for issue in facts.values():
             if issue.parent_key is not None and issue.parent_key in facts:
                 self.children.setdefault(issue.parent_key, []).append(issue)
@@ -80,28 +92,33 @@ class SubtreeClosure:
             raise EmptyFireCriteriaError(issue_key=key)
         return criteria
 
-    def is_closed(self, key: str) -> bool:
+    def gap(self, key: str) -> tuple[TrackerIssue, ...]:
+        """Every still-open criterion record under *key*, in subtree order."""
         pending = [(key, False)]
         while pending:
-            current, visited = pending.pop()
-            if current in self.closed:
+            current, expanded = pending.pop()
+            if current in self.gaps:
                 continue
             issue = self.facts[current]
             children = self.children.get(current, ())
             if "criterion" in issue.issue_labels:
                 if children:
                     raise ScopeReadError("criterion has child issues", ref=self.ref)
-                self.closed[current] = not open_criteria((issue,), ref=self.ref)
+                self.gaps[current] = open_criteria((issue,), ref=self.ref)
             elif issue.issue_labels & RECORD_KINDS:
                 if children:
                     raise ScopeReadError("record issue has child issues", ref=self.ref)
-                self.closed[current] = True
-            elif visited:
-                self.closed[current] = all(
-                    self.closed[child.issue_key] for child in children
+                self.gaps[current] = ()
+            elif expanded:
+                self.gaps[current] = tuple(
+                    row for child in children for row in self.gaps[child.issue_key]
                 )
             else:
                 self.criteria(current)
                 pending.append((current, True))
                 pending.extend((child.issue_key, False) for child in children)
-        return self.closed[key]
+        return self.gaps[key]
+
+    def is_closed(self, key: str) -> bool:
+        """Finished is owing nothing: the same read, asked the other way."""
+        return not self.gap(key)

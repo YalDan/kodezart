@@ -1,10 +1,10 @@
 """The dispatch pass's second selection producer: one fire per scope walk.
 
 The unscoped producer ranks an approved scan and asks ten clauses of the
-winner.  This one asks a live ready set which lanes are admissible — over
-the criterion sub-issues and the live subtree closure, never over a
-deliverable's own workflow field — and then asks the same dispatcher for
-the clauses that stand whatever chose the lane.
+winner.  This one asks a live ready set which lanes are admissible — over one
+arithmetic, the live subtree, never over a deliverable's own workflow
+field — and then asks the same dispatcher for the clauses that stand
+whatever chose the lane.
 
 One fire per pass, exactly as the unscoped producer manages: the walk
 re-reads on the next tick rather than fanning out a schedule that the

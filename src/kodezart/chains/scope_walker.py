@@ -7,7 +7,6 @@ from kodezart.domain.issue_tree import (
     RECORD_KINDS,
     SubtreeClosure,
     index_issue_tree,
-    open_criteria,
 )
 from kodezart.domain.topology import plan_topology
 from kodezart.services.scope_planning import read_scope_plan
@@ -35,8 +34,11 @@ async def _read_tree(
 async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReadySet:
     """Recompute one ready set without dispatch, writes or merge observations.
 
-    Candidate identity stays native scope membership. Complete descendants
-    outside a container filter are read only to decide a blocker's closure.
+    Candidate identity stays native scope membership. The complete
+    descendant tree then decides both questions through one arithmetic: what
+    a candidate still owes, and whether a blocker is discharged. A scope
+    therefore never reports itself at rest while a criterion under one of its
+    members is open, including one a container filter cannot reach.
     Repeated reads detect movement; they do not claim a transactional lease.
     """
     tracker.require_issue_classification_reads()
@@ -65,7 +67,7 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
             continue
         approved[key] = await tracker.execution_approved(issue_key=key)
         if approved[key]:
-            gap = open_criteria(closure.criteria(key), ref=ref)
+            gap = closure.gap(key)
             if gap:
                 gaps[key] = gap
     blockers = {

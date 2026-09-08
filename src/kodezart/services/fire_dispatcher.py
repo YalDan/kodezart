@@ -377,8 +377,9 @@ class FireDispatcher:
         method rather than two copies that drift.
 
         *criterion_keys* is what the caller says the fire is FOR: the open
-        criterion sub-issues of the lane being dispatched.  Empty is the
-        honest answer for a producer that selects whole issues.
+        criterion records of the subtree the lane being dispatched owns,
+        which need not all be its own children.  Empty is the honest answer
+        for a producer that selects whole issues.
         """
         claim = await self._tracker.claim_issue(
             issue_key=winner.issue_key,

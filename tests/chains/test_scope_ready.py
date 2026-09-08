@@ -194,9 +194,16 @@ async def test_blocker_subtree_recomputed_across_ticks_without_parent_state(
     fixture.assert_read_only()
 
 
-async def test_blocker_closure_includes_deliverable_grandchildren_outside_membership(
+async def test_deliverable_grandchildren_outside_membership_are_owed_and_dispatched(
     ready_fixture,
 ):
+    """The same subtree read carries the grandchild and discharges the blocker.
+
+    The blocker's own check is graded and the deliverable it parents sits
+    outside the container filter with a check still open.  That check is what
+    the blocker still owes, so it is dispatched to the blocker and holds the
+    lane behind it; grading it releases both.
+    """
     rows = pair()
     rows += [
         row("nested", parent="blocker"),
@@ -209,13 +216,41 @@ async def test_blocker_closure_includes_deliverable_grandchildren_outside_member
     fixture.state("blocker-check", "completed")
     fixture.state("nested", "completed")
     first = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
-    assert first.ready == ()
+    assert keys(first) == ["blocker"]
+    assert [item.issue_key for item in first.ready[0].gap] == ["deep-check"]
     assert first.blocked[0].issue_key == "lane"
     fixture.state("deep-check", "completed")
     fixture.state("nested", "unstarted")
     assert keys(await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)) == [
         "lane"
     ]
+    fixture.assert_read_only()
+
+
+async def test_a_graded_lane_over_an_out_of_filter_open_child_is_not_at_rest(
+    ready_fixture,
+):
+    """The shape the ruling of 2026-09-09 was settled on: no silent rest.
+
+    Every criterion the lane itself carries is graded, and the deliverable it
+    parents is out of the scope's container filter with a check still open.
+    Under the abolished reading the scope reported nothing ready and nothing
+    blocked while that check stayed open and unreachable forever.
+    """
+    rows = [
+        row("lane"),
+        row("lane-check", parent="lane", label="criterion", kind="completed"),
+        row("child", parent="lane"),
+        row("child-check", parent="child", label="criterion"),
+    ]
+    for item in rows[-2:]:
+        item.project_key = OTHER_PROJECT
+        item.milestone_key = None
+    fixture = await ready_fixture(rows)
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+    assert keys(selection) == ["lane"]
+    assert [item.issue_key for item in selection.ready[0].gap] == ["child-check"]
+    assert selection.blocked == ()
     fixture.assert_read_only()
 
 
