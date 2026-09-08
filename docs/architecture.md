@@ -529,6 +529,12 @@ when they record a landing. The append-only `record_work_ref` operation
 retains its one-deliverable rule and never silently replaces that record.
 No landing fact is inferred from a merge strategy, Git ancestry or forge
 state, and no second landing carrier is introduced on the lane run record.
+The base resolver discards explicitly landed inputs before looking up their
+remote branch. An all-landed input set therefore uses the configured trunk;
+a mixed set retains only the other recorded inputs. Unknown and not-landed
+inputs keep the existing resolution path, including a typed refusal when
+their branch is missing. Multiple deliverable records refuse as ambiguous
+before choosing a base.
 
 `commits_ahead_of_record` compares four projections from one lane record:
 lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.
