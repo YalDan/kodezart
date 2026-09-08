@@ -18,6 +18,7 @@ from kodezart.domain.run_shape import (
     escalation_ageing,
     surface_contended,
 )
+from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
@@ -72,7 +73,34 @@ async def observe_escalation_ageing(
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
-    """Read the current decision for an already-read occurrence and counters.
+    """Read current resolution and return the existing pure age observation."""
+    observation, _ = await read_escalation_ageing(
+        tracker=tracker,
+        config=config,
+        scope_key=scope_key,
+        lane_key=lane_key,
+        escalation=escalation,
+        commits=commits,
+        ticks_since_raise=ticks_since_raise,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
+    return observation
+
+
+async def read_escalation_ageing(
+    *,
+    tracker: TrackerPort,
+    config: AppConfig,
+    scope_key: str,
+    lane_key: str,
+    escalation: AlarmReading,
+    commits: AlarmReading,
+    ticks_since_raise: AlarmReading,
+    raised_at_sha: str,
+    raised_by: str,
+) -> tuple[RunAlarm | None, EscalationResolution]:
+    """Retain the exact resolution that produced this age observation.
 
     The caller supplies tracker projections with explicit source references:
     the LaneEscalation JSON, recorded commit SHAs in order, and the recorded
@@ -100,7 +128,7 @@ async def observe_escalation_ageing(
         lane_key=lane_key,
         escalation_key=record.escalation_key,
     )
-    return escalation_ageing(
+    observation = escalation_ageing(
         subject=subject,
         readings=(
             escalation,
@@ -122,6 +150,8 @@ async def observe_escalation_ageing(
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,
     )
+
+    return observation, resolution
 
 
 async def observe_barren_tick(

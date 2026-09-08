@@ -83,10 +83,7 @@ class EscalationRecordReader:
             # The writer emits one JSON object directly below the marker.
             # Duplicate keys, extra fields and old prose cannot supply a fact.
             payload = comment.body.partition("\n")[2]
-            decoded = json.loads(payload, object_pairs_hook=_unique_object)
-            fields = {field.alias for field in LaneEscalation.model_fields.values()}
-            if not isinstance(decoded, dict) or set(decoded) != fields:
-                raise ValueError("the payload does not contain the declared field set")
+            json.loads(payload, object_pairs_hook=_unique_object)
             record = LaneEscalation.model_validate_json(payload, strict=True)
             if record.issue_id != issue_key or record.escalation_key != escalation_key:
                 raise ValueError(

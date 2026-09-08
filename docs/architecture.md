@@ -478,8 +478,9 @@ escalation and commit readings from their actual configured native records.
 The escalation reader consumes the existing writer's seven-field JSON, with
 strict occurrence identity and no interpretation of legacy prose. The lane
 record's ordered commits must completely reach its declared head and agree
-with its count. Both native records are read again around decision resolution;
-a changed source refuses the observation. All returned readings preserve
+with its count. Both native records and the exact decision resolution used
+by the shared observer are checked again; a changed source refuses the
+observation, including a newly answered or withdrawn decision. All returned readings preserve
 their source comment identities, and neither collector writes or reads Git.
 The walker's recorded tick-age input, supervisor tick and alarm persistence
 under a surface lease remain unwired. These readers do not declare the

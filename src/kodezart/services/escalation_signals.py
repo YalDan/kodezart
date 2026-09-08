@@ -7,7 +7,7 @@ from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.run_shape import observe_escalation_ageing
+from kodezart.services.run_shape import read_escalation_ageing
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_alarm import AlarmReading, AlarmSignal, RunAlarm
 
@@ -58,7 +58,7 @@ async def observe_recorded_escalation_ageing(
             source_ref=lane_comment.comment_key,
             reason="the recorded commit series does not reach its declared head",
         )
-    result = await observe_escalation_ageing(
+    result, resolution = await read_escalation_ageing(
         tracker=tracker,
         config=config,
         scope_key=scope_key,
@@ -83,13 +83,17 @@ async def observe_recorded_escalation_ageing(
     current_lane, _ = await lane_reader.read(
         issue_key=issue_key, lane_key=lane_key, record_ref=lane_comment.comment_key
     )
+    current_resolution = await tracker.read_escalation_resolution(**address)
     if (
-        current_escalation.body != escalation_comment.body
+        current_resolution != resolution
+        or current_escalation.body != escalation_comment.body
         or current_lane.body != lane_comment.body
     ):
         raise RunShapeReadError(
             signal=AlarmSignal.ESCALATION_AGEING.value,
             source_ref=escalation_comment.comment_key,
-            reason="the recorded escalation or lane history changed during observation",
+            reason=(
+                "the escalation, lane history or resolution changed during observation"
+            ),
         )
     return result
