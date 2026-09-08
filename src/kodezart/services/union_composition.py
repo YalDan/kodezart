@@ -97,13 +97,19 @@ class UnionComposition:
                     except MergeConflictError as exc:
                         if not exc.paths:
                             raise
+                        conflict = UnionMergeConflict(
+                            lane_key=head.lane_key,
+                            paths=exc.paths,
+                        )
                         return UnionCompositionResult(
                             **snapshot.model_dump(exclude={"scratch_sha"}),
                             scratch_sha=await self._scratch_sha(worktree),
                             checks=None,
-                            merge_conflict=UnionMergeConflict(
-                                lane_key=head.lane_key,
-                                paths=exc.paths,
+                            merge_conflict=conflict,
+                            remediation=UnionRemediationEntry(
+                                root_step_names=(),
+                                cascade_step_names=(),
+                                merge_conflict=conflict,
                             ),
                         )
                     if cancelled:

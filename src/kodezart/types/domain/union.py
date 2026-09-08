@@ -68,19 +68,37 @@ class UnionMergeConflict(CamelCaseModel):
 
 
 class UnionRemediationEntry(CamelCaseModel):
-    """One scope remediation entry naming check causes and their cascades.
+    """One scope remediation entry, from checks or an observed merge conflict.
 
     This returned value is not a tracker record or a terminal emission.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    root_step_names: tuple[str, ...] = Field(min_length=1)
+    root_step_names: tuple[str, ...]
     cascade_step_names: tuple[str, ...]
+    merge_conflict: UnionMergeConflict | None = None
+
+    @model_validator(mode="after")
+    def _one_cause(self) -> Self:
+        if self.merge_conflict is not None:
+            if self.root_step_names or self.cascade_step_names:
+                raise ValueError("a merge conflict has no executed check failures")
+        elif not self.root_step_names:
+            raise ValueError("check remediation requires at least one root")
+        names = (*self.root_step_names, *self.cascade_step_names)
+        if len(names) != len(set(names)):
+            raise ValueError("check remediation partitions each failure exactly once")
+        return self
 
     @property
     def detail(self) -> str:
         """Name causes once, with dependent failures identified separately."""
+        if self.merge_conflict is not None:
+            return (
+                f"Resolve union merge conflict for lane {self.merge_conflict.lane_key} "
+                f"in: {', '.join(self.merge_conflict.paths)}."
+            )
         roots = ", ".join(self.root_step_names)
         cascades = ", ".join(self.cascade_step_names) or "none"
         return f"Repair union check roots: {roots}. Cascading checks: {cascades}."
@@ -108,6 +126,26 @@ class UnionCompositionResult(UnionScratchObservation):
             and self.merge_conflict.lane_key not in self.composition_order
         ):
             raise ValueError("merge conflict must name a planned lane")
+        remediation = self.remediation
+        if self.merge_conflict is not None:
+            if remediation is None or remediation.merge_conflict != self.merge_conflict:
+                raise ValueError(
+                    "a union conflict requires its one matching remediation"
+                )
+        elif self.checks is not None and self.checks.failed_step_names:
+            if (
+                remediation is None
+                or remediation.merge_conflict is not None
+                or frozenset(
+                    (*remediation.root_step_names, *remediation.cascade_step_names)
+                )
+                != self.checks.failed_step_names
+            ):
+                raise ValueError(
+                    "a red union requires remediation for its check failures"
+                )
+        elif remediation is not None:
+            raise ValueError("a green union has no remediation")
         return self
 
     @property

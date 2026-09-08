@@ -53,7 +53,10 @@ def test_invalid_or_unpinned_scratch_claim_refuses(changes):
 
 def test_public_scope_result_round_trips_the_same_observation_for_consumers():
     from kodezart.types.domain.check_chain import CheckChainResult, CheckStepOutput
-    from kodezart.types.domain.union import UnionCompositionResult
+    from kodezart.types.domain.union import (
+        UnionCompositionResult,
+        UnionRemediationEntry,
+    )
 
     result = UnionCompositionResult(
         **observation().model_dump(),
@@ -64,6 +67,9 @@ def test_public_scope_result_round_trips_the_same_observation_for_consumers():
                     name="gate", output="actual output", exit_code=1, timed_out=False
                 ),
             ),
+        ),
+        remediation=UnionRemediationEntry(
+            root_step_names=("gate",), cascade_step_names=()
         ),
     )
     terminal_input = UnionCompositionResult.model_validate_json(

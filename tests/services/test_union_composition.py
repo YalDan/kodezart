@@ -370,6 +370,9 @@ async def test_incompatible_constructor_heads_are_each_green_but_union_red(repos
     assert result.checks is None
     assert result.merge_conflict.lane_key == "right"
     assert "api.py" in result.merge_conflict.paths
+    assert result.remediation.merge_conflict == result.merge_conflict
+    assert result.remediation.root_step_names == ()
+    assert result.remediation.cascade_step_names == ()
     assert result.composed_lane_heads == (heads[0],)
     assert result.lane_heads == tuple(heads)
     assert all(not item.failed_step_names for item in individual)
@@ -386,6 +389,7 @@ async def test_clean_union_is_green_and_check_failure_is_red(repository):
         repo_entry=entry(f'{sys.executable} -c "raise SystemExit(1)"'),
     )
     assert green.outcome is UnionOutcome.GREEN
+    assert green.remediation is None
     assert red.outcome is UnionOutcome.RED
     assert red.checks.failed_step_names == frozenset({"gate"})
     assert red.merge_conflict is None
