@@ -480,6 +480,24 @@ The alarm vocabulary and payload validation are available independently of
 signal computation, supervisor scheduling and leased alarm writes; those
 consumers are not enabled by constructing a model.
 
+`services.scope_tally.observe_scope_tally` reads current native membership and
+strict issue classification twice before computing `tally_unmoved`. Its roster
+uses the same ORGANIZE work-target predicate as the gap: criterion and
+record-shaped issues are excluded without pruning deliverable descendants.
+The governed GROOM → TICKET → CRITERIA sequence selects adjacent configured
+terminal markers independently of table order. A member carrying the next
+marker while fewer than all members carry the current marker returns a scope
+alarm. Missing phase labels count as open; unreadable or changed membership
+and classification refuse. Required semantic mappings must be present, and
+aliased phase or classification markers refuse instead of changing the roster.
+
+The signal retains the exact configuration references, native scope address,
+roster keys and member label projections as readings, so replay needs no port.
+A missing member reading or null/empty marker set counts as open in the pure
+predicate. The final execution transition still requires a native member
+lane-dispatched event reader and explicitly refuses before querying; the lane
+arm, supervisor scheduling and leased alarm publication remain unfinished.
+
 `domain.run_shape.escalation_ageing` measures an unresolved escalation in
 recorded lane commits after its raise SHA and recorded walker ticks since
 raise. Either count exceeding its own AppConfig limit returns the observation;

@@ -9,6 +9,7 @@ from kodezart.types.domain.escalation import (
     EscalationResolution,
     EscalationResolutionState,
 )
+from kodezart.types.domain.organize import OrganizeLabelNamespace, split_label_key
 from kodezart.types.domain.run_alarm import (
     AlarmBound,
     AlarmReading,
@@ -20,6 +21,7 @@ from kodezart.types.domain.run_alarm import (
     surface_alarm_member_id,
 )
 from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
 
 ESCALATION_COMMITS_BOUND = "run_alarm_escalation_age_max_commits"
@@ -42,6 +44,10 @@ _IDENTITY: TypeAdapter[str] = TypeAdapter(
 )
 _COMMIT_ROWS = TypeAdapter(tuple[LaneCommit, ...])
 _LANE_FIELD = TypeAdapter(LaneFieldValue)
+_SCOPE = TypeAdapter(ScopeRef)
+_MARKER_LABELS: TypeAdapter[tuple[str, ...] | None] = TypeAdapter(
+    tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] | None
+)
 
 
 def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeReadError:
@@ -454,3 +460,90 @@ def barren_tick_with_diff_growth(
                 raised_by=raised_by,
             )
     return None
+
+
+GROOM_MARKER_SOURCE = "organize_mandates.groom.terminal_marker_key"
+TICKET_MARKER_SOURCE = "organize_mandates.ticket.terminal_marker_key"
+CRITERIA_MARKER_SOURCE = "organize_mandates.criteria.terminal_marker_key"
+
+
+def tally_unmoved(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Observe a configured adjacent ORGANIZE marker barrier over its roster.
+
+    Readings retain two qualified configuration keys, the native scope
+    address, its ORGANIZE work-target keys, then per-member semantic label
+    sets. An absent member reading or a JSON null label set counts as open;
+    malformed or foreign readings refuse. This is the scope arm of the
+    shared signal. The lane arm and execution-entry event reader are not
+    implemented by substituting other tracker facts.
+    """
+    signal = AlarmSignal.TALLY_UNMOVED
+    if subject.kind is not AlarmSubjectKind.SCOPE:
+        raise _unreadable(
+            signal, subject.scope_key, "lane tally inputs are unavailable"
+        )
+    try:
+        current, following, scope_reading, roster_reading, *members = readings
+    except ValueError as exc:
+        raise _unreadable(
+            signal, subject.scope_key, "incomplete scope tally readings"
+        ) from exc
+    if (current.source_ref, following.source_ref) not in {
+        (GROOM_MARKER_SOURCE, TICKET_MARKER_SOURCE),
+        (TICKET_MARKER_SOURCE, CRITERIA_MARKER_SOURCE),
+    }:
+        raise _unreadable(signal, subject.scope_key, "wrong phase marker sources")
+    try:
+        current_namespace, current_key = split_label_key(
+            _decode(current, _IDENTITY, signal)
+        )
+        next_namespace, next_key = split_label_key(
+            _decode(following, _IDENTITY, signal)
+        )
+    except ValueError as exc:
+        raise _unreadable(
+            signal, current.source_ref, "invalid phase marker key"
+        ) from exc
+    if (
+        current_namespace is not OrganizeLabelNamespace.ISSUE
+        or next_namespace is not OrganizeLabelNamespace.ISSUE
+        or current_key == next_key
+    ):
+        raise _unreadable(
+            signal, current.source_ref, "distinct issue phase markers required"
+        )
+    scope = _decode(scope_reading, _SCOPE, signal)
+    roster = _decode(roster_reading, _REFERENCES, signal)
+    if (
+        scope.key != subject.scope_key
+        or scope_reading.source_ref != scope.key
+        or roster_reading.source_ref != scope.key
+    ):
+        raise _unreadable(signal, scope_reading.source_ref, "scope identity disagrees")
+    if len(set(roster)) != len(roster):
+        raise _unreadable(signal, roster_reading.source_ref, "roster repeats a member")
+    labels: dict[str, tuple[str, ...] | None] = {}
+    for member in members:
+        if member.source_ref not in roster or member.source_ref in labels:
+            raise _unreadable(
+                signal, member.source_ref, "foreign or repeated member reading"
+            )
+        labels[member.source_ref] = _decode(member, _MARKER_LABELS, signal)
+    carrying = sum(current_key in (labels.get(key) or ()) for key in roster)
+    entered = any(next_key in (labels.get(key) or ()) for key in roster)
+    if carrying == len(roster) or not entered:
+        return None
+    return RunAlarm(
+        subject=subject,
+        signal=signal,
+        readings=readings,
+        bound=None,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
