@@ -65,6 +65,7 @@ from tests.fakes import (
     FakeTrackerPort,
     ManagedFakeLinearMcpServer,
 )
+from tests.run_events import RUN_EVENT_STATES
 from tests.tracker.conftest import (
     APPROVER,
     BYSTANDER,
@@ -85,6 +86,7 @@ def operation_config() -> OperationConfig:
     return OperationConfig(
         operation_name="fixture",
         workspace="fixture-workspace",
+        run_event_states=dict(RUN_EVENT_STATES),
         principals=[
             Principal(
                 tracker_user=APPROVER,
