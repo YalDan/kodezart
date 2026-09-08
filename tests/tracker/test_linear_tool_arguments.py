@@ -92,6 +92,14 @@ LIVE_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
         ),
         required=frozenset({"id"}),
     ),
+    "get_user": ToolSchema(
+        properties=frozenset(
+            {
+                "query",
+            },
+        ),
+        required=frozenset({"query"}),
+    ),
     "get_issue": ToolSchema(
         properties=frozenset(
             {
@@ -328,6 +336,7 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         ),
     )
     await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    await tracker.writer_identity()
     keyed = await tracker.upsert_issue(
         scope_key=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope"),
         deliverable_key="fixture-deliverable",

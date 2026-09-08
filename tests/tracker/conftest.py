@@ -64,6 +64,10 @@ FIRE_ENTRY_LABELS = [FIRE_SCOPE_LABEL, FIRE_STAGE_LABEL]
 
 APPROVER = "fixture-approver"
 BYSTANDER = "fixture-bystander"
+#: The non-human writer the operation declares.  A workspace member like
+#: any other, so a boot over a credential belonging to it has a declared
+#: agent identity to recognise itself by.
+AGENT_IDENTITY = "fixture-agent"
 
 QUEUE_STATE_LABELS: dict[str, str] = {
     "triage": "queue:triage",
@@ -130,8 +134,17 @@ SCOPE_DIAGNOSIS = "auth_insufficient_scope: the credential cannot read this"
 def fixture_server(
     *,
     scope_refusals: Mapping[str, str] | None = None,
+    actor: str = APPROVER,
 ) -> FakeLinearMcpServer:
-    """A fresh fake workspace — one per test, never shared."""
+    """A fresh fake workspace — one per test, never shared.
+
+    *actor* is the account whose credential the workspace is dialled with:
+    it authors every comment this server records and it is what the
+    current-user read answers.  It defaults to the approver so the
+    comment-author assertions elsewhere read the same author they always
+    did; a boot case that needs an attributable non-human writer passes
+    ``AGENT_IDENTITY``.
+    """
     return FakeLinearMcpServer(
         tool_errors=scope_refusals,
         diffs=[
@@ -218,7 +231,7 @@ def fixture_server(
                 content=DOCUMENT_CONTENT,
             ),
         ],
-        users=[APPROVER, BYSTANDER],
+        users=[APPROVER, BYSTANDER, AGENT_IDENTITY],
         teams=["fixture-team", FOREIGN_TEAM],
         labels=list(QUEUE_STATE_LABELS.values()),
         # Both boards in the fixture workspace offer the whole vocabulary:
@@ -226,7 +239,7 @@ def fixture_server(
         # would make the ordinary case the divergent one.
         statuses={team: list(STATE_TYPES) for team in ("fixture-team", FOREIGN_TEAM)},
         state_types=STATE_TYPES,
-        actor=APPROVER,
+        actor=actor,
     )
 
 
@@ -284,8 +297,9 @@ async def _snapshot(
             if (spec := await source.read_base_spec(issue_key=key)) is not None
         },
         scan_refusals=refusals,
+        writer_identities=await source.writer_identity(),
         known_identifiers=[
-            *(APPROVER, BYSTANDER),
+            *(APPROVER, BYSTANDER, AGENT_IDENTITY),
             *TEAM_IDENTIFIERS.values(),
             *QUEUE_STATE_LABELS.values(),
             *WORKFLOW_STATE_NAMES.values(),

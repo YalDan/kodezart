@@ -2474,6 +2474,10 @@ class FakeMcpComment:
         }
 
 
+#: The query the vendor's user read answers the caller's own account for.
+_CURRENT_USER = "me"
+
+
 class FakeLinearMcpServer:
     """In-process MCP server satisfying ``McpToolCaller``.
 
@@ -2906,6 +2910,27 @@ class FakeLinearMcpServer:
             "hasNextPage": False,
         }
 
+    def _tool_get_user(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """One user, under BOTH identities, for the query the caller sends.
+
+        ``"me"`` answers the account this credential writes as, which is
+        the server's ``actor``; any other query is a lookup by name, and a
+        name the workspace does not hold is a tool error like any other.
+        """
+        query = str(arguments["query"])
+        name = self.actor if query == _CURRENT_USER else query
+        if name not in {self.actor, *self.users}:
+            msg = f"fake workspace has no user {query!r}"
+            raise LookupError(msg)
+        return {
+            "id": f"{name}-id",
+            "name": name,
+            "displayName": self.display_name(name),
+        }
+
     def _tool_list_teams(
         self,
         arguments: Mapping[str, object],
@@ -3156,6 +3181,7 @@ class FakeTrackerPort:
         recorded_repositories: Mapping[str, str] | None = None,
         initiative_identifiers: Mapping[str, frozenset[str]] | None = None,
         scan_refusals: Mapping[PassSignal, str] | None = None,
+        writer_identities: frozenset[str] = frozenset(),
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
@@ -3240,6 +3266,8 @@ class FakeTrackerPort:
         self.scan_refusals: dict[PassSignal, str] = dict(scan_refusals or {})
         #: Every capability sweep this double was asked, in order.
         self.capability_probes: list[tuple[PassSignal, ...]] = []
+        #: Both spellings of the account this double's writes are signed by.
+        self.writer_identities: frozenset[str] = writer_identities
         self._assets: dict[str, tuple[TrackerAsset, ...]] = {
             key: tuple(value) for key, value in (assets or {}).items()
         }
@@ -3357,6 +3385,10 @@ class FakeTrackerPort:
             for signal in signals
             if (diagnosis := self.scan_refusals.get(signal)) is not None
         }
+
+    async def writer_identity(self) -> frozenset[str]:
+        await asyncio.sleep(0)
+        return self.writer_identities
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)

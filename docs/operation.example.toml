@@ -29,7 +29,8 @@ organize_mandates = []
 
 # Identities the agent posts under, in the order the pass templates address
 # them: the mention handle first, the account's plain name second. Must not
-# collide with a principal.
+# collide with a principal. The tracker credential must be attributed to one
+# of these identities; boot refuses otherwise.
 agent_identities = ["@example-agent", "example-agent"]
 
 # Semantic prose stays available to the judgment scanner. Host/workspace facts

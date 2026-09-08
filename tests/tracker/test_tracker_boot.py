@@ -68,6 +68,7 @@ from tests.fakes import (
 )
 from tests.run_events import RUN_EVENT_STATES
 from tests.tracker.conftest import (
+    AGENT_IDENTITY,
     APPROVER,
     BYSTANDER,
     QUEUE_STATE_LABELS,
@@ -106,7 +107,7 @@ def operation_config() -> OperationConfig:
                 handle="@bystander",
             ),
         ],
-        agent_identities=[],
+        agent_identities=[AGENT_IDENTITY],
         teams={
             team_key: TeamEntry(name=team_name, key="ENG")
             for team_key, team_name in TEAM_IDENTIFIERS.items()
@@ -178,7 +179,7 @@ class TestConfiguredMappings:
     def test_each_principal_contributes_a_user_ref(self) -> None:
         refs = configured_mappings(operation_config())
         users = {ref.identifier for ref in refs if ref.kind is MappingKind.USER}
-        assert users == {APPROVER, BYSTANDER}
+        assert users == {APPROVER, BYSTANDER, AGENT_IDENTITY}
 
     def test_the_ref_order_is_stable_across_calls(self) -> None:
         assert configured_mappings(operation_config()) == configured_mappings(
@@ -385,6 +386,7 @@ class TestBootValidation:
         resolvable = [
             APPROVER,
             BYSTANDER,
+            AGENT_IDENTITY,
             *QUEUE_STATE_LABELS.values(),
             *WORKFLOW_STATE_NAMES.values(),
         ]
@@ -568,7 +570,7 @@ class TestQueueVocabularyPerDeclaredTeam:
         """
         return FakeLinearMcpServer(
             documents=[FakeMcpDocument(id="doc-1", title="checkpoint", content="")],
-            users=[APPROVER, BYSTANDER],
+            users=[APPROVER, BYSTANDER, AGENT_IDENTITY],
             teams=list(self.TWO_TEAMS.values()),
             labels=[],
             team_labels={f"{team}-id": list(names) for team, names in held.items()},
@@ -948,7 +950,7 @@ class _Endpoint:
 
 def _managed_fixture_server() -> ManagedFakeLinearMcpServer:
     """The shared fixture workspace, plus the session lifetime boot drives."""
-    source = fixture_server()
+    source = fixture_server(actor=AGENT_IDENTITY)
     managed = ManagedFakeLinearMcpServer()
     managed.issues = source.issues
     managed.documents = source.documents

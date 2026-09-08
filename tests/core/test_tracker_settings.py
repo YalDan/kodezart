@@ -19,7 +19,7 @@ from kodezart.core.errors import (
 from kodezart.core.logging import get_logger
 from tests.adapters.test_http_mcp_tool_caller import _FakeStreamableServer
 from tests.core.test_retired_config import _from_source
-from tests.tracker.conftest import CLAIMED_ISSUE, fixture_server
+from tests.tracker.conftest import AGENT_IDENTITY, CLAIMED_ISSUE, fixture_server
 from tests.tracker.test_tracker_boot import operation_config
 
 TOKEN = "lin_api_" + "Q7" * 24
@@ -75,7 +75,7 @@ def configured(source, tmp_path, monkeypatch):
 class NativeEndpoint(_FakeStreamableServer):
     def __init__(self, monkeypatch, status=HTTPStatus.OK):
         super().__init__(initialize_status=status)
-        self.native = fixture_server()
+        self.native = fixture_server(actor=AGENT_IDENTITY)
         self.wire = []
         self.clients = []
         self.hold = asyncio.Event()

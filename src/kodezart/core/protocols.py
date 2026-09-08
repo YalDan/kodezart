@@ -756,6 +756,20 @@ class TrackerPort(
         """
         ...
 
+    async def writer_identity(self) -> frozenset[str]:
+        """Every spelling the backend attributes this adapter's writes under.
+
+        Both the account name and the mention handle, because a configured
+        identity may legitimately be either and user resolution already
+        matches the union of the two.
+
+        Read once at boot and compared against the operation's declared
+        agent identities. It is never a flag a consumer reads: a deployment
+        whose credential no declared agent identity answers to does not
+        serve, so nothing downstream branches on the answer.
+        """
+        ...
+
     async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
         """Stable native field projection and complete comments for receipt replay."""
         ...

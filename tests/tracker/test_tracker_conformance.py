@@ -1774,6 +1774,37 @@ class TestScanCapability:
         assert refusals == {}
 
 
+class TestWriterIdentity:
+    """Who the backend attributes this adapter's writes to.
+
+    A boot-time read, compared there against the operation's declared
+    non-human writer. It is stated at the port so every implementation
+    answers the same question, and it is a READ: asking must change
+    nothing.
+    """
+
+    async def test_the_writer_identity_carries_both_spellings_of_the_actor(
+        self,
+        tracker: TrackerPort,
+        server: FakeLinearMcpServer,
+    ) -> None:
+        assert await tracker.writer_identity() == {
+            server.actor,
+            server.display_name(server.actor),
+        }
+
+    async def test_the_writer_identity_is_read_not_written(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        before = tracker_writes()
+
+        await tracker.writer_identity()
+
+        assert tracker_writes() == before
+
+
 class TestSubstitutability:
     """No capability flags, no feature detection, no partial adapters."""
 

@@ -136,6 +136,7 @@ _TOOL_LIST_DOCUMENTS = "list_documents"
 _TOOL_SAVE_DOCUMENT = "save_document"
 _TOOL_GET_PROJECT = "get_project"
 _TOOL_LIST_USERS = "list_users"
+_TOOL_GET_USER = "get_user"
 _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
 _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
@@ -167,6 +168,7 @@ _READ_TOOLS: Final[frozenset[str]] = SCOPE_READ_TOOLS | frozenset(
         _TOOL_LIST_DOCUMENTS,
         _TOOL_GET_PROJECT,
         _TOOL_LIST_USERS,
+        _TOOL_GET_USER,
         _TOOL_LIST_TEAMS,
         _TOOL_LIST_ISSUE_LABELS,
         _TOOL_LIST_PROJECT_LABELS,
@@ -174,6 +176,11 @@ _READ_TOOLS: Final[frozenset[str]] = SCOPE_READ_TOOLS | frozenset(
         _TOOL_LIST_ISSUE_STATUSES,
     },
 )
+
+#: What the user read is asked for the account the credential belongs to:
+#: the tool takes one query and answers the caller's own user for this
+#: value.
+_CURRENT_USER_QUERY = "me"
 
 #: The page a capability probe asks for: the smallest a listing tool takes.
 #: The probe is about reachability, so a second row would be paid for and
@@ -885,6 +892,12 @@ class LinearMcpTracker:
         self._self_writes.record_mutation(
             issue_key=issue_key, mutation=OwnMutation(deleted=(comment_key,))
         )
+
+    async def writer_identity(self) -> frozenset[str]:
+        """Both spellings of the account this credential writes as."""
+        payload = await self._call(_TOOL_GET_USER, {"query": _CURRENT_USER_QUERY})
+        wire = self._validate(LinearUserWire, payload, _TOOL_GET_USER)
+        return frozenset({wire.name, wire.display_name})
 
     async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
         """Retain the whole native projection, including unconfigured fields.
