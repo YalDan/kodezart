@@ -70,6 +70,7 @@ def native_tracker(server, labels=LABELS):
         marker_prefixes=MARKER_PREFIXES,
         issue_labels=labels,
         scope_labels=APPROVAL,
+        criteria_stage_label_key=None,
         caller=server,
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
