@@ -3,12 +3,12 @@
 import asyncio
 from typing import assert_never
 
-from kodezart.chains.delivery_coordinator import classify_red_checks
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import CIMonitor, CIObservationReader, TrackerPort
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.git_url import resolve_repo_url
+from kodezart.services.check_classification import classify_red_checks
 from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
@@ -127,10 +127,11 @@ class AuditForgeVerifier:
             red = await classify_red_checks(
                 ci=self._ci,
                 repository=repository,
+                repo_url=repository.url,
                 final_commit_sha=evidence.graded_sha,
                 initial_summary=summary,
                 initial_failed_names=names,
-                config=self._config,
+                max_attempts=self._config.delivery_red_rerun_max_attempts,
             )
             if red.checks_passed is None:
                 return result(

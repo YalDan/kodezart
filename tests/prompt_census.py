@@ -10,7 +10,6 @@ PROMPT_FUNCTION_NAMES: Final[frozenset[str]] = frozenset(
         "ticket_revision",
         "acceptance_criteria",
         "criteria_validation",
-        "fire_time_ruling",
         "implementation",
         "evaluation",
         "iteration_feedback",
@@ -31,7 +30,6 @@ PROMPT_FUNCTION_NAMES: Final[frozenset[str]] = frozenset(
         "audit_overclaim",
         "audit_mandate",
         "audit_detection_removal",
-        "write_back_verify",
         "organize_criteria_author",
     }
 )

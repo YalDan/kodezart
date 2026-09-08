@@ -27,6 +27,14 @@ layers:
 All cross-layer dependencies point inward through protocols defined in
 `core/protocols.py`. Infrastructure adapters are wired in the composition root
 (`main.py` `lifespan()`).
+The lifespan registers each acquired resource with an `AsyncExitStack`.
+Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
+their records, then closes their transports; the checkpointer retains its
+context-managed lifetime. The same releases run on partial startup and
+exceptional exit, and one release failure does not skip later callbacks. The
+unwind is one owned task so repeated cancellation cannot interrupt a queue
+worker or close a transport before its consumers finish. Each cleanup failure
+is logged before propagation, so later failures cannot hide an earlier error.
 
 ## Component Diagram
 
@@ -58,10 +66,7 @@ does not exist.
 | ChangePersister   | GitChangePersister       | Detects changes, generates commit message, commits, pushes |
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
-| ForgeQuery        | GitHubAPIClient          | Looks up an open PR by head and composes branch browser URLs |
-| WriteBackVerifier | TrackerWriteBackVerifier | Bounded native artifact re-read and fresh judgment around caller-owned write/repair actions; leases and universal adoption remain separate |
 | PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA and open/closed/merged lifecycle; refuses foreign or unavailable head repositories; no mutation authority |
-| PRContentEditor   | GitHubAPIClient          | Reads unique open PR content and edits changed title/body/base fields |
 | CIMonitor         | GitHubAPIClient          | Polls checks and re-observes Actions attempts at one commit |
 | CIObservationReader | GitHubAPIClient        | Reads the completed watch's commit identity and structured verdict |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
@@ -70,8 +75,6 @@ does not exist.
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
-| TrackerCriteriaValidator | TrackerFeasibilityValidator | Fresh native criterion judgment at an explicitly pinned head |
-| TrackerFirePreparer | AddressedTrackerFirePreparation | Read-only preparation of one addressed ready issue from its verified repository route and recorded base |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
@@ -983,73 +986,18 @@ It performs no tracker writes, correction or remediation. Scheduled sweep
 composition, mandate completion for refutations, lease-protected state changes
 and publication remain separate consumers.
 
-## Tracker feasibility at the selected head
+## Scoped execution boundary
 
-`TrackerFeasibilityValidator.validate` is the read-only criterion-validation
-consumer for a tracker subject. It accepts an issue key and a previously
-resolved dispatch SHA, obtains the subject once through `read_fire_spec`,
-and matches a fresh full criterion-family read to that captured identity set.
-Only the backend's unstarted (Todo) children enter its feasibility session;
-other criterion states are retained in the observation without re-authoring.
-The session receives the captured subject and current Check fields, with native
-sub-issue keys and no recorded Evidence or criterion-author rationale.
+The public workflow router raises `ScopedExecutionUnavailableError` immediately
+for every addressed scope. It does not read the tracker, clone a repository,
+resolve a remote head, start a judgment session or dispatch an authored loop.
+Unscoped authored jobs keep their existing forge routing and execution.
 
-The validator uses the existing evidence classifier and permutation/conjunction
-arithmetic. A native schema carries those same grounded three-state findings
-without constructing authored AC-n identities or a ticket draft. The authored
-schemas and rendered prompt bytes remain unchanged. Flags remain observations;
-they cannot remove a tracker criterion from its obligations. The existing
-`fan_in_max_attempts` bounds fresh corrective sessions. A missing, foreign,
-duplicate or ungrounded response refuses on exhaustion.
-
-The selected SHA is checked in a detached workspace before each session and
-after validation. Active Git replacement refs refuse through the existing
-replacement-ref read, preventing a reused cache from substituting another
-commit's bytes under the selected identity. That read also settles before
-workspace release on cancellation. Ordinary tracked, staged or untracked changes refuse through
-`GitService.has_changes`; ignored test outputs follow Git's existing ignore
-behavior. The full criterion family is read again before returning, and any
-observed change refuses. This is optimistic source coherence, not an atomic
-tracker snapshot or an immutable-filesystem claim. Owned acquisition and
-release settle through repeated cancellation. An empty Todo subset opens no
-session and leaves every state untouched.
-
-This consumer returns a source-addressed observation. It does not apply
-amendments, cancellations or state transitions, authorize dispatch, persist an
-artifact, or supply the missing full FIRE composition. Approval eligibility,
-leased authoring and the live iteration-exit path remain separate consumers.
-
-
-The public `OriginRoutedWorkflowEngine.run` now prepares an explicitly addressed
-scoped FIRE through `AddressedTrackerFirePreparation` when a tracker is composed.
-The existing complete readiness read must uniquely select the issue. Its FIRE
-run identity and recorded `BaseSpec` must agree with the queued inputs before
-repository access. The loaded operation reaches this actual entry from application
-composition. Its existing `teams_scanned_by` and `teams_bound_to` rules require a
-known team and declared target repository. Explicit and implicit single-repository
-bindings select that repository without reading an issue route marker; unbound
-teams require the native recorded repository to agree with the queued target.
-A stale marker cannot override configured routing.
-This bounded first-entry arm refuses
-existing deliverable, iteration, recovery or best-iteration refs until scoped
-resume-head selection is implemented. An integration ref remains base provenance.
-
-The preparer pins the actual remote head of the recorded base branch and calls
-the same native feasibility validator through the real `AgentService`. It then
-rereads the repository/base/work refs, complete readiness and remote head, and
-checks the original team identity/binding and declared repository URLs. An observed change
-refuses the prepared result. Cache and remote reads settle owned
-subprocesses through cancellation, and validation retains the existing detached
-workspace, fresh-session and complete-family guards. Caller prompt text and
-write-capable tools never replace native criterion sources or evaluation tools.
-
-Both configured and recorded repository routes prepare first-entry fires.
-Scoped resume-head selection, automatic broad-scope dispatch, ruling application,
-leased state/Evidence writes and the native loop remain separate work. After a
-valid observation, the public entry explicitly refuses the unavailable ruling
-and loop graph; it does not dispatch legacy ticket generation or report a
-completed FIRE. The authored entry path retains its existing behavior.
-
+Scope readers, planning and readiness remain available to their current
+consumers. A tracker-native execution loop is still unfinished. The former
+preparation, feasibility and ruling-proposal stack ran work only to refuse;
+its exclusive ports, transient schema and prompt role have been retired.
+They are not an alternate execution path or evidence of a completed fire.
 
 The scheduled pass gate keeps its vendor timestamp window for reply and
 mention scanning. Atomic issue-write responses can identify their own
@@ -1087,3 +1035,12 @@ indistinguishable transient histories, including a simultaneous mention-only
 ripple during otherwise identical own churn; this is not a vendor event
 history or a universal attribution proof. Admission continues to use its
 upstream body digest and gap, never this scan window or a second digest.
+
+
+Description edits address the complete issue body. An exact desired body or
+identical expected/replacement is unchanged without a write; an exact expected
+body is replaced once. Any other current body raises `StaleWriteError`.
+Substring matches, repeated fragments and incidental desired text never
+identify the target. `upsert_issue` supplies the complete body it read and
+preserves its adapter-owned identity. This is optimistic stale-read detection,
+not atomic compare-and-swap; callers still serialize writes.

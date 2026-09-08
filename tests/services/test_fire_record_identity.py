@@ -45,8 +45,6 @@ async def test_real_queue_router_workflow_and_ticket_sessions_share_submission_i
     router = OriginRoutedWorkflowEngine(
         forge_arm=engine,
         forge_less_arm=engine,
-        tracker=None,
-        tracker_preparer=None,
     )
     queue = AsyncioJobQueue(
         engine=router,

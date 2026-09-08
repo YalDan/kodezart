@@ -57,15 +57,7 @@ ORGANIZE_INPUT_TAGS = (
 )
 
 ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
-    "fire_time_ruling": (
-        "issue_key",
-        "issue_body",
-        "criteria",
-        "base_ref",
-        "validation_findings",
-    ),
     "audit_overclaim": ("criterion_key", "graded_sha", "head_sha", "check"),
-    "write_back_verify": ("verification_goal", "head_sha", "written_artifact"),
     "audit_mandate": (
         "defect_class",
         "refutation_evidence",

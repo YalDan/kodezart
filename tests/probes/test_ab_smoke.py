@@ -349,8 +349,8 @@ async def run_arm(
     )
     stack = build_git_stack(config=config, prompts=prompts, gate=gate)
     engine = build_workflow_engine(
+        repositories=(),
         config=config,
-        operation=None,
         agent_service=AgentService(
             executor=executor,
             workspace=stack.workspace,
@@ -368,7 +368,6 @@ async def run_arm(
         gate=gate,
         github_api=None,
         checkpointer=None,
-        tracker=None,
     )
 
     repo = await fixture_repo(root)

@@ -52,6 +52,7 @@ from kodezart.domain.errors import (
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     EscalationReadError,
+    IssueLabelReadError,
     TransientAPIError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
@@ -70,6 +71,7 @@ from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
+    LinearAssetWire,
     LinearCommentListWire,
     LinearCommentWire,
     LinearCriterionIssueWire,
@@ -643,6 +645,58 @@ class LinearMcpTracker:
             self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
         )
 
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        label = self._issue_labels.get(classification)
+        if label is None or not label.strip():
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels[{classification!r}]",
+                stops="complete labeled issue membership cannot be read",
+            )
+        arguments: dict[str, object] = {
+            "label": label,
+            "includeArchived": True,
+            "fields": ["id"],
+            "limit": _ISSUE_IDENTITY_PAGE_SIZE,
+        }
+        members: dict[str, TrackerIssue] = {}
+        cursors: set[str] = set()
+        try:
+            while True:
+                payload = await self._call(_TOOL_LIST_ISSUES, arguments)
+                page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+                for entry in page.issues:
+                    if entry.id in members:
+                        raise IssueLabelReadError(
+                            classification=classification,
+                            reason=f"duplicate listed identity {entry.id!r}",
+                        )
+                    issue = await self.read_planning_issue(issue_key=entry.id)
+                    if (
+                        issue.issue_key != entry.id
+                        or classification not in issue.issue_labels
+                    ):
+                        raise IssueLabelReadError(
+                            classification=classification,
+                            reason=f"listed identity or label changed for {entry.id!r}",
+                        )
+                    members[entry.id] = issue
+                if not page.has_next_page:
+                    return tuple(members[key] for key in sorted(members))
+                if not page.cursor or page.cursor in cursors:
+                    raise IssueLabelReadError(
+                        classification=classification,
+                        reason="membership pagination cannot advance",
+                    )
+                cursors.add(page.cursor)
+                arguments["cursor"] = page.cursor
+        except (McpTransportError, TrackerProtocolError) as exc:
+            raise IssueLabelReadError(
+                classification=classification,
+                reason="the tracker membership read failed or was incomplete",
+            ) from exc
+
     def require_scope_plan_reads(self) -> None:
         """A clean plan must be able to see both criteria and open decisions."""
         for classification in ("criterion", "decision"):
@@ -1142,7 +1196,7 @@ class LinearMcpTracker:
     async def edit_description(
         self, *, target: str, expected: str, replacement: str
     ) -> DescriptionEditResult:
-        """Read and assert the anchor before a description-only write."""
+        """Assert the complete expected body before a description-only write."""
         current = await self.read_issue(issue_key=target)
         body = description_replacement(
             target=target, body=current.body, expected=expected, replacement=replacement
@@ -1556,16 +1610,29 @@ class LinearMcpTracker:
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
         """Attachment and document metadata referenced by the issue."""
         wire = await self._read_issue_wire(issue_key)
-        return tuple(
-            TrackerAsset(
-                asset_key=asset.id,
-                title=asset.title,
-                url=asset.url,
-                content_type=asset.content_type,
-                size_bytes=asset.size,
+        assets = []
+        for asset in (*wire.attachments, *wire.documents):
+            url = asset.url
+            if url is None:
+                payload = await self._call(_TOOL_GET_DOCUMENT, {"id": asset.id})
+                document = self._validate(LinearAssetWire, payload, _TOOL_GET_DOCUMENT)
+                if document.id != asset.id or document.title != asset.title:
+                    raise TrackerProtocolError(
+                        "document metadata differs from the issue reference",
+                        tool=_TOOL_GET_DOCUMENT,
+                        detail=f"expected document {asset.id!r}",
+                    )
+                url = document.url
+            assets.append(
+                TrackerAsset(
+                    asset_key=asset.id,
+                    title=asset.title,
+                    url=url,
+                    content_type=asset.content_type,
+                    size_bytes=asset.size,
+                )
             )
-            for asset in (*wire.attachments, *wire.documents)
-        )
+        return tuple(assets)
 
     async def read_document(self, *, document_key: str) -> str:
         """The document's text content."""

@@ -15,11 +15,9 @@ root may define its framework hook and its factory, and nothing else.
 A builder belongs in `kodezart.composition`, where it is unit-testable
 without importing the application.
 
-The lifespan's SHUTDOWN is asserted here too, in the two halves it has:
-its order, read off the hook's own syntax tree, and its outcome, driven
-over the shipped queue, watcher, recorder and a Fire Log double in that
-same order — because "every fire leaves a row" is a property of the
-sequence rather than of any component in it (KOD-178).
+The actual lifespan's shutdown order, failure cleanup and fire records
+are exercised in test_lifespan_cleanup. The component cases here retain
+the queue, watcher and recorder's individual shutdown behavior.
 """
 
 import ast
@@ -108,59 +106,6 @@ def test_the_guard_reads_a_real_module() -> None:
     defined = _top_level_definitions()
 
     assert set(defined) == PERMITTED
-
-
-def _dotted(node: ast.expr) -> str:
-    """The dotted name of an attribute chain, or "" for anything else."""
-    parts: list[str] = []
-    current = node
-    while isinstance(current, ast.Attribute):
-        parts.append(current.attr)
-        current = current.value
-    if not isinstance(current, ast.Name):
-        return ""
-    parts.append(current.id)
-    return ".".join(reversed(parts))
-
-
-def _lifespan_calls() -> list[str]:
-    """Every dotted call the lifespan makes, in source order."""
-    tree = ast.parse(ROOT.read_text(encoding="utf-8"))
-    (hook,) = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "lifespan"
-    ]
-    calls = [
-        node
-        for node in ast.walk(hook)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-    ]
-    # ``ast.walk`` is breadth-first; the question here is ORDER, so the
-    # nodes are put back into the order they were written in.
-    calls.sort(key=lambda node: (node.lineno, node.col_offset))
-    return [_dotted(node.func) for node in calls]
-
-
-def test_the_shutdown_records_unfinished_fires_over_a_quiescent_registry() -> None:
-    """KOD-178 — the sweep's placement IS its correctness.
-
-    After the queue's stop, because that is when nothing can finish
-    underneath it: a fire completing between a registry read and the stop
-    would be swept as failed and its own true row verified away (ruled
-    2026-09-02). After the drain, because that is when nothing records
-    beside it: a watch ending on the stopped stream verifies the log and
-    then writes, exactly as the sweep does, and the two interleaved over
-    one run are two rows. And before the knowledge session closes, because
-    that session is what the rows are written through.
-    """
-    calls = _lifespan_calls()
-    sweep = calls.index("dispatch.lifecycle.record_unfinished")
-
-    assert sweep > calls.index("dispatch.scheduler.stop")
-    assert sweep > calls.index("job_queue.stop")
-    assert sweep > calls.index("dispatch.lifecycle.drain")
-    assert sweep < calls.index("built_recorder.knowledge_caller.close")
 
 
 # ---------------------------------------------------------------------------

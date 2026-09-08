@@ -27,7 +27,6 @@ class PromptKey(StrEnum):
     TICKET_REVISION = "ticket_revision"
     ACCEPTANCE_CRITERIA = "acceptance_criteria"
     CRITERIA_VALIDATION = "criteria_validation"
-    FIRE_TIME_RULING = "fire_time_ruling"
     IMPLEMENTATION = "implementation"
     EVALUATION = "evaluation"
     ITERATION_FEEDBACK = "iteration_feedback"
@@ -46,7 +45,6 @@ class PromptKey(StrEnum):
     AUDIT_OVERCLAIM = "audit_overclaim"
     AUDIT_MANDATE = "audit_mandate"
     AUDIT_DETECTION_REMOVAL = "audit_detection_removal"
-    WRITE_BACK_VERIFY = "write_back_verify"
     ORGANIZE_CRITERIA_AUTHOR = "organize_criteria_author"
     #: What lives where.  A prelude composed into a session that is granted
     #: the knowledge server, and into no other — a key rather than set-level

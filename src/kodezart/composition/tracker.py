@@ -4,6 +4,7 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
+import asyncio
 from dataclasses import dataclass
 from typing import Final, assert_never
 
@@ -16,6 +17,7 @@ from kodezart.adapters.linear_mcp_tracker import (
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import TrackerCredentialShapeError
 from kodezart.core.logging import BoundLogger
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     McpToolCaller,
@@ -175,8 +177,8 @@ async def boot_tracker(
     refuse_foreign_credential(backend=config.tracker, token=token)
     caller = make_mcp_tool_caller(config=config, token=token)
     await caller.probe()
-    await caller.open()
     try:
+        await caller.open()
         tracker, ledger = build_tracker(
             config=config,
             operation=operation,
@@ -188,26 +190,46 @@ async def boot_tracker(
             tracker=tracker,
             config=operation,
         )
-    except BaseException:
-        await caller.close()
+        await log.ainfo(
+            "tracker_mappings_reconciled",
+            backend=config.tracker.value,
+            adopted=[
+                item.ref.describe()
+                for item in reconciliation.outcomes
+                if item.action is EnsureAction.ADOPTED
+            ],
+            created=[
+                item.ref.describe()
+                for item in reconciliation.outcomes
+                if item.action is EnsureAction.CREATED
+            ],
+        )
+        return DialledTracker(
+            tracker=tracker,
+            caller=caller,
+            operation=reconciliation.config,
+            ledger=ledger,
+        )
+    except BaseException as failure:
+
+        async def close_caller() -> BaseException | None:
+            try:
+                await caller.close()
+            except BaseException as exc:
+                await log.aerror(
+                    "tracker_boot_cleanup_failed",
+                    error_kind=type(exc).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
+                return exc
+            return None
+
+        cleanup_error, cancelled = await finish_owned(
+            asyncio.create_task(close_caller())
+        )
+        if cancelled or isinstance(failure, asyncio.CancelledError):
+            raise asyncio.CancelledError from cleanup_error
+        if cleanup_error is not None:
+            raise cleanup_error from failure
         raise
-    await log.ainfo(
-        "tracker_mappings_reconciled",
-        backend=config.tracker.value,
-        adopted=[
-            item.ref.describe()
-            for item in reconciliation.outcomes
-            if item.action is EnsureAction.ADOPTED
-        ],
-        created=[
-            item.ref.describe()
-            for item in reconciliation.outcomes
-            if item.action is EnsureAction.CREATED
-        ],
-    )
-    return DialledTracker(
-        tracker=tracker,
-        caller=caller,
-        operation=reconciliation.config,
-        ledger=ledger,
-    )

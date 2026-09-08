@@ -18,7 +18,6 @@ from typing import Annotated, NewType, Self
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.criterion_ref import CriterionRef
 
 #: The prefix every minted criterion identity carries — one owner.
 #:
@@ -408,53 +407,6 @@ class CriteriaValidationOutput(CamelCaseModel):
         description=(
             "Subsets of individually feasible criteria that cannot hold together."
         ),
-    )
-
-
-class TrackerCriterionFinding(FindingEvidence):
-    """A feasibility finding addressed by the criterion sub-issue's own key."""
-
-    criterion_id: CriterionRef = Field(
-        min_length=1,
-        pattern=r"\S",
-        description="The dispatched criterion sub-issue key, echoed exactly.",
-    )
-
-
-class TrackerContradiction(CamelCaseModel):
-    """A conflicting subset addressed by native criterion keys."""
-
-    model_config = ConfigDict(frozen=True)
-
-    criterion_ids: list[Annotated[CriterionRef, Field(min_length=1, pattern=r"\S")]] = (
-        Field(
-            min_length=2,
-            description="The smallest subset of native criterion keys that conflicts.",
-        )
-    )
-    explanation: str = Field(
-        min_length=1,
-        pattern=r"\S",
-        description="Why no single implementation can satisfy that subset.",
-    )
-
-    @model_validator(mode="after")
-    def members_are_distinct(self) -> Self:
-        if len(set(self.criterion_ids)) != len(self.criterion_ids):
-            raise ValueError("a conflicting subset requires distinct criterion keys")
-        return self
-
-
-class TrackerCriteriaValidationOutput(CamelCaseModel):
-    """The native-key answer from a tracker feasibility session."""
-
-    findings: list[TrackerCriterionFinding] = Field(
-        min_length=1,
-        description="Exactly one grounded finding per dispatched native criterion key.",
-    )
-    contradictions: list[TrackerContradiction] = Field(
-        default_factory=list,
-        description="Minimal conflicting subsets of the supplied criterion keys.",
     )
 
 

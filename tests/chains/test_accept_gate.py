@@ -346,6 +346,10 @@ def _engine(
         persister=FakeChangePersister(),
     )
     return AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -681,6 +685,10 @@ def _engine_over_a_real_loop(
     )
     prompts = make_prompt_provider()
     return AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,

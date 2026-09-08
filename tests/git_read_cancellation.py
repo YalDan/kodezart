@@ -18,6 +18,7 @@ async def assert_git_read_settles_before_release(
     phase,
     read_number,
     expect_release=True,
+    prior_releases=0,
 ):
     """A controllable actual child must finish before its workspace is released."""
     native = SubprocessGitService(remote="fixture-remote")
@@ -61,7 +62,7 @@ async def assert_git_read_settles_before_release(
         task.cancel()
         await asyncio.sleep(0.01)
         assert not task.done()
-        assert releases == []
+        assert releases == [False] * prior_releases
         finish.write_text("settle")
         try:
             await asyncio.wait_for(task, 5)
@@ -69,7 +70,7 @@ async def assert_git_read_settles_before_release(
             pass
         else:
             raise AssertionError("caller cancellation did not propagate")
-        assert releases == ([True] if expect_release else [])
+        assert releases == [False] * prior_releases + ([True] if expect_release else [])
         try:
             os.kill(pid, 0)
         except ProcessLookupError:

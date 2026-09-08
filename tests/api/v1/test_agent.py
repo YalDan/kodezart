@@ -225,6 +225,10 @@ async def _workflow_client(
         last_commit_sha="a" * 40,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -496,6 +500,10 @@ async def _workflow_client_with(
         persister=FakeChangePersister(),
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=getattr(ci_monitor, "observation_reader", None),
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),

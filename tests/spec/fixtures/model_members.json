@@ -1,0 +1,23 @@
+[
+  {
+    "key": "member/alpha",
+    "body": "## D1 — Consume the shared identity\n\nThe defining contract is <issue id=\"member/beta\">member/beta</issue> D2.\n",
+    "labels": ["criterion_lifecycle"]
+  },
+  {
+    "key": "member/beta",
+    "body": "**D2 — Define the shared identity.**\n\nA single native issue key addresses each criterion.\n",
+    "labels": ["criterion_lifecycle"]
+  },
+  {
+    "key": "criterion/alpha",
+    "body": "**Check:** Read <issue id=\"member/beta\">member/beta</issue> D2 through the port.\n\n**Do:** Preserve the native target identity.\n\n**Evidence:** —",
+    "parent": "member/alpha",
+    "labels": ["criterion"]
+  },
+  {
+    "key": "unmarked/outsider",
+    "body": "This is outside the model. <issue id=\"missing\">missing</issue> D9.",
+    "labels": []
+  }
+]

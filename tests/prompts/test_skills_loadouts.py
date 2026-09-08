@@ -226,6 +226,10 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         persister=FakeChangePersister(),
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         service=service,
         quality_gate=FakeQualityGate(

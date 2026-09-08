@@ -16,7 +16,6 @@ from kodezart.types.domain.assertion_drift import ProtectedTestRef
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditMandateJudgment,
-    WriteBackJudgment,
 )
 from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
 from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
@@ -32,7 +31,6 @@ from kodezart.types.domain.criteria import (
     DraftedCriterion,
     FanInReport,
     GeneratedCriterion,
-    TrackerCriteriaValidationOutput,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.node_session import NodeInvocation
@@ -73,7 +71,6 @@ RaiseSite = Literal[
     "audit_claim",
     "audit_overclaim",
     "audit_detection_removal",
-    "write_back_verify",
     "audit_mandate",
     "branch_name",
     "acceptance_criteria",
@@ -1075,9 +1072,6 @@ GENERATED_CRITERIA_SCHEMA: dict[str, object] = (
 CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
     CriteriaValidationOutput.model_json_schema()
 )
-TRACKER_CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
-    TrackerCriteriaValidationOutput.model_json_schema()
-)
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
 # Schema for structured ticket review output
@@ -1089,11 +1083,11 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
 AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
-WRITE_BACK_SCHEMA: dict[str, object] = WriteBackJudgment.model_json_schema()
 
 AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_schema()
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
 DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_schema()
+
 
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 
@@ -1106,7 +1100,6 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
-    "TRACKER_CRITERIA_VALIDATION_SCHEMA": TRACKER_CRITERIA_VALIDATION_SCHEMA,
     "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
@@ -1116,6 +1109,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
     "AUDIT_OVERCLAIM_SCHEMA": AUDIT_OVERCLAIM_SCHEMA,
     "DETECTOR_REMOVAL_SCHEMA": DETECTOR_REMOVAL_SCHEMA,
-    "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
 }

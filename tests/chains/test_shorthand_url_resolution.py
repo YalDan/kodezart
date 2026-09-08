@@ -59,6 +59,10 @@ def _make_engine(
         git_base_url="https://github.com",
     )
     return AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),

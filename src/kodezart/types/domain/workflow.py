@@ -17,6 +17,7 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
     ValidatedCriterion,
 )
+from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.run_records import RunIdentity
@@ -259,3 +260,5 @@ class AuthoredWorkflowState(WorkflowState):
     pr_number: int | None
     ci_status: CIStatus
     ci_summary: str | None
+    ci_red_class: NotRequired[CheckRedClass | None]
+    ci_run_absent: NotRequired[bool]

@@ -3,7 +3,6 @@
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
-from kodezart.composition.engine import OriginRoutedWorkflowEngine
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.domain.errors import (
     CriterionReadError,
@@ -17,11 +16,6 @@ from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import FakeTrackerPort, make_tracker_issue
-from tests.test_forge_origin_selection import (
-    FORGE_ORIGIN,
-    ForbiddenWorkflowEngine,
-    _drive,
-)
 from tests.tracker.conftest import (
     QUEUE_STATE_LABELS,
     STATE_TYPES,
@@ -115,9 +109,7 @@ def build(request):
 
 
 @pytest.mark.parametrize("barrier", ["decision", "backlog", "crossing", "cycle"])
-async def test_native_stage_barriers_name_keys_before_actual_engine_dispatch(
-    build, barrier
-):
+async def test_native_stage_barriers_name_keys_at_the_planning_boundary(build, barrier):
     rows = [row("root"), row("criterion", parent="root", label="criterion")]
     if barrier == "decision":
         rows.append(row("question", parent="root", label="decision"))
@@ -136,14 +128,8 @@ async def test_native_stage_barriers_name_keys_before_actual_engine_dispatch(
         rows.append(row("external", blockers=("root",)))
         offending, error = "external", ScopeCycleError
     tracker = build(rows)
-    engine = OriginRoutedWorkflowEngine(
-        forge_arm=ForbiddenWorkflowEngine(),
-        forge_less_arm=ForbiddenWorkflowEngine(),
-        tracker=tracker,
-        tracker_preparer=None,
-    )
     with pytest.raises(error, match=offending):
-        await _drive(engine, repo_url=FORGE_ORIGIN, scope=SCOPE)
+        await read_scope_plan(ref=SCOPE, tracker=tracker)
 
 
 @pytest.mark.parametrize("decision_kind", ["completed", "canceled", "duplicate"])

@@ -237,6 +237,10 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         delay_floor_for=no_delay_floor,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -389,6 +393,10 @@ async def test_workflow_e2e_exhausts_iterations(
         delay_floor_for=no_delay_floor,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -596,6 +604,10 @@ async def test_workflow_e2e_divergent_base_branch(
         delay_floor_for=no_delay_floor,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -897,6 +909,10 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         delay_floor_for=no_delay_floor,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1146,6 +1162,10 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
     must track the configured remote.
     """
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1296,6 +1316,10 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         last_commit_sha="a" * 40,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1453,6 +1477,10 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
         persister=persister,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,
@@ -1705,6 +1733,10 @@ def _remediation_engine(
         ),
     )
     return AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),

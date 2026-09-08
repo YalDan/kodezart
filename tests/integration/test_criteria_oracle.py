@@ -213,6 +213,10 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         delay_floor_for=no_delay_floor,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,
@@ -306,6 +310,10 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         delay_floor_for=no_delay_floor,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,

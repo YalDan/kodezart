@@ -1,6 +1,7 @@
 """Authored HTTP delivery around the shared delivery-free fire graph."""
 
-from collections.abc import AsyncIterator
+import asyncio
+from collections.abc import AsyncIterator, Sequence
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -17,6 +18,7 @@ from kodezart.core.protocols import (
     ArtifactPersister,
     BranchMerger,
     CIMonitor,
+    CIObservationReader,
     GitService,
     OutboundContentGate,
     PRCreator,
@@ -36,9 +38,11 @@ from kodezart.domain.accept_gate import (
 from kodezart.domain.authored_outcome import classify_authored_outcome
 from kodezart.domain.ci import ci_status_of
 from kodezart.domain.errors import (
+    CheckObservationError,
     ForgeAPIError,
     TransientAPIError,
 )
+from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.pr_body import (
     append_flagged_section,
     append_tracker_issue,
@@ -51,6 +55,7 @@ from kodezart.domain.workflow_state import (
     original_ticket,
     validated_criteria,
 )
+from kodezart.services.check_classification import classify_red_checks
 from kodezart.types.domain.agent import (
     PR_DESCRIPTION_SCHEMA,
     AgentEvent,
@@ -62,12 +67,14 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
+from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
     WriterShape,
 )
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.run_records import RunIdentity
@@ -105,6 +112,10 @@ class AuthoredDeliveryCoordinator(RalphWorkflowEngine):
         delay_floor_for: DelayFloor,
         pr_creator: PRCreator | None = None,
         ci_monitor: CIMonitor | None = None,
+        ci_observations: CIObservationReader | None,
+        repositories: Sequence[RepoEntry],
+        max_concurrent_watches: int,
+        red_rerun_max_attempts: int,
         ref_publisher: RefPublisher | None = None,
         remediator: Remediator | None = None,
         remediation_max_rounds: int,
@@ -138,6 +149,14 @@ class AuthoredDeliveryCoordinator(RalphWorkflowEngine):
         )
         self._pr_creator = pr_creator
         self._ci_monitor = ci_monitor
+        self._ci_observations = ci_observations
+        self._repositories = tuple(repo.model_copy(deep=True) for repo in repositories)
+        if max_concurrent_watches < 1 or red_rerun_max_attempts < 0:
+            raise ValueError(
+                "delivery needs a positive watch bound and nonnegative rerun bound"
+            )
+        self._watch_slots = asyncio.Semaphore(max_concurrent_watches)
+        self._red_rerun_max_attempts = red_rerun_max_attempts
         self._delivery_compiled = self._build_delivery_graph().compile(
             checkpointer=self._checkpointer,
         )
@@ -177,6 +196,8 @@ class AuthoredDeliveryCoordinator(RalphWorkflowEngine):
             pr_number=None,
             ci_status=CIStatus.not_monitored,
             ci_summary=None,
+            ci_red_class=None,
+            ci_run_absent=False,
         )
         terminal: AuthoredWorkflowCompleteEvent | None = None
         async for event in self._delivery_compiled.astream(
@@ -248,7 +269,11 @@ class AuthoredDeliveryCoordinator(RalphWorkflowEngine):
             self._route_after_pr,
             {"monitor_ci": "monitor_ci", "complete": "complete"},
         )
-        graph.add_edge("open_stalled_pr", "complete")
+        graph.add_conditional_edges(
+            "open_stalled_pr",
+            self._route_after_pr,
+            {"monitor_ci": "monitor_ci", "complete": "complete"},
+        )
         graph.add_conditional_edges(
             "monitor_ci",
             self._route_after_ci,
@@ -507,25 +532,87 @@ class AuthoredDeliveryCoordinator(RalphWorkflowEngine):
             raise RuntimeError(msg)
 
         ref = state["feature_branch"]
-        passed, summary = await ci_monitor.wait_for_checks(
-            repo_url=repo_url,
-            ref=ref,
+        canonical = resolve_repo_url(repo_url, self._git_base_url)
+        matches = tuple(
+            repo
+            for repo in self._repositories
+            if resolve_repo_url(repo.url, self._git_base_url) == canonical
         )
-        ci_status = ci_status_of(passed)
-
-        writer(
-            WorkflowCIEvent(
-                ci_status=ci_status,
-                summary=summary,
+        if len(matches) > 1:
+            raise ValueError("delivery repository declarations are ambiguous")
+        repository = matches[0] if matches else None
+        red_class = None
+        async with self._watch_slots:
+            passed, summary = await ci_monitor.wait_for_checks(
+                repo_url=repo_url,
                 ref=ref,
             )
-        )
-
-        return {"ci_status": ci_status, "ci_summary": summary}
+            if passed is False:
+                observations = self._ci_observations
+                if observations is None:
+                    raise CheckObservationError(
+                        repo_url=repo_url,
+                        ref=ref,
+                        reason="red classification needs the completed watch identity",
+                    )
+                original = await observations.observed_checks(
+                    repo_url=repo_url, ref=ref
+                )
+                names = await ci_monitor.failed_check_names(repo_url=repo_url, ref=ref)
+                if (
+                    original.checks_passed
+                    or not names
+                    or not names <= original.check_names
+                ):
+                    raise CheckObservationError(
+                        repo_url=repo_url,
+                        ref=ref,
+                        reason="original red identity and failing check set disagree",
+                    )
+                red = await classify_red_checks(
+                    ci=ci_monitor,
+                    repo_url=repo_url,
+                    repository=repository,
+                    final_commit_sha=original.commit_sha,
+                    initial_summary=summary,
+                    initial_failed_names=names,
+                    max_attempts=self._red_rerun_max_attempts,
+                )
+                red_class = red.red_class
+                passed, summary = red.checks_passed, red.checks_summary
+                if red_class is CheckRedClass.RUNNER_FLAKE and passed is not None:
+                    final = await observations.observed_checks(
+                        repo_url=repo_url,
+                        ref=original.commit_sha,
+                    )
+                    if (
+                        final.commit_sha != original.commit_sha
+                        or final.checks_passed != passed
+                    ):
+                        raise CheckObservationError(
+                            repo_url=repo_url,
+                            ref=original.commit_sha,
+                            reason="recovered checks changed commit or verdict",
+                        )
+            run_absent = (
+                passed is None
+                and await ci_monitor.checks_declared(repo_url=repo_url)
+                and not (repository is not None and repository.forge_exempt)
+            )
+        ci_status = ci_status_of(passed)
+        writer(WorkflowCIEvent(ci_status=ci_status, summary=summary, ref=ref))
+        return {
+            "ci_status": ci_status,
+            "ci_summary": summary,
+            "ci_red_class": red_class,
+            "ci_run_absent": run_absent,
+        }
 
     def _route_after_ci(self, state: AuthoredWorkflowState) -> str:
         """Route based on CI result, fix budget, and adapter preconditions."""
         if state["ci_status"] is not CIStatus.failed:
+            return "complete"
+        if state.get("ci_red_class") is not CheckRedClass.WORK_DEFECT:
             return "complete"
         if self._rounds_remain(state):
             return "remediate"

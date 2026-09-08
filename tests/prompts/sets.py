@@ -56,16 +56,6 @@ ORGANIZE_CASE: dict[str, object] = {
 }
 
 EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
-    "fire_time_ruling": (
-        PromptKey.FIRE_TIME_RULING,
-        {
-            "issue_key": "external/subject",
-            "issue_body": "The declared deliverable and open question.",
-            "criteria": "Native criterion keys and their full source bodies.",
-            "base_ref": "resolved-dispatch-head",
-            "validation_findings": "Independent feasibility observations.",
-        },
-    ),
     "audit_overclaim": (
         PromptKey.AUDIT_OVERCLAIM,
         {
@@ -82,14 +72,6 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
             "refutation_evidence": "Observed counterexample.",
             "head_sha": "exact-head",
             "audited_surfaces": "[]",
-        },
-    ),
-    "write_back_verify": (
-        PromptKey.WRITE_BACK_VERIFY,
-        {
-            "verification_goal": "Evidence is reproducible.",
-            "head_sha": "exact-head",
-            "written_artifact": "The test exists and passes.",
         },
     ),
     "audit_claim": (

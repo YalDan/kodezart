@@ -1,17 +1,11 @@
 """Protocol definitions — composition without inheritance."""
 
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.assertion_drift import GitSourceBlob
-from kodezart.types.domain.audit import (
-    TrackerArtifact,
-    WriteBackJudgment,
-    WriteBackRequest,
-    WriteBackResult,
-)
 from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.check_chain import CheckChainResult
 from kodezart.types.domain.check_observation import ObservedChecks
@@ -41,13 +35,11 @@ from kodezart.types.domain.operation import (
     RecordDestination,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
-from kodezart.types.domain.pr_content import PRContent
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
-from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -71,37 +63,8 @@ from kodezart.types.domain.tracker import (
     TrackerIssueStateChange,
     TrackerReview,
 )
-from kodezart.types.domain.tracker_feasibility import (
-    TrackerFeasibilityObservation,
-    TrackerFeasibilityRequest,
-)
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
-
-
-@runtime_checkable
-class TrackerCriteriaValidator(Protocol):
-    """A fresh native-key feasibility judgment at an already pinned head."""
-
-    async def validate(
-        self, request: TrackerFeasibilityRequest
-    ) -> TrackerFeasibilityObservation: ...
-
-
-@runtime_checkable
-class TrackerFirePreparer(Protocol):
-    """Prepare one explicitly addressed ready issue without advancing its branch."""
-
-    async def prepare(
-        self,
-        *,
-        selection: ScopeReadySet,
-        issue_key: str,
-        repo_url: str,
-        base_spec: BaseSpec,
-        cache_key: str,
-        run_identity: RunIdentity | None,
-    ) -> TrackerFeasibilityObservation: ...
 
 
 @runtime_checkable
@@ -507,54 +470,11 @@ class PRCreator(Protocol):
 
 
 @runtime_checkable
-class ForgeQuery(Protocol):
-    """Read forge identities before creating delivery artifacts."""
-
-    async def open_pr_for_head(
-        self,
-        *,
-        repo_url: str,
-        head: str,
-    ) -> tuple[str, int] | None:
-        """Return an open PR's (html_url, number), or None.
-
-        Head is a branch in the repository named by repo_url. Forge
-        transport and payload failures use the same domain errors as PRCreator.
-        """
-        ...
-
-    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
-        """Compose the forge's browser URL for a repository branch."""
-        ...
-
-
-@runtime_checkable
 class PRStateReader(Protocol):
     """Read one PR's native lifecycle without edit, close or merge authority."""
 
     async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
         """Require exact addressed identity; failed or missing reads refuse."""
-        ...
-
-
-@runtime_checkable
-class PRContentEditor(Protocol):
-    """Read and edit open PR content, without state or merge capabilities."""
-
-    async def read_open_pr(
-        self, *, repo_url: str, head: str, pr_number: int
-    ) -> PRContent:
-        """Require one open head match with the supplied PR number."""
-        ...
-
-    async def edit_pr(
-        self, *, repo_url: str, expected: PRContent, title: str, body: str, base: str
-    ) -> PRContent:
-        """Re-read the expected snapshot; write only differing content.
-
-        Missing, ambiguous or changed content raises PRContentConflictError.
-        This optimistic read and update do not claim atomic exclusion.
-        """
         ...
 
 
@@ -809,6 +729,17 @@ class TrackerPort(Protocol):
         """Read reported labels and full dependency relations; omission refuses."""
         ...
 
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        """Read every issue with a configured semantic label, including archived.
+
+        This is a complete, strict membership read, independent of queue state.
+        Missing configuration, incomplete pagination or contradictory membership
+        refuses instead of returning a truncated or filtered set.
+        """
+        ...
+
     def require_scope_plan_reads(self) -> None:
         """Require semantic criterion and decision reads before scope planning.
 
@@ -974,13 +905,12 @@ class TrackerPort(Protocol):
     async def edit_description(
         self, *, target: str, expected: str, replacement: str
     ) -> DescriptionEditResult:
-        """Replace exact expected text in the issue's current description.
+        """Replace the complete expected description; state moves separately.
 
-        Expected present reports EDITED. Otherwise, replacement present
-        reports UNCHANGED with no write; neither raises StaleWriteError
-        naming target and expected with no write. State moves separately.
-        Callers serialize writes: this read-before-write detects stale
-        anchors, but is not a backend atomic compare-and-swap.
+        Exact desired bytes or identical expected/replacement return UNCHANGED.
+        Exact expected bytes return EDITED; any other current body raises
+        StaleWriteError with no write. Substrings do not identify the target.
+        Callers serialize writes; this is not an atomic compare-and-swap.
         """
         ...
 
@@ -1601,21 +1531,3 @@ class CheckChainRunner(Protocol):
     async def run_chain(
         self, *, cwd: str, steps: Sequence[CheckStep]
     ) -> CheckChainResult: ...
-
-
-@runtime_checkable
-class WriteBackVerifier(Protocol):
-    """Verify caller-owned writes before their result reaches another consumer.
-
-    The caller owns authorization, sanitization and the surface lease for its
-    write and repair actions. This component does not acquire or bypass those
-    controls; scope-writer adoption must supply them at the actual call sites.
-    """
-
-    async def verify(
-        self,
-        request: WriteBackRequest,
-        *,
-        write: Callable[[], Awaitable[None]],
-        repair: Callable[[TrackerArtifact, WriteBackJudgment], Awaitable[None]],
-    ) -> WriteBackResult: ...
