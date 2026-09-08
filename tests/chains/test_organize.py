@@ -14,6 +14,7 @@ from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailure
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.domain.organize import organize_gap
 from kodezart.services.agent_service import AgentService
+from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.organize import (
     AdmissionJudgment,
@@ -279,6 +280,7 @@ async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_bas
         workspace.arguments
         == [
             {
+                "repo_path": None,
                 "repo_url": REPO,
                 "ref": BASE,
                 "create_branch": False,
@@ -641,6 +643,23 @@ async def test_real_tracker_hydrates_evidence_before_real_runner_dispatch(
 
 def test_the_organize_dispatch_census_names_its_type_and_read_only_policy():
     tree = ast.parse(inspect.getsource(OrganizeAdmission))
+    shared = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "judge_in_workspace"
+    ]
+    assert len(shared) == 1
+    keywords = {argument.arg: argument.value for argument in shared[0].keywords}
+    assert ast.unparse(keywords["session_type"]) == "SessionType.ORGANIZE_PASS"
+    assert not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"stream", "stream_in_workspace", "stream_workflow"}
+        for node in ast.walk(tree)
+    )
+    tree = ast.parse(inspect.getsource(judge_in_workspace))
     calls = [
         node
         for node in ast.walk(tree)
@@ -650,7 +669,7 @@ def test_the_organize_dispatch_census_names_its_type_and_read_only_policy():
     ]
     assert [node.func.attr for node in calls] == ["stream_in_workspace"]
     keywords = {argument.arg: argument.value for argument in calls[0].keywords}
-    assert ast.unparse(keywords["session_type"]) == "SessionType.ORGANIZE_PASS"
+    assert ast.unparse(keywords["session_type"]) == "session_type"
     assert ast.unparse(keywords["permission_mode"]) == "EVAL_PERMISSION_MODE"
     assert ast.unparse(keywords["session_id"]) == "None"
     assert ast.unparse(keywords["agents"]) == "NO_SUBAGENTS"

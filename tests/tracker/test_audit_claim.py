@@ -110,7 +110,7 @@ async def setup(tracker):
     cache = FakeRepoCache()
     workspace = FakeWorkspaceProvider()
 
-    def build(set_name=V5_SET):
+    def build(set_name=V5_SET, *, remote="configured-remote"):
         return AuditClaimVerifier(
             tracker=tracker,
             records=LaneRecordReader(tracker=tracker, operation=OPERATION),
@@ -120,7 +120,7 @@ async def setup(tracker):
             runner=runner,
             prompts=load_registry(default_set=set_name),
             skills=SUPPRESS_ALL_SKILLS,
-            config=AppConfig(git_remote="configured-remote"),
+            remote=remote,
         )
 
     return build, runner, git, cache, workspace, stored
@@ -377,12 +377,16 @@ async def test_actual_agent_service_forwards_fresh_dispatch_and_detached_workspa
         runner=service,
         prompts=load_registry(default_set=V5_SET),
         skills=SUPPRESS_ALL_SKILLS,
-        config=AppConfig(git_remote="configured-remote"),
+        remote=AppConfig(git_remote="configured-remote").git_remote,
     )
     observation = await verifier.verify(REQUEST)
     assert observation.judgment.verdict is AuditVerdict.HOLDS
     acquire.assert_awaited_once_with(
-        repo_path="/tmp/fake-cache", ref=HEAD, create_branch=False
+        repo_path="/tmp/fake-cache",
+        repo_url=None,
+        ref=HEAD,
+        create_branch=False,
+        cache_key=None,
     )
     (call,) = executor.calls
     assert call["session_id"] is None
@@ -530,3 +534,20 @@ async def test_native_git_read_cancellation_settles_before_workspace_release(
         phase=phase,
         read_number=read_number,
     )
+
+
+@pytest.mark.parametrize("configured", [None, "deployment-remote"])
+async def test_parsed_remote_value_reaches_the_actual_claim_reads(
+    setup, monkeypatch, configured
+):
+    if configured is None:
+        monkeypatch.delenv("KODEZART_GIT_REMOTE", raising=False)
+    else:
+        monkeypatch.setenv("KODEZART_GIT_REMOTE", configured)
+    remote = AppConfig(_env_file=None).git_remote
+    build, _, git, *_ = setup
+    observed = await build(remote=remote).verify(REQUEST)
+    assert observed.head_sha == HEAD
+    calls = [call for call in git.calls if call[0] == "remote_branch_sha"]
+    assert len(calls) == 2
+    assert {call[2] for call in calls} == {configured or "origin"}

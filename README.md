@@ -286,12 +286,23 @@ A payload takes the **maximum** severity over all its hits. Identifier-shaped
 writers (a git ref cannot carry a placeholder) block on any hit regardless of
 the category's declared verdict.
 
-Pattern sets ship credential shapes and native workspace URL shapes: Linear
-issue/project/initiative addresses and Notion application page addresses.
-These use the existing `tracker_urls` category and contain no workspace names.
-Deployment-specific URL forms can be supplied through `KODEZART_DENY_PATTERNS`;
-an explicit mapping replaces the defaults. Other deployment-specific sets
-remain empty, and organisation names remain patternless.
+Credential shapes remain deterministic. Reference privacy uses
+`OperationConfig.private_surface.hosts` for entire private hosts and
+`private_surface.workspaces` for exact native workspace slugs by host.
+A public workspace on the same host remains distinct. Hostnames normalize
+case, IDNA and a trailing dot; workspace slugs are decoded and compared
+case-insensitively by the owning adapter. Linear workspace URLs are supported;
+configuring a workspace on a host with no native parser refuses at boot.
+The text boundary decodes Markdown character references and punctuation escapes
+once, classifies explicit URL authorities including scheme-relative links, and
+redacts the complete original span while preserving neighboring text.
+Opaque document URLs carry no inferred workspace; declare an entire private
+host when appropriate, or use the semantic privacy description.
+
+The existing regex overrides and aggregate scanner remain transitional pending
+the structured writer-admission migration. This reference increment removes
+vendor URL patterns from their shipped defaults; it does not claim the whole
+outbound admission replacement is complete.
 
 #### The judgment half
 
@@ -316,10 +327,11 @@ is silent:
 | `true` | present | The audit scanner is registered **after** the patterns. |
 | `true` | absent or empty | Startup aborts with `ContentScannerBootError`. |
 
-The mechanism ships and the policy is operator configuration. `private_surface`
-is prose describing the **class** of thing this operation treats as private —
-never a list of instances, which would stop at what the operator remembered to
-enumerate and would publish those instances by writing them down. Every way of
+The mechanism ships and the policy is operator configuration.
+`private_surface.description` remains prose describing the **class** of things
+treated as private; host/workspace facts supplement that judgment. An old
+`private_surface = "..."` string migrates to the description without changing
+its bytes. Unlisted authored prose still reaches the enabled judgment scanner. Every way of
 having no answer (`timeout`, `refusal`, `malformed_verdict`, `rate_limited`,
 `transport_error`, `empty_response`, `spans_unresolvable`, `budget_exhausted`,
 `not_configured`) resolves to `blocked` and is named on the event: "did not

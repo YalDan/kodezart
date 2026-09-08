@@ -1,12 +1,7 @@
 """Fresh current-head claim judgments, before full sweep publication."""
 
-import asyncio
 import json
 
-from kodezart.core.config import AppConfig
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
-from kodezart.core.errors import soft_failure
-from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
@@ -15,9 +10,9 @@ from kodezart.core.protocols import (
     TrackerPort,
     WorkspaceProvider,
 )
-from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import (
     read_remote_head,
@@ -25,6 +20,7 @@ from kodezart.services.git_observations import (
     read_workspace_head,
 )
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA
@@ -44,7 +40,6 @@ from kodezart.types.domain.audit import (
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.surface import WritableSurface
 from kodezart.types.domain.tracker import TrackerIssue
 
@@ -67,7 +62,7 @@ class AuditClaimVerifier:
         runner: AgentRunner,
         prompts: PromptSetProvider,
         skills: SkillsSelection,
-        config: AppConfig,
+        remote: str,
     ) -> None:
         self._tracker = tracker
         self._records = records
@@ -77,7 +72,7 @@ class AuditClaimVerifier:
         self._runner = runner
         self._prompts = prompts
         self._skills = skills
-        self._remote = config.git_remote
+        self._remote = remote
 
     async def _criterion(self, request: AuditClaimRequest) -> TrackerIssue:
         try:
@@ -113,18 +108,9 @@ class AuditClaimVerifier:
         prompt = self._prompts.template_for(key).render(
             {"criterion_key": criterion.issue_key, "head_sha": head, "check": check}
         )
-        workspace, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._workspace.acquire(
-                    repo_path=repository,
-                    ref=head,
-                    create_branch=False,
-                )
-            )
-        )
-        try:
-            if cancelled:
-                raise asyncio.CancelledError
+        async with owned_workspace(
+            self._workspace, repo_path=repository, ref=head
+        ) as workspace:
             if await read_replace_refs(git=self._git, workspace=workspace):
                 raise AuditClaimReadError(
                     "the audit repository substitutes Git objects"
@@ -136,34 +122,19 @@ class AuditClaimVerifier:
                 raise AuditClaimReadError(
                     "the audit workspace is not clean at the selected head"
                 )
-            result, rate_limited = await drain(
-                self._runner.stream_in_workspace(
-                    prompt=prompt,
-                    workspace_path=workspace,
-                    permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=list(EVAL_TOOLS),
-                    skills=self._prompts.session_skills(key, self._skills),
-                    session_type=SessionType.SCHEDULED_PASS,
-                    agents=NO_SUBAGENTS,
-                    session_policy=self._prompts.session_policy(key),
-                    session_id=None,
-                    output_format={"type": "json_schema", "schema": AUDIT_CLAIM_SCHEMA},
-                ),
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=AUDIT_CLAIM_SCHEMA,
                 site="audit_claim",
+                session_type=SessionType.SCHEDULED_PASS,
+                failure_message="Audit claim produced no structured judgment.",
             )
-            if (
-                result is None
-                or result.structured_output is None
-                or result.is_error
-                or rate_limited
-            ):
-                raise soft_failure(
-                    "Audit claim produced no structured judgment.",
-                    raise_site="audit_claim",
-                    result_event=result,
-                    rate_limit_rejected=rate_limited,
-                )
-            judgment = AuditClaimJudgment.model_validate(result.structured_output)
+            judgment = AuditClaimJudgment.model_validate(structured)
             if judgment.criterion_key != criterion.issue_key:
                 raise AuditClaimReadError("the judgment names a different criterion")
             if await self._criterion(request) != criterion:
@@ -196,12 +167,6 @@ class AuditClaimVerifier:
                 record_ref=comment.comment_key,
                 check=check,
             )
-        finally:
-            _, cancelled = await finish_owned(
-                asyncio.create_task(self._workspace.release(workspace))
-            )
-            if cancelled:
-                raise asyncio.CancelledError
 
 
 class AuditMandateHunt:
@@ -275,19 +240,12 @@ class AuditMandateHunt:
                 finding_surface=None,
                 evidence="The addressed surface set could not be fully read.",
             )
-        workspace, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._workspace.acquire(
-                    repo_url=request.repo_url,
-                    ref=request.head_sha,
-                    create_branch=False,
-                    cache_key=request.cache_key,
-                )
-            )
-        )
-        try:
-            if cancelled:
-                raise asyncio.CancelledError
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.head_sha,
+            cache_key=request.cache_key,
+        ) as workspace:
             if await read_replace_refs(git=self._git, workspace=workspace):
                 raise AuditClaimReadError(
                     "the mandate repository substitutes Git objects"
@@ -318,37 +276,19 @@ class AuditMandateHunt:
                     ),
                 }
             )
-            result, limited = await drain(
-                self._runner.stream_in_workspace(
-                    prompt=prompt,
-                    workspace_path=workspace,
-                    permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=list(EVAL_TOOLS),
-                    skills=self._prompts.session_skills(key, self._skills),
-                    session_type=SessionType.SCHEDULED_PASS,
-                    agents=NO_SUBAGENTS,
-                    session_policy=self._prompts.session_policy(key),
-                    session_id=None,
-                    output_format={
-                        "type": "json_schema",
-                        "schema": AUDIT_MANDATE_SCHEMA,
-                    },
-                ),
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=AUDIT_MANDATE_SCHEMA,
                 site="audit_mandate",
+                session_type=SessionType.SCHEDULED_PASS,
+                failure_message="Mandate hunt produced no structured judgment.",
             )
-            if (
-                result is None
-                or result.structured_output is None
-                or result.is_error
-                or limited
-            ):
-                raise soft_failure(
-                    "Mandate hunt produced no structured judgment.",
-                    raise_site="audit_mandate",
-                    result_event=result,
-                    rate_limit_rejected=limited,
-                )
-            judgment = AuditMandateJudgment.model_validate(result.structured_output)
+            judgment = AuditMandateJudgment.model_validate(structured)
             if await read_replace_refs(git=self._git, workspace=workspace):
                 raise AuditClaimReadError(
                     "the mandate repository substitutes Git objects"
@@ -400,9 +340,3 @@ class AuditMandateHunt:
                 finding_surface=finding_surface,
                 evidence=judgment.evidence,
             )
-        finally:
-            _, cancelled = await finish_owned(
-                asyncio.create_task(self._workspace.release(workspace))
-            )
-            if cancelled:
-                raise asyncio.CancelledError

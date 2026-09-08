@@ -23,6 +23,7 @@ import asyncio
 
 from pydantic import ValidationError
 
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, PromptSetProvider
@@ -64,16 +65,14 @@ class AgentContentScanner:
         prompts: PromptSetProvider,
         neutral_cwd: str,
         skills: SkillsSelection,
-        retry_max_attempts: int,
-        retry_initial_interval: float,
+        retry: RetryPolicy,
         timeout_seconds: float,
     ) -> None:
         self._executor = executor
         self._prompts = prompts
         self._neutral_cwd = neutral_cwd
         self._skills = skills
-        self._retry_max_attempts = retry_max_attempts
-        self._retry_initial_interval = retry_initial_interval
+        self._retry = retry
         self._timeout_seconds = timeout_seconds
         self._log: BoundLogger = get_logger(__name__)
 
@@ -98,21 +97,19 @@ class AgentContentScanner:
             # against. A scanner registered without its configuration is a
             # blocked payload, never a quietly absent scanner.
             return ScanResult(failure=ScanFailureKind.NOT_CONFIGURED)
-        interval = self._retry_initial_interval
         result = ScanResult(failure=ScanFailureKind.EMPTY_RESPONSE)
-        for attempt in range(1, self._retry_max_attempts + 1):
+        for attempt in range(self._retry.attempts):
             result = await self._attempt(prompt=prompt, content=content)
             if result.failure is None or result.failure not in _RETRYABLE:
                 return result
             await self._log.awarning(
                 "content_audit_attempt_failed",
-                attempt=attempt,
+                attempt=attempt + 1,
                 failure=result.failure.value,
                 destination=destination.value,
             )
-            if attempt < self._retry_max_attempts:
-                await asyncio.sleep(interval)
-                interval *= 2
+            if attempt + 1 < self._retry.attempts:
+                await asyncio.sleep(self._retry.delay(attempt))
         return result
 
     async def _attempt(self, *, prompt: str, content: str) -> ScanResult:

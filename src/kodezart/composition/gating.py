@@ -9,7 +9,9 @@ from pathlib import Path
 from kodezart.adapters.agent_content_scanner import AgentContentScanner
 from kodezart.adapters.aggregate_content_scanner import AggregateContentScanner
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
+from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.logging import BoundLogger
@@ -20,6 +22,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.types.domain.gating import content_digest
 from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.privacy import PrivateSurface
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -41,8 +44,10 @@ def outbound_scanners(
     than registering a scanner whose every answer would be
     ``NOT_CONFIGURED``; disabled runs the deterministic scanners alone.
     """
+    private_surface = None if operation is None else operation.private_surface
     scanners: list[ContentScanner] = [
         RegexContentScanner(patterns=config.deny_patterns),
+        ReferenceContentScanner(private_surface=private_surface or PrivateSurface()),
         AggregateContentScanner(
             tracker_object_nouns=config.aggregate_tracker_object_nouns,
             count_token_distance=config.aggregate_count_token_distance,
@@ -54,8 +59,7 @@ def outbound_scanners(
     if not config.agentic_content_scanner_enabled:
         return scanners, ""
 
-    private_surface = None if operation is None else operation.private_surface
-    if private_surface is None or not private_surface.strip():
+    if private_surface is None or not private_surface.description.strip():
         msg = "The judgment content scanner is enabled with nothing to judge against"
         raise ContentScannerBootError(msg, missing="OperationConfig.private_surface")
 
@@ -67,12 +71,14 @@ def outbound_scanners(
             prompts=prompts,
             neutral_cwd=str(working_dir),
             skills=skills,
-            retry_max_attempts=config.content_scan_retry_max_attempts,
-            retry_initial_interval=config.content_scan_retry_initial_interval,
+            retry=RetryPolicy(
+                attempts=config.content_scan_retry_max_attempts,
+                initial_delay=config.content_scan_retry_initial_interval,
+            ),
             timeout_seconds=config.content_scan_timeout_seconds,
         ),
     )
-    return scanners, content_digest(private_surface)
+    return scanners, content_digest(private_surface.model_dump_json())
 
 
 async def build_outbound_gate(

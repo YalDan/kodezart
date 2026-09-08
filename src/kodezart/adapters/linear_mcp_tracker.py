@@ -19,6 +19,7 @@ from kodezart.adapters.linear_history_receipt import state_history_receipt
 from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
 from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
     McpCallUnansweredError,
     McpCredentialRefusedError,
@@ -252,8 +253,6 @@ _WORK_REF_ROLE_BY_VALUE: Mapping[str, WorkRefRole] = {
     role.value: role for role in WorkRefRole
 }
 
-_RETRY_BACKOFF_BASE = 2.0
-
 
 def _label_arguments(identifier: str, container: str | None) -> dict[str, object]:
     """Create-arguments for one queue-state label.
@@ -429,8 +428,7 @@ class LinearMcpTracker:
         workflow_state_names: Mapping[LifecycleStage, str],
         marker_prefixes: Mapping[str, str],
         team_identifiers: Mapping[str, str],
-        max_retries: int,
-        retry_backoff_factor: float,
+        retry: RetryPolicy,
         clock: Callable[[], datetime] = _utc_now,
         ledger: SelfWriteLedger,
     ) -> None:
@@ -441,8 +439,7 @@ class LinearMcpTracker:
         self._issue_labels = dict(issue_labels)
         self._scope_labels = dict(scope_labels)
         self._criteria_stage_label_key = criteria_stage_label_key
-        self._max_retries: int = max_retries
-        self._retry_backoff_factor: float = retry_backoff_factor
+        self._retry = retry
         self._clock: Callable[[], datetime] = clock
         self._workflow_state_names: Mapping[LifecycleStage, str] = workflow_state_names
         self._team_identifiers: Mapping[str, str] = team_identifiers
@@ -2279,9 +2276,9 @@ class LinearMcpTracker:
                 )
                 raise
             except (McpTransportError, TransientAPIError) as exc:
-                if attempt >= self._max_retries or not _may_resend(tool, exc):
+                if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
                     raise
-                delay = self._retry_backoff_factor * (_RETRY_BACKOFF_BASE**attempt)
+                delay = self._retry.delay(attempt)
                 await self._log.awarning(
                     "tracker_mcp_retry",
                     tool=tool,

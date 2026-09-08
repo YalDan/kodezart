@@ -44,7 +44,7 @@ from tests.prompts.test_prompt_wiring import load_registry
         "https://app.notion.com/p/01234567-89ab-cdef-0123-456789abcdef?pvs=204",
     ],
 )
-async def test_native_workspace_urls_use_the_existing_tracker_category(url):
+async def test_unconfigured_native_urls_carry_no_implicit_private_workspace(url):
     content = f"Read <{url}> before work."
     decision = await configured_gate().gate(
         content=content,
@@ -53,9 +53,9 @@ async def test_native_workspace_urls_use_the_existing_tracker_category(url):
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.DERIVED,
     )
-    assert decision.verdict is GateVerdict.REDACTED
-    assert decision.categories == (RedactionCategory.TRACKER_URLS,)
-    assert url not in decision.content
+    assert decision.verdict is GateVerdict.CLEAN
+    assert decision.categories == ()
+    assert decision.content == content
     assert decision.content.startswith("Read <")
     assert decision.content.endswith("> before work.")
 

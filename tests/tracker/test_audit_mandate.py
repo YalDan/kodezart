@@ -344,7 +344,11 @@ async def test_actual_agent_service_gets_only_fresh_claim_and_native_sources(
     report = await hunt.complete(REQUEST)
     assert report.mandate.verdict is AuditVerdict.HOLDS
     acquire.assert_awaited_once_with(
-        repo_url=REQUEST.repo_url, ref=HEAD, create_branch=False, cache_key=None
+        repo_path=None,
+        repo_url=REQUEST.repo_url,
+        ref=HEAD,
+        create_branch=False,
+        cache_key=None,
     )
     (call,) = executor.calls
     assert call["session_id"] is None

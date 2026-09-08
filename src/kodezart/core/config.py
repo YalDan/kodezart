@@ -921,19 +921,12 @@ class AppConfig(BaseSettings):
             "the skills knob never silently narrows loaded settings."
         ),
     )
-    # Credential shapes share the wire-egress table. Native workspace URL
-    # shapes also ship populated (KOD-491), without naming any workspace.
-    # Other deployment-specific pattern sets remain empty.
+    # Credential shapes share the wire-egress table. Workspace classification
+    # uses parsed native references and OperationConfig deployment facts.
     deny_patterns: dict[RedactionCategory, list[str]] = Field(
         default_factory=lambda: {
             RedactionCategory.CROSS_REPO_NAMES: [],
-            RedactionCategory.TRACKER_URLS: [
-                r"(?i:https?://(?:www\.)?linear\.app/[a-z0-9_-]+/"
-                r"(?:issue|project|initiative)/[^\s<>\[\]()\"']+)",
-                r"(?i:https?://app\.notion\.com/p/"
-                r"(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})"
-                r"(?:[?#][^\s<>\[\]()\"']*)?)",
-            ],
+            RedactionCategory.TRACKER_URLS: [],
             RedactionCategory.EMAIL_HANDLES: [],
             RedactionCategory.INFRA_ENDPOINTS: [],
             RedactionCategory.CREDENTIALS: [
@@ -942,7 +935,7 @@ class AppConfig(BaseSettings):
         },
         description=(
             "JSON object mapping a redaction category to its regex pattern "
-            "list. Ships credential and native workspace URL shapes; other "
+            "list. Ships credential shapes; other "
             "deployment-specific sets are empty. The "
             "org_private category is REJECTED as a key: a pattern naming an "
             "organisation contains the string it names."

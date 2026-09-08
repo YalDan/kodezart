@@ -35,6 +35,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.dispatch import SelfWriteLedger
@@ -368,8 +369,7 @@ def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
         },
         workflow_state_names={LifecycleStage.DONE: "Done"},
         team_identifiers={"board": TEAM_NAME},
-        max_retries=0,
-        retry_backoff_factor=0.0,
+        retry=RetryPolicy(attempts=1, initial_delay=0.0),
         ledger=SelfWriteLedger(),
     )
 

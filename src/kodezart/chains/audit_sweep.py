@@ -7,7 +7,6 @@ from kodezart.chains.audit_evidence import AuditEvidenceVerifier
 from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
-from kodezart.core.config import AppConfig
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_issues
@@ -150,7 +149,7 @@ class AuditReadSweep:
         terminals: AuditTerminalReader,
         git: GitService,
         cache: RepoCache,
-        config: AppConfig,
+        remote: str,
         overclaims: AuditOverclaimVerifier | None = None,
         removals: DetectorRemovalVerifier | None = None,
         forge: AuditForgeVerifier | None = None,
@@ -164,7 +163,7 @@ class AuditReadSweep:
         self._terminals = terminals
         self._git = git
         self._cache = cache
-        self._remote = config.git_remote
+        self._remote = remote
         self._overclaims = overclaims
         self._removals = removals
         self._forge = forge

@@ -280,15 +280,15 @@ async def test_scanner_hits_are_returned_in_payload_order() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_default_pattern_sets_populate_credentials_and_workspace_urls() -> None:
-    """KOD-491 adds structural workspace URLs to the existing pattern sets."""
+def test_default_pattern_sets_leave_workspace_policy_to_parsed_facts() -> None:
+    """Only credential shapes remain populated in the transitional regex input."""
     patterns = AppConfig().deny_patterns
     # ORG_PRIVATE is absent BY CONSTRUCTION, not by omission: a pattern
     # describing an organisation contains the string it describes, so the
     # category is rejected as a deny_patterns key at boot (KOD-106 d.3).
     assert set(patterns) == set(RedactionCategory) - PATTERNLESS_CATEGORIES
     for category, entries in patterns.items():
-        if category in {RedactionCategory.CREDENTIALS, RedactionCategory.TRACKER_URLS}:
+        if category is RedactionCategory.CREDENTIALS:
             assert entries
         else:
             assert entries == []

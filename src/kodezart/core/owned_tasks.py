@@ -1,6 +1,7 @@
 """Cancellation-safe settlement for operations owning external resources."""
 
 import asyncio
+from collections.abc import Coroutine
 
 
 async def finish_owned[T](task: asyncio.Task[T]) -> tuple[T, bool]:
@@ -17,3 +18,11 @@ async def finish_owned[T](task: asyncio.Task[T]) -> tuple[T, bool]:
             if cancelled:
                 raise asyncio.CancelledError from None
             raise
+
+
+async def settle[T](operation: Coroutine[object, object, T]) -> T:
+    """Finish one operation before propagating caller cancellation."""
+    result, cancelled = await finish_owned(asyncio.create_task(operation))
+    if cancelled:
+        raise asyncio.CancelledError
+    return result

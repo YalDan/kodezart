@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Sequence
 
 from kodezart.core.config import AppConfig
-from kodezart.core.owned_tasks import finish_owned
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService
 from kodezart.domain.errors import UnionHeadReadError, UnionUnstableError
 from kodezart.services.git_observations import read_remote_head
@@ -84,17 +84,13 @@ class UnionTick:
 
     async def _fetch(self) -> None:
         try:
-            _, cancelled = await finish_owned(
-                asyncio.create_task(self._git.fetch(self._context.repo_path))
-            )
+            await settle(self._git.fetch(self._context.repo_path))
         except (OSError, RuntimeError, ValueError) as exc:
             raise UnionHeadReadError(
                 scope_key=self._context.scope_key,
                 branch=None,
                 reason="the configured remote could not be fetched",
             ) from exc
-        if cancelled:
-            raise asyncio.CancelledError
 
     async def _read_heads(self, plan: UnionTickPlan) -> tuple[UnionLaneHead, ...]:
         observed: list[UnionLaneHead] = []

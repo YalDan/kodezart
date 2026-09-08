@@ -20,6 +20,11 @@ for configuration. All settings are loaded from environment variables with the
 - **Extra fields forbidden**: a `KODEZART_` variable whose suffix names no
   field below raises a validation error at startup rather than being ignored
 
+Audit claim, Evidence, source, terminal and sweep consumers receive only the
+resolved Git remote name, rather than the application configuration object.
+`KODEZART_GIT_REMOTE` retains its existing default and environment override;
+this API narrowing does not add an audit setting or compose a new scheduler.
+
 ## Settings Reference
 
 Escalation ageing uses recorded run progress. The implementation defaults
@@ -93,7 +98,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_CONTENT_SCAN_RETRY_MAX_ATTEMPTS` | `int` | `2` | >= 1, <= 10 | Attempts a judgment content scanner makes before declaring a timeout, rate limit or transport failure. Exhaustion BLOCKS. |
 | `KODEZART_CONTENT_SCAN_TIMEOUT_SECONDS` | `float` | `120.0` | >= 1.0 | Wall-clock bound on one judgment content-scan session. Exceeding it is TIMEOUT, which BLOCKS. |
 | `KODEZART_CONTENT_AUDIT_WORKING_DIR` | `str` | `/tmp/kodezart-content-audit` |  | Working directory the audit session runs in. Deliberately not the cloned target repository: an auditor whose working directory is attacker-writable is not an auditor. |
-| `KODEZART_DENY_PATTERNS` | `dict[RedactionCategory, list[str]]` | credential shapes and native workspace URL shapes; other deployment-specific sets empty |  | JSON object mapping a redaction category to its regex pattern list. Ships credential and native workspace URL shapes; other deployment-specific sets are empty. The `org_private` category is REJECTED as a key: a pattern naming an organisation contains the string it names. |
+| `KODEZART_DENY_PATTERNS` | `dict[RedactionCategory, list[str]]` | credential shapes; other deployment-specific sets empty |  | JSON object mapping a redaction category to its regex pattern list. Ships credential shapes; other deployment-specific sets are empty. The `org_private` category is REJECTED as a key: a pattern naming an organisation contains the string it names. |
 | `KODEZART_DENY_PATTERN_VERDICTS` | `dict[RedactionCategory, GateVerdict]` | `redacted` everywhere except `infra_endpoints` and `credentials`: `blocked` |  | JSON object mapping a redaction category to the verdict a hit in that category yields. A payload takes the max severity. |
 | `KODEZART_DISPATCH_HOLDER` | `str` | `kodezart` | min length 1 | Identity this deployment holds atomic claims under. Names the PROCESS, not the tracker account: two deployments sharing one workspace must carry different values or they cannot race. |
 | `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
@@ -138,6 +143,21 @@ and leased alarm writer remain separate work.
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
 | `KODEZART_TRACKER_TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
 | `KODEZART_KNOWLEDGE` | `KnowledgeSettings` | unconfigured | typed HTTP/stdio connection | Knowledge grants and server configuration; nested overrides below. |
+
+## Adapter retry timing
+
+GitHub, Linear and the content scanner receive one validated `RetryPolicy`
+value with total attempts, initial delay, exponential factor and fractional
+jitter. Existing environment names and units remain supported: forge/tracker
+`MAX_RETRIES` excludes the first request; content-scan `MAX_ATTEMPTS` includes
+the first session. Their composition converts those units once.
+
+The factor defaults to two. GitHub adds positive jitter up to ten percent;
+Linear and content scanning have no jitter. A GitHub `Retry-After` value
+replaces the exponential delay before jitter is applied. Retryable failures,
+unsafe write replays, response parsing and per-attempt timeouts remain owned
+by each adapter. Cancellation interrupts requests and backoff. LangGraph
+node retry policy is separate.
 
 ## Organize phase configuration
 

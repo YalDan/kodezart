@@ -1,10 +1,7 @@
 """Read recorded grading and distinguish lapse from fresh current-head judgment."""
 
-import asyncio
-
 from kodezart.chains.audit_pass import AuditClaimVerifier
-from kodezart.core.config import AppConfig
-from kodezart.core.owned_tasks import finish_owned
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService, GitSourceReader, RepoCache, TrackerPort
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
@@ -38,7 +35,7 @@ class AuditEvidenceVerifier:
         cache: RepoCache,
         claims: AuditClaimVerifier,
         operation: OperationConfig,
-        config: AppConfig,
+        remote: str,
     ) -> None:
         self._tracker = tracker
         self._records = records
@@ -47,7 +44,7 @@ class AuditEvidenceVerifier:
         self._cache = cache
         self._claims = claims
         self._operation = operation
-        self._remote = config.git_remote
+        self._remote = remote
 
     async def _criterion(self, request: AuditClaimRequest) -> TrackerIssue:
         return await resolve_criterion(
@@ -87,9 +84,7 @@ class AuditEvidenceVerifier:
                     raise ValueError("the graded commit is not on the recorded branch")
             return head
 
-        head, cancelled = await finish_owned(asyncio.create_task(observe()))
-        if cancelled:
-            raise asyncio.CancelledError
+        head = await settle(observe())
         return head
 
     async def observe(self, request: AuditClaimRequest) -> AuditEvidenceObservation:
@@ -149,13 +144,9 @@ class AuditEvidenceVerifier:
         )
         if latest_record != (comment, record):
             raise ValueError("the lane record changed during Evidence verification")
-        latest_head, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._git.remote_branch_sha(repository, self._remote, record.branch)
-            )
+        latest_head = await settle(
+            self._git.remote_branch_sha(repository, self._remote, record.branch)
         )
-        if cancelled:
-            raise asyncio.CancelledError
         if latest_head != head:
             raise ValueError("the remote head changed during Evidence verification")
         if await read_replace_refs(git=self._git, workspace=repository):

@@ -15,6 +15,7 @@ from kodezart.adapters.linear_mcp_tracker import (
 )
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     McpCredentialRefusedError,
@@ -587,8 +588,7 @@ class TestQueueVocabularyPerDeclaredTeam:
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
             team_identifiers=dict(self.TWO_TEAMS),
-            max_retries=0,
-            retry_backoff_factor=1.0,
+            retry=RetryPolicy(attempts=1, initial_delay=1.0),
             ledger=SelfWriteLedger(),
         )
 
@@ -716,8 +716,7 @@ class TestWorkflowStatesResolvePerTeam:
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
             team_identifiers=dict(self.DECLARED_TEAMS),
-            max_retries=0,
-            retry_backoff_factor=1.0,
+            retry=RetryPolicy(attempts=1, initial_delay=1.0),
             ledger=SelfWriteLedger(),
         )
 

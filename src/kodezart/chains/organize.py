@@ -1,21 +1,17 @@
 """Tracker-backed admission sessions, independent on every assess and verify call."""
 
-import asyncio
-
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
-from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     AgentRunner,
     PromptSetProvider,
     TrackerPort,
     WorkspaceProvider,
 )
-from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.domain.organize import is_admission_live
 from kodezart.domain.prompt_variables import organize_variables
+from kodezart.services.audit_sessions import judge_in_workspace
+from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.agent import ORGANIZE_ADMISSION_SCHEMA, RaiseSite
 from kodezart.types.domain.organize import (
     AdmissionJudgment,
@@ -25,7 +21,6 @@ from kodezart.types.domain.organize import (
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.subagents import NO_SUBAGENTS
 
 
 class OrganizeAdmission:
@@ -103,19 +98,12 @@ class OrganizeAdmission:
                 "base_ref": request.base_ref,
             }
         )
-        workspace, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._workspace.acquire(
-                    repo_url=request.repo_url,
-                    ref=request.base_ref,
-                    create_branch=False,
-                    cache_key=request.cache_key,
-                )
-            )
-        )
-        try:
-            if cancelled:
-                raise asyncio.CancelledError
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.base_ref,
+            cache_key=request.cache_key,
+        ) as workspace:
             await self._log.ainfo(
                 "organize_admission_attempt",
                 issue_key=subject.issue_key,
@@ -124,37 +112,19 @@ class OrganizeAdmission:
                 session_id=None,
                 resumed_session_id=None,
             )
-            result, rate_limit_rejected = await drain(
-                self._runner.stream_in_workspace(
-                    prompt=prompt,
-                    workspace_path=workspace,
-                    permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=list(EVAL_TOOLS),
-                    skills=self._prompts.session_skills(key, self._skills),
-                    session_type=SessionType.ORGANIZE_PASS,
-                    agents=NO_SUBAGENTS,
-                    session_policy=self._prompts.session_policy(key),
-                    session_id=None,
-                    output_format={
-                        "type": "json_schema",
-                        "schema": ORGANIZE_ADMISSION_SCHEMA,
-                    },
-                ),
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=ORGANIZE_ADMISSION_SCHEMA,
                 site=site,
+                session_type=SessionType.ORGANIZE_PASS,
+                failure_message="Organize admission produced no structured output.",
             )
-            if (
-                result is None
-                or result.structured_output is None
-                or result.is_error
-                or rate_limit_rejected
-            ):
-                raise soft_failure(
-                    "Organize admission produced no structured output.",
-                    raise_site=site,
-                    result_event=result,
-                    rate_limit_rejected=rate_limit_rejected,
-                )
-            judgment = AdmissionJudgment.model_validate(result.structured_output)
+            judgment = AdmissionJudgment.model_validate(structured)
             if judgment.issue_id != subject.issue_key:
                 raise OrganizeAdmissionIdentityError(
                     expected=subject.issue_key, observed=judgment.issue_id
@@ -162,9 +132,3 @@ class OrganizeAdmission:
             return AdmissionResult(
                 **judgment.model_dump(), admitted_body_digest=revision.body_digest
             )
-        finally:
-            _, cancelled = await finish_owned(
-                asyncio.create_task(self._workspace.release(workspace))
-            )
-            if cancelled:
-                raise asyncio.CancelledError

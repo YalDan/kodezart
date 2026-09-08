@@ -169,7 +169,7 @@ async def setup(tracker, server):
             runner=runner,
             prompts=prompts,
             skills=SUPPRESS_ALL_SKILLS,
-            config=config,
+            remote=config.git_remote,
         )
         evidence = AuditEvidenceVerifier(
             tracker=tracker,
@@ -179,7 +179,7 @@ async def setup(tracker, server):
             source=selected_source or Source(),
             claims=claims,
             operation=selected_op,
-            config=config,
+            remote=config.git_remote,
         )
         mandates = AuditMandateHunt(
             tracker=tracker,
@@ -196,7 +196,7 @@ async def setup(tracker, server):
             git=selected_git,
             cache=selected_cache,
             operation=selected_op,
-            config=config,
+            remote=config.git_remote,
         )
         overclaims = (
             AuditOverclaimVerifier(
@@ -207,7 +207,7 @@ async def setup(tracker, server):
                     source=selected_source or Source(),
                     cache=selected_cache,
                     operation=selected_op,
-                    config=config,
+                    remote=config.git_remote,
                 ),
                 sessions=FreshAuditSession(
                     git=selected_git,
@@ -231,7 +231,7 @@ async def setup(tracker, server):
                     source=selected_source or Source(),
                     cache=selected_cache,
                     operation=selected_op,
-                    config=config,
+                    remote=config.git_remote,
                 ),
                 sessions=FreshAuditSession(
                     git=selected_git,
@@ -256,7 +256,7 @@ async def setup(tracker, server):
             terminals=terminals,
             git=selected_git,
             cache=selected_cache,
-            config=config,
+            remote=config.git_remote,
             overclaims=overclaims,
             removals=removals,
             forge=selected_forge,
@@ -269,7 +269,7 @@ async def setup(tracker, server):
 async def test_every_state_reaches_actual_fresh_claim_dispatch(
     setup, tracker, server, tracker_writes, kind
 ):
-    build, executor, _, _, workspace, *_ = setup
+    build, executor, git, _, workspace, *_ = setup
     await state(
         tracker,
         server,
@@ -305,6 +305,9 @@ async def test_every_state_reaches_actual_fresh_claim_dispatch(
         and "OLD_RECORDED_TEST" not in call["prompt"]
     )
     assert workspace.calls[-1][0] == "release"
+    assert {call[2] for call in git.calls if call[0] == "remote_branch_sha"} == {
+        "configured-remote"
+    }
     assert tracker_writes() == before
     assert not {"covered", "complete", "coverage"} & {
         field.name for field in fields(result)

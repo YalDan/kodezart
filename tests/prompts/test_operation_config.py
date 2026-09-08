@@ -694,24 +694,26 @@ def _to_toml(raw: dict[str, object]) -> str:
     lines: list[str] = []
     for key, value in raw.items():
         if isinstance(value, str | int | float | bool):
-            lines.append(f"{key} = {_scalar(value)}")
+            lines.append(f"{_scalar(key)} = {_scalar(value)}")
         elif isinstance(value, list) and all(isinstance(v, str) for v in value):
-            lines.append(f"{key} = [{', '.join(_scalar(v) for v in value)}]")
+            lines.append(f"{_scalar(key)} = [{', '.join(_scalar(v) for v in value)}]")
     for key, value in raw.items():
         if isinstance(value, dict):
             for sub_key, sub_value in value.items():
                 if isinstance(sub_value, dict):
-                    lines.append(f"\n[{key}.{sub_key}]")
-                    lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_value.items())
+                    lines.append(f"\n[{_scalar(key)}.{_scalar(sub_key)}]")
+                    lines.extend(
+                        f"{_scalar(k)} = {_scalar(v)}" for k, v in sub_value.items()
+                    )
             scalars = {k: v for k, v in value.items() if not isinstance(v, dict)}
             if scalars:
-                lines.append(f"\n[{key}]")
-                lines.extend(f"{k} = {_scalar(v)}" for k, v in scalars.items())
+                lines.append(f"\n[{_scalar(key)}]")
+                lines.extend(f"{_scalar(k)} = {_scalar(v)}" for k, v in scalars.items())
         elif isinstance(value, list) and value and isinstance(value[0], dict):
             for item in value:
-                lines.append(f"\n[[{key}]]")
+                lines.append(f"\n[[{_scalar(key)}]]")
                 lines.extend(
-                    f"{k} = {_scalar(v)}"
+                    f"{_scalar(k)} = {_scalar(v)}"
                     for k, v in item.items()
                     if not _is_table_array(v)
                 )
@@ -720,8 +722,10 @@ def _to_toml(raw: dict[str, object]) -> str:
                         continue
                     sub_items: list[dict[str, object]] = sub_value
                     for sub_item in sub_items:
-                        lines.append(f"\n[[{key}.{sub_key}]]")
-                        lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_item.items())
+                        lines.append(f"\n[[{_scalar(key)}.{_scalar(sub_key)}]]")
+                        lines.extend(
+                            f"{_scalar(k)} = {_scalar(v)}" for k, v in sub_item.items()
+                        )
     return "\n".join(lines) + "\n"
 
 

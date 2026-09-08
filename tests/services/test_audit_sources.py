@@ -27,7 +27,7 @@ def reader(setup, tracker):
         source=source,
         cache=cache,
         operation=fixtures.OPERATION,
-        config=AppConfig(git_remote="configured-remote"),
+        remote=AppConfig(git_remote="configured-remote").git_remote,
     )
 
 
@@ -52,6 +52,9 @@ async def test_actual_source_pair_reads_own_evidence_and_current_remote(
         {"url": fixtures.REQUEST.repo_url, "cache_key": fixtures.REQUEST.cache_key}
     ]
     assert not runner.calls and not workspace.calls
+    assert {call[2] for call in git.calls if call[0] == "remote_branch_sha"} == {
+        "configured-remote"
+    }
     assert tracker_writes() == before
 
 

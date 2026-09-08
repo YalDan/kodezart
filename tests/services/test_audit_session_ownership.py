@@ -101,7 +101,13 @@ async def test_repeated_cancellation_settles_native_worktree(
         await asyncio.wait_for(entered.wait(), 5)
         assert len(acquired) == 1 and Path(acquired[0]).is_dir()
         assert acquire_calls == [
-            {"repo_path": str(git_repo), "ref": head, "create_branch": False}
+            {
+                "repo_path": str(git_repo),
+                "repo_url": None,
+                "ref": head,
+                "create_branch": False,
+                "cache_key": None,
+            }
         ]
         assert await native.current_sha(acquired[0]) == head
         branch = subprocess.run(
