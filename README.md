@@ -286,9 +286,12 @@ A payload takes the **maximum** severity over all its hits. Identifier-shaped
 writers (a git ref cannot carry a placeholder) block on any hit regardless of
 the category's declared verdict.
 
-Pattern sets ship **empty except the credential category**, so an unconfigured
-deployment behaves exactly as it did before the gate existed, apart from the
-two new events.
+Pattern sets ship credential shapes and native workspace URL shapes: Linear
+issue/project/initiative addresses and Notion application page addresses.
+These use the existing `tracker_urls` category and contain no workspace names.
+Deployment-specific URL forms can be supplied through `KODEZART_DENY_PATTERNS`;
+an explicit mapping replaces the defaults. Other deployment-specific sets
+remain empty, and organisation names remain patternless.
 
 #### The judgment half
 

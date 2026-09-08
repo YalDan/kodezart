@@ -33,6 +33,62 @@ from tests.fakes import FakeAgentExecutor, FakeContentScanner
 from tests.prompts.test_prompt_wiring import load_registry
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://linear.app/example-workspace/issue/EX-1/a-title",
+        "https://linear.app/example-workspace/project/a-project-123",
+        "https://linear.app/example-workspace/initiative/a-scope-456",
+        "HTTPS://LINEAR.APP/example-workspace/issue/EX-2?tab=activity#comment-abc",
+        "https://app.notion.com/p/0123456789abcdef0123456789abcdef",
+        "https://app.notion.com/p/01234567-89ab-cdef-0123-456789abcdef?pvs=204",
+    ],
+)
+async def test_native_workspace_urls_use_the_existing_tracker_category(url):
+    content = f"Read <{url}> before work."
+    decision = await configured_gate().gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.DERIVED,
+    )
+    assert decision.verdict is GateVerdict.REDACTED
+    assert decision.categories == (RedactionCategory.TRACKER_URLS,)
+    assert url not in decision.content
+    assert decision.content.startswith("Read <")
+    assert decision.content.endswith("> before work.")
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "https://linear.app/",
+        "https://linear.app/docs/issues",
+        "https://linear.app.evil.invalid/example/issue/EX-1",
+        "https://app.notion.com.evil.invalid/p/0123456789abcdef0123456789abcdef",
+        "https://example.invalid/example/issue/EX-1",
+        "example-workspace",
+    ],
+)
+async def test_url_defaults_do_not_supply_workspace_name_patterns(content):
+    decision = await configured_gate().gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.DERIVED,
+    )
+    assert decision.verdict is GateVerdict.CLEAN
+    assert decision.content == content
+
+
+@pytest.mark.parametrize("patterns", [[], ["synthetic-organisation"]])
+def test_workspace_name_pattern_category_is_still_rejected(patterns):
+    with pytest.raises(ValidationError):
+        AppConfig(deny_patterns={RedactionCategory.ORG_PRIVATE: patterns})
+
+
 def test_every_real_writer_has_a_durability_classification() -> None:
     """Adding a destination without deciding how it is read fails this gate."""
     assert set(DESTINATION_DURABILITY) == set(OutboundDestination)
