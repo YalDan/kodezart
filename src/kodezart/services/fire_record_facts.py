@@ -2,6 +2,7 @@
 
 from kodezart.types.domain.agent import (
     AgentEvent,
+    AuthoredWorkflowCompleteEvent,
     WorkflowCompleteEvent,
     WorkflowPREvent,
     WorkflowScopeBaseEvent,
@@ -21,7 +22,12 @@ def observe_fire_facts(facts: FireRecordFacts, event: AgentEvent) -> FireRecordF
         return FireRecordFacts(
             repo_url=facts.repo_url,
             base_branch=facts.base_branch,
-            pr_url=event.pr_url if event.pr_url is not None else facts.pr_url,
+            pr_url=(
+                event.pr_url
+                if isinstance(event, AuthoredWorkflowCompleteEvent)
+                and event.pr_url is not None
+                else facts.pr_url
+            ),
             iterations=event.total_iterations,
         )
     return facts

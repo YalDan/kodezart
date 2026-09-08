@@ -1,4 +1,4 @@
-"""Tests for RalphWorkflowEngine (outer pipeline) with fakes."""
+"""Tests for AuthoredDeliveryCoordinator (outer pipeline) with fakes."""
 
 import asyncio
 import re
@@ -13,8 +13,9 @@ import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 
+from kodezart.chains import authored_delivery as authored_delivery_module
 from kodezart.chains import ralph_workflow as ralph_workflow_module
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
@@ -76,7 +77,7 @@ from kodezart.types.domain.subagents import (
     SessionPolicy,
 )
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
-from kodezart.types.domain.workflow import WorkflowState
+from kodezart.types.domain.workflow import AuthoredWorkflowState as WorkflowState
 from tests.chains.test_dispatch_definitions import (
     chain_source,
     dispatch_block,
@@ -138,7 +139,7 @@ def _make_engine(
     retry_max_attempts: int = 3,
     delay_floor_for: DelayFloor = no_delay_floor,
     outbound_gate: OutboundContentGate | None = None,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
             events=[
@@ -153,7 +154,7 @@ def _make_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         gate=PassThroughGate() if outbound_gate is None else outbound_gate,
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
@@ -695,7 +696,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -945,7 +946,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1337,7 +1338,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1655,7 +1656,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1817,7 +1818,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -2962,7 +2963,7 @@ def _make_engine_with_executor(
     ci_monitor: FakeCIMonitor | None = None,
     remediation_max_rounds: int = 1,
     prompts: RecordingPromptProvider | None = None,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     """Build an engine wired to a pre-configured executor (e.g. _Sequential)."""
     service = AgentService(
         git_base_url="https://github.com",
@@ -2976,7 +2977,7 @@ def _make_engine_with_executor(
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
@@ -3110,7 +3111,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         total_iterations=1,
         last_commit_sha=feature_tip,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3186,7 +3187,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3274,7 +3275,7 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3432,7 +3433,7 @@ class TestForgeNodePreconditions:
         """
         written: list[AgentEvent] = []
         monkeypatch.setattr(
-            ralph_workflow_module,
+            authored_delivery_module,
             "get_stream_writer",
             lambda: written.append,
         )
@@ -3623,7 +3624,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3960,7 +3961,7 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -4226,7 +4227,7 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
     None
 ):
     """No silent fallback: a run that produced commits always lands a PR."""
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -4273,7 +4274,7 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
 # ---------------------------------------------------------------------------
 
 
-def _graph_nodes(engine: RalphWorkflowEngine) -> set[str]:
+def _graph_nodes(engine: AuthoredDeliveryCoordinator) -> set[str]:
     return set(engine._compiled.get_graph().nodes)
 
 
@@ -4877,7 +4878,8 @@ KEYED_DISPATCH_COUNTS = {
     "git_change_persister.py": 1,
     "organize.py": 1,
     "ralph_loop.py": 2,
-    "ralph_workflow.py": 5,
+    "ralph_workflow.py": 4,
+    "authored_delivery.py": 1,
     "remediation.py": 1,
     "ticket_generation.py": 2,
     "prompt_pass.py": 1,
@@ -5105,7 +5107,7 @@ class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
         }
         return state
 
-    def _engine(self, merger: FakeBranchMerger) -> RalphWorkflowEngine:
+    def _engine(self, merger: FakeBranchMerger) -> AuthoredDeliveryCoordinator:
         return _make_engine(
             merger=merger,
             git=FakeGitService(remote_branch_shas={"main": "b" * 40}),

@@ -29,7 +29,7 @@ from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.composition.gating import outbound_scanners
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import ContentScannerBootError
@@ -597,7 +597,7 @@ def test_the_declared_class_can_never_be_omitted() -> None:
         OutboundContentGate.gate,
         PatternOutboundContentGate.gate,
         gated_write,
-        RalphWorkflowEngine._gated,
+        AuthoredDeliveryCoordinator._gated,
         GitChangePersister._gated_message,
     )
     for surface in surfaces:

@@ -5,7 +5,7 @@ Observation: Live test with repoUrl='YalDan/kodezart' produced
   The execute step succeeded (shorthand resolved in AgentService._run_in_workspace)
   but the finalize step's consolidate call failed (shorthand NOT resolved).
 
-Hypothesis: RalphWorkflowEngine stores raw repo_url in WorkflowState.
+Hypothesis: AuthoredDeliveryCoordinator stores raw repo_url in WorkflowState.
   _finalize_node passes state["repo_url"] directly to merger.consolidate(),
   which calls workspace.acquire() — but neither merger nor workspace resolve
   shorthand. Only AgentService._run_in_workspace() calls resolve_repo_url().
@@ -16,7 +16,7 @@ Experiment: Run a workflow with shorthand repo_url and verify the merger
 
 import uuid
 
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AssistantTextEvent,
@@ -44,7 +44,7 @@ def _make_engine(
     *,
     merger: FakeBranchMerger,
     quality_gate: FakeQualityGate | None = None,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
@@ -58,7 +58,7 @@ def _make_engine(
         persister=FakeChangePersister(),
         git_base_url="https://github.com",
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),

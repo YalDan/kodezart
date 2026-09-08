@@ -11,8 +11,8 @@ with identity carried by the ``AC-n`` id.
 
 from collections.abc import AsyncGenerator, Sequence
 
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.domain.criteria import mint_criteria
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
@@ -212,7 +212,7 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         fan_in_max_attempts=2,
         delay_floor_for=no_delay_floor,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,
@@ -305,7 +305,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         fan_in_max_attempts=2,
         delay_floor_for=no_delay_floor,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,

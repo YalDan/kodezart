@@ -7,8 +7,8 @@ import pytest
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.agent import (
+    AuthoredWorkflowCompleteEvent,
     ErrorEvent,
-    WorkflowCompleteEvent,
     WorkflowScopeBaseEvent,
     WorkflowVisibilityEvent,
 )
@@ -45,7 +45,7 @@ def observed_events():
 
 
 def terminal():
-    return WorkflowCompleteEvent(
+    return AuthoredWorkflowCompleteEvent(
         feature_branch="feature",
         ralph_branch="ralph",
         total_iterations=3,

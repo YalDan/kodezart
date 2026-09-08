@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import JobQueue, JobRegistry
@@ -253,14 +253,16 @@ def _request(prompt: str) -> WorkflowSubmission:
 # ---------------------------------------------------------------------------
 
 
-def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngine:
+def _real_engine(
+    checkpointer: InMemorySaver | None = None,
+) -> AuthoredDeliveryCoordinator:
     service = AgentService(
         git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         service=service,
         quality_gate=FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
@@ -354,7 +356,7 @@ class GatedQualityGate:
 def _mid_run_engine(
     checkpointer: InMemorySaver,
     quality_gate: GatedQualityGate,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     """Engine whose first post-merge review fails, forcing one fix round.
 
     The scripted executor answers the review schema: failing first, then
@@ -414,7 +416,7 @@ def _mid_run_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         service=service,
         quality_gate=quality_gate,
         ticket_generator=FakeTicketGenerator(),
@@ -1304,7 +1306,7 @@ async def test_status_of_a_running_job_reports_checkpointed_progress(
 async def test_status_reports_progress_while_the_graph_is_paused_mid_run() -> None:
     """A checkpoint read mid-graph names an intermediate node, not the last.
 
-    The engine is a real ``RalphWorkflowEngine``; its quality gate blocks
+    The engine is a real ``AuthoredDeliveryCoordinator``; its quality gate blocks
     on the remediation round's loop, so the graph is genuinely suspended
     part-way through that round while the status endpoint answers.
     """

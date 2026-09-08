@@ -191,7 +191,7 @@ class RalphLoopState(TypedDict):
 
 
 class WorkflowState(TypedDict):
-    """State for the outer workflow pipeline.
+    """State for the delivery-free fire graph.
 
     ``issue_key`` is the producer's tracker identity for this run. It is
     preserved across remediation and appended before gating a PR body.
@@ -247,10 +247,15 @@ class WorkflowState(TypedDict):
     remediation_ticket: TicketDraftOutput | None
     remediation_entry: RemediationEntry | None
     best_iteration_sha: str | None
+    repo_url: str | None
+    repo_visibility: RepoVisibility
+    trajectory: LoopTrajectory | None
+
+
+class AuthoredWorkflowState(WorkflowState):
+    """Outer authored delivery state, never passed into the fire graph."""
+
     pr_url: str | None
     pr_number: int | None
     ci_status: CIStatus
     ci_summary: str | None
-    repo_url: str | None
-    repo_visibility: RepoVisibility
-    trajectory: LoopTrajectory | None

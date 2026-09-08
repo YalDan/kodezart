@@ -2,8 +2,8 @@
 
 import pytest
 
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.preflight import (
     preflight_prompt_skill_loadouts,
     preflight_skills,
@@ -225,7 +225,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         service=service,
         quality_gate=FakeQualityGate(

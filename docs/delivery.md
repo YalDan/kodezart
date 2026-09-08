@@ -63,10 +63,12 @@ failure refuses publication or its successful result without appending ungated
 content. Completed green/no-CI checks retain `stalled_pr_opened`, including after
 runner-flake recovery: successful checks do not establish acceptance criteria.
 
-The existing fire still opens its stalled PR before this boundary; consuming
-that real terminal therefore edits the existing PR and then watches it. The
-native boundary also covers creation after a successful empty lookup. Moving
-that first PR-opening act out of the fire remains separate integration work.
+The authored HTTP coordinator opens its stalled PR outside the shared fire
+graph; consuming that authored outer terminal here therefore edits the existing
+PR and then watches it. The native boundary also covers creation after a
+successful empty lookup. The delivery-free fire reports its existing loop
+outcome before publication; direct stalled lane adoption of that new handoff
+remains separate from the existing authored-terminal replay.
 Tracker stalled handoffs refuse before lookup because their trajectory producer
 does not yet carry tracker criterion identities; no authored AC ids are minted
 for those references.

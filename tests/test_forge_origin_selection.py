@@ -25,7 +25,7 @@ import httpx
 import pytest
 
 from kodezart.adapters.github_api import GitHubAPIClient
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.composition.engine import (
     OriginRoutedWorkflowEngine,
     build_workflow_engine,
@@ -175,9 +175,9 @@ class RecordingForge:
         return RepoVisibility.PUBLIC
 
 
-def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
+def _arm(*, forge: RecordingForge | None) -> AuthoredDeliveryCoordinator:
     """One engine arm, wired exactly as the composition root wires it."""
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         service=AgentService(
             git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),

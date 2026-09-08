@@ -1,4 +1,4 @@
-"""Ralph workflow engine — outer pipeline: branch generation, loop, post-merge."""
+"""Shared fire graph: generation, implementation, consolidation and review."""
 
 import uuid
 from collections.abc import AsyncIterator
@@ -23,10 +23,8 @@ from kodezart.core.protocols import (
     AgentRunner,
     ArtifactPersister,
     BranchMerger,
-    CIMonitor,
     GitService,
     OutboundContentGate,
-    PRCreator,
     PromptSetProvider,
     QualityGate,
     RefPublisher,
@@ -50,7 +48,6 @@ from kodezart.domain.accept_gate import (
 )
 from kodezart.domain.agent import best_iteration_ref, generate_ralph_branch_name
 from kodezart.domain.base_scope import scope_base
-from kodezart.domain.ci import ci_status_of
 from kodezart.domain.criteria import build_artifact, mint_criteria
 from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
@@ -61,21 +58,13 @@ from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criteria_prompt import render_validation_findings
 from kodezart.domain.errors import (
     CriteriaFanInError,
-    ForgeAPIError,
     ScopedExecutionUnavailableError,
-    TransientAPIError,
     UngroundedVerdictError,
 )
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
-from kodezart.domain.pr_body import (
-    append_flagged_section,
-    append_tracker_issue,
-    require_tracker_issue,
-)
 from kodezart.domain.prompt_variables import changeset_variables
-from kodezart.domain.stall_report import stall_pr_body, stall_pr_title
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.ticket import format_fire_spec, format_ticket_as_task
 from kodezart.domain.trajectory import landable_commit
@@ -91,21 +80,17 @@ from kodezart.types.domain.agent import (
     BRANCH_NAME_SCHEMA,
     CRITERIA_VALIDATION_SCHEMA,
     GENERATED_CRITERIA_SCHEMA,
-    PR_DESCRIPTION_SCHEMA,
     AcceptanceCriteriaOutput,
     AgentEvent,
     BranchNameOutput,
     GeneratedCriteriaOutput,
-    PRDescriptionOutput,
     TicketDraftOutput,
     WorkflowArtifactsEvent,
-    WorkflowCIEvent,
     WorkflowCompleteEvent,
     WorkflowConsolidationEvent,
     WorkflowCriteriaEvent,
     WorkflowCriteriaValidationEvent,
     WorkflowIterationEvent,
-    WorkflowPREvent,
     WorkflowRemediationEvent,
     WorkflowReviewEvent,
     WorkflowScopeBaseEvent,
@@ -113,7 +98,6 @@ from kodezart.types.domain.agent import (
     WorkflowVisibilityEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
@@ -154,11 +138,7 @@ CORRECTABLE_VALIDATION_BREACHES: Final[tuple[type[Exception], ...]] = (
 
 
 class RalphWorkflowEngine:
-    """Outer workflow: branch -> ticket -> criteria -> ralph loop -> post-merge.
-
-    Delegates the iterative execute/evaluate loop to a QualityGate.
-    Post-merge: review against ticket, open PR, monitor CI, fix failures.
-    """
+    """Shared fire graph: author, implement, consolidate and review."""
 
     def __init__(
         self,
@@ -179,8 +159,6 @@ class RalphWorkflowEngine:
         retry_max_attempts: int,
         retry_initial_interval: float,
         delay_floor_for: DelayFloor,
-        pr_creator: PRCreator | None = None,
-        ci_monitor: CIMonitor | None = None,
         ref_publisher: RefPublisher | None = None,
         remediator: Remediator | None = None,
         remediation_max_rounds: int,
@@ -203,8 +181,6 @@ class RalphWorkflowEngine:
         self._skills: SkillsSelection = skills
         self._gate: OutboundContentGate = gate
         self._visibility_resolver: RepoVisibilityResolver | None = visibility_resolver
-        self._pr_creator: PRCreator | None = pr_creator
-        self._ci_monitor: CIMonitor | None = ci_monitor
         self._ref_publisher: RefPublisher | None = ref_publisher
         self._remediator: Remediator | None = remediator
         self._remediation_max_rounds: int = remediation_max_rounds
@@ -238,100 +214,34 @@ class RalphWorkflowEngine:
         cache_key: str,
         run_identity: RunIdentity | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Execute the full workflow pipeline.
-
-        *base_spec* is the lane's recorded base and *implied_base* is the
-        base its blockers imply now; the run refuses before any node when
-        they differ, because a criterion graded against a base that has
-        moved is about a tree that no longer exists.
-
-        ``cache_key`` IS the LangGraph thread id: the caller's job id
-        addresses this run's checkpoints.
-        """
-        if scope is not None:
-            msg = "Scoped execution requires the scope entry pipeline"
-            raise ScopedExecutionUnavailableError(msg, ref=scope)
-        # TODO(time-travel): E2E checkpoint resume still requires:
-        # 2. On resume: pass None (not initial_state) to astream()
-        #    so LangGraph loads from the outer checkpoint.
-        # 4. Sub-graphs are called imperatively (not LangGraph
-        #    subgraphs), so each has isolated checkpoints. On outer
-        #    resume the sub-graph nodes re-enter; inner loops must
-        #    also accept a resume signal (see ralph_loop.py and
-        #    ticket_generation.py TODOs).
-        # 5. WorkflowRequest and the handler need a resume signal to
-        #    plumb an existing job id back in from HTTP.
-        # Refuses here, before any node: a stale baseline produces no
-        # scope verdict at all rather than one graded against the wrong tree.
-        scope_base(base_spec, implied_base)
-
-        resolved_url = (
-            resolve_repo_url(repo_url, self._git_base_url)
-            if repo_url is not None
-            else None
-        )
-
-        ctx = ExecutionContext(
+        """Execute a fire and expose its delivery-free terminal."""
+        initial_state, config = self._prepare(
             prompt=prompt,
+            issue_key=issue_key,
             repo_path=repo_path,
-            repo_url=resolved_url,
-            cache_key=cache_key,
-            run_identity=run_identity,
+            repo_url=repo_url,
             base_spec=base_spec,
+            scope=scope,
+            implied_base=implied_base,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
+            cache_key=cache_key,
+            run_identity=run_identity,
         )
-        configurable: dict[str, object] = ctx.model_dump()
-        if self._checkpointer is not None:
-            configurable["thread_id"] = workflow_thread_id(cache_key)
-
-        config: RunnableConfig = {"configurable": configurable}
-
-        initial_state: WorkflowState = {
-            "issue_key": issue_key,
-            "feature_branch": "",
-            "ralph_branch": "",
-            "work_base_ref": base_spec.base_branch,
-            "ticket": None,
-            "acceptance_criteria": [],
-            "criteria_artifact": None,
-            "criteria_validation": None,
-            "criteria_regeneration_rounds": 0,
-            "criteria_infeasible": False,
-            "accept_verdict": AcceptVerdict.rejected,
-            "flagged_items": [],
-            "total_iterations": 0,
-            "feature_tip_sha": None,
-            "review_base_sha": None,
-            "review_head_sha": None,
-            "merged": False,
-            "merge_error": None,
-            "review_passed": False,
-            "review_feedback": None,
-            "remediation_rounds_used": 0,
-            "remediation_ticket": None,
-            "remediation_entry": None,
-            "best_iteration_sha": None,
-            "pr_url": None,
-            "pr_number": None,
-            "ci_status": CIStatus.not_monitored,
-            "ci_summary": None,
-            "repo_url": resolved_url,
-            "repo_visibility": RepoVisibility.UNKNOWN,
-            "trajectory": None,
-        }
-
+        terminal: WorkflowCompleteEvent | None = None
         async for event in self._compiled.astream(
             initial_state,
             config=config,
             stream_mode="custom",
         ):
             if not isinstance(event, AgentEvent):
-                msg = f"Expected AgentEvent from stream, got {type(event).__name__}"
-                raise TypeError(msg)
+                raise TypeError(f"Expected AgentEvent, got {type(event).__name__}")
+            if isinstance(event, WorkflowCompleteEvent):
+                terminal = event
             yield event
-
-    # -- Graph construction --------------------------------------------------
+        if terminal is None:
+            raise RuntimeError("Fire graph emitted no terminal")
+        await self._cleanup_backups(terminal, config)
 
     def _build_graph(
         self,
@@ -389,21 +299,6 @@ class RalphWorkflowEngine:
             self._floor(self._remediate_node),
             retry_policy=self._retry,
         )
-        graph.add_node(
-            "open_pr",
-            self._floor(self._open_pr_node),
-            retry_policy=self._retry,
-        )
-        graph.add_node(
-            "monitor_ci",
-            self._floor(self._monitor_ci_node),
-            retry_policy=self._retry,
-        )
-        graph.add_node(
-            "comment_failure",
-            self._floor(self._comment_failure_node),
-            retry_policy=self._retry,
-        )
         graph.add_node("complete", self._complete_node)
 
         if self._artifact_persister is not None:
@@ -418,7 +313,14 @@ class RalphWorkflowEngine:
                 retry_policy=self._retry,
             )
 
-        graph.add_edge(START, "resolve_visibility")
+        graph.add_conditional_edges(
+            START,
+            self._route_entry,
+            {
+                "resolve_visibility": "resolve_visibility",
+                "generate_criteria": "generate_criteria",
+            },
+        )
         graph.add_edge("resolve_visibility", "generate_branch")
         graph.add_edge("generate_branch", "generate_ticket")
         if self._artifact_persister is not None:
@@ -458,34 +360,11 @@ class RalphWorkflowEngine:
         graph.add_conditional_edges(
             "review_against_ticket",
             self._route_after_review,
-            {
-                "open_pr": "open_pr",
-                "monitor_ci": "monitor_ci",
-                "remediate": "remediate",
-                "complete": "complete",
-                "comment_failure": "comment_failure",
-            },
+            {"remediate": "remediate", "complete": "complete"},
         )
         graph.add_edge("remediate", "generate_criteria")
-        graph.add_conditional_edges(
-            "open_pr",
-            self._route_after_pr,
-            {"monitor_ci": "monitor_ci", "complete": "complete"},
-        )
-        graph.add_conditional_edges(
-            "monitor_ci",
-            self._route_after_ci,
-            {
-                "complete": "complete",
-                "remediate": "remediate",
-                "comment_failure": "comment_failure",
-            },
-        )
-        graph.add_edge("comment_failure", "complete")
         graph.add_edge("complete", END)
         return graph
-
-    # -- Existing nodes ------------------------------------------------------
 
     async def _resolve_visibility_node(
         self,
@@ -1069,8 +948,6 @@ class RalphWorkflowEngine:
         # HTTP→handler→engine thread_id plumbing in ralph_workflow.py:130-145.
         return {}
 
-    # -- Post-merge nodes ----------------------------------------------------
-
     async def _merge_to_feature_node(
         self,
         state: WorkflowState,
@@ -1190,22 +1067,7 @@ class RalphWorkflowEngine:
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Open the do-not-merge pull request from the run's BEST iteration.
-
-        Consolidation is attempted first, so the passing and non-passing
-        paths stay symmetrical — but it is not a precondition.  A pull
-        request needs a head and a base sharing an ancestor, not a
-        fast-forward, so a non-integrating consolidation opens the request
-        from the published ref instead of ending the run without one.  A
-        conflicted request on that path is expected: the work is most
-        tangled exactly where human review matters most, and an orphan
-        branch nobody knows about is the worse outcome.
-
-        Artifacts are NOT cleaned from the branch here.  The passing path
-        cleans because it merges; this head exists to show the best state
-        the run reached, and rewriting it to remove files would make it
-        something the run never produced.
-        """
+        """Publish and select the best available work without opening a PR."""
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
 
@@ -1219,24 +1081,8 @@ class RalphWorkflowEngine:
             )
             return {}
 
-        repo_url = ctx.repo_url
-        if self._pr_creator is None or repo_url is None:
-            await self._log.awarning(
-                "stall_exit_no_forge_configured",
-                feature_branch=state["feature_branch"],
-                best_commit_sha=best_sha,
-            )
+        if self._ref_publisher is None or ctx.repo_url is None:
             return {}
-
-        if self._ref_publisher is None:
-            msg = (
-                "land_best_iteration requires ref_publisher when a forge is "
-                "configured — a run that produced commits never terminates "
-                "without a pull request"
-            )
-            raise RuntimeError(msg)
-
-        ticket = current_ticket(state)
 
         best_ref = best_iteration_ref(state["feature_branch"])
         await self._ref_publisher.publish(
@@ -1270,60 +1116,7 @@ class RalphWorkflowEngine:
         head = state["feature_branch"] if integrated else best_ref
         head_sha = outcome.feature_tip_sha if integrated else best_sha
 
-        pr_url, pr_number = await self._pr_creator.create_pr(
-            repo_url=repo_url,
-            title=await self._gated(
-                content=stall_pr_title(ticket.title),
-                visibility=state["repo_visibility"],
-                shape=WriterShape.PROSE,
-                destination=OutboundDestination.PR_TITLE,
-                content_class=ContentClass.AUTHORED,
-            ),
-            body=require_tracker_issue(
-                await self._gated(
-                    content=append_tracker_issue(
-                        stall_pr_body(
-                            trajectory,
-                            validated_criteria(state),
-                            landed_commit=best_sha,
-                        ),
-                        state["issue_key"],
-                    ),
-                    visibility=state["repo_visibility"],
-                    shape=WriterShape.PROSE,
-                    destination=OutboundDestination.PR_BODY,
-                    content_class=ContentClass.AUTHORED,
-                ),
-                state["issue_key"],
-            ),
-            head=head,
-            base=ctx.base_branch,
-        )
-        writer(
-            WorkflowPREvent(
-                pr_url=pr_url,
-                pr_number=pr_number,
-                feature_branch=head,
-                base_branch=ctx.base_branch,
-                feature_tip_sha=head_sha,
-                # The acceptance gate rejected this branch: the pull request
-                # asks a human to read a stall, it does not deliver the issue.
-                delivered=False,
-            )
-        )
-        await self._log.ainfo(
-            "stall_exit_pr_opened",
-            pr_number=pr_number,
-            head=head,
-            consolidation_status=outcome.status.value,
-            best_commit_sha=best_sha,
-        )
-        return {
-            "pr_url": pr_url,
-            "pr_number": pr_number,
-            "feature_branch": head,
-            "feature_tip_sha": head_sha,
-        }
+        return {"feature_branch": head, "feature_tip_sha": head_sha}
 
     async def _resolve_cwd(self, ctx: ExecutionContext) -> str:
         """Resolve a usable cwd for GitService calls in the outer engine."""
@@ -1467,27 +1260,10 @@ class RalphWorkflowEngine:
         }
 
     def _route_after_review(self, state: WorkflowState) -> str:
-        """Route based on review result, fix budget, and adapter preconditions."""
-        can_pr = self._pr_creator is not None and state.get("repo_url") is not None
-        can_ci = self._ci_monitor is not None and state.get("repo_url") is not None
         if state["review_passed"]:
-            if state["pr_url"] is not None and can_ci:
-                return "monitor_ci"
-            if state["pr_url"] is not None:
-                return "complete"
-            if can_pr:
-                return "open_pr"
             return "complete"
         if self._rounds_remain(state):
             return "remediate"
-        if state["pr_url"] is not None and can_pr:
-            return "comment_failure"
-        return "complete"
-
-    def _route_after_pr(self, state: WorkflowState) -> str:
-        """Route after PR creation: monitor CI only if adapter is configured."""
-        if self._ci_monitor is not None and state.get("repo_url") is not None:
-            return "monitor_ci"
         return "complete"
 
     def _rounds_remain(self, state: WorkflowState) -> bool:
@@ -1509,32 +1285,6 @@ class RalphWorkflowEngine:
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Draft one targeted remediation ticket and re-enter the pipeline.
-
-        Every failure route lands here.  What the round is answering is
-        carried as a value on the request, so the component never asks
-        who called it — a question it could only answer with a second
-        code path.
-
-        The node produces a TICKET and nothing else.  Resetting the
-        criteria fields hands the round back to the criteria generator
-        and the validation gate that already exist, which is what keeps
-        the gate un-bypassable: there is no second criteria path to
-        remember to route through.
-
-        ``work_base_ref`` is READ, never derived: the request states the
-        ref the round's loop will actually be cut from, because it is the
-        same value the loop node reads, and the drafting session reads
-        the repository at that ref.
-        """
-        ctx = ExecutionContext.from_configurable(config)
-        writer = get_stream_writer()
-
-        remediator = self._remediator
-        if remediator is None:
-            msg = "remediate requires a remediator but self._remediator is None"
-            raise RuntimeError(msg)
-
         entry = self._remediation_entry(state)
         work_base_ref = state["work_base_ref"]
         request = RemediationRequest(
@@ -1543,13 +1293,190 @@ class RalphWorkflowEngine:
             original_ticket=original_ticket(state),
             work_branch=state["feature_branch"],
             work_base_ref=work_base_ref,
-            pr_url=state["pr_url"],
             total_iterations=state["total_iterations"],
             trajectory=state["trajectory"],
             criteria=validated_criteria(state),
             failure_evidence=self._failure_evidence(state, entry),
         )
 
+        return await self._draft_remediation(state, request, config)
+
+    def _remediation_entry(self, state: WorkflowState) -> RemediationEntry:
+        """Which failure opened this round — computed from state, not routing.
+
+        The three routes share a join point, so the node a run arrived
+        from carries less information than the state it arrived with —
+        the same reason the terminal outcome is computed rather than
+        judged from routing provenance.
+        """
+        if state["merged"] and state["review_passed"] is False:
+            return RemediationEntry.review_failure
+        return RemediationEntry.loop_not_accepted
+
+    def _failure_evidence(
+        self,
+        state: WorkflowState,
+        entry: RemediationEntry,
+    ) -> str:
+        """The evidence for the entry that fired, never a generic summary."""
+        if entry is RemediationEntry.review_failure:
+            return (
+                state["review_feedback"]
+                or "The post-merge review rejected the work with no feedback."
+            )
+        trajectory = state["trajectory"]
+        if trajectory is None:
+            return "The loop ended without acceptance and recorded no iterations."
+        never_passed = ", ".join(trajectory.never_passed_ids) or "none"
+        plateau = "; the run plateaued" if trajectory.plateaued else ""
+        return (
+            "The loop ended without acceptance after "
+            f"{state['total_iterations']} iterations. Best pass count "
+            f"{trajectory.best_passed_count} at iteration "
+            f"{trajectory.best_iteration}{plateau}. "
+            f"Criteria that passed in no iteration: {never_passed}."
+        )
+
+    async def _complete_node(
+        self,
+        state: WorkflowState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        """Emit the fire terminal before external delivery."""
+        _ = config
+        writer = get_stream_writer()
+        writer(
+            WorkflowCompleteEvent(
+                feature_branch=state["feature_branch"],
+                ralph_branch=state["ralph_branch"],
+                total_iterations=state["total_iterations"],
+                accepted=gate_cleared(state["accept_verdict"]),
+                outcome=classify_outcome(state),
+                merged=state["merged"],
+                final_commit_sha=state["feature_tip_sha"],
+                merge_error=state["merge_error"],
+                trajectory=state["trajectory"],
+                criteria_validation=state["criteria_validation"],
+            )
+        )
+
+        return {}
+
+    def _prepare(
+        self,
+        *,
+        prompt: str,
+        issue_key: str | None = None,
+        repo_path: str | None,
+        repo_url: str | None,
+        base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        implied_base: BaseSpec | None = None,
+        permission_mode: str,
+        allowed_tools: list[str],
+        cache_key: str,
+        run_identity: RunIdentity | None = None,
+    ) -> tuple[WorkflowState, RunnableConfig]:
+        """Execute the full workflow pipeline.
+
+        *base_spec* is the lane's recorded base and *implied_base* is the
+        base its blockers imply now; the run refuses before any node when
+        they differ, because a criterion graded against a base that has
+        moved is about a tree that no longer exists.
+
+        ``cache_key`` IS the LangGraph thread id: the caller's job id
+        addresses this run's checkpoints.
+        """
+        if scope is not None:
+            msg = "Scoped execution requires the scope entry pipeline"
+            raise ScopedExecutionUnavailableError(msg, ref=scope)
+        # TODO(time-travel): E2E checkpoint resume still requires:
+        # 2. On resume: pass None (not initial_state) to astream()
+        #    so LangGraph loads from the outer checkpoint.
+        # 4. Sub-graphs are called imperatively (not LangGraph
+        #    subgraphs), so each has isolated checkpoints. On outer
+        #    resume the sub-graph nodes re-enter; inner loops must
+        #    also accept a resume signal (see ralph_loop.py and
+        #    ticket_generation.py TODOs).
+        # 5. WorkflowRequest and the handler need a resume signal to
+        #    plumb an existing job id back in from HTTP.
+        # Refuses here, before any node: a stale baseline produces no
+        # scope verdict at all rather than one graded against the wrong tree.
+        scope_base(base_spec, implied_base)
+
+        resolved_url = (
+            resolve_repo_url(repo_url, self._git_base_url)
+            if repo_url is not None
+            else None
+        )
+
+        ctx = ExecutionContext(
+            prompt=prompt,
+            repo_path=repo_path,
+            repo_url=resolved_url,
+            cache_key=cache_key,
+            run_identity=run_identity,
+            base_spec=base_spec,
+            permission_mode=permission_mode,
+            allowed_tools=allowed_tools,
+        )
+        configurable: dict[str, object] = ctx.model_dump()
+        if self._checkpointer is not None:
+            configurable["thread_id"] = workflow_thread_id(cache_key)
+
+        config: RunnableConfig = {"configurable": configurable}
+
+        initial_state: WorkflowState = {
+            "issue_key": issue_key,
+            "feature_branch": "",
+            "ralph_branch": "",
+            "work_base_ref": base_spec.base_branch,
+            "ticket": None,
+            "acceptance_criteria": [],
+            "criteria_artifact": None,
+            "criteria_validation": None,
+            "criteria_regeneration_rounds": 0,
+            "criteria_infeasible": False,
+            "accept_verdict": AcceptVerdict.rejected,
+            "flagged_items": [],
+            "total_iterations": 0,
+            "feature_tip_sha": None,
+            "review_base_sha": None,
+            "review_head_sha": None,
+            "merged": False,
+            "merge_error": None,
+            "review_passed": False,
+            "review_feedback": None,
+            "remediation_rounds_used": 0,
+            "remediation_ticket": None,
+            "remediation_entry": None,
+            "best_iteration_sha": None,
+            "repo_url": resolved_url,
+            "repo_visibility": RepoVisibility.UNKNOWN,
+            "trajectory": None,
+        }
+
+        return initial_state, config
+
+    def _route_entry(self, state: WorkflowState) -> str:
+        """An explicit drafted remediation resumes at the shared criteria gate."""
+        if state["remediation_ticket"] is not None:
+            return "generate_criteria"
+        return "resolve_visibility"
+
+    async def _draft_remediation(
+        self,
+        state: WorkflowState,
+        request: RemediationRequest,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
+        ctx = ExecutionContext.from_configurable(config)
+        writer = get_stream_writer()
+        remediator = self._remediator
+        if remediator is None:
+            raise RuntimeError("Remediation requires a configured remediator")
+        entry = request.entry
+        work_base_ref = request.work_base_ref
         remediation_event: WorkflowRemediationEvent | None = None
         async for event in remediator.run(
             request,
@@ -1590,330 +1517,26 @@ class RalphWorkflowEngine:
             "merge_error": None,
         }
 
-    def _remediation_entry(self, state: WorkflowState) -> RemediationEntry:
-        """Which failure opened this round — computed from state, not routing.
-
-        The three routes share a join point, so the node a run arrived
-        from carries less information than the state it arrived with —
-        the same reason the terminal outcome is computed rather than
-        judged from routing provenance.
-        """
-        if state["ci_status"] is CIStatus.failed:
-            return RemediationEntry.ci_failure
-        if state["merged"] and state["review_passed"] is False:
-            return RemediationEntry.review_failure
-        return RemediationEntry.loop_not_accepted
-
-    def _failure_evidence(
+    async def _cleanup_backups(
         self,
-        state: WorkflowState,
-        entry: RemediationEntry,
-    ) -> str:
-        """The evidence for the entry that fired, never a generic summary."""
-        if entry is RemediationEntry.ci_failure:
-            return state["ci_summary"] or "CI reported a failure with no summary."
-        if entry is RemediationEntry.review_failure:
-            return (
-                state["review_feedback"]
-                or "The post-merge review rejected the work with no feedback."
-            )
-        trajectory = state["trajectory"]
-        if trajectory is None:
-            return "The loop ended without acceptance and recorded no iterations."
-        never_passed = ", ".join(trajectory.never_passed_ids) or "none"
-        plateau = "; the run plateaued" if trajectory.plateaued else ""
-        return (
-            "The loop ended without acceptance after "
-            f"{state['total_iterations']} iterations. Best pass count "
-            f"{trajectory.best_passed_count} at iteration "
-            f"{trajectory.best_iteration}{plateau}. "
-            f"Criteria that passed in no iteration: {never_passed}."
-        )
-
-    async def _open_pr_node(
-        self,
-        state: WorkflowState,
+        terminal: WorkflowCompleteEvent,
         config: RunnableConfig,
-    ) -> dict[str, object]:
-        """Open a pull request for the feature branch."""
+    ) -> None:
         ctx = ExecutionContext.from_configurable(config)
-        writer = get_stream_writer()
-
-        pr_creator = self._pr_creator
-        if pr_creator is None:
-            msg = "open_pr requires pr_creator but self._pr_creator is None"
-            raise RuntimeError(msg)
-
-        repo_url = ctx.repo_url
-        if repo_url is None:
-            msg = "open_pr requires repo_url but ctx.repo_url is None"
-            raise RuntimeError(msg)
-
-        ticket = current_ticket(state)
-
-        feature_tip_sha = state["feature_tip_sha"]
-        if feature_tip_sha is None:
-            msg = "open_pr requires feature_tip_sha to be set."
-            raise RuntimeError(msg)
-
-        if self._artifact_persister is not None:
-            await self._artifact_persister.clean(
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                branch=state["feature_branch"],
-                cache_key=ctx.cache_key,
-            )
-
-        # Generate PR description via agent
-        prompt = self._prompts.template_for(PromptKey.PR_DESCRIPTION).render(
-            {
-                "task_md": format_fire_spec(AuthoredSpec(ticket=ticket)),
-                "acceptance_criteria": validated_criteria(state),
-                "total_iterations": state["total_iterations"],
-            },
-        )
-        result_event, rate_limit_rejected = await drain(
-            self._service.stream(
-                prompt=prompt,
-                repo_path=ctx.repo_path,
-                repo_url=ctx.repo_url,
-                permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=[],
-                skills=self._prompts.session_skills(
-                    PromptKey.PR_DESCRIPTION, self._skills
-                ),
-                session_type=SessionType.TICKET_FIRE,
-                run_identity=ctx.run_identity,
-                session_policy=self._prompts.session_policy(
-                    PromptKey.PR_DESCRIPTION,
-                ),
-                output_format={
-                    "type": "json_schema",
-                    "schema": PR_DESCRIPTION_SCHEMA,
-                },
-                cache_key=ctx.cache_key,
-            ),
-            site="pr_description",
-        )
-
-        if result_event is None or result_event.structured_output is None:
-            msg = "Agent did not produce structured output for PR description"
-            raise soft_failure(
-                msg,
-                raise_site="pr_description",
-                result_event=result_event,
-                rate_limit_rejected=rate_limit_rejected,
-            )
-
-        pr_output = PRDescriptionOutput.model_validate(
-            result_event.structured_output,
-        )
-        body = append_tracker_issue(
-            append_flagged_section(pr_output.description, state["flagged_items"]),
-            state["issue_key"],
-        )
-
-        pr_url, pr_number = await pr_creator.create_pr(
-            repo_url=repo_url,
-            title=await self._gated(
-                content=pr_output.title,
-                visibility=state["repo_visibility"],
-                shape=WriterShape.PROSE,
-                destination=OutboundDestination.PR_TITLE,
-                content_class=ContentClass.AUTHORED,
-            ),
-            body=require_tracker_issue(
-                await self._gated(
-                    content=body,
-                    visibility=state["repo_visibility"],
-                    shape=WriterShape.PROSE,
-                    destination=OutboundDestination.PR_BODY,
-                    content_class=ContentClass.AUTHORED,
-                ),
-                state["issue_key"],
-            ),
-            head=state["feature_branch"],
-            base=ctx.base_branch,
-        )
-
-        writer(
-            WorkflowPREvent(
-                pr_url=pr_url,
-                pr_number=pr_number,
-                feature_branch=state["feature_branch"],
-                base_branch=ctx.base_branch,
-                feature_tip_sha=feature_tip_sha,
-                # The accepted path: this branch is what the run delivered.
-                delivered=True,
-            )
-        )
-
-        return {"pr_url": pr_url, "pr_number": pr_number}
-
-    async def _monitor_ci_node(
-        self,
-        state: WorkflowState,
-        config: RunnableConfig,
-    ) -> dict[str, object]:
-        """Poll CI status for the latest commit on the feature branch."""
-        ctx = ExecutionContext.from_configurable(config)
-        writer = get_stream_writer()
-
-        ci_monitor = self._ci_monitor
-        if ci_monitor is None:
-            msg = "monitor_ci requires ci_monitor but self._ci_monitor is None"
-            raise RuntimeError(msg)
-
-        repo_url = ctx.repo_url
-        if repo_url is None:
-            msg = "monitor_ci requires repo_url but ctx.repo_url is None"
-            raise RuntimeError(msg)
-
-        ref = state["feature_branch"]
-        passed, summary = await ci_monitor.wait_for_checks(
-            repo_url=repo_url,
-            ref=ref,
-        )
-        ci_status = ci_status_of(passed)
-
-        writer(
-            WorkflowCIEvent(
-                ci_status=ci_status,
-                summary=summary,
-                ref=ref,
-            )
-        )
-
-        return {"ci_status": ci_status, "ci_summary": summary}
-
-    def _route_after_ci(self, state: WorkflowState) -> str:
-        """Route based on CI result, fix budget, and adapter preconditions."""
-        if state["ci_status"] is not CIStatus.failed:
-            return "complete"
-        if self._rounds_remain(state):
-            return "remediate"
-        can_comment = (
-            state["pr_number"] is not None
-            and self._pr_creator is not None
-            and state.get("repo_url") is not None
-        )
-        if can_comment:
-            return "comment_failure"
-        return "complete"
-
-    async def _comment_failure_node(
-        self,
-        state: WorkflowState,
-        config: RunnableConfig,
-    ) -> dict[str, object]:
-        """Post a comment on the PR about exhausted fix budget.
-
-        A forge refusal on this last write is LOGGED and the run continues
-        to its terminal event: the comment reports a failure the terminal
-        event also reports, so crashing here would lose the whole outcome
-        in order to report that one line of it did not post.  The
-        containment is exactly the forge taxonomy — ``ForgeAPIError`` and
-        ``TransientAPIError`` — and every other exception propagates,
-        because a defect in this node is not a forge refusal and must not
-        be filed as one.
-        """
-        ctx = ExecutionContext.from_configurable(config)
-
-        pr_creator = self._pr_creator
-        if pr_creator is None:
-            msg = "comment_failure requires pr_creator but self._pr_creator is None"
-            raise RuntimeError(msg)
-
-        repo_url = ctx.repo_url
-        if repo_url is None:
-            msg = "comment_failure requires repo_url but ctx.repo_url is None"
-            raise RuntimeError(msg)
-
-        pr_number = state["pr_number"]
-        if pr_number is None:
-            msg = "comment_failure requires pr_number but state['pr_number'] is None"
-            raise RuntimeError(msg)
-
-        comment_parts = [
-            "## kodezart: remediation budget exhausted\n",
-            (
-                f"Remediation rounds used: {state['remediation_rounds_used']}"
-                f"/{self._remediation_max_rounds}\n"
-            ),
-        ]
-        if state["review_feedback"] is not None:
-            comment_parts.append(f"\n### Review Failures\n{state['review_feedback']}\n")
-        if state["ci_summary"] is not None:
-            comment_parts.append(f"\n### CI Summary\n{state['ci_summary']}\n")
-
-        # AUTHORED: the counters above are derived, but review_feedback is
-        # the evaluator's own reasoning per failed criterion. One authored
-        # part makes the assembled body authored.
-        comment_body = await self._gated(
-            content="".join(comment_parts),
-            visibility=state["repo_visibility"],
-            shape=WriterShape.PROSE,
-            destination=OutboundDestination.PR_COMMENT,
-            content_class=ContentClass.AUTHORED,
-        )
-
-        try:
-            await pr_creator.comment_on_pr(
-                repo_url=repo_url,
-                pr_number=pr_number,
-                body=comment_body,
-            )
-        except (ForgeAPIError, TransientAPIError) as exc:
-            await self._log.aerror(
-                "comment_failure_failed",
-                error=str(exc),
-                error_kind=type(exc).__name__,
-            )
-
-        return {}
-
-    async def _complete_node(
-        self,
-        state: WorkflowState,
-        config: RunnableConfig,
-    ) -> dict[str, object]:
-        """Emit the final WorkflowCompleteEvent."""
-        ctx = ExecutionContext.from_configurable(config)
-        writer = get_stream_writer()
-        writer(
-            WorkflowCompleteEvent(
-                feature_branch=state["feature_branch"],
-                ralph_branch=state["ralph_branch"],
-                total_iterations=state["total_iterations"],
-                accepted=gate_cleared(state["accept_verdict"]),
-                outcome=classify_outcome(state),
-                merged=state["merged"],
-                final_commit_sha=state["feature_tip_sha"],
-                merge_error=state["merge_error"],
-                pr_url=state["pr_url"],
-                pr_number=state["pr_number"],
-                ci_status=state["ci_status"],
-                trajectory=state["trajectory"],
-                criteria_validation=state["criteria_validation"],
-            )
-        )
-
-        if gate_cleared(state["accept_verdict"]) and state["merged"]:
+        if terminal.accepted and terminal.merged:
             await self._log.ainfo(
                 "backup_cleanup_starting",
-                prefix=state["feature_branch"],
+                prefix=terminal.feature_branch,
             )
             await self._merger.cleanup_backup_branches(
                 repo_path=ctx.repo_path,
                 repo_url=ctx.repo_url,
-                prefix=state["feature_branch"],
+                prefix=terminal.feature_branch,
                 cache_key=ctx.cache_key,
             )
         else:
             await self._log.adebug(
                 "backup_cleanup_skipped",
-                accept_verdict=state["accept_verdict"],
-                merged=state["merged"],
+                accept_verdict=terminal.accepted,
+                merged=terminal.merged,
             )
-
-        return {}

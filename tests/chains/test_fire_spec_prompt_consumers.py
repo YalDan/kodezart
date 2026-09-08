@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.chains import delivery_coordinator, ralph_workflow, remediation
+from kodezart.chains import (
+    authored_delivery,
+    delivery_coordinator,
+    ralph_workflow,
+    remediation,
+)
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.criteria import ConjunctionVerdict, CriteriaArtifact
 from kodezart.types.domain.fire_spec import AuthoredSpec
@@ -39,6 +44,7 @@ async def capture_prompts(family, ticket, monkeypatch):
     runner = FakeAgentRunner([description()])
     engine._service = runner
     monkeypatch.setattr(ralph_workflow, "get_stream_writer", lambda: lambda _: None)
+    monkeypatch.setattr(authored_delivery, "get_stream_writer", lambda: lambda _: None)
     state = {
         "issue_key": "subject/42",
         "ticket": ticket,
@@ -90,7 +96,12 @@ async def test_real_authored_consumer_prompts_match_recorded_base(
         calls.append(spec)
         return format_fire_spec(spec)
 
-    for module in (ralph_workflow, remediation, delivery_coordinator):
+    for module in (
+        ralph_workflow,
+        authored_delivery,
+        remediation,
+        delivery_coordinator,
+    ):
         monkeypatch.setattr(module, "format_fire_spec", formatted)
     actual = await capture_prompts(family, CORPUS[index], monkeypatch)
     assert len(calls) == 4

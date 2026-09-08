@@ -6,7 +6,7 @@ import pytest
 
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.agent_service import AgentService
@@ -50,7 +50,7 @@ def make_engine(
     ci_monitor: FakeCIMonitor | None = None,
     artifact_persister: FakeArtifactPersister | None = None,
     executor: FakeAgentExecutor | None = None,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     """Build a workflow engine wired to fakes, with a real gate."""
     service = AgentService(
         git_base_url="https://github.com",
@@ -58,7 +58,7 @@ def make_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
@@ -88,7 +88,7 @@ def make_engine(
 
 
 async def run_engine(
-    engine: RalphWorkflowEngine,
+    engine: AuthoredDeliveryCoordinator,
     *,
     repo_url: str | None = "https://github.com/owner/repo",
     repo_path: str | None = None,
