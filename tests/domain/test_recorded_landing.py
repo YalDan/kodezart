@@ -140,3 +140,108 @@ def test_unknown_is_its_own_case_and_an_extra_reader_refuses():
     assert combined != source
     assert landing_read_violations(combined, "services/base_resolver.py")
     assert landing_read_violations(source, "new_consumer.py")
+
+
+def landing_derivation_violations(source, module):
+    tree = ast.parse(source)
+    failures = []
+    wire_read = ast.dump(
+        ast.parse(
+            "WorkRefLanding.UNKNOWN if landing is None else WorkRefLanding(landing)",
+            mode="eval",
+        ).body
+    )
+    for node in ast.walk(tree):
+        if isinstance(node, ast.keyword) and node.arg == "landing":
+            if (
+                module != "adapters/linear_mcp_tracker.py"
+                or ast.dump(node.value) != wire_read
+            ):
+                failures.append(node.lineno)
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and ast.unparse(node.annotation) == "WorkRefLanding"
+        ):
+            if (
+                module != "types/domain/branch.py"
+                or ast.unparse(node.target) != "landing"
+                or node.value is None
+                or ast.unparse(node.value) != "WorkRefLanding.UNKNOWN"
+            ):
+                failures.append(node.lineno)
+        elif (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "_input_for"
+        ):
+            allowed_calls = {
+                "self._nearest_deliverable_ref",
+                "self._tracker.read_issue",
+                "is_open",
+                "self._log.ainfo",
+                "BaseResolutionError",
+                "assert_never",
+                "BaseInput",
+            }
+            for call in ast.walk(node):
+                if (
+                    isinstance(call, ast.Call)
+                    and ast.unparse(call.func) not in allowed_calls
+                ):
+                    failures.append(call.lineno)
+    return tuple(failures)
+
+
+def test_landing_can_only_arrive_from_the_existing_native_record():
+    assert {
+        path.relative_to(ROOT).as_posix(): failures
+        for path in ROOT.rglob("*.py")
+        if (
+            failures := landing_derivation_violations(
+                path.read_text(), path.relative_to(ROOT).as_posix()
+            )
+        )
+    } == {}
+
+
+@pytest.mark.parametrize(
+    "detector",
+    [
+        "self._git.is_ancestor('repo', 'lane', 'trunk')",
+        "self._git.diff_refs('repo', 'lane', 'trunk')",
+        "self._forge.get_merge_state('lane')",
+        "derive_from_another_module(ref)",
+    ],
+)
+def test_topology_forge_and_delegated_detectors_fail_before_they_can_run(detector):
+    source = f"async def _input_for(ref):\n    return {detector}\n"
+    assert landing_derivation_violations(source, "services/base_resolver.py")
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "WorkRefLanding.LANDED",
+        "'landed' if ancestry else 'unknown'",
+        "WorkRefLanding.LANDED if diff_empty else WorkRefLanding.UNKNOWN",
+        "WorkRefLanding(merge_state)",
+        "bool(ref)",
+    ],
+)
+def test_a_constructor_cannot_derive_or_assume_a_landing(expression):
+    assert landing_derivation_violations(
+        f"WorkRef(landing={expression})", "services/base_resolver.py"
+    )
+    assert landing_derivation_violations(
+        f"WorkRef(landing={expression})", "adapters/linear_mcp_tracker.py"
+    )
+
+
+def test_a_second_landing_carrier_and_changed_absence_default_fail():
+    assert landing_derivation_violations(
+        "class OtherRecord:\n    landing: WorkRefLanding = WorkRefLanding.UNKNOWN",
+        "types/domain/other.py",
+    )
+    assert landing_derivation_violations(
+        "class WorkRef:\n    landing: WorkRefLanding = WorkRefLanding.NOT_LANDED",
+        "types/domain/branch.py",
+    )
