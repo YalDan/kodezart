@@ -126,7 +126,7 @@ class BaseResolver:
         one here means the graph moved under the pass, and dispatching
         over it would build on a premise that does not exist yet.
         """
-        ref = await self._nearest_deliverable_ref(blocker_key)
+        ref = await self._nearest_deliverable_ref(blocker_key, issue_key=issue_key)
         if ref is None:
             blocker = await self._tracker.read_issue(issue_key=blocker_key)
             if not is_open(blocker.state_kind):
@@ -164,14 +164,27 @@ class BaseResolver:
             sha=ref.pushed_head_sha,
         )
 
-    async def _nearest_deliverable_ref(self, blocker_key: str) -> WorkRef | None:
+    async def _nearest_deliverable_ref(
+        self, blocker_key: str, *, issue_key: str
+    ) -> WorkRef | None:
         seen: set[str] = set()
         cursor: str | None = blocker_key
         while cursor is not None and cursor not in seen:
             seen.add(cursor)
-            for ref in await self._tracker.work_refs(issue_key=cursor):
-                if ref.role is WorkRefRole.DELIVERABLE:
-                    return ref
+            deliverables = [
+                ref
+                for ref in await self._tracker.work_refs(issue_key=cursor)
+                if ref.role is WorkRefRole.DELIVERABLE
+            ]
+            if len(deliverables) > 1:
+                raise BaseResolutionError(
+                    f"multiple deliverable refs are recorded on {cursor}",
+                    issue_id=issue_key,
+                    blocker_issue_ids=(blocker_key,),
+                    branches=tuple(ref.branch for ref in deliverables),
+                )
+            if deliverables:
+                return deliverables[0]
             cursor = (await self._tracker.read_issue(issue_key=cursor)).parent_key
         return None
 
