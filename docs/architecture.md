@@ -783,6 +783,10 @@ head and acquires a detached workspace at that exact SHA. The fresh evaluative
 session receives the Check and measured head, with `session_id=None`, no
 subagents and the configured read-only tools. The record's prior head, prior
 Evidence/verdict and author transcript are not session inputs.
+Active Git replacement references refuse the claim before dispatch or before
+an observation returns: a matching SHA and clean status alone do not prove
+that the workspace contains the original commit tree. The replacement read
+settles before cancellation releases the workspace, and read failures propagate.
 
 The result uses the shared three-state `AuditVerdict`. The caller attaches the
 measured SHA, native comment reference and exact Check. A changed criterion,
@@ -817,9 +821,23 @@ distinguishes an absent file from an unreadable commit or unsupported object.
 The session's semantic counterfactual remains a judgment: exact quotations do
 not prove the absence of all replacement detection. The test fixture executes
 the real current suite and baseline detector at the current head through the
-actual agent/workspace boundary; it does not call a live model. This component
-returns an observation, without scheduling a sweep, completing a mandate hunt,
-writing a refutation or bypassing required writer leases.
+actual agent/workspace boundary; it does not call a live model. The verifier
+returns a source-checked observation. `AuditReadSweep` invokes it independently
+for each native criterion request and completes a separate existing mandate
+report for every demonstrated loss. Each report retains the exact mechanism
+and detector quotations, their addresses and the absence demonstration; these
+remain evidence for a judgment rather than a new routing rule. A quiet or
+unverifiable detector produces its own non-refuted report without a mandate.
+
+Failure in the ordinary claim or over-claim arm does not suppress this detector.
+An unavailable revision or verifier is named separately, including states
+outside the revision reader's completed/configured-review contract. Final scope,
+record and current-head checks include every successful detector observation.
+The native sweep fixtures execute the current suite and old guard: deleting the
+last guard reports a loss, while retaining or replacing it keeps this arm quiet.
+There are no tracker writes, coverage marks or writer-lease bypasses here;
+scheduled publication and complete coverage of the other detectors remain
+separate consumers.
 
 
 ## Standing over-claim observations
@@ -862,6 +880,25 @@ categories using a scripted external judgment boundary; they validate execution
 and evidence handling without claiming live-model detection accuracy.
 
 ## Recorded criterion Evidence and lapse observations
+
+`AuditReadSweep` independently invokes `AuditForgeVerifier` for completed native
+criterion requests. The request's criterion, owning issue and repository come
+from the same native scope assembly as the other arms. The full forge reading
+retains recorded Evidence, required and observed check names, and the existing
+delivery classifier's same-SHA rerun history. This sweep can request bounded
+forge reruns; it performs no tracker writes.
+
+Each forge verdict has an addressed claim report using the exact Check, native
+lane-comment reference and historical graded SHA. Refutations receive the
+existing mandate hunt at that SHA. If the hunt fails, the raw forge observation
+remains available with an explicit failure and no completed forge report.
+Missing capabilities, rosters and prerequisites remain unverifiable. A missing
+verifier or ineligible source has its own refusal without suppressing other
+arms. The observed criterion must equal the collected target, and final native
+source checks still cover its body, state, Evidence and lane record. Historical
+forge SHAs do not enter the current-head equality check: a current lapse can
+coexist with a green or refuted historical forge proposition. Scheduling,
+coverage advancement and leased publication remain separate consumers.
 
 `AuditEvidenceVerifier.observe` reads the requested criterion's current full
 record and its lane's addressed run-state comment. The existing Evidence field

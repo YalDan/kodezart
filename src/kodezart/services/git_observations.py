@@ -6,6 +6,16 @@ from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import GitService
 
 
+async def read_replace_refs(*, git: GitService, workspace: str) -> bool:
+    """Settle the active replacement-namespace read before workspace release."""
+    replacements, cancelled = await finish_owned(
+        asyncio.create_task(git.has_replace_refs(workspace))
+    )
+    if cancelled:
+        raise asyncio.CancelledError
+    return replacements
+
+
 async def read_remote_head(
     *, git: GitService, repository: str, remote: str, branch: str
 ) -> str | None:

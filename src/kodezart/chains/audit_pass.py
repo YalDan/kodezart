@@ -19,7 +19,11 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.criterion_sources import resolve_criterion
-from kodezart.services.git_observations import read_remote_head, read_workspace_head
+from kodezart.services.git_observations import (
+    read_remote_head,
+    read_replace_refs,
+    read_workspace_head,
+)
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.services.tracker_artifacts import read_tracker_artifact
@@ -29,6 +33,7 @@ from kodezart.types.domain.audit import (
     AuditClaimObservation,
     AuditClaimReport,
     AuditClaimRequest,
+    AuditMandateContext,
     AuditMandateJudgment,
     AuditMandateObservation,
     AuditMandateRequest,
@@ -120,6 +125,10 @@ class AuditClaimVerifier:
         try:
             if cancelled:
                 raise asyncio.CancelledError
+            if await read_replace_refs(git=self._git, workspace=workspace):
+                raise AuditClaimReadError(
+                    "the audit repository substitutes Git objects"
+                )
             if await read_workspace_head(git=self._git, workspace=workspace) != (
                 head,
                 False,
@@ -166,6 +175,10 @@ class AuditClaimVerifier:
             )
             if latest != (comment, record):
                 raise AuditClaimReadError("the lane record changed during verification")
+            if await read_replace_refs(git=self._git, workspace=workspace):
+                raise AuditClaimReadError(
+                    "the audit repository substitutes Git objects"
+                )
             if await read_remote_head(
                 git=self._git,
                 repository=repository,
@@ -238,24 +251,35 @@ class AuditMandateHunt:
     async def complete(self, request: AuditMandateRequest) -> AuditClaimReport:
         if request.claim.judgment.verdict is not AuditVerdict.REFUTED:
             return AuditClaimReport(claim=request.claim, mandate=None)
+        mandate = await self.observe(
+            AuditMandateContext(
+                defect_class=request.defect_class,
+                refutation_evidence=request.claim.judgment.evidence,
+                head_sha=request.claim.head_sha,
+                surfaces=request.surfaces,
+                repo_url=request.repo_url,
+                cache_key=request.cache_key,
+            )
+        )
+        return AuditClaimReport(claim=request.claim, mandate=mandate)
+
+    async def observe(self, request: AuditMandateContext) -> AuditMandateObservation:
+        """Hunt once over native text for a fresh, exactly addressed refutation."""
         covered, unreadable = await self._read_set(request.surfaces)
         if unreadable:
-            return AuditClaimReport(
-                claim=request.claim,
-                mandate=AuditMandateObservation(
-                    verdict=AuditVerdict.UNVERIFIABLE,
-                    covered=covered,
-                    unreadable=unreadable,
-                    finding=None,
-                    finding_surface=None,
-                    evidence="The addressed surface set could not be fully read.",
-                ),
+            return AuditMandateObservation(
+                verdict=AuditVerdict.UNVERIFIABLE,
+                covered=covered,
+                unreadable=unreadable,
+                finding=None,
+                finding_surface=None,
+                evidence="The addressed surface set could not be fully read.",
             )
         workspace, cancelled = await finish_owned(
             asyncio.create_task(
                 self._workspace.acquire(
                     repo_url=request.repo_url,
-                    ref=request.claim.head_sha,
+                    ref=request.head_sha,
                     create_branch=False,
                     cache_key=request.cache_key,
                 )
@@ -264,8 +288,12 @@ class AuditMandateHunt:
         try:
             if cancelled:
                 raise asyncio.CancelledError
+            if await read_replace_refs(git=self._git, workspace=workspace):
+                raise AuditClaimReadError(
+                    "the mandate repository substitutes Git objects"
+                )
             if await read_workspace_head(git=self._git, workspace=workspace) != (
-                request.claim.head_sha,
+                request.head_sha,
                 False,
             ):
                 raise AuditClaimReadError(
@@ -275,8 +303,8 @@ class AuditMandateHunt:
             prompt = self._prompts.template_for(key).render(
                 {
                     "defect_class": request.defect_class,
-                    "refutation_evidence": request.claim.judgment.evidence,
-                    "head_sha": request.claim.head_sha,
+                    "refutation_evidence": request.refutation_evidence,
+                    "head_sha": request.head_sha,
                     "audited_surfaces": json.dumps(
                         [
                             {
@@ -321,8 +349,12 @@ class AuditMandateHunt:
                     rate_limit_rejected=limited,
                 )
             judgment = AuditMandateJudgment.model_validate(result.structured_output)
+            if await read_replace_refs(git=self._git, workspace=workspace):
+                raise AuditClaimReadError(
+                    "the mandate repository substitutes Git objects"
+                )
             if await read_workspace_head(git=self._git, workspace=workspace) != (
-                request.claim.head_sha,
+                request.head_sha,
                 False,
             ):
                 raise AuditClaimReadError(
@@ -360,16 +392,13 @@ class AuditMandateHunt:
                     raise AuditClaimReadError(
                         "session claims a successfully read source was unreadable"
                     )
-            return AuditClaimReport(
-                claim=request.claim,
-                mandate=AuditMandateObservation(
-                    verdict=judgment.verdict,
-                    covered=covered,
-                    unreadable=unreadable,
-                    finding=judgment.finding,
-                    finding_surface=finding_surface,
-                    evidence=judgment.evidence,
-                ),
+            return AuditMandateObservation(
+                verdict=judgment.verdict,
+                covered=covered,
+                unreadable=unreadable,
+                finding=judgment.finding,
+                finding_surface=finding_surface,
+                evidence=judgment.evidence,
             )
         finally:
             _, cancelled = await finish_owned(

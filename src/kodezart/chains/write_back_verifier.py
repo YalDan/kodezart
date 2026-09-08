@@ -17,7 +17,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import WriteBackReadError
-from kodezart.services.git_observations import read_workspace_head
+from kodezart.services.git_observations import read_replace_refs, read_workspace_head
 from kodezart.services.tracker_artifacts import (
     read_tracker_artifact,
     require_artifact_read,
@@ -129,6 +129,8 @@ class TrackerWriteBackVerifier:
                 raise asyncio.CancelledError
 
     async def _require_head(self, workspace: str, head_sha: str) -> None:
+        if await read_replace_refs(git=self._git, workspace=workspace):
+            raise WriteBackReadError("verification repository substitutes Git objects")
         observed_head, dirty = await read_workspace_head(
             git=self._git, workspace=workspace
         )

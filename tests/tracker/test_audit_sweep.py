@@ -6,6 +6,7 @@ from inspect import signature
 
 import pytest
 
+from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
 from kodezart.chains.audit_evidence import AuditEvidenceVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
@@ -23,6 +24,7 @@ from kodezart.types.domain.agent import (
     AUDIT_CLAIM_SCHEMA,
     AUDIT_MANDATE_SCHEMA,
     AUDIT_OVERCLAIM_SCHEMA,
+    DETECTOR_REMOVAL_SCHEMA,
 )
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
@@ -67,12 +69,20 @@ class Executor(FakeAgentExecutor):
         self.verdict = "holds"
         self.during = None
         self.overclaim_output = None
+        self.removal_output = None
         self.mandate_output = {
             "verdict": "refuted",
             "finding": None,
             "source_index": None,
             "evidence": "No instruction mandates this defect in the supplied body set.",
         }
+
+    def _is_criteria_validation_schema(self, output_format):
+        if output_format and output_format["schema"] == DETECTOR_REMOVAL_SCHEMA:
+            # The broad fake's findings heuristic otherwise fabricates authored
+            # feasibility output instead of forwarding this scripted detector.
+            return False
+        return super()._is_criteria_validation_schema(output_format)
 
     async def stream(self, **kwargs):
         if self.during:
@@ -85,6 +95,8 @@ class Executor(FakeAgentExecutor):
             }
         elif kwargs["output_format"]["schema"] == AUDIT_OVERCLAIM_SCHEMA:
             payload = self.overclaim_output
+        elif kwargs["output_format"]["schema"] == DETECTOR_REMOVAL_SCHEMA:
+            payload = self.removal_output
         else:
             assert kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA
             payload = self.mandate_output
@@ -140,6 +152,8 @@ async def setup(tracker, server):
         selected_workspace=workspace,
         selected_source=None,
         include_overclaims=False,
+        include_removals=False,
+        selected_forge=None,
     ):
         runner = AgentService(
             executor=executor, workspace=selected_workspace, git_base_url=REPO
@@ -208,6 +222,30 @@ async def setup(tracker, server):
             if include_overclaims
             else None
         )
+        removals = (
+            DetectorRemovalVerifier(
+                sources=AuditSourceReader(
+                    tracker=tracker,
+                    records=records,
+                    git=selected_git,
+                    source=selected_source or Source(),
+                    cache=selected_cache,
+                    operation=selected_op,
+                    config=config,
+                ),
+                sessions=FreshAuditSession(
+                    git=selected_git,
+                    workspace=selected_workspace,
+                    runner=runner,
+                    prompts=prompts,
+                    skills=SUPPRESS_ALL_SKILLS,
+                ),
+                prompts=prompts,
+                git=selected_source or Source(),
+            )
+            if include_removals
+            else None
+        )
         return AuditReadSweep(
             scope=scope,
             tracker=tracker,
@@ -220,6 +258,8 @@ async def setup(tracker, server):
             cache=selected_cache,
             config=config,
             overclaims=overclaims,
+            removals=removals,
+            forge=selected_forge,
         )
 
     return build, executor, git, cache, workspace, forge, stored, op
@@ -357,7 +397,9 @@ async def test_independent_terminal_read_survives_failed_criterion(
         )  # unreadable Evidence never falls back to an optimistic fresh arm
     if mode == "refuted":
         assert parent.terminal.verdict is AuditVerdict.REFUTED
-        assert "mandate" in parent.unavailable_reason
+        assert parent.unavailable_reason is None
+        assert parent.terminal_report.observation == parent.terminal
+        assert parent.terminal_report.mandate.verdict is AuditVerdict.REFUTED
     else:
         assert (
             parent.terminal.verdict is AuditVerdict.HOLDS

@@ -429,7 +429,7 @@ operation configuration. It uses the existing scheduled-session grant and
 configured evaluation policy; no prior session identifier is accepted.
 
 `AuditReadSweep` binds a `ScopeRef` at construction and offers a zero-argument
-`run()` for a read-only full-snapshot observation. It discovers each native
+`run()` for a full-snapshot observation. It discovers each native
 lane record from its configured marker and resolves the repository through
 existing team bindings or the recorded-repository route. Ambiguous records,
 unknown routes and unreadable targets remain explicit; no latest-lane selection
@@ -441,13 +441,34 @@ reader. Refuted criteria complete the existing mandate hunt over the exact
 scope issue bodies, any addressed parent outside the scope, and the scope
 container body when applicable. The returned surface set bounds the mandate
 finding; it does not claim to have read every charter or ruling elsewhere.
-Terminal refutations retain their observation and name the missing terminal
-mandate consumer. Independent readable targets continue after a target fails.
+Terminal observations retain their own issue and native record identity. A
+refutation with an observed branch head now invokes the same mandate hunt as
+criterion refutations and returns its mandate-completed terminal report. It
+passes the native discrepancy and PR facts at that exact head, without creating
+a criterion judgment for an issue. Missing-branch observations retain an
+explicit unavailable reason; a historical lane-record head does not supply the
+missing verification context. A failed hunt likewise retains the original
+terminal observation without claiming a complete report. Final terminal and
+scope reads still refuse changed source facts. Independent readable targets
+continue after a target fails.
 When supplied, the existing over-claim verifier runs independently for each
 criterion request. Its four categories retain separate mandate-completed reports
 and their original source evidence. Missing configuration or unreadable revision
 inputs produce an explicit detector-unavailable reason alongside any successful
 ordinary claim. This introduces no configuration field or implicit detector.
+The optional detector-removal verifier likewise runs independently. Each
+source-checked removal retains an individual mandate-completed report; absent
+configuration or unreadable revision inputs remain explicit. Its successful
+observed head must agree with the other current-revision arms. Both optional
+detectors use their existing prompt roles and operation source bindings.
+
+When supplied, the forge verifier observes completed criteria at their own
+historical Evidence SHA. It may request the existing delivery classifier's
+bounded same-SHA forge reruns, so the sweep is not globally read-only. The full
+observation survives an unavailable mandate hunt; only a completed hunt exposes
+a refuted forge report. The report keeps the graded SHA, exact Check and native
+record reference. Historical forge SHAs never replace current-head observations
+or participate in their equality check. No tracker writer is added.
 
 This read attempt does not advance the completed-audit coverage cache, even
 when its individual observations succeed. Every invocation reads the full
@@ -478,11 +499,24 @@ whole-surface reads refuse before writing. The caller retains its required
 lease, authorization and outbound sanitization throughout; this component does
 not complete universal scope-writer adoption. Ignored generated outputs are
 outside the Git workspace-cleanliness check.
+The verifier also refuses active Git replacement references before the initial
+write and around every fresh judgment. A replacement introduced by a write,
+repair or session cannot yield a verified artifact, even at the expected SHA
+with a clean tree. Replacement reads settle before workspace release, and an
+unreadable namespace propagates instead of being treated as empty.
 
 
+The shared `AuditMandateHunt.observe` consumes an explicit `AuditMandateContext`
+from either a fresh criterion judgment or a native terminal refutation. The
+existing criterion `complete` entry delegates to that same session and coverage
+implementation; both retain the original `SpecFinding` mandate shape.
 The `audit_mandate` read-only role receives `defect_class`, `refutation_evidence`,
 `head_sha` and `audited_surfaces` per call. It completes a freshly refuted claim
 with an instruction verdict over an explicit addressed text set. A quoted
 mandate must occur exactly in its native source; absence requires full reads.
 Unsupported or unreachable surfaces yield unverifiable coverage. This consumer
 does not enumerate the full audit scope or publish/edit any tracker artifact.
+Before and after the mandate session, an active Git replacement reference
+refuses the observation even if the workspace reports the expected SHA and
+clean status. The native namespace read settles before cancellation releases
+the workspace; an unreadable namespace cannot establish a valid observation.
