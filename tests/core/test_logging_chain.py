@@ -162,12 +162,12 @@ async def test_the_queues_failure_event_carries_the_traceback() -> None:
         queue = AsyncioJobQueue(
             engine=RaisingEngine(),
             max_concurrent_runs_per_lane=1,
-            max_depth_per_lane=config.queue_max_depth_per_lane,
-            terminal_retention_seconds=config.queue_terminal_retention_seconds,
+            max_depth_per_lane=config.queue.max_depth_per_lane,
+            terminal_retention_seconds=config.queue.terminal_retention_seconds,
             event_buffer_retention_seconds=(
-                config.queue_event_buffer_retention_seconds
+                config.queue.event_buffer_retention_seconds
             ),
-            event_buffer_capacity=config.queue_event_buffer_capacity,
+            event_buffer_capacity=config.queue.event_buffer_capacity,
         )
         await queue.start()
         try:

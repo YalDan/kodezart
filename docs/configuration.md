@@ -85,11 +85,11 @@ and leased alarm writer remain separate work.
 | `KODEZART_RETRY_RATE_LIMIT_FLOOR_SECONDS` | `float` | `60.0` | >= 1.0, <= 3600.0 | Seconds a node attempt that died on a provider rate-limit rejection waits before the graph's own back-off begins, when the rejection states no retry-after of its own. Measured 2026-09-01: under one standing limit the retry policy spawned around sixteen empty sessions in thirty seconds. The attempt budget is unchanged — only the spacing is. |
 | `KODEZART_CHECKPOINT_URL`         | `str\|None`  | `None`                   |             | LangGraph checkpoint URL (see Checkpointing below)       |
 | `KODEZART_LOOP_PLATEAU_WINDOW`    | `int`        | `2`                      | 2-10        | Iterations without a new best passed-count before the Ralph loop is considered plateaued and stops |
-| `KODEZART_QUEUE_MAX_CONCURRENT_RUNS_PER_LANE` | `int` | `1`             | 1-16        | Dispatcher worker tasks per lane; `1` makes runs serial. Above 1 is honored and warns at start |
-| `KODEZART_QUEUE_MAX_DEPTH_PER_LANE` | `int`      | `64`                     | 1-1024      | Queued submissions a lane accepts before rejecting with HTTP 429 |
-| `KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS` | `float` | `86400.0`        | 60-604800   | Seconds the terminal **job record** is retained in the registry (see Queue retention below) |
-| `KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS` | `float` | `900.0`      | 0-86400     | Seconds a terminal job's **replay buffer** is retained, independently of its record (see Queue retention below) |
-| `KODEZART_QUEUE_EVENT_BUFFER_CAPACITY` | `int`   | `512`                    | 1-10000     | Events retained per job for replay on attach; overflow drops oldest and marks the job truncated |
+| `KODEZART_QUEUE__MAX_CONCURRENT_RUNS_PER_LANE` | `int` | `1`             | 1-16        | Dispatcher worker tasks per lane; `1` makes runs serial. Above 1 is honored and warns at start |
+| `KODEZART_QUEUE__MAX_DEPTH_PER_LANE` | `int`      | `64`                     | 1-1024      | Queued submissions a lane accepts before rejecting with HTTP 429 |
+| `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` | `float` | `86400.0`        | 60-604800   | Seconds the terminal **job record** is retained in the registry (see Queue retention below) |
+| `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` | `float` | `900.0`      | 0-86400     | Seconds a terminal job's **replay buffer** is retained, independently of its record (see Queue retention below) |
+| `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` | `int`   | `512`                    | 1-10000     | Events retained per job for replay on attach; overflow drops oldest and marks the job truncated |
 | `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` | `bool` | `false` |  | Enables organization-privacy judgment and requires an OperationConfig `private_surface` description. Mandatory authored aggregate judgment on durable PUBLIC/UNKNOWN writes is independent of this setting. |
 | `KODEZART_TRACKER_ASSET_FETCH_TIMEOUT_SECONDS` | `float` | `30.0` | >= 1.0, <= 300.0 | Time one asset fetch may take before the fire fails to build. |
 | `KODEZART_TRACKER_ASSET_MAX_BYTES` | `int` | `10485760` | >= 1024, <= 104857600 | Largest single asset admitted into a fire context. An asset over the bound is a typed failure, never a truncation. |
@@ -402,7 +402,7 @@ own window:
 
 - the **job record** (`jobId`, lane, state, outcome, truncated) is 1-2 KB, so it
   is kept for a day by default;
-- the **replay buffer** holds up to `QUEUE_EVENT_BUFFER_CAPACITY` full SSE
+- the **replay buffer** holds up to `queue.event_buffer_capacity` full SSE
   frames, which run to megabytes per job, so it is released after 15 minutes —
   long enough for a disconnected client to reconnect at
   `GET /api/v1/jobs/{jobId}/stream` and replay.
@@ -412,8 +412,8 @@ terminal. Releasing a buffer marks the record `truncated: true` and logs
 `job_event_buffer_dropped`, so frames a client can no longer replay are never a
 silent gap.
 
-`QUEUE_EVENT_BUFFER_RETENTION_SECONDS` must not exceed
-`QUEUE_TERMINAL_RETENTION_SECONDS`: a buffer outliving the record that names it
+`queue.event_buffer_retention_seconds` must not exceed
+`queue.terminal_retention_seconds`: a buffer outliving the record that names it
 is incoherent, so the configuration is **rejected at startup** rather than
 clamped.
 
@@ -573,3 +573,23 @@ the workspace; an unreadable namespace cannot establish a valid observation.
 Scoped execution is currently unavailable and refuses before tracker,
 repository or judgment work. There is no fire-time ruling prompt setting or
 preparation-only session. Authored workflow prompt configuration is unchanged.
+
+## Queue environment migration
+
+Queue settings now live in the ordinary `AppConfig.queue` value passed to the
+queue builder. The five operator choices, defaults and bounds are unchanged.
+Replace each former flat field's environment name (the uppercase field with the
+`KODEZART` prefix and separator) with the nested name below. Old flat assignments
+are rejected in constructor input, process environment, dotenv and file secrets.
+
+| Former flat field | Nested environment name |
+| --- | --- |
+| `queue_max_concurrent_runs_per_lane` | `KODEZART_QUEUE__MAX_CONCURRENT_RUNS_PER_LANE` |
+| `queue_max_depth_per_lane` | `KODEZART_QUEUE__MAX_DEPTH_PER_LANE` |
+| `queue_terminal_retention_seconds` | `KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS` |
+| `queue_event_buffer_retention_seconds` | `KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS` |
+| `queue_event_buffer_capacity` | `KODEZART_QUEUE__EVENT_BUFFER_CAPACITY` |
+
+A file secret named `KODEZART_QUEUE` contains a JSON object with these section
+field names, without the old `queue_` prefix. Standard settings precedence remains
+constructor input, process environment, dotenv, file secrets, then defaults.

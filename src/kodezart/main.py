@@ -176,7 +176,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # the watchers later. This exit stack reserves their dependency order.
         watchers = await cleanup.enter_async_context(AsyncExitStack())
         job_queue = build_job_queue(
-            config=config,
+            settings=config.queue,
             workflow_engine=workflow_engine,
         )
         app.state.job_queue = job_queue

@@ -133,7 +133,7 @@ Queue a workflow run and return immediately. Same request body as
 ```
 
 `queuePosition` is `null` once the run has left the queue. A lane at
-`KODEZART_QUEUE_MAX_DEPTH_PER_LANE` rejects the submission with `429`.
+`KODEZART_QUEUE__MAX_DEPTH_PER_LANE` rejects the submission with `429`.
 
 ### Example
 
@@ -147,7 +147,7 @@ curl -X POST http://localhost:8000/api/v1/agent/fire \
 
 Registry facts for a queued or running job, plus the checkpointed run state.
 `404` with a `BaseResponse` error body when the job id is unknown or its
-record has been released (`KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS`).
+record has been released (`KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS`).
 
 ### Example
 
@@ -158,10 +158,10 @@ curl http://localhost:8000/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6
 ## GET /api/v1/jobs/{jobId}/stream
 
 Attach to a job's event stream. Replays the job's bounded event buffer
-(`KODEZART_QUEUE_EVENT_BUFFER_CAPACITY`) and then goes live, in the same SSE
+(`KODEZART_QUEUE__EVENT_BUFFER_CAPACITY`) and then goes live, in the same SSE
 format as `/agent/query` and `/agent/workflow`. `404` when the job id is
 unknown. A job whose buffer has been released
-(`KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS`) is marked `truncated` on its
+(`KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS`) is marked `truncated` on its
 record and replays nothing.
 
 ### Example

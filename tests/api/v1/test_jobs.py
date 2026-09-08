@@ -18,6 +18,7 @@ from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
+from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.protocols import JobQueue, JobRegistry
 from kodezart.domain.errors import QueueFullError
 from kodezart.domain.thread_id import (
@@ -1106,18 +1107,18 @@ async def test_zero_buffer_retention_drops_the_buffer_at_terminal() -> None:
 def test_retention_defaults_are_the_ruled_windows() -> None:
     """24h for the record, 15 minutes for the buffer, from AppConfig."""
     config = AppConfig()
-    assert config.queue_terminal_retention_seconds == 86400.0
-    assert config.queue_event_buffer_retention_seconds == 900.0
-    assert config.queue_event_buffer_capacity == 512
-    assert config.queue_max_depth_per_lane == 64
-    assert config.queue_max_concurrent_runs_per_lane == 1
+    assert config.queue.terminal_retention_seconds == 86400.0
+    assert config.queue.event_buffer_retention_seconds == 900.0
+    assert config.queue.event_buffer_capacity == 512
+    assert config.queue.max_depth_per_lane == 64
+    assert config.queue.max_concurrent_runs_per_lane == 1
 
 
 def test_each_retention_field_says_which_object_it_governs() -> None:
     """The separation is the point, so it is legible at the config surface."""
-    fields = AppConfig.model_fields
-    record_description = fields["queue_terminal_retention_seconds"].description
-    buffer_description = fields["queue_event_buffer_retention_seconds"].description
+    fields = JobQueueSettings.model_fields
+    record_description = fields["terminal_retention_seconds"].description
+    buffer_description = fields["event_buffer_retention_seconds"].description
     assert record_description is not None
     assert buffer_description is not None
     assert "JOB RECORD" in record_description
@@ -1128,33 +1129,37 @@ def test_a_buffer_outliving_its_record_is_rejected_at_boot() -> None:
     """Incoherent config fails loud rather than being clamped."""
     with pytest.raises(ValidationError, match="cannot outlive"):
         AppConfig(
-            queue_terminal_retention_seconds=120.0,
-            queue_event_buffer_retention_seconds=121.0,
+            queue={
+                "terminal_retention_seconds": 120.0,
+                "event_buffer_retention_seconds": 121.0,
+            },
         )
 
 
 def test_equal_retention_windows_are_accepted() -> None:
     """The bound is <=, not <: a buffer may live exactly as long."""
     config = AppConfig(
-        queue_terminal_retention_seconds=120.0,
-        queue_event_buffer_retention_seconds=120.0,
+        queue={
+            "terminal_retention_seconds": 120.0,
+            "event_buffer_retention_seconds": 120.0,
+        },
     )
-    assert config.queue_event_buffer_retention_seconds == 120.0
+    assert config.queue.event_buffer_retention_seconds == 120.0
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("queue_terminal_retention_seconds", 59.0),
-        ("queue_terminal_retention_seconds", 604801.0),
-        ("queue_event_buffer_retention_seconds", -1.0),
-        ("queue_event_buffer_retention_seconds", 86401.0),
+        ("terminal_retention_seconds", 59.0),
+        ("terminal_retention_seconds", 604801.0),
+        ("event_buffer_retention_seconds", -1.0),
+        ("event_buffer_retention_seconds", 86401.0),
     ],
 )
 def test_retention_bounds_are_enforced(field: str, value: float) -> None:
     """Both windows carry the ruled bounds."""
     with pytest.raises(ValidationError):
-        AppConfig(**{field: value})
+        AppConfig(queue={field: value})
 
 
 async def test_stop_marks_in_flight_jobs_terminal_and_leaves_no_worker() -> None:

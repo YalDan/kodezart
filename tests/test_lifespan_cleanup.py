@@ -400,7 +400,7 @@ async def test_actual_queue_watchers_finish_fire_records_before_transports_close
         return runtime
 
     monkeypatch.setattr(main, "build_dispatch_runtime", dispatch)
-    resources.app.state.config = AppConfig(queue_max_concurrent_runs_per_lane=1)
+    resources.app.state.config = AppConfig(queue={"max_concurrent_runs_per_lane": 1})
     observed = False
     try:
         try:
@@ -519,3 +519,19 @@ async def test_repeated_lifespan_cancellation_settles_the_actual_queue_worker(
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         await settle_fixture(resources)
+
+
+async def test_actual_lifespan_passes_queue_section_to_composed_workers(
+    resources, monkeypatch
+):
+    from tests.api.v1.test_jobs import GatedWorkflowEngine, _request, _until
+
+    engine = GatedWorkflowEngine()
+    monkeypatch.setattr(main, "build_workflow_engine", lambda **_kwargs: engine)
+    resources.app.state.config = AppConfig(queue={"max_concurrent_runs_per_lane": 2})
+    async with resources.app.router.lifespan_context(resources.app):
+        queue = resources.queues[0]
+        for prompt in ["first", "second"]:
+            await queue.submit(lane="same-lane", request=_request(prompt))
+        await _until(lambda: engine.started == ["first", "second"])
+    assert engine.finished == []
