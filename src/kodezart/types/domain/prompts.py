@@ -41,6 +41,7 @@ class PromptKey(StrEnum):
     ORGANIZE_ASSESS = "organize_assess"
     ORGANIZE_AUTHOR = "organize_author"
     ORGANIZE_VERIFY = "organize_verify"
+    AUDIT_CLAIM = "audit_claim"
     ORGANIZE_CRITERIA_AUTHOR = "organize_criteria_author"
     #: What lives where.  A prelude composed into a session that is granted
     #: the knowledge server, and into no other — a key rather than set-level

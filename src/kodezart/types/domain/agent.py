@@ -11,6 +11,7 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
+from kodezart.types.domain.audit import AuditClaimJudgment
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
@@ -58,6 +59,7 @@ RaiseSite = Literal[
     "ticket_reviewer",
     "organize_assess",
     "organize_verify",
+    "audit_claim",
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",
@@ -960,6 +962,8 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
+AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
+
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
@@ -977,4 +981,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
+    "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
 }

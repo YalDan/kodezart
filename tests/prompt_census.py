@@ -26,6 +26,7 @@ PROMPT_FUNCTION_NAMES: Final[frozenset[str]] = frozenset(
         "organize_assess",
         "organize_author",
         "organize_verify",
+        "audit_claim",
         "organize_criteria_author",
     }
 )

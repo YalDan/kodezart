@@ -4,9 +4,24 @@
 context=...)` creates or edits an accepted lane's pull request and observes its checks.
 `LaneDispatch` contains the lane key, issue identity, head branch and recorded
 `BaseSpec`. `DeliveryContext` supplies the existing execution context, fire
-outcome, ticket, validated criteria, iteration count, flags and repository
-visibility used by the PR-description session. These are caller inputs; the
-coordinator does not synthesize a legacy ticket from tracker issue text.
+outcome, `FireSpec`, criteria, iteration count, flags and repository visibility
+used by the PR-description session. Authored calls supply
+`AuthoredSpec(ticket=...)` with validated authored criteria. Tracker calls supply
+the captured `TrackerSpec` and the criterion issues themselves, in its recorded
+key order; each must retain its owning subject and configured criterion
+membership. Empty, mixed, duplicate or mismatched tracker criteria refuse at
+context construction, and a subject differing from the dispatch refuses before
+side effects. These are caller inputs; the coordinator neither constructs a
+legacy ticket nor re-reads the tracker. The one total formatter preserves
+authored subject bytes and renders a tracker subject's body verbatim. Both
+shipped PR prompts retain tracker criterion keys, owning issue references and
+bodies without minting legacy criterion identities or classes.
+
+The existing authored implementation, remediation and workflow PR bindings also
+use the total formatter. A generated ticket corpus exercises the actual
+consumers in both shipped prompt sets against 192 prompt digests captured on the
+dispatch base, preserving the authored bytes without changing existing goldens.
+The branch-name input still belongs to its earlier dispatch stage.
 
 The common route accepts `handed_off_for_delivery`. It verifies that the
 execution carries the dispatched issue's FIRE run identity, that the
@@ -91,3 +106,6 @@ same-SHA linkage between the initial branch watch
 and red re-observation, the shared remediation loop, durable residual
 publication, and declared-no-run exemption/close-out remain unfinished. The
 existing pure red classifier is not invoked by this common route.
+Tracker fire entry, approval/state eligibility, per-iteration criterion queries
+and the write-only artifact projection remain separate integration work. This
+delivery input path does not establish any of those producer behaviors.

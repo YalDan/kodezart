@@ -16,13 +16,14 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.core.stream_drain import drain
 from kodezart.domain.remediation import done_work_summary
-from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.agent import (
     TICKET_DRAFT_SCHEMA,
     AgentEvent,
     TicketDraftOutput,
     WorkflowRemediationEvent,
 )
+from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
@@ -65,7 +66,9 @@ class RemediationChain:
         """Draft one remediation ticket for *request*."""
         prompt = self._prompts.template_for(PromptKey.REMEDIATION_TICKET).render(
             {
-                "original_ticket": format_ticket_as_task(request.original_ticket),
+                "original_ticket": format_fire_spec(
+                    AuthoredSpec(ticket=request.original_ticket)
+                ),
                 "done_work": done_work_summary(request),
                 "failure_evidence": request.failure_evidence,
             },

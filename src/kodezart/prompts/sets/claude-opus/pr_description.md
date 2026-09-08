@@ -4,7 +4,8 @@
 {{task_md}}
 
 ## Acceptance Criteria{{#each acceptance_criteria}}
-- {{this.id}} [{{this.criterion_class}}] {{this.text}}{{/each}}
+- {{#if this.id}}{{this.id}} [{{this.criterion_class}}] {{this.text}}{{/if}}{{#if this.issue_key}}{{this.issue_key}} (owning issue: {{this.parent_key}})
+{{this.body}}{{/if}}{{/each}}
 
 ## Implementation Stats
 - Total iterations: {{total_iterations}}

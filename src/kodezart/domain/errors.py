@@ -601,3 +601,7 @@ class CheckChainExecutionError(Exception):
         self.step_name = step_name
         self.reason = reason
         super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")
+
+
+class AuditClaimReadError(ValueError):
+    """The claim's source or remote head cannot support this observation."""

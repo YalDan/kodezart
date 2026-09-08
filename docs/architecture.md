@@ -524,8 +524,18 @@ bound. Subject/source mismatches, inconsistent SHA stamps and ambiguous
 commit identities refuse observation. Commit subjects and issue mentions
 never affect the count. A wholly stale record whose terms agree remains
 invisible: the declared head is retained for replay and is never resolved
-against a repository. Both predicates are pure; neither implements the
-supervisor tick, a record collector or leased alarm publication.
+against a repository. Both predicates remain pure.
+
+`services.lane_record_signals.observe_commits_ahead_of_record` supplies the
+commit-consistency inputs through the addressed `LaneRecordReader`. One
+successful tracker read provides the lane key, recorded head, declared count
+and enumerated rows; all four projections retain that native comment identity
+and its recorded head. A supplied record reference must match, and missing,
+malformed, duplicated or unreadable records retain the reader's refusal.
+The service performs no repository read or tracker write and does not turn
+an unreadable record into an empty lane. The signal's whole-record-staleness
+limit remains unchanged. Event-to-target collection for skipped writes,
+supervisor scheduling and leased alarm publication remain separate consumers.
 
 `record_superseded` compares explicit assertions about the same field in the
 same lane. Its three raw readings contain the record's `LaneFieldValue`, an
@@ -619,3 +629,21 @@ is independent of lane outcomes. The result is available to any caller;
 it does not itself publish a tracker remediation record or scope terminal.
 Walker tick scheduling, stale-head re-entry, and terminal residual
 publication remain separate integration work.
+
+
+## Current-head audit claim sessions
+
+`AuditClaimVerifier` reads the current criterion through its owning lane's
+complete criterion query and extracts only its Check. It reconstructs the lane
+from the current addressed tracker comment, resolves the actual remote branch
+head and acquires a detached workspace at that exact SHA. The fresh evaluative
+session receives the Check and measured head, with `session_id=None`, no
+subagents and the configured read-only tools. The record's prior head, prior
+Evidence/verdict and author transcript are not session inputs.
+
+The result uses the shared three-state `AuditVerdict`. The caller attaches the
+measured SHA, native comment reference and exact Check. A changed criterion,
+record, workspace or remote head refuses the observation; workspace release
+also runs on errors and cancellation. This is a repeat-read observation, not an
+atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
+report publication, write-back and scheduler registration remain separate work.
