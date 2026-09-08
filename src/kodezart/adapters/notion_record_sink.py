@@ -21,6 +21,7 @@ from kodezart.adapters.notion_record_properties import (
     record_properties,
     write_properties,
 )
+from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.errors import McpTransportError, RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
@@ -201,14 +202,26 @@ class NotionRecordSink:
             "page_size": 100,
         }
         found: dict[str, NotionRecordPage] = {}
-        cursors: set[str] = set()
-        while True:
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[NotionRecordPageList, bool, str | None]:
             payload = await self._caller.call_tool(
-                name=_TOOL_QUERY_DATA_SOURCE, arguments=arguments
+                name=_TOOL_QUERY_DATA_SOURCE, arguments=request
             )
             page = self._validate(
                 NotionRecordPageList, payload, _TOOL_QUERY_DATA_SOURCE
             )
+            return page, page.has_more, page.next_cursor
+
+        async for page in cursor_pages(
+            read,
+            arguments=arguments,
+            cursor_key="start_cursor",
+            refusal=lambda _: mapping_error(
+                destination, record, "record query pagination cannot advance"
+            ),
+        ):
             for row in page.results:
                 title = row.properties.get(title_property)
                 if title is None or title.title is None:
@@ -218,14 +231,6 @@ class NotionRecordSink:
                 text = "".join(part.plain_text for part in title.title)
                 if text == record.title() or text.startswith(f"{record.title()} — "):
                     found[row.id] = row
-            if not page.has_more:
-                break
-            if not page.next_cursor or page.next_cursor in cursors:
-                raise mapping_error(
-                    destination, record, "record query pagination cannot advance"
-                )
-            cursors.add(page.next_cursor)
-            arguments["start_cursor"] = page.next_cursor
         if len(found) > 1:
             raise RunRecordWriteError(
                 "more than one destination row carries this run identity",

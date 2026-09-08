@@ -5,6 +5,7 @@ from typing import Protocol, assert_never
 
 from pydantic import ValidationError
 
+from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
 from kodezart.domain.errors import ScopeReadError
@@ -377,21 +378,20 @@ class LinearScopeReader:
         tool: str,
         arguments: Mapping[str, object],
     ) -> AsyncIterator[PageT]:
-        request = dict(arguments)
-        seen: set[str] = set()
-        while True:
+        async def read(request: Mapping[str, object]) -> tuple[PageT, bool, str | None]:
             page = await self._read(shape, tool, request)
+            return page, page.has_next_page, page.cursor
+
+        async for page in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda _: TrackerProtocolError(
+                "scope pagination cannot advance",
+                tool=tool,
+                detail="missing or repeated cursor",
+            ),
+        ):
             yield page
-            if not page.has_next_page:
-                return
-            if not page.cursor or page.cursor in seen:
-                raise TrackerProtocolError(
-                    "scope pagination cannot advance",
-                    tool=tool,
-                    detail="missing or repeated cursor",
-                )
-            seen.add(page.cursor)
-            request["cursor"] = page.cursor
 
     async def _read[WireT: LinearWireModel](
         self,

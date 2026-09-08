@@ -19,6 +19,7 @@ from kodezart.adapters.linear_history_receipt import state_history_receipt
 from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
 from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
+from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
     McpCallUnansweredError,
@@ -641,11 +642,23 @@ class LinearMcpTracker:
             "limit": _ISSUE_IDENTITY_PAGE_SIZE,
         }
         members: dict[str, TrackerIssue] = {}
-        cursors: set[str] = set()
         try:
-            while True:
-                payload = await self._call(_TOOL_LIST_ISSUES, arguments)
+
+            async def read(
+                request: Mapping[str, object],
+            ) -> tuple[LinearScopeIssuesWire, bool, str | None]:
+                payload = await self._call(_TOOL_LIST_ISSUES, request)
                 page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+                return page, page.has_next_page, page.cursor
+
+            async for page in cursor_pages(
+                read,
+                arguments=arguments,
+                refusal=lambda _: IssueLabelReadError(
+                    classification=classification,
+                    reason="membership pagination cannot advance",
+                ),
+            ):
                 for entry in page.issues:
                     if entry.id in members:
                         raise IssueLabelReadError(
@@ -662,15 +675,7 @@ class LinearMcpTracker:
                             reason=f"listed identity or label changed for {entry.id!r}",
                         )
                     members[entry.id] = issue
-                if not page.has_next_page:
-                    return tuple(members[key] for key in sorted(members))
-                if not page.cursor or page.cursor in cursors:
-                    raise IssueLabelReadError(
-                        classification=classification,
-                        reason="membership pagination cannot advance",
-                    )
-                cursors.add(page.cursor)
-                arguments["cursor"] = page.cursor
+            return tuple(members[key] for key in sorted(members))
         except (McpTransportError, TrackerProtocolError) as exc:
             raise IssueLabelReadError(
                 classification=classification,
@@ -934,10 +939,23 @@ class LinearMcpTracker:
     async def _movement_comments(self, issue_key: str) -> CommentValues:
         arguments: dict[str, object] = {"issueId": issue_key}
         comments: dict[str, tuple[tuple[str, str], ...]] = {}
-        cursors: set[str] = set()
-        while True:
-            payload = await self._call(_TOOL_LIST_COMMENTS, arguments)
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[tuple[McpToolResult, LinearCommentListWire], bool, str | None]:
+            payload = await self._call(_TOOL_LIST_COMMENTS, request)
             page = self._validate(LinearCommentListWire, payload, _TOOL_LIST_COMMENTS)
+            return (payload, page), page.has_next_page, page.cursor
+
+        async for payload, page in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda _: TrackerProtocolError(
+                "movement comment pagination cannot advance",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=issue_key,
+            ),
+        ):
             assert isinstance(payload, Mapping)
             raw_comments = payload["comments"]
             assert isinstance(raw_comments, list)
@@ -949,16 +967,7 @@ class LinearMcpTracker:
                         detail=issue_key,
                     )
                 comments[wire.id] = field_values(raw)
-            if not page.has_next_page:
-                return tuple(sorted(comments.items()))
-            if not page.cursor or page.cursor in cursors:
-                raise TrackerProtocolError(
-                    "movement comment pagination cannot advance",
-                    tool=_TOOL_LIST_COMMENTS,
-                    detail=issue_key,
-                )
-            cursors.add(page.cursor)
-            arguments["cursor"] = page.cursor
+        return tuple(sorted(comments.items()))
 
     async def create_issue(
         self,
@@ -1061,11 +1070,23 @@ class LinearMcpTracker:
             "fields": ["id"],
         }
         seen_keys: set[str] = set()
-        seen_cursors: set[str] = set()
         criteria: list[TrackerIssue] = []
-        while True:
-            payload = await self._call(_TOOL_LIST_ISSUES, arguments)
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[LinearScopeIssuesWire, bool, str | None]:
+            payload = await self._call(_TOOL_LIST_ISSUES, request)
             page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+            return page, page.has_next_page, page.cursor
+
+        async for page in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda _: CriterionReadError(
+                issue_key=issue_key,
+                reason="child listing pagination cannot advance",
+            ),
+        ):
             for entry in page.issues:
                 if entry.id in seen_keys:
                     continue
@@ -1083,15 +1104,6 @@ class LinearMcpTracker:
                     )
                 if "criterion" in child.issue_labels:
                     criteria.append(child)
-            if not page.has_next_page:
-                break
-            if not page.cursor or page.cursor in seen_cursors:
-                raise CriterionReadError(
-                    issue_key=issue_key,
-                    reason="child listing pagination cannot advance",
-                )
-            seen_cursors.add(page.cursor)
-            arguments["cursor"] = page.cursor
         return tuple(sorted(criteria, key=lambda criterion: criterion.issue_key))
 
     async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
@@ -1138,11 +1150,24 @@ class LinearMcpTracker:
             "fields": ["id"],
         }
         seen_keys: set[str] = set()
-        seen_cursors: set[str] = set()
         matches: list[TrackerIssue] = []
-        while True:
-            payload = await self._call(_TOOL_LIST_ISSUES, arguments)
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[LinearScopeIssuesWire, bool, str | None]:
+            payload = await self._call(_TOOL_LIST_ISSUES, request)
             page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+            return page, page.has_next_page, page.cursor
+
+        async for page in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda _: TrackerProtocolError(
+                "issue identity lookup pagination cannot advance",
+                tool=_TOOL_LIST_ISSUES,
+                detail="missing or repeated cursor",
+            ),
+        ):
             for entry in page.issues:
                 if entry.id in seen_keys:
                     continue
@@ -1155,16 +1180,6 @@ class LinearMcpTracker:
                 )
                 if held == identity:
                     matches.append(self._to_issue(wire))
-            if not page.has_next_page:
-                break
-            if not page.cursor or page.cursor in seen_cursors:
-                raise TrackerProtocolError(
-                    "issue identity lookup pagination cannot advance",
-                    tool=_TOOL_LIST_ISSUES,
-                    detail="missing or repeated cursor",
-                )
-            seen_cursors.add(page.cursor)
-            arguments["cursor"] = page.cursor
         if len(matches) > 1:
             raise DuplicateIssueIdentityError(
                 scope_key=identity.scope_key,
@@ -2053,23 +2068,25 @@ class LinearMcpTracker:
     ) -> Sequence[LinearLabelWire]:
         """Every page of one label namespace, preserving the listing scope."""
         entries: list[LinearLabelWire] = []
-        sent = dict(arguments)
-        seen: set[str] = set()
-        while True:
-            payload = await self._call(tool, sent)
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[LinearLabelListWire, bool, str | None]:
+            payload = await self._call(tool, request)
             listing = self._validate(LinearLabelListWire, payload, tool)
+            return listing, listing.has_next_page, listing.cursor
+
+        async for listing in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda cursor: TrackerProtocolError(
+                "label pagination did not provide a new continuation cursor",
+                tool=tool,
+                detail=f"cursor={cursor!r}",
+            ),
+        ):
             entries.extend(listing.labels)
-            if not listing.has_next_page:
-                return entries
-            cursor = listing.cursor
-            if not cursor or cursor in seen:
-                raise TrackerProtocolError(
-                    "label pagination did not provide a new continuation cursor",
-                    tool=tool,
-                    detail=f"cursor={cursor!r}",
-                )
-            seen.add(cursor)
-            sent["cursor"] = cursor
+        return entries
 
     async def _team_listing(self) -> Sequence[LinearTeamWire]:
         """Every team the workspace holds, with the UUID it is addressed by."""
@@ -2220,10 +2237,14 @@ class LinearMcpTracker:
         self, issue_key: str, *, require_reply_links: bool = False
     ) -> Sequence[LinearCommentWire]:
         arguments: dict[str, object] = {"issueId": issue_key}
-        seen_cursors: set[str] = set()
         comments: dict[str, LinearCommentWire] = {}
-        while True:
-            payload = await self._call(_TOOL_LIST_COMMENTS, arguments)
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[
+            LinearCommentListWire | LinearThreadCommentListWire, bool, str | None
+        ]:
+            payload = await self._call(_TOOL_LIST_COMMENTS, request)
             listing: LinearCommentListWire | LinearThreadCommentListWire
             if require_reply_links:
                 listing = self._validate(
@@ -2233,6 +2254,17 @@ class LinearMcpTracker:
                 listing = self._validate(
                     LinearCommentListWire, payload, _TOOL_LIST_COMMENTS
                 )
+            return listing, listing.has_next_page, listing.cursor
+
+        async for listing in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda cursor: TrackerProtocolError(
+                "comment listing cannot advance to its next page",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=f"target={issue_key}; cursor={cursor!r}",
+            ),
+        ):
             for comment in listing.comments:
                 previous = comments.get(comment.id)
                 if require_reply_links and previous is not None and previous != comment:
@@ -2242,18 +2274,7 @@ class LinearMcpTracker:
                         detail=f"target={issue_key}; comment={comment.id}",
                     )
                 comments[comment.id] = comment
-            if not listing.has_next_page:
-                return tuple(
-                    sorted(comments.values(), key=lambda c: (c.created_at, c.id))
-                )
-            if not listing.cursor or listing.cursor in seen_cursors:
-                raise TrackerProtocolError(
-                    "comment listing cannot advance to its next page",
-                    tool=_TOOL_LIST_COMMENTS,
-                    detail=f"target={issue_key}; cursor={listing.cursor!r}",
-                )
-            seen_cursors.add(listing.cursor)
-            arguments["cursor"] = listing.cursor
+        return tuple(sorted(comments.values(), key=lambda c: (c.created_at, c.id)))
 
     async def _call(
         self,

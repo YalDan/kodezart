@@ -1,5 +1,6 @@
 """Actual Notion property writes use explicitly selected outcome semantics."""
 
+import asyncio
 from datetime import timedelta, timezone
 
 import pytest
@@ -286,6 +287,98 @@ async def test_identity_lookup_visits_later_pages_before_creating():
     assert len(server.rows) == 102
     assert server.writes()[0][0] == "API-patch-page"
     assert server.writes()[0][1]["page_id"] == key
+
+
+@pytest.mark.parametrize("cursor", [None, "opaque:next/page"])
+async def test_unfinished_record_query_never_becomes_permission_to_create(cursor):
+    class Unfinished(NotionLogServer):
+        async def call_tool(self, *, name, arguments):
+            if name != "API-query-data-source":
+                return await super().call_tool(name=name, arguments=arguments)
+            queries = [call for call in self.calls if call[0] == name]
+            assert len(queries) < 2, "A stuck cursor caused another remote request"
+            self.calls.append((name, dict(arguments)))
+            return {
+                "results": [],
+                "has_more": True,
+                "next_cursor": "opaque:next/page" if not queries else cursor,
+            }
+
+    server = Unfinished()
+    with pytest.raises(RunRecordWriteError, match="pagination cannot advance"):
+        await recorder(server, destination()).record(_record(RunKind.FIRE))
+    assert server.writes() == []
+    queries = [args for name, args in server.calls if name == "API-query-data-source"]
+    assert "start_cursor" not in queries[0]
+    assert queries[1] == {**queries[0], "start_cursor": "opaque:next/page"}
+
+
+async def test_final_record_page_ignores_its_leftover_cursor():
+    class FinalCursor(NotionLogServer):
+        async def call_tool(self, *, name, arguments):
+            result = await super().call_tool(name=name, arguments=arguments)
+            if name == "API-query-data-source":
+                assert result["has_more"] is False
+                result["next_cursor"] = "opaque:unused"
+            return result
+
+    server = FinalCursor()
+    record = _record(RunKind.FIRE)
+    existing = server.seed(record.title())
+    await recorder(server, destination()).record(record)
+    assert len(server.rows) == 1
+    assert server.writes()[0][1]["page_id"] == existing
+    assert all(
+        "start_cursor" not in arguments
+        for name, arguments in server.calls
+        if name == "API-query-data-source"
+    )
+
+
+async def test_cancelled_record_query_restarts_with_its_own_cursor_history():
+    class Paused(NotionLogServer):
+        def __init__(self):
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.resume = asyncio.Event()
+            self.pause = True
+
+        async def call_tool(self, *, name, arguments):
+            if name != "API-query-data-source":
+                return await super().call_tool(name=name, arguments=arguments)
+            self.calls.append((name, dict(arguments)))
+            if "start_cursor" not in arguments:
+                return {"results": [], "has_more": True, "next_cursor": "opaque"}
+            assert arguments["start_cursor"] == "opaque"
+            if self.pause:
+                self.entered.set()
+                await self.resume.wait()
+            return {
+                "results": list(self.rows.values()),
+                "has_more": False,
+                "next_cursor": "opaque",
+            }
+
+    server = Paused()
+    record = _record(RunKind.FIRE)
+    existing = server.seed(record.title())
+    service = recorder(server, destination())
+    task = asyncio.create_task(service.record(record))
+    try:
+        async with asyncio.timeout(2):
+            await server.entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert server.writes() == []
+    finally:
+        task.cancel()
+        server.resume.set()
+        await asyncio.gather(task, return_exceptions=True)
+    server.pause = False
+    await service.record(record)
+    assert len(server.rows) == 1
+    assert server.writes()[0][1]["page_id"] == existing
 
 
 async def test_duration_unit_is_explicit_and_seconds_are_not_converted():
