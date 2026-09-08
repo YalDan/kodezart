@@ -790,18 +790,47 @@ class Ruling(CamelCaseModel):
 class RulingProposal(CamelCaseModel):
     """Session-authored answer fields; identity and authorship are harness-owned."""
 
-    issue_ref: str = Field(min_length=1, pattern=r"\S")
-    question: str = Field(min_length=1, pattern=r"\S")
-    ruling_class: RulingClass
-    resolution: str = Field(min_length=1, pattern=r"\S")
-    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None
-    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...]
+    issue_ref: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="The owning native issue key from the supplied fire subtree.",
+    )
+    question: str = Field(
+        min_length=1, pattern=r"\S", description="The exact question being ruled on."
+    )
+    ruling_class: RulingClass = Field(
+        description="Which of the four permitted defects this proposal resolves."
+    )
+    resolution: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="The proposed answer within the issue's declared deliverables.",
+    )
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(
+            description=(
+                "The losing reading or side of a contradiction; required for "
+                "pin_reading and resolve_contradiction, otherwise explicit null "
+                "when there is no rejected alternative."
+            )
+        )
+    )
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
+        Field(
+            description="Repository evidence references supporting the proposed answer."
+        )
+    )
 
 
 class RulingProposalOutput(CamelCaseModel):
     """Transient proposals, explicitly distinct from pinned tracker records."""
 
-    rulings: tuple[RulingProposal, ...]
+    rulings: tuple[RulingProposal, ...] = Field(
+        description=(
+            "One proposed answer per ruled question; empty means no rulings. "
+            "These proposals are not published records or loop authorization."
+        )
+    )
     unresolved_questions: tuple[
         Annotated[str, Field(min_length=1, pattern=r"\S")], ...
     ] = Field(
