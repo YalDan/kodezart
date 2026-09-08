@@ -36,6 +36,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.services.git_observations import read_workspace_head
+from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.agent import TRACKER_CRITERIA_VALIDATION_SCHEMA
 from kodezart.types.domain.criteria import TrackerCriteriaValidationOutput
 from kodezart.types.domain.fire_spec import TrackerSpec
@@ -151,8 +152,8 @@ class TrackerFeasibilityValidator:
                 "tracker_criteria": True,
             }
         )
-        repository = await self._cache.ensure_available(
-            request.repo_url, request.cache_key
+        repository = await ensure_repository(
+            cache=self._cache, repo_url=request.repo_url, cache_key=request.cache_key
         )
         workspace, cancelled = await finish_owned(
             asyncio.create_task(
