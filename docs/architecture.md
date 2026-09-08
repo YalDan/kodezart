@@ -660,6 +660,51 @@ atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion
 report publication, write-back and scheduler registration remain separate work.
 
 
+## Recorded criterion Evidence and lapse observations
+
+`AuditEvidenceVerifier.observe` reads the requested criterion's current full
+record and its lane's addressed run-state comment. The existing Evidence field
+contains one explicit JSON block, rendered by `render_evidence_field`:
+
+````markdown
+**Evidence:**
+```json
+{
+  "gradedSha": "0123456789abcdef0123456789abcdef01234567",
+  "test": "tests/test_contract.py::test_current_check"
+}
+```
+````
+
+The complete Git commit identity and named test or recorded observation are the
+two stored fields. The codec refuses repeated fields/keys, ambiguous framing,
+extra verdicts and historical prose. It does not rewrite that prose or infer a
+SHA from it. The shared criterion-field parser keeps Check extraction separate
+from Evidence and ignores quoted field labels and HTML comments.
+
+For a completed criterion, the reader fetches the recorded repository, reads
+the live remote branch head, and verifies both immutable commit identities and
+their ancestry. A completed claim at an older commit yields `unverifiable`,
+naming the original criterion, recorded SHA and current head, without a grading
+session. An off-branch or unreadable commit causes a typed read refusal.
+
+A current completed claim, or a claim in the configured review state, goes
+through the existing fresh `AuditClaimVerifier`. Review re-verification does not
+require old history to remain reachable after a rewrite: it judges the current
+Check at the current remote head and retains the previous Evidence as a prior
+claim, without reestablishing it as proof. Recorded test prose and verdicts stay
+out of that session. The final source, lane record and remote head reads must
+agree; owned repository reads settle before cancellation returns.
+
+These are observations before correction and publication. Evaluator adoption
+of the codec, historical migration, Evidence test/observation admissibility,
+forge comparison, state transitions, mandate-complete reports and the scheduled
+sweep remain separate consumers. The reader acquires no authoring lease and
+performs no tracker write; the required correction writers must use the ruled
+lease and inline verification boundaries.
+
+## Tracker feasibility at the selected head
+
 `TrackerFeasibilityValidator.validate` is the read-only criterion-validation
 consumer for a tracker subject. It accepts an issue key and a previously
 resolved dispatch SHA, obtains the subject once through `read_fire_spec`,

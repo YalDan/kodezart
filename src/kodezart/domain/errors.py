@@ -26,6 +26,15 @@ class AssertionComparisonError(Exception):
         super().__init__(f"assertion comparison for {source_ref!r} refused: {reason}")
 
 
+class AuditEvidenceReadError(Exception):
+    """A criterion's recorded grading cannot establish one current observation."""
+
+    def __init__(self, *, criterion_key: str, reason: str) -> None:
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(f"Evidence for {criterion_key!r} could not be read: {reason}")
+
+
 class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
