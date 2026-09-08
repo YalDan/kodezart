@@ -53,7 +53,10 @@ async def test_native_orphan_is_reaped_through_repeated_cancellation(
             steps=[
                 CheckStep(
                     name="tree",
-                    command="sleep 30 & printf '%s' $! > child; printf partial; wait",
+                    command=(
+                        "sleep 30 & printf '%s' $! > child.pending; "
+                        "mv child.pending child; printf partial; wait"
+                    ),
                 ),
                 CheckStep(name="later", command="touch later; printf next"),
             ],
