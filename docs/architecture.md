@@ -734,6 +734,14 @@ the tree on return, refusal, exception, or cancellation. Scratch merges have
 a separate Git operation; normal branch consolidation remains fast-forward
 only. Named branches and forge pull requests are untouched.
 
+Both union consumers require the native Git replacement namespace to be empty.
+A replacement can make an immutable commit name select another tree, so an
+unreadable namespace or any replacement raises `UnionHeadReadError`. The check
+precedes scratch creation, runs again before checks and before returning either
+checks or a merge conflict, and also protects cached current-head results.
+Replacement reads settle before cancellation propagates. Like the head checks,
+these observations do not claim atomic exclusion of later local writers.
+
 The shared `UnionCompositionResult` retains scope and repository identity,
 ordered branch/head pairs, the selected base, and the discarded scratch
 path and commit. A conflict reports only its successfully merged prefix;

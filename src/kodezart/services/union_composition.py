@@ -9,6 +9,7 @@ from kodezart.core.owned_tasks import finish_owned as _finish_owned
 from kodezart.core.protocols import CheckChainRunner, GitService
 from kodezart.domain import check_chain
 from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
+from kodezart.services.union_identity import require_union_object_identity
 from kodezart.types.domain.operation import RepoEntry, check_chain_failures
 from kodezart.types.domain.union import (
     UnionCompositionResult,
@@ -66,6 +67,9 @@ class UnionComposition:
                     step_name=None,
                     reason="; ".join(failures),
                 )
+            await require_union_object_identity(
+                git=self._git, repository=repo_path, scope_key=scope_key
+            )
             created = False
             try:
                 _, cancelled = await _finish_owned(
@@ -101,7 +105,7 @@ class UnionComposition:
                             lane_key=head.lane_key,
                             paths=exc.paths,
                         )
-                        return UnionCompositionResult(
+                        result = UnionCompositionResult(
                             **snapshot.model_dump(exclude={"scratch_sha"}),
                             scratch_sha=await self._scratch_sha(worktree),
                             checks=None,
@@ -112,6 +116,10 @@ class UnionComposition:
                                 merge_conflict=conflict,
                             ),
                         )
+                        await require_union_object_identity(
+                            git=self._git, repository=repo_path, scope_key=scope_key
+                        )
+                        return result
                     if cancelled:
                         raise asyncio.CancelledError
                 if not repo.checks:
@@ -120,6 +128,9 @@ class UnionComposition:
                         step_name=None,
                         reason="no check chain is declared",
                     )
+                await require_union_object_identity(
+                    git=self._git, repository=repo_path, scope_key=scope_key
+                )
                 checks = await self._runner.run_chain(cwd=worktree, steps=repo.checks)
                 classification = check_chain.classify_check_failures(
                     repo.checks,
@@ -134,6 +145,9 @@ class UnionComposition:
                     else None
                 )
                 scratch_sha = await self._scratch_sha(worktree)
+                await require_union_object_identity(
+                    git=self._git, repository=repo_path, scope_key=scope_key
+                )
                 return UnionCompositionResult(
                     **snapshot.model_dump(exclude={"scratch_sha"}),
                     scratch_sha=scratch_sha,
