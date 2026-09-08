@@ -697,6 +697,12 @@ class RulingClass(StrEnum):
     RESOLVE_CONTRADICTION = "resolve_contradiction"
 
 
+class RulingProtectedTestRef(ProtectedTestRef):
+    """A native ruling designation retains the canonical typed owner identity."""
+
+    source_ref: RulingId = Field(min_length=1, pattern=r"\S")
+
+
 class Ruling(CamelCaseModel):
     """One pinned answer, with explicit authorship and its stable question key."""
 
@@ -728,7 +734,7 @@ class Ruling(CamelCaseModel):
     authored_by: RulingAuthor = Field(
         description="Explicit machine or principal authorship, independent of account."
     )
-    protected_tests: tuple[ProtectedTestRef, ...] | None = Field(
+    protected_tests: tuple[RulingProtectedTestRef, ...] | None = Field(
         default=None,
         description=(
             "Tests explicitly designated as encoding this ruling. Each source_ref "
