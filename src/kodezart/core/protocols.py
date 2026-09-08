@@ -33,6 +33,7 @@ from kodezart.types.domain.operation import (
     RecordDestination,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+from kodezart.types.domain.pr_content import PRContent
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
@@ -56,6 +57,7 @@ from kodezart.types.domain.tracker import (
     TrackerComment,
     TrackerIssue,
     TrackerIssueRevision,
+    TrackerIssueStateChange,
     TrackerReview,
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
@@ -462,6 +464,27 @@ class ForgeQuery(Protocol):
 
 
 @runtime_checkable
+class PRContentEditor(Protocol):
+    """Read and edit open PR content, without state or merge capabilities."""
+
+    async def read_open_pr(
+        self, *, repo_url: str, head: str, pr_number: int
+    ) -> PRContent:
+        """Require one open head match with the supplied PR number."""
+        ...
+
+    async def edit_pr(
+        self, *, repo_url: str, expected: PRContent, title: str, body: str, base: str
+    ) -> PRContent:
+        """Re-read the expected snapshot; write only differing content.
+
+        Missing, ambiguous or changed content raises PRContentConflictError.
+        This optimistic read and update do not claim atomic exclusion.
+        """
+        ...
+
+
+@runtime_checkable
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
 
@@ -700,6 +723,17 @@ class TrackerPort(Protocol):
         stable body digests. This is a required contract, not feature
         negotiation: consumers never select a weaker read. Conformance
         tests prove the guarantee without mutating the live board at boot.
+        """
+        ...
+
+    async def read_issue_state_change(
+        self, *, issue_key: str
+    ) -> TrackerIssueStateChange:
+        """Read the current state-entry time with that same full issue snapshot.
+
+        Missing or inconsistent state history raises, never substitutes a
+        general update time, creation time, or a timestamp from another read.
+        This is read-only and acquires no write lease.
         """
         ...
 

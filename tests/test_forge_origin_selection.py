@@ -16,10 +16,12 @@ it is chosen by the same predicate.
 
 import ast
 import asyncio
+import json
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
+import httpx
 import pytest
 
 from kodezart.adapters.github_api import GitHubAPIClient
@@ -28,7 +30,11 @@ from kodezart.composition.engine import (
     OriginRoutedWorkflowEngine,
     build_workflow_engine,
 )
-from kodezart.composition.forge import build_forge_client, forge_query_for_origin
+from kodezart.composition.forge import (
+    build_forge_client,
+    forge_query_for_origin,
+    pr_content_editor_for_origin,
+)
 from kodezart.composition.jobs import build_job_queue
 from kodezart.core import protocols
 from kodezart.core.config import AppConfig
@@ -37,6 +43,7 @@ from kodezart.core.protocols import (
     CIMonitor,
     DeliveryProbe,
     ForgeQuery,
+    PRContentEditor,
     PRCreator,
     RepoVisibilityResolver,
     WorkflowEngine,
@@ -111,6 +118,7 @@ COVERED_BY_ORIGIN: dict[type, str] = {
     RepoVisibilityResolver: "visibility_resolver",
     DeliveryProbe: "delivery",
     ForgeQuery: "query",
+    PRContentEditor: "pr_content",
 }
 
 
@@ -587,3 +595,69 @@ def test_query_capability_is_absent_for_local_origin_despite_client():
 
 def test_query_capability_is_absent_without_configured_client():
     assert forge_query_for_origin(client=None, repo_url=FORGE_ORIGIN) is None
+
+
+@pytest.mark.parametrize(
+    "repo_url", [FORGE_ORIGIN, "https://github.example/owner/repo"]
+)
+async def test_content_capability_selects_origin_before_native_read_and_edit(repo_url):
+    from tests.adapters.test_github_api import _make_client
+
+    requests = []
+    row = {
+        "html_url": f"{repo_url}/pull/7",
+        "number": 7,
+        "head": {"ref": "feature"},
+        "base": {"ref": "main"},
+        "title": "Before",
+        "body": "Body",
+    }
+
+    def handler(request):
+        requests.append(request)
+        if request.method == "GET":
+            assert request.url.path == "/repos/owner/repo/pulls"
+            assert request.url.params["head"] == "owner:feature"
+            return httpx.Response(200, json=[row])
+        assert request.method == "PATCH"
+        assert request.url.path == "/repos/owner/repo/pulls/7"
+        assert json.loads(request.content) == {"title": "After"}
+        row["title"] = "After"
+        return httpx.Response(200, json=row)
+
+    client = _make_client(handler)
+    selected = pr_content_editor_for_origin(client=client, repo_url=repo_url)
+    assert selected is client
+    try:
+        before = await selected.read_open_pr(
+            repo_url=repo_url, head="feature", pr_number=7
+        )
+        after = await selected.edit_pr(
+            repo_url=repo_url, expected=before, title="After", body="Body", base="main"
+        )
+    finally:
+        await client.close()
+    assert after.title == "After" and after.url == before.url and after.number == 7
+    assert [request.method for request in requests] == ["GET", "GET", "PATCH"]
+
+
+@pytest.mark.parametrize("repo_url", [FILE_ORIGIN, "file:///var/repository.git"])
+async def test_content_capability_is_absent_for_local_origin_despite_client(repo_url):
+    from tests.adapters.test_github_api import _make_client
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        raise AssertionError("a local origin cannot ask the forge")
+
+    client = _make_client(handler)
+    try:
+        assert pr_content_editor_for_origin(client=client, repo_url=repo_url) is None
+    finally:
+        await client.close()
+    assert requests == []
+
+
+def test_content_capability_is_absent_without_configured_client():
+    assert pr_content_editor_for_origin(client=None, repo_url=FORGE_ORIGIN) is None

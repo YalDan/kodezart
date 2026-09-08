@@ -1,8 +1,11 @@
 """Shared lane records and durable questions raised while work is in flight."""
 
-from pydantic import ConfigDict, Field
+from typing import Annotated, Self
+
+from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.branch import BranchAssociation, BranchRole
 
 
 class LaneCommit(CamelCaseModel):
@@ -37,3 +40,41 @@ class LanePR(CamelCaseModel):
     url: str
     number: int
     state: str
+
+
+class LaneRunState(CamelCaseModel):
+    """The committing loop's recorded branch facts and complete association set.
+
+    A missing remote head, the same head and a different head remain distinct.
+    Commit rows retain their trajectory order; counts are recorded observations,
+    so inconsistency remains available to the record-consistency signal.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    lane_key: str = Field(min_length=1)
+    branch: str = Field(min_length=1)
+    branch_url: str = Field(min_length=1)
+    head_sha: str = Field(min_length=1)
+    pushed_head_sha: Annotated[str, Field(min_length=1)] | None
+    commits_ahead: int = Field(ge=0)
+    files_changed: int = Field(ge=0)
+    commits: list[LaneCommit]
+    pr: LanePR | None = None
+    associations: list[BranchAssociation]
+
+    @model_validator(mode="after")
+    def _require_loop_and_deliverable_cardinality(self) -> Self:
+        if not any(
+            item.role is BranchRole.LOOP and item.branch == self.branch
+            for item in self.associations
+        ):
+            raise ValueError("the recorded branch must have a LOOP association")
+        deliverables = [
+            item.run_id
+            for item in self.associations
+            if item.role is BranchRole.DELIVERABLE
+        ]
+        if len(deliverables) != len(set(deliverables)):
+            raise ValueError("one DELIVERABLE association is permitted per run")
+        return self

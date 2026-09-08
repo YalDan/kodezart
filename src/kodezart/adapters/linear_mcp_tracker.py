@@ -77,6 +77,7 @@ from kodezart.types.domain.linear_mcp import (
     LinearDocumentWire,
     LinearIssueDetailWire,
     LinearIssueListWire,
+    LinearIssueStateHistoryWire,
     LinearIssueWire,
     LinearLabelListWire,
     LinearLabelWire,
@@ -113,6 +114,7 @@ from kodezart.types.domain.tracker import (
     TrackerComment,
     TrackerIssue,
     TrackerIssueRevision,
+    TrackerIssueStateChange,
     TrackerReview,
     WorkflowStateKind,
 )
@@ -620,6 +622,46 @@ class LinearMcpTracker:
 
     def require_body_digest_stability(self) -> None:
         """Supported: full-read body bytes alone determine this adapter's digest."""
+
+    async def read_issue_state_change(
+        self, *, issue_key: str
+    ) -> TrackerIssueStateChange:
+        """Use the matching open state interval from the same native payload."""
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        wire = self._validate(LinearIssueStateHistoryWire, payload, _TOOL_GET_ISSUE)
+        current = [entry for entry in wire.state_history if entry.ended_at is None]
+        if wire.id != issue_key or len(current) != 1:
+            raise TrackerProtocolError(
+                "state history has no unique current issue interval",
+                tool=_TOOL_GET_ISSUE,
+                detail=f"target={issue_key}; returned={wire.id}",
+            )
+        entry = current[0]
+        if (
+            entry.state.name != wire.status
+            or entry.state.type != wire.status_type
+            or wire.created_at.utcoffset() is None
+            or wire.updated_at.utcoffset() is None
+            or not wire.created_at <= entry.started_at <= wire.updated_at
+            or any(
+                item.ended_at is not None
+                and not wire.created_at
+                <= item.started_at
+                <= item.ended_at
+                <= entry.started_at
+                for item in wire.state_history
+            )
+        ):
+            raise TrackerProtocolError(
+                "state history does not agree with the issue snapshot",
+                tool=_TOOL_GET_ISSUE,
+                detail=f"target={issue_key}",
+            )
+        return TrackerIssueStateChange(
+            issue=self._to_issue(wire), state_changed_at=entry.started_at
+        )
 
     async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
         """Hash exactly the returned body, independently of vendor timestamps."""

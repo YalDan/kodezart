@@ -8,7 +8,7 @@ classification reads summary or log text; summaries are carried as evidence.
 import asyncio
 
 from kodezart.core.config import AppConfig
-from kodezart.core.constants import EVAL_PERMISSION_MODE
+from kodezart.core.constants import ARTIFACT_DIR, EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
@@ -19,6 +19,7 @@ from kodezart.core.protocols import (
     ForgeQuery,
     GitService,
     OutboundContentGate,
+    PRContentEditor,
     PRCreator,
     PromptSetProvider,
     RepoCache,
@@ -28,6 +29,7 @@ from kodezart.domain.errors import (
     BaseResolutionError,
     DeliveryContextError,
     DeliveryRouteUnavailableError,
+    PRContentConflictError,
 )
 from kodezart.domain.pr_body import (
     append_flagged_section,
@@ -51,6 +53,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import RepoEntry, RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.pr_content import PRContent
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_state import LanePR
 from kodezart.types.domain.session import SessionType
@@ -75,6 +78,7 @@ class DeliveryCoordinator:
         gate: OutboundContentGate,
         pr_creator: PRCreator,
         forge_query: ForgeQuery,
+        pr_editor: PRContentEditor,
         ci: CIMonitor,
         git: GitService,
         cache: RepoCache,
@@ -88,6 +92,7 @@ class DeliveryCoordinator:
         self._gate = gate
         self._pr_creator = pr_creator
         self._forge_query = forge_query
+        self._pr_editor = pr_editor
         self._ci = ci
         self._git = git
         self._cache = cache
@@ -141,19 +146,26 @@ class DeliveryCoordinator:
         existing = await self._forge_query.open_pr_for_head(
             repo_url=execution.repo_url, head=feature_branch
         )
+        existing_content: PRContent | None = None
         if existing is not None:
             url, number = existing
-            raise DeliveryRouteUnavailableError(
-                lane_key=dispatch.lane_key,
-                issue_id=dispatch.issue_id,
-                reason="existing PR requires an unconnected content-edit route",
-                pr_url=url,
-                pr_number=number,
-                checks_passed=None,
-                checks_summary=None,
+            existing_content = await self._pr_editor.read_open_pr(
+                repo_url=execution.repo_url, head=feature_branch, pr_number=number
             )
-        remote_sha = await self._require_remote_branches(dispatch, context)
-        if remote_sha != final_commit_sha:
+            if existing_content.url != url:
+                raise PRContentConflictError(
+                    repo_url=execution.repo_url,
+                    head=feature_branch,
+                    pr_number=number,
+                    reason="PR content does not match the looked-up identity",
+                )
+        cwd, remote_sha = await self._require_remote_branches(dispatch, context)
+        if remote_sha != final_commit_sha and (
+            existing_content is None
+            or not await self._cleanup_replay(
+                cwd=cwd, fire_sha=final_commit_sha, observed_sha=remote_sha
+            )
+        ):
             raise DeliveryContextError(
                 lane_key=dispatch.lane_key,
                 issue_id=dispatch.issue_id,
@@ -179,13 +191,40 @@ class DeliveryCoordinator:
         )
         body = await self._gated(body, context.visibility, OutboundDestination.PR_BODY)
         require_tracker_issue(body, dispatch.issue_id)
-        url, number = await self._pr_creator.create_pr(
-            repo_url=execution.repo_url,
-            title=title,
-            body=body,
-            head=feature_branch,
-            base=dispatch.resolved_base.base_branch,
-        )
+        base = dispatch.resolved_base.base_branch
+        if existing_content is None:
+            url, number = await self._pr_creator.create_pr(
+                repo_url=execution.repo_url,
+                title=title,
+                body=body,
+                head=feature_branch,
+                base=base,
+            )
+        else:
+            if existing_content.base_branch != base:
+                gated_base = await gated_write(
+                    gate=self._gate,
+                    log=self._log,
+                    content=base,
+                    visibility=context.visibility,
+                    shape=WriterShape.IDENTIFIER,
+                    destination=OutboundDestination.BRANCH_NAME,
+                    content_class=ContentClass.DERIVED,
+                )
+                if gated_base != base:
+                    raise DeliveryContextError(
+                        lane_key=dispatch.lane_key,
+                        issue_id=dispatch.issue_id,
+                        reason="outbound gate changed the dispatch-resolved base",
+                    )
+            updated = await self._pr_editor.edit_pr(
+                repo_url=execution.repo_url,
+                expected=existing_content,
+                title=title,
+                body=body,
+                base=base,
+            )
+            url, number = updated.url, updated.number
         async with self._watch_slots:
             passed, summary = await self._ci.wait_for_checks(
                 repo_url=execution.repo_url, ref=feature_branch
@@ -206,6 +245,17 @@ class DeliveryCoordinator:
                 checks_passed=passed,
                 checks_summary=summary,
             )
+        observed = await self._pr_editor.read_open_pr(
+            repo_url=execution.repo_url, head=feature_branch, pr_number=number
+        )
+        if observed.url != url or observed.base_branch != base:
+            raise PRContentConflictError(
+                repo_url=execution.repo_url,
+                head=feature_branch,
+                pr_number=number,
+                reason="open PR identity or base changed during check watching",
+            )
+        require_tracker_issue(observed.body, dispatch.issue_id)
         return LaneDelivery(
             lane_key=dispatch.lane_key,
             issue_id=dispatch.issue_id,
@@ -219,7 +269,7 @@ class DeliveryCoordinator:
 
     async def _require_remote_branches(
         self, dispatch: LaneDispatch, context: DeliveryContext
-    ) -> str:
+    ) -> tuple[str, str]:
         execution = context.execution
         cwd = execution.repo_path
         if cwd is None:
@@ -256,7 +306,25 @@ class DeliveryCoordinator:
                     if sha is None
                 ],
             )
-        return head
+        return cwd, head
+
+    async def _cleanup_replay(
+        self, *, cwd: str, fire_sha: str, observed_sha: str
+    ) -> bool:
+        """Recognize an existing delivery advanced only by owned artifacts.
+
+        The actual cleaner commits removal of ARTIFACT_DIR. A cold replay
+        retains the earlier fire SHA; it may accept that metadata-only
+        descendant, but never a rewind, unrelated head or changed code.
+        """
+        await self._git.fetch(cwd)
+        if not await self._git.is_ancestor(cwd, fire_sha, observed_sha):
+            return False
+        changes = await self._git.diff_summary(cwd, fire_sha, observed_sha)
+        return bool(changes.file_paths) and all(
+            path == ARTIFACT_DIR or path.startswith(f"{ARTIFACT_DIR}/")
+            for path in changes.file_paths
+        )
 
     async def _description(
         self, context: DeliveryContext, *, feature_branch: str

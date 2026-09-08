@@ -46,6 +46,7 @@ does not exist.
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
 | ForgeQuery        | GitHubAPIClient          | Looks up an open PR by head and composes branch browser URLs |
+| PRContentEditor   | GitHubAPIClient          | Reads unique open PR content and edits changed title/body/base fields |
 | CIMonitor         | GitHubAPIClient          | Polls checks and re-observes Actions attempts at one commit |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
@@ -101,12 +102,50 @@ hashes those exact UTF-8 body bytes; timestamps, comments, labels and workflow
 state do not participate. Each surface changes independently, and replaying
 an unchanged body preserves its digest.
 
+`read_issue_state_change` requires native state history from the same complete
+issue read. Exactly one current interval must agree with the issue state and
+its timestamps; absent, ambiguous or inconsistent history is a typed refusal.
+General issue edits do not stand in for state transitions. The audit collector
+reads complete scope and criterion membership before and after detail reads,
+refusing changed snapshots or duplicate native members before coverage begins.
+These are checked observations, not an atomic vendor snapshot; scheduled audit
+sessions remain a separate consumer.
+
 Tracker boot first requires `require_criterion_reads`. An adapter declaring
 that criterion-child reads are unavailable raises `CriterionReadCapabilityError`
 with its adapter identity and the `criterion_reads` capability. Boot closes
 the opened transport before mapping reconciliation or execution can start.
 The declaration itself performs no writes or lease acquisition. Scope-walker
 dispatch remains a separate unfinished consumer of this mandatory boot boundary.
+
+`LaneRecordReader` reads the owning issue's complete comment listing through
+`TrackerPort`, locates the exact configured `marker_prefixes.run_state` marker,
+and returns the native comment and decoded `LaneRunState` from that same read.
+An existing `record_ref` must still identify that marker comment. Missing,
+duplicate, malformed or misaddressed records raise `LaneRecordReadError`;
+transport failure never becomes an empty record. Every call reads again, so a
+fresh client needs no process cache, repository, trajectory or forge connection.
+
+`render_lane_record` places one readable JSON value under that marker, followed
+by fixed re-entry guidance. The record preserves three-state remote head facts,
+ordered `LaneCommit` rows, `LanePR` and explicitly typed `BranchAssociation`
+roles, parents and run identities. Its loop branch must appear in the association
+set, and each run has at most one deliverable. Branch names do not supply roles.
+The model follows the declared list fields: field assignment is frozen, but
+the lists are not deeply immutable. Consumers must not mutate retained evidence;
+each read returns freshly decoded values rather than a shared cached collection.
+Counts remain independently recorded observations, so the consistency signal
+can still detect disagreement with commit rows. The re-entry text directs
+checkout or recovery of existing work and treats absent or reaped remote refs
+explicitly. Satisfaction and Evidence remain on the criterion issues.
+
+The reader recognizes this declared format; old free-form manual comments need
+an explicit migration. A formatter and cold tracker read do not implement the
+committing node's collection/write operation, its first-push notification,
+first-class branch-association persistence, or a complete mid-loop kill test.
+Mandatory write leases and the recorded association-storage conflict remain
+separate prerequisites. Scope terminals must still consume this reader and
+other required durable records; no terminal outcome is inferred from it.
 
 Tracker boot calls the required `require_body_digest_stability` contract before
 mapping reconciliation. An adapter that cannot guarantee those semantics
@@ -505,6 +544,53 @@ The field projection is an observation input, not a new run-event vocabulary;
 the event/record readers must supply those assertions and the commit order.
 Their collectors, supervisor scheduling and leased publication remain
 separate consumers.
+
+`rulings_outpace_closures` counts distinct machine-authored ruling identities
+added since the recorded last-closure snapshot. Its five readings preserve
+the baseline/current ruling projections, prior open/current closed references
+and the actual `run_alarm_max_rulings_without_closure` bound (default five,
+configurable and nonnegative). Only the intersection of the two obligation
+sets establishes a closure. Repeated identities, amended answers and principal
+rulings cannot inflate the count. Required authorship comes from the ruling
+artifact, using the owner's `RulingId` and `RulingAuthor` vocabulary; transport
+authors and timestamps cannot supply it. The read-only service obtains current
+criterion closure through the shared gap arithmetic for every declared lane
+issue. The full ruling artifact writer/renderer/reader and persisted window
+advancement remain implementation work; the projection does not replace them.
+
+`structural_write_uncrosses_milestone` compares complete lane membership
+snapshots. The collector reads both the fire subtree and native milestone
+membership through the port, including archived issues, and preserves the
+returned state, parent and membership facts. Conflicting versions of a shared
+member refuse observation instead of pretending the reads are atomic. The
+prior graph must support crossing under the charter: completed fire, all
+members completed or canceled with recorded supersession. A newly present
+unresolved member while the fire remains completed raises the alarm; an
+existing member changing only state does not. No derived crossed flag or vendor change
+timestamp replaces this graph comparison. Both signals preserve their raw
+readings for replay; the structural signal has no threshold. Retaining prior
+snapshots, supervisor scheduling and alarm publication under the universal
+surface lease remain separate consumers.
+## Audit coverage selection
+
+`AuditCoverage` visits the supplied complete eligible snapshot in state-change
+time and issue-key order. The first attempt is full; later attempts select new
+or changed identities until the configured full-sweep interval expires. Marks
+are per-scope process caches and are advanced only after every selected visit
+returns. Interrupted or failed attempts repeat their selection, and a fresh
+process starts full. Per-key stamps retain newly observed identities even when
+their times tie a previously covered entry. Neither a quiet tick nor an empty
+snapshot postpones periodic full coverage. If the next configured tick would
+cross the full-coverage deadline, the current tick covers everything; intervals
+that are not divisible therefore cannot silently extend the declared bound.
+
+The caller supplies the observation time; this component adds no clock, timer
+or scheduler. A simultaneous attempt for the same scope refuses without
+disturbing its owner. Candidates are snapshotted before visiting, and returned
+coverage facts are immutable point-in-time observations, not durable verdicts.
+The native tracker state-change collector supplies complete checked candidates.
+Granted audit sessions and registration on the existing scheduler remain
+separate implementation work. Sampled mode is retired.
 
 ## Check-chain execution
 

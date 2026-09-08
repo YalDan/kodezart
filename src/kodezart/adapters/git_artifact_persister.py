@@ -4,11 +4,10 @@ import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
+from kodezart.core.constants import ARTIFACT_DIR
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService, WorkspaceProvider
 from kodezart.types.domain.persist import ArtifactPersistStatus
-
-ARTIFACT_DIR = ".kodezart"
 
 
 class GitArtifactPersister:

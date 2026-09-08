@@ -11,6 +11,19 @@ class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
 
+class PRContentConflictError(Exception):
+    """An open PR cannot be identified or edited from the observed content."""
+
+    def __init__(
+        self, *, repo_url: str, head: str, pr_number: int | None, reason: str
+    ) -> None:
+        self.repo_url = repo_url
+        self.head = head
+        self.pr_number = pr_number
+        self.reason = reason
+        super().__init__(f"PR content for {repo_url!r}/{head!r}: {reason}")
+
+
 class PRTrackerIdentityError(Exception):
     """The publishable PR body lost its required tracker identity."""
 
@@ -142,6 +155,27 @@ class StaleWriteError(Exception):
         super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
         self.target = target
         self.expected = expected
+
+
+class LaneRecordReadError(Exception):
+    """A lane's branch record cannot be read from its addressed tracker comment."""
+
+    def __init__(
+        self,
+        *,
+        issue_key: str,
+        lane_key: str,
+        record_ref: str | None,
+        reason: str,
+    ) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.record_ref = record_ref
+        self.reason = reason
+        super().__init__(
+            f"lane record {record_ref!r} on {issue_key!r} "
+            f"for {lane_key!r} could not be read: {reason}"
+        )
 
 
 class EscalationReadError(Exception):

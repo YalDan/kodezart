@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, ConfigDict, Field, field_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.operation import OperationConfig, QueueState
@@ -219,6 +219,13 @@ class TrackerIssue(TrackerModel):
     created_at: datetime
     updated_at: datetime
     url: str
+
+
+class TrackerIssueStateChange(TrackerModel):
+    """An issue and its current state's entry time from one full read."""
+
+    issue: TrackerIssue
+    state_changed_at: AwareDatetime
 
 
 class TrackerIssueRevision(TrackerModel):

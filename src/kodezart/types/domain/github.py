@@ -51,6 +51,27 @@ class PullRequestSummary(BaseModel):
     html_url: str
 
 
+class PullRequestBranch(BaseModel):
+    """Only the reference name; no merge-status field is modeled."""
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    ref: str = Field(min_length=1)
+
+
+class PullRequestContentResponse(BaseModel):
+    """Native raw content required by the separate PR editor."""
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    number: int = Field(gt=0)
+    html_url: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    body: str | None
+    head: PullRequestBranch
+    base: PullRequestBranch
+
+
 class RepositoryResponse(BaseModel):
     """Wrapper for the GitHub repository metadata response."""
 

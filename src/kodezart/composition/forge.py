@@ -6,7 +6,7 @@ than defines.
 
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.core.config import AppConfig
-from kodezart.core.protocols import ForgeQuery
+from kodezart.core.protocols import ForgeQuery, PRContentEditor
 from kodezart.domain.git_url import is_forge_less_origin
 
 
@@ -48,4 +48,11 @@ def forge_query_for_origin(
     same origin predicate as workflow and delivery selection. A configured
     credential alone never establishes that an origin has a forge.
     """
+    return None if is_forge_less_origin(repo_url) else client
+
+
+def pr_content_editor_for_origin(
+    *, client: PRContentEditor | None, repo_url: str
+) -> PRContentEditor | None:
+    """Select PR content access only for an origin with a forge capability."""
     return None if is_forge_less_origin(repo_url) else client

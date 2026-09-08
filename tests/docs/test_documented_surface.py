@@ -46,6 +46,7 @@ _UNDOCUMENTED_BY_DESIGN: frozenset[str] = frozenset(
 _FORGE_PATH_PERMISSIONS: dict[str, str] = {
     "/repos/{}/{}": "Metadata: read",
     "/repos/{}/{}/pulls": "Pull requests: read/write",
+    "/repos/{}/{}/pulls/{}": "Pull requests: read/write",
     "/repos/{}/{}/issues/{}/comments": "Pull requests: read/write",
     "/repos/{}/{}/commits/{}": "Contents: read",
     "/repos/{}/{}/commits/{}/check-runs": "Checks: read",

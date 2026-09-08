@@ -27,7 +27,12 @@ from urllib.parse import quote, urlsplit
 import httpx
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
+from kodezart.domain.errors import (
+    ForgeAPIError,
+    PRContentConflictError,
+    RateLimitError,
+    TransientAPIError,
+)
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.github import (
@@ -35,6 +40,7 @@ from kodezart.types.domain.github import (
     CheckRunsResponse,
     CommitIdentity,
     DeclaredWorkflowsResponse,
+    PullRequestContentResponse,
     PullRequestResponse,
     PullRequestSummary,
     RepositoryResponse,
@@ -44,6 +50,7 @@ from kodezart.types.domain.github import (
     WorkflowRunsResponse,
     WorkflowsResponse,
 )
+from kodezart.types.domain.pr_content import PRContent
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
 
 #: Every root httpx derives an exception from.  ``HTTPError`` covers the
@@ -98,6 +105,23 @@ def _pull_request_identities(payload: object) -> tuple[PullRequestResponse, ...]
         msg = f"expected a pull request array, got {type(payload).__name__}"
         raise ValueError(msg)
     return tuple(PullRequestResponse.model_validate(entry) for entry in payload)
+
+
+def _pull_request_contents(payload: object) -> tuple[PullRequestContentResponse, ...]:
+    if not isinstance(payload, list):
+        raise ValueError("expected a pull request content array")
+    return tuple(PullRequestContentResponse.model_validate(entry) for entry in payload)
+
+
+def _pr_content(wire: PullRequestContentResponse) -> PRContent:
+    return PRContent(
+        url=wire.html_url,
+        number=wire.number,
+        head_branch=wire.head.ref,
+        base_branch=wire.base.ref,
+        title=wire.title,
+        body="" if wire.body is None else wire.body,
+    )
 
 
 class WorkflowsProbeResult(StrEnum):
@@ -322,6 +346,7 @@ class GitHubAPIClient:
         *,
         json: dict[str, object] | None = None,
         params: dict[str, str | int] | None = None,
+        retryable: bool = True,
     ) -> _WireT:
         """One request, with its body decoded and validated.
 
@@ -341,6 +366,7 @@ class GitHubAPIClient:
             url,
             json=json,
             params=params,
+            retryable=retryable,
         )
         try:
             return parse(response.json())
@@ -425,7 +451,7 @@ class GitHubAPIClient:
         repo_url: str,
         head: str,
     ) -> tuple[str, int] | None:
-        """Read the newest open PR for a branch in this repository."""
+        """Read one unique open PR for a branch in this repository."""
         owner, repo = extract_owner_repo(repo_url)
         listing = await self._parsed_with_retry(
             "GET",
@@ -434,13 +460,20 @@ class GitHubAPIClient:
             params={
                 "state": self._OPEN_STATE,
                 "head": f"{owner}:{head}",
-                "per_page": 1,
+                "per_page": 2,
                 "sort": "created",
                 "direction": "desc",
             },
         )
         if not listing:
             return None
+        if len(listing) != 1:
+            raise PRContentConflictError(
+                repo_url=repo_url,
+                head=head,
+                pr_number=None,
+                reason="multiple open pull requests match the head",
+            )
         return (listing[0].html_url, listing[0].number)
 
     def branch_web_url(self, *, repo_url: str, branch: str) -> str:
@@ -459,6 +492,84 @@ class GitHubAPIClient:
             )
             raise ValueError(msg)
         return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch, safe='')}"
+
+    # -- PRContentEditor -----------------------------------------------------
+
+    async def read_open_pr(
+        self, *, repo_url: str, head: str, pr_number: int
+    ) -> PRContent:
+        """Read a unique still-open PR from the native head-filtered listing."""
+        owner, repo = extract_owner_repo(repo_url)
+        listing = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            _pull_request_contents,
+            params={
+                "state": self._OPEN_STATE,
+                "head": f"{owner}:{head}",
+                "per_page": 2,
+            },
+        )
+        if (
+            len(listing) != 1
+            or listing[0].number != pr_number
+            or listing[0].head.ref != head
+        ):
+            raise PRContentConflictError(
+                repo_url=repo_url,
+                head=head,
+                pr_number=pr_number,
+                reason="open head lookup is absent, ambiguous or changed identity",
+            )
+        return _pr_content(listing[0])
+
+    async def edit_pr(
+        self, *, repo_url: str, expected: PRContent, title: str, body: str, base: str
+    ) -> PRContent:
+        """Update only changed title/body/base after a fresh content assertion."""
+        current = await self.read_open_pr(
+            repo_url=repo_url,
+            head=expected.head_branch,
+            pr_number=expected.number,
+        )
+        if current != expected:
+            raise PRContentConflictError(
+                repo_url=repo_url,
+                head=expected.head_branch,
+                pr_number=expected.number,
+                reason="open PR content changed after it was read",
+            )
+        desired = PRContent.model_validate(
+            {**current.model_dump(), "title": title, "body": body, "base_branch": base}
+        )
+        updates: dict[str, object] = {}
+        for name, before, after in (
+            ("title", current.title, title),
+            ("body", current.body, body),
+            ("base", current.base_branch, base),
+        ):
+            if before != after:
+                updates[name] = after
+        if not updates:
+            return current
+        owner, repo = extract_owner_repo(repo_url)
+        updated = _pr_content(
+            await self._parsed_with_retry(
+                "PATCH",
+                f"/repos/{owner}/{repo}/pulls/{current.number}",
+                PullRequestContentResponse.model_validate,
+                json=updates,
+                retryable=False,
+            )
+        )
+        if updated != desired:
+            raise PRContentConflictError(
+                repo_url=repo_url,
+                head=current.head_branch,
+                pr_number=current.number,
+                reason="updated PR did not retain the requested identity and content",
+            )
+        return updated
 
     # -- DeliveryProbe -------------------------------------------------------
 

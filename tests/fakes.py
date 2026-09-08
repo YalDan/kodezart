@@ -41,6 +41,7 @@ from kodezart.domain.errors import (
     DuplicateWorkRefError,
     EscalationReadError,
     MergeConflictError,
+    PRContentConflictError,
     RateLimitError,
     ScopeReadError,
     TransientAPIError,
@@ -105,6 +106,7 @@ from kodezart.types.domain.operation import (
     RecordDestination,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
+from kodezart.types.domain.pr_content import PRContent
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
@@ -134,6 +136,7 @@ from kodezart.types.domain.tracker import (
     TrackerComment,
     TrackerIssue,
     TrackerIssueRevision,
+    TrackerIssueStateChange,
     TrackerReview,
     WorkflowStateKind,
 )
@@ -1668,11 +1671,13 @@ class FakePRCreator:
         pr_number: int = 1,
         fail_create: Exception | None = None,
         fail_comment: Exception | None = None,
+        content_store: dict[tuple[str, int], PRContent] | None = None,
     ) -> None:
         self._pr_url = pr_url
         self._pr_number = pr_number
         self._fail_create = fail_create
         self._fail_comment = fail_comment
+        self._content_store = content_store
         self.calls: list[dict[str, object]] = []
 
     async def create_pr(
@@ -1696,7 +1701,19 @@ class FakePRCreator:
         )
         if self._fail_create is not None:
             raise self._fail_create
-        return (self._pr_url, self._pr_number)
+        pr_url, pr_number = self._pr_url, self._pr_number
+        if self._content_store is not None:
+            self._pr_number += 1
+            self._pr_url = f"{self._pr_url.rsplit('/', 1)[0]}/{self._pr_number}"
+            self._content_store[(repo_url, pr_number)] = PRContent(
+                url=pr_url,
+                number=pr_number,
+                head_branch=head,
+                base_branch=base,
+                title=title,
+                body=body,
+            )
+        return (pr_url, pr_number)
 
     async def comment_on_pr(
         self,
@@ -1725,9 +1742,11 @@ class FakeForgeQuery:
         *,
         open_prs: dict[tuple[str, str], tuple[str, int]] | None = None,
         branch_urls: dict[tuple[str, str], str] | None = None,
+        ambiguous_heads: frozenset[tuple[str, str]] = frozenset(),
     ) -> None:
         self.open_prs = dict(open_prs or {})
         self.branch_urls = dict(branch_urls or {})
+        self.ambiguous_heads = ambiguous_heads
         self.calls: list[dict[str, str]] = []
 
     async def open_pr_for_head(
@@ -1739,6 +1758,13 @@ class FakeForgeQuery:
         self.calls.append(
             {"method": "open_pr_for_head", "repo_url": repo_url, "head": head}
         )
+        if (repo_url, head) in self.ambiguous_heads:
+            raise PRContentConflictError(
+                repo_url=repo_url,
+                head=head,
+                pr_number=None,
+                reason="multiple open pull requests match the head",
+            )
         return self.open_prs.get((repo_url, head))
 
     def branch_web_url(self, *, repo_url: str, branch: str) -> str:
@@ -1746,6 +1772,71 @@ class FakeForgeQuery:
             {"method": "branch_web_url", "repo_url": repo_url, "branch": branch}
         )
         return self.branch_urls[(repo_url, branch)]
+
+
+class FakePRContentEditor:
+    """Open content snapshots and optimistic writes, without PR state methods."""
+
+    def __init__(
+        self, *, records: dict[tuple[str, int], PRContent] | None = None
+    ) -> None:
+        self.records = dict(records or {})
+        self.calls: list[dict[str, object]] = []
+
+    async def read_open_pr(
+        self, *, repo_url: str, head: str, pr_number: int
+    ) -> PRContent:
+        self.calls.append(
+            {
+                "method": "read_open_pr",
+                "repo_url": repo_url,
+                "head": head,
+                "pr_number": pr_number,
+            }
+        )
+        matching = [
+            record
+            for (repository, _), record in self.records.items()
+            if repository == repo_url and record.head_branch == head
+        ]
+        if len(matching) != 1 or matching[0].number != pr_number:
+            raise PRContentConflictError(
+                repo_url=repo_url,
+                head=head,
+                pr_number=pr_number,
+                reason="open head lookup is absent, ambiguous or changed identity",
+            )
+        return matching[0]
+
+    async def edit_pr(
+        self, *, repo_url: str, expected: PRContent, title: str, body: str, base: str
+    ) -> PRContent:
+        current = await self.read_open_pr(
+            repo_url=repo_url, head=expected.head_branch, pr_number=expected.number
+        )
+        if current != expected:
+            raise PRContentConflictError(
+                repo_url=repo_url,
+                head=expected.head_branch,
+                pr_number=expected.number,
+                reason="open PR content changed after it was read",
+            )
+        updated = PRContent.model_validate(
+            {**current.model_dump(), "title": title, "body": body, "base_branch": base}
+        )
+        if updated != current:
+            self.calls.append(
+                {
+                    "method": "edit_pr",
+                    "repo_url": repo_url,
+                    "expected": expected,
+                    "title": title,
+                    "body": body,
+                    "base": base,
+                }
+            )
+            self.records[(repo_url, expected.number)] = updated
+        return updated
 
 
 type _FakeCIObservation = tuple[bool | None, str, frozenset[str]]
@@ -2275,6 +2366,7 @@ class FakeMcpIssue:
     assignee: str | None = None
     created_at: datetime = FIXTURE_EPOCH
     updated_at: datetime = FIXTURE_EPOCH
+    state_changed_at: datetime | None = None
     url: str = ""
 
     def entry(self) -> dict[str, object]:
@@ -2313,6 +2405,17 @@ class FakeMcpIssue:
             "relations": self.relations_wire(),
             "attachments": [asset.wire() for asset in self.attachments],
             "documents": [asset.wire() for asset in self.documents],
+            "stateHistory": [
+                {
+                    "state": {
+                        "id": f"state-{self.status}",
+                        "name": self.status,
+                        "type": self.status_type,
+                    },
+                    "startedAt": (self.state_changed_at or self.created_at).isoformat(),
+                    "endedAt": None,
+                }
+            ],
         }
 
     def relations_wire(self) -> dict[str, object]:
@@ -2628,6 +2731,8 @@ class FakeLinearMcpServer:
             assert isinstance(additions, list)
             issue.labels = list(dict.fromkeys([*issue.labels, *map(str, additions)]))
         self._moved(issue.id)
+        if "state" in arguments:
+            issue.state_changed_at = issue.updated_at
         return issue.wire()
 
     def _tool_save_comment(
@@ -3104,6 +3209,9 @@ class FakeTrackerPort:
         #: so what a consumer spends on reads is only visible as a list of
         #: them (KOD-173).
         self.issue_reads: list[str] = []
+        self.issue_state_changes: dict[str, datetime] = {
+            issue.issue_key: issue.created_at for issue in issues
+        }
         #: Every claim this double GRANTED, in order — kept past the release
         #: that deletes the claim itself, so a claim/release pair spent and
         #: undone is still visible as the write it was (KOD-173).
@@ -3223,6 +3331,14 @@ class FakeTrackerPort:
     def require_body_digest_stability(self) -> None:
         """The fake's revision reads derive their digest from the body alone."""
 
+    async def read_issue_state_change(
+        self, *, issue_key: str
+    ) -> TrackerIssueStateChange:
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueStateChange(
+            issue=issue, state_changed_at=self.issue_state_changes[issue_key]
+        )
+
     async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
         issue = await self.read_issue(issue_key=issue_key)
         return TrackerIssueRevision(
@@ -3311,6 +3427,7 @@ class FakeTrackerPort:
         )
         self.issues[issue.issue_key] = issue
         self.issue_creations.append(issue.issue_key)
+        self.issue_state_changes[issue.issue_key] = issue.created_at
         return issue
 
     async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
@@ -3429,6 +3546,7 @@ class FakeTrackerPort:
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
+        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
         return updated
 
     async def restore_workflow_state(
@@ -3451,6 +3569,7 @@ class FakeTrackerPort:
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
+        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
         return updated
 
     async def set_queue_state(

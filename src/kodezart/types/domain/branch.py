@@ -12,6 +12,7 @@ import hashlib
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,6 +53,25 @@ class WorkRefRole(StrEnum):
     RECOVERY = "recovery"
     BEST_ITERATION = "best_iteration"
     INTEGRATION = "integration"
+
+
+class BranchRole(StrEnum):
+    """The role recorded for one branch in one fire's association set."""
+
+    DELIVERABLE = "deliverable"
+    LOOP = "loop"
+    RECOVERY = "recovery"
+
+
+class BranchAssociation(CamelCaseModel):
+    """Historical branch identity; remote liveness is a separate observation."""
+
+    model_config = ConfigDict(frozen=True)
+
+    branch: str = Field(min_length=1)
+    role: BranchRole
+    derived_from: Annotated[str, Field(min_length=1)] | None
+    run_id: str = Field(min_length=1)
 
 
 class WorkRef(CamelCaseModel):
