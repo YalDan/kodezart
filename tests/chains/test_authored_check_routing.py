@@ -177,7 +177,16 @@ async def test_absent_run_uses_the_actual_declaration(declared, exempt, expected
 
 
 async def test_native_branch_watch_retries_the_observed_cleanup_commit():
-    native = ActionsAPI(sha=CLEAN_SHA)
+    from tests.fakes import FakeArtifactPersister, FakeBranchMerger
+
+    native = ActionsAPI(sha=SHA)
+
+    class Cleanup(FakeArtifactPersister):
+        async def clean(self, **kwargs):
+            await super().clean(**kwargs)
+            native.sha = CLEAN_SHA
+
+    cleanup = Cleanup()
 
     def handler(request):
         if (
@@ -195,12 +204,17 @@ async def test_native_branch_watch_retries_the_observed_cleanup_commit():
 
     client = _make_client(handler)
     try:
-        workflow, fixes = engine(client, observations=client)
+        workflow, fixes = engine(
+            client,
+            observations=client,
+            artifact_persister=cleanup,
+            merger=FakeBranchMerger(merge_sha=SHA),
+        )
         result = await finish(workflow)
         assert result.outcome is WorkflowOutcome.ci_passed
-        assert (
-            result.final_commit_sha != CLEAN_SHA
-        )  # Original fire tip is deliberately different.
+        assert result.final_commit_sha == SHA
+        assert len(cleanup.clean_calls) == 1
+        assert native.sha == CLEAN_SHA
         assert fixes.calls == []
         assert len(native.writes) == 1
         assert any(
