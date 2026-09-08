@@ -46,7 +46,6 @@ from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
     FakeJobQueue,
-    FakePRStateReader,
     FakeRepoCache,
     FakeTrackerPort,
     PassThroughGate,
@@ -550,25 +549,40 @@ async def test_a_lane_with_no_pull_request_and_no_live_run_is_eligible():
 
 
 async def test_re_entry_eligibility_reads_no_merge_state_and_no_body(monkeypatch):
-    """The excluded lane is decided over facts, never assembled or measured."""
+    """The excluded lane is decided over facts, never assembled or measured.
+
+    The hook stands over every issue the pass touches rather than the
+    excluded one alone, and comes off the moment a fire launches: what a
+    fire reads once it owns a lane is the fire's business, what re-entry
+    eligibility reads is this one's.  The forge is asked about both lanes'
+    deliveries and about neither lane's merge state.
+    """
     tracker = re_entry_board()
-    walker, _, _ = walk(tracker, delivered=("crashed",))
-    reader = FakePRStateReader(records={})
+    walker, queue, probe = walk(tracker, delivered=("crashed",))
     body_reads = []
     original = TrackerIssue.__getattribute__
 
     def checked(issue, name):
-        if name == "body" and original(issue, "issue_key") == "crashed":
-            body_reads.append(name)
-            raise AssertionError("an excluded lane's description was read")
+        if name == "body":
+            body_reads.append(original(issue, "issue_key"))
+            raise AssertionError("a description was read to decide eligibility")
         return original(issue, name)
 
+    launch = FireDispatcher.launch
+
+    async def restoring(self, *args, **kwargs):
+        monkeypatch.setattr(TrackerIssue, "__getattribute__", original)
+        return await launch(self, *args, **kwargs)
+
+    monkeypatch.setattr(FireDispatcher, "launch", restoring)
     monkeypatch.setattr(TrackerIssue, "__getattribute__", checked)
     report = await walker.run_pass()
 
     assert body_reads == []
-    assert reader.calls == []
+    assert probe.calls == ["crashed", "fresh"]
+    assert probe.merge_state.calls == []
     assert report.claimed_issue_key == "fresh"
+    assert enqueued(queue) == ["fresh"]
 
 
 async def test_a_scope_of_open_unmerged_pull_requests_walks_to_completion():
