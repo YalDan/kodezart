@@ -16,7 +16,7 @@ Kodezart uses [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pyda
 for configuration. All settings are loaded from environment variables with the
 `KODEZART_` prefix and optionally from a `.env` file (`env_file='.env'`).
 
-- **Case insensitive**: `KODEZART_DEBUG` and `kodezart_debug` are equivalent
+- **Case insensitive**: `KODEZART_HTTP__DEBUG` and `kodezart_http__debug` are equivalent
 - **Extra fields forbidden**: a `KODEZART_` variable whose suffix names no
   field below raises a validation error at startup rather than being ignored
 
@@ -62,7 +62,7 @@ and leased alarm writer remain separate work.
 
 | Variable                          | Type         | Default                  | Constraints | Description                                              |
 | --------------------------------- | ------------ | ------------------------ | ----------- | -------------------------------------------------------- |
-| `KODEZART_PROJECT_NAME`           | `str`        | `kodezart`               |             | FastAPI application title                                |
+| `KODEZART_HTTP__PROJECT_NAME`           | `str`        | `kodezart`               |             | FastAPI application title                                |
 | `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_COMMITS` | `int` | `5` | >= 0 | Recorded lane commits allowed after an unanswered escalation's raise SHA. |
 | `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_TICKS` | `int` | `10` | >= 0 | Recorded walker ticks allowed after an unanswered escalation was raised. |
 | `KODEZART_RUN_ALARM_BARREN_TICK_MAX_FILES_CHANGED` | `int` | `10` | >= 0 | Recorded files changed against the lane base allowed on a tick closing no previously-open reference. |
@@ -71,10 +71,10 @@ and leased alarm writer remain separate work.
 | `KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` | `float` | `1800` | > 0 | Wall-clock bound for one check step of a union composition. |
 | `KODEZART_UNION_STALE_MAX_ATTEMPTS` | `int` | `3` | >= 1 | Maximum union attempts before continuously moving lane heads refuse. |
 | `KODEZART_RUN_ALARM_MAX_RULINGS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Distinct machine-authored ruling identities allowed since the lane last closed a previously-open obligation. |
-| `KODEZART_DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
+| `KODEZART_HTTP__DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
 | `KODEZART_LOG_LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
 | `KODEZART_LOG_PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
-| `KODEZART_API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
+| `KODEZART_HTTP__API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
 | `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   | min length 1 | GitHub PAT for cloning private repositories and reaching the forge. Unset means no forge credential: the clone path attaches no auth and no dispatch pass is scheduled. An empty assignment is refused at startup rather than resolving to "unset" on one code path and "empty credential" on the next |
 | `KODEZART_CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
 | `KODEZART_INTEGRATION_WORKSPACE_DIR` | `str`     | `/tmp/kodezart-integration` |          | Local directory the base resolver builds integration refs in |
@@ -435,11 +435,11 @@ most commonly customized variables. This table above is the authoritative
 full reference.
 
 ```bash
-KODEZART_PROJECT_NAME=kodezart
-KODEZART_DEBUG=false
+KODEZART_HTTP__PROJECT_NAME=kodezart
+KODEZART_HTTP__DEBUG=false
 KODEZART_LOG_LEVEL=INFO
 KODEZART_LOG_PRETTY=false
-KODEZART_API_V1_PREFIX=/api/v1
+KODEZART_HTTP__API_V1_PREFIX=/api/v1
 # GitHub personal access token for repository cloning (optional). The field is
 # str | None and an empty assignment is NOT an unset one — it is refused at
 # startup. Leave the line commented out to keep it unset.
@@ -601,3 +601,20 @@ are rejected in constructor input, process environment, dotenv and file secrets.
 A file secret named `KODEZART_QUEUE` contains a JSON object with these section
 field names, without the old `queue_` prefix. Standard settings precedence remains
 constructor input, process environment, dotenv, file secrets, then defaults.
+
+## HTTP environment migration
+
+HTTP settings now live in `AppConfig.http`. The application consumes this section;
+HTTP response handlers receive only the route prefix. Defaults and debug behavior
+are unchanged. Replace the former flat environment assignments with these names:
+
+| Former flat field | Nested environment name |
+| --- | --- |
+| `project_name` | `KODEZART_HTTP__PROJECT_NAME` |
+| `debug` | `KODEZART_HTTP__DEBUG` |
+| `api_v1_prefix` | `KODEZART_HTTP__API_V1_PREFIX` |
+
+The former names (uppercase field with the `KODEZART` prefix and separator) now
+refuse in constructor input, environment, dotenv and file secrets. A file secret
+named `KODEZART_HTTP` holds a JSON object with the three field names above.
+Standard constructor/environment/dotenv/file-secret precedence is unchanged.

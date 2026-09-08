@@ -221,8 +221,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         await log.ainfo(
             "application_starting",
-            project=config.project_name,
-            debug=config.debug,
+            project=config.http.project_name,
+            debug=config.http.debug,
         )
         yield
     except BaseException as exc:
@@ -255,14 +255,14 @@ def create_app() -> FastAPI:
     """
     config = AppConfig.from_env()
     application = FastAPI(
-        title=config.project_name,
-        debug=config.debug,
+        title=config.http.project_name,
+        debug=config.http.debug,
         lifespan=lifespan,
-        docs_url="/docs" if config.debug else None,
-        redoc_url="/redoc" if config.debug else None,
+        docs_url="/docs" if config.http.debug else None,
+        redoc_url="/redoc" if config.http.debug else None,
     )
     application.state.config = config
-    application.include_router(v1_router, prefix=config.api_v1_prefix)
+    application.include_router(v1_router, prefix=config.http.api_v1_prefix)
     return application
 
 

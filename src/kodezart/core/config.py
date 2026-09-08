@@ -12,6 +12,7 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from kodezart.core.http_settings import HttpSettings
 from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
@@ -73,6 +74,9 @@ class AppConfig(BaseSettings):
                 "organize_max_admission_rounds",
                 "organize_max_convergence_rounds",
                 "union_check_cleanup_poll_interval_seconds",
+                "project_name",
+                "debug",
+                "api_v1_prefix",
                 "queue_max_concurrent_runs_per_lane",
                 "queue_max_depth_per_lane",
                 "queue_terminal_retention_seconds",
@@ -111,13 +115,9 @@ class AppConfig(BaseSettings):
             checked(file_secret_settings),
         )
 
-    project_name: str = Field(
-        default="kodezart",
-        description="FastAPI application title.",
-    )
-    debug: bool = Field(
-        default=False,
-        description="Enable /docs and /redoc Swagger UI.",
+    http: HttpSettings = Field(
+        default_factory=HttpSettings,
+        description="HTTP application metadata, debug behavior and route prefix.",
     )
     log_level: str = Field(
         default="INFO",
@@ -126,10 +126,6 @@ class AppConfig(BaseSettings):
     log_pretty: bool = Field(
         default=False,
         description="Colorized console output when true, JSON lines when false.",
-    )
-    api_v1_prefix: str = Field(
-        default="/api/v1",
-        description="URL prefix for all v1 API routes.",
     )
     github_token: str | None = Field(
         default=None,

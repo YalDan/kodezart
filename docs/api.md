@@ -6,7 +6,7 @@
 http://localhost:8000/api/v1
 ```
 
-The prefix is configurable via `KODEZART_API_V1_PREFIX` (default `/api/v1`).
+The prefix is configurable via `KODEZART_HTTP__API_V1_PREFIX` (default `/api/v1`).
 
 `/agent/fire` and job status declare their existing success models in OpenAPI
 and return those models through FastAPI response validation. Queue-full `429`
