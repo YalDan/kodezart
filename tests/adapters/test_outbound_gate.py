@@ -163,7 +163,7 @@ async def test_gate_engages_on_public_and_unknown_only(
 async def test_unconfigured_deployment_is_clean_on_every_visibility(
     visibility: RepoVisibility,
 ) -> None:
-    """AC-4: pattern sets ship empty except credentials, so ordinary text passes."""
+    """Ordinary text still passes the populated credential and URL defaults."""
     config = AppConfig()
     gate = PatternOutboundContentGate(
         scanners=[RegexContentScanner(patterns=config.deny_patterns)],
@@ -180,7 +180,7 @@ async def test_unconfigured_deployment_is_clean_on_every_visibility(
 
 
 async def test_shipped_credential_category_still_blocks() -> None:
-    """The one category that ships populated: a credential never leaves."""
+    """Shipped credential protection remains independent of workspace URL patterns."""
     config = AppConfig()
     gate = PatternOutboundContentGate(
         scanners=[RegexContentScanner(patterns=config.deny_patterns)],
