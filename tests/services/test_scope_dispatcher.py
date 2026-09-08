@@ -512,3 +512,72 @@ async def test_re_entry_eligibility_reads_no_merge_state_and_no_body(monkeypatch
     assert body_reads == []
     assert reader.calls == []
     assert report.claimed_issue_key == "fresh"
+
+
+async def test_a_scope_of_open_unmerged_pull_requests_walks_to_completion():
+    """Every lane's delivery opened and never merged; the graph still finishes."""
+    tracker = chain()
+    walker, queue, probe = walk(tracker)
+
+    reports = await walk_chain(tracker, walker, queue, probe, open_prs=True)
+
+    assert [report.claimed_issue_key for report in reports] == ["A", "B", "C", None]
+    assert [report.base.base_branch for report in reports[:3]] == [
+        TRUNK,
+        branch_of("A"),
+        branch_of("B"),
+    ]
+    assert probe.delivered == {"A", "B", "C"}
+    assert reports[-1].outcome is DispatchOutcome.empty_eligible_set
+    assert reports[-1].exclusions == ()
+    assert tracker.claims == {}
+
+
+async def test_a_blocker_done_with_no_pull_request_unlocks_on_the_same_tick():
+    """A premise with no delivery at all unlocks its dependent identically."""
+    tracker = chain()
+    walker, queue, probe = walk(tracker)
+    without_deliveries = await walk_chain(tracker, walker, queue, probe)
+
+    open_tracker = chain()
+    open_walker, open_queue, open_probe = walk(open_tracker)
+    with_deliveries = await walk_chain(
+        open_tracker,
+        open_walker,
+        open_queue,
+        open_probe,
+        open_prs=True,
+    )
+
+    assert [report.claimed_issue_key for report in without_deliveries] == [
+        "A",
+        "B",
+        "C",
+        None,
+    ]
+    assert probe.delivered == set()
+    assert [report.base.base_branch for report in without_deliveries[:3]] == [
+        TRUNK,
+        branch_of("A"),
+        branch_of("B"),
+    ]
+    assert len(without_deliveries) == len(with_deliveries)
+
+
+async def test_an_open_criterion_holds_a_dependent_whatever_its_refs_say():
+    """A recorded deliverable ref is not a closed subtree and never unlocks."""
+    tracker = chain()
+    deliver(tracker, "A")
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert enqueued(queue) == ["A"]
+    assert (
+        IssueExclusion(
+            issue_key="B",
+            clause=ExclusionClause.LIVE_BLOCKER,
+            detail="A",
+        )
+        in report.exclusions
+    )
