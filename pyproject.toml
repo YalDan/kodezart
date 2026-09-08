@@ -112,7 +112,7 @@ filterwarnings = ["error"]
 #   uv run pytest -m live --collect-only -q
 #   uv run pytest -m postgres --collect-only -q
 #
-#   live      Drives a real Claude CLI and spends account budget, so it
+#   live      Needs real external credentials or drives the Claude CLI, so it
 #             cannot run unattended in CI.  Run by the operator during a
 #             live window; the board carries the last such run.
 #   postgres  Needs a real PostgreSQL server at KODEZART_TEST_POSTGRES_URL.
@@ -123,6 +123,6 @@ filterwarnings = ["error"]
 # `make check` cannot supply what they need — which is why the evidence
 # for them lives on the board and not in this file.
 markers = [
-    "live: requires live Claude CLI (skip by default, run with: pytest -m live)",
+    "live: requires external credentials or Claude CLI (skip by default, run with: pytest -m live)",
     "postgres: requires a PostgreSQL server at KODEZART_TEST_POSTGRES_URL (skip by default, run with: pytest -m postgres)",
 ]

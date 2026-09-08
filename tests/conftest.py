@@ -44,7 +44,7 @@ def _git_test_identity() -> None:
 
 
 _GATED_MARKERS: dict[str, str] = {
-    "live": "live tests need Claude CLI (run with: pytest -m live)",
+    "live": "live tests need external credentials or CLI (run with: pytest -m live)",
     "postgres": (
         "postgres tests need a database at KODEZART_TEST_POSTGRES_URL "
         "(run with: pytest -m postgres)"
