@@ -2456,6 +2456,9 @@ class FakeMcpComment:
     body: str
     created_at: datetime
     parent_id: str | None = None
+    #: The stamp an edit moves, ``None`` on an entry never edited — which
+    #: the listing still reports, carrying its creation instant.
+    updated_at: datetime | None = None
 
     def wire(self) -> dict[str, object]:
         return {
@@ -2467,6 +2470,7 @@ class FakeMcpComment:
             ),
             "body": self.body,
             "createdAt": self.created_at.isoformat(),
+            "updatedAt": (self.updated_at or self.created_at).isoformat(),
             "parentId": self.parent_id,
             "resolvedAt": None,
             "quotedText": None,
@@ -2751,9 +2755,11 @@ class FakeLinearMcpServer:
             comment_id = str(arguments["id"])
             for existing in self.comments:
                 if existing.id == comment_id:
-                    # ``created_at`` survives an edit, which is the whole
-                    # property the claim order depends on.
+                    # ``created_at`` survives an edit and ``updated_at``
+                    # moves: the order the claim depends on is the first
+                    # stamp, and when a body last changed is the second.
                     existing.body = str(arguments["body"])
+                    existing.updated_at = self._next_instant()
                     self._moved(existing.issue_id)
                     return existing.wire()
             raise KeyError(f"no comment {comment_id} to update")

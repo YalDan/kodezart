@@ -4,7 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from kodezart.domain.surface_lease import live_conflict, surface_address
+from kodezart.domain.surface_lease import (
+    live_conflict,
+    published_expiry,
+    surface_address,
+)
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 
@@ -106,3 +110,60 @@ def test_the_first_conflict_in_address_order_is_named() -> None:
 def test_a_lease_requires_a_holder_and_a_nonempty_set(holder, surfaces) -> None:
     with pytest.raises(ValueError):
         SurfaceLease(holder=holder, surfaces=surfaces, expires_at=NOW)
+
+
+#: What the backend's stamp on a write ran ahead of the writing holder's
+#: clock, measured on the real board.  Both readings of one instant are on
+#: the record itself, which is what makes the two clocks comparable.
+SKEW = timedelta(seconds=0.5)
+
+
+def test_a_record_that_never_extended_anything_is_read_as_written() -> None:
+    assert published_expiry(
+        expires_at=NOW + timedelta(seconds=60),
+        extends=None,
+        granted_at=NOW,
+        created_at=NOW + SKEW,
+        updated_at=NOW + SKEW,
+    ) == NOW + timedelta(seconds=60)
+
+
+def test_an_extension_stamped_inside_the_grant_it_extends_is_in_force() -> None:
+    assert published_expiry(
+        expires_at=NOW + timedelta(seconds=120),
+        extends=NOW + timedelta(seconds=60),
+        granted_at=NOW,
+        created_at=NOW + SKEW,
+        updated_at=NOW + timedelta(seconds=30) + SKEW,
+    ) == NOW + timedelta(seconds=120)
+
+
+def test_an_extension_stamped_after_the_lapse_puts_nothing_in_force() -> None:
+    """The grant keeps the expiry it had; a lapsed order does not come back."""
+    assert published_expiry(
+        expires_at=NOW + timedelta(seconds=120),
+        extends=NOW + timedelta(seconds=60),
+        granted_at=NOW,
+        created_at=NOW + SKEW,
+        updated_at=NOW + timedelta(seconds=62) + SKEW,
+    ) == NOW + timedelta(seconds=60)
+
+
+def test_the_deadline_is_converted_by_the_records_own_two_readings() -> None:
+    """Clocks months apart decide the same way: the offset is per record."""
+    apart = timedelta(days=61)
+    for offset in (SKEW, apart, -apart):
+        assert published_expiry(
+            expires_at=NOW + timedelta(seconds=120),
+            extends=NOW + timedelta(seconds=60),
+            granted_at=NOW,
+            created_at=NOW + offset,
+            updated_at=NOW + timedelta(seconds=59) + offset,
+        ) == NOW + timedelta(seconds=120)
+        assert published_expiry(
+            expires_at=NOW + timedelta(seconds=120),
+            extends=NOW + timedelta(seconds=60),
+            granted_at=NOW,
+            created_at=NOW + offset,
+            updated_at=NOW + timedelta(seconds=61) + offset,
+        ) == NOW + timedelta(seconds=60)

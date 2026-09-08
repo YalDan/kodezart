@@ -50,7 +50,11 @@ from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.scope_approval import resolve_execution_approval
-from kodezart.domain.surface_lease import live_conflict, surface_address
+from kodezart.domain.surface_lease import (
+    live_conflict,
+    published_expiry,
+    surface_address,
+)
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
@@ -64,6 +68,7 @@ from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.linear_mcp import (
     LINEAR_NAMED_ARRAY,
     LinearAssetWire,
+    LinearCommentEntryWire,
     LinearCommentListWire,
     LinearCommentWire,
     LinearCriterionIssueWire,
@@ -1768,7 +1773,7 @@ class LinearMcpTracker:
             if marker.holder == holder and marker.nonce == nonce
         }
         if set(mine) != set(written):
-            await self._delete_markers(
+            await self._stand_down(
                 tuple(
                     _WrittenMarker(target=target, comment_key=key)
                     for target, key in written.items()
@@ -1788,9 +1793,7 @@ class LinearMcpTracker:
             now=self._clock(),
         )
         if conflict is not None:
-            await self._delete_markers(
-                tuple(marker.written for marker in mine.values())
-            )
+            await self._stand_down(tuple(marker.written for marker in mine.values()))
             return _Refused(
                 address=conflict.address,
                 holder=conflict.holder,
@@ -1799,7 +1802,7 @@ class LinearMcpTracker:
             )
         # Its own predecessor for exactly this set — the marker a restart
         # left behind — is a duplicate of this grant, never a competitor.
-        await self._delete_markers(
+        await self._stand_down(
             tuple(
                 marker.written
                 for marker in markers
@@ -1826,12 +1829,17 @@ class LinearMcpTracker:
         advertising — a lapsed marker of its own comes off the board, and
         so does a live one another holder outranks — because a marker left
         standing for a holder that has been told it owns nothing is a
-        claim nobody will ever withdraw.  The write itself can outlive the
-        lease it was extending — that is the delayed renewal — so after
-        the edit lands the holder checks its own clock against the expiry
-        it HAD: a lease that lapsed while the write was in flight is
-        handed back, whoever took it meanwhile, and the marker goes with
-        it.
+        claim nobody will ever withdraw.
+
+        The write itself can outlive the lease it was extending — that is
+        the delayed renewal — and the extension is therefore published
+        AGAINST the expiry it replaces: an edit the backend stamps after
+        that deadline puts nothing in force, so the holder that took the
+        address meanwhile is the sole owner from the moment it acquired,
+        and stays so whether or not this holder's own withdrawal reaches
+        the backend.  The holder then reads the board back and reports
+        holding nothing unless its own extension is standing, in force
+        and still earliest.
         """
         now = self._clock()
         encoded = frozenset(addressing.lines(addresses))
@@ -1849,7 +1857,7 @@ class LinearMcpTracker:
             if standing is None or marker.order < standing.order:
                 mine[marker.target] = marker
         if set(mine) != set(targets):
-            await self._delete_markers(
+            await self._stand_down(
                 tuple(
                     marker.written
                     for marker in markers
@@ -1870,9 +1878,7 @@ class LinearMcpTracker:
             )
             is not None
         ):
-            await self._delete_markers(
-                tuple(marker.written for marker in mine.values())
-            )
+            await self._stand_down(tuple(marker.written for marker in mine.values()))
             return None
         previous = min(marker.expires_at for marker in mine.values())
         expires_at = max(now + timedelta(seconds=lease_seconds), previous)
@@ -1886,12 +1892,13 @@ class LinearMcpTracker:
                     nonce=marker.nonce,
                     granted_at=marker.granted_at,
                     expires_at=expires_at,
+                    extends=marker.expires_at,
                     addresses=addressing.lines(addresses),
                 ),
             )
         withdrawn = tuple(marker.written for marker in mine.values())
         if self._clock() >= previous:
-            await self._delete_markers(withdrawn)
+            await self._stand_down(withdrawn)
             return None
         after = await self._markers_on(addressing.kind, targets=targets)
         renewed = {
@@ -1913,7 +1920,7 @@ class LinearMcpTracker:
             )
             is not None
         ):
-            await self._delete_markers(withdrawn)
+            await self._stand_down(withdrawn)
             return None
         return _Granted(expires_at=expires_at)
 
@@ -1924,9 +1931,15 @@ class LinearMcpTracker:
         addresses: frozenset[AddressT],
         holder: str,
     ) -> None:
-        """Delete this holder's markers over these addresses; never another's."""
+        """Delete this holder's markers over these addresses; never another's.
+
+        A release is the caller's own request rather than compensation
+        for a decision, so a marker the backend refuses to remove is
+        raised: a holder told its release succeeded would stop renewing a
+        grant that is still standing.
+        """
         encoded = frozenset(addressing.lines(addresses))
-        await self._delete_markers(
+        refused = await self._delete_markers(
             tuple(
                 marker.written
                 for marker in await self._markers_on(
@@ -1935,6 +1948,8 @@ class LinearMcpTracker:
                 if marker.holder == holder and marker.addresses & encoded
             )
         )
+        if refused:
+            raise refused[0][1]
 
     def _conflict[AddressT](
         self,
@@ -1986,19 +2001,25 @@ class LinearMcpTracker:
         nonce: str,
         granted_at: datetime,
         expires_at: datetime,
+        extends: datetime | None = None,
         addresses: Sequence[str],
     ) -> str:
-        """One marker's whole state, so any reader decides from the marker."""
-        return self._markers.grant_body(
-            lines={
-                "kind": addressing.kind.value,
-                "holder": holder,
-                "nonce": nonce,
-                "granted-at": granted_at.isoformat(),
-                "expires-at": expires_at.isoformat(),
-            },
-            addresses=addresses,
-        )
+        """One marker's whole state, so any reader decides from the marker.
+
+        An extension states the expiry it replaces, which is what lets a
+        reader hold it to the deadline it was published against instead of
+        taking a lapsed grant's word for it.
+        """
+        stated = {
+            "kind": addressing.kind.value,
+            "holder": holder,
+            "nonce": nonce,
+            "granted-at": granted_at.isoformat(),
+            "expires-at": expires_at.isoformat(),
+        }
+        if extends is not None:
+            stated["extends"] = extends.isoformat()
+        return self._markers.grant_body(lines=stated, addresses=addresses)
 
     async def _markers_on(
         self, kind: _GrantKind, *, targets: Sequence[_Target]
@@ -2019,9 +2040,15 @@ class LinearMcpTracker:
         return tuple(found)
 
     def _parsed_marker(
-        self, payload: str, *, wire: LinearCommentWire, target: _Target
+        self, payload: str, *, wire: LinearCommentEntryWire, target: _Target
     ) -> _GrantMarker:
-        """One marker's declared fields and addresses, or a protocol refusal."""
+        """One marker's declared fields and addresses, or a protocol refusal.
+
+        The expiry the marker is read by is the one its last write put in
+        force: an extension the backend stamped after the grant it
+        extends had lapsed leaves the marker on the expiry it had, for
+        every reader including the holder that wrote it.
+        """
         stated: dict[str, str] = {}
         addresses: list[str] = []
         listing = False
@@ -2045,6 +2072,8 @@ class LinearMcpTracker:
             )
         if stated["kind"] not in _GRANT_KIND_BY_VALUE:
             raise self._malformed_marker(wire, detail=f"kind {stated['kind']!r}")
+        extended = stated.get("extends")
+        granted_at = self._parse_instant(stated["granted-at"], _TOOL_LIST_COMMENTS)
         return _GrantMarker(
             target=target,
             comment_key=wire.id,
@@ -2052,8 +2081,20 @@ class LinearMcpTracker:
             kind=_GRANT_KIND_BY_VALUE[stated["kind"]],
             holder=stated["holder"],
             nonce=stated["nonce"],
-            granted_at=self._parse_instant(stated["granted-at"], _TOOL_LIST_COMMENTS),
-            expires_at=self._parse_instant(stated["expires-at"], _TOOL_LIST_COMMENTS),
+            granted_at=granted_at,
+            expires_at=published_expiry(
+                expires_at=self._parse_instant(
+                    stated["expires-at"], _TOOL_LIST_COMMENTS
+                ),
+                extends=(
+                    None
+                    if extended is None
+                    else self._parse_instant(extended, _TOOL_LIST_COMMENTS)
+                ),
+                granted_at=granted_at,
+                created_at=wire.created_at,
+                updated_at=wire.updated_at,
+            ),
             addresses=frozenset(addresses),
         )
 
@@ -2105,10 +2146,48 @@ class LinearMcpTracker:
             ),
         )
 
-    async def _delete_markers(self, markers: Sequence[_WrittenMarker]) -> None:
+    async def _delete_markers(
+        self, markers: Sequence[_WrittenMarker]
+    ) -> Sequence[tuple[_WrittenMarker, Exception]]:
+        """Take every one of these markers off; answer with what stayed on.
+
+        A marker the backend refuses stops nothing: the rest are still
+        this holder's to withdraw, and abandoning them would leave grants
+        standing that only this holder can remove.  Whether a refusal is
+        the caller's answer or only a fact to record is the caller's to
+        decide, so it is answered rather than raised.
+        """
+        refused: list[tuple[_WrittenMarker, Exception]] = []
         for marker in markers:
-            await self._delete_own_comment(
-                issue_key=marker.target.key, comment_key=marker.comment_key
+            try:
+                await self._delete_own_comment(
+                    issue_key=marker.target.key, comment_key=marker.comment_key
+                )
+            except (
+                McpCredentialRefusedError,
+                McpTransportError,
+                TransientAPIError,
+            ) as exc:
+                refused.append((marker, exc))
+        return tuple(refused)
+
+    async def _stand_down(self, markers: Sequence[_WrittenMarker]) -> None:
+        """Stop advertising a grant this holder has already been told it lost.
+
+        The outcome is decided before these markers come off, so a
+        backend that refuses one cannot turn a decided outcome into a
+        transport failure: what stayed on the board is recorded for the
+        operator, expires on its own bound, and makes this holder an owner
+        of nothing, because whoever beat it was granted from an earlier
+        order and is read as the owner while it stands.
+        """
+        refused = await self._delete_markers(markers)
+        if refused:
+            await self._log.aerror(
+                "tracker_withdrawal_incomplete",
+                tool=_TOOL_DELETE_COMMENT,
+                detail=str(refused[0][1]),
+                comments=[marker.comment_key for marker, _ in refused],
             )
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
@@ -2852,9 +2931,9 @@ class LinearMcpTracker:
         *,
         parent_field: str = "issueId",
         require_reply_links: bool = False,
-    ) -> Sequence[LinearCommentWire]:
+    ) -> Sequence[LinearCommentEntryWire]:
         arguments: dict[str, object] = {parent_field: issue_key}
-        comments: dict[str, LinearCommentWire] = {}
+        comments: dict[str, LinearCommentEntryWire] = {}
 
         async def read(
             request: Mapping[str, object],
