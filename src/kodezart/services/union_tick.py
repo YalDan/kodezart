@@ -9,6 +9,7 @@ from kodezart.core.protocols import GitService
 from kodezart.domain.errors import UnionHeadReadError, UnionUnstableError
 from kodezart.services.git_observations import read_remote_head
 from kodezart.services.union_composition import UnionComposition
+from kodezart.services.union_identity import require_union_object_identity
 from kodezart.types.domain.union import UnionCompositionResult, UnionLaneHead
 from kodezart.types.domain.union_tick import (
     UnionLaneBranch,
@@ -122,4 +123,9 @@ class UnionTick:
                     branch=lane.branch,
                     reason="the planned branch has no readable commit identity",
                 ) from exc
+        await require_union_object_identity(
+            git=self._git,
+            repository=self._context.repo_path,
+            scope_key=self._context.scope_key,
+        )
         return tuple(observed)
