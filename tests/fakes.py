@@ -1897,6 +1897,7 @@ class FakeCIMonitor:
         rerun_results: Sequence[tuple[bool | None, str, frozenset[str]]] = (),
         observation_reader: FakeCIObservationReader | None = None,
         observed_sha_by_ref: Mapping[str, str] | None = None,
+        check_names: frozenset[str] = frozenset(),
     ) -> None:
         self._passed = passed
         self._summary = summary
@@ -1906,6 +1907,7 @@ class FakeCIMonitor:
         self._rerun_results = list(rerun_results)
         self.observation_reader = observation_reader
         self.observed_sha_by_ref = dict(observed_sha_by_ref or {})
+        self.check_names = check_names
         self._attempts: ContextVar[
             tuple[object, dict[tuple[str, str], _FakeCIObservation]] | None
         ] = ContextVar("fake_ci_attempts", default=None)
@@ -1996,7 +1998,11 @@ class FakeCIMonitor:
             self.observation_reader._record(
                 repo_url,
                 ref,
-                ObservedChecks(commit_sha=sha, checks_passed=passed),
+                ObservedChecks(
+                    commit_sha=sha,
+                    checks_passed=passed,
+                    check_names=self.check_names | names,
+                ),
             )
         return (passed, summary)
 

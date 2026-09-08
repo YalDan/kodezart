@@ -524,6 +524,7 @@ class CIObservationReader(Protocol):
     async def observed_checks(self, *, repo_url: str, ref: str) -> ObservedChecks:
         """Require this task's latest completed watch to name one commit.
 
+        The snapshot includes the completed check names from that same watch.
         Missing, pending, failed or identity-incomplete watches raise
         CheckObservationError. Reading never starts another forge observation.
         A later watch clears the earlier result before it can fail or cancel.

@@ -689,6 +689,29 @@ sweep remain separate consumers. The reader acquires no authoring lease and
 performs no tracker write; the required correction writers must use the ruled
 lease and inline verification boundaries.
 
+The separate `AuditForgeVerifier` checks a completed criterion's own explicit
+Evidence SHA through the existing CI monitor and completed-watch reader. Its
+request cannot supply a replacement SHA. The returned commit must match exactly;
+no branch name, newer branch run or ancestor run can substitute. Completed watch
+snapshots now retain their check names, and every explicitly configured
+`CheckStep.forge_check` must be present before a definite verdict. An empty
+configured roster leaves the repository's observed CI roster authoritative.
+
+Green at that SHA holds the forge proposition. Red goes through the existing
+`classify_red_checks` with the operation's repository declarations and existing
+rerun bound, including native same-SHA rerun requests. A reproduced work defect is
+refuted; an unmet prerequisite or unclassified red is unverifiable. A flake with
+an exact-SHA green rerun holds, while a rerun with no observable checks remains
+unverifiable. A missing run never proves this proposition, including when the
+separate delivery policy declares the repository forge-exempt. Each call starts
+a fresh task-owned observation sequence so a caller's older CI watch or rerun
+cannot replace its evidence. The full criterion source is reread before return.
+
+This is a forge-claim observation, not a whole-criterion satisfaction verdict.
+It performs no tracker writes, correction or remediation. Scheduled sweep
+composition, mandate completion for refutations, lease-protected state changes
+and publication remain separate consumers.
+
 ## Tracker feasibility at the selected head
 
 `TrackerFeasibilityValidator.validate` is the read-only criterion-validation

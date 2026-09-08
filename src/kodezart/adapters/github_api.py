@@ -1279,6 +1279,7 @@ class GitHubAPIClient:
         return ObservedChecks(
             commit_sha=sha,
             checks_passed=watched.passed,
+            check_names=frozenset(check.name for check in watched.checks),
         )
 
     async def wait_for_checks(
