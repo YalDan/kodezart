@@ -429,7 +429,7 @@ operation configuration. It uses the existing scheduled-session grant and
 configured evaluation policy; no prior session identifier is accepted.
 
 `AuditReadSweep` binds a `ScopeRef` at construction and offers a zero-argument
-`run()` for a read-only full-snapshot observation. It discovers each native
+`run()` for a full-snapshot observation. It discovers each native
 lane record from its configured marker and resolves the repository through
 existing team bindings or the recorded-repository route. Ambiguous records,
 unknown routes and unreadable targets remain explicit; no latest-lane selection
@@ -453,6 +453,14 @@ source-checked removal retains an individual mandate-completed report; absent
 configuration or unreadable revision inputs remain explicit. Its successful
 observed head must agree with the other current-revision arms. Both optional
 detectors use their existing prompt roles and operation source bindings.
+
+When supplied, the forge verifier observes completed criteria at their own
+historical Evidence SHA. It may request the existing delivery classifier's
+bounded same-SHA forge reruns, so the sweep is not globally read-only. The full
+observation survives an unavailable mandate hunt; only a completed hunt exposes
+a refuted forge report. The report keeps the graded SHA, exact Check and native
+record reference. Historical forge SHAs never replace current-head observations
+or participate in their equality check. No tracker writer is added.
 
 This read attempt does not advance the completed-audit coverage cache, even
 when its individual observations succeed. Every invocation reads the full

@@ -877,6 +877,25 @@ and evidence handling without claiming live-model detection accuracy.
 
 ## Recorded criterion Evidence and lapse observations
 
+`AuditReadSweep` independently invokes `AuditForgeVerifier` for completed native
+criterion requests. The request's criterion, owning issue and repository come
+from the same native scope assembly as the other arms. The full forge reading
+retains recorded Evidence, required and observed check names, and the existing
+delivery classifier's same-SHA rerun history. This sweep can request bounded
+forge reruns; it performs no tracker writes.
+
+Each forge verdict has an addressed claim report using the exact Check, native
+lane-comment reference and historical graded SHA. Refutations receive the
+existing mandate hunt at that SHA. If the hunt fails, the raw forge observation
+remains available with an explicit failure and no completed forge report.
+Missing capabilities, rosters and prerequisites remain unverifiable. A missing
+verifier or ineligible source has its own refusal without suppressing other
+arms. The observed criterion must equal the collected target, and final native
+source checks still cover its body, state, Evidence and lane record. Historical
+forge SHAs do not enter the current-head equality check: a current lapse can
+coexist with a green or refuted historical forge proposition. Scheduling,
+coverage advancement and leased publication remain separate consumers.
+
 `AuditEvidenceVerifier.observe` reads the requested criterion's current full
 record and its lane's addressed run-state comment. The existing Evidence field
 contains one explicit JSON block, rendered by `render_evidence_field`:

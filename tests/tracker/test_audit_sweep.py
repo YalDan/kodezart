@@ -153,6 +153,7 @@ async def setup(tracker, server):
         selected_source=None,
         include_overclaims=False,
         include_removals=False,
+        selected_forge=None,
     ):
         runner = AgentService(
             executor=executor, workspace=selected_workspace, git_base_url=REPO
@@ -258,6 +259,7 @@ async def setup(tracker, server):
             config=config,
             overclaims=overclaims,
             removals=removals,
+            forge=selected_forge,
         )
 
     return build, executor, git, cache, workspace, forge, stored, op

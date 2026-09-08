@@ -4,11 +4,13 @@ from dataclasses import dataclass
 
 from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
 from kodezart.chains.audit_evidence import AuditEvidenceVerifier
+from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.audit_requests import (
     AuditRequestReader,
     AuditRequestSnapshot,
@@ -30,6 +32,7 @@ from kodezart.types.domain.audit_detection_removal import (
     DetectorRemovalReportEntry,
 )
 from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
+from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
 from kodezart.types.domain.audit_overclaim import (
     AuditOverclaimReport,
     OverclaimReportEntry,
@@ -38,6 +41,7 @@ from kodezart.types.domain.audit_terminal import (
     AuditTerminalObservation,
     AuditTerminalRequest,
 )
+from kodezart.types.domain.fire_spec import CriterionRef
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -57,6 +61,9 @@ class AuditReadObservation:
     overclaim_unavailable_reason: str | None = None
     detector_removal: DetectorRemovalReport | None = None
     removal_unavailable_reason: str | None = None
+    forge: AuditForgeObservation | None = None
+    forge_report: AuditClaimReport | None = None
+    forge_unavailable_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,14 +106,16 @@ def _body_surfaces(snapshot: AuditRequestSnapshot) -> tuple[WritableSurface, ...
 
 
 class AuditReadSweep:
-    """One zero-argument, read-only sweep over a constructor-bound native scope.
+    """One zero-argument observation sweep over a constructor-bound native scope.
 
     Every invocation enumerates every state again. A failed subject cannot
     prevent other independent subjects from being observed. A refuted criterion
-    is returned only through the existing mandate-completed report model.
+    report requires the existing mandate-completed model. Raw forge observations
+    survive an unavailable mandate hunt, without claiming a complete report.
     Terminal refutations retain their native observation and explicitly name
     their still-missing mandate consumer. No timer, scheduler or writer lives
-    here, and no partial detector pass enters the audit coverage cache.
+    here, and no partial detector pass enters the audit coverage cache. The forge
+    verifier may request the delivery classifier's bounded same-SHA reruns.
     """
 
     def __init__(
@@ -124,6 +133,7 @@ class AuditReadSweep:
         config: AppConfig,
         overclaims: AuditOverclaimVerifier | None = None,
         removals: DetectorRemovalVerifier | None = None,
+        forge: AuditForgeVerifier | None = None,
     ) -> None:
         self._scope = scope
         self._requests = AuditRequestReader(tracker=tracker, operation=operation)
@@ -137,6 +147,7 @@ class AuditReadSweep:
         self._remote = config.git_remote
         self._overclaims = overclaims
         self._removals = removals
+        self._forge = forge
 
     async def _observe(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
@@ -247,6 +258,60 @@ class AuditReadSweep:
             reports.append(DetectorRemovalReportEntry(finding=finding, report=report))
         return DetectorRemovalReport(observation=observed, reports=tuple(reports))
 
+    async def _observe_forge(
+        self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
+    ) -> tuple[AuditForgeObservation, AuditClaimReport | None, str | None]:
+        request = target.request
+        if not isinstance(request, AuditClaimRequest) or target.source is None:
+            raise AuditClaimReadError(
+                "forge verification requires a native criterion request and record"
+            )
+        if target.issue.state_kind is not WorkflowStateKind.COMPLETED:
+            raise AuditClaimReadError(
+                "forge verification requires a completed criterion"
+            )
+        if self._forge is None:
+            raise AuditClaimReadError("the forge verifier is not configured")
+        observed = await self._forge.observe(
+            AuditForgeRequest(
+                criterion_key=CriterionRef(request.criterion_key),
+                lane_issue_key=request.lane_issue_key,
+                repo_url=request.repo_url,
+            )
+        )
+        if observed.criterion != target.issue:
+            raise AuditClaimReadError(
+                "the forge criterion differs from the collected target"
+            )
+        try:
+            check = criterion_check(
+                criterion=observed.criterion, issue_key=request.lane_issue_key
+            )
+            claim = AuditClaimObservation(
+                judgment=AuditClaimJudgment(
+                    criterion_key=observed.criterion.issue_key,
+                    verdict=observed.verdict,
+                    evidence=observed.reason,
+                ),
+                head_sha=observed.recorded_evidence.graded_sha,
+                record_ref=target.source.comment.comment_key,
+                check=check,
+            )
+            report = await self._mandates.complete(
+                AuditMandateRequest(
+                    claim=claim,
+                    defect_class=f"forge checks refute the recorded grading: {check}",
+                    surfaces=surfaces,
+                    repo_url=request.repo_url,
+                    cache_key=request.cache_key,
+                )
+            )
+            if report.claim != claim:
+                raise AuditClaimReadError("the forge report changed the observed claim")
+            return observed, report, None
+        except Exception as exc:
+            return observed, None, f"{type(exc).__name__}: {exc}"
+
     async def _require_current(self, observation: AuditReadObservation) -> None:
         target = observation.target
         request = target.request
@@ -267,6 +332,8 @@ class AuditReadSweep:
             heads.add(observation.overclaims.observation.head_sha)
         if observation.detector_removal is not None:
             heads.add(observation.detector_removal.observation.head_sha)
+        # Forge checks grade a historical Evidence SHA. Their mandate report
+        # retains that SHA and cannot participate in current-head equality.
         if not heads:
             return
         if len(heads) != 1:
@@ -302,6 +369,9 @@ class AuditReadSweep:
             overclaim_reason = None
             removals = None
             removal_reason = None
+            forge = None
+            forge_report = None
+            forge_reason = None
             if "criterion" in target.issue.issue_labels:
                 try:
                     overclaims = await self._observe_overclaims(target, surfaces)
@@ -311,6 +381,12 @@ class AuditReadSweep:
                     removals = await self._observe_removals(target, surfaces)
                 except Exception as exc:
                     removal_reason = f"{type(exc).__name__}: {exc}"
+                try:
+                    forge, forge_report, forge_reason = await self._observe_forge(
+                        target, surfaces
+                    )
+                except Exception as exc:
+                    forge_reason = f"{type(exc).__name__}: {exc}"
             observations.append(
                 AuditReadObservation(
                     target=observation.target,
@@ -322,6 +398,9 @@ class AuditReadSweep:
                     overclaim_unavailable_reason=overclaim_reason,
                     detector_removal=removals,
                     removal_unavailable_reason=removal_reason,
+                    forge=forge,
+                    forge_report=forge_report,
+                    forge_unavailable_reason=forge_reason,
                 )
             )
         for observation in observations:
