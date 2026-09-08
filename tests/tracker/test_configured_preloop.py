@@ -83,9 +83,15 @@ async def test_bound_route_still_refuses_changed_native_authority(
     prepared.no_writes()
 
 
-@pytest.mark.parametrize("change", ["binding", "team-removed", "repositories"])
-async def test_loaded_routing_facts_cannot_change_during_validation(prepared, change):
-    bind(prepared, "explicit")
+@pytest.mark.parametrize("route", ["explicit", "recorded"])
+@pytest.mark.parametrize(
+    "change", ["binding", "team-removed", "repositories", "name", "key", "scope"]
+)
+async def test_loaded_routing_facts_cannot_change_during_validation(
+    prepared, change, route
+):
+    if route == "explicit":
+        bind(prepared, "explicit")
 
     async def move():
         if change == "binding":
@@ -94,6 +100,14 @@ async def test_loaded_routing_facts_cannot_change_during_validation(prepared, ch
             ].model_copy(update={"repository": prepared.operation.repos[1].url})
         elif change == "team-removed":
             del prepared.operation.teams["board"]
+        elif change == "scope":
+            prepared.operation.teams["board"] = prepared.operation.teams[
+                "board"
+            ].model_copy(update={"scope": ("foreign-container",)})
+        elif change in {"name", "key"}:
+            prepared.operation.teams["board"] = prepared.operation.teams[
+                "board"
+            ].model_copy(update={change: "foreign-team"})
         else:
             prepared.operation.repos.pop(0)
 

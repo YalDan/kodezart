@@ -970,7 +970,7 @@ resume-head selection is implemented. An integration ref remains base provenance
 The preparer pins the actual remote head of the recorded base branch and calls
 the same native feasibility validator through the real `AgentService`. It then
 rereads the repository/base/work refs, complete readiness and remote head, and
-checks the original team binding and declared repository URLs. An observed change
+checks the original team identity/binding and declared repository URLs. An observed change
 refuses the prepared result. Cache and remote reads settle owned
 subprocesses through cancellation, and validation retains the existing detached
 workspace, fresh-session and complete-family guards. Caller prompt text and

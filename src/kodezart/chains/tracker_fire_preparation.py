@@ -79,7 +79,7 @@ class AddressedTrackerFirePreparation:
         if team is None or team not in operation.teams_scanned_by(repo_url):
             raise refuse("recorded-route preparation requires a known unbound team")
         repository_urls = tuple(row.url for row in operation.repos)
-        team_binding = operation.teams[team].repository
+        team_entry = operation.teams[team]
         bound = team in operation.teams_bound_to(repo_url)
         # The existing dispatcher owns this precedence: configured teams use
         # their binding; only unbound teams take authority from an issue marker.
@@ -146,7 +146,7 @@ class AddressedTrackerFirePreparation:
         current_team = operation.teams.get(team)
         if (
             current_team is None
-            or current_team.repository != team_binding
+            or current_team != team_entry
             or tuple(row.url for row in operation.repos) != repository_urls
         ):
             raise refuse("operation routing changed during preparation")
