@@ -37,6 +37,18 @@ class PermissionMode(StrEnum):
     UNATTENDED = "unattended"
 
 
+class SessionFailureKind(StrEnum):
+    """A reported session failure, independent of provider error vocabulary."""
+
+    TIMEOUT = "timeout"
+    REFUSAL = "refusal"
+    RATE_LIMITED = "rate_limited"
+    TRANSPORT_ERROR = "transport_error"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    MALFORMED_OUTPUT = "malformed_output"
+    EXECUTION_ERROR = "execution_error"
+
+
 class SessionType(StrEnum):
     """Every kind of agent session the service starts.
 

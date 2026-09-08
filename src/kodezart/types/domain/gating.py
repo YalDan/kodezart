@@ -229,6 +229,7 @@ class ScanFailureKind(StrEnum):
     MALFORMED_VERDICT = "malformed_verdict"
     RATE_LIMITED = "rate_limited"
     TRANSPORT_ERROR = "transport_error"
+    EXECUTION_ERROR = "execution_error"
     EMPTY_RESPONSE = "empty_response"
     SPANS_UNRESOLVABLE = "spans_unresolvable"
     BUDGET_EXHAUSTED = "budget_exhausted"

@@ -18,13 +18,16 @@ did not happen.
 
 import asyncio
 
+from claude_agent_sdk import CLIConnectionError, CLINotFoundError, ResultError
 from pydantic import ValidationError
 
+from kodezart.adapters._sdk_mapping import result_failure
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import PromptRenderError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentExecutor, PromptSetProvider
 from kodezart.core.stream_drain import drain
+from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import CONTENT_AUDIT_SCHEMA, ContentAuditOutput
 from kodezart.types.domain.gating import (
     TRACKER_ROSTER_MIN_REFERENCES,
@@ -39,7 +42,11 @@ from kodezart.types.domain.gating import (
     surface_of,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import PermissionMode, SessionType
+from kodezart.types.domain.session import (
+    PermissionMode,
+    SessionFailureKind,
+    SessionType,
+)
 from kodezart.types.domain.skills import SkillsSelection
 
 _AUDIT_PERMISSION_MODE = PermissionMode.INTERACTIVE
@@ -53,6 +60,17 @@ _RETRYABLE: frozenset[ScanFailureKind] = frozenset(
         ScanFailureKind.TRANSPORT_ERROR,
     },
 )
+
+
+_SCAN_FAILURES = {
+    SessionFailureKind.TIMEOUT: ScanFailureKind.TIMEOUT,
+    SessionFailureKind.REFUSAL: ScanFailureKind.REFUSAL,
+    SessionFailureKind.RATE_LIMITED: ScanFailureKind.RATE_LIMITED,
+    SessionFailureKind.TRANSPORT_ERROR: ScanFailureKind.TRANSPORT_ERROR,
+    SessionFailureKind.BUDGET_EXHAUSTED: ScanFailureKind.BUDGET_EXHAUSTED,
+    SessionFailureKind.MALFORMED_OUTPUT: ScanFailureKind.MALFORMED_VERDICT,
+    SessionFailureKind.EXECUTION_ERROR: ScanFailureKind.EXECUTION_ERROR,
+}
 
 
 class AgentContentScanner:
@@ -170,13 +188,17 @@ class AgentContentScanner:
             return ScanResult(failure=ScanFailureKind.TIMEOUT)
         except OSError:
             return ScanResult(failure=ScanFailureKind.TRANSPORT_ERROR)
+        except AgentSDKError as exc:
+            return ScanResult(failure=_failure_for_sdk(exc))
 
         if rate_limit_rejected:
             return ScanResult(failure=ScanFailureKind.RATE_LIMITED)
         if result_event is None:
             return ScanResult(failure=ScanFailureKind.EMPTY_RESPONSE)
+        if result_event.failure_kind is not None:
+            return ScanResult(failure=_SCAN_FAILURES[result_event.failure_kind])
         if result_event.is_error:
-            return ScanResult(failure=_failure_for_subtype(result_event.subtype))
+            return ScanResult(failure=ScanFailureKind.EXECUTION_ERROR)
         if result_event.structured_output is None:
             return ScanResult(failure=ScanFailureKind.EMPTY_RESPONSE)
         try:
@@ -186,18 +208,21 @@ class AgentContentScanner:
         return _hits_from(audit, content=content)
 
 
-def _failure_for_subtype(subtype: str) -> ScanFailureKind:
-    """Map an errored result's subtype onto the taxonomy. Never CLEAN."""
-    normalised = subtype.lower()
-    if "budget" in normalised or "cost" in normalised:
-        return ScanFailureKind.BUDGET_EXHAUSTED
-    if "rate" in normalised or "limit" in normalised:
-        return ScanFailureKind.RATE_LIMITED
-    if "refus" in normalised or "block" in normalised:
-        return ScanFailureKind.REFUSAL
-    if "timeout" in normalised:
-        return ScanFailureKind.TIMEOUT
-    return ScanFailureKind.TRANSPORT_ERROR
+def _failure_for_sdk(error: AgentSDKError) -> ScanFailureKind:
+    """Read native causes here, without widening domain errors or SSE frames."""
+    cause = error.__cause__
+    if isinstance(cause, ResultError):
+        failure = result_failure(cause)
+        return (
+            _SCAN_FAILURES[failure]
+            if failure is not None
+            else ScanFailureKind.EXECUTION_ERROR
+        )
+    if isinstance(cause, CLINotFoundError):
+        return ScanFailureKind.NOT_CONFIGURED
+    if isinstance(cause, CLIConnectionError):
+        return ScanFailureKind.TRANSPORT_ERROR
+    return ScanFailureKind.EXECUTION_ERROR
 
 
 def _hits_from(audit: ContentAuditOutput, *, content: str) -> ScanResult:

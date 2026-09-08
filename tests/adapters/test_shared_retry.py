@@ -15,6 +15,7 @@ from kodezart.core.config import AppConfig
 from kodezart.core.errors import McpCallUnansweredError, McpCredentialRefusedError
 from kodezart.core.logging import get_logger
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
+from kodezart.types.domain.agent import RateLimitWarningEvent
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -23,6 +24,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.privacy import PrivateSurface
+from kodezart.types.domain.session import SessionFailureKind
 from tests.adapters.test_ci_rerun import REPO, SHA, ActionsAPI
 from tests.adapters.test_github_api import _make_client
 from tests.adapters.test_judgment_scanner import (
@@ -221,8 +223,10 @@ async def test_content_scanner_shared_policy_retries_only_typed_transient_result
     kind, waits
 ):
     executor = ScriptedAuditExecutor(
-        [audit_result(None, is_error=True, subtype=kind)],
-        raises=OSError("temporary") if kind == "transport" else None,
+        [RateLimitWarningEvent(status="rejected"), audit_result([])]
+        if kind == "rate_limit"
+        else [],
+        raises={"transport": OSError("temporary"), "timeout": TimeoutError()}.get(kind),
     )
     scanner = scanner_for(
         executor, retry=RetryPolicy(attempts=3, initial_delay=0.25, factor=3)
@@ -240,7 +244,13 @@ async def test_content_scanner_shared_policy_retries_only_typed_transient_result
 @pytest.mark.parametrize("subtype", ["refusal", "budget_exhausted"])
 async def test_content_scanner_permanent_result_never_retries(subtype, waits):
     executor = ScriptedAuditExecutor(
-        [audit_result(None, is_error=True, subtype=subtype)]
+        [
+            audit_result(None, failure_kind=SessionFailureKind.REFUSAL)
+            if subtype == "refusal"
+            else audit_result(
+                None, is_error=True, failure_kind=SessionFailureKind.BUDGET_EXHAUSTED
+            )
+        ]
     )
     scanner = scanner_for(executor, retry_max_attempts=4)
     result = await scanner.scan(content=PROSE, destination=OutboundDestination.PR_BODY)
