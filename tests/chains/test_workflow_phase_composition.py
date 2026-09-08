@@ -280,3 +280,69 @@ async def test_production_phase_refusal_or_cancel_releases_native_workspaces(
     assert not any(isinstance(event, WorkflowCompleteEvent) for event in events)
     assert sum(call["role"] == target for call in executor.calls) == 1
     await assert_released(workspace, repo)
+
+
+@pytest.mark.parametrize("bound", [1, 2])
+async def test_loop_then_ci_share_one_budget_and_cumulative_iteration_total(bound):
+    from kodezart.types.domain.outcome import WorkflowOutcome
+    from kodezart.types.domain.remediation import RemediationEntry
+    from tests.chains.test_fire_extraction import request
+    from tests.chains.test_ralph_workflow import _make_engine
+    from tests.fakes import (
+        FakeCIMonitor,
+        FakePRCreator,
+        FakeQualityGate,
+        FakeRemediator,
+        make_failing_evaluation,
+        make_passing_evaluation,
+    )
+
+    class FirstLoopFails:
+        def __init__(self):
+            self.rounds = 0
+
+        async def run(self, **kwargs):
+            quality = FakeQualityGate(
+                events=[],
+                evaluation=make_failing_evaluation()
+                if self.rounds == 0
+                else make_passing_evaluation(),
+                total_iterations=2 if self.rounds == 0 else 3,
+                last_commit_sha="a" * 40,
+            )
+            self.rounds += 1
+            async for event in quality.run(**kwargs):
+                yield event
+
+    class FirstWatchFails(FakeCIMonitor):
+        async def wait_for_checks(self, *, repo_url, ref):
+            await super().wait_for_checks(repo_url=repo_url, ref=ref)
+            return len(self.calls) > 1, "observed checks"
+
+    quality = FirstLoopFails()
+    checks = FirstWatchFails(passed=False, failed_names=frozenset({"lint"}))
+    fixes = FakeRemediator()
+    workflow = _make_engine(
+        quality_gate=quality,
+        ci_monitor=checks,
+        pr_creator=FakePRCreator(),
+        remediator=fixes,
+        remediation_max_rounds=bound,
+    )
+    events = [event async for event in workflow.run(**request())]
+    (terminal,) = [
+        event for event in events if isinstance(event, WorkflowCompleteEvent)
+    ]
+    expected_entries = [RemediationEntry.loop_not_accepted]
+    if bound == 2:
+        expected_entries.append(RemediationEntry.ci_failure)
+    assert [call.entry for call in fixes.calls] == expected_entries
+    assert [call.round_index for call in fixes.calls] == list(range(bound))
+    assert [call.total_iterations for call in fixes.calls] == [2, 5][:bound]
+    assert quality.rounds == bound + 1
+    assert terminal.total_iterations == 2 + 3 * bound
+    assert terminal.outcome is (
+        WorkflowOutcome.ci_failed_fix_budget_exhausted
+        if bound == 1
+        else WorkflowOutcome.ci_passed
+    )
