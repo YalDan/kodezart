@@ -10,7 +10,7 @@ from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
-from kodezart.domain.fire_spec import criterion_check
+from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_issues
 from kodezart.services.audit_requests import (
     AuditRequestReader,
     AuditRequestSnapshot,
@@ -43,7 +43,6 @@ from kodezart.types.domain.audit_terminal import (
     AuditTerminalReport,
     AuditTerminalRequest,
 )
-from kodezart.types.domain.fire_spec import CriterionRef
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -315,7 +314,9 @@ class AuditReadSweep:
             raise AuditClaimReadError("the forge verifier is not configured")
         observed = await self._forge.observe(
             AuditForgeRequest(
-                criterion_key=CriterionRef(request.criterion_key),
+                criterion_key=tracker_spec_from_issues(
+                    subject=target.source.issue, criteria=(target.issue,)
+                ).criteria[0],
                 lane_issue_key=request.lane_issue_key,
                 repo_url=request.repo_url,
             )
