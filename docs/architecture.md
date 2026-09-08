@@ -1070,6 +1070,15 @@ wakes once. This fixed bookkeeping window adds no operator configuration
 or reader-lifecycle registry. It bounds retained receipt bodies by count,
 not native comment size or the current snapshots themselves.
 
+Native state saves can omit history. One optional issue read can fill only
+that receipt field when its issue identity and timestamp match the atomic
+save response. The receipt accepts only the previous open interval closing
+at the one new interval, with all older rows unchanged. Replay also requires
+the prior history to match the state write's pre-read, so a principal's earlier
+transition is not absorbed. A later, unreadable, or inconsistent enrichment
+leaves history unaccounted for and wakes conservatively; it never restamps or
+fails the landed write. Cancellation still propagates.
+
 This suppresses unchanged own claim/renew/release, marker, base, and mixed
 lifecycle churn while retaining differing principal fields, comments,
 edits, and deletions. Timestamp-only movement without a new local receipt

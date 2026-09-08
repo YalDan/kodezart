@@ -33,6 +33,7 @@ from typing import Final, assert_never
 
 from pydantic import ValidationError
 
+from kodezart.adapters.linear_history_receipt import state_history_receipt
 from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
 from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
@@ -809,7 +810,6 @@ class LinearMcpTracker:
                             "startedAt",
                             "completedAt",
                             "canceledAt",
-                            "stateHistory",
                         )
                         if key in payload
                     }
@@ -1179,14 +1179,78 @@ class LinearMcpTracker:
 
     async def _save_state(self, *, issue_key: str, state_name: str) -> TrackerIssue:
         """Read first; matching state writes produce no history entry."""
-        current = await self.read_issue(issue_key=issue_key)
+        before = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        current = self._to_issue(
+            self._validate(LinearIssueDetailWire, before, _TOOL_GET_ISSUE)
+        )
         if current.state_name == state_name:
             return current
         payload = await self._call(
             _TOOL_SAVE_ISSUE,
             {"id": issue_key, "state": state_name},
         )
-        return self._saved_issue(payload, written={"state": state_name})
+        issue = self._saved_issue(payload, written={"state": state_name})
+        assert isinstance(before, Mapping) and isinstance(payload, Mapping)
+        await self._record_state_history(before=before, saved=payload, issue=issue)
+        return issue
+
+    async def _record_state_history(
+        self,
+        *,
+        before: Mapping[str, object],
+        saved: Mapping[str, object],
+        issue: TrackerIssue,
+    ) -> None:
+        """Enrich only history, without failing or restamping a landed write.
+
+        Native save_issue can omit stateHistory. A single full read may supply
+        it only at the already-known atomic write stamp. A later or unreadable
+        snapshot leaves this optional receipt unavailable and the gate wakes.
+        """
+        after: McpToolResult = saved
+        if "stateHistory" not in saved:
+            try:
+                after = await self._call(
+                    _TOOL_GET_ISSUE,
+                    {"id": issue.issue_key, "includeRelations": True},
+                )
+            except (
+                McpCredentialRefusedError,
+                McpTransportError,
+                TrackerProtocolError,
+                TransientAPIError,
+            ):
+                return
+        try:
+            start = LinearIssueWire.model_validate(before)
+            end = LinearIssueWire.model_validate(after)
+        except ValidationError:
+            return
+        if (
+            start.id != issue.issue_key
+            or end.id != issue.issue_key
+            or end.updated_at != issue.updated_at
+            or end.status != issue.state_name
+            or end.status_type != saved["statusType"]
+        ):
+            return
+        assert isinstance(after, Mapping)
+        mutation = state_history_receipt(
+            before=before.get("stateHistory"),
+            after=after.get("stateHistory"),
+            previous_state=start.status,
+            previous_type=start.status_type,
+            written_state=end.status,
+            written_type=end.status_type,
+            before_stamp=start.updated_at,
+            write_stamp=issue.updated_at,
+        )
+        if mutation is not None:
+            self._self_writes.record_mutation(
+                issue_key=issue.issue_key, mutation=mutation
+            )
 
     async def set_queue_state(
         self,

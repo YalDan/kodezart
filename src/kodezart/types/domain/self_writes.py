@@ -39,6 +39,7 @@ class OwnMutation:
     """Only fields actually written, never an arbitrary post-write snapshot."""
 
     fields: FieldValues = ()
+    expected_fields: FieldValues = ()
     additions: tuple[tuple[str, tuple[str, ...]], ...] = ()
     created: CommentValues = ()
     edited: CommentValues = ()

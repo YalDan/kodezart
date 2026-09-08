@@ -2461,6 +2461,9 @@ class FakeMcpIssue:
     created_at: datetime = FIXTURE_EPOCH
     updated_at: datetime = FIXTURE_EPOCH
     state_changed_at: datetime | None = None
+    previous_states: list[tuple[str, str, datetime, datetime]] = field(
+        default_factory=list
+    )
     url: str = ""
 
     def entry(self) -> dict[str, object]:
@@ -2500,6 +2503,14 @@ class FakeMcpIssue:
             "attachments": [asset.wire() for asset in self.attachments],
             "documents": [asset.wire() for asset in self.documents],
             "stateHistory": [
+                *[
+                    {
+                        "state": {"id": f"state-{name}", "name": name, "type": kind},
+                        "startedAt": started.isoformat(),
+                        "endedAt": ended.isoformat(),
+                    }
+                    for name, kind, started, ended in self.previous_states
+                ],
                 {
                     "state": {
                         "id": f"state-{self.status}",
@@ -2508,7 +2519,7 @@ class FakeMcpIssue:
                     },
                     "startedAt": (self.state_changed_at or self.created_at).isoformat(),
                     "endedAt": None,
-                }
+                },
             ],
         }
 
@@ -2808,6 +2819,11 @@ class FakeLinearMcpServer:
             self.issues[created.id] = created
             return created.wire()
         issue = self._issue(arguments, "id")
+        previous_state = (
+            issue.status,
+            issue.status_type,
+            issue.state_changed_at or issue.created_at,
+        )
         if "title" in arguments:
             issue.title = str(arguments["title"])
         if "description" in arguments:
@@ -2826,6 +2842,7 @@ class FakeLinearMcpServer:
             issue.labels = list(dict.fromkeys([*issue.labels, *map(str, additions)]))
         self._moved(issue.id)
         if "state" in arguments:
+            issue.previous_states.append((*previous_state, issue.updated_at))
             issue.state_changed_at = issue.updated_at
         return issue.wire()
 

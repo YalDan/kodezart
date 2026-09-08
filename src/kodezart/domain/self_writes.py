@@ -21,6 +21,8 @@ def matches_own_mutations(
     fields = dict(before.fields)
     comments = dict(before.comments)
     for mutation in mutations:
+        if any(fields.get(key) != value for key, value in mutation.expected_fields):
+            return False
         fields.update(mutation.fields)
         for key, additions in mutation.additions:
             if key not in fields:
