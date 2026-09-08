@@ -72,11 +72,12 @@ def test_claude_opus_completeness_check_passes_at_the_full_census() -> None:
 
 def test_every_writer_in_the_corrected_inventory_names_the_gate() -> None:
     """V-3: the five-writer inventory routes through the gate."""
-    workflow = (
-        REPO_ROOT / "src" / "kodezart" / "chains" / "ralph_workflow.py"
-    ).read_text(encoding="utf-8")
+    workflow = "\n".join(
+        (REPO_ROOT / "src" / "kodezart" / "chains" / name).read_text(encoding="utf-8")
+        for name in ("fire_specification.py", "fire_implementation.py")
+    )
     delivery = (
-        REPO_ROOT / "src" / "kodezart" / "chains" / "authored_delivery.py"
+        REPO_ROOT / "src" / "kodezart" / "chains" / "authored_publication.py"
     ).read_text(encoding="utf-8")
     persister = (
         REPO_ROOT / "src" / "kodezart" / "adapters" / "git_change_persister.py"

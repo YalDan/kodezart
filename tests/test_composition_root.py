@@ -613,7 +613,8 @@ def test_the_executor_keywords_are_read_off_a_real_call() -> None:
 
 #: The graphs composition builds, each of which takes the floor resolver as
 #: a required argument and none of which can say whether it got the real one.
-FLOORED_GRAPHS = ("RalphLoop", "TicketGenerationLoop", "AuthoredDeliveryCoordinator")
+#: Authored delivery reuses the fire graph owner's floor for its outer nodes.
+FLOORED_GRAPHS = ("RalphLoop", "TicketGenerationLoop", "RalphWorkflowEngine")
 
 
 def _engine_function() -> ast.FunctionDef:

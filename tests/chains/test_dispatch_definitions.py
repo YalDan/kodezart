@@ -204,12 +204,12 @@ def test_the_set_under_test_actually_declares_three_lenses() -> None:
 # ---------------------------------------------------------------------------
 
 GENERATIVE_SITES = (
-    ("ralph_workflow.py", "GENERATED_CRITERIA_SCHEMA"),
+    ("fire_specification.py", "GENERATED_CRITERIA_SCHEMA"),
     ("ticket_generation.py", "TICKET_DRAFT_SCHEMA"),
 )
 EVALUATIVE_SITES = (
     ("ralph_loop.py", "ACCEPTANCE_CRITERIA_SCHEMA"),
-    ("ralph_workflow.py", "CRITERIA_VALIDATION_SCHEMA"),
+    ("fire_specification.py", "CRITERIA_VALIDATION_SCHEMA"),
 )
 
 
@@ -236,7 +236,7 @@ def evaluative_guarantee_holds(block: str) -> bool:
 
 def post_merge_review_block() -> str:
     """The post-merge review dispatch, as text — its own site, found by name."""
-    source = chain_source("ralph_workflow.py")
+    source = chain_source("fire_review.py")
     review = source.index('site="post_merge_review"')
     return source[source.rindex("self._service.stream", 0, review) : review]
 
@@ -288,13 +288,23 @@ def test_every_generative_dispatch_hands_over_the_sets_definitions(
 
 def test_no_dispatch_site_builds_its_own_definition_list() -> None:
     """One definition per lens: a site that constructs one is a second copy."""
-    for module in ("ralph_loop.py", "ralph_workflow.py", "ticket_generation.py"):
+    for module in (
+        "ralph_loop.py",
+        "fire_specification.py",
+        "fire_review.py",
+        "ticket_generation.py",
+    ):
         assert "AgentDefinition(" not in chain_source(module)
 
 
 def test_no_dispatch_site_passes_a_raw_dict_for_agents() -> None:
     """KOD-87-AC-8 at the call sites, not only at the port's declaration."""
-    for module in ("ralph_loop.py", "ralph_workflow.py", "ticket_generation.py"):
+    for module in (
+        "ralph_loop.py",
+        "fire_specification.py",
+        "fire_review.py",
+        "ticket_generation.py",
+    ):
         source = chain_source(module)
         for line in source.splitlines():
             stripped = line.strip()

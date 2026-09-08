@@ -1,4 +1,8 @@
-"""Aggregates belong on event surfaces, never on descriptions read as current."""
+"""Legacy derived-pattern compatibility until typed writer admission replaces it.
+
+Actual authored admission is exercised in test_authored_aggregate_admission;
+its semantic judgment does not use these operator grammars or distances.
+"""
 
 import pytest
 from pydantic import ValidationError
@@ -29,7 +33,8 @@ from kodezart.types.domain.gating import (
     durability_of,
 )
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
-from tests.fakes import FakeAgentExecutor, FakeContentScanner
+from tests.adapters.test_judgment_scanner import ScriptedAuditExecutor, audit_result
+from tests.fakes import FakeContentScanner
 from tests.prompts.test_prompt_wiring import load_registry
 
 
@@ -196,7 +201,7 @@ def configured_scanners(config: AppConfig) -> list[ContentScanner]:
     scanners, _ = outbound_scanners(
         config=config,
         operation=None,
-        executor=FakeAgentExecutor([]),
+        executor=ScriptedAuditExecutor([audit_result([])]),
         prompts=load_registry(),
         skills=SkillsSelection(mode=SkillsMode.NONE),
     )
@@ -252,7 +257,7 @@ async def test_aggregate_block_wins_over_an_earlier_redaction() -> None:
         visibility=RepoVisibility.UNKNOWN,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
-        content_class=ContentClass.AUTHORED,
+        content_class=ContentClass.DERIVED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert set(decision.categories) == {
@@ -263,7 +268,7 @@ async def test_aggregate_block_wins_over_an_earlier_redaction() -> None:
 
 
 @pytest.mark.parametrize("visibility", [RepoVisibility.PUBLIC, RepoVisibility.UNKNOWN])
-@pytest.mark.parametrize("content_class", list(ContentClass))
+@pytest.mark.parametrize("content_class", [ContentClass.DERIVED])
 @pytest.mark.parametrize(
     "content",
     ["3 issues remain", "ABC-1, ABC-2, ABC-3"],
@@ -354,7 +359,7 @@ async def test_identifier_roster_uses_the_configured_run_boundary(minimum: int) 
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
-            content_class=ContentClass.AUTHORED,
+            content_class=ContentClass.DERIVED,
         )
         assert decision.verdict is expected, content
 
@@ -378,7 +383,7 @@ async def test_roster_grammar_is_configuration_and_prose_breaks_a_run() -> None:
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
-            content_class=ContentClass.AUTHORED,
+            content_class=ContentClass.DERIVED,
         )
         assert decision.verdict is expected, content
 
@@ -429,7 +434,7 @@ async def test_blocked_write_names_the_exact_span_for_repair(
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
-            content_class=ContentClass.AUTHORED,
+            content_class=ContentClass.DERIVED,
         )
     error = excinfo.value
     start = content.index(matched)
@@ -450,7 +455,7 @@ async def test_blocked_write_names_the_exact_span_for_repair(
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
-            content_class=ContentClass.AUTHORED,
+            content_class=ContentClass.DERIVED,
         )
         == repaired
     )
@@ -491,7 +496,7 @@ async def test_shipped_patterns_leave_repository_counts_and_references_clean(
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
-        content_class=ContentClass.AUTHORED,
+        content_class=ContentClass.DERIVED,
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == content
@@ -533,7 +538,7 @@ async def test_noun_first_count_allows_sentence_punctuation(number: str) -> None
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
-        content_class=ContentClass.AUTHORED,
+        content_class=ContentClass.DERIVED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert [hit.matched_text for hit in decision.hits] == [f"Issues: {number}"]
@@ -555,7 +560,7 @@ async def test_configured_object_nouns_replace_the_shipped_vocabulary() -> None:
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
-            content_class=ContentClass.AUTHORED,
+            content_class=ContentClass.DERIVED,
         )
         assert decision.verdict is expected, content
 
@@ -578,7 +583,7 @@ async def test_count_adjectives_and_identifier_suffixes_are_distinct(
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
-        content_class=ContentClass.AUTHORED,
+        content_class=ContentClass.DERIVED,
     )
     assert decision.verdict is expected
 
@@ -607,7 +612,7 @@ async def test_configured_identifier_numbers_never_become_object_counts(
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
-        content_class=ContentClass.AUTHORED,
+        content_class=ContentClass.DERIVED,
     )
     assert decision.verdict is GateVerdict.CLEAN
 
@@ -630,7 +635,7 @@ async def test_a_reference_inside_the_configured_gap_does_not_hide_a_count(
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
-        content_class=ContentClass.AUTHORED,
+        content_class=ContentClass.DERIVED,
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.categories == (DurabilityCategory.OBJECT_COUNT,)

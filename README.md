@@ -299,8 +299,9 @@ redacts the complete original span while preserving neighboring text.
 Opaque document URLs carry no inferred workspace; declare an entire private
 host when appropriate, or use the semantic privacy description.
 
-The existing regex overrides and aggregate scanner remain transitional pending
-the structured writer-admission migration. This reference increment removes
+The existing regex overrides and DERIVED aggregate scanner remain transitional
+pending the structured writer-admission migration. Authored text uses the fresh
+judgment described below. This reference increment removes
 vendor URL patterns from their shipped defaults; it does not claim the whole
 outbound admission replacement is complete.
 
@@ -318,16 +319,23 @@ disclosure on another. `org_private` is therefore **rejected as a
 instead — a different session from the writer whose output it grades, with no
 shared context, no tools, and a neutral working directory.
 
-`KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` has three states and none of them
-is silent:
+Authored tracker aggregates are inspected on every durable PUBLIC/UNKNOWN write,
+including PR text and ticket/criteria artifact text. Worded counts with no issue
+references still qualify. A roster starts at the fixed three-reference policy;
+ordinary test/file/commit counts and a single public reference do not qualify.
+`object_count` and `identifier_roster` refuse the whole write. Their located spans
+and original text identify a repair; unlocated or malformed findings never permit
+publication. Point-in-time comments allow aggregates, subject to privacy rules.
+
+`KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` controls only organization-privacy
+judgment:
 
 | Knob | `OperationConfig.private_surface` | Result |
 | --- | --- | --- |
-| `false` (default) | anything | The deterministic scanners run alone. |
-| `true` | present | The audit scanner is registered **after** the patterns. |
+| `false` (default) | anything | Local checks and mandatory authored aggregate judgment run. |
+| `true` | present | The same fresh audit also judges organization privacy. |
 | `true` | absent or empty | Startup aborts with `ContentScannerBootError`. |
 
-The mechanism ships and the policy is operator configuration.
 `private_surface.description` remains prose describing the **class** of things
 treated as private; host/workspace facts supplement that judgment. An old
 `private_surface = "..."` string migrates to the description without changing
@@ -337,10 +345,12 @@ having no answer (`timeout`, `refusal`, `malformed_verdict`, `rate_limited`,
 `not_configured`) resolves to `blocked` and is named on the event: "did not
 answer" and "said it is clean" stay two distinct observable states.
 
-Cost routing is deterministic and made once: the audit runs only on authored
-prose bound for a publication or tracker surface, plus the branch name. A
-criterion tick, a sha or a state transition classifies as structured and takes
-the cheap path by classification rather than by exemption.
+Organization-privacy judgment retains its publication/tracker authored routing
+and branch-name rule. Mandatory aggregate judgment also reaches durable authored
+repository artifacts. PRIVATE destinations retain the explicit no-scanner fast
+path. Credential refusal happens locally before any audit session. DERIVED values
+retain their legacy pattern admission pending typed generated-writer adoption;
+this increment does not infer native tracker ownership from authored criterion IDs.
 
 ### Operation config
 
@@ -758,7 +768,7 @@ not, so configuring them "to be safe" is how a first setup breaks itself.
   session kinds that read it. The ready-to-use block is in `.env.example`, and
   `docs/configuration.md` carries the recipe and the tracker-instead-of-Notion
   alternative.
-- **`private_surface` is required only if you turn the judgment scanner on.**
+- **`private_surface` prose is required only for organization-privacy judgment.**
   `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` ships disabled, and leaving it
   disabled needs no prose. Enabling it without a `private_surface` description
   aborts boot rather than degrading — the intended trade, not a bug to work

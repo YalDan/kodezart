@@ -11,7 +11,6 @@ with identity carried by the ``AC-n`` id.
 
 from collections.abc import AsyncGenerator, Sequence
 
-from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.domain.criteria import mint_criteria
 from kodezart.services.agent_service import AgentService
@@ -54,6 +53,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 # Two criteria chosen for the exact shapes the incident report names: a
 # space before a quote in an identifier-equals-quoted-string pattern, and
@@ -212,7 +212,7 @@ async def test_the_oracle_is_byte_identical_across_all_four_surfaces() -> None:
         fan_in_max_attempts=2,
         delay_floor_for=no_delay_floor,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -309,7 +309,7 @@ async def test_the_second_iteration_is_asked_about_the_harness_text() -> None:
         fan_in_max_attempts=2,
         delay_floor_for=no_delay_floor,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,

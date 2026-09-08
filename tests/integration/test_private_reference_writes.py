@@ -74,7 +74,7 @@ async def composed_gate(operation=None, config=None):
     return await build_outbound_gate(
         config=AppConfig() if config is None else config,
         operation=operation,
-        executor=FakeAgentExecutor(events=[]),
+        executor=ScriptedAuditExecutor([audit_result([])]),
         prompts=make_prompt_provider(),
         skills=SUPPRESS_ALL_SKILLS,
         log=get_logger(__name__),

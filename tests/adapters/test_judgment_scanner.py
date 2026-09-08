@@ -29,7 +29,6 @@ from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.composition.gating import outbound_scanners
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
@@ -88,7 +87,16 @@ def audit_result(
         is_error=is_error,
         num_turns=1,
         session_id="audit",
-        structured_output=None if findings is None else {"findings": findings},
+        structured_output=(
+            None
+            if findings is None
+            else {
+                "findings": [
+                    {"category": RedactionCategory.ORG_PRIVATE.value, **finding}
+                    for finding in findings
+                ]
+            }
+        ),
     )
 
 
@@ -585,11 +593,12 @@ def test_the_declared_class_can_never_be_omitted() -> None:
     """P: required and keyword-only on the port and on every wrapper.
 
     A default would be a silent cheap path — the caller that forgot to think
-    about provenance would get the unaudited answer and no diagnostic.  This
-    asserts the static property that matters, at each of the five surfaces a
+    about provenance would get the unaudited answer and no diagnostic.
+    The phase writers now call ``gated_write`` directly. This
+    asserts the static property that matters, at each of the four surfaces a
     caller can reach the gate through: the parameter exists, it is annotated
     ``ContentClass``, and it carries NO DEFAULT.  Calling convention is not
-    asserted and deliberately so -- four of the five are keyword-only while
+    asserted and deliberately so -- three of the four are keyword-only while
     ``GitChangePersister._gated_message`` is positional-or-keyword, matching
     its neighbours, and that difference cannot produce the silent cheap path
     this test exists to prevent.
@@ -598,7 +607,6 @@ def test_the_declared_class_can_never_be_omitted() -> None:
         OutboundContentGate.gate,
         PatternOutboundContentGate.gate,
         gated_write,
-        AuthoredDeliveryCoordinator._gated,
         GitChangePersister._gated_message,
     )
     for surface in surfaces:
@@ -730,8 +738,8 @@ def boot_scanners(
     )
 
 
-def test_disabled_registers_the_deterministic_scanner_alone() -> None:
-    """State 1: the mechanism ships, the policy is operator configuration."""
+def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment() -> None:
+    """Only organization-privacy judgment is optional; aggregate admission ships."""
     scanners, digest = boot_scanners(
         enabled=False,
         private_surface=FIXTURE_PRIVATE_SURFACE,
@@ -740,8 +748,9 @@ def test_disabled_registers_the_deterministic_scanner_alone() -> None:
         "RegexContentScanner",
         "ReferenceContentScanner",
         "AggregateContentScanner",
+        "AgentContentScanner",
     ]
-    assert digest == ""
+    assert digest
 
 
 def test_enabled_with_a_description_registers_the_judgment_scanner_second() -> None:

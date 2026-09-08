@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
+from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor
@@ -1911,11 +1912,19 @@ def test_every_loop_requires_a_delay_floor_of_its_caller() -> None:
     at the graph's own speed — the respawns KOD-174 measured, with the
     remedy wired but not reaching the object.  A caller that means "no
     floor" now has to pass a resolver saying so.
+
+    Fire owns the resolver after phase extraction. Authored delivery must
+    receive that same typed fire collaborator; its retrying nodes are checked
+    against ``self.fire.floor`` and ``self.fire.retry`` by the wiring guard.
     """
-    for loop in (RalphLoop, TicketGenerationLoop, AuthoredDeliveryCoordinator):
+    for loop in (RalphLoop, TicketGenerationLoop, RalphWorkflowEngine):
         parameter = inspect.signature(loop.__init__).parameters["delay_floor_for"]
         assert parameter.default is inspect.Parameter.empty, loop.__name__
         assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, loop.__name__
+    fire = inspect.signature(AuthoredDeliveryCoordinator.__init__).parameters["fire"]
+    assert fire.default is inspect.Parameter.empty
+    assert fire.kind is inspect.Parameter.KEYWORD_ONLY
+    assert fire.annotation is RalphWorkflowEngine
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ from tests.chains.test_fire_extraction import DELIVERY_FIELDS, fire
 
 def test_compiled_fire_has_no_delivery_nodes_routes_or_capabilities():
     engine = fire()
-    graph = engine._compiled.get_graph()
+    graph = engine.graph.get_graph()
     forbidden = {"open_pr", "monitor_ci", "comment_failure", "open_stalled_pr"}
     assert not forbidden.intersection(graph.nodes)
     assert not any(

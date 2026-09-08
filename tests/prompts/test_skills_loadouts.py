@@ -2,7 +2,6 @@
 
 import pytest
 
-from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.composition.preflight import (
     preflight_prompt_skill_loadouts,
@@ -32,6 +31,7 @@ from tests.fakes import (
     no_delay_floor,
 )
 from tests.prompts.test_prompt_wiring import RENDER_CASES, load_registry
+from tests.workflow_factory import make_authored_workflow
 
 UTILITY_KEYS = (
     PromptKey.BRANCH_NAME,
@@ -225,7 +225,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,

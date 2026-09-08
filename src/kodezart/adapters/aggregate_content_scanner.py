@@ -5,9 +5,10 @@ from collections.abc import Sequence
 
 from kodezart.adapters.regex_content_scanner import RegexContentScanner, pattern_spans
 from kodezart.types.domain.gating import (
-    UNCONDITIONAL_ROUTING,
+    ContentClass,
     DurabilityCategory,
     OutboundDestination,
+    OutboundSurface,
     ScanHit,
     ScannerRouting,
     ScanResult,
@@ -56,8 +57,11 @@ class AggregateContentScanner:
 
     @property
     def routing(self) -> ScannerRouting:
-        """Computed and authored aggregates use the same deterministic rule."""
-        return UNCONDITIONAL_ROUTING
+        """Legacy derived values retain coverage until typed writer adoption."""
+        return ScannerRouting(
+            surfaces=frozenset(OutboundSurface),
+            content_classes=frozenset({ContentClass.DERIVED}),
+        )
 
     async def scan(
         self,

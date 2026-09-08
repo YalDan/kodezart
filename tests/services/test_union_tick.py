@@ -25,7 +25,9 @@ repository = pinned.repository
 
 class CountingRunner:
     def __init__(self):
-        self.actual = SubprocessCheckChainRunner(config=AppConfig())
+        self.actual = SubprocessCheckChainRunner(
+            timeout=AppConfig().union_check_step_timeout_seconds
+        )
         self.calls = []
         self.after = None
 

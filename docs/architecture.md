@@ -249,6 +249,20 @@ HTTP delivery operations. A CI remediation draft re-enters the same fire graph
 at criteria generation; it does not rebuild the ticket or create another set
 of fire nodes.
 
+Composition constructs five concrete fire phases: `FireSpecification` authors
+and validates the input, `FireImplementation` persists artifacts and drives the
+loop, `FireConsolidation` owns branch consolidation and backup cleanup,
+`FireReview` judges the consolidated diff, and `FireRemediation` owns the shared
+round budget and drafted state transition. Each constructor takes only its
+phase's collaborators and bounds. `WorkflowState` and `ExecutionContext` still
+carry the run state; there is no second context or phase protocol.
+
+The fire graph owns checkpoint and retry mechanics once. The authored coordinator
+composes that graph with `AuthoredPublication` and `AuthoredChecks`, reusing its
+remediation phase and graph mechanics. It no longer inherits the fire's agent,
+Git, loop and persistence dependencies. Public run signatures, node names,
+checkpoint identities and terminal event shapes remain unchanged.
+
 Two fire nodes — `persist_ticket` and `persist_artifacts` — are present only
 when an ArtifactPersister is wired.
 

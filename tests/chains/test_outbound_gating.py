@@ -40,6 +40,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 
 def make_engine(
@@ -50,6 +51,7 @@ def make_engine(
     ci_monitor: FakeCIMonitor | None = None,
     artifact_persister: FakeArtifactPersister | None = None,
     executor: FakeAgentExecutor | None = None,
+    ticket_generator: FakeTicketGenerator | None = None,
 ) -> AuthoredDeliveryCoordinator:
     """Build a workflow engine wired to fakes, with a real gate."""
     service = AgentService(
@@ -58,7 +60,7 @@ def make_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
@@ -69,7 +71,7 @@ def make_engine(
             evaluation=make_passing_evaluation(),
             last_commit_sha="a" * 40,
         ),
-        ticket_generator=FakeTicketGenerator(),
+        ticket_generator=ticket_generator or FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
         git_remote="origin",

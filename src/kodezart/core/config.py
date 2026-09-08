@@ -61,29 +61,34 @@ class AppConfig(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Keep normal precedence; make retired knowledge variables visible errors."""
+        """Keep normal precedence; expose retired settings to extra-field refusal."""
+
+        def retired(key: str, prefix: str) -> bool:
+            key, prefix = key.casefold(), prefix.casefold()
+            if not key.startswith(prefix):
+                return False
+            name = key.removeprefix(prefix)
+            return name in {
+                "organize_max_admission_rounds",
+                "organize_max_convergence_rounds",
+                "union_check_cleanup_poll_interval_seconds",
+            } or (name.startswith("knowledge_") and not name.startswith("knowledge__"))
 
         def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
             values = source()
             if isinstance(source, EnvSettingsSource):
-                prefix = f"{source.env_prefix}knowledge_".casefold()
                 for key, value in source.env_vars.items():
-                    if key.casefold().startswith(
-                        prefix
-                    ) and not key.casefold().startswith(prefix + "_"):
+                    if retired(key, source.env_prefix):
                         # Preserve retired names for extra=forbid; never expose values.
                         values[key] = value
             if (
                 isinstance(source, SecretsSettingsSource)
                 and source.secrets_dir is not None
             ):
-                prefix = f"{source.env_prefix}knowledge_".casefold()
                 for directory in source.secrets_paths:
                     for path in directory.iterdir():
                         key = path.name
-                        if key.casefold().startswith(
-                            prefix
-                        ) and not key.casefold().startswith(prefix + "_"):
+                        if retired(key, source.env_prefix):
                             # Reject the retired name without reading its secret value.
                             values[key] = None
             return InitSettingsSource(settings_cls, init_kwargs=values)
@@ -219,18 +224,6 @@ class AppConfig(BaseSettings):
             "closed a previously-open obligation reference."
         ),
     )
-    organize_max_admission_rounds: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum organize admission re-author and re-test rounds.",
-    )
-    organize_max_convergence_rounds: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum organize whole-scope convergence rounds.",
-    )
     ticket_review_mode: TicketReviewMode = Field(
         default=TicketReviewMode.CREATE_ONLY,
         description=(
@@ -318,10 +311,10 @@ class AppConfig(BaseSettings):
     agentic_content_scanner_enabled: bool = Field(
         default=False,
         description=(
-            "Whether the judgment half of the outbound gate is registered. "
-            "Ships disabled: the mechanism ships and the policy is operator "
-            "configuration. Enabling it without an OperationConfig "
-            "private_surface description aborts boot rather than degrading."
+            "Whether organization-privacy judgment is enabled. Requires an "
+            "OperationConfig private_surface description when enabled. "
+            "Authored aggregate admission on durable PUBLIC/UNKNOWN writes "
+            "always runs independently of this setting."
         ),
     )
     model: str | None = Field(
@@ -428,15 +421,6 @@ class AppConfig(BaseSettings):
         ge=1,
         description=(
             "Maximum union attempts before continuously moving lane heads refuse."
-        ),
-    )
-    union_check_cleanup_poll_interval_seconds: float = Field(
-        default=0.01,
-        gt=0,
-        allow_inf_nan=False,
-        description=(
-            "Seconds between repeated check-process group termination signals "
-            "while canceled or timed-out output is still draining."
         ),
     )
     delivery_max_concurrent_watches: int = Field(

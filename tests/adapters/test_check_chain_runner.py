@@ -1,8 +1,6 @@
 """Real commands preserve observations and do not outlive aborted steps."""
 
-import ast
 import asyncio
-import inspect
 import os
 import shlex
 import signal
@@ -26,7 +24,9 @@ def python_command(source: str) -> str:
 
 def runner(timeout: float = 5) -> SubprocessCheckChainRunner:
     return SubprocessCheckChainRunner(
-        config=AppConfig(union_check_step_timeout_seconds=timeout)
+        timeout=AppConfig(
+            union_check_step_timeout_seconds=timeout
+        ).union_check_step_timeout_seconds
     )
 
 
@@ -209,17 +209,27 @@ def test_timeout_bound_rejects_nonpositive_values(value: int) -> None:
         AppConfig(union_check_step_timeout_seconds=value)
 
 
-def test_timeout_environment_and_no_runner_numeric_literal(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("timeout, timed_out", [("0.05", True), ("5", False)])
+async def test_timeout_environment_changes_native_command_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timeout: str, timed_out: bool
 ) -> None:
     assert AppConfig().union_check_step_timeout_seconds == 1800
-    monkeypatch.setenv("KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS", "2.5")
-    assert AppConfig().union_check_step_timeout_seconds == 2.5
-    assert not [
-        node.value
-        for node in ast.walk(ast.parse(inspect.getsource(subprocess_check_chain)))
-        if isinstance(node, ast.Constant) and type(node.value) in (int, float)
-    ]
+    monkeypatch.setenv("KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS", timeout)
+    config = AppConfig()
+    adapter = SubprocessCheckChainRunner(
+        timeout=config.union_check_step_timeout_seconds
+    )
+    async with asyncio.timeout(6):
+        result = await adapter.run_chain(
+            cwd=str(tmp_path),
+            steps=[CheckStep(name="timed", command="sleep 0.2; printf finished")],
+        )
+    assert result.step_outputs[0].timed_out is timed_out
+    assert result.failed_step_names == (
+        frozenset({"timed"}) if timed_out else frozenset()
+    )
+    if not timed_out:
+        assert result.step_outputs[0].output == "finished"
 
 
 @pytest.mark.parametrize("cancel_cleanup", [False, True])

@@ -1,7 +1,6 @@
 """Construction of the outbound content gate's scanner list.
 
-Moved verbatim from the composition root, which imports and wires rather
-than defines.
+Local credentials and typed references precede authored text judgment.
 """
 
 from pathlib import Path
@@ -39,10 +38,9 @@ def outbound_scanners(
     Deterministic first, always, and that ordering is the whole reason a
     credential is still caught when the judgment path is degraded.
 
-    Three states, none silent.  Enabled with a private-surface description
-    registers the judgment scanner; enabled without one aborts boot rather
-    than registering a scanner whose every answer would be
-    ``NOT_CONFIGURED``; disabled runs the deterministic scanners alone.
+    Authored aggregate judgment is always registered. Organization-privacy
+    judgment uses the existing opt-in and requires a private-surface
+    description when enabled. PRIVATE targets retain the gate fast path.
     """
     private_surface = None if operation is None else operation.private_surface
     scanners: list[ContentScanner] = [
@@ -56,10 +54,9 @@ def outbound_scanners(
             identifier_roster_min_length=config.aggregate_identifier_roster_min_length,
         ),
     ]
-    if not config.agentic_content_scanner_enabled:
-        return scanners, ""
-
-    if private_surface is None or not private_surface.description.strip():
+    if config.agentic_content_scanner_enabled and (
+        private_surface is None or not private_surface.description.strip()
+    ):
         msg = "The judgment content scanner is enabled with nothing to judge against"
         raise ContentScannerBootError(msg, missing="OperationConfig.private_surface")
 
@@ -76,9 +73,12 @@ def outbound_scanners(
                 initial_delay=config.content_scan_retry_initial_interval,
             ),
             timeout_seconds=config.content_scan_timeout_seconds,
+            inspect_privacy=config.agentic_content_scanner_enabled,
         ),
     )
-    return scanners, content_digest(private_surface.model_dump_json())
+    return scanners, content_digest(
+        "" if private_surface is None else private_surface.model_dump_json()
+    )
 
 
 async def build_outbound_gate(
@@ -107,7 +107,7 @@ async def build_outbound_gate(
     await log.ainfo(
         "outbound_content_scanners_resolved",
         scanners=[type(scanner).__name__ for scanner in scanners],
-        judgment_scanner_enabled=config.agentic_content_scanner_enabled,
+        privacy_judgment_enabled=config.agentic_content_scanner_enabled,
     )
     return PatternOutboundContentGate(
         scanners=scanners,

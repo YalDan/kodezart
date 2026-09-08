@@ -65,6 +65,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 _BODY: dict[str, object] = {"prompt": "fix", "repoPath": "/tmp/fake"}
 
@@ -262,7 +263,7 @@ def _real_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -420,7 +421,7 @@ def _mid_run_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,

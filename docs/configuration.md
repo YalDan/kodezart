@@ -25,6 +25,21 @@ resolved Git remote name, rather than the application configuration object.
 `KODEZART_GIT_REMOTE` retains its existing default and environment override;
 this API narrowing does not add an audit setting or compose a new scheduler.
 
+## Removed implementation settings
+
+The unconsumed `organize_max_admission_rounds` and
+`organize_max_convergence_rounds` settings were removed. Delete their
+constructor arguments and corresponding uppercase `KODEZART_` assignments
+from the environment, dotenv files and file-secret directories. Startup
+refuses these retired names. There is no replacement setting while the
+bounded ORGANIZE loops have no active consumer; this does not remove their
+required bounded retry and exhaustion behavior.
+
+The `union_check_cleanup_poll_interval_seconds` setting and its uppercase
+environment name were also removed. Repeated process-group termination uses
+a fixed 0.01-second interval until output drains; it is cleanup mechanics,
+not a deployment policy. The per-step command timeout remains configurable.
+
 ## Settings Reference
 
 Escalation ageing uses recorded run progress. The implementation defaults
@@ -44,7 +59,6 @@ and leased alarm writer remain separate work.
 | `KODEZART_RUN_ALARM_MAX_SURFACE_HOLDERS` | `int` | `1` | >= 0 | Distinct recorded run holders allowed on one complete writable-surface address. |
 | `KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` | `float` | `1800` | > 0 | Wall-clock bound for one check step of a union composition. |
 | `KODEZART_UNION_STALE_MAX_ATTEMPTS` | `int` | `3` | >= 1 | Maximum union attempts before continuously moving lane heads refuse. |
-| `KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS` | `float` | `0.01` | finite, > 0 | Seconds between repeated check-process group termination signals while canceled or timed-out output is still draining. |
 | `KODEZART_RUN_ALARM_MAX_RULINGS_WITHOUT_CLOSURE` | `int` | `5` | >= 0 | Distinct machine-authored ruling identities allowed since the lane last closed a previously-open obligation. |
 | `KODEZART_DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
 | `KODEZART_LOG_LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
@@ -59,8 +73,6 @@ and leased alarm writer remain separate work.
 | `KODEZART_GIT_COMMITTER_EMAIL`    | `str`        | `kodezart@noreply.dev`   |             | Git committer email for auto-generated commits           |
 | `KODEZART_MAX_ITERATIONS`         | `int`        | `5`                      | 1-20        | Maximum Ralph loop iterations before stopping            |
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
-| `KODEZART_ORGANIZE_MAX_ADMISSION_ROUNDS` | `int` | `3` | 1-10 | Maximum organize admission re-author and re-test rounds; runtime organizer wiring is pending. |
-| `KODEZART_ORGANIZE_MAX_CONVERGENCE_ROUNDS` | `int` | `3` | 1-10 | Maximum organize whole-scope convergence rounds; runtime organizer wiring is pending. |
 | `KODEZART_TICKET_REVIEW_MODE`     | `str`        | `create_only`            | `reviewed`, `create_only` | Whether the ticket loop compiles a reviewer session or one creator session whose draft the set's draft-critic lens checks; setting `KODEZART_MAX_REVIEWS` under `create_only`, or `create_only` over a set declaring no such lens, is refused at boot |
 | `KODEZART_FALLBACK_MODEL`         | `str\|None`  | `None`                   |             | Engine a session falls back to when the primary declines a request; absent declares no fallback |
 | `KODEZART_SESSION_MODELS`         | `dict[str,str]` | `{}`                  | keys: prompt function keys | JSON object pinning named function keys' sessions to an engine, overriding `KODEZART_MODEL` for those keys only; an unknown key is refused at boot naming the vocabulary (KOD-161) |
@@ -78,7 +90,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS` | `float` | `86400.0`        | 60-604800   | Seconds the terminal **job record** is retained in the registry (see Queue retention below) |
 | `KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS` | `float` | `900.0`      | 0-86400     | Seconds a terminal job's **replay buffer** is retained, independently of its record (see Queue retention below) |
 | `KODEZART_QUEUE_EVENT_BUFFER_CAPACITY` | `int`   | `512`                    | 1-10000     | Events retained per job for replay on attach; overflow drops oldest and marks the job truncated |
-| `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` | `bool` | `false` |  | Whether the judgment half of the outbound gate is registered. Ships disabled: the mechanism ships and the policy is operator configuration. Enabling it without an OperationConfig `private_surface` description aborts boot rather than degrading. |
+| `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` | `bool` | `false` |  | Enables organization-privacy judgment and requires an OperationConfig `private_surface` description. Mandatory authored aggregate judgment on durable PUBLIC/UNKNOWN writes is independent of this setting. |
 | `KODEZART_TRACKER_ASSET_FETCH_TIMEOUT_SECONDS` | `float` | `30.0` | >= 1.0, <= 300.0 | Time one asset fetch may take before the fire fails to build. |
 | `KODEZART_TRACKER_ASSET_MAX_BYTES` | `int` | `10485760` | >= 1024, <= 104857600 | Largest single asset admitted into a fire context. An asset over the bound is a typed failure, never a truncation. |
 | `KODEZART_TRACKER_ASSET_MAX_COUNT` | `int` | `20` | >= 1, <= 200 | Assets one fire's ticket may reference. A ticket referencing more fails loudly rather than being fetched in part. |

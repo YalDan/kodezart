@@ -32,7 +32,11 @@ from kodezart.types.domain.criteria import (
     FanInReport,
     GeneratedCriterion,
 )
-from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.gating import (
+    DurabilityCategory,
+    RedactionCategory,
+    RepoVisibility,
+)
 from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.organize import AdmissionJudgment
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -640,12 +644,19 @@ class ContentAuditFinding(CamelCaseModel):
     excise, and the gate blocks rather than redacting such a finding.
     """
 
+    category: Literal[RedactionCategory.ORG_PRIVATE] | DurabilityCategory = Field(
+        description=(
+            "org_private for an organization privacy disclosure; object_count for "
+            "a tracker-object count claim; identifier_roster for a tracker roster. "
+            "Durability reasons are distinct from privacy redaction."
+        ),
+    )
     start: int | None = Field(
         default=None,
         ge=0,
         description=(
-            "Character offset where the leaking span starts, counted from the "
-            "start of the payload. Absent when the leak is carried by a "
+            "Character offset where the finding span starts, counted from the "
+            "start of the payload. Absent when the finding is carried by a "
             "passage rather than a substring."
         ),
     )

@@ -9,8 +9,16 @@ from collections.abc import AsyncIterator, Sequence
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.chains.authored_checks import AuthoredChecks
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+from kodezart.chains.authored_publication import AuthoredPublication
+from kodezart.chains.fire_consolidation import FireConsolidation
+from kodezart.chains.fire_implementation import FireImplementation
+from kodezart.chains.fire_remediation import FireRemediation
+from kodezart.chains.fire_review import FireReview
+from kodezart.chains.fire_specification import FireSpecification
 from kodezart.chains.ralph_loop import RalphLoop
+from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
@@ -165,17 +173,15 @@ def build_workflow_engine(
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
 
-    All three are built here rather than by the engine, because all three
-    are ports to it: substituting any of them is a wiring decision and the
-    engine holds them by protocol.  None of the three touches a forge, so
-    both arms share them.
+    The real loops and remediator are constructed here and shared by both
+    origin arms. Each concrete phase receives only the collaborators its
+    node behavior uses; the graph owners receive those phases.
 
     ``arm`` binds every forge-touching capability the engine takes to ONE
     value, so no capability can be chosen apart from the others, and the
     router is the only thing that chooses between the arms.  ``github_api``
-    answers three of those protocols at once, and passing it three times is
-    what the engine's signature asks for rather than a duplication this
-    could remove.
+    answers the narrow protocols used by specification, publication and
+    checks; each receives the same selected adapter.
     """
     delay_floor_for = rate_limit_delay_floor(config)
     ralph_loop = RalphLoop(
@@ -212,34 +218,66 @@ def build_workflow_engine(
 
     def arm(forge: GitHubAPIClient | None) -> AuthoredDeliveryCoordinator:
         return AuthoredDeliveryCoordinator(
-            service=agent_service,
-            quality_gate=ralph_loop,
-            ticket_generator=ticket_generator,
-            merger=merger,
-            git_base_url=config.git_base_url,
-            git_remote=config.git_remote,
-            git=git,
-            cache=cache,
-            prompts=prompts,
-            skills=skills,
-            gate=gate,
-            visibility_resolver=forge,
-            checkpointer=checkpointer,
-            retry_max_attempts=config.retry_max_attempts,
-            retry_initial_interval=config.retry_initial_interval,
-            delay_floor_for=delay_floor_for,
-            pr_creator=forge,
-            ci_monitor=forge,
-            ci_observations=forge,
-            repositories=repositories,
-            max_concurrent_watches=config.delivery_max_concurrent_watches,
-            red_rerun_max_attempts=config.delivery_red_rerun_max_attempts,
-            ref_publisher=ref_publisher,
-            remediator=remediator,
-            remediation_max_rounds=config.remediation_max_rounds,
-            criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
-            fan_in_max_attempts=config.fan_in_max_attempts,
-            artifact_persister=artifact_persister,
+            fire=RalphWorkflowEngine(
+                specification=FireSpecification(
+                    service=agent_service,
+                    ticket_generator=ticket_generator,
+                    prompts=prompts,
+                    skills=skills,
+                    gate=gate,
+                    visibility_resolver=forge,
+                    criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
+                    fan_in_max_attempts=config.fan_in_max_attempts,
+                ),
+                implementation=FireImplementation(
+                    quality_gate=ralph_loop,
+                    prompts=prompts,
+                    artifact_persister=artifact_persister,
+                    gate=gate,
+                ),
+                consolidation=FireConsolidation(
+                    merger=merger,
+                    git=git,
+                    cache=cache,
+                    git_remote=config.git_remote,
+                    ref_publisher=ref_publisher if forge is not None else None,
+                ),
+                review=FireReview(
+                    service=agent_service,
+                    prompts=prompts,
+                    skills=skills,
+                    git=git,
+                    cache=cache,
+                    fan_in_max_attempts=config.fan_in_max_attempts,
+                ),
+                remediation=FireRemediation(
+                    remediator=remediator,
+                    remediation_max_rounds=config.remediation_max_rounds,
+                ),
+                git_base_url=config.git_base_url,
+                checkpointer=checkpointer,
+                retry_max_attempts=config.retry_max_attempts,
+                retry_initial_interval=config.retry_initial_interval,
+                delay_floor_for=delay_floor_for,
+            ),
+            publication=AuthoredPublication(
+                service=agent_service,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                pr_creator=forge,
+                artifact_persister=artifact_persister,
+                ref_publisher=ref_publisher,
+                remediation_max_rounds=config.remediation_max_rounds,
+            ),
+            checks=AuthoredChecks(
+                ci_monitor=forge,
+                ci_observations=forge,
+                git_base_url=config.git_base_url,
+                repositories=repositories,
+                max_concurrent_watches=config.delivery_max_concurrent_watches,
+                red_rerun_max_attempts=config.delivery_red_rerun_max_attempts,
+            ),
         )
 
     return OriginRoutedWorkflowEngine(

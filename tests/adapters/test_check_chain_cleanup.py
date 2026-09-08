@@ -6,7 +6,6 @@ import signal
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from kodezart.adapters import subprocess_check_chain
 from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
@@ -43,9 +42,9 @@ async def test_native_orphan_is_reaped_through_repeated_cancellation(
 
     monkeypatch.setattr(subprocess_check_chain, "_kill_group", controlled_signal)
     adapter = SubprocessCheckChainRunner(
-        config=AppConfig(
+        timeout=AppConfig(
             union_check_step_timeout_seconds=0.2 if trigger == "timeout" else 30
-        )
+        ).union_check_step_timeout_seconds
     )
     task = asyncio.create_task(
         adapter.run_chain(
@@ -118,17 +117,3 @@ async def test_native_orphan_is_reaped_through_repeated_cancellation(
         for process in signaled:
             real_kill(process)
         await asyncio.gather(task, return_exceptions=True)
-
-
-@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
-def test_cleanup_poll_interval_is_positive_and_finite(value: float) -> None:
-    with pytest.raises(ValidationError):
-        AppConfig(union_check_cleanup_poll_interval_seconds=value)
-
-
-def test_cleanup_poll_interval_has_its_own_environment_name(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    assert AppConfig().union_check_cleanup_poll_interval_seconds == 0.01
-    monkeypatch.setenv("KODEZART_UNION_CHECK_CLEANUP_POLL_INTERVAL_SECONDS", "0.025")
-    assert AppConfig().union_check_cleanup_poll_interval_seconds == 0.025

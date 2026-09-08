@@ -71,6 +71,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 
 async def _git(cmd: list[str], cwd: Path) -> None:
@@ -236,7 +237,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         retry_initial_interval=1.0,
         delay_floor_for=no_delay_floor,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -392,7 +393,7 @@ async def test_workflow_e2e_exhausts_iterations(
         retry_initial_interval=1.0,
         delay_floor_for=no_delay_floor,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -603,7 +604,7 @@ async def test_workflow_e2e_divergent_base_branch(
         retry_initial_interval=1.0,
         delay_floor_for=no_delay_floor,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -908,7 +909,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         retry_initial_interval=1.0,
         delay_floor_for=no_delay_floor,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -1161,7 +1162,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
     ``ralph_workflow.py:590-594``.  The raised ``RuntimeError`` substring
     must track the configured remote.
     """
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -1315,7 +1316,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -1476,7 +1477,7 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
         workspace=workspace,
         persister=persister,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -1732,7 +1733,7 @@ def _remediation_engine(
             remote="origin",
         ),
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
