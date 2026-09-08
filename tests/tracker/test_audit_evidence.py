@@ -10,10 +10,13 @@ from kodezart.chains.audit_evidence import AuditEvidenceVerifier
 from kodezart.core.config import AppConfig
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import AuditEvidenceReadError
+from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.run_state import LaneRunState
+from tests.domain.test_lane_record import record_data
 from tests.fakes import FakeMcpIssue
 from tests.tracker import test_audit_claim as claim_fixtures
 from tests.tracker.conftest import STATE_TYPES, WORKFLOW_STATE_NAMES, fixture_server
@@ -223,6 +226,29 @@ async def test_unreadable_git_identity_is_never_a_lapse(setup, monkeypatch, dama
         await build().observe(REQUEST)
     assert raised.value.criterion_key == CHILD
     assert not runner.calls and not workspace.calls
+
+
+async def test_a_valid_replacement_record_cannot_validate_the_earlier_snapshot(
+    setup, tracker
+):
+    build, _, _, source, _, _, stored, _ = setup
+    replacement = LaneRunState.model_validate({**record_data(), "filesChanged": 17})
+    marker, payload = render_lane_record(
+        record=replacement, marker_prefixes=PREFIXES
+    ).split("\n", 1)
+
+    async def change():
+        source.during = None
+        changed = await tracker.upsert_comment(target=ROOT, marker=marker, body=payload)
+        assert changed.comment_key == stored.comment_key
+        _, parsed = await LaneRecordReader(tracker=tracker, operation=OPERATION).read(
+            issue_key=ROOT, lane_key=REQUEST.lane_key, record_ref=stored.comment_key
+        )
+        assert parsed == replacement
+
+    source.during = change
+    with pytest.raises(AuditEvidenceReadError, match="lane record changed"):
+        await build().observe(REQUEST)
 
 
 async def test_review_claim_does_not_require_old_grade_to_survive_history_rewrite(
