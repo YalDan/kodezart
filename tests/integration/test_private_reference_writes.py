@@ -418,3 +418,56 @@ async def test_actual_pr_never_publishes_the_tail_of_an_overlapping_private_url(
     assert "private-example" not in created["body"]
     assert "linear.app" not in created["body"]
     assert "EX-4" in created["body"]
+
+
+@pytest.mark.parametrize(
+    "private",
+    [
+        "https://linear.app/private-example/issue/EX-4",
+        "https://linear.app/private&#45;example/issue/EX-4",
+        "https://linear.app/private&#x2d;example/issue/EX-4",
+        "https://linear&period;app/private-example/issue/EX-4",
+        "https&colon;&sol;&sol;linear.app/private-example/issue/EX-4",
+        "//linear.app/private-example/issue/EX-4",
+        "&sol;&sol;linear.app/private&#45;example/issue/EX-4",
+        r"https\://linear.app/private\-example/issue/EX-4",
+    ],
+)
+async def test_actual_writer_classifies_rendered_markdown_with_original_spans(private):
+    public = "https://linear.app/public&#45;example/issue/PUB-7"
+    body = f"Prefix &NotEqualTilde; [EX-4]({private}) and [PUB-7]({public})."
+    gate = await composed_gate(
+        operation_with_facts(workspaces={"linear.app": ["private-example"]})
+    )
+    creator = FakePRCreator()
+    engine = make_engine(
+        pr_creator=creator,
+        gate=gate,
+        visibility_resolver=FakeVisibilityResolver(RepoVisibility.PUBLIC),
+        executor=DescriptionExecutor(body),
+    )
+    await run_engine(engine)
+    (created,) = creator.calls
+    assert body.replace(private, "[REDACTED:tracker_urls]") in created["body"]
+    assert public in created["body"]
+
+
+@pytest.mark.parametrize(
+    "private",
+    [
+        "//runner.private.invalid/work",
+        "https&colon;&sol;&sol;runner.private.invalid/work",
+    ],
+)
+async def test_actual_writer_blocks_rendered_private_authority_before_create(private):
+    gate = await composed_gate(operation_with_facts(hosts=["runner.private.invalid"]))
+    creator = FakePRCreator()
+    engine = make_engine(
+        pr_creator=creator,
+        gate=gate,
+        visibility_resolver=FakeVisibilityResolver(RepoVisibility.UNKNOWN),
+        executor=DescriptionExecutor(f"See [internal]({private})."),
+    )
+    with pytest.raises(OutboundContentBlockedError):
+        await run_engine(engine)
+    assert creator.calls == []

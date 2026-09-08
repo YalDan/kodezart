@@ -293,6 +293,9 @@ A public workspace on the same host remains distinct. Hostnames normalize
 case, IDNA and a trailing dot; workspace slugs are decoded and compared
 case-insensitively by the owning adapter. Linear workspace URLs are supported;
 configuring a workspace on a host with no native parser refuses at boot.
+The text boundary decodes Markdown character references and punctuation escapes
+once, classifies explicit URL authorities including scheme-relative links, and
+redacts the complete original span while preserving neighboring text.
 Opaque document URLs carry no inferred workspace; declare an entire private
 host when appropriate, or use the semantic privacy description.
 
