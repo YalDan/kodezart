@@ -112,8 +112,19 @@ async def test_replacement_during_native_conflict_cannot_be_reported_as_remediat
             raise
 
     monkeypatch.setattr(current.git, "merge_scratch_head", replace_after_conflict)
+    await current.git.fetch(str(current.observer))
+    heads = (
+        current.heads[0].model_copy(update={"head_sha": first}),
+        current.heads[1].model_copy(update={"head_sha": second}),
+    )
     with pytest.raises(UnionHeadReadError, match="substitutes Git objects"):
-        await current.consumer().verify(lane_branches=current.branches)
+        # Exercise the pinned public consumer directly: the tick's separate
+        # final-head guard must not mask a missing conflict-result guard.
+        await verify(
+            (current.observer, current.context.base_sha, heads),
+            current.git,
+            current.runner,
+        )
     assert len(current.git.created) == 1
     assert current.git.removed == current.git.created
     assert not Path(current.git.created[0]).exists()
