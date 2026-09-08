@@ -284,7 +284,7 @@ def test_the_models_enforce_the_constraints_the_wire_states() -> None:
     with pytest.raises(ValidationError):
         PRDescriptionOutput(title="t" * 200, description="d")
     with pytest.raises(ValidationError):
-        ContentAuditFinding(start=-1, end=2, rationale="why")
+        ContentAuditFinding(category="org_private", start=-1, end=2, rationale="why")
 
 
 # ---------------------------------------------------------------------------

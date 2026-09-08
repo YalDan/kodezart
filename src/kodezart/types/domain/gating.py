@@ -76,6 +76,9 @@ class RedactionCategory(StrEnum):
     ORG_PRIVATE = "org_private"
 
 
+TRACKER_ROSTER_MIN_REFERENCES = 3
+
+
 class DurabilityCategory(StrEnum):
     """Aggregate claims always block; redacting one would preserve the claim."""
 

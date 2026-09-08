@@ -1,12 +1,9 @@
 """The judgment half of the outbound gate — a scanner backed by a session.
 
-One implementation of ``ContentScanner`` alongside ``RegexContentScanner``,
-registered AFTER it in the gate's ordered list.  A credential is arithmetic
-and stays with the patterns; "would a stranger learn something from this
-that this organisation did not choose to publish" is irreducibly semantic,
-and no pattern set can answer it — the set of private things is open-ended,
-writing the deny pattern publishes the string it protects, and the same
-string can be fine or not depending on where it is going.
+The same fresh session judges mandatory authored tracker aggregates and optional
+organization-privacy disclosures. Credentials remain local and run first. Durable
+authored text includes artifact leaves; a zero-reference claim can still describe
+the tracker's changing state, and ordinary repository counts are not such claims.
 
 The session is deliberately a DIFFERENT one from the writer whose output it
 grades: no shared context, ``allowed_tools=[]``, and a neutral working
@@ -31,12 +28,17 @@ from kodezart.core.stream_drain import drain
 from kodezart.types.domain.agent import CONTENT_AUDIT_SCHEMA, ContentAuditOutput
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
+    TRACKER_ROSTER_MIN_REFERENCES,
+    ContentClass,
+    DurabilityCategory,
     OutboundDestination,
-    RedactionCategory,
+    OutboundSurface,
     ScanFailureKind,
     ScanHit,
     ScannerRouting,
     ScanResult,
+    SurfaceDurability,
+    durability_of,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
@@ -67,6 +69,7 @@ class AgentContentScanner:
         skills: SkillsSelection,
         retry: RetryPolicy,
         timeout_seconds: float,
+        inspect_privacy: bool = True,
     ) -> None:
         self._executor = executor
         self._prompts = prompts
@@ -74,12 +77,17 @@ class AgentContentScanner:
         self._skills = skills
         self._retry = retry
         self._timeout_seconds = timeout_seconds
+        self._inspect_privacy = inspect_privacy
         self._log: BoundLogger = get_logger(__name__)
 
     @property
     def routing(self) -> ScannerRouting:
-        """Authored prose on a publication or tracker surface, plus the ref."""
-        return JUDGMENT_ROUTING
+        """Authored text may carry aggregates even inside repository artifacts."""
+        return ScannerRouting(
+            surfaces=frozenset(OutboundSurface),
+            content_classes=frozenset({ContentClass.AUTHORED}),
+            mandatory_destinations=JUDGMENT_ROUTING.mandatory_destinations,
+        )
 
     async def scan(
         self,
@@ -88,9 +96,21 @@ class AgentContentScanner:
         destination: OutboundDestination,
     ) -> ScanResult:
         """Audit *content* for *destination*, or say why there is no answer."""
+        aggregates = durability_of(destination) is SurfaceDurability.DURABLE
+        privacy = self._inspect_privacy and JUDGMENT_ROUTING.applies(
+            destination=destination, content_class=ContentClass.AUTHORED
+        )
+        if not aggregates and not privacy:
+            return ScanResult()
         try:
             prompt = self._prompts.template_for(PromptKey.CONTENT_AUDIT).render(
-                {"content": content, "destination": destination.value},
+                {
+                    "content": content,
+                    "destination": destination.value,
+                    "inspect_aggregates": True if aggregates else None,
+                    "inspect_privacy": True if privacy else None,
+                    "roster_minimum": TRACKER_ROSTER_MIN_REFERENCES,
+                },
             )
         except PromptRenderError:
             # The mandate has no private-surface description to judge
@@ -100,7 +120,26 @@ class AgentContentScanner:
         result = ScanResult(failure=ScanFailureKind.EMPTY_RESPONSE)
         for attempt in range(self._retry.attempts):
             result = await self._attempt(prompt=prompt, content=content)
-            if result.failure is None or result.failure not in _RETRYABLE:
+            if result.failure is None:
+                if not privacy and any(
+                    not isinstance(hit.category, DurabilityCategory)
+                    for hit in result.hits
+                ):
+                    return ScanResult(failure=ScanFailureKind.MALFORMED_VERDICT)
+                return result.model_copy(
+                    update={
+                        "hits": tuple(
+                            hit
+                            for hit in result.hits
+                            if (
+                                aggregates
+                                if isinstance(hit.category, DurabilityCategory)
+                                else privacy
+                            )
+                        )
+                    }
+                )
+            if result.failure not in _RETRYABLE:
                 return result
             await self._log.awarning(
                 "content_audit_attempt_failed",
@@ -183,7 +222,7 @@ def _hits_from(audit: ContentAuditOutput, *, content: str) -> ScanResult:
         if finding.start is None and finding.end is None:
             hits.append(
                 ScanHit(
-                    category=RedactionCategory.ORG_PRIVATE,
+                    category=finding.category,
                     rationale=finding.rationale,
                 ),
             )
@@ -192,10 +231,15 @@ def _hits_from(audit: ContentAuditOutput, *, content: str) -> ScanResult:
             return ScanResult(failure=ScanFailureKind.SPANS_UNRESOLVABLE)
         hits.append(
             ScanHit(
-                category=RedactionCategory.ORG_PRIVATE,
+                category=finding.category,
                 start=finding.start,
                 end=finding.end,
                 rationale=finding.rationale,
+                matched_text=(
+                    content[finding.start : finding.end]
+                    if isinstance(finding.category, DurabilityCategory)
+                    else None
+                ),
             ),
         )
     hits.sort(key=lambda hit: hit.sort_key())

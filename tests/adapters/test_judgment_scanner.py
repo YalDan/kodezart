@@ -88,7 +88,16 @@ def audit_result(
         is_error=is_error,
         num_turns=1,
         session_id="audit",
-        structured_output=None if findings is None else {"findings": findings},
+        structured_output=(
+            None
+            if findings is None
+            else {
+                "findings": [
+                    {"category": RedactionCategory.ORG_PRIVATE.value, **finding}
+                    for finding in findings
+                ]
+            }
+        ),
     )
 
 
@@ -730,8 +739,8 @@ def boot_scanners(
     )
 
 
-def test_disabled_registers_the_deterministic_scanner_alone() -> None:
-    """State 1: the mechanism ships, the policy is operator configuration."""
+def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment() -> None:
+    """Only organization-privacy judgment is optional; aggregate admission ships."""
     scanners, digest = boot_scanners(
         enabled=False,
         private_surface=FIXTURE_PRIVATE_SURFACE,
@@ -740,8 +749,9 @@ def test_disabled_registers_the_deterministic_scanner_alone() -> None:
         "RegexContentScanner",
         "ReferenceContentScanner",
         "AggregateContentScanner",
+        "AgentContentScanner",
     ]
-    assert digest == ""
+    assert digest
 
 
 def test_enabled_with_a_description_registers_the_judgment_scanner_second() -> None:

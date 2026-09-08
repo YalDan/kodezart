@@ -311,10 +311,10 @@ class AppConfig(BaseSettings):
     agentic_content_scanner_enabled: bool = Field(
         default=False,
         description=(
-            "Whether the judgment half of the outbound gate is registered. "
-            "Ships disabled: the mechanism ships and the policy is operator "
-            "configuration. Enabling it without an OperationConfig "
-            "private_surface description aborts boot rather than degrading."
+            "Whether organization-privacy judgment is enabled. Requires an "
+            "OperationConfig private_surface description when enabled. "
+            "Authored aggregate admission on durable PUBLIC/UNKNOWN writes "
+            "always runs independently of this setting."
         ),
     )
     model: str | None = Field(
