@@ -843,8 +843,21 @@ pairs is not proof that every possible adoption claim was discovered.
 
 The observation derives its overall three-state verdict from all four readings,
 then rechecks native criterion, lane-record and remote-head identity. It performs
-no tracker writes. Full sweep invocation, mandatory mandate completion and leased
-publication remain separate consumers. Native Git fixtures exercise all four
+no tracker writes. `AuditReadSweep` now invokes this verifier for each native
+criterion request independently of its ordinary claim/Evidence arm. It retains
+all four readings, including recomputed values, missing witnesses and native
+byte pairs. Each category has its own addressed report; every refutation passes
+through the existing mandate hunt before that report can be returned. Equal
+reading text cannot relabel categories or exchange their mandate findings.
+
+An unavailable verifier or source produces a named per-target detector refusal;
+it does not suppress the independent claim arm. The revision reader still
+requires a completed or configured-review criterion with native Evidence, so
+other states retain their fresh claim observation and an unavailable revision
+detector. A lapsed completed claim can coexist with a current over-claim
+observation. Final native source checks and equal observed branch heads prevent
+combining observations from different revisions. Scheduled coverage advancement
+and leased publication remain separate consumers. Native Git fixtures exercise all four
 categories using a scripted external judgment boundary; they validate execution
 and evidence handling without claiming live-model detection accuracy.
 

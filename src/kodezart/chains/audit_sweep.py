@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from kodezart.chains.audit_evidence import AuditEvidenceVerifier
+from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
@@ -16,12 +17,18 @@ from kodezart.services.audit_terminal import AuditTerminalReader
 from kodezart.services.git_observations import read_remote_head
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import (
+    AuditClaimJudgment,
+    AuditClaimObservation,
     AuditClaimReport,
     AuditClaimRequest,
     AuditMandateRequest,
     AuditVerdict,
 )
 from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
+from kodezart.types.domain.audit_overclaim import (
+    AuditOverclaimReport,
+    OverclaimReportEntry,
+)
 from kodezart.types.domain.audit_terminal import (
     AuditTerminalObservation,
     AuditTerminalRequest,
@@ -41,6 +48,8 @@ class AuditReadObservation:
     evidence: AuditEvidenceObservation | None = None
     terminal: AuditTerminalObservation | None = None
     unavailable_reason: str | None = None
+    overclaims: AuditOverclaimReport | None = None
+    overclaim_unavailable_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +115,7 @@ class AuditReadSweep:
         git: GitService,
         cache: RepoCache,
         config: AppConfig,
+        overclaims: AuditOverclaimVerifier | None = None,
     ) -> None:
         self._scope = scope
         self._requests = AuditRequestReader(tracker=tracker, operation=operation)
@@ -117,6 +127,7 @@ class AuditReadSweep:
         self._git = git
         self._cache = cache
         self._remote = config.git_remote
+        self._overclaims = overclaims
 
     async def _observe(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
@@ -162,6 +173,46 @@ class AuditReadSweep:
         )
         return AuditReadObservation(target, claim=report, evidence=evidence)
 
+    async def _observe_overclaims(
+        self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
+    ) -> AuditOverclaimReport:
+        request = target.request
+        if not isinstance(request, AuditClaimRequest):
+            raise AuditClaimReadError(
+                "over-claim verification requires a native criterion request"
+            )
+        if self._overclaims is None:
+            raise AuditClaimReadError("the over-claim verifier is not configured")
+        observed = await self._overclaims.observe(request)
+        reports: list[OverclaimReportEntry] = []
+        for reading in observed.judgment.checks:
+            reports.append(
+                OverclaimReportEntry(
+                    kind=reading.kind,
+                    report=await self._mandates.complete(
+                        AuditMandateRequest(
+                            claim=AuditClaimObservation(
+                                judgment=AuditClaimJudgment(
+                                    criterion_key=observed.judgment.criterion_key,
+                                    verdict=reading.verdict,
+                                    evidence=reading.evidence,
+                                ),
+                                head_sha=observed.head_sha,
+                                record_ref=observed.record_ref,
+                                check=observed.check,
+                            ),
+                            defect_class=(
+                                f"{reading.kind.value} over-claim: {observed.check}"
+                            ),
+                            surfaces=surfaces,
+                            repo_url=request.repo_url,
+                            cache_key=request.cache_key,
+                        )
+                    ),
+                )
+            )
+        return AuditOverclaimReport(observation=observed, reports=tuple(reports))
+
     async def _require_current(self, observation: AuditReadObservation) -> None:
         target = observation.target
         request = target.request
@@ -173,15 +224,18 @@ class AuditReadSweep:
             return
         if not isinstance(request, AuditClaimRequest) or target.source is None:
             return
-        head = (
-            observation.claim.claim.head_sha
-            if observation.claim is not None
-            else observation.evidence.head_sha
-            if observation.evidence is not None
-            else None
-        )
-        if head is None:
+        heads = set()
+        if observation.claim is not None:
+            heads.add(observation.claim.claim.head_sha)
+        if observation.evidence is not None:
+            heads.add(observation.evidence.head_sha)
+        if observation.overclaims is not None:
+            heads.add(observation.overclaims.observation.head_sha)
+        if not heads:
             return
+        if len(heads) != 1:
+            raise AuditClaimReadError("audit arms observed different branch heads")
+        head = next(iter(heads))
         repository = await ensure_repository(
             cache=self._cache, repo_url=request.repo_url, cache_key=request.cache_key
         )
@@ -203,13 +257,29 @@ class AuditReadSweep:
         observations: list[AuditReadObservation] = []
         for target in snapshot.targets:
             try:
-                observations.append(await self._observe(target, surfaces))
+                observation = await self._observe(target, surfaces)
             except Exception as exc:
-                observations.append(
-                    AuditReadObservation(
-                        target, unavailable_reason=f"{type(exc).__name__}: {exc}"
-                    )
+                observation = AuditReadObservation(
+                    target, unavailable_reason=f"{type(exc).__name__}: {exc}"
                 )
+            overclaims = None
+            overclaim_reason = None
+            if "criterion" in target.issue.issue_labels:
+                try:
+                    overclaims = await self._observe_overclaims(target, surfaces)
+                except Exception as exc:
+                    overclaim_reason = f"{type(exc).__name__}: {exc}"
+            observations.append(
+                AuditReadObservation(
+                    target=observation.target,
+                    claim=observation.claim,
+                    evidence=observation.evidence,
+                    terminal=observation.terminal,
+                    unavailable_reason=observation.unavailable_reason,
+                    overclaims=overclaims,
+                    overclaim_unavailable_reason=overclaim_reason,
+                )
+            )
         for observation in observations:
             await self._require_current(observation)
         await self._requests.require_unchanged(snapshot)
