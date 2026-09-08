@@ -709,7 +709,9 @@ def operation_with(private_surface: str | None) -> OperationConfig:
     """The shipped example operation config, with its private surface set."""
     root = Path(__file__).resolve().parents[2]
     config = load_operation_config(root / "docs" / "operation.example.toml")
-    return config.model_copy(update={"private_surface": private_surface})
+    return OperationConfig.model_validate(
+        {**config.model_dump(), "private_surface": private_surface}
+    )
 
 
 def boot_scanners(
@@ -735,6 +737,7 @@ def test_disabled_registers_the_deterministic_scanner_alone() -> None:
     )
     assert [type(scanner).__name__ for scanner in scanners] == [
         "RegexContentScanner",
+        "ReferenceContentScanner",
         "AggregateContentScanner",
     ]
     assert digest == ""
@@ -748,6 +751,7 @@ def test_enabled_with_a_description_registers_the_judgment_scanner_second() -> N
     )
     assert [type(scanner).__name__ for scanner in scanners] == [
         "RegexContentScanner",
+        "ReferenceContentScanner",
         "AggregateContentScanner",
         "AgentContentScanner",
     ]

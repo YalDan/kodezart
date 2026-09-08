@@ -19,7 +19,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.organize import (
@@ -29,6 +29,7 @@ from kodezart.types.domain.organize import (
     ResolvedMandateSpec,
     split_label_key,
 )
+from kodezart.types.domain.privacy import PrivateSurface
 from kodezart.types.domain.run_event import (
     DERIVED_RUN_EVENTS,
     RUN_EVENT_PUBLISHERS,
@@ -584,13 +585,13 @@ class OperationConfig(OperationModel):
     knowledge: dict[str, str] = Field(default_factory=dict)
     endpoints: dict[str, str] = Field(default_factory=dict)
     initiatives: list[Initiative] = Field(default_factory=list)
-    # Prose describing the CLASS of thing this operation treats as private,
-    # never a list of instances. Prose generalizes to instances the operator
-    # never enumerated, and it lives operator-side, which together is the
-    # whole reason this is not a pattern list. ``None`` means the operator
-    # has not supplied one; the judgment scanner then refuses to register
-    # rather than registering with nothing to judge against.
-    private_surface: str | None = None
+    private_surface: PrivateSurface | None = None
+
+    @field_validator("private_surface", mode="before")
+    @classmethod
+    def _migrate_private_description(cls, value: object) -> object:
+        """Existing operator prose retains its exact bytes at the load boundary."""
+        return {"description": value} if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def _check_structure(self) -> Self:

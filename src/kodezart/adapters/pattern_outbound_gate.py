@@ -162,7 +162,12 @@ def _redact(content: str, hits: Sequence[ScanHit]) -> str:
         if not hit.has_span:
             continue
         start, end = hit.start, hit.end
-        if start is None or end is None or start < cursor:
+        if start is None or end is None:
+            continue
+        if start < cursor:
+            # A previous placeholder already covers this overlap, but its
+            # shorter span must not leave the rest of this finding visible.
+            cursor = max(cursor, end)
             continue
         parts.append(content[cursor:start])
         parts.append(_PLACEHOLDER.format(category=hit.category.value))

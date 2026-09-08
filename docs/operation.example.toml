@@ -32,14 +32,14 @@ organize_mandates = []
 # collide with a principal.
 agent_identities = ["@example-agent", "example-agent"]
 
-# Prose describing the CLASS of thing this operation treats as private, read
-# by the judgment half of the outbound gate. A CLASS, never a list of
-# instances: an instance list stops at what the operator remembered to
-# enumerate, and writing the instances down here would publish the very
-# strings the gate exists to withhold. Omitting the field is legal and means
-# the operator has supplied no description; enabling
-# KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED without one aborts boot.
-private_surface = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
+# Semantic prose stays available to the judgment scanner. Host/workspace facts
+# are deployment data; these are synthetic examples only. A private host blocks
+# references to that entire host; workspaces select only named native slugs.
+[private_surface]
+description = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
+hosts = []
+[private_surface.workspaces]
+"linear.app" = ["example-private-workspace"]
 
 # Stable tracker identities. Preserve the existing prefixes when adopting
 # a tracker with recorded work: changing one addresses a different marker.

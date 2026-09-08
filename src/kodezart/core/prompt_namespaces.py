@@ -282,7 +282,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     _bind_absentable(
         bindings,
         "private_surface",
-        config.private_surface,
+        None if config.private_surface is None else config.private_surface.description,
         absent=config.private_surface is None,
     )
     _bind_absentable(
