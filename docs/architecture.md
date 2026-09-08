@@ -645,6 +645,17 @@ also runs on errors and cancellation. This is a repeat-read observation, not an
 atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
 report publication, write-back and scheduler registration remain separate work.
 
+Revision comparisons share `AuditSourceReader` and `FreshAuditSession`.
+The source reader requires the criterion's native Evidence, validates its
+graded commit against the current recorded branch, and retains the exact
+criterion, Check, Evidence and lane comment. Its `require_unchanged` check
+re-reads the criterion, lane record and remote head before a consumer returns.
+The session helper owns a detached workspace at the immutable head, checks
+its head and cleanliness before and after fresh read-only execution, and
+settles acquisition, native reads and release through repeated cancellation.
+Callers supply a prompt and output schema and validate the returned structured
+value; the helpers neither inherit prior conclusions nor publish a verdict.
+
 
 ## Recorded criterion Evidence and lapse observations
 
