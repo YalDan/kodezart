@@ -2,6 +2,7 @@
 
 import ast
 import inspect
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -121,6 +122,19 @@ async def test_missing_prefix_refuses_before_any_read(tracker, monkeypatch):
             operation=OPERATION.model_copy(update={"marker_prefixes": {}}),
         ).read(**ADDRESS)
     read.assert_not_awaited()
+
+
+@pytest.mark.parametrize("field", ["issueId", "escalationKey"])
+async def test_valid_payload_with_foreign_identity_refuses_at_record_reader(
+    tracker, field
+):
+    data = escalation().model_dump(by_alias=True)
+    data[field] = "another-valid-identity"
+    await seed_escalation(tracker, payload=json.dumps(data))
+    with pytest.raises(EscalationReadError, match="differs from the address"):
+        await EscalationRecordReader(tracker=tracker, operation=OPERATION).read(
+            **ADDRESS
+        )
 
 
 def test_actual_collector_declares_only_tracker_reads_and_pure_observation_calls():
