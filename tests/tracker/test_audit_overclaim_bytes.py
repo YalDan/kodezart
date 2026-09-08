@@ -127,3 +127,45 @@ async def test_cancelled_native_byte_read_never_returns_a_judgment(setup, tracke
         await fixtures.build(setup, tracker, source=NativeBoundary()).observe(
             fixtures.fixtures.REQUEST
         )
+
+
+@pytest.mark.parametrize("changed", [True, False])
+async def test_native_bytes_override_coverage_without_confusing_equal_pairs(
+    setup, tracker, changed
+):
+    class NativeBoundary:
+        async def read_source(self, *, cwd, commit_sha, path):
+            content = (
+                b"source"
+                if path == "source.md" or not changed
+                else b"covered differently"
+            )
+            return GitSourceBlob(
+                commit_sha=commit_sha, path=path, blob_sha="d" * 40, content=content
+            )
+
+    fixtures.answer(setup[1], adopted_output())
+    result = await fixtures.build(setup, tracker, source=NativeBoundary()).observe(
+        fixtures.fixtures.REQUEST
+    )
+    assert result.judgment.verdict is (
+        AuditVerdict.REFUTED if changed else AuditVerdict.HOLDS
+    )
+
+
+async def test_source_movement_during_native_byte_read_refuses_result(setup, tracker):
+    class NativeBoundary:
+        async def read_source(self, *, cwd, commit_sha, path):
+            await tracker.update_issue(
+                issue_key=fixtures.fixtures.CHILD,
+                body=fixtures.fixtures.body(fixtures.fixtures.HEAD),
+            )
+            return GitSourceBlob(
+                commit_sha=commit_sha, path=path, blob_sha="d" * 40, content=b"equal"
+            )
+
+    fixtures.answer(setup[1], adopted_output())
+    with pytest.raises(fixtures.AuditEvidenceReadError):
+        await fixtures.build(setup, tracker, source=NativeBoundary()).observe(
+            fixtures.fixtures.REQUEST
+        )
