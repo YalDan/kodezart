@@ -544,9 +544,14 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
     def _config(self) -> AppConfig:
         return AppConfig(
             tracker_mcp_sse_read_timeout_seconds=self.TRACKER_BOUND,
-            knowledge_mcp_sse_read_timeout_seconds=self.KNOWLEDGE_BOUND,
-            knowledge_mcp_server_url="https://knowledge.invalid/mcp",
-            knowledge_mcp_token=SecretStr("ntn_" + "K" * 44),
+            knowledge={
+                "connection": {
+                    "transport": "http",
+                    "sse_read_timeout_seconds": self.KNOWLEDGE_BOUND,
+                    "server_url": "https://knowledge.invalid/mcp",
+                    "credential": SecretStr("ntn_" + "K" * 44),
+                }
+            },
         )
 
     def test_the_tracker_composition_passes_its_field(self) -> None:
@@ -561,7 +566,7 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
         One number for both would make a knowledge server that streams
         slowly a reason to loosen the tracker's bound.
         """
-        caller = _knowledge_caller(self._config(), ["records.fire_prep"])
+        caller = _knowledge_caller(self._config().knowledge, ["records.fire_prep"])
 
         assert isinstance(caller, HttpMcpToolCaller)
         assert caller._server._sse_read_timeout_seconds == self.KNOWLEDGE_BOUND

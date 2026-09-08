@@ -116,7 +116,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
-from kodezart.types.domain.session import KnowledgeGrant, SessionType
+from kodezart.types.domain.session import HttpKnowledge, KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -216,10 +216,12 @@ def knowledge_grant_for(
     return KnowledgeGrant(
         granted=granted,
         server_name=FIXTURE_KNOWLEDGE_SERVER,
-        server_url="https://knowledge.invalid/mcp",
-        auth_header="Authorization",
-        auth_scheme="Bearer",
-        credential=_FIXTURE_KNOWLEDGE_CREDENTIAL,
+        connection=HttpKnowledge(
+            server_url="https://knowledge.invalid/mcp",
+            auth_header="Authorization",
+            auth_scheme="Bearer",
+            credential=_FIXTURE_KNOWLEDGE_CREDENTIAL,
+        ),
         knowledge_map=knowledge_map if granted else "",
     )
 

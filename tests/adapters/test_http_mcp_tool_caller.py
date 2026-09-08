@@ -130,12 +130,10 @@ def caller_fixture(
     return HttpMcpToolCaller(
         url="https://mcp.invalid/mcp",
         server_name="fixture-server",
-        token=_FIXTURE_TOKEN,
+        headers={"Authorization": "Bearer" + " " + _FIXTURE_TOKEN},
         timeout_seconds=5.0,
         call_timeout_seconds=call_timeout_seconds,
         sse_read_timeout_seconds=_SSE_READ_TIMEOUT_SECONDS,
-        auth_header_name="Authorization",
-        auth_scheme="Bearer",
         error_detail_limit=_ERROR_DETAIL_LIMIT,
         client_factory=client_factory,
     )

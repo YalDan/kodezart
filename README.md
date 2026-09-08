@@ -742,7 +742,7 @@ not, so configuring them "to be safe" is how a first setup breaks itself.
   can create one there.
   To turn it on with Notion, use the self-hosted server over stdio — the
   hosted `mcp.notion.com` endpoint is OAuth-only and refuses a static `ntn_`
-  integration token — and set `KODEZART_KNOWLEDGE_SESSION_GRANTS` to the
+  integration token — and set `KODEZART_KNOWLEDGE__SESSION_GRANTS` to the
   session kinds that read it. The ready-to-use block is in `.env.example`, and
   `docs/configuration.md` carries the recipe and the tracker-instead-of-Notion
   alternative.
@@ -843,7 +843,7 @@ be able to reach the tracker. Both passes register whenever the operation
 config declares at least one team and one repository (an empty roster logs
 `prompt_passes_not_wired` naming what is absent). What this process attaches to
 a session is the knowledge server it was granted
-(`KODEZART_KNOWLEDGE_SESSION_GRANTS`) and nothing else: it registers no tracker
+(`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and nothing else: it registers no tracker
 MCP server on a session. That registration is host configuration, made where a
 session started in `KODEZART_SCHEDULED_PASS_WORKING_DIR` can see it, and
 nothing here performs or verifies it — do not read a machine-local MCP
@@ -946,3 +946,7 @@ Security issues go through [private vulnerability reporting](https://github.com/
 ## License
 
 [MIT](LICENSE)
+
+Knowledge configuration now uses `KODEZART_KNOWLEDGE__...` nested variables.
+See [the migration table](docs/configuration.md#knowledge-environment-migration);
+old flat knowledge variables are rejected instead of silently disabling grants.

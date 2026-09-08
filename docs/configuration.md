@@ -137,24 +137,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_TRACKER_MCP_SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
 | `KODEZART_TRACKER_TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
-| `KODEZART_KNOWLEDGE_MCP_TOKEN` | `str \| None` | `None` |  | Credential for the knowledge MCP server. Environment only. |
-| `KODEZART_KNOWLEDGE_SESSION_GRANTS` | `list[SessionType]` | `[]` |  | Session types the knowledge MCP server is attached to, named one by one. No wildcard value. |
-| `KODEZART_KNOWLEDGE_MCP_SERVER_NAME` | `str` | `notion` | min length 1 | Identity the knowledge MCP server carries in a granted session. |
-| `KODEZART_KNOWLEDGE_MCP_SERVER_URL` | `str \| None` | `None` | min length 1 | Endpoint of the knowledge MCP server a granted session dials under the http transport. Unset means no knowledge server endpoint is configured; a granted http session then aborts boot naming the absence. |
-| `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the knowledge credential is presented in. |
-| `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` | `str \| None` | `Bearer` | min length 1 | Scheme prefixing the knowledge credential in its auth header. The literal value `null` means no scheme: the credential rides raw in its header. |
-| `KODEZART_KNOWLEDGE_MCP_TRANSPORT` | `KnowledgeTransport` | `http` | `http` or `stdio` | How a granted session reaches the knowledge MCP server: `http` dials the configured endpoint with headers, `stdio` spawns the configured command. |
-| `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN` | `str \| None` | `None` |  | Gateway credential a client presents to a self-hosted knowledge server, as a bearer in the `Authorization` header. Environment only. |
-| `KODEZART_KNOWLEDGE_MCP_COMMAND` | `str \| None` | `None` | absolute path, no package runner | Path of the self-hosted knowledge server binary a granted session spawns under the stdio transport. |
-| `KODEZART_KNOWLEDGE_MCP_ARGS` | `list[str]` | `[]` |  | Arguments the stdio knowledge server is spawned with. |
-| `KODEZART_KNOWLEDGE_MCP_ENV` | `dict[str, str]` | `{}` |  | Non-secret environment entries for the stdio knowledge server. |
-| `KODEZART_KNOWLEDGE_MCP_TIMEOUT_SECONDS` | `float` | `30.0` | 5.0–120.0 | Timeout the knowledge MCP transport gives one HTTP exchange with the server on the programmatic record path. |
-| `KODEZART_KNOWLEDGE_MCP_CALL_TIMEOUT_SECONDS` | `float` | `60.0` | 1.0–120.0 | Seconds one knowledge MCP tool call may wait for its answer before it is abandoned as the typed transport failure. The same bound the tracker transport carries, on the same transport class: a record write on a torn-down session hangs the pass holding it exactly as a tracker scan does. |
-| `KODEZART_KNOWLEDGE_MCP_SSE_READ_TIMEOUT_SECONDS` | `float` | `300.0` | 30.0–3600.0 | Seconds the knowledge MCP session's event stream may go quiet before its read is abandoned, when the record path is reached over HTTP. The same bound the tracker transport carries, on the same transport class. |
-| `KODEZART_KNOWLEDGE_MCP_ERROR_DETAIL_LIMIT` | `int` | `500` | 80–8000 | Characters of the server's own error text carried into a knowledge MCP transport failure on the programmatic record path. |
-| `KODEZART_KNOWLEDGE_MCP_STDERR_TAIL_LIMIT` | `int` | `2000` | 200–20000 | Bytes of the spawned knowledge MCP server's own stderr carried into the process log when its session fails or ends. The tail, because a server that dies says why in its last lines. |
-| `KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV` | `str \| None` | `None` | min length 1 | Name of the environment entry the stdio knowledge server reads its credential from; the value comes from `KODEZART_KNOWLEDGE_MCP_TOKEN`. |
-| `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` | `list[str]` | `["mcp.notion.com"]` |  | Hosts that authenticate interactively (OAuth) and accept no static credential; a granted endpoint on one of them paired with a static credential aborts boot, naming the conflict. |
+| `KODEZART_KNOWLEDGE` | `KnowledgeSettings` | unconfigured | typed HTTP/stdio connection | Knowledge grants and server configuration; nested overrides below. |
 
 ## Organize phase configuration
 
@@ -218,9 +201,44 @@ in-flight workspace acquisition or release to settle. A cancellation during
 acquisition releases the resulting workspace without starting the session;
 repeated cancellation cannot interrupt that cleanup.
 
+## Knowledge environment migration
+
+The former `KODEZART_KNOWLEDGE_MCP_*` and
+`KODEZART_KNOWLEDGE_SESSION_GRANTS` variables are removed. They refuse in
+process environment, dotenv and initializer inputs, including an old name
+alongside a new one. Rename the values using this table; do not keep inert
+HTTP settings when selecting stdio. Other subsystem variables are unchanged.
+
+| Previous suffix after `KODEZART_KNOWLEDGE_` | New suffix after `KODEZART_KNOWLEDGE__` |
+| --- | --- |
+| `SESSION_GRANTS` | `SESSION_GRANTS` |
+| `MCP_SERVER_NAME` | `SERVER_NAME` |
+| `MCP_CALL_TIMEOUT_SECONDS` | `CALL_TIMEOUT_SECONDS` |
+| `MCP_ERROR_DETAIL_LIMIT` | `ERROR_DETAIL_LIMIT` |
+| `MCP_TOKEN` | `CONNECTION__CREDENTIAL` |
+| `MCP_GATEWAY_TOKEN` | `CONNECTION__GATEWAY_CREDENTIAL` |
+| Other `MCP_<FIELD>` | `CONNECTION__<FIELD>` |
+
+`knowledge.connection` is absent by default. Selecting one requires its
+explicit `transport` discriminator and `server_url` (HTTP) or `command`
+(stdio). Unknown fields, including explicitly empty fields from the other
+transport, are refused. The parsed connection is carried unchanged into the
+session grant and deterministic recorder. Both HTTP clients use the complete
+same credential headers; stdio clients use the same command and environment.
+
+Pydantic Settings keeps initializer > process environment > dotenv > file
+secret > default precedence. `KODEZART_KNOWLEDGE` accepts one JSON object;
+`__` nested environment values override corresponding JSON members. `null`
+expresses absence, including a raw HTTP `AUTH_SCHEME=null` header. Session
+grants default to `[]`, server name to `notion`, call timeout to60 seconds
+(1–120), and error detail to500 characters (80–8000). HTTP exchange timeout
+is30 seconds (5–120), HTTP stream-read timeout300 (30–3600), and stdio stderr
+tail2000 bytes (200–20000). These transport bounds still serve actual record
+clients; they are not SDK tool timeout promises.
+
 ## The knowledge-server grant
 
-`KODEZART_KNOWLEDGE_SESSION_GRANTS` names, one by one, the kinds of agent
+`KODEZART_KNOWLEDGE__SESSION_GRANTS` names, one by one, the kinds of agent
 session that are configured with the knowledge MCP server. The vocabulary is
 the `SessionType` enum, and it is closed:
 
@@ -240,9 +258,9 @@ Three rules, each enforced at boot rather than documented and hoped for:
 - **An unknown entry aborts boot**, naming the offending entry and the values
   that are legal — never a silent no-grant.
 - **A non-empty grant with no credential at all aborts boot**, naming the
-  missing variable: set `KODEZART_KNOWLEDGE_MCP_TOKEN` (or, for a self-hosted
+  missing variable: set `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` (or, for a self-hosted
   http server that holds its own upstream token,
-  `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN`). An empty grant with an unset
+  `KODEZART_KNOWLEDGE__CONNECTION__GATEWAY_CREDENTIAL`). An empty grant with an unset
   credential boots clean.
 
 The shipped default is the empty list: the mechanism ships and the grant is
@@ -256,65 +274,55 @@ never a schema migration, and never an edit to a consumer.
 
 ## The knowledge transport, and the shapes it can express
 
-`KODEZART_KNOWLEDGE_MCP_TRANSPORT` states the route explicitly. Each route
+`KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT` states the route explicitly. Each route
 reads its own fields and only its own; a field the declared route never
 reads aborts boot naming it, because configuration dialled by nothing is how
 the previous defect survived.
 
 Under `http`, the header set a granted session dials with can express:
 
-- the upstream credential alone — `KODEZART_KNOWLEDGE_MCP_TOKEN` presented
-  in `KODEZART_KNOWLEDGE_MCP_AUTH_HEADER`, prefixed by
-  `KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME` (or raw, when the scheme is `null`);
-- the gateway credential alone — `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN` as
+- the upstream credential alone — `KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` presented
+  in `KODEZART_KNOWLEDGE__CONNECTION__AUTH_HEADER`, prefixed by
+  `KODEZART_KNOWLEDGE__CONNECTION__AUTH_SCHEME` (or raw, when the scheme is `null`);
+- the gateway credential alone — `KODEZART_KNOWLEDGE__CONNECTION__GATEWAY_CREDENTIAL` as
   `Authorization: Bearer …` against a self-hosted server that holds its own
   upstream token;
 - both at once — the vendor's token pass-through, where the upstream header
   must differ from `Authorization` because the gateway credential owns it.
 
 Under `stdio` there is no endpoint and there are no headers: the session
-spawns `KODEZART_KNOWLEDGE_MCP_COMMAND` (an absolute path; package runners
+spawns `KODEZART_KNOWLEDGE__CONNECTION__COMMAND` (an absolute path; package runners
 such as `npx` are refused because they resolve or fetch their payload at
 spawn time, in a working directory a cloned repository controls) with
-`KODEZART_KNOWLEDGE_MCP_ARGS` and `KODEZART_KNOWLEDGE_MCP_ENV`, and the
+`KODEZART_KNOWLEDGE__CONNECTION__ARGS` and `KODEZART_KNOWLEDGE__CONNECTION__ENV`, and the
 credential is delivered as one environment entry named by
-`KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV`.
+`KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL_ENV`.
 
-No endpoint ships. `KODEZART_KNOWLEDGE_MCP_SERVER_URL` is unset by default,
+No endpoint ships. `KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL` is unset by default,
 because the vendor's hosted server authenticates interactively (OAuth) and
 accepts no static credential — an endpoint no configuration of this service
 can ever reach. A granted `http` deployment names its own instead.
 
-Two refusals carry that, both on the resolved grant value `KnowledgeGrant`
-validates as the service starts:
-
-- a granted `http` route with no endpoint at all aborts boot naming
-  `server_url`;
-- a granted endpoint whose host appears in
-  `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS` while
-  `KODEZART_KNOWLEDGE_MCP_TOKEN` or `KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN`
-  composes a static header aborts boot naming the host and both variables —
-  the combination no credential value rescues.
-
-Both are conditioned on the grant list: a deployment that grants no session
-dials nothing, so it needs no endpoint and nothing about it is dead. The two
-working static-credential routes are a self-hosted HTTP server (with the
-gateway token) and the stdio transport spawning an absolute command path.
+The typed HTTP connection requires an endpoint whenever configured. Static
+credentials on a configured interactive-auth host are refused at load even
+when no session is granted, because the recorder can consume that connection
+independently. Unconfigured knowledge remains `connection=None`, with no
+endpoint or credential required.
 
 ### Recipe: the knowledge layer with a Notion integration token
 
 A Notion **internal integration token** (`ntn_…`) is a static credential, and
 the hosted `mcp.notion.com` server does not accept one — it authenticates
-interactively (OAuth), so it appears in `KODEZART_KNOWLEDGE_MCP_INTERACTIVE_AUTH_HOSTS`
+interactively (OAuth), so it appears in `KODEZART_KNOWLEDGE__CONNECTION__INTERACTIVE_AUTH_HOSTS`
 and a grant pointing there aborts boot. Run the vendor's self-hosted server
 over `stdio` instead:
 
 ```
-KODEZART_KNOWLEDGE_SESSION_GRANTS=["scheduled_pass","ticket_fire"]
-KODEZART_KNOWLEDGE_MCP_TRANSPORT=stdio
-KODEZART_KNOWLEDGE_MCP_COMMAND=/opt/homebrew/bin/notion-mcp-server
-KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV=NOTION_TOKEN
-KODEZART_KNOWLEDGE_MCP_TOKEN=ntn_your_integration_token
+KODEZART_KNOWLEDGE__SESSION_GRANTS=["scheduled_pass","ticket_fire"]
+KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT=stdio
+KODEZART_KNOWLEDGE__CONNECTION__COMMAND=/opt/homebrew/bin/notion-mcp-server
+KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL_ENV=NOTION_TOKEN
+KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL=ntn_your_integration_token
 ```
 
 `@notionhq/notion-mcp-server` is the binary (`npm i -g @notionhq/notion-mcp-server`);
@@ -331,7 +339,7 @@ grant may be empty, and no knowledge server is dialled.
 
 ## Private knowledge base — the knowledge credential
 
-`KODEZART_KNOWLEDGE_MCP_TOKEN` is a credential, and it is configured **only**
+`KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL` is a credential, and it is configured **only**
 through the environment (or the `.env` file the environment is loaded from).
 It is never written to the file-based operation config: that model forbids
 extra keys, so a secret placed there aborts boot rather than being read.

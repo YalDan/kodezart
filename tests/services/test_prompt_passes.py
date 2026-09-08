@@ -132,8 +132,14 @@ def _config(tmp_path: Path, **overrides: object) -> AppConfig:
         "grooming_pass_interval_seconds": GROOMING_INTERVAL,
         "grooming_pass_timeout_seconds": GROOMING_TIMEOUT,
         "scheduled_pass_working_dir": str(tmp_path / "pass"),
-        "knowledge_session_grants": [SessionType.SCHEDULED_PASS],
-        "knowledge_mcp_token": KNOWLEDGE_TOKEN,
+        "knowledge": {
+            "session_grants": [SessionType.SCHEDULED_PASS],
+            "connection": {
+                "transport": "http",
+                "server_url": "https://knowledge.invalid/mcp",
+                "credential": KNOWLEDGE_TOKEN,
+            },
+        },
     }
     settings.update(overrides)
     return AppConfig(**settings)  # type: ignore[arg-type]
@@ -569,8 +575,14 @@ async def test_the_floor_boots_where_the_same_hole_over_a_roster_refuses(
 #: the knowledge store.  Written out rather than left to the default,
 #: because what these cases turn on is the grant and it must be visible.
 UNGRANTED: dict[str, object] = {
-    "knowledge_session_grants": [],
-    "knowledge_mcp_token": None,
+    "knowledge": {
+        "session_grants": [],
+        "connection": {
+            "transport": "http",
+            "server_url": "https://knowledge.invalid/mcp",
+            "credential": None,
+        },
+    },
 }
 
 #: Every surface of the shipped example that lives in the knowledge system,
@@ -782,10 +794,17 @@ async def test_the_same_operation_boots_once_the_fire_is_granted_too(
         tracker=None,
         runner=FakeAgentRunner(events=[]),
         operation=operation,
-        knowledge_session_grants=[
-            SessionType.SCHEDULED_PASS,
-            SessionType.TICKET_FIRE,
-        ],
+        knowledge={
+            "session_grants": [
+                SessionType.SCHEDULED_PASS,
+                SessionType.TICKET_FIRE,
+            ],
+            "connection": {
+                "transport": "http",
+                "server_url": "https://knowledge.invalid/mcp",
+                "credential": KNOWLEDGE_TOKEN,
+            },
+        },
     )
 
     assert operation.records[RunKind.FIRE.value].system is DocumentSystem.KNOWLEDGE

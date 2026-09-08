@@ -1203,12 +1203,10 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         caller = HttpMcpToolCaller(
             url="https://tracker.invalid/mcp",
             server_name="fake-linear",
-            token=self.FIXTURE_TOKEN,
+            headers={"Authorization": "Bearer" + " " + self.FIXTURE_TOKEN},
             timeout_seconds=5.0,
             call_timeout_seconds=5.0,
             sse_read_timeout_seconds=300.0,
-            auth_header_name="Authorization",
-            auth_scheme="Bearer",
             error_detail_limit=500,
             client_factory=client_over(endpoint.transport),
         )

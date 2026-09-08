@@ -137,12 +137,10 @@ class _RemoteServer(HostedSessionTransport):
         *,
         url: str,
         server_name: str,
-        token: str,
+        headers: Mapping[str, str],
         timeout_seconds: float,
         call_timeout_seconds: float,
         sse_read_timeout_seconds: float,
-        auth_header_name: str,
-        auth_scheme: str,
         error_detail_limit: int,
         client_factory: HttpxClientFactory,
     ) -> None:
@@ -151,12 +149,10 @@ class _RemoteServer(HostedSessionTransport):
             error_detail_limit=error_detail_limit,
         )
         self._url: str = url
-        self._token: str = token
+        self._headers = dict(headers)
         self._timeout_seconds: float = timeout_seconds
         self._call_timeout_seconds: float = call_timeout_seconds
         self._sse_read_timeout_seconds: float = sse_read_timeout_seconds
-        self._auth_header_name: str = auth_header_name
-        self._auth_scheme: str = auth_scheme
         #: What builds each HTTP client under this transport.  The
         #: deployment gets httpx's own pool and its environment; a case puts
         #: an in-process responder behind a client of the same shape and
@@ -217,9 +213,7 @@ class _RemoteServer(HostedSessionTransport):
         that performs it.
         """
         client = self.http_client(
-            headers={
-                self._auth_header_name: f"{self._auth_scheme} {self._token}",
-            },
+            headers=dict(self._headers),
             # The session's response is a stream the server holds open, so
             # the read phase is bounded on its OWN configured value rather
             # than on the exchange bound every other phase takes: a bound
@@ -301,7 +295,7 @@ class _RemoteServer(HostedSessionTransport):
         """
         async with self.http_client(
             headers={
-                self._auth_header_name: f"{self._auth_scheme} {self._token}",
+                **self._headers,
                 "Accept": _PROBE_ACCEPT,
             },
             timeout=httpx.Timeout(self._timeout_seconds),
@@ -405,24 +399,20 @@ class HttpMcpToolCaller:
         *,
         url: str,
         server_name: str,
-        token: str,
+        headers: Mapping[str, str],
         timeout_seconds: float,
         call_timeout_seconds: float,
         sse_read_timeout_seconds: float,
-        auth_header_name: str,
-        auth_scheme: str,
         error_detail_limit: int,
         client_factory: HttpxClientFactory = pooled_http_client,
     ) -> None:
         self._server: _RemoteServer = _RemoteServer(
             url=url,
             server_name=server_name,
-            token=token,
+            headers=headers,
             timeout_seconds=timeout_seconds,
             call_timeout_seconds=call_timeout_seconds,
             sse_read_timeout_seconds=sse_read_timeout_seconds,
-            auth_header_name=auth_header_name,
-            auth_scheme=auth_scheme,
             error_detail_limit=error_detail_limit,
             client_factory=client_factory,
         )

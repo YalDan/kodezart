@@ -237,7 +237,7 @@ async def production_executor(
         model=config.model,
         setting_sources=config.setting_sources,
         knowledge_grant=await boot_knowledge_grant(
-            config=config,
+            knowledge=config.knowledge,
             prompts=prompts,
             log=log,
         ),
