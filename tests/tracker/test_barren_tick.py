@@ -183,6 +183,7 @@ def test_observer_has_one_tracker_read_and_no_version_control_dependency():
         "kodezart.domain.errors",
         "kodezart.domain.gap",
         "kodezart.domain.run_shape",
+        "kodezart.types.domain.escalation",
         "kodezart.types.domain.run_alarm",
         "kodezart.types.domain.run_state",
     }
