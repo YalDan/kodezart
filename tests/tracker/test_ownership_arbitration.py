@@ -624,3 +624,71 @@ async def test_a_refused_acquisition_takes_its_own_markers_back_off() -> None:
     assert refused.value.current_holder == "job-a"
     assert refused.value.marker == "A"
     assert [comment.id for comment in server.comments] == standing
+
+
+class _RefusesOneWithdrawal:
+    """Turn the first deletion down, and answer everything after it.
+
+    One refused request, not a broken backend: what it shows is whether a
+    withdrawal abandons the markers it had not reached yet, and whether
+    the refusal replaces the answer the caller asked for.
+    """
+
+    def __init__(self, server: FakeLinearMcpServer) -> None:
+        self._server = server
+        self.refused: str | None = None
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        if name == "delete_comment" and self.refused is None:
+            self.refused = str(arguments["id"])
+            raise McpTransportError(
+                "the MCP server reported a tool error: comment cannot be deleted",
+                server_name="fake-linear",
+                tool_name=name,
+            )
+        return await self._server.call_tool(name=name, arguments=arguments)
+
+
+async def test_a_refused_acquisition_answers_the_refusal_a_delete_cannot_reach() -> (
+    None
+):
+    """The withdrawal compensates for the answer; it does not become it.
+
+    The loser's markers go on before the read-back that refuses it, so
+    taking them off is a second request the backend can turn down.  When
+    it does, the caller is still told what it asked — which surface, held
+    by whom — the markers the refusal did not reach still come off, and
+    what stayed on is recorded.  It grants the loser nothing: the holder
+    that beat it was created earlier, so the board names that holder to
+    everyone, this loser included.
+    """
+    server = fixture_server()
+    spanning = frozenset({CONTAINER, ISSUE_DESCRIPTION})
+    holding = tracker_over(server)
+    await holding.acquire_surfaces(
+        surfaces=spanning, holder="job-a", lease_seconds=LEASE_SECONDS
+    )
+    caller = _RefusesOneWithdrawal(server)
+    losing = tracker_over(server, caller=caller)
+
+    with (
+        structlog.testing.capture_logs() as logs,
+        pytest.raises(SurfaceLeaseError) as refused,
+    ):
+        await losing.acquire_surfaces(
+            surfaces=spanning, holder="job-b", lease_seconds=LEASE_SECONDS
+        )
+
+    assert refused.value.current_holder == "job-a"
+    assert [entry["event"] for entry in logs] == ["tracker_withdrawal_incomplete"]
+    assert [entry["comments"] for entry in logs] == [[caller.refused]]
+    standing = [comment for comment in server.comments if comment.id == caller.refused]
+    assert [_holder_of(comment.body) for comment in standing] == ["job-b"]
+    assert len(server.comments) == 3
+    with pytest.raises(SurfaceLeaseError) as after:
+        await tracker_over(server).acquire_surfaces(
+            surfaces=spanning, holder="job-c", lease_seconds=LEASE_SECONDS
+        )
+    assert after.value.current_holder == "job-a"
