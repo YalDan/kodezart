@@ -7,7 +7,12 @@ from typing import Self
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.audit import AuditVerdict
+from kodezart.types.domain.audit import (
+    AuditClaimJudgment,
+    AuditClaimObservation,
+    AuditClaimReport,
+    AuditVerdict,
+)
 
 
 class OverclaimKind(StrEnum):
@@ -148,3 +153,54 @@ class AuditOverclaimObservation(CamelCaseModel):
     head_sha: str
     record_ref: str
     check: str
+
+
+class OverclaimReportEntry(CamelCaseModel):
+    """The category remains explicit even when two readings have equal evidence."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: OverclaimKind
+    report: AuditClaimReport
+
+
+class AuditOverclaimReport(CamelCaseModel):
+    """All observed categories retain their own mandate-completed claim report."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    observation: AuditOverclaimObservation
+    reports: tuple[OverclaimReportEntry, ...]
+
+    @model_validator(mode="after")
+    def reports_preserve_each_reading(self) -> Self:
+        observed = self.observation
+        readings = observed.judgment.checks
+        if len(self.reports) != len(readings):
+            raise ValueError("every over-claim reading requires its own report")
+        for reading, entry in zip(readings, self.reports, strict=True):
+            if entry.kind is not reading.kind:
+                raise ValueError("report order must preserve the observed categories")
+            report = entry.report
+            expected = AuditClaimObservation(
+                judgment=AuditClaimJudgment(
+                    criterion_key=observed.judgment.criterion_key,
+                    verdict=reading.verdict,
+                    evidence=reading.evidence,
+                ),
+                head_sha=observed.head_sha,
+                record_ref=observed.record_ref,
+                check=observed.check,
+            )
+            if report.claim != expected:
+                raise ValueError(
+                    "the report differs from its observed over-claim reading"
+                )
+            if (
+                report.mandate is not None
+                and report.mandate.finding is not None
+                and report.mandate.finding.defect_class
+                != f"{reading.kind.value} over-claim: {observed.check}"
+            ):
+                raise ValueError("the mandate finding names a different over-claim")
+        return self

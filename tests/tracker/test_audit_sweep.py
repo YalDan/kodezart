@@ -7,6 +7,7 @@ from inspect import signature
 import pytest
 
 from kodezart.chains.audit_evidence import AuditEvidenceVerifier
+from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.chains.audit_sweep import AuditReadSweep
 from kodezart.core.config import AppConfig
@@ -14,9 +15,15 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.services.agent_service import AgentService
+from kodezart.services.audit_sessions import FreshAuditSession
+from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.audit_terminal import AuditTerminalReader
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA
+from kodezart.types.domain.agent import (
+    AUDIT_CLAIM_SCHEMA,
+    AUDIT_MANDATE_SCHEMA,
+    AUDIT_OVERCLAIM_SCHEMA,
+)
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
@@ -59,6 +66,7 @@ class Executor(FakeAgentExecutor):
         super().__init__([])
         self.verdict = "holds"
         self.during = None
+        self.overclaim_output = None
         self.mandate_output = {
             "verdict": "refuted",
             "finding": None,
@@ -75,6 +83,8 @@ class Executor(FakeAgentExecutor):
                 "verdict": self.verdict,
                 "evidence": "Measured current repository contents.",
             }
+        elif kwargs["output_format"]["schema"] == AUDIT_OVERCLAIM_SCHEMA:
+            payload = self.overclaim_output
         else:
             assert kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA
             payload = self.mandate_output
@@ -129,6 +139,7 @@ async def setup(tracker, server):
         selected_cache=cache,
         selected_workspace=workspace,
         selected_source=None,
+        include_overclaims=False,
     ):
         runner = AgentService(
             executor=executor, workspace=selected_workspace, git_base_url=REPO
@@ -173,6 +184,30 @@ async def setup(tracker, server):
             operation=selected_op,
             config=config,
         )
+        overclaims = (
+            AuditOverclaimVerifier(
+                sources=AuditSourceReader(
+                    tracker=tracker,
+                    records=records,
+                    git=selected_git,
+                    source=selected_source or Source(),
+                    cache=selected_cache,
+                    operation=selected_op,
+                    config=config,
+                ),
+                sessions=FreshAuditSession(
+                    git=selected_git,
+                    workspace=selected_workspace,
+                    runner=runner,
+                    prompts=prompts,
+                    skills=SUPPRESS_ALL_SKILLS,
+                ),
+                prompts=prompts,
+                git=selected_source or Source(),
+            )
+            if include_overclaims
+            else None
+        )
         return AuditReadSweep(
             scope=scope,
             tracker=tracker,
@@ -184,6 +219,7 @@ async def setup(tracker, server):
             git=selected_git,
             cache=selected_cache,
             config=config,
+            overclaims=overclaims,
         )
 
     return build, executor, git, cache, workspace, forge, stored, op

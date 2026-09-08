@@ -47,6 +47,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunIdentity, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
+from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -69,8 +70,37 @@ from kodezart.types.domain.tracker import (
     TrackerIssueStateChange,
     TrackerReview,
 )
+from kodezart.types.domain.tracker_feasibility import (
+    TrackerFeasibilityObservation,
+    TrackerFeasibilityRequest,
+)
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
+
+
+@runtime_checkable
+class TrackerCriteriaValidator(Protocol):
+    """A fresh native-key feasibility judgment at an already pinned head."""
+
+    async def validate(
+        self, request: TrackerFeasibilityRequest
+    ) -> TrackerFeasibilityObservation: ...
+
+
+@runtime_checkable
+class TrackerFirePreparer(Protocol):
+    """Prepare one explicitly addressed ready issue without advancing its branch."""
+
+    async def prepare(
+        self,
+        *,
+        selection: ScopeReadySet,
+        issue_key: str,
+        repo_url: str,
+        base_spec: BaseSpec,
+        cache_key: str,
+        run_identity: RunIdentity | None,
+    ) -> TrackerFeasibilityObservation: ...
 
 
 @runtime_checkable

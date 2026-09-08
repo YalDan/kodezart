@@ -58,6 +58,8 @@ does not exist.
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
+| TrackerCriteriaValidator | TrackerFeasibilityValidator | Fresh native criterion judgment at an explicitly pinned head |
+| TrackerFirePreparer | AddressedTrackerFirePreparation | Read-only preparation of one addressed ready issue from its verified repository route and recorded base |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
@@ -666,6 +668,18 @@ Native and fake tracker fixtures show that duplicate or amended criterion text
 does not change the addressed keys. Evaluator state/body writer adoption and
 the separate model-membership and spec-backend invariants remain unfinished.
 
+`resolve_criterion` is the shared native-key resolver in `criterion_sources`.
+It reads the complete current child family through `TrackerPort.read_criteria`
+and returns the one full `TrackerIssue` with the requested own key. A missing,
+multiple or unreadable match raises `CriterionResolutionError` naming both
+the key and its owning issue; no text matching, checkbox address or cached
+criterion set participates. Duplicate pagination of the same native object is
+still handled by the adapter's existing enumeration contract. Audit claim,
+Evidence, repository-source and forge consumers use this resolver and retain
+their own state eligibility and final source-coherence checks. The generic
+resolver admits every workflow state and performs no write. Leased state and
+Evidence writer adoption remains separate.
+
 `structural_write_uncrosses_milestone` compares complete lane membership
 snapshots. The collector reads both the fire subtree and native milestone
 membership through the port, including archived issues, and preserves the
@@ -829,8 +843,21 @@ pairs is not proof that every possible adoption claim was discovered.
 
 The observation derives its overall three-state verdict from all four readings,
 then rechecks native criterion, lane-record and remote-head identity. It performs
-no tracker writes. Full sweep invocation, mandatory mandate completion and leased
-publication remain separate consumers. Native Git fixtures exercise all four
+no tracker writes. `AuditReadSweep` now invokes this verifier for each native
+criterion request independently of its ordinary claim/Evidence arm. It retains
+all four readings, including recomputed values, missing witnesses and native
+byte pairs. Each category has its own addressed report; every refutation passes
+through the existing mandate hunt before that report can be returned. Equal
+reading text cannot relabel categories or exchange their mandate findings.
+
+An unavailable verifier or source produces a named per-target detector refusal;
+it does not suppress the independent claim arm. The revision reader still
+requires a completed or configured-review criterion with native Evidence, so
+other states retain their fresh claim observation and an unavailable revision
+detector. A lapsed completed claim can coexist with a current over-claim
+observation. Final native source checks and equal observed branch heads prevent
+combining observations from different revisions. Scheduled coverage advancement
+and leased publication remain separate consumers. Native Git fixtures exercise all four
 categories using a scripted external judgment boundary; they validate execution
 and evidence handling without claiming live-model detection accuracy.
 
@@ -922,7 +949,10 @@ they cannot remove a tracker criterion from its obligations. The existing
 duplicate or ungrounded response refuses on exhaustion.
 
 The selected SHA is checked in a detached workspace before each session and
-after validation. Ordinary tracked, staged or untracked changes refuse through
+after validation. Active Git replacement refs refuse through the existing
+replacement-ref read, preventing a reused cache from substituting another
+commit's bytes under the selected identity. That read also settles before
+workspace release on cancellation. Ordinary tracked, staged or untracked changes refuse through
 `GitService.has_changes`; ignored test outputs follow Git's existing ignore
 behavior. The full criterion family is read again before returning, and any
 observed change refuses. This is optimistic source coherence, not an atomic
@@ -934,3 +964,34 @@ This consumer returns a source-addressed observation. It does not apply
 amendments, cancellations or state transitions, authorize dispatch, persist an
 artifact, or supply the missing full FIRE composition. Approval eligibility,
 leased authoring and the live iteration-exit path remain separate consumers.
+
+
+The public `OriginRoutedWorkflowEngine.run` now prepares an explicitly addressed
+scoped FIRE through `AddressedTrackerFirePreparation` when a tracker is composed.
+The existing complete readiness read must uniquely select the issue. Its FIRE
+run identity and recorded `BaseSpec` must agree with the queued inputs before
+repository access. The loaded operation reaches this actual entry from application
+composition. Its existing `teams_scanned_by` and `teams_bound_to` rules require a
+known team and declared target repository. Explicit and implicit single-repository
+bindings select that repository without reading an issue route marker; unbound
+teams require the native recorded repository to agree with the queued target.
+A stale marker cannot override configured routing.
+This bounded first-entry arm refuses
+existing deliverable, iteration, recovery or best-iteration refs until scoped
+resume-head selection is implemented. An integration ref remains base provenance.
+
+The preparer pins the actual remote head of the recorded base branch and calls
+the same native feasibility validator through the real `AgentService`. It then
+rereads the repository/base/work refs, complete readiness and remote head, and
+checks the original team identity/binding and declared repository URLs. An observed change
+refuses the prepared result. Cache and remote reads settle owned
+subprocesses through cancellation, and validation retains the existing detached
+workspace, fresh-session and complete-family guards. Caller prompt text and
+write-capable tools never replace native criterion sources or evaluation tools.
+
+Both configured and recorded repository routes prepare first-entry fires.
+Scoped resume-head selection, automatic broad-scope dispatch, ruling application,
+leased state/Evidence writes and the native loop remain separate work. After a
+valid observation, the public entry explicitly refuses the unavailable ruling
+and loop graph; it does not dispatch legacy ticket generation or report a
+completed FIRE. The authored entry path retains its existing behavior.

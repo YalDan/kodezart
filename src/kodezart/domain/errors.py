@@ -253,6 +253,19 @@ class CriterionReadError(Exception):
         super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
 
 
+class CriterionResolutionError(ValueError):
+    """A native criterion key has no unique current child in the addressed family."""
+
+    def __init__(self, *, issue_key: str, criterion_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(
+            f"criterion {criterion_key!r} of {issue_key!r} could not be resolved: "
+            f"{reason}"
+        )
+
+
 class FireSpecEntryError(Exception):
     """The current subject lacks its machine completion or human approval."""
 
@@ -746,6 +759,15 @@ class WriteBackReadError(ValueError):
 
 class TrackerFeasibilityReadError(Exception):
     """The selected tracker family or repository changed before judgment settled."""
+
+
+class TrackerFirePreparationError(Exception):
+    """An addressed fire cannot establish its native first-entry source facts."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"tracker fire {issue_key!r} cannot prepare: {reason}")
 
 
 class PRStateReadError(ValueError):

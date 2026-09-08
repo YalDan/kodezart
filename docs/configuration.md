@@ -443,6 +443,11 @@ container body when applicable. The returned surface set bounds the mandate
 finding; it does not claim to have read every charter or ruling elsewhere.
 Terminal refutations retain their observation and name the missing terminal
 mandate consumer. Independent readable targets continue after a target fails.
+When supplied, the existing over-claim verifier runs independently for each
+criterion request. Its four categories retain separate mandate-completed reports
+and their original source evidence. Missing configuration or unreadable revision
+inputs produce an explicit detector-unavailable reason alongside any successful
+ordinary claim. This introduces no configuration field or implicit detector.
 
 This read attempt does not advance the completed-audit coverage cache, even
 when its individual observations succeed. Every invocation reads the full

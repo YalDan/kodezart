@@ -113,6 +113,15 @@ class TrackerFeasibilityValidator:
         self._log = get_logger(__name__)
 
     async def _require_head(self, workspace: str, head: str) -> None:
+        replacements, cancelled = await finish_owned(
+            asyncio.create_task(self._git.has_replace_refs(workspace))
+        )
+        if cancelled:
+            raise asyncio.CancelledError
+        if replacements:
+            raise TrackerFeasibilityReadError(
+                "the verification repository has replacement Git objects"
+            )
         observed, dirty = await read_workspace_head(git=self._git, workspace=workspace)
         if observed != head:
             raise TrackerFeasibilityReadError(

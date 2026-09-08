@@ -131,7 +131,10 @@ async def workflow_harness(
         quality_gate=_stalled_gate() if stalled else None,
     )
     router = OriginRoutedWorkflowEngine(
-        forge_arm=engine, forge_less_arm=_make_engine(), tracker=tracker
+        forge_arm=engine,
+        forge_less_arm=_make_engine(),
+        tracker=tracker,
+        tracker_preparer=None,
     )
     queue = AsyncioJobQueue(
         engine=router,

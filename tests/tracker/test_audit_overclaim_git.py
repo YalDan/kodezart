@@ -39,11 +39,12 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
     (author / "source.md").write_text("A café\nAll required topics are covered.\n")
     (author / "adopted.md").write_bytes((author / "source.md").read_bytes())
     (author / "charter.txt").write_text(
-        "Every task decision is computed, never judged.\nTask "
+        "Member counts are computed, never judged.\nTask "
         "suitability requires evaluating the specification, "
         "not its word count.\n"
     )
     (author / "dispatch.py").write_text(
+        "def count(members):\n    return len(members)\n\n"
         "def choose(task, evaluate):\n    return evaluate(task)\n"
     )
     command(author, "add", "--all")
@@ -60,6 +61,11 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
                 "A cafe\u0301\nAll required topics are covered.\n"
             )
         else:
+            (author / "charter.txt").write_text(
+                "Every task decision is computed, never judged.\nTask "
+                "suitability requires evaluating the specification, "
+                "not its word count.\n"
+            )
             (author / "dispatch.py").write_text(
                 "def choose(task, evaluate):\n    return len(task.split()) > 20\n"
             )
@@ -80,8 +86,7 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
         ),
         OverclaimKind.SELF_RULE: (
             "The dispatch.py artifact complies with charter.txt, "
-            "including its own unscoped computed, never judged "
-            "claim."
+            "including its own computation and evaluation claims."
         ),
     }[kind]
     await tracker.update_issue(
@@ -159,9 +164,11 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
                 }
             ]
         else:
-            assert "computed, never judged" in (path / "charter.txt").read_text()
+            charter = (path / "charter.txt").read_text()
+            assert "suitability requires evaluating the specification" in charter
             code = (path / "dispatch.py").read_text()
-            if "len(task.split())" in code:
+            unscoped = "Every task decision is computed, never judged." in charter
+            if unscoped and "len(task.split())" in code:
                 row.update(
                     verdict="refuted",
                     evidence=(
@@ -169,6 +176,9 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
                         "specification evaluation its own charter requires."
                     ),
                 )
+            else:
+                assert "Member counts are computed, never judged." in charter
+                assert "return len(members)" in code and "return evaluate(task)" in code
         observations.append(output)
         fixtures.answer(runner, output)
 

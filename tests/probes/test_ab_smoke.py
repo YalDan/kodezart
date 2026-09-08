@@ -350,6 +350,7 @@ async def run_arm(
     stack = build_git_stack(config=config, prompts=prompts, gate=gate)
     engine = build_workflow_engine(
         config=config,
+        operation=None,
         agent_service=AgentService(
             executor=executor,
             workspace=stack.workspace,

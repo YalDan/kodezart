@@ -270,6 +270,7 @@ async def test_scoped_queue_jobs_resolve_then_publish_the_typed_refusal(
             forge_arm=ForbiddenWorkflowEngine(),
             forge_less_arm=ForbiddenWorkflowEngine(),
             tracker=tracker,
+            tracker_preparer=None,
         ),
     )
     await queue.start()
@@ -321,6 +322,7 @@ async def test_scope_read_failure_propagates_without_a_legacy_run() -> None:
         forge_arm=ForbiddenWorkflowEngine(),
         forge_less_arm=ForbiddenWorkflowEngine(),
         tracker=tracker,
+        tracker_preparer=None,
     )
 
     with pytest.raises(ScopeReadError) as caught:
@@ -336,6 +338,7 @@ async def test_scope_without_a_tracker_refuses_before_selecting_a_legacy_arm() -
         forge_arm=ForbiddenWorkflowEngine(),
         forge_less_arm=ForbiddenWorkflowEngine(),
         tracker=None,
+        tracker_preparer=None,
     )
 
     with pytest.raises(ScopedExecutionUnavailableError, match="configured tracker"):
@@ -370,6 +373,7 @@ async def test_a_fire_over_a_file_origin_reaches_the_no_pull_request_terminal() 
         forge_arm=_arm(forge=forge),
         forge_less_arm=_arm(forge=None),
         tracker=None,
+        tracker_preparer=None,
     )
 
     events = await _drive(engine, repo_url=FILE_ORIGIN)
@@ -389,6 +393,7 @@ async def test_a_fire_over_a_forge_shaped_origin_still_opens_its_pull_request() 
         forge_arm=_arm(forge=forge),
         forge_less_arm=_arm(forge=None),
         tracker=None,
+        tracker_preparer=None,
     )
 
     events = await _drive(engine, repo_url=FORGE_ORIGIN)
@@ -409,6 +414,7 @@ def test_a_forge_less_origin_gets_the_forge_less_arm() -> None:
         forge_arm=forge_arm,
         forge_less_arm=forge_less_arm,
         tracker=None,
+        tracker_preparer=None,
     )
 
     assert engine.arm_for(FILE_ORIGIN) is forge_less_arm
@@ -430,6 +436,7 @@ def test_everything_else_keeps_the_forge_arm(repo_url: str | None) -> None:
         forge_arm=forge_arm,
         forge_less_arm=forge_less_arm,
         tracker=None,
+        tracker_preparer=None,
     )
 
     assert engine.arm_for(repo_url) is forge_arm
@@ -442,6 +449,7 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
     tracker = RecordingScopeTracker()
     try:
         engine = build_workflow_engine(
+            operation=None,
             # The shared prompt fixture resolves its set for the reviewed
             # mode, and the ticket loop refuses a config that asks for a
             # guarantee the resolved set cannot deliver.
