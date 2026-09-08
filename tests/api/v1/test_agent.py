@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient, Response
 
-from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
@@ -41,6 +40,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 
 async def _collect_sse_events(response: Response) -> list[dict[str, object]]:
@@ -224,7 +224,7 @@ async def _workflow_client(
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -499,7 +499,7 @@ async def _workflow_client_with(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,

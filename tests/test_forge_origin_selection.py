@@ -79,6 +79,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 #: The origin the hundred-minute fire ran over: a local bare repository,
 #: the sanctioned smoke shape, with no forge behind it to be asked.
@@ -167,7 +168,7 @@ class RecordingForge:
 
 def _arm(*, forge: RecordingForge | None) -> AuthoredDeliveryCoordinator:
     """One engine arm, wired exactly as the composition root wires it."""
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=getattr(forge, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,

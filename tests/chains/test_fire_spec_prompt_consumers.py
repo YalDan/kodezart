@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from kodezart.chains import (
-    authored_delivery,
-    ralph_workflow,
+    authored_publication,
+    fire_implementation,
     remediation,
 )
 from kodezart.domain.ticket import format_fire_spec
@@ -65,9 +65,13 @@ async def capture_prompts(family, ticket, monkeypatch):
             )
         ]
     )
-    engine._service = runner
-    monkeypatch.setattr(ralph_workflow, "get_stream_writer", lambda: lambda _: None)
-    monkeypatch.setattr(authored_delivery, "get_stream_writer", lambda: lambda _: None)
+    engine.publication._service = runner
+    monkeypatch.setattr(
+        fire_implementation, "get_stream_writer", lambda: lambda _: None
+    )
+    monkeypatch.setattr(
+        authored_publication, "get_stream_writer", lambda: lambda _: None
+    )
     state = {
         "issue_key": "subject/42",
         "ticket": ticket,
@@ -85,8 +89,8 @@ async def capture_prompts(family, ticket, monkeypatch):
         "flagged_items": [],
     }
     config = {"configurable": execution.model_dump()}
-    await engine._run_ralph_loop_node(state, config)
-    await engine._open_pr_node(state, config)
+    await engine.fire.implementation.run_ralph_loop(state, config)
+    await engine.publication.open_pr(state, config)
 
     fix_runner = FakeAgentRunner([_ticket_result()])
     request = _request().model_copy(update={"original_ticket": ticket})
@@ -117,8 +121,8 @@ async def test_real_authored_consumer_prompts_match_recorded_base(
         return format_fire_spec(spec)
 
     for module in (
-        ralph_workflow,
-        authored_delivery,
+        fire_implementation,
+        authored_publication,
         remediation,
     ):
         monkeypatch.setattr(module, "format_fire_spec", formatted)

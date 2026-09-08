@@ -6,7 +6,6 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.core.protocols import QualityGate
 from kodezart.domain.outcome import classify_outcome
 from kodezart.services.agent_service import AgentService
@@ -43,12 +42,13 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_fire_workflow
 
 DELIVERY_FIELDS = {"pr_url", "pr_number", "ci_status", "ci_summary", "ci_passed"}
 
 
 def fire(*, artifacts=None, executor=None, quality: QualityGate | None = None):
-    return RalphWorkflowEngine(
+    return make_fire_workflow(
         service=AgentService(
             git_base_url="https://github.com",
             executor=executor or FakeAgentExecutor(events=[]),
@@ -250,4 +250,4 @@ async def test_authored_delivery_preserves_one_public_terminal_and_wire(issue_ke
     assert {"prUrl", "prNumber", "ciStatus"} <= terminal.model_dump(
         by_alias=True
     ).keys()
-    assert engine._delivery_compiled.get_graph().nodes["fire"].data is engine._compiled
+    assert engine._delivery_compiled.get_graph().nodes["fire"].data is engine.fire.graph

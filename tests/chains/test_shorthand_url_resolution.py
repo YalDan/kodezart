@@ -38,6 +38,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 
 def _make_engine(
@@ -58,7 +59,7 @@ def _make_engine(
         persister=FakeChangePersister(),
         git_base_url="https://github.com",
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,

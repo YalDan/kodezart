@@ -232,9 +232,9 @@ async def test_configured_watch_bound_covers_every_parallel_public_run(
 ):
     from langchain_core.runnables import RunnableConfig
 
-    from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+    from kodezart.chains.authored_checks import AuthoredChecks
 
-    original = AuthoredDeliveryCoordinator._monitor_ci_node
+    original = AuthoredChecks.monitor_ci
     all_arrived = asyncio.Event()
     arrivals = 0
 
@@ -245,7 +245,7 @@ async def test_configured_watch_bound_covers_every_parallel_public_run(
             all_arrived.set()
         return await original(self, state, config)
 
-    monkeypatch.setattr(AuthoredDeliveryCoordinator, "_monitor_ci_node", entered)
+    monkeypatch.setattr(AuthoredChecks, "monitor_ci", entered)
 
     class HeldChecks(FakeCIMonitor):
         def __init__(self):
@@ -509,9 +509,9 @@ def test_active_pr_write_port_exposes_no_merge_capability():
 async def test_one_watch_slot_remains_owned_during_same_sha_reruns(monkeypatch):
     from langchain_core.runnables import RunnableConfig
 
-    from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+    from kodezart.chains.authored_checks import AuthoredChecks
 
-    original = AuthoredDeliveryCoordinator._monitor_ci_node
+    original = AuthoredChecks.monitor_ci
     all_arrived = asyncio.Event()
     arrivals = 0
 
@@ -522,7 +522,7 @@ async def test_one_watch_slot_remains_owned_during_same_sha_reruns(monkeypatch):
             all_arrived.set()
         return await original(self, state, config)
 
-    monkeypatch.setattr(AuthoredDeliveryCoordinator, "_monitor_ci_node", entered)
+    monkeypatch.setattr(AuthoredChecks, "monitor_ci", entered)
 
     class HeldRetry(FakeCIMonitor):
         def __init__(self):

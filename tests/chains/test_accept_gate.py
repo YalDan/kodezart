@@ -69,6 +69,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 HARD = CriterionClass.hard_gate
 SOFT = CriterionClass.soft_signal
@@ -345,7 +346,7 @@ def _engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -684,7 +685,7 @@ def _engine_over_a_real_loop(
         persister=FakeChangePersister(),
     )
     prompts = make_prompt_provider()
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,

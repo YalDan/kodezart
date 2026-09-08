@@ -42,6 +42,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 BLOCKER_A_BRANCH = "kodezart/blocker-a-11111111"
 BLOCKER_B_BRANCH = "kodezart/blocker-b-22222222"
@@ -160,7 +161,7 @@ def _engine(repo: Path, tmp_path: Path) -> AuthoredDeliveryCoordinator:
         workspace=workspace,
         persister=persister,
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,

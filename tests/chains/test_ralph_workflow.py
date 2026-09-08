@@ -13,8 +13,9 @@ import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 
-from kodezart.chains import authored_delivery as authored_delivery_module
-from kodezart.chains import ralph_workflow as ralph_workflow_module
+from kodezart.chains import authored_checks
+from kodezart.chains import authored_publication as authored_publication_module
+from kodezart.chains import fire_consolidation as fire_consolidation_module
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
@@ -110,6 +111,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 
 def _engine_kwargs() -> dict[str, object]:
@@ -158,7 +160,7 @@ def _make_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=observations or getattr(ci_monitor, "observation_reader", None),
         repositories=repositories,
         max_concurrent_watches=max_concurrent_watches,
@@ -704,7 +706,7 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -958,7 +960,7 @@ async def test_criteria_receives_formatted_ticket() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -1354,7 +1356,7 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
@@ -1676,7 +1678,7 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -1842,7 +1844,7 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
@@ -3005,7 +3007,7 @@ def _make_engine_with_executor(
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    return AuthoredDeliveryCoordinator(
+    return make_authored_workflow(
         ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
@@ -3143,7 +3145,7 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         total_iterations=1,
         last_commit_sha=feature_tip,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -3223,7 +3225,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -3315,7 +3317,7 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -3412,7 +3414,7 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
         }
     }
     with pytest.raises(RuntimeError, match="review_base_sha"):
-        await engine._review_against_ticket_node(state, config)
+        await engine.fire.review.review_against_ticket(state, config)
 
 
 # ---------------------------------------------------------------------------
@@ -3477,9 +3479,12 @@ class TestForgeNodePreconditions:
         """
         written: list[AgentEvent] = []
         monkeypatch.setattr(
-            authored_delivery_module,
+            authored_publication_module,
             "get_stream_writer",
             lambda: written.append,
+        )
+        monkeypatch.setattr(
+            authored_checks, "get_stream_writer", lambda: written.append
         )
         return written
 
@@ -3492,7 +3497,7 @@ class TestForgeNodePreconditions:
         engine = _make_engine(pr_creator=None)
 
         with pytest.raises(RuntimeError, match="open_pr requires pr_creator"):
-            await engine._open_pr_node(self._state(), self._config())
+            await engine.publication.open_pr(self._state(), self._config())
 
         assert written == []
 
@@ -3505,7 +3510,7 @@ class TestForgeNodePreconditions:
         engine = _make_engine(ci_monitor=None)
 
         with pytest.raises(RuntimeError, match="monitor_ci requires ci_monitor"):
-            await engine._monitor_ci_node(self._state(), self._config())
+            await engine.checks.monitor_ci(self._state(), self._config())
 
         assert written == []
 
@@ -3514,7 +3519,7 @@ class TestForgeNodePreconditions:
         engine = _make_engine(pr_creator=None)
 
         with pytest.raises(RuntimeError, match="comment_failure requires pr_creator"):
-            await engine._comment_failure_node(self._state(), self._config())
+            await engine.publication.comment_failure(self._state(), self._config())
 
 
 # ---------------------------------------------------------------------------
@@ -3668,7 +3673,7 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -4011,7 +4016,7 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -4281,7 +4286,7 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
     None
 ):
     """No silent fallback: a run that produced commits always lands a PR."""
-    engine = AuthoredDeliveryCoordinator(
+    engine = make_authored_workflow(
         ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
@@ -4333,7 +4338,7 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
 
 
 def _graph_nodes(engine: AuthoredDeliveryCoordinator) -> set[str]:
-    return set(engine._compiled.get_graph().nodes)
+    return set(engine.fire.graph.get_graph().nodes)
 
 
 def _failing_gate() -> FakeQualityGate:
@@ -4535,7 +4540,7 @@ def test_the_round_budget_is_config_read_with_no_literal_in_routing(
         / "src"
         / "kodezart"
         / "chains"
-        / "ralph_workflow.py"
+        / "fire_remediation.py"
     ).read_text(encoding="utf-8")
     assert re.search(r"_remediation_max_rounds\s*[<>=]+\s*\d", engine_source) is None
     assert "remediation_max_rounds=config.remediation_max_rounds" in (
@@ -4880,7 +4885,7 @@ async def test_a_conforming_review_is_dispatched_once_and_carries_no_report() ->
 
 def test_the_post_merge_review_dispatch_passes_an_empty_definition_set() -> None:
     """KOD-87-AC-5, first half — the second evaluative site, asserted here."""
-    source = chain_source("ralph_workflow.py")
+    source = chain_source("fire_review.py")
     review = source.index('site="post_merge_review"')
     start = source.rindex("self._service.stream", 0, review)
     assert "agents=NO_SUBAGENTS" in source[start:review]
@@ -4890,7 +4895,7 @@ def test_the_post_merge_review_dispatch_passes_an_empty_definition_set() -> None
 def test_the_criteria_dispatch_passes_exactly_the_sets_three_definitions() -> None:
     """KOD-87-AC-5, second half — the lenses come from the set, not from code."""
     block = dispatch_block(
-        chain_source("ralph_workflow.py"), "GENERATED_CRITERIA_SCHEMA"
+        chain_source("fire_specification.py"), "GENERATED_CRITERIA_SCHEMA"
     )
     assert "agents=self._prompts.definitions()" in block
     assert len(v5_provider().definitions()) == 3
@@ -4932,8 +4937,9 @@ KEYED_DISPATCH_COUNTS = {
     "agent_content_scanner.py": 1,
     "git_change_persister.py": 1,
     "ralph_loop.py": 2,
-    "ralph_workflow.py": 4,
-    "authored_delivery.py": 1,
+    "fire_specification.py": 3,
+    "fire_review.py": 1,
+    "authored_publication.py": 1,
     "remediation.py": 1,
     "ticket_generation.py": 2,
     "prompt_pass.py": 1,
@@ -5175,11 +5181,11 @@ class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
         merger: FakeBranchMerger,
     ) -> dict[str, object]:
         monkeypatch.setattr(
-            ralph_workflow_module,
+            fire_consolidation_module,
             "get_stream_writer",
             lambda: lambda _event: None,
         )
-        return await self._engine(merger)._merge_to_feature_node(
+        return await self._engine(merger).fire.consolidation.merge_to_feature(
             self._state(accepted=accepted),
             self._config(),
         )
