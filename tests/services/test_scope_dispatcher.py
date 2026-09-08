@@ -34,7 +34,11 @@ from kodezart.types.domain.dispatch import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
-from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
+from kodezart.types.domain.tracker import (
+    IssuePriority,
+    TrackerIssue,
+    WorkflowStateKind,
+)
 from tests.fakes import (
     FIXTURE_EPOCH,
     FakeDeliveryProbe,
@@ -424,3 +428,87 @@ def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
         "kodezart.types.domain.run_records",
         "kodezart.types.domain.scope",
     }
+
+
+def re_entry_board():
+    """Two independent lanes; the higher-priority one crashed mid-run."""
+    return board(
+        lane_issue("crashed", priority=IssuePriority.HIGH),
+        criterion("crashed-check", parent="crashed"),
+        lane_issue("fresh", priority=IssuePriority.LOW),
+        criterion("fresh-check", parent="fresh"),
+    )
+
+
+async def test_a_lane_with_an_open_pull_request_is_excluded_as_delivered_in_review():
+    """A lane whose delivery is open is in review, not waiting to be re-fired."""
+    tracker = re_entry_board()
+    walker, queue, probe = walk(tracker, delivered=("crashed",))
+
+    report = await walker.run_pass()
+
+    assert enqueued(queue) == ["fresh"]
+    assert (
+        IssueExclusion(issue_key="crashed", clause=ExclusionClause.OPEN_DELIVERY)
+        in report.exclusions
+    )
+    assert "crashed" in probe.calls
+    assert "crashed" not in tracker.claims
+
+
+async def test_a_lane_with_a_live_run_is_excluded_as_in_flight():
+    """A released claim is not the whole answer: the run itself is still live."""
+    tracker = re_entry_board()
+    walker, queue, _ = walk(tracker)
+
+    first = await walker.run_pass()
+    assert first.claimed_issue_key == "crashed"
+
+    queue.mark(first.job_id, JobState.RUNNING)
+    tracker.claims.pop("crashed")
+    second = await walker.run_pass()
+
+    assert enqueued(queue) == ["crashed", "fresh"]
+    assert (
+        IssueExclusion(
+            issue_key="crashed",
+            clause=ExclusionClause.CLAIMED_OR_IN_FLIGHT,
+        )
+        in second.exclusions
+    )
+
+
+async def test_a_lane_with_no_pull_request_and_no_live_run_is_eligible():
+    """The crashed lane comes straight back: nothing about it is outstanding."""
+    tracker = re_entry_board()
+    walker, queue, _ = walk(tracker)
+
+    first = await walker.run_pass()
+    finish(tracker, queue, first)
+    second = await walker.run_pass()
+
+    assert enqueued(queue) == ["crashed", "crashed"]
+    assert second.claimed_issue_key == "crashed"
+    assert second.criterion_keys == ("crashed-check",)
+
+
+async def test_re_entry_eligibility_reads_no_merge_state_and_no_body(monkeypatch):
+    """The excluded lane is decided over facts, never assembled or measured."""
+    tracker = re_entry_board()
+    walker, _, _ = walk(tracker, delivered=("crashed",))
+    reader = FakePRStateReader(records={})
+    body_reads = []
+    original = TrackerIssue.__getattribute__
+
+    def checked(issue, name):
+        if name == "body" and original(issue, "issue_key") == "crashed":
+            body_reads.append(name)
+            raise AssertionError("an excluded lane's description was read")
+        return original(issue, name)
+
+    monkeypatch.setattr(TrackerIssue, "__getattribute__", checked)
+    report = await walker.run_pass()
+
+    assert body_reads == []
+    assert reader.calls == []
+    assert report.claimed_issue_key == "fresh"
