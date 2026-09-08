@@ -1,11 +1,17 @@
 """Native re-reads and fresh judgments bound the caller's write/repair loop."""
 
 import asyncio
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
 
+from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
+from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
+from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.chains.write_back_verifier import TrackerWriteBackVerifier
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
@@ -17,6 +23,7 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from tests.audit_replacements import command
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentRunner,
@@ -480,3 +487,119 @@ async def test_native_git_read_cancellation_settles_before_workspace_release(
         phase=phase,
         read_number=read_number,
     )
+
+
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+@pytest.mark.parametrize("initial_path", ["tests/missing.py", "tests/existing.py"])
+async def test_absent_test_at_exact_ref_is_cited_and_repaired_before_consumption(
+    tracker, tmp_path, set_name, initial_path
+):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    command(repository, "init", "-q")
+    command(repository, "config", "user.name", "Fixture")
+    command(repository, "config", "user.email", "fixture@example.invalid")
+    existing = "tests/existing.py"
+    (repository / "tests").mkdir()
+    (repository / existing).write_text("assert 2 + 2 == 4\n")
+    command(repository, "add", "--all")
+    command(repository, "commit", "-qm", "Executable test witness")
+    head = command(repository, "rev-parse", "HEAD")
+    assert command(repository, "ls-tree", "-r", "--name-only", head) == existing
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(
+        git=git,
+        cache=cache,
+        committer_name="Fixture",
+        committer_email="fixture@example.invalid",
+    )
+    seen = []
+
+    class FileRunner(FakeAgentRunner):
+        async def stream_in_workspace(self, **kwargs):
+            path = Path(kwargs["workspace_path"])
+            assert command(path, "rev-parse", "HEAD") == head
+            assert kwargs["session_id"] is None
+            assert kwargs["permission_mode"] == EVAL_PERMISSION_MODE
+            assert kwargs["agents"] == NO_SUBAGENTS
+            claims = [
+                candidate
+                for candidate in ("tests/missing.py", existing)
+                if f"{candidate} passes" in kwargs["prompt"]
+            ]
+            assert len(claims) == 1
+            claimed = claims[0]
+            seen.append(claimed)
+            if not (path / claimed).is_file():
+                verdict, evidence = "refuted", f"{claimed} is absent at {head}."
+            else:
+                run = subprocess.run(
+                    [sys.executable, "-B", str(path / claimed)],
+                    cwd=path,
+                    capture_output=True,
+                    check=False,
+                )
+                assert run.returncode == 0, run.stderr
+                verdict, evidence = (
+                    "holds",
+                    f"{claimed} executes successfully at {head}.",
+                )
+            event = judgment(verdict)
+            yield event.model_copy(
+                update={"structured_output": {"verdict": verdict, "evidence": evidence}}
+            )
+
+    repairs = []
+
+    async def write():
+        await tracker.update_issue(issue_key=ISSUE, body=f"{initial_path} passes")
+
+    async def repair(artifact, result):
+        assert result.verdict is AuditVerdict.REFUTED
+        missing = artifact.content.removesuffix(" passes")
+        assert result.evidence == f"{missing} is absent at {head}."
+        repairs.append(missing)
+        await tracker.update_issue(issue_key=ISSUE, body=f"{existing} passes")
+
+    verifier = TrackerWriteBackVerifier(
+        tracker=tracker,
+        runner=FileRunner([]),
+        workspace=workspace,
+        git=git,
+        prompts=load_registry(default_set=set_name),
+        skills=SUPPRESS_ALL_SKILLS,
+        config=AppConfig(write_back_max_verify_rounds=2),
+    )
+    request = REQUEST.model_copy(
+        update={"repo_url": repository.as_uri(), "head_sha": head}
+    )
+    result = await verifier.verify(request, write=write, repair=repair)
+    assert result.verdict is AuditVerdict.HOLDS
+    if initial_path != existing:
+        assert [r.verdict for r in result.rounds] == [
+            AuditVerdict.REFUTED,
+            AuditVerdict.HOLDS,
+        ]
+        assert result.rounds[0].evidence == f"{initial_path} is absent at {head}."
+        assert repairs == [initial_path]
+        assert seen == [initial_path, existing]
+    else:
+        assert [r.verdict for r in result.rounds] == [AuditVerdict.HOLDS]
+        assert repairs == [] and seen == [existing]
+
+    consumed = []
+
+    def consume(artifact):
+        claimed = artifact.content.removesuffix(" passes")
+        consumed.append(claimed)
+        # The next consumer obtains executable bytes by the verified reference,
+        # rather than receiving either the initial text or the repair callback.
+        source = command(repository, "show", f"{head}:{claimed}")
+        subprocess.run([sys.executable, "-B", "-c", source], check=True)
+
+    assert result.verified_artifact is not None
+    consume(result.verified_artifact)
+    assert consumed == [existing]
+    assert result.verified_artifact.native_ref == ISSUE
+    assert not workspace._workspaces
