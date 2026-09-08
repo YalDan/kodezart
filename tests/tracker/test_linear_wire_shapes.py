@@ -359,6 +359,7 @@ def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
     return LinearMcpTracker(
         marker_prefixes=MARKER_PREFIXES,
         issue_labels={"criterion": "acceptance-condition"},
+        scope_labels={},
         caller=caller,
         queue_state_labels={
             QueueState.APPROVED.value: "queue:approved",
