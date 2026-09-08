@@ -16,11 +16,11 @@ production constants.
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import pytest
 from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, query
 
+from kodezart.adapters._permission_modes import map_permission_mode
 from kodezart.adapters._sdk_mapping import map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
 from kodezart.core.config import AppConfig
@@ -58,7 +58,7 @@ VERDICT_ABSENT = "absent"
 
 # The probes that reach for the workflow primitive have to leave the
 # evaluative session shape in exactly two respects, one field at a time.
-UNGATED_PERMISSION_MODE: Literal["default"] = "default"
+UNGATED_PERMISSION_MODE = PermissionMode.INTERACTIVE
 WORKFLOW_ALLOWED_TOOLS: list[str] = [*TICKET_TOOLS, WORKFLOW_TOOL_NAME]
 WORKFLOW_WRITE_ALLOWED_TOOLS: list[str] = [*WORKFLOW_ALLOWED_TOOLS, WRITE_TOOL_NAME]
 
@@ -131,7 +131,7 @@ def session_options(
     config = AppConfig()
     return ClaudeAgentOptions(
         cwd=str(cwd),
-        permission_mode=permission_mode,
+        permission_mode=map_permission_mode(permission_mode),
         allowed_tools=allowed_tools,
         disallowed_tools=STALL_GUARD_DISALLOWED_TOOLS,
         skills=map_skills(config.skills_selection()),
@@ -268,11 +268,11 @@ def test_probe_config_matches_production(tmp_path: Path) -> None:
     """The probe dispatches the production objects, and drift fails here."""
     options = evaluator_options(cwd=tmp_path, max_turns=ENUMERATION_TURNS)
 
-    assert options.permission_mode is EVAL_PERMISSION_MODE
+    assert options.permission_mode == "plan"
     assert options.allowed_tools is EVAL_TOOLS
     assert options.can_use_tool is None
 
-    assert EVAL_PERMISSION_MODE == "plan"
+    assert EVAL_PERMISSION_MODE is PermissionMode.PLAN
     assert EVAL_TOOLS == ["Read", "Glob", "Grep", "Bash"]
 
 

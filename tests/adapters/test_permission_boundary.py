@@ -281,3 +281,30 @@ async def test_cancellation_still_closes_sdk_and_releases_the_workspace(module):
     assert options_seen[0].permission_mode == "bypassPermissions"
     assert closed == [True]
     assert [call[0] for call in workspace.calls] == ["acquire", "release"]
+
+
+@pytest.mark.parametrize(("mode", "wire"), MODES)
+def test_opt_in_harness_probe_uses_the_same_sdk_translation(tmp_path, mode, wire):
+    from tests.probes.test_harness_capabilities import session_options
+
+    options = session_options(
+        cwd=tmp_path, permission_mode=mode, allowed_tools=TOOLS, max_turns=3
+    )
+    assert options.permission_mode == wire
+    assert options.allowed_tools == TOOLS
+    assert options.max_turns == 3
+
+
+def test_the_probe_alternative_preserves_its_interactive_sdk_mode(tmp_path):
+    from tests.probes.test_harness_capabilities import (
+        UNGATED_PERMISSION_MODE,
+        session_options,
+    )
+
+    options = session_options(
+        cwd=tmp_path,
+        permission_mode=UNGATED_PERMISSION_MODE,
+        allowed_tools=TOOLS,
+        max_turns=3,
+    )
+    assert options.permission_mode == "default"

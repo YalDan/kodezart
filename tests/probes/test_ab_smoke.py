@@ -45,6 +45,7 @@ from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.workspace import build_git_stack
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import AgentExecutor, PromptSetProvider
+from kodezart.handlers.agent_handler import _HTTP_PERMISSIONS
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -382,7 +383,7 @@ async def run_arm(
             repo_url=request.repo_url,
             scope=None,
             base_spec=trunk_base(request.base_branch),
-            permission_mode=request.permission_mode,
+            permission_mode=_HTTP_PERMISSIONS[request.permission_mode],
             allowed_tools=request.allowed_tools,
             cache_key=uuid.uuid4().hex,
         ):

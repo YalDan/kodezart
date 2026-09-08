@@ -44,7 +44,7 @@ from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.fakes import (
     FIXTURE_EPOCH,
@@ -60,7 +60,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
 
 WORKSPACE = "/tmp/kodezart-scheduled-pass"
-PERMISSION_MODE = "bypassPermissions"
+PERMISSION_MODE = PermissionMode.UNATTENDED
 PAGE_SIZE = 50
 LATER = FIXTURE_EPOCH + timedelta(hours=1)
 #: The shipped set that declares a session role covering both pass keys.
