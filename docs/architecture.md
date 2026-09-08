@@ -473,10 +473,17 @@ It has no writer or repository dependency. Missing escalation reads, malformed
 counts, and absent or duplicate raise positions refuse observation; they do
 not manufacture an unanswered question or a clean result. The configured
 limits are nonnegative counts, defaulting to five commits and ten ticks.
-Collectors for the lane's durable commit list and walker's recorded tick
-age, the supervisor tick, and alarm persistence under a surface lease remain
-unwired. This slice provides one pure signal and its read-only service; it
-does not declare the complete signal table or supervisor boot capability.
+`services.escalation_signals.observe_recorded_escalation_ageing` supplies the
+escalation and commit readings from their actual configured native records.
+The escalation reader consumes the existing writer's seven-field JSON, with
+strict occurrence identity and no interpretation of legacy prose. The lane
+record's ordered commits must completely reach its declared head and agree
+with its count. Both native records are read again around decision resolution;
+a changed source refuses the observation. All returned readings preserve
+their source comment identities, and neither collector writes or reads Git.
+The walker's recorded tick-age input, supervisor tick and alarm persistence
+under a surface lease remain unwired. These readers do not declare the
+complete signal table or supervisor boot capability.
 
 `barren_tick_with_diff_growth` compares recorded files-changed and
 commits-ahead against their own configured bounds when a tick closes no
