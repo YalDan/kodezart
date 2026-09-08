@@ -9,6 +9,7 @@ as a claim that was never spent.
 
 import ast
 import inspect
+from datetime import datetime, timedelta
 
 from kodezart.chains import scope_walker
 from kodezart.domain import issue_tree, topology
@@ -83,6 +84,7 @@ def lane_issue(
     state_kind: WorkflowStateKind = WorkflowStateKind.UNSTARTED,
     state_name: str = "Todo",
     parent_key: str | None = None,
+    created_at: datetime = FIXTURE_EPOCH,
 ):
     """A deliverable the walk may select: approved, in the project."""
     return make_tracker_issue(
@@ -92,6 +94,7 @@ def lane_issue(
         state_kind=state_kind,
         state_name=state_name,
         parent_key=parent_key,
+        created_at=created_at,
         project_id=PROJECT.key,
     )
 
@@ -612,3 +615,95 @@ async def test_a_one_issue_scope_dispatches_exactly_as_the_unscoped_pass_does():
     assert unscoped.base == scoped.base
     assert unscoped.criterion_keys == ()
     assert scoped.criterion_keys == ("K-1-check",)
+
+
+def two_roots(approved=(PROJECT,)):
+    """Two unrelated roots in one container; neither is the other's parent."""
+    return board(
+        lane_issue("alpha", priority=IssuePriority.LOW),
+        criterion("alpha-check", parent="alpha"),
+        lane_issue(
+            "beta",
+            priority=IssuePriority.HIGH,
+            created_at=FIXTURE_EPOCH + timedelta(days=1),
+        ),
+        criterion("beta-check", parent="beta"),
+        approved=approved,
+    )
+
+
+async def test_a_container_of_two_root_members_resolves_the_dispatch_target_by_key():
+    """Two parentless members resolve unambiguously, by identity and rank."""
+    tracker = two_roots()
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.claimed_issue_key == "beta"
+    assert queue.submissions[0][1].issue_key == "beta"
+    assert report.eligible == ("beta", "alpha")
+
+
+async def test_an_unapproved_member_never_reaches_the_walk():
+    """Approval is per issue when the container carries none of its own."""
+    tracker = two_roots(approved=(ScopeRef(kind=ScopeKind.ISSUE, key="alpha"),))
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.eligible == ("alpha",)
+    assert enqueued(queue) == ["alpha"]
+    assert "beta" not in tracker.claims
+    assert [item.issue_key for item in report.snapshot] == ["alpha"]
+
+
+async def test_dispatch_target_resolution_reads_no_description_text(monkeypatch):
+    """The target is an identity; prose is read only once a fire is launched."""
+    tracker = two_roots()
+    walker, queue, _ = walk(tracker)
+    body_reads = []
+    original = TrackerIssue.__getattribute__
+
+    def checked(issue, name):
+        if name == "body":
+            body_reads.append(original(issue, "issue_key"))
+            raise AssertionError("description text was read to resolve a target")
+        return original(issue, name)
+
+    launch = FireDispatcher.launch
+
+    async def restoring(self, *args, **kwargs):
+        monkeypatch.setattr(TrackerIssue, "__getattribute__", original)
+        return await launch(self, *args, **kwargs)
+
+    monkeypatch.setattr(FireDispatcher, "launch", restoring)
+    monkeypatch.setattr(TrackerIssue, "__getattribute__", checked)
+    report = await walker.run_pass()
+
+    assert body_reads == []
+    assert report.claimed_issue_key == "beta"
+    assert enqueued(queue) == ["beta"]
+
+
+def test_walker_modules_resolve_no_lane_marker_and_parse_no_prose():
+    """Neither module can reach a marker vocabulary or a text parser at all."""
+    forbidden_modules = {
+        "kodezart.domain.comment_markers",
+        "kodezart.domain.lane_record",
+        "kodezart.services.lane_records",
+        "re",
+    }
+    for module in (scope_dispatcher, scope_walker):
+        tree = ast.parse(inspect.getsource(module))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                assert node.module not in forbidden_modules
+            if isinstance(node, ast.Import):
+                assert {alias.name for alias in node.names} & forbidden_modules == set()
+            if isinstance(node, ast.Attribute):
+                assert node.attr not in {
+                    "body",
+                    "description",
+                    "title",
+                    "list_comments",
+                }
