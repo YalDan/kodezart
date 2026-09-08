@@ -1,47 +1,41 @@
-"""Every retrying node in every graph waits the floor its caller built.
+"""Each retrying registration uses its graph owner's floor and retry policy.
 
-The three graphs each take a floor resolver and the suite proves one node
-per graph WAITS it (KOD-195), but a per-node case can only ever clock the
-node it names.  Sixteen of the nineteen ``self._floor`` sites were
-unwrapped one at a time and the whole suite stayed green (KOD-275 sweep at
-``f24fe90``): the storm KOD-174 measured is a node that spawns a session
-under a standing limit with the floor peeled off, and nothing red would
-have said so.
-
-The property that actually holds the floor on is structural, not
-behavioural: a node registered WITH a retry policy is a node the graph
-will re-enter, and the floor is what a re-entry must wait — so every
-``add_node`` that carries ``retry_policy=self._retry`` must hand a node
-wrapped in ``self._floor``, and the two nodes that carry no retry policy
-(``finalize``, ``complete``) are the only ones that may go bare.  Read off
-the syntax tree because it is a property of the WIRING, which no fixture
-holds and which is the same reason the resolver hand-off is read this way
-in :mod:`tests.test_composition_root`.
+The fire graph owns the shared pair used by its authored delivery graph.
+The quality and ticket graphs each own their own pair. Actual registrations
+are checked in both directions, including every extracted delivery node;
+missing wrappers, unrelated owners and incorrect policies must all fail.
+Runtime wait behavior is exercised separately by the real loop tests.
 """
 
 import ast
+import copy
 from pathlib import Path
 from types import ModuleType
-from typing import Final
 
 import pytest
 
-from kodezart.chains import ralph_loop, ralph_workflow, ticket_generation
+from kodezart.chains import (
+    authored_delivery,
+    ralph_loop,
+    ralph_workflow,
+    ticket_generation,
+)
 
-#: The three graph modules, each read as its own source tree.
-_GRAPH_MODULES: Final = (ralph_loop, ralph_workflow, ticket_generation)
+_GRAPH_BINDINGS = (
+    (ralph_loop, "self._floor", "self._retry"),
+    (ticket_generation, "self._floor", "self._retry"),
+    (ralph_workflow, "self.floor", "self.retry"),
+    (authored_delivery, "self.fire.floor", "self.fire.retry"),
+)
 
 
 def _module_source(module: ModuleType) -> str:
-    """The module's own source, its path asserted present for the type."""
     path = module.__file__
     assert path is not None, f"{module.__name__} has no source file"
     return Path(path).read_text(encoding="utf-8")
 
 
-def _add_node_calls(source: str) -> list[ast.Call]:
-    """Every ``graph.add_node(...)`` call in *source*."""
-    tree = ast.parse(source)
+def _add_node_calls(tree: ast.AST) -> list[ast.Call]:
     return [
         node
         for node in ast.walk(tree)
@@ -51,74 +45,116 @@ def _add_node_calls(source: str) -> list[ast.Call]:
     ]
 
 
-def _carries_retry_policy(call: ast.Call) -> bool:
-    """Whether the registration hands the graph a retry policy."""
-    return any(keyword.arg == "retry_policy" for keyword in call.keywords)
-
-
-def _node_name(call: ast.Call) -> str:
-    """The registered node's name, for a legible failure."""
-    if call.args and isinstance(call.args[0], ast.Constant):
-        return str(call.args[0].value)
-    return ast.unparse(call)
-
-
-def _is_floored(call: ast.Call) -> bool:
-    """Whether the node argument is wrapped in ``self._floor(...)``."""
+def _is_floored(call: ast.Call, floor: str) -> bool:
     if len(call.args) < 2:
         return False
     node = call.args[1]
     return (
         isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "_floor"
+        and ast.unparse(node.func) == floor
+        and len(node.args) == 1
+        and not node.keywords
     )
 
 
-@pytest.mark.parametrize(
-    "module",
-    _GRAPH_MODULES,
-    ids=lambda module: module.__name__.rsplit(".", 1)[-1],
-)
-def test_every_retrying_node_is_floored(module: ModuleType) -> None:
-    """A node the graph will re-enter must wait the floor on the way back in.
-
-    The pairing is the whole guard: ``retry_policy`` present is the graph
-    saying it will run this node again, and ``self._floor`` is what that
-    re-run has to wait.  Peel the floor off any retrying node and it shows
-    up here as a retrying node that is not floored.
-    """
-    source = _module_source(module)
-    retrying = [call for call in _add_node_calls(source) if _carries_retry_policy(call)]
-    assert retrying, f"{module.__name__}: no node is registered with a retry policy"
-    unfloored = [_node_name(call) for call in retrying if not _is_floored(call)]
-    assert unfloored == [], (
-        f"{module.__name__.rsplit('.', 1)[-1]}: these nodes are registered with a "
-        f"retry policy but their node is not wrapped in self._floor, so a rejection "
-        f"re-enters them with no wait: {unfloored}"
-    )
+def _assert_wiring(tree: ast.AST, floor: str, retry: str) -> None:
+    retrying = 0
+    for call in _add_node_calls(tree):
+        policy = next(
+            (kw.value for kw in call.keywords if kw.arg == "retry_policy"), None
+        )
+        if policy is not None:
+            retrying += 1
+            assert ast.unparse(policy) == retry, ast.unparse(call)
+            assert _is_floored(call, floor), ast.unparse(call)
+        else:
+            assert not _is_floored(call, floor), ast.unparse(call)
+    assert retrying, "No actual retrying registration was checked"
 
 
-@pytest.mark.parametrize(
-    "module",
-    _GRAPH_MODULES,
-    ids=lambda module: module.__name__.rsplit(".", 1)[-1],
-)
-def test_a_floored_node_always_carries_the_retry_policy(module: ModuleType) -> None:
-    """The paired negative: a floor with no retry policy floors nothing.
+@pytest.mark.parametrize(("module", "floor", "retry"), _GRAPH_BINDINGS)
+def test_every_retrying_node_uses_its_own_floor_and_policy(module, floor, retry):
+    _assert_wiring(ast.parse(_module_source(module)), floor, retry)
 
-    A ``self._floor`` wrapper on a node the graph never re-enters is a wait
-    that can never be paid — the node runs once and its rejection leaves
-    the graph.  So the two are one fact, asserted in both directions, and
-    neither may drift without the other.
-    """
-    source = _module_source(module)
-    floored_without_policy = [
-        _node_name(call)
-        for call in _add_node_calls(source)
-        if _is_floored(call) and not _carries_retry_policy(call)
+
+@pytest.mark.parametrize(("module", "floor", "retry"), _GRAPH_BINDINGS)
+def test_removing_any_actual_node_floor_is_detected(module, floor, retry):
+    tree = ast.parse(_module_source(module))
+    calls = _add_node_calls(tree)
+    indices = [
+        index
+        for index, call in enumerate(calls)
+        if any(kw.arg == "retry_policy" for kw in call.keywords)
     ]
-    assert floored_without_policy == [], (
-        f"{module.__name__.rsplit('.', 1)[-1]}: these nodes are floored but carry no "
-        f"retry policy, so the floor is never paid: {floored_without_policy}"
+    assert indices
+    for index in indices:
+        changed = copy.deepcopy(tree)
+        call = _add_node_calls(changed)[index]
+        wrapper = call.args[1]
+        assert isinstance(wrapper, ast.Call)
+        call.args[1] = wrapper.args[0]
+        with pytest.raises(AssertionError):
+            _assert_wiring(changed, floor, retry)
+
+
+@pytest.mark.parametrize(("module", "floor", "retry"), _GRAPH_BINDINGS)
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "bare",
+        "unrelated_floor",
+        "wrong_owner",
+        "wrong_retry",
+        "missing_retry",
+        "null_retry",
+    ],
+)
+def test_wrong_or_unpaired_dependencies_cannot_satisfy_the_guard(
+    module, floor, retry, defect
+):
+    node = f"{floor}(self.work)"
+    policy = f", retry_policy={retry}"
+    if defect == "bare":
+        node = "self.work"
+    elif defect == "unrelated_floor":
+        node = "unrelated.floor(self.work)"
+    elif defect == "wrong_owner":
+        node = "self.unrelated.floor(self.work)"
+    elif defect == "wrong_retry":
+        policy = ", retry_policy=self.unrelated.retry"
+    elif defect == "missing_retry":
+        policy = ""
+    elif defect == "null_retry":
+        policy = ", retry_policy=None"
+    # A valid sibling prevents no-registration refusal from hiding a bad arm.
+    source = (
+        f'graph.add_node("valid", {floor}(self.other), retry_policy={retry})\n'
+        f'graph.add_node("changed", {node}{policy})'
     )
+    with pytest.raises(AssertionError):
+        _assert_wiring(ast.parse(source), floor, retry)
+
+
+@pytest.mark.parametrize(("module", "floor", "retry"), _GRAPH_BINDINGS)
+def test_correct_owner_and_unretried_terminal_are_valid(module, floor, retry):
+    source = (
+        f'graph.add_node("work", {floor}(self.work), retry_policy={retry})\n'
+        'graph.add_node("complete", self.complete)'
+    )
+    _assert_wiring(ast.parse(source), floor, retry)
+
+
+def test_every_production_graph_with_registered_nodes_is_checked():
+    assert ralph_loop.__file__ is not None
+    source_root = Path(ralph_loop.__file__).resolve().parents[1]
+    actual = {
+        path.resolve()
+        for path in source_root.rglob("*.py")
+        if _add_node_calls(ast.parse(path.read_text(encoding="utf-8")))
+    }
+    declared = {
+        Path(module.__file__).resolve()
+        for module, _, _ in _GRAPH_BINDINGS
+        if module.__file__ is not None
+    }
+    assert actual == declared
