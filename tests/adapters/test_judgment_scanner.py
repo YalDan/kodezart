@@ -380,7 +380,10 @@ async def test_an_authored_pull_request_body_costs_exactly_one() -> None:
     assert len(scanner.calls) == 1
 
 
-async def test_a_branch_name_is_audited_despite_being_an_identifier() -> None:
+@pytest.mark.parametrize("content_class", list(ContentClass))
+async def test_a_branch_name_is_audited_despite_being_an_identifier(
+    content_class,
+) -> None:
     """R: one call per run — the routing rule is frequency x prose origin."""
     scanner = FakeContentJudgment(hits=[])
     await gate_once(
@@ -388,7 +391,7 @@ async def test_a_branch_name_is_audited_despite_being_an_identifier() -> None:
         content="kodezart/quarry-works-pricing-pilot",
         destination=OutboundDestination.BRANCH_NAME,
         shape=WriterShape.IDENTIFIER,
-        content_class=ContentClass.AUTHORED,
+        content_class=content_class,
     )
     assert len(scanner.calls) == 1
 
