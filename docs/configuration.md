@@ -441,8 +441,16 @@ reader. Refuted criteria complete the existing mandate hunt over the exact
 scope issue bodies, any addressed parent outside the scope, and the scope
 container body when applicable. The returned surface set bounds the mandate
 finding; it does not claim to have read every charter or ruling elsewhere.
-Terminal refutations retain their observation and name the missing terminal
-mandate consumer. Independent readable targets continue after a target fails.
+Terminal observations retain their own issue and native record identity. A
+refutation with an observed branch head now invokes the same mandate hunt as
+criterion refutations and returns its mandate-completed terminal report. It
+passes the native discrepancy and PR facts at that exact head, without creating
+a criterion judgment for an issue. Missing-branch observations retain an
+explicit unavailable reason; a historical lane-record head does not supply the
+missing verification context. A failed hunt likewise retains the original
+terminal observation without claiming a complete report. Final terminal and
+scope reads still refuse changed source facts. Independent readable targets
+continue after a target fails.
 When supplied, the existing over-claim verifier runs independently for each
 criterion request. Its four categories retain separate mandate-completed reports
 and their original source evidence. Missing configuration or unreadable revision
@@ -498,6 +506,10 @@ with a clean tree. Replacement reads settle before workspace release, and an
 unreadable namespace propagates instead of being treated as empty.
 
 
+The shared `AuditMandateHunt.observe` consumes an explicit `AuditMandateContext`
+from either a fresh criterion judgment or a native terminal refutation. The
+existing criterion `complete` entry delegates to that same session and coverage
+implementation; both retain the original `SpecFinding` mandate shape.
 The `audit_mandate` read-only role receives `defect_class`, `refutation_evidence`,
 `head_sha` and `audited_surfaces` per call. It completes a freshly refuted claim
 with an instruction verdict over an explicit addressed text set. A quoted

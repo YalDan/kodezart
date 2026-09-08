@@ -24,6 +24,7 @@ from kodezart.types.domain.audit import (
     AuditClaimObservation,
     AuditClaimReport,
     AuditClaimRequest,
+    AuditMandateContext,
     AuditMandateRequest,
     AuditVerdict,
 )
@@ -39,6 +40,7 @@ from kodezart.types.domain.audit_overclaim import (
 )
 from kodezart.types.domain.audit_terminal import (
     AuditTerminalObservation,
+    AuditTerminalReport,
     AuditTerminalRequest,
 )
 from kodezart.types.domain.fire_spec import CriterionRef
@@ -56,6 +58,7 @@ class AuditReadObservation:
     claim: AuditClaimReport | None = None
     evidence: AuditEvidenceObservation | None = None
     terminal: AuditTerminalObservation | None = None
+    terminal_report: AuditTerminalReport | None = None
     unavailable_reason: str | None = None
     overclaims: AuditOverclaimReport | None = None
     overclaim_unavailable_reason: str | None = None
@@ -64,6 +67,23 @@ class AuditReadObservation:
     forge: AuditForgeObservation | None = None
     forge_report: AuditClaimReport | None = None
     forge_unavailable_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            self.terminal is not None
+            and self.terminal_report is None
+            and self.unavailable_reason is None
+        ):
+            raise ValueError(
+                "terminal observation requires completion or unavailability"
+            )
+        if self.terminal_report is not None:
+            if self.terminal_report.observation != self.terminal:
+                raise ValueError("terminal report differs from the native observation")
+            if self.unavailable_reason is not None:
+                raise ValueError(
+                    "a complete terminal report cannot also be unavailable"
+                )
 
 
 @dataclass(frozen=True)
@@ -112,10 +132,11 @@ class AuditReadSweep:
     prevent other independent subjects from being observed. A refuted criterion
     report requires the existing mandate-completed model. Raw forge observations
     survive an unavailable mandate hunt, without claiming a complete report.
-    Terminal refutations retain their native observation and explicitly name
-    their still-missing mandate consumer. No timer, scheduler or writer lives
-    here, and no partial detector pass enters the audit coverage cache. The forge
-    verifier may request the delivery classifier's bounded same-SHA reruns.
+    Terminal refutations with an observed branch head use the same mandate
+    hunt; missing-head observations remain explicitly unavailable. No timer,
+    scheduler or writer lives here, and no partial detector pass enters the
+    audit coverage cache. The forge verifier may request the delivery
+    classifier's bounded same-SHA reruns.
     """
 
     def __init__(
@@ -159,14 +180,34 @@ class AuditReadSweep:
             )
         if isinstance(request, AuditTerminalRequest):
             terminal = await self._terminals.observe(request)
+            try:
+                mandate = None
+                if terminal.verdict is AuditVerdict.REFUTED:
+                    if terminal.branch_head is None:
+                        raise AuditClaimReadError(
+                            "terminal mandate has no observed branch head"
+                        )
+                    mandate = await self._mandates.observe(
+                        AuditMandateContext(
+                            defect_class=terminal.defect_class(),
+                            refutation_evidence=terminal.refutation_evidence(),
+                            head_sha=terminal.branch_head,
+                            surfaces=surfaces,
+                            repo_url=request.repo_url,
+                            cache_key=request.cache_key,
+                        )
+                    )
+                terminal_report = AuditTerminalReport(
+                    observation=terminal, mandate=mandate
+                )
+            except Exception as exc:
+                return AuditReadObservation(
+                    target,
+                    terminal=terminal,
+                    unavailable_reason=f"{type(exc).__name__}: {exc}",
+                )
             return AuditReadObservation(
-                target,
-                terminal=terminal,
-                unavailable_reason=(
-                    "terminal refutation mandate completion is not implemented"
-                    if terminal.verdict is AuditVerdict.REFUTED
-                    else None
-                ),
+                target, terminal=terminal, terminal_report=terminal_report
             )
         evidence = None
         issue = target.issue
@@ -393,6 +434,7 @@ class AuditReadSweep:
                     claim=observation.claim,
                     evidence=observation.evidence,
                     terminal=observation.terminal,
+                    terminal_report=observation.terminal_report,
                     unavailable_reason=observation.unavailable_reason,
                     overclaims=overclaims,
                     overclaim_unavailable_reason=overclaim_reason,

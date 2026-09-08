@@ -397,7 +397,9 @@ async def test_independent_terminal_read_survives_failed_criterion(
         )  # unreadable Evidence never falls back to an optimistic fresh arm
     if mode == "refuted":
         assert parent.terminal.verdict is AuditVerdict.REFUTED
-        assert "mandate" in parent.unavailable_reason
+        assert parent.unavailable_reason is None
+        assert parent.terminal_report.observation == parent.terminal
+        assert parent.terminal_report.mandate.verdict is AuditVerdict.REFUTED
     else:
         assert (
             parent.terminal.verdict is AuditVerdict.HOLDS
