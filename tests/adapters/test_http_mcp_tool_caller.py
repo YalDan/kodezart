@@ -1588,27 +1588,42 @@ class TestWorkersHitByOneDropShareOneReopen:
             hold_reopens=True,
         )
         caller = caller_fixture(client_factory=client_over(server.transport))
-        await caller.open()
-        # The call the drop lands under is told, not re-sent (KOD-305); it
-        # is the NEXT one that pays for the reopen the sibling then meets.
-        with pytest.raises(McpCallUnansweredError):
-            await caller.call_tool(name="get_issue", arguments={})
-        first = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
-        async with asyncio.timeout(_HANG_CEILING_SECONDS):
-            while server.requests.count("initialize") < 2:
+        # The host is joined before the reopen. Capture its expected drop
+        # log so rendering a rich SDK traceback is outside this lifecycle
+        # assertion's hang ceiling, and verify the real events below.
+        with structlog.testing.capture_logs() as logs:
+            await caller.open()
+            # The call the drop lands under is told, not re-sent (KOD-305); it
+            # is the NEXT one that pays for the reopen the sibling then meets.
+            with pytest.raises(McpCallUnansweredError):
+                await caller.call_tool(name="get_issue", arguments={})
+            first = asyncio.create_task(
+                caller.call_tool(name="get_issue", arguments={})
+            )
+            async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                while server.requests.count("initialize") < 2:
+                    await asyncio.sleep(0)
+
+            second = asyncio.create_task(
+                caller.call_tool(name="list_issues", arguments={})
+            )
+            for _ in range(_SETTLE_TURNS):
                 await asyncio.sleep(0)
+            assert not second.done(), "the sibling was answered before the session was"
+            server.release_reopen.set()
+            async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                results = [await first, await second]
 
-        second = asyncio.create_task(caller.call_tool(name="list_issues", arguments={}))
-        for _ in range(_SETTLE_TURNS):
-            await asyncio.sleep(0)
-        assert not second.done(), "the sibling was answered before the session was"
-        server.release_reopen.set()
-        async with asyncio.timeout(_HANG_CEILING_SECONDS):
-            results = [await first, await second]
+            assert results == [{"id": "K-1"}, {"id": "K-1"}]
+            assert server.requests.count("initialize") == 2, (
+                "the sibling dialled its own"
+            )
+            await caller.close()
 
-        assert results == [{"id": "K-1"}, {"id": "K-1"}]
-        assert server.requests.count("initialize") == 2, "the sibling dialled its own"
-        await caller.close()
+        events = [log["event"] for log in logs]
+        assert events.count("mcp_session_ended") == 1
+        assert events.count("mcp_session_reopened") == 1
+        assert events.count("mcp_session_closed") == 1
 
     async def test_siblings_of_a_failed_reopen_each_try_their_own(self) -> None:
         """The paired negative: once per CALL, and a failed reopen serves nobody.
