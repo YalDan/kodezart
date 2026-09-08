@@ -783,6 +783,10 @@ head and acquires a detached workspace at that exact SHA. The fresh evaluative
 session receives the Check and measured head, with `session_id=None`, no
 subagents and the configured read-only tools. The record's prior head, prior
 Evidence/verdict and author transcript are not session inputs.
+Active Git replacement references refuse the claim before dispatch or before
+an observation returns: a matching SHA and clean status alone do not prove
+that the workspace contains the original commit tree. The replacement read
+settles before cancellation releases the workspace, and read failures propagate.
 
 The result uses the shared three-state `AuditVerdict`. The caller attaches the
 measured SHA, native comment reference and exact Check. A changed criterion,
