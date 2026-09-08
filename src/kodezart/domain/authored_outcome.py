@@ -3,6 +3,7 @@
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.outcome import classify_outcome
 from kodezart.types.domain.ci import CIStatus
+from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.workflow import AuthoredWorkflowState
 
@@ -27,6 +28,13 @@ def classify_authored_outcome(state: AuthoredWorkflowState) -> WorkflowOutcome:
     ):
         raise ValueError("Unclassifiable authored delivery after fire")
 
+    if state.get("ci_run_absent"):
+        return WorkflowOutcome.ci_no_run_at_ref
+    red_class = state.get("ci_red_class")
+    if red_class is CheckRedClass.ENVIRONMENT_PREREQUISITE_UNMET:
+        return WorkflowOutcome.ci_failed_environment_prerequisite
+    if red_class is CheckRedClass.UNCLASSIFIED:
+        return WorkflowOutcome.ci_failed_unclassified
     status = state["ci_status"]
     if status is CIStatus.not_monitored:
         return WorkflowOutcome.pr_opened

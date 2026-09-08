@@ -3,8 +3,8 @@
 import pytest
 from pydantic import ValidationError
 
-from kodezart.chains.delivery_coordinator import classify_red_checks
 from kodezart.core.config import AppConfig
+from kodezart.services.check_classification import classify_red_checks
 from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.operation import CheckPrerequisite, CheckStep, RepoEntry
 
@@ -44,12 +44,13 @@ async def classify(ci, repository=None, bound=1):
     return await classify_red_checks(
         ci=ci,
         repository=repository or repo(),
+        repo_url=(repository or repo()).url,
         final_commit_sha="immutable-sha",
         initial_summary=ci.summary,
         initial_failed_names=await ci.failed_check_names(
             repo_url=(repository or repo()).url, ref="immutable-sha"
         ),
-        config=AppConfig(delivery_red_rerun_max_attempts=bound),
+        max_attempts=bound,
     )
 
 

@@ -35,7 +35,6 @@ from kodezart.types.domain.operation import (
     RecordDestination,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
-from kodezart.types.domain.pr_content import PRContent
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
@@ -471,54 +470,11 @@ class PRCreator(Protocol):
 
 
 @runtime_checkable
-class ForgeQuery(Protocol):
-    """Read forge identities before creating delivery artifacts."""
-
-    async def open_pr_for_head(
-        self,
-        *,
-        repo_url: str,
-        head: str,
-    ) -> tuple[str, int] | None:
-        """Return an open PR's (html_url, number), or None.
-
-        Head is a branch in the repository named by repo_url. Forge
-        transport and payload failures use the same domain errors as PRCreator.
-        """
-        ...
-
-    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
-        """Compose the forge's browser URL for a repository branch."""
-        ...
-
-
-@runtime_checkable
 class PRStateReader(Protocol):
     """Read one PR's native lifecycle without edit, close or merge authority."""
 
     async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
         """Require exact addressed identity; failed or missing reads refuse."""
-        ...
-
-
-@runtime_checkable
-class PRContentEditor(Protocol):
-    """Read and edit open PR content, without state or merge capabilities."""
-
-    async def read_open_pr(
-        self, *, repo_url: str, head: str, pr_number: int
-    ) -> PRContent:
-        """Require one open head match with the supplied PR number."""
-        ...
-
-    async def edit_pr(
-        self, *, repo_url: str, expected: PRContent, title: str, body: str, base: str
-    ) -> PRContent:
-        """Re-read the expected snapshot; write only differing content.
-
-        Missing, ambiguous or changed content raises PRContentConflictError.
-        This optimistic read and update do not claim atomic exclusion.
-        """
         ...
 
 

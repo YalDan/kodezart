@@ -16,7 +16,6 @@ from kodezart.types.domain.gating import (
     ScanResult,
 )
 from kodezart.types.requests.agent import WorkflowRequest
-from tests.chains.test_delivery_runtime import deliver, setup
 from tests.integration.test_issue_key_carriage import (
     DECOY_PROMPT,
     GENERATED_DESCRIPTION,
@@ -50,16 +49,6 @@ def redacting_gate(text):
     )
 
 
-async def test_delivery_refuses_when_actual_gate_redacts_its_issue_key():
-    scanner, gate = redacting_gate("subject/42")
-    fixture = setup(gate=gate)
-    with pytest.raises(PRTrackerIdentityError) as error:
-        await deliver(fixture.coordinator)
-    assert error.value.issue_key == "subject/42"
-    assert scanner.bodies[0].endswith("Tracker issue: subject/42")
-    assert fixture.forge.calls == fixture.monitor.calls == []
-
-
 @pytest.mark.parametrize("stalled", [False, True])
 async def test_real_dispatch_refuses_when_actual_gate_redacts_its_issue_key(stalled):
     scanner, gate = redacting_gate(ISSUE_KEY)
@@ -91,17 +80,6 @@ def test_identity_requires_the_exact_complete_line(body):
 def test_validation_preserves_all_gated_bytes(suffix):
     body = "Rewritten prose.\n\nTracker issue: subject/42" + suffix
     assert require_tracker_issue(body, "subject/42") is body
-
-
-async def test_delivery_keeps_permitted_prose_redaction_and_exact_identity():
-    scanner, gate = redacting_gate("Body.")
-    fixture = setup(gate=gate)
-    await deliver(fixture.coordinator)
-    published = fixture.forge.calls[0]["body"]
-    assert "Body." in scanner.bodies[0]
-    assert "Body." not in published
-    assert "[REDACTED:tracker_urls]" in published
-    assert published.endswith("Tracker issue: subject/42")
 
 
 @pytest.mark.parametrize("issue_key", [None, "external/42"])

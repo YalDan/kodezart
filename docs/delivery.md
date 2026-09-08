@@ -1,190 +1,60 @@
-# Delivery coordinator boundary
+# Authored delivery
 
-`DeliveryCoordinator.deliver(dispatch, feature_branch=..., final_commit_sha=...,
-context=...)` creates or edits a lane's pull request and observes its checks.
-`LaneDispatch` contains the lane key, issue identity, head branch and recorded
-`BaseSpec`. `DeliveryContext` supplies the existing execution context, fire
-outcome, `FireSpec`, criteria, iteration count, nullable trajectory, flags and repository visibility
-used by the PR-description session. Authored calls supply
-`AuthoredSpec(ticket=...)` with validated authored criteria. Tracker calls supply
-the captured `TrackerSpec` and the criterion issues themselves, in its recorded
-key order; each must retain its owning subject and configured criterion
-membership. Empty, mixed, duplicate or mismatched tracker criteria refuse at
-context construction, and a subject differing from the dispatch refuses before
-side effects. These are caller inputs; the coordinator neither constructs a
-legacy ticket nor re-reads the tracker. The one total formatter preserves
-authored subject bytes and renders a tracker subject's body verbatim. Both
-shipped PR prompts retain tracker criterion keys, owning issue references and
-bodies without minting legacy criterion identities or classes.
+`build_workflow_engine` composes `AuthoredDeliveryCoordinator` around the shared
+fire graph. The authored HTTP path creates the PR, watches checks, routes a
+reproduced work defect through the existing remediation entry, and emits its
+existing terminal event. Scoped execution currently refuses before preparation:
+there is no active scope walker or independent delivery coordinator.
 
-The existing authored implementation, remediation and workflow PR bindings also
-use the total formatter. A generated ticket corpus exercises the actual
-consumers in both shipped prompt sets against 192 prompt digests captured on the
-dispatch base, preserving the authored bytes without changing existing goldens.
-The branch-name input still belongs to its earlier dispatch stage.
+The accepted and stalled PR-opening nodes use the same watch route. The existing
+acceptance/outcome classifier retains `stalled_pr_opened` when checks recover;
+green checks do not establish that stalled acceptance criteria passed. PR bodies
+retain the existing total FireSpec formatter, artifact cleanup, title/body gate
+and fixed issue-line validation. No bytes are appended after the gate. The three
+active authored prompt consumers retain their dispatch-base prompt digests.
 
-The forge inputs are required constructor arguments with explicitly nullable
-values. `delivery_client_for_origin` selects all five together for an origin:
-no configured client or a `file://` origin supplies no PR creator. A healthy
-`handed_off_for_delivery` call then returns `review_passed_no_pr_adapter`,
-preserving the recorded lane, issue, head and base with `pr`, `checks_passed`
-and `checks_summary` all `None`. Dispatch identity and outcome validation still
-run, but no forge read, remote lookup, cleaner, session or outbound gate runs.
-Unobserved checks are never reported as passing or as undeclared CI. A stalled
-handoff still requires its PR route. A configured creator with any missing
-supporting query, content or check capability raises `DeliveryContextError`
-before I/O; an adapter error never becomes capability absence.
+`KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` bounds simultaneous watches per
+coordinator (default 4, range 1–32). Its semaphore encloses the initial watch and
+all same-commit reruns. Failure or cancellation releases the slot. Existing
+adapter polling bounds still control each watch.
 
-With a PR creator configured, the common route accepts `handed_off_for_delivery`
-and an authored
-`stalled_pr_opened` handoff carrying its original trajectory. It verifies that the
-execution carries the dispatched issue's FIRE run identity, that the
-terminal head and recorded base agree with the call, that both branches exist
-on the configured remote, and that the remote head still matches the fire's
-final SHA. An existing-PR replay also accepts a descendant whose nonempty diff
-is confined to the cleaner's owned `.kodezart/` directory: it fetches the native
-Git objects and proves ancestry and changed paths. This permits cold replay
-after cleanup without replacing the original fire SHA or accepting later code
-changes. A missing ref raises `BaseResolutionError`; an inconsistent handoff
-raises `DeliveryContextError`. A dependent lane can open against its blocker's
-branch before that blocker has a PR.
+`KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS` bounds reruns at one observed commit
+(default 1, range 0–5). The single `classify_red_checks` service also serves
+`AuditForgeVerifier`. The original failing set comes from `failed_check_names`
+at the watched branch; `CIObservationReader` supplies its retained SHA and check
+roster from the same native response. Neither read requests another check set.
+Reruns use that immutable SHA, including a cleanup commit different from the
+fire's original tip. An incomplete, missing or contradictory observation refuses
+before rerun or remediation. The native adapter correlates each requested Actions
+attempt and keeps task-local observation identity.
 
-Cache acquisition, remote-head lookups and the replay Git observation settle
-their native processes before caller cancellation returns. Repeated cancellation
-cannot interrupt that ownership; delivery propagates cancellation before any
-subsequent description session, outbound gate or PR write.
+Repository declarations are supplied directly from the loaded operation.
+Matching `CheckStep.forge_check` and explicit `runner_environment=False` facts
+establish an unmet prerequisite before any rerun. Missing repository or
+prerequisite declarations establish no exemption; duplicate repository addresses
+refuse. The check summary is never parsed to infer a class.
 
-`DeliveryContext.from_terminal` copies the existing terminal outcome,
-iteration count and trajectory. It adds no terminal fields. An authored stalled
-handoff requires nonempty recorded work, known criterion identities and consistent
-iteration/count facts. Total iterations accumulate across remediation rounds;
-the terminal trajectory retains only the latest quality-gate invocation. Its
-record count must not exceed that cumulative total. The description is the existing factual stall report,
-with the observed published head SHA after the ordinary artifact cleanup. No
-description session runs on this path. Both presentations pass through the same
-title/body gate, PR create-or-edit route and check watcher. The required stalled
-title prefix and report heading must survive gating and the final PR read;
-failure refuses publication or its successful result without appending ungated
-content. Completed green/no-CI checks retain `stalled_pr_opened`, including after
-runner-flake recovery: successful checks do not establish acceptance criteria.
-
-The authored HTTP coordinator opens its stalled PR outside the shared fire
-graph; consuming that authored outer terminal here therefore edits the existing
-PR and then watches it. The native boundary also covers creation after a
-successful empty lookup. The delivery-free fire reports its existing loop
-outcome before publication; direct stalled lane adoption of that new handoff
-remains separate from the existing authored-terminal replay.
-Tracker stalled handoffs refuse before lookup because their trajectory producer
-does not yet carry tracker criterion identities; no authored AC ids are minted
-for those references.
-
-The existing `ForgeQuery` is a separate read dependency required when the PR
-creator is configured. After the
-handoff identity is validated, the coordinator looks up the open PR for that
-repository and head. Only a successful empty lookup permits creation. An
-existing PR is read through the separate `PRContentEditor`: URL, number, head,
-base, title and body. The native adapter requires a unique open PR for the exact
-repository and head; ambiguity or a conflicting identity raises
-`PRContentConflictError`, while malformed or unreadable responses remain typed
-adapter errors. Successful replay retains that PR's identity.
-
-After authoring and gating, the editor re-reads the expected content snapshot
-and refuses an intervening change. Matching fields cause no write. Otherwise,
-the GitHub adapter sends one PATCH containing only differing title, body and
-base fields and verifies the response. It never retries that mutation after an
-uncertain transport result. Both adapters share content conformance tests;
-native coordinator tests cover creation followed by replay and existing-PR
-editing followed by a replay with no additional content write.
-
-These are optimistic checks. The [GitHub pull-request REST contract](https://docs.github.com/en/rest/pulls/pulls)
-does not provide the content editor with an atomic compare-and-swap guarantee.
-Concurrent edits can still arrive between the read and PATCH, and simultaneous
-calls can still race on an absent PR. These limitations are not treated as
-successful exclusion.
-
-If an artifact cleaner is supplied, it runs before description generation and
-both remote refs are checked again afterward. Cleanup may advance the branch;
-the caller's original fire SHA is preserved. The description session uses the
-existing PR-description prompt and output schema in a fresh read-only session,
-with the original run identity. The harness appends recorded flags and issue
-identity before sending both title and body through the shared outbound gate.
-Every PR writer then validates the fixed tracker-issue line in the gated body.
-If rewriting removed or changed that identity, `PRTrackerIdentityError`
-refuses publication; the writer never appends bytes after the gate. Permitted
-redaction of other prose remains publishable, and legacy calls without an
-issue key retain their existing behavior.
-
-Retargeting an existing PR sends the dispatch-resolved base through the shared
-identifier gate before PATCH. A blocked or rewritten reference refuses the
-update; it never substitutes another branch. `PRCreator` remains exactly
-`create_pr` and `comment_on_pr`; content reads and edits expose no merge or
-mergedness operation.
-The composition module's `pr_content_editor_for_origin` selects this capability
-using the shared origin predicate, returning no editor for a `file://` origin or
-an absent client.
-
-The coordinator creates or edits the PR and calls `wait_for_checks` with its head branch.
-One semaphore per coordinator limits concurrent watches using
-`KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES`. A failed or canceled watch releases
-its slot. The existing CI poll budgets remain adapter configuration.
-
-A completed red now reaches the existing structural classifier. The separate
-`CIObservationReader` returns the original watch's commit SHA and verdict,
-using the native check run's `head_sha` from the
-[GitHub Checks response](https://docs.github.com/en/rest/checks/runs#list-check-runs-for-a-git-reference).
-The existing `failed_check_names` reads the original branch ref from those
-same retained bytes, then reads each requested rerun attempt. Both classifier
-comparisons use that one failing-set reader. Neither original read performs
-another query, so a moving branch cannot replace the original failing set.
-Missing or mixed commit identities, incomplete or nonterminal
-sets, and absent observations raise `CheckObservationError`. Each async task
-owns its observations; starting another watch clears the previous result
-before that new watch can fail or be canceled. The normal monitor retains its
-four methods and its existing timeout/no-CI behavior; a timeout cannot supply
-the completed red evidence this reader requires.
-
-The observed commit must match the delivered remote head, including a cleanup
-commit when present. The classifier receives that observed SHA and failing
-set, then follows the declared prerequisite and bounded rerun order. Its
-repository declarations come from the required `OperationConfig`, resolved
-against the delivered URL using the existing clone URL resolver. Missing or
-ambiguous repository declarations refuse classification; an undeclared
-environment prerequisite never establishes that it is unmet.
-After recovery the coordinator re-reads the remote head and refuses if it
-moved away from the commit that was checked. These are observations, not an
-atomic lock on a branch another writer can move.
-
-A not-red rerun establishes `RUNNER_FLAKE`. Green returns through the ordinary
-successful PR validation; `None` still needs a successful declaration read
-establishing no CI. Rerun watches retain the same semaphore slot and create no
-remediation session. Other red classes remain typed unavailable routes with
-their observed check facts. The per-origin `ci_observation_reader_for_origin`
-selector supplies no capability for a `file://` origin or an absent client.
-
-Before returning success it re-observes the same unique open PR, its recorded
-base and its fixed issue line. Closure, ambiguity or a changed identity/base
-during watching cannot produce a stale successful result.
-
-| Observation | Result |
+| Observation | Active authored behavior |
 | --- | --- |
-| Healthy handoff with no configured PR creator | `review_passed_no_pr_adapter`, retaining `pr=None` and unknown check facts |
-| Checks pass | Open PR and `ci_passed` |
-| No checks, and the adapter confirms no active workflow declaration | Open PR and `ci_not_configured`, retaining `checks_passed=None` |
-| Red checks that recover at the same commit | Ordinary green/no-CI result after bounded rerun |
-| Authored stalled handoff whose ordinary green/no-CI route completes | Open PR and `stalled_pr_opened`, retaining the observed check result |
-| Reproduced, prerequisite-unmet or unclassified red, or no checks despite an active declaration | `DeliveryRouteUnavailableError` carrying the observed PR and check facts |
-| Any other fire outcome | `DeliveryRouteUnavailableError` before writes |
-| Failed forge or declaration read | The adapter's typed refusal propagates |
+| Same-SHA rerun becomes nonred | `RUNNER_FLAKE`; no remediation round |
+| Explicitly unmet prerequisite of a failing check | `ci_failed_environment_prerequisite`; no rerun or fix |
+| Every rerun stays red with the original failing set | `WORK_DEFECT`; the shared remediation entry, within its existing budget |
+| Every rerun stays red and a failing set differs | `ci_failed_unclassified`; no fix |
+| No checks and no declared workflow | `ci_not_configured` |
+| No run despite declared workflows | `ci_no_run_at_ref`, unless the repository explicitly declares `forge_exempt` |
 
-The coordinator has no merge capability or tracker issue-state writer. An
-unavailable route does not produce a successful `LaneDelivery` or claim that
-a residual was published.
+A zero rerun bound reproduces a red vacuously and reaches the work-defect route
+unless an explicit unmet prerequisite takes precedence. The four red classes use
+one vocabulary. The historical root/cascade check-chain classifier and authored
+terminal outcome classifier address different facts and remain separate.
 
-This boundary is callable independently; scope-walker dispatch and application
-composition are not connected yet. The legacy fire graph still owns its prior
-PR/check nodes until that extraction is completed. Tracker stalled trajectories,
-the shared remediation loop, durable residual publication, and declared-no-run
-exemption/close-out remain unfinished.
-Tracker fire entry, approval/state eligibility, per-iteration criterion queries
-and the write-only artifact projection remain separate integration work. This
-delivery input path does not establish any of those producer behaviors.
+The retired alternative's `LaneDispatch`, `DeliveryContext`, `LaneDelivery`, PR
+content editor/query capabilities and their exclusive fixtures are removed.
+The actual PR-state audit reader and native lane reports remain. Unused scope
+terminal/residual wrappers are removed without deleting public outcome values.
+
+This change does not implement scoped dispatch, native terminal/residual
+publication, tracker criterion state writes, or PR content replay. The authored
+PR creation behavior remains its existing API; the retired alternative's
+optimistic replay checks are not claimed as active behavior. No delivery path
+merges a PR or writes tracker issue state.

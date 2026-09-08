@@ -263,6 +263,10 @@ def _real_engine(
         persister=FakeChangePersister(),
     )
     return AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=service,
         quality_gate=FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
@@ -417,6 +421,10 @@ def _mid_run_engine(
         persister=FakeChangePersister(),
     )
     return AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=service,
         quality_gate=quality_gate,
         ticket_generator=FakeTicketGenerator(),

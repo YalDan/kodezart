@@ -8,8 +8,6 @@ from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import (
     CIObservationReader,
-    ForgeQuery,
-    PRContentEditor,
     PRStateReader,
 )
 from kodezart.domain.git_url import is_forge_less_origin
@@ -40,39 +38,6 @@ def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
         if config.github_token is not None
         else None
     )
-
-
-def delivery_client_for_origin(
-    *, client: GitHubAPIClient | None, repo_url: str
-) -> GitHubAPIClient | None:
-    """Select all delivery forge capabilities together for the supplied origin.
-
-    Pass this result into the coordinator's PR, content, query and check
-    slots. No configured client and a forge-less origin both establish
-    absence before the coordinator can ask a forge to act.
-    """
-    return None if is_forge_less_origin(repo_url) else client
-
-
-def forge_query_for_origin(
-    *,
-    client: ForgeQuery | None,
-    repo_url: str,
-) -> ForgeQuery | None:
-    """Select the read capability before a caller asks a forge-less origin.
-
-    Query consumers receive no capability for a local repository, using the
-    same origin predicate as workflow and delivery selection. A configured
-    credential alone never establishes that an origin has a forge.
-    """
-    return None if is_forge_less_origin(repo_url) else client
-
-
-def pr_content_editor_for_origin(
-    *, client: PRContentEditor | None, repo_url: str
-) -> PRContentEditor | None:
-    """Select PR content access only for an origin with a forge capability."""
-    return None if is_forge_less_origin(repo_url) else client
 
 
 def ci_observation_reader_for_origin(

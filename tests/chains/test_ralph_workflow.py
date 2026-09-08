@@ -139,6 +139,10 @@ def _make_engine(
     retry_max_attempts: int = 3,
     delay_floor_for: DelayFloor = no_delay_floor,
     outbound_gate: OutboundContentGate | None = None,
+    repositories=(),
+    observations=None,
+    max_concurrent_watches=4,
+    red_rerun_max_attempts=0,
 ) -> AuthoredDeliveryCoordinator:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
@@ -155,6 +159,10 @@ def _make_engine(
         persister=FakeChangePersister(),
     )
     return AuthoredDeliveryCoordinator(
+        ci_observations=observations or getattr(ci_monitor, "observation_reader", None),
+        repositories=repositories,
+        max_concurrent_watches=max_concurrent_watches,
+        red_rerun_max_attempts=red_rerun_max_attempts,
         gate=PassThroughGate() if outbound_gate is None else outbound_gate,
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
@@ -697,6 +705,10 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         last_commit_sha="a" * 40,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -947,6 +959,10 @@ async def test_criteria_receives_formatted_ticket() -> None:
         last_commit_sha="a" * 40,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1339,6 +1355,10 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         last_commit_sha="a" * 40,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=getattr(ci_monitor, "observation_reader", None),
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1657,6 +1677,10 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         last_commit_sha="a" * 40,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1819,6 +1843,10 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         last_commit_sha="a" * 40,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=getattr(ci_monitor, "observation_reader", None),
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -2978,6 +3006,10 @@ def _make_engine_with_executor(
         last_commit_sha="a" * 40,
     )
     return AuthoredDeliveryCoordinator(
+        ci_observations=getattr(ci_monitor, "observation_reader", None),
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
@@ -3112,6 +3144,10 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         last_commit_sha=feature_tip,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3188,6 +3224,10 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         persister=FakeChangePersister(),
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3276,6 +3316,10 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         last_commit_sha="a" * 40,
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3625,6 +3669,10 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         persister=FakeChangePersister(),
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3786,7 +3834,9 @@ async def test_terminal_outcome_ci_not_configured_when_ci_reports_none() -> None
     """A three-state CI result of None with a summary is ci_not_configured."""
     engine = _make_engine(
         pr_creator=FakePRCreator(),
-        ci_monitor=FakeCIMonitor(passed=None, summary="No CI checks configured."),
+        ci_monitor=FakeCIMonitor(
+            passed=None, declared=False, summary="No CI checks configured."
+        ),
     )
 
     events = [
@@ -3962,6 +4012,10 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
         persister=FakeChangePersister(),
     )
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -4228,6 +4282,10 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
 ):
     """No silent fallback: a run that produced commits always lands a PR."""
     engine = AuthoredDeliveryCoordinator(
+        ci_observations=None,
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -4872,7 +4930,6 @@ def _dispatch_sites() -> list[tuple[str, str]]:
 KEYED_DISPATCH_COUNTS = {
     "audit_pass.py": 2,
     "audit_sessions.py": 1,
-    "delivery_coordinator.py": 1,
     "agent_content_scanner.py": 1,
     "git_change_persister.py": 1,
     "organize.py": 1,

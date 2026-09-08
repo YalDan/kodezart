@@ -16,7 +16,6 @@ it is chosen by the same predicate.
 
 import ast
 import asyncio
-import json
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -33,8 +32,6 @@ from kodezart.composition.engine import (
 from kodezart.composition.forge import (
     build_forge_client,
     ci_observation_reader_for_origin,
-    forge_query_for_origin,
-    pr_content_editor_for_origin,
     pr_state_reader_for_origin,
 )
 from kodezart.composition.jobs import build_job_queue
@@ -45,8 +42,6 @@ from kodezart.core.protocols import (
     CIMonitor,
     CIObservationReader,
     DeliveryProbe,
-    ForgeQuery,
-    PRContentEditor,
     PRCreator,
     PRStateReader,
     RepoVisibilityResolver,
@@ -98,7 +93,7 @@ COMPOSITION = SRC / "composition"
 #: through.  Bound as a set at exactly one site, so a capability cannot be
 #: selected apart from its peers.
 ENGINE_FORGE_SLOTS: frozenset[str] = frozenset(
-    {"visibility_resolver", "pr_creator", "ci_monitor"},
+    {"visibility_resolver", "pr_creator", "ci_monitor", "ci_observations"},
 )
 
 #: The forge client parameter of the composition root.  Its presence is
@@ -118,8 +113,6 @@ COVERED_BY_ORIGIN: dict[type, str] = {
     CIMonitor: "ci_monitor",
     RepoVisibilityResolver: "visibility_resolver",
     DeliveryProbe: "delivery",
-    ForgeQuery: "query",
-    PRContentEditor: "pr_content",
     CIObservationReader: "ci_observations",
     PRStateReader: "pr_state",
 }
@@ -175,6 +168,10 @@ class RecordingForge:
 def _arm(*, forge: RecordingForge | None) -> AuthoredDeliveryCoordinator:
     """One engine arm, wired exactly as the composition root wires it."""
     return AuthoredDeliveryCoordinator(
+        ci_observations=getattr(forge, "observation_reader", None),
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=AgentService(
             git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
@@ -396,6 +393,7 @@ async def test_the_builder_wires_both_arms_and_refuses_scope_without_io(kind) ->
             # The shared prompt fixture resolves its set for the reviewed
             # mode, and the ticket loop refuses a config that asks for a
             # guarantee the resolved set cannot deliver.
+            repositories=(),
             config=AppConfig(ticket_review_mode=TicketReviewMode.REVIEWED),
             agent_service=AgentService(
                 git_base_url="https://github.com",
@@ -536,100 +534,6 @@ def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
     assert isinstance(delivery.value, ast.Call)
     assert isinstance(delivery.value.func, ast.Name)
     assert delivery.value.func.id == "delivery_probe_for"
-
-
-@pytest.mark.parametrize("repo_url", [FORGE_ORIGIN, "https://github.example/o/r.git"])
-async def test_query_capability_selects_repository_origin_before_read(repo_url):
-    from tests.fakes import FakeForgeQuery
-
-    expected = (f"{repo_url}/pull/7", 7)
-    client = FakeForgeQuery(open_prs={(repo_url, "feature"): expected})
-    selected = forge_query_for_origin(client=client, repo_url=repo_url)
-    assert selected is client
-    assert (
-        await selected.open_pr_for_head(repo_url=repo_url, head="feature") == expected
-    )
-    assert client.calls == [
-        {"method": "open_pr_for_head", "repo_url": repo_url, "head": "feature"}
-    ]
-
-
-def test_query_capability_is_absent_for_local_origin_despite_client():
-    from tests.fakes import FakeForgeQuery
-
-    client = FakeForgeQuery()
-    assert forge_query_for_origin(client=client, repo_url=FILE_ORIGIN) is None
-    assert client.calls == []
-
-
-def test_query_capability_is_absent_without_configured_client():
-    assert forge_query_for_origin(client=None, repo_url=FORGE_ORIGIN) is None
-
-
-@pytest.mark.parametrize(
-    "repo_url", [FORGE_ORIGIN, "https://github.example/owner/repo"]
-)
-async def test_content_capability_selects_origin_before_native_read_and_edit(repo_url):
-    from tests.adapters.test_github_api import _make_client
-
-    requests = []
-    row = {
-        "html_url": f"{repo_url}/pull/7",
-        "number": 7,
-        "head": {"ref": "feature"},
-        "base": {"ref": "main"},
-        "title": "Before",
-        "body": "Body",
-    }
-
-    def handler(request):
-        requests.append(request)
-        if request.method == "GET":
-            assert request.url.path == "/repos/owner/repo/pulls"
-            assert request.url.params["head"] == "owner:feature"
-            return httpx.Response(200, json=[row])
-        assert request.method == "PATCH"
-        assert request.url.path == "/repos/owner/repo/pulls/7"
-        assert json.loads(request.content) == {"title": "After"}
-        row["title"] = "After"
-        return httpx.Response(200, json=row)
-
-    client = _make_client(handler)
-    selected = pr_content_editor_for_origin(client=client, repo_url=repo_url)
-    assert selected is client
-    try:
-        before = await selected.read_open_pr(
-            repo_url=repo_url, head="feature", pr_number=7
-        )
-        after = await selected.edit_pr(
-            repo_url=repo_url, expected=before, title="After", body="Body", base="main"
-        )
-    finally:
-        await client.close()
-    assert after.title == "After" and after.url == before.url and after.number == 7
-    assert [request.method for request in requests] == ["GET", "GET", "PATCH"]
-
-
-@pytest.mark.parametrize("repo_url", [FILE_ORIGIN, "file:///var/repository.git"])
-async def test_content_capability_is_absent_for_local_origin_despite_client(repo_url):
-    from tests.adapters.test_github_api import _make_client
-
-    requests = []
-
-    def handler(request):
-        requests.append(request)
-        raise AssertionError("a local origin cannot ask the forge")
-
-    client = _make_client(handler)
-    try:
-        assert pr_content_editor_for_origin(client=client, repo_url=repo_url) is None
-    finally:
-        await client.close()
-    assert requests == []
-
-
-def test_content_capability_is_absent_without_configured_client():
-    assert pr_content_editor_for_origin(client=None, repo_url=FORGE_ORIGIN) is None
 
 
 async def test_native_watch_observation_reader_is_selected_by_origin():

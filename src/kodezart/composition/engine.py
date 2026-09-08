@@ -4,7 +4,7 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -33,6 +33,7 @@ from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.skills import SkillsSelection
@@ -148,6 +149,7 @@ def rate_limit_delay_floor(config: AppConfig) -> DelayFloor:
 def build_workflow_engine(
     *,
     config: AppConfig,
+    repositories: Sequence[RepoEntry],
     agent_service: AgentService,
     git: GitService,
     cache: RepoCache,
@@ -228,6 +230,10 @@ def build_workflow_engine(
             delay_floor_for=delay_floor_for,
             pr_creator=forge,
             ci_monitor=forge,
+            ci_observations=forge,
+            repositories=repositories,
+            max_concurrent_watches=config.delivery_max_concurrent_watches,
+            red_rerun_max_attempts=config.delivery_red_rerun_max_attempts,
             ref_publisher=ref_publisher,
             remediator=remediator,
             remediation_max_rounds=config.remediation_max_rounds,

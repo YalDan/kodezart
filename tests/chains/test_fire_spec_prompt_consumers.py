@@ -8,15 +8,16 @@ import pytest
 
 from kodezart.chains import (
     authored_delivery,
-    delivery_coordinator,
     ralph_workflow,
     remediation,
 )
 from kodezart.domain.ticket import format_fire_spec
+from kodezart.types.domain.agent import ResultEvent
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import ConjunctionVerdict, CriteriaArtifact
 from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.gating import RepoVisibility
-from tests.chains.test_delivery_runtime import context, deliver, description, setup
+from kodezart.types.domain.workflow import ExecutionContext
 from tests.chains.test_ralph_workflow import _make_engine
 from tests.chains.test_remediation import _chain, _request, _ticket_result
 from tests.domain.test_fire_spec_formatter import tickets
@@ -25,6 +26,7 @@ from tests.fakes import (
     FakePRCreator,
     FakeQualityGate,
     RecordingPromptProvider,
+    make_criteria,
     make_passing_evaluation,
 )
 from tests.prompts.sets import OPUS_SET, V5_SET
@@ -36,12 +38,33 @@ CORPUS = list(tickets())
 
 async def capture_prompts(family, ticket, monkeypatch):
     provider = RecordingPromptProvider(load_registry(default_set=family))
-    facts = context(spec=AuthoredSpec(ticket=ticket))
+    execution = ExecutionContext(
+        prompt="The original dispatched prompt.",
+        repo_path="/checkout",
+        repo_url="https://github.com/example/project",
+        cache_key="original-job",
+        base_spec=trunk_base("selected-base"),
+        permission_mode="acceptEdits",
+        allowed_tools=["Read"],
+    )
     quality_gate = FakeQualityGate(events=[], evaluation=make_passing_evaluation())
     engine = _make_engine(
         quality_gate=quality_gate, pr_creator=FakePRCreator(), prompts=provider
     )
-    runner = FakeAgentRunner([description()])
+    runner = FakeAgentRunner(
+        [
+            ResultEvent(
+                result="",
+                session_id="description",
+                subtype="result",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                structured_output={"title": "Authored title", "description": "Body."},
+            )
+        ]
+    )
     engine._service = runner
     monkeypatch.setattr(ralph_workflow, "get_stream_writer", lambda: lambda _: None)
     monkeypatch.setattr(authored_delivery, "get_stream_writer", lambda: lambda _: None)
@@ -54,14 +77,14 @@ async def capture_prompts(family, ticket, monkeypatch):
         "work_base_ref": "selected-base",
         "feature_tip_sha": "a" * 40,
         "criteria_artifact": CriteriaArtifact(
-            criteria=list(facts.criteria),
+            criteria=make_criteria("Recorded criterion"),
             conjunction=ConjunctionVerdict(satisfiable=True),
         ),
         "total_iterations": 7,
         "repo_visibility": RepoVisibility.PUBLIC,
         "flagged_items": [],
     }
-    config = {"configurable": facts.execution.model_dump()}
+    config = {"configurable": execution.model_dump()}
     await engine._run_ralph_loop_node(state, config)
     await engine._open_pr_node(state, config)
 
@@ -73,13 +96,10 @@ async def capture_prompts(family, ticket, monkeypatch):
             request, repo_path="/checkout", repo_url=None, cache_key="fix"
         )
     ]
-    delivery = setup(family=family)
-    await deliver(delivery.coordinator, facts=facts)
     return {
         "implementation": quality_gate.calls[0]["prompt"],
         "fix": fix_runner.calls[0]["prompt"],
         "workflow_pr": runner.calls[0]["prompt"],
-        "delivery_pr": delivery.runner.calls[0]["prompt"],
     }
 
 
@@ -100,11 +120,10 @@ async def test_real_authored_consumer_prompts_match_recorded_base(
         ralph_workflow,
         authored_delivery,
         remediation,
-        delivery_coordinator,
     ):
         monkeypatch.setattr(module, "format_fire_spec", formatted)
     actual = await capture_prompts(family, CORPUS[index], monkeypatch)
-    assert len(calls) == 4
+    assert len(calls) == 3
     assert all(isinstance(spec, AuthoredSpec) for spec in calls)
     assert all(spec.ticket == CORPUS[index] for spec in calls)
     assert {
