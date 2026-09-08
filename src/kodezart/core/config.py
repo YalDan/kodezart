@@ -61,29 +61,33 @@ class AppConfig(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Keep normal precedence; make retired knowledge variables visible errors."""
+        """Keep normal precedence; expose retired settings to extra-field refusal."""
+
+        def retired(key: str, prefix: str) -> bool:
+            key, prefix = key.casefold(), prefix.casefold()
+            if not key.startswith(prefix):
+                return False
+            name = key.removeprefix(prefix)
+            return name in {
+                "organize_max_admission_rounds",
+                "organize_max_convergence_rounds",
+            } or (name.startswith("knowledge_") and not name.startswith("knowledge__"))
 
         def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
             values = source()
             if isinstance(source, EnvSettingsSource):
-                prefix = f"{source.env_prefix}knowledge_".casefold()
                 for key, value in source.env_vars.items():
-                    if key.casefold().startswith(
-                        prefix
-                    ) and not key.casefold().startswith(prefix + "_"):
+                    if retired(key, source.env_prefix):
                         # Preserve retired names for extra=forbid; never expose values.
                         values[key] = value
             if (
                 isinstance(source, SecretsSettingsSource)
                 and source.secrets_dir is not None
             ):
-                prefix = f"{source.env_prefix}knowledge_".casefold()
                 for directory in source.secrets_paths:
                     for path in directory.iterdir():
                         key = path.name
-                        if key.casefold().startswith(
-                            prefix
-                        ) and not key.casefold().startswith(prefix + "_"):
+                        if retired(key, source.env_prefix):
                             # Reject the retired name without reading its secret value.
                             values[key] = None
             return InitSettingsSource(settings_cls, init_kwargs=values)
@@ -218,18 +222,6 @@ class AppConfig(BaseSettings):
             "Distinct machine-authored rulings allowed since a lane last "
             "closed a previously-open obligation reference."
         ),
-    )
-    organize_max_admission_rounds: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum organize admission re-author and re-test rounds.",
-    )
-    organize_max_convergence_rounds: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum organize whole-scope convergence rounds.",
     )
     ticket_review_mode: TicketReviewMode = Field(
         default=TicketReviewMode.CREATE_ONLY,
