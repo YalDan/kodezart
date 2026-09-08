@@ -25,6 +25,7 @@ from datetime import timedelta
 
 import pytest
 
+from kodezart.domain.errors import UnsupportedClaimError
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -47,6 +48,7 @@ from tests.tracker.connected_app_label_contract import (
     CONNECTED_APP_LABEL_ARGUMENTS,
     CONNECTED_APP_LABEL_REQUIRED,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 
 @dataclass(frozen=True)
@@ -360,10 +362,18 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="changed"
     )
     await tracker.list_comments(issue_key=CLAIMED_ISSUE)
-    await tracker.claim_issue(
+    with pytest.raises(UnsupportedClaimError):
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="holder",
+            lease_seconds=60.0,
+        )
+    await tracker.post_comment(
         issue_key=CLAIMED_ISSUE,
-        holder="holder",
-        lease_seconds=60.0,
+        body=(
+            f'<!-- {MARKER_PREFIXES["claim"]} holder="holder" '
+            'expires-at="2099-01-01T00:00:00+00:00" -->'
+        ),
     )
     await tracker.active_claim(issue_key=CLAIMED_ISSUE)
     await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="holder")

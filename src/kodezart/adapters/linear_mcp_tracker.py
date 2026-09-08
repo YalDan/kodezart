@@ -1,33 +1,15 @@
-"""Linear tracker adapter — a programmatic MCP client behind ``TrackerPort``.
+"""Linear tracker adapter behind the programmatic MCP port.
 
-Every read and write on the deterministic path is a named tool call with
-no model in the loop.  The adapter owns everything vendor-shaped: the
-identifier translation, queue-state-as-label mechanics, the atomic-claim
-mechanism and the priority encoding.  None of it crosses the port.
-
-This is the FIRST adapter, not the design centre.  A GitHub Issues or Jira
-adapter is a peer module implementing the same protocol; consumers change
-by nothing at all.
-
-The atomic claim is built on the issue comment log, which is append-only
-with server-assigned timestamps.  A claimant appends its marker, then reads
-the log back and takes the EARLIEST unexpired marker as the holder.  Every
-concurrent claimant computes the same winner from the same log, so exactly
-one observes ``GRANTED``.
-
-A renewal EDITS the holder's earliest marker rather than appending a second
-one, so one claim costs one comment however long the run it guards lasts.
-Everything that would otherwise pile up on the log is removed by the writer
-that put it there: a renewal deletes this holder's own duplicates, and a
-claimant whose read-back says LOST deletes the marker it just appended.
-Neither ever touches a marker another holder wrote, so the order the log
-records stays the order every claimant computes from it.
+The adapter owns native identifiers, label/state mappings and tool calls.
+Comment updates lack an atomic owner/version precondition, so acquisition
+and renewal explicitly refuse. Legacy claim records remain readable and
+releasable; their timestamp order does not establish safe ownership writes.
 """
 
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Final, assert_never
 
@@ -54,6 +36,7 @@ from kodezart.domain.errors import (
     EscalationReadError,
     IssueLabelReadError,
     TransientAPIError,
+    UnsupportedClaimError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
@@ -1423,37 +1406,11 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> ClaimResult:
-        """Append a claim marker, then read the log back to learn the winner.
-
-        A LOSER deletes the marker it just appended.  The append has to
-        happen before the read-back — that append is what the race is
-        decided over — so the decision itself is untouched, and the delete
-        lands strictly after it.
-
-        What the delete removes is a claim nobody holds.  A loser's marker
-        used to sit on the log for its whole lease: it outranked every
-        claimant that arrived after it, it survived the WINNER's release,
-        and nothing renewed it or cleaned it up, so an issue whose work had
-        long finished stayed unclaimable until that lease ran out.  The
-        marker is deleted by the identifier the server assigned this
-        append, so no marker another claimant wrote can be reached from
-        here.
-        """
-        expires_at = self._clock() + timedelta(seconds=lease_seconds)
-        appended = await self._append_claim_marker(
-            issue_key=issue_key,
-            holder=holder,
-            expires_at=expires_at,
-        )
-        winner = await self.active_claim(issue_key=issue_key)
-        if winner is not None and winner.holder == holder:
-            return winner
-        await self._delete_own_comment(issue_key=issue_key, comment_key=appended)
-        return ClaimResult(
-            issue_key=issue_key,
-            status=ClaimStatus.LOST,
-            holder=holder,
-            expires_at=expires_at,
+        """Refuse acquisition without a native atomic ownership primitive."""
+        raise UnsupportedClaimError(
+            f"Linear MCP cannot fence claim acquisition for {issue_key!r}, "
+            f"holder {holder!r}, duration {lease_seconds:g}s; "
+            "comment creation and renewal have no conditional ownership check"
         )
 
     async def renew_claim(
@@ -1463,91 +1420,12 @@ class LinearMcpTracker:
         holder: str,
         lease_seconds: float,
     ) -> ClaimResult | None:
-        """Carry the holder's own marker forward, EDITED rather than appended.
-
-        The holder's OWN unexpired markers are the whole precondition, and
-        not who currently wins the log's order: a losing claimant's marker
-        outliving the winner's first one takes the order for as long as it
-        lasts, and a run whose work is still in flight may not stop
-        renewing over that.
-
-        The marker that moves is the holder's EARLIEST, under the same total
-        order ``active_claim`` computes, and it is updated in place.  Two
-        properties follow, and both are the reason this is an edit:
-
-        ``created_at`` is the primary sort key, so editing keeps the holder
-        exactly where it already stood in the order — for the whole life of
-        the claim, however many times it renews.  Appending could not: a
-        renewal marker carries a LATER ``created_at``, so once the original
-        lapsed the holder's remaining marker could lose the order to a
-        claimant that started after it.
-
-        And a renewal costs no comment.  Appending wrote one every renewal
-        interval for as long as the job ran, which on measured fire
-        durations is dozens of machine comments on one issue, in a log a
-        person is expected to read and on a board that mirrors publicly.
-
-        Any FURTHER unexpired marker this holder owns is deleted in the same
-        pass: they are this holder's own duplicates, they can only muddy the
-        order, and converging on one marker per claim is what makes the
-        first property hold.
-        """
-        mine = sorted(
-            (
-                marker
-                for marker in await self._unexpired_claim_markers(issue_key)
-                if marker.holder == holder
-            ),
-            key=lambda marker: (marker.created_at, marker.comment_key),
+        """Never resurrect an expired marker with an unfenced native write."""
+        raise UnsupportedClaimError(
+            f"Linear MCP cannot fence claim renewal for {issue_key!r}, "
+            f"holder {holder!r}, duration {lease_seconds:g}s; "
+            "save_comment has no expected owner or version"
         )
-        if not mine:
-            return None
-        expires_at = max(
-            self._clock() + timedelta(seconds=lease_seconds),
-            *(marker.expires_at for marker in mine),
-        )
-        earliest, *duplicates = mine
-        payload = await self._call(
-            _TOOL_SAVE_COMMENT,
-            {
-                "id": earliest.comment_key,
-                "body": self._markers.claim_body(holder=holder, expires_at=expires_at),
-            },
-        )
-        self._comment_written(issue_key=issue_key, payload=payload, created=False)
-        for duplicate in duplicates:
-            await self._delete_own_comment(
-                issue_key=issue_key, comment_key=duplicate.comment_key
-            )
-        return ClaimResult(
-            issue_key=issue_key,
-            status=ClaimStatus.GRANTED,
-            holder=holder,
-            expires_at=expires_at,
-        )
-
-    async def _append_claim_marker(
-        self,
-        *,
-        issue_key: str,
-        holder: str,
-        expires_at: datetime,
-    ) -> str:
-        """Append one marker, answering with the key the server assigned it.
-
-        The key is what makes a losing claimant able to delete its OWN
-        append and nothing else.
-        """
-        payload = await self._call(
-            _TOOL_SAVE_COMMENT,
-            {
-                "issueId": issue_key,
-                "body": self._markers.claim_body(holder=holder, expires_at=expires_at),
-            },
-        )
-        return self._comment_written(
-            issue_key=issue_key, payload=payload, created=True
-        ).comment_key
 
     async def _unexpired_claim_markers(
         self,

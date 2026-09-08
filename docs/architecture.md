@@ -1027,7 +1027,7 @@ transition is not absorbed. A later, unreadable, or inconsistent enrichment
 leaves history unaccounted for and wakes conservatively; it never restamps or
 fails the landed write. Cancellation still propagates.
 
-This suppresses unchanged own claim/renew/release, marker, base, and mixed
+This suppresses unchanged own legacy-claim release, marker, base, and mixed
 lifecycle churn while retaining differing principal fields, comments,
 edits, and deletions. Timestamp-only movement without a new local receipt
 still wakes. Current snapshots cannot establish the causal author of
@@ -1044,3 +1044,14 @@ Substring matches, repeated fragments and incidental desired text never
 identify the target. `upsert_issue` supplies the complete body it read and
 preserves its adapter-owned identity. This is optimistic stale-read detection,
 not atomic compare-and-swap; callers still serialize writes.
+
+### Native claim ownership
+
+The Linear MCP adapter refuses acquisition and renewal before any backend
+request with `UnsupportedClaimError`: comment updates expose no atomic owner
+or version precondition. A delayed renewal must not restore an expired owner.
+This permanent refusal stops claim-dependent dispatch before enqueue; heartbeat
+logs it once and stops. Legacy marker reads and releases remain available.
+The shared claim contract permits unsupported refusal only before mutation;
+capable test doubles still exercise grant, renewal, expiry and replay behavior.
+This does not implement surface-set leases or provide a native fencing token.

@@ -7,6 +7,10 @@ from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
 
 
+class UnsupportedClaimError(RuntimeError):
+    """The tracker cannot fence exclusive claim acquisition or renewal."""
+
+
 class IssueLabelReadError(Exception):
     """A configured classification cannot establish complete issue membership."""
 

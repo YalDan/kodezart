@@ -28,6 +28,9 @@ that lease, and on an instance that was stopped rather than lost that is a
 replacement locked out of work nobody is doing.  The lapse stays where it
 belongs — the arm where no code of ours runs at all.
 
+This lifecycle is for a claim-capable backend. Unsupported native ownership
+is a permanent refusal: it is logged once, and no further renewal is tried.
+
 A renewal write that fails does not end the loop.  The interval is a
 fraction of the lease precisely so several consecutive failures are
 survivable, and a tracker that is durably unreachable ends with the lease
@@ -44,6 +47,7 @@ from contextlib import asynccontextmanager, suppress
 from kodezart.core.errors import McpCredentialRefusedError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.errors import UnsupportedClaimError
 
 
 class ClaimHeartbeat:
@@ -121,6 +125,14 @@ class ClaimHeartbeat:
                 )
             except asyncio.CancelledError:
                 raise
+            except UnsupportedClaimError as exc:
+                await self._log.aerror(
+                    "claim_renewal_unsupported",
+                    issue_key=issue_key,
+                    holder=self._holder,
+                    error=str(exc),
+                )
+                return
             except McpCredentialRefusedError as exc:
                 # A third arm, and it is neither of the two above.  A write
                 # that FAILED is survivable by design — the interval is a

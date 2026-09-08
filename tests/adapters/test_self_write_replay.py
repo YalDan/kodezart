@@ -13,11 +13,10 @@ from tests.adapters.test_tracker_self_writes import (
     DONE_STATE,
     HOLDER,
     ISSUE,
-    LEASE_SECONDS,
     STAMP,
     TEAM_KEY,
-    _claim_granted,
     _gate,
+    _legacy_claim,
     _server,
     _tracker,
 )
@@ -162,11 +161,8 @@ async def test_mixed_declared_issue_fields_and_comment_churn_stay_quiet() -> Non
     await tracker.set_queue_state(issue_key=ISSUE, state=QueueState.PROPOSED)
     await tracker.set_queue_state(issue_key=ISSUE, state=QueueState.APPROVED)
     await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")
-    await _claim_granted(tracker)
-    await _claim_granted(tracker)
-    await tracker.renew_claim(
-        issue_key=ISSUE, holder=HOLDER, lease_seconds=LEASE_SECONDS
-    )
+    await _legacy_claim(tracker)
+    await _legacy_claim(tracker)
     await tracker.release_claim(issue_key=ISSUE, holder=HOLDER)
     await tracker.upsert_comment(target=ISSUE, marker="<!-- own note -->", body="first")
     initial = server.comments[-1].created_at

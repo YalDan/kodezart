@@ -788,6 +788,17 @@ it could not resolve. Nothing runs until you fix it.
 *Observable result:* one of the three states, identified by name, with no line
 in the startup log left unaccounted for.
 
+**Native claim capability:** Linear MCP currently refuses claim acquisition and
+renewal with `UnsupportedClaimError`. Its comment API has no conditional
+ownership/version update, and delayed renewal can otherwise displace a newer
+holder. Claim-dependent dispatch therefore refuses before enqueueing a fire.
+Existing claim reads and releases remain available for cleanup; changing lease
+timing cannot enable safe native claims. Authored HTTP execution and the
+read-only tracker paths retain their existing contracts.
+
+The following fire progression describes a claim-capable adapter; it is not
+currently a successful Linear MCP smoke test.
+
 **8. Smoke test — the one act that is yours.** The loop watches for issues
 carrying the approval label. **Applying that label is the single human act the
 design preserves, and an agent following this guide must not perform it**: a

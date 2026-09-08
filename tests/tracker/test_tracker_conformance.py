@@ -1,5 +1,6 @@
 """Port-level conformance suite — written once, run against every adapter.
 
+An unsupported claim operation must refuse before any mutation.
 Passing this module IS the definition of conforming.  Nothing here names a
 vendor, a tool, or a vendor identifier format: an adapter that needed a
 special case in this file would not be substitutable, which is the failure
@@ -10,13 +11,15 @@ workspace anywhere in this module and none may be introduced.
 """
 
 import asyncio
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 
 import pytest
 
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import DuplicateWorkRefError
+from kodezart.domain.errors import DuplicateWorkRefError, UnsupportedClaimError
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -55,6 +58,29 @@ LEASE_SECONDS = 600.0
 TEAM = TEAM_IDENTIFIERS["engineering"]
 #: The signal the refusing cases put out of the credential's reach.
 REFUSED = [PassSignal.reviews_changed]
+
+
+@contextmanager
+def claim_contract(writes: Callable[[], tuple[object, ...]]) -> Iterator[None]:
+    """A permanent unsupported refusal must precede every mutation.
+
+    A backend that grants acquisition but later cannot renew fails this
+    guard: the earlier acquisition changed its backend. Capable adapters
+    still execute every existing ownership/expiry/replay assertion.
+    """
+    before = writes()
+    try:
+        yield
+    except UnsupportedClaimError:
+        assert writes() == before
+
+
+def test_claim_contract_rejects_a_refusal_after_a_mutation() -> None:
+    changes: list[object] = []
+    with pytest.raises(AssertionError):
+        with claim_contract(lambda: tuple(changes)):
+            changes.append("backend mutation")
+            raise UnsupportedClaimError("cannot fence")
 
 
 class TestScanAndRead:
@@ -326,16 +352,19 @@ class TestAnUnattributedComment:
 class TestAtomicClaim:
     """Exactly-once claim semantics — the concurrency contract."""
 
-    async def test_claim_grants_then_reads_back(self, tracker: TrackerPort) -> None:
-        granted = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        assert granted.status is ClaimStatus.GRANTED
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-        assert held is not None
-        assert held.holder == "pass-a"
+    async def test_claim_grants_then_reads_back(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ) -> None:
+        with claim_contract(tracker_writes):
+            granted = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert granted.status is ClaimStatus.GRANTED
+            held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+            assert held is not None
+            assert held.holder == "pass-a"
 
     async def test_unclaimed_issue_has_no_active_claim(
         self,
@@ -346,76 +375,85 @@ class TestAtomicClaim:
     async def test_two_simultaneous_claimants_produce_exactly_one_winner(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """AC: two simultaneous claimants -> one wins, the loser sees LOST."""
-        first, second = await asyncio.gather(
-            tracker.claim_issue(
-                issue_key=CLAIMED_ISSUE,
-                holder="pass-a",
-                lease_seconds=LEASE_SECONDS,
-            ),
-            tracker.claim_issue(
-                issue_key=CLAIMED_ISSUE,
-                holder="pass-b",
-                lease_seconds=LEASE_SECONDS,
-            ),
-        )
-        statuses = [first.status, second.status]
-        assert statuses.count(ClaimStatus.GRANTED) == 1
-        assert statuses.count(ClaimStatus.LOST) == 1
+        with claim_contract(tracker_writes):
+            first, second = await asyncio.gather(
+                tracker.claim_issue(
+                    issue_key=CLAIMED_ISSUE,
+                    holder="pass-a",
+                    lease_seconds=LEASE_SECONDS,
+                ),
+                tracker.claim_issue(
+                    issue_key=CLAIMED_ISSUE,
+                    holder="pass-b",
+                    lease_seconds=LEASE_SECONDS,
+                ),
+            )
+            statuses = [first.status, second.status]
+            assert statuses.count(ClaimStatus.GRANTED) == 1
+            assert statuses.count(ClaimStatus.LOST) == 1
 
     async def test_the_loser_observes_a_distinct_typed_result_not_an_exception(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        loser = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS,
-        )
-        assert loser.status is ClaimStatus.LOST
-        assert loser.holder == "pass-b"
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            loser = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert loser.status is ClaimStatus.LOST
+            assert loser.holder == "pass-b"
 
     async def test_release_frees_the_issue_for_the_next_claimant(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
-        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
-        again = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS,
-        )
-        assert again.status is ClaimStatus.GRANTED
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+            assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+            again = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert again.status is ClaimStatus.GRANTED
 
     async def test_release_by_a_non_holder_is_a_no_op(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-b")
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-        assert held is not None
-        assert held.holder == "pass-a"
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-b")
+            held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+            assert held is not None
+            assert held.holder == "pass-a"
 
     async def test_releasing_twice_is_the_same_as_releasing_once(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """Idempotent: the caller cannot know which arm already released.
 
@@ -423,48 +461,52 @@ class TestAtomicClaim:
         the watch releases what its job finished with; a second release is
         an ordinary state and not an error.
         """
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+            await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
 
-        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
-        again = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS,
-        )
-        assert again.status is ClaimStatus.GRANTED
+            assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+            again = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert again.status is ClaimStatus.GRANTED
 
     async def test_a_second_release_never_frees_the_next_holders_claim(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """Idempotence is not amnesia: a release frees THIS holder's claim."""
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS,
-        )
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
 
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+            await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
 
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-        assert held is not None
-        assert held.holder == "pass-b"
+            held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+            assert held is not None
+            assert held.holder == "pass-b"
 
     async def test_a_losing_claimant_leaves_nothing_that_outlives_the_winner(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """A claim that was refused is not a claim, and holds nothing.
 
@@ -473,35 +515,39 @@ class TestAtomicClaim:
         later claimant, for the whole of a lease nobody was renewing
         (KOD-152).
         """
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        lost = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS,
-        )
-        assert lost.status is ClaimStatus.LOST
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            lost = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert lost.status is ClaimStatus.LOST
 
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+            await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
 
-        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
-        next_pass = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-c",
-            lease_seconds=LEASE_SECONDS,
-        )
-        assert next_pass.status is ClaimStatus.GRANTED
+            assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+            next_pass = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-c",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert next_pass.status is ClaimStatus.GRANTED
 
-    async def test_the_lease_bounds_the_claim(self, tracker: TrackerPort) -> None:
-        granted = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        assert granted.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
+    async def test_the_lease_bounds_the_claim(
+        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+    ) -> None:
+        with claim_contract(tracker_writes):
+            granted = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert granted.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
 
 
 class TestRenewingAClaim:
@@ -519,118 +565,129 @@ class TestRenewingAClaim:
     async def test_renewal_extends_a_claim_the_holder_already_holds(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-
-        renewed = await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS * 2,
-        )
-
-        assert renewed is not None
-        assert renewed.status is ClaimStatus.GRANTED
-        assert renewed.expires_at == FIXTURE_NOW + timedelta(
-            seconds=LEASE_SECONDS * 2,
-        )
-
-    async def test_the_extension_is_what_a_later_reader_sees(
-        self,
-        tracker: TrackerPort,
-    ) -> None:
-        """A renewal nobody else can observe protects nothing."""
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        renewed = await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS * 2,
-        )
-
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-
-        assert renewed is not None
-        assert held is not None
-        assert held.holder == "pass-a"
-        assert held.expires_at == renewed.expires_at
-
-    async def test_renewal_never_acquires_an_unclaimed_issue(
-        self,
-        tracker: TrackerPort,
-    ) -> None:
-        """The crash arm: a lapsed claim stays lapsed and stays claimable."""
-        assert (
-            await tracker.renew_claim(
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
                 holder="pass-a",
                 lease_seconds=LEASE_SECONDS,
             )
-            is None
-        )
-        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
-        taken = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS,
-        )
-        assert taken.status is ClaimStatus.GRANTED
+
+            renewed = await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS * 2,
+            )
+
+            assert renewed is not None
+            assert renewed.status is ClaimStatus.GRANTED
+            assert renewed.expires_at == FIXTURE_NOW + timedelta(
+                seconds=LEASE_SECONDS * 2,
+            )
+
+    async def test_the_extension_is_what_a_later_reader_sees(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """A renewal nobody else can observe protects nothing."""
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            renewed = await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS * 2,
+            )
+
+            held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+
+            assert renewed is not None
+            assert held is not None
+            assert held.holder == "pass-a"
+            assert held.expires_at == renewed.expires_at
+
+    async def test_renewal_never_acquires_an_unclaimed_issue(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The crash arm: a lapsed claim stays lapsed and stays claimable."""
+        with claim_contract(tracker_writes):
+            assert (
+                await tracker.renew_claim(
+                    issue_key=CLAIMED_ISSUE,
+                    holder="pass-a",
+                    lease_seconds=LEASE_SECONDS,
+                )
+                is None
+            )
+            assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+            taken = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert taken.status is ClaimStatus.GRANTED
 
     async def test_a_non_holder_renews_nothing_and_moves_nothing(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
 
-        refused = await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS * 2,
-        )
+            refused = await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS * 2,
+            )
 
-        assert refused is None
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
-        assert held is not None
-        assert held.holder == "pass-a"
-        assert held.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
+            assert refused is None
+            held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+            assert held is not None
+            assert held.holder == "pass-a"
+            assert held.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
 
     async def test_a_renewed_claim_still_defeats_a_second_claimant(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """The whole point: the TRACKER excludes the second claimant."""
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS * 2,
-        )
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS * 2,
+            )
 
-        loser = await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS,
-        )
+            loser = await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
 
-        assert loser.status is ClaimStatus.LOST
+            assert loser.status is ClaimStatus.LOST
 
     async def test_a_renewal_across_a_competitors_claim_still_holds_the_issue(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """The competitor arrives BETWEEN renewals and changes nothing.
 
@@ -638,53 +695,56 @@ class TestRenewingAClaim:
         claimant did while the run was working, the run that is still
         working is the one holding the issue.
         """
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-b",
-            lease_seconds=LEASE_SECONDS,
-        )
-        renewed = await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS * 2,
-        )
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-b",
+                lease_seconds=LEASE_SECONDS,
+            )
+            renewed = await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS * 2,
+            )
 
-        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+            held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
 
-        assert renewed is not None
-        assert held is not None
-        assert held.holder == "pass-a"
-        assert held.expires_at == renewed.expires_at
+            assert renewed is not None
+            assert held is not None
+            assert held.holder == "pass-a"
+            assert held.expires_at == renewed.expires_at
 
     async def test_release_frees_a_renewed_claim_whole(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """Every write the renewals made goes, not merely the newest."""
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE,
-            holder="pass-a",
-            lease_seconds=LEASE_SECONDS * 2,
-        )
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.renew_claim(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS * 2,
+            )
 
-        await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
+            await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="pass-a")
 
-        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+            assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
 
 
 class TestAssets:
@@ -1271,25 +1331,27 @@ class TestWorkRefs:
     async def test_work_refs_and_claims_do_not_read_each_other(
         self,
         tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """Both live on the comment log; neither may see the other's markers."""
-        await tracker.claim_issue(
-            issue_key=APPROVED_ISSUE,
-            holder="fixture-holder",
-            lease_seconds=LEASE_SECONDS,
-        )
-        await tracker.record_work_ref(
-            ref=WorkRef(
-                issue_id=APPROVED_ISSUE,
-                role=WorkRefRole.ITERATION,
-                branch="kodezart/iteration",
-                recorded_at=FIXTURE_NOW,
-            ),
-        )
-        claim = await tracker.active_claim(issue_key=APPROVED_ISSUE)
-        assert claim is not None and claim.holder == "fixture-holder"
-        refs = await tracker.work_refs(issue_key=APPROVED_ISSUE)
-        assert [r.role for r in refs] == [WorkRefRole.ITERATION]
+        with claim_contract(tracker_writes):
+            await tracker.claim_issue(
+                issue_key=APPROVED_ISSUE,
+                holder="fixture-holder",
+                lease_seconds=LEASE_SECONDS,
+            )
+            await tracker.record_work_ref(
+                ref=WorkRef(
+                    issue_id=APPROVED_ISSUE,
+                    role=WorkRefRole.ITERATION,
+                    branch="kodezart/iteration",
+                    recorded_at=FIXTURE_NOW,
+                ),
+            )
+            claim = await tracker.active_claim(issue_key=APPROVED_ISSUE)
+            assert claim is not None and claim.holder == "fixture-holder"
+            refs = await tracker.work_refs(issue_key=APPROVED_ISSUE)
+            assert [r.role for r in refs] == [WorkRefRole.ITERATION]
 
 
 class TestRecordedBaseSpec:
