@@ -201,7 +201,10 @@ source `issue_key` is supplied separately from the verbatim bodies. Each
 call acquires the requested repository base and starts a read-only
 `organize_pass` session, with no prior session or author transcript. These
 entry points return an admission result; they do not write phase markers or
-run the full organizer convergence loop.
+run the full organizer convergence loop. Caller cancellation waits for an
+in-flight workspace acquisition or release to settle. A cancellation during
+acquisition releases the resulting workspace without starting the session;
+repeated cancellation cannot interrupt that cleanup.
 
 ## The knowledge-server grant
 
