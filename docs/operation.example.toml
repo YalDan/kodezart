@@ -53,6 +53,8 @@ repository = "kodezart-repo"
 issue_identity = "kodezart-issue"
 run_state = "run-state"
 decision = "decision"
+# Record-shaped issues carry history and are never scope fire candidates.
+tracker = "tracker"
 escalation = "escalation"
 
 # Authority is enforced by ROLE, never by name in code or templates.

@@ -12,6 +12,7 @@ from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.remediation import RemediationChain
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import RateLimitedSoftFailureError
@@ -32,7 +33,6 @@ from kodezart.core.retry import DelayFloor
 from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
-from kodezart.services.scope_planning import read_scope_plan
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.run_records import RunIdentity
@@ -109,13 +109,15 @@ class OriginRoutedWorkflowEngine:
             if self._tracker is None:
                 msg = "Scoped execution requires a configured tracker"
                 raise ScopedExecutionUnavailableError(msg, ref=scope)
-            plan = await read_scope_plan(ref=scope, tracker=self._tracker)
-            resolved = plan.scope
+            selection = await read_scope_ready(ref=scope, tracker=self._tracker)
+            resolved = selection.scope
             await self._log.ainfo(
                 "workflow_scope_resolved",
                 scope_kind=resolved.ref.kind.value,
                 scope_key=resolved.ref.key,
                 issue_count=len(resolved.issues),
+                ready_issue_keys=tuple(row.issue.issue_key for row in selection.ready),
+                blocked_issue_keys=tuple(row.issue_key for row in selection.blocked),
             )
             msg = "Scoped graph execution is not implemented"
             raise ScopedExecutionUnavailableError(msg, ref=resolved.ref)

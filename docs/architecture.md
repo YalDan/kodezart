@@ -135,11 +135,34 @@ member through that strict boundary before following dependencies, rechecks all
 facts and the scope family, and refuses omissions or changed observations. Open decisions,
 backlog-kind criteria and criterion edges leaving their parent's subtree yield
 `ScopePlanRefusalError` with the offending native keys. Existing topology
-arithmetic owns cycle detection. A successful snapshot is not approval or a
-ready-set claim: approval-qualified selection, full walker dispatch and pre-loop
-criterion revalidation remain separate. Valid scoped entries still raise the
-explicit unavailable-walker error, while invalid scopes now fail earlier with
-their measured stage-barrier reasons.
+arithmetic owns cycle detection. A successful planning snapshot alone makes no
+approval or readiness claim.
+
+The actual scoped entry then calls `read_scope_ready`. It requires all three
+semantic classifications (`criterion`, `tracker`, `decision`) through the shared
+`require_issue_classification_reads` declaration, reads current
+approval through the issue's real ancestry, and selects only native scope
+deliverables with a nonempty criterion gap. Record issues and criteria are never
+selected; an approved deliverable without its own criteria refuses. Deliverable
+workflow state does not decide either gap or subtree closure. An in-scope blocker
+closes only when all its criterion children and every deliverable child's full
+subtree close, including children outside a container's membership filter.
+Each consulted complete issue subtree passes the same `read_scope_plan` barriers;
+an outside-filter open decision is refused by key, never closed by its empty
+criterion set. Record classification does not waive those stage barriers.
+The existing topology ranking consumes that explicit closure result without
+consulting parent state. Each result carries exactly its current gap, and the
+next call recomputes from tracker reads. Scope membership, complete child trees
+and approval are checked again before returning; this is an optimistic read,
+not transactional exclusion from concurrent tracker writers.
+
+Canceled or duplicate criteria that need supersession resolution currently raise
+`ScopeSupersessionReadError`: the existing gap function accepts established
+references, but the native tracker has no declared reader for the historical
+supersession prose. No inferred reference or merge observation substitutes for
+that missing read. Full walker dispatch and pre-loop revalidation remain separate;
+valid scoped entries still raise the explicit unavailable-walker error after
+recording the current ready and blocked keys.
 
 `LaneRecordReader` reads the owning issue's complete comment listing through
 `TrackerPort`, locates the exact configured `marker_prefixes.run_state` marker,
