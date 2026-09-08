@@ -9,7 +9,7 @@ from kodezart.core.config import AppConfig
 from kodezart.domain.errors import CriterionReadError
 from kodezart.domain.run_shape import barren_tick_with_diff_growth
 from kodezart.services import run_shape
-from kodezart.services.run_shape import observe_barren_tick
+from kodezart.services.run_shape import observe_barren_tick, read_barren_tick
 from kodezart.types.domain.run_alarm import AlarmReading
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
 from tests.tracker.conftest import APPROVED_ISSUE, fixture_server
@@ -160,7 +160,13 @@ async def test_failed_criterion_read_is_never_an_empty_or_closed_set(tracker, se
 
 
 def test_observer_has_one_tracker_read_and_no_version_control_dependency():
-    tree = ast.parse(inspect.getsource(observe_barren_tick))
+    wrapper = ast.parse(inspect.getsource(observe_barren_tick))
+    assert {
+        ast.unparse(node.func)
+        for node in ast.walk(wrapper)
+        if isinstance(node, ast.Call)
+    } == {"read_barren_tick"}
+    tree = ast.parse(inspect.getsource(read_barren_tick))
     tracker_calls = {
         node.func.attr
         for node in ast.walk(tree)
@@ -186,6 +192,7 @@ def test_observer_has_one_tracker_read_and_no_version_control_dependency():
         "kodezart.types.domain.escalation",
         "kodezart.types.domain.run_alarm",
         "kodezart.types.domain.run_state",
+        "kodezart.types.domain.tracker",
     }
     assert set(inspect.signature(observe_barren_tick).parameters) == {
         "tracker",
@@ -200,3 +207,6 @@ def test_observer_has_one_tracker_read_and_no_version_control_dependency():
         "raised_at_sha",
         "raised_by",
     }
+    assert set(inspect.signature(read_barren_tick).parameters) == set(
+        inspect.signature(observe_barren_tick).parameters
+    )

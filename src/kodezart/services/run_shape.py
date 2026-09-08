@@ -27,6 +27,7 @@ from kodezart.types.domain.run_alarm import (
     RunAlarm,
 )
 from kodezart.types.domain.run_state import LaneEscalation
+from kodezart.types.domain.tracker import TrackerIssue
 
 _REFERENCE_JSON = TypeAdapter(tuple[str, ...])
 
@@ -168,6 +169,37 @@ async def observe_barren_tick(
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
+    """Read current closure and return the existing barren growth observation."""
+    observation, _ = await read_barren_tick(
+        tracker=tracker,
+        config=config,
+        scope_key=scope_key,
+        lane_key=lane_key,
+        issue_key=issue_key,
+        previous_open=previous_open,
+        files_changed=files_changed,
+        commits_ahead=commits_ahead,
+        supersession_refs=supersession_refs,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
+    return observation
+
+
+async def read_barren_tick(
+    *,
+    tracker: TrackerPort,
+    config: AppConfig,
+    scope_key: str,
+    lane_key: str,
+    issue_key: str,
+    previous_open: AlarmReading,
+    files_changed: AlarmReading,
+    commits_ahead: AlarmReading,
+    supersession_refs: Mapping[str, str],
+    raised_at_sha: str,
+    raised_by: str,
+) -> tuple[RunAlarm | None, tuple[TrackerIssue, ...]]:
     """Read current criterion closure, then compare already-recorded growth.
 
     Closure comes from the shared criterion gap arithmetic: Completion closes,
@@ -180,7 +212,7 @@ async def observe_barren_tick(
     subject = AlarmSubject(
         kind=AlarmSubjectKind.LANE, scope_key=scope_key, lane_key=lane_key
     )
-    criteria = await tracker.read_criteria(issue_key=issue_key)
+    criteria = tuple(await tracker.read_criteria(issue_key=issue_key))
     open_keys = {
         criterion.issue_key
         for criterion in compute_gap(criteria, supersession_refs=supersession_refs)
@@ -190,7 +222,7 @@ async def observe_barren_tick(
         for criterion in criteria
         if criterion.issue_key not in open_keys
     )
-    return barren_tick_with_diff_growth(
+    observation = barren_tick_with_diff_growth(
         subject=subject,
         readings=(
             previous_open,
@@ -212,3 +244,5 @@ async def observe_barren_tick(
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,
     )
+
+    return observation, criteria
