@@ -59,7 +59,7 @@ does not exist.
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
 | TrackerCriteriaValidator | TrackerFeasibilityValidator | Fresh native criterion judgment at an explicitly pinned head |
-| TrackerFirePreparer | AddressedTrackerFirePreparation | Read-only preparation of one addressed ready issue from its recorded repository and base |
+| TrackerFirePreparer | AddressedTrackerFirePreparation | Read-only preparation of one addressed ready issue from its verified repository route and recorded base |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
