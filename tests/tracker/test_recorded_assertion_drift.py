@@ -20,8 +20,7 @@ from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.recorded_assertion_drift import RecordedAssertionDriftDetector
 from kodezart.services.ruling_records import RulingRecordReader
-from kodezart.types.domain.agent import Ruling
-from kodezart.types.domain.assertion_drift import ProtectedTestRef
+from kodezart.types.domain.agent import Ruling, RulingProtectedTestRef
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.tracker import TrackerComment
 from tests.domain.test_rulings import ruling_data
@@ -57,7 +56,7 @@ async def seed(
     data = ruling_data(issue_ref=owner, question=question)
     if designation == "named":
         data["protected_tests"] = (
-            ProtectedTestRef(
+            RulingProtectedTestRef(
                 source_ref=data["ruling_id"], path=PATH, qualified_name="test_contract"
             ),
         )

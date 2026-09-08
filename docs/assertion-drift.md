@@ -37,7 +37,10 @@ the current remote head of the recorded lane branch through `AuditSourceReader`.
 It enumerates configured ruling comments on the lane issue and its current
 criterion children. Each ruling can explicitly designate `protectedTests` using
 the existing reference shape: its own `RulingId` as `sourceRef`, a canonical
-Python path, and a qualified test name. The existing marker, question identity,
+Python path, and a qualified test name. `RulingProtectedTestRef` narrows the
+existing reference's owner to `RulingId`; its path/name validation and wire shape
+are inherited. Generic detector references still carry native comment addresses.
+The existing marker, question identity,
 required authorship, complete comment reader, and strict JSON parser remain the
 record boundary; there is no second protection marker or inferred file owner.
 

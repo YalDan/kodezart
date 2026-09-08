@@ -1,13 +1,15 @@
 """Explicit ruling designation preserves unknown, empty and named protection."""
 
 import json
+import subprocess
+import sys
+from typing import get_type_hints
 
 import pytest
 from pydantic import ValidationError
 
 from kodezart.domain.rulings import parse_ruling, render_ruling
-from kodezart.types.domain.agent import Ruling
-from kodezart.types.domain.assertion_drift import ProtectedTestRef
+from kodezart.types.domain.agent import Ruling, RulingId, RulingProtectedTestRef
 from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
 
 
@@ -18,7 +20,7 @@ def designated(**changes):
         "path": "tests/test_contract.py",
         "qualified_name": "TestContract.test_expected_value",
     }
-    data["protected_tests"] = (ProtectedTestRef(**{**reference, **changes}),)
+    data["protected_tests"] = (RulingProtectedTestRef(**{**reference, **changes}),)
     return data
 
 
@@ -111,3 +113,46 @@ def test_invalid_native_designation_refuses_instead_of_losing_protection(change)
     _, text, _ = round_trip(designated())
     with pytest.raises(ValueError):
         parse_ruling(body=change(text), lane_key=LANE, marker_prefixes=PREFIXES)
+
+
+def test_native_designation_has_a_typed_ruling_owner():
+    assert get_type_hints(RulingProtectedTestRef)["source_ref"] is RulingId
+
+
+def test_mypy_preserves_reader_identity_and_refuses_a_plain_string_owner(tmp_path):
+    program = """from kodezart.domain.agent import mint_ruling_id
+from kodezart.types.domain.agent import Ruling, RulingId, RulingProtectedTestRef
+
+def recorded_owner(ruling: Ruling) -> RulingId:
+    if not ruling.protected_tests:
+        raise ValueError("No designated test")
+    return ruling.protected_tests[0].source_ref
+
+reference = RulingProtectedTestRef(
+    source_ref=mint_ruling_id(issue_ref="external/issue", question="Exact question"),
+    path="tests/test_contract.py",
+    qualified_name="test_contract",
+)
+"""
+    path = tmp_path / "ruling_designation_typecheck.py"
+
+    def typecheck(text):
+        path.write_text(text)
+        return subprocess.run(
+            [sys.executable, "-m", "mypy", "--strict", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    accepted = typecheck(program)
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    refused = typecheck(
+        program.replace(
+            'mint_ruling_id(issue_ref="external/issue", question="Exact question")',
+            '"an untyped ruling address"',
+        )
+    )
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert 'Argument "source_ref"' in refused.stdout
+    assert 'incompatible type "str"; expected "RulingId"' in refused.stdout
