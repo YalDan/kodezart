@@ -1,6 +1,8 @@
 """Ralph quality-gating loop — execute + evaluate until accepted or exhausted."""
 
+import json
 from collections.abc import AsyncIterator
+from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -11,6 +13,7 @@ from langgraph.types import RetryPolicy
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.node_sessions import NodeSessionObserver
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
@@ -37,6 +40,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType
@@ -262,7 +266,34 @@ class RalphLoop:
             },
         )
 
+        # The graph can retry this node after it already opened a session.
+        # Give that execution a fresh invocation component; iteration and
+        # correction ordinals alone repeat on a graph-level retry.
+        node_execution = uuid4().hex
+        evaluation_attempt = 0
+
         async def evaluate() -> AcceptanceCriteriaOutput:
+            nonlocal evaluation_attempt
+            evaluation_attempt += 1
+            observer = None
+            if ctx.run_identity is not None:
+                observer = NodeSessionObserver(
+                    invocation=NodeInvocation(
+                        run=ctx.run_identity,
+                        node_key=PromptKey.EVALUATION.value,
+                        invocation_key=json.dumps(
+                            [
+                                ctx.ralph_branch,
+                                state["iteration"],
+                                evaluation_attempt,
+                                node_execution,
+                            ],
+                            separators=(",", ":"),
+                        ),
+                        declared_sessions=1,
+                    ),
+                    emit=writer,
+                )
             result_event, rate_limit_rejected = await drain(
                 self._service.stream(
                     prompt=eval_prompt,
@@ -290,7 +321,10 @@ class RalphLoop:
                     cache_key=ctx.cache_key,
                 ),
                 site="ralph_evaluator",
+                observe=None if observer is None else observer.observe,
             )
+            if observer is not None:
+                observer.require_valid()
 
             if result_event is None or result_event.structured_output is None:
                 msg = "Evaluator produced no structured output."

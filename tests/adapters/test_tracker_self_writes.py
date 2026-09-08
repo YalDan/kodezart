@@ -1,12 +1,8 @@
-"""The tracker adapter tells the ledger what its own writes left (KOD-175).
+"""Native writes leave atomic issue stamps or explicit comment receipts.
 
-The pass gates decide "is this movement ours?" by comparing an issue's
-newest stamp against what this process's last write left on it, and the
-comparison is only as good as the recording.  Both recording paths are
-here, because the backend answers a write in two shapes and only one of
-them carries the stamp: an issue write comes back AS the issue, and a
-comment write comes back as a comment while moving the issue underneath
-it — which is the shape every claim, marker and base spec takes.
+The behavioral own-churn proof survives the source-authorized protocol
+change: comment responses have no issue stamp and no later read may claim
+one. Actual gate tests replace the obsolete read-back-stamp assertion.
 """
 
 import inspect
@@ -18,9 +14,10 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.errors import McpSessionClosedError
-from kodezart.core.protocols import McpToolResult
+from kodezart.core.protocols import McpToolCaller, McpToolResult
+from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
-from kodezart.types.domain.dispatch import SelfWriteLedger
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import ClaimStatus
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
@@ -62,7 +59,7 @@ def _server() -> FakeLinearMcpServer:
     )
 
 
-def _tracker(server: FakeLinearMcpServer, ledger: SelfWriteLedger) -> LinearMcpTracker:
+def _tracker(server: McpToolCaller, ledger: SelfWriteLedger) -> LinearMcpTracker:
     return LinearMcpTracker(
         marker_prefixes=MARKER_PREFIXES,
         issue_labels={"criterion": "acceptance-condition"},
@@ -95,24 +92,23 @@ async def test_a_write_answered_with_the_issue_records_that_answers_stamp() -> N
     assert ledger.wrote(issue_key=ISSUE, updated_at=issue.updated_at)
 
 
-async def test_a_marker_write_records_the_stamp_a_read_back_finds() -> None:
-    """The comment log: the answer is a comment, so the issue is read back.
-
-    Every claim, renewal, release, work ref and base spec rides this shape,
-    and it is the one the measured boot woke itself on 30 ticks out of 31.
-    What the ledger holds is the stamp the write LEFT — strictly past the
-    one the issue carried before it — so a read placed ahead of the write
-    would record the wrong one and fail here.
-    """
+async def test_a_marker_records_a_mutation_without_an_issue_stamp() -> None:
     ledger = SelfWriteLedger()
     server = _server()
     tracker = _tracker(server, ledger)
+    gate = _gate(tracker, ledger)
+    assert (await gate.delta()).changed == (ISSUE,)
 
     await tracker.record_base_spec(issue_key=ISSUE, spec=trunk_base("main"))
 
     stored = await tracker.read_issue(issue_key=ISSUE)
     assert stored.updated_at > STAMP
-    assert ledger.wrote(issue_key=ISSUE, updated_at=stored.updated_at)
+    assert not ledger.wrote(issue_key=ISSUE, updated_at=stored.updated_at)
+    assert len(ledger.receipts(issue_key=ISSUE)[1]) == 1
+    assert (await gate.delta()).changed == ()
+    assert (
+        gate.mark(PassSignal.approved_changed, container=TEAM_KEY) == stored.updated_at
+    )
 
 
 async def test_an_issue_this_adapter_never_wrote_to_is_not_in_the_ledger() -> None:
@@ -166,16 +162,11 @@ class _ReadBackGone:
 
 
 async def test_a_read_back_that_fails_does_not_fail_the_write_it_recorded() -> None:
-    """The ledger entry is bookkeeping; the write already landed (KOD-172).
+    """A landed comment needs no follow-up issue read to return successfully.
 
-    Every comment-shaped write reads the issue back to learn the stamp it
-    left.  That read used to be inside the write: a session that died in
-    between raised out of ``post_comment``, and a caller told its write
-    failed writes again — a second marker on a log that already carries
-    the first, from a call whose comment the caller never saw.
-
-    What the failure costs instead is one ledger entry, which is one extra
-    wake-up on this operation's own churn.
+    The previous bookkeeping-read failure remains a paired native control:
+    this caller refuses all get_issue calls, but the exact write response
+    and explicit receipt are sufficient. No issue stamp is claimed.
     """
     server = _server()
     ledger = SelfWriteLedger()
@@ -229,12 +220,7 @@ async def _claim_granted(tracker: LinearMcpTracker) -> None:
 
 
 async def _claim_lost(tracker: LinearMcpTracker) -> None:
-    """The loser writes twice — it appends a marker and deletes it again.
-
-    Both moves land on the issue, so the loser's OWN last write is what the
-    ledger has to hold: a loser that recorded the winner's stamp, or
-    nothing at all, wakes the next tick on its own withdrawn marker.
-    """
+    """The loser appends and deletes its own marker; replay preserves both."""
     await _claim_granted(tracker)
     lost = await tracker.claim_issue(
         issue_key=ISSUE,
@@ -287,7 +273,7 @@ async def _work_ref(tracker: LinearMcpTracker) -> None:
     ],
     ids=["claim-granted", "claim-lost", "renew", "release", "comment", "work-ref"],
 )
-async def test_every_comment_shaped_write_records_the_stamp_it_left(
+async def test_every_comment_shaped_write_records_only_its_own_mutations(
     write: Write,
 ) -> None:
     """The paths the measured incident actually rode (KOD-175).
@@ -304,8 +290,73 @@ async def test_every_comment_shaped_write_records_the_stamp_it_left(
     server = _server()
     tracker = _tracker(server, ledger)
 
+    gate = _gate(tracker, ledger)
+    assert (await gate.delta()).changed == (ISSUE,)
+
     await write(tracker)
 
     stored = await tracker.read_issue(issue_key=ISSUE)
     assert stored.updated_at > STAMP, "the write moved the issue"
-    assert ledger.wrote(issue_key=ISSUE, updated_at=stored.updated_at)
+    assert not ledger.wrote(issue_key=ISSUE, updated_at=stored.updated_at)
+    assert ledger.receipts(issue_key=ISSUE)[1]
+    assert (await gate.delta()).changed == ()
+    assert (
+        gate.mark(PassSignal.approved_changed, container=TEAM_KEY) == stored.updated_at
+    )
+
+
+@pytest.mark.parametrize("foreign", [None, "body", "state", "comment"])
+async def test_comment_readback_cannot_claim_a_concurrent_principal_movement(
+    foreign: str | None,
+) -> None:
+
+    server = _server()
+    ledger = SelfWriteLedger()
+
+    class Interleaved:
+        async def call_tool(
+            self, *, name: str, arguments: Mapping[str, object]
+        ) -> McpToolResult:
+            result = await server.call_tool(name=name, arguments=arguments)
+            if name == "save_comment" and arguments.get("body") == "our own note":
+                if foreign == "body":
+                    await server.call_tool(
+                        name="save_issue",
+                        arguments={"id": ISSUE, "description": "principal's new body"},
+                    )
+                elif foreign == "state":
+                    await server.call_tool(
+                        name="save_issue",
+                        arguments={"id": ISSUE, "state": DONE_STATE},
+                    )
+                elif foreign == "comment":
+                    await server.call_tool(
+                        name="save_comment",
+                        arguments={"issueId": ISSUE, "body": "principal's new note"},
+                    )
+            return result
+
+    tracker = _tracker(Interleaved(), ledger)
+    gate = PassGate(
+        tracker=tracker,
+        ledger=ledger,
+        signals=[PassSignal.approved_changed],
+        team_keys=[TEAM_KEY],
+        repo_urls=[],
+        page_size=50,
+    )
+    assert (await gate.delta()).changed == (ISSUE,)
+    await tracker.post_comment(issue_key=ISSUE, body="our own note")
+    changed = (await gate.delta()).changed
+    assert changed == (() if foreign is None else (ISSUE,))
+
+
+def _gate(tracker: LinearMcpTracker, ledger: SelfWriteLedger) -> PassGate:
+    return PassGate(
+        tracker=tracker,
+        ledger=ledger,
+        signals=[PassSignal.approved_changed],
+        team_keys=[TEAM_KEY],
+        repo_urls=[],
+        page_size=50,
+    )

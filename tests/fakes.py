@@ -25,6 +25,7 @@ from kodezart.core.errors import (
     McpTransportError,
     RateLimitedSoftFailureError,
     TrackerEnsureConflictError,
+    TrackerProtocolError,
 )
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import (
@@ -115,6 +116,7 @@ from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -2459,6 +2461,9 @@ class FakeMcpIssue:
     created_at: datetime = FIXTURE_EPOCH
     updated_at: datetime = FIXTURE_EPOCH
     state_changed_at: datetime | None = None
+    previous_states: list[tuple[str, str, datetime, datetime]] = field(
+        default_factory=list
+    )
     url: str = ""
 
     def entry(self) -> dict[str, object]:
@@ -2498,6 +2503,14 @@ class FakeMcpIssue:
             "attachments": [asset.wire() for asset in self.attachments],
             "documents": [asset.wire() for asset in self.documents],
             "stateHistory": [
+                *[
+                    {
+                        "state": {"id": f"state-{name}", "name": name, "type": kind},
+                        "startedAt": started.isoformat(),
+                        "endedAt": ended.isoformat(),
+                    }
+                    for name, kind, started, ended in self.previous_states
+                ],
                 {
                     "state": {
                         "id": f"state-{self.status}",
@@ -2506,7 +2519,7 @@ class FakeMcpIssue:
                     },
                     "startedAt": (self.state_changed_at or self.created_at).isoformat(),
                     "endedAt": None,
-                }
+                },
             ],
         }
 
@@ -2806,6 +2819,11 @@ class FakeLinearMcpServer:
             self.issues[created.id] = created
             return created.wire()
         issue = self._issue(arguments, "id")
+        previous_state = (
+            issue.status,
+            issue.status_type,
+            issue.state_changed_at or issue.created_at,
+        )
         if "title" in arguments:
             issue.title = str(arguments["title"])
         if "description" in arguments:
@@ -2824,6 +2842,7 @@ class FakeLinearMcpServer:
             issue.labels = list(dict.fromkeys([*issue.labels, *map(str, additions)]))
         self._moved(issue.id)
         if "state" in arguments:
+            issue.previous_states.append((*previous_state, issue.updated_at))
             issue.state_changed_at = issue.updated_at
         return issue.wire()
 
@@ -3370,6 +3389,33 @@ class FakeTrackerPort:
         stamp = max(self._clock(), issue.updated_at)
         self.issues[issue_key] = issue.model_copy(update={"updated_at": stamp})
         self.self_writes.record(issue_key=issue_key, updated_at=stamp)
+
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        issue = await self.read_issue(issue_key=issue_key)
+        comments = tuple(await self.list_comments(issue_key=issue_key))
+        repeated_comments = tuple(await self.list_comments(issue_key=issue_key))
+        final_issue = await self.read_issue(issue_key=issue_key)
+        if (
+            issue != final_issue
+            or comments != repeated_comments
+            or len({comment.comment_key for comment in comments}) != len(comments)
+        ):
+            raise TrackerProtocolError(
+                "issue movement changed or comments repeat",
+                tool="read_issue_movement",
+                detail=issue_key,
+            )
+        return IssueMovementSnapshot(
+            issue_key=issue_key,
+            updated_at=issue.updated_at,
+            fields=field_values(issue.model_dump(mode="json", exclude={"updated_at"})),
+            comments=tuple(
+                sorted(
+                    (comment.comment_key, field_values(comment.model_dump(mode="json")))
+                    for comment in comments
+                )
+            ),
+        )
 
     async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
         await asyncio.sleep(0)

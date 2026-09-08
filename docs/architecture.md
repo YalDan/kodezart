@@ -1,5 +1,17 @@
 # Architecture
 
+The authored Ralph evaluator observes native SDK session openings at its
+actual dispatch boundary. A typed `node_session_started` stream occurrence
+carries the existing fire identity and explicit node invocation; each
+iteration, corrective dispatch and graph-level retry is a separate invocation. A repeated native
+opening frame is not a second session. Missing or malformed opening evidence
+is refused after draining the executor, preserving its cleanup. Generic calls
+without a fire identity retain their existing stream. Tracker publication and
+the supervisor's durable event reader remain unavailable until the universal
+surface-lease contract is satisfied; these stream occurrences are not a claim
+of persisted run history. The frozen alarm subject vocabulary also does not
+yet provide a per-node subject identity, which this producer does not invent.
+
 ## Overview
 
 Kodezart follows a hexagonal (ports-and-adapters) architecture with three
@@ -1037,3 +1049,41 @@ leased state/Evidence writes and the native loop remain separate work. After a
 valid observation, the public entry explicitly refuses the unavailable ruling
 and loop graph; it does not dispatch legacy ticket generation or report a
 completed FIRE. The authored entry path retains its existing behavior.
+
+
+The scheduled pass gate keeps its vendor timestamp window for reply and
+mention scanning. Atomic issue-write responses can identify their own
+stamp. Comment creation, edit, and deletion instead record explicit native
+mutation receipts; no post-write issue read is attributed to that write.
+Each gate retains its own complete native issue/comment observation and
+receipt cursor, replays only declared changes, and compares the result.
+Native fields outside the configured label vocabulary remain in the opaque
+projection. Stable bounding issue reads and two complete comment listings
+must agree before a container mark advances; unreadability, pagination
+ambiguity, source movement, or cancellation leaves that window unspent.
+Rearming a failed pass restores both observations and marks. The latest
+256 receipts across the service are retained, independently readable by
+multiple gates. If an observation or rearm checkpoint needs evicted history,
+the gate wakes conservatively; a partial receipt suffix is never treated as
+complete evidence. A new gate with no retained comment baseline likewise
+wakes once. This fixed bookkeeping window adds no operator configuration
+or reader-lifecycle registry. It bounds retained receipt bodies by count,
+not native comment size or the current snapshots themselves.
+
+Native state saves can omit history. One optional issue read can fill only
+that receipt field when its issue identity and timestamp match the atomic
+save response. The receipt accepts only the previous open interval closing
+at the one new interval, with all older rows unchanged. Replay also requires
+the prior history to match the state write's pre-read, so a principal's earlier
+transition is not absorbed. A later, unreadable, or inconsistent enrichment
+leaves history unaccounted for and wakes conservatively; it never restamps or
+fails the landed write. Cancellation still propagates.
+
+This suppresses unchanged own claim/renew/release, marker, base, and mixed
+lifecycle churn while retaining differing principal fields, comments,
+edits, and deletions. Timestamp-only movement without a new local receipt
+still wakes. Current snapshots cannot establish the causal author of
+indistinguishable transient histories, including a simultaneous mention-only
+ripple during otherwise identical own churn; this is not a vendor event
+history or a universal attribution proof. Admission continues to use its
+upstream body digest and gap, never this scan window or a second digest.

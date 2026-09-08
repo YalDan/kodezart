@@ -177,6 +177,15 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         dict(config.marker_prefixes),
         absent=not config.marker_prefixes,
     )
+    _bind_absentable(
+        bindings,
+        "run_event_states",
+        [
+            {"event": name, "effect": effect.value}
+            for name, effect in config.run_event_states.items()
+        ],
+        absent=not config.run_event_states,
+    )
     # The roster a pass enumerates. ``repository`` splits three ways per
     # entry, exactly one marker non-``None``: bound to a declared url;
     # unbound with ONE repository declared, where the binding is implicit

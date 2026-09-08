@@ -1,9 +1,19 @@
-"""Code backend: shared criterion and ruling identities retain their owners."""
+"""Code backend: shared identities and the actual run-event table agree."""
 
+import tomllib
+from enum import StrEnum
 from pathlib import Path
 
 import pytest
 
+from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.run_event import (
+    RUN_EVENT_PUBLISHERS,
+    RunEventEffect,
+    RunEventKind,
+    RunEventPublisher,
+    RunEventTableError,
+)
 from tests.identity_guards import construction_sites, invalid_ruling_fields
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
@@ -172,3 +182,63 @@ def test_aliasing_a_local_namespace_preserves_its_untyped_address_refusal():
         "class Types:\n    RulingId = str\n"
         "Alias = Types\nclass Record:\n    ruling_id: Alias.RulingId"
     ) == (5,)
+
+
+@pytest.fixture
+def deployed_event_table():
+    """The code backend reads the shipped table, not a copied invariant roster."""
+    example = SOURCE_ROOT.parents[1] / "docs" / "operation.example.toml"
+    return OperationConfig.model_validate(tomllib.loads(example.read_text()))
+
+
+def test_run_event_invariant_uses_the_actual_code_backend(deployed_event_table):
+    vocabulary = {event.value for event in RunEventKind}
+    assert set(deployed_event_table.run_event_states) == vocabulary
+    assert {event.value for event in RUN_EVENT_PUBLISHERS} == vocabulary
+    deployed_event_table.require_run_event_table()
+
+
+@pytest.mark.parametrize("posted", tuple(RUN_EVENT_PUBLISHERS))
+def test_posted_event_missing_row_fails_and_restoring_it_passes(
+    deployed_event_table, posted
+):
+    effect = deployed_event_table.run_event_states.pop(posted.value)
+    with pytest.raises(RunEventTableError) as failure:
+        deployed_event_table.require_run_event_table()
+    assert failure.value.failures == (
+        f"run_event_states is missing event {posted.value!r}",
+    )
+    deployed_event_table.run_event_states[posted.value] = effect
+    deployed_event_table.require_run_event_table()
+
+
+def test_table_only_event_fails_the_other_side_of_the_same_invariant(
+    deployed_event_table,
+):
+    deployed_event_table.run_event_states["invented_event"] = (
+        RunEventEffect.NO_TRANSITION
+    )
+    with pytest.raises(RunEventTableError) as failure:
+        deployed_event_table.require_run_event_table()
+    assert failure.value.failures == (
+        "run_event_states names undeclared event 'invented_event'",
+    )
+    del deployed_event_table.run_event_states["invented_event"]
+    deployed_event_table.require_run_event_table()
+
+
+def test_a_posting_declaration_outside_the_vocabulary_is_named(
+    deployed_event_table, monkeypatch
+):
+    class ExtraPostedEvent(StrEnum):
+        UNKNOWN = "unregistered_posted_event"
+
+    monkeypatch.setitem(
+        RUN_EVENT_PUBLISHERS, ExtraPostedEvent.UNKNOWN, RunEventPublisher.RAISER
+    )
+    with pytest.raises(RunEventTableError) as failure:
+        deployed_event_table.require_run_event_table()
+    assert failure.value.failures == (
+        "run-event notification partition names undeclared event "
+        "'unregistered_posted_event'",
+    )

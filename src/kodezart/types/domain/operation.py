@@ -29,6 +29,14 @@ from kodezart.types.domain.organize import (
     ResolvedMandateSpec,
     split_label_key,
 )
+from kodezart.types.domain.run_event import (
+    DERIVED_RUN_EVENTS,
+    RUN_EVENT_PUBLISHERS,
+    SILENT_STATE_EVENTS,
+    RunEventEffect,
+    RunEventKind,
+    RunEventTableError,
+)
 
 #: The one stable document key the structure validators below and the pass
 #: templates address by name; it carries no accessor that refuses on absence,
@@ -566,6 +574,9 @@ class OperationConfig(OperationModel):
     issue_labels: dict[str, str] = Field(default_factory=dict)
     organize_mandates: tuple[MandateSpec, ...] = ()
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
+    run_event_states: dict[str, LifecycleStage | RunEventEffect] = Field(
+        default_factory=dict
+    )
     marker_prefixes: dict[str, str] = Field(default_factory=dict)
     repos: list[RepoEntry] = Field(default_factory=list)
     documents: dict[str, DocumentEntry] = Field(default_factory=dict)
@@ -585,6 +596,12 @@ class OperationConfig(OperationModel):
     def _check_structure(self) -> Self:
         """Collect EVERY structural failure into one error, never the first."""
         failures: list[str] = []
+
+        if self.run_event_states:
+            try:
+                self.require_run_event_table()
+            except RunEventTableError as exc:
+                failures.extend(exc.failures)
 
         try:
             self.resolve_organize_mandates()
@@ -868,6 +885,46 @@ class OperationConfig(OperationModel):
             )
         return scanned
 
+    def require_run_event_table(self) -> None:
+        """Require the total event table before a tracker deployment starts.
+
+        Empty operation values remain representable for non-tracker callers.
+        A tracker deployment has no default event effect or disabled signal.
+        """
+        vocabulary = {kind.value for kind in RunEventKind}
+        present = set(self.run_event_states)
+        failures = [
+            f"run_event_states is missing event {name!r}"
+            for name in sorted(vocabulary - present)
+        ]
+        failures.extend(
+            f"run_event_states names undeclared event {name!r}"
+            for name in sorted(present - vocabulary)
+        )
+        publishers = {kind.value for kind in RUN_EVENT_PUBLISHERS}
+        failures.extend(
+            f"run-event notification partition is missing {name!r}"
+            for name in sorted(vocabulary - publishers)
+        )
+        failures.extend(
+            f"run-event notification partition names undeclared event {name!r}"
+            for name in sorted(publishers - vocabulary)
+        )
+        for kind in RunEventKind:
+            if kind.value not in self.run_event_states:
+                continue
+            effect = self.run_event_states[kind.value]
+            if kind in DERIVED_RUN_EVENTS:
+                if effect is not RunEventEffect.DERIVED:
+                    failures.append(f"{kind.value!r} requires DERIVED")
+            elif kind in SILENT_STATE_EVENTS:
+                if effect is not RunEventEffect.NO_TRANSITION:
+                    failures.append(f"{kind.value!r} requires NO_TRANSITION")
+            elif not isinstance(effect, LifecycleStage):
+                failures.append(f"{kind.value!r} requires a named workflow state")
+        if failures:
+            raise RunEventTableError(tuple(failures))
+
     def resolve_organize_mandates(self) -> tuple[ResolvedMandateSpec, ...]:
         """Resolve every declared phase during ordinary configuration validation.
 
@@ -978,6 +1035,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "issue_labels": ConfigOwnership.OWNED,
     "organize_mandates": ConfigOwnership.LOCAL,
     "workflow_states": ConfigOwnership.EXTERNAL,
+    "run_event_states": ConfigOwnership.LOCAL,
     "marker_prefixes": ConfigOwnership.LOCAL,
     "repos": ConfigOwnership.LOCAL,
     "documents": ConfigOwnership.OWNED,

@@ -10,14 +10,17 @@ Approved-but-blocked is a correct resting state — a fact to report, never
 a contradiction to fix.
 """
 
+from collections import deque
 from datetime import datetime
 from enum import StrEnum
+from typing import Final
 
 from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.self_writes import OwnMutation
 from kodezart.types.domain.tracker import IssuePriority
 
 
@@ -270,34 +273,29 @@ class PassDelta(DispatchModel):
         return bool(self.changed)
 
 
+#: Bookkeeping can conservatively wake a lagging gate instead of retaining
+#: arbitrary full comment bodies for the entire service lifetime.
+_SELF_WRITE_RECEIPT_LIMIT: Final[int] = 256
+
+
 class SelfWriteLedger:
-    """What THIS process last left on an issue, so its own churn is not news.
+    """Atomic issue stamps and ordered explicit mutation receipts.
 
-    A pass gate wakes on movement, and the movement it reads is the
-    vendor's ``updated_at``.  The operation's own deterministic writes move
-    it too — a claim marker, its renewal, its release, a recorded base
-    spec, a lifecycle transition — so a lane that claimed an issue woke
-    itself on the claim, and again on the release, forever: 30 of 31
-    dispatch ticks on the measured boot found a delta of the service's own
-    making, and five full judgment sessions ran on it in 53 minutes
-    (KOD-175).
-
-    The writers tell the gate, because nothing else can: the vendor's
-    listings carry no actor, so a reading alone cannot say whose edit it
-    is.  Each write path records the stamp its own write left, and an issue
-    whose newest stamp is EXACTLY that is not news.  A principal's edit is
-    strictly later than ours, so it still wakes the pass — which is why the
-    comparison is equality and never a window.
-
-    In-process and per issue: it holds one stamp for each issue this
-    process has written to, and it answers about nothing else.  A judgment
-    session's own MCP writes go around it and stay news (KOD-113 owns that
-    generalisation), and a restart starts empty, which costs exactly one
-    wake-up on whatever this process last wrote.
+    Only the native issue write response may supply an own issue stamp.
+    Comment writes have no such response: they record their exact create,
+    edit or delete instead. Each gate independently retains its observation
+    and receipt position; reading never consumes another gate's receipts.
+    The newest 256 receipts are retained across all issues. An older
+    reader gets explicit unavailable history and conservatively wakes;
+    it never treats a partial suffix as complete evidence. This avoids a
+    reader-lifecycle registry and bounds retained full comment bodies.
     """
 
     def __init__(self) -> None:
         self._stamps: dict[str, datetime] = {}
+        self._mutations: deque[tuple[str, int, OwnMutation]] = deque()
+        self._versions: dict[str, int] = {}
+        self._discarded: dict[str, int] = {}
 
     def record(self, *, issue_key: str, updated_at: datetime) -> None:
         """Remember the stamp our own write left on *issue_key*."""
@@ -306,6 +304,32 @@ class SelfWriteLedger:
     def wrote(self, *, issue_key: str, updated_at: datetime) -> bool:
         """Whether *updated_at* is exactly what our own last write left."""
         return self._stamps.get(issue_key) == updated_at
+
+    def record_mutation(self, *, issue_key: str, mutation: OwnMutation) -> None:
+        """Append only the effects described by a successful native write."""
+        if len(self._mutations) == _SELF_WRITE_RECEIPT_LIMIT:
+            discarded_issue, discarded_version, _ = self._mutations.popleft()
+            self._discarded[discarded_issue] = discarded_version
+        version = self._versions.get(issue_key, 0) + 1
+        self._versions[issue_key] = version
+        self._mutations.append((issue_key, version, mutation))
+
+    def receipts(
+        self, *, issue_key: str, after: int = 0
+    ) -> tuple[int, tuple[OwnMutation, ...] | None]:
+        """Return a cursor and complete receipts, or None for evicted history.
+
+        Reads do not consume receipts, so gates and their rearm checkpoints
+        remain independent. The caller must wake when history is missing.
+        """
+        version = self._versions.get(issue_key, 0)
+        if after < self._discarded.get(issue_key, 0) or after > version:
+            return version, None
+        return version, tuple(
+            mutation
+            for key, held_version, mutation in self._mutations
+            if key == issue_key and held_version > after
+        )
 
 
 class PassRun(StrEnum):

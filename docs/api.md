@@ -223,7 +223,7 @@ stopped externally reports `killed` only here. `terminal` is resolved
 against the SDK's own terminal-status set, so a consumer tracking task
 ids clears them on `terminal` from either frame.
 
-### Workflow Events (15)
+### Workflow Events (16)
 
 | Event Type                     | Key Fields                                      |
 | ------------------------------ | ----------------------------------------------- |
@@ -232,6 +232,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`, `mode`    |
 | `workflow_scope_base`          | `baseBranch`, `baseRole`, `inputs`              |
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
+| `node_session_started`         | `invocation`, `sessionId`                       |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
 | `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets`, `correction` (present only when a refused response was re-dispatched) |
 | `workflow_artifacts`           | `status`, `branch`                              |
@@ -245,6 +246,14 @@ ids clears them on `terminal` from either frame.
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.
+
+`node_session_started` reports the native session id from an evaluator's SDK
+opening frame. Its invocation preserves the existing fire identity, node key,
+explicit invocation key and declared session count. Iterations, corrective
+dispatches and graph-level retries have distinct invocation keys; repeated frames for the same native
+session produce one occurrence. Issue-less calls do not synthesize a tracker
+identity. This event is emitted on the harness stream and does not certify a
+durable tracker event, an alarm, or completion of the supervisor's event reader.
 
 `workflow_ticket.approved` is three-state (`approved`, `unapproved`,
 `not_reviewed`) and rides beside `mode`. `not_reviewed` says no reviewer ran

@@ -1,6 +1,6 @@
 """The deterministic pre-query a scheduled pass is gated on.
 
-One port call per configured signal and container, no prompt, no session,
+One scoped scan per configured signal and container, no prompt, no session,
 no model — so a tick over a quiet board costs zero tokens and cannot
 report a set smaller than the tracker's own query returned.  That is the
 whole reason the gate is not a cheap model call: a relayed answer is
@@ -42,13 +42,17 @@ this gate advanced for a pass that then RAISED is put back — ``rearm`` —
 because asking is not reading: the window was opened for work that never
 happened, and leaving the mark past it spends a wake-up on nothing.
 
-A delta is a PRINCIPAL's movement, never the operation's own.  Every
-deterministic write this process makes bumps the same ``updated_at`` the
-gate reads, so a lane that claimed an issue woke itself on the claim and
-again on the release: the writers therefore record what they left, and an
-issue whose newest stamp is exactly that is no delta (KOD-175).  The
-ledger is the operation's own writes only; a judgment session's MCP writes
-are outside it and still wake the next tick.
+The operation's own writes also move the issue scan stamp. Atomic issue
+write responses record their exact stamp. Comment writes instead record
+explicit create/edit/delete receipts, never a later issue read's stamp.
+For each scanned issue the gate retains stable full native fields and the
+complete comment log. Replaying only receipts since THIS gate's previous
+observation can suppress own churn; a different resulting field or comment
+remains movement. Receipt positions and observations roll back with marks.
+This is current-content comparison, not proof of every transient event's
+actor: indistinguishable histories cannot be reconstructed from snapshots.
+A timestamp-only movement with no new receipt still wakes the reply/mention
+scan; admission and gap arithmetic do not use this window.
 
 Asking is itself three-state, never two.  A signal resolves to
 saw-something, saw-nothing, or COULD-NOT-ASK: a transport that refused to
@@ -62,12 +66,18 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import assert_never
 
-from kodezart.core.errors import McpTransportError, PassGateScopeError
+from kodezart.core.errors import (
+    McpTransportError,
+    PassGateScopeError,
+    TrackerProtocolError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.git_url import is_forge_less_origin
+from kodezart.domain.self_writes import matches_own_mutations
 from kodezart.types.domain.dispatch import PassDelta, PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import OperationMemberAbsentError, QueueState
+from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.tracker import (
     IssueQuery,
     ReviewQuery,
@@ -109,6 +119,12 @@ class PassGate:
         #: are the same state and re-arming twice cannot rewind a window
         #: twice.
         self._advanced: dict[tuple[PassSignal, str], datetime | None] = {}
+        self._observations: dict[
+            tuple[PassSignal, str, str], tuple[IssueMovementSnapshot, int]
+        ] = {}
+        self._previous_observations: dict[
+            tuple[PassSignal, str, str], tuple[IssueMovementSnapshot, int]
+        ] = {}
         self._log: BoundLogger = get_logger(__name__)
 
     @property
@@ -121,7 +137,7 @@ class PassGate:
         return self._marks.get((signal, container))
 
     async def delta(self) -> PassDelta:
-        """One port call per signal and container; everything that moved.
+        """Scoped scans plus stable native snapshots; everything that moved.
 
         A container whose ask could not be answered is named and skipped:
         it contributes nothing here and keeps its own mark, and the other
@@ -130,11 +146,12 @@ class PassGate:
         changed: list[str] = []
         unanswerable: list[str] = []
         self._advanced.clear()
+        self._previous_observations = dict(self._observations)
         for signal in self._signals:
             for container in self._containers(signal):
                 try:
                     changed.extend(await self._observe(signal, container))
-                except McpTransportError as exc:
+                except (McpTransportError, TrackerProtocolError) as exc:
                     unanswerable.append(f"{signal.value}@{container}")
                     await self._log.awarning(
                         "pass_gate_signal_unanswerable",
@@ -181,6 +198,8 @@ class PassGate:
         applied, so a second call and a call after a delta that advanced
         nothing are both no-ops rather than a second rewind.
         """
+        if self._advanced:
+            self._observations = self._previous_observations
         for key, previous in self._advanced.items():
             self._marks[key] = previous
         self._advanced.clear()
@@ -270,12 +289,9 @@ class PassGate:
     ) -> tuple[str, ...]:
         """Issues that moved on *signal* since its mark; an absent state is any.
 
-        An issue whose newest stamp is EXACTLY the one this process's own
-        write left is not movement, and it is dropped from the delta: the
-        operation woke itself on its own claims, markers and lifecycle
-        transitions on the measured boot, 30 dispatch ticks out of 31
-        (KOD-175).  A principal's edit carries a strictly later stamp and
-        still reports, which is why this is an equality and not a window.
+        An exact atomic issue-write stamp or a matching explicit receipt
+        replay suppresses own churn. Comment writes have no issue stamp to
+        attribute; arbitrary post-write reads never create ledger entries.
 
         The MARK still advances over the whole page, self-writes included.
         The window has genuinely been read — every issue in it was looked
@@ -292,16 +308,45 @@ class PassGate:
         )
         if not issues:
             return ()
+        changed: list[str] = []
+        observed: dict[
+            tuple[PassSignal, str, str], tuple[IssueMovementSnapshot, int]
+        ] = {}
+        for issue in issues:
+            key = (signal, team_key, issue.issue_key)
+            previous = self._observations.get(key)
+            cursor, mutations = self._ledger.receipts(
+                issue_key=issue.issue_key, after=0 if previous is None else previous[1]
+            )
+            snapshot = await self._tracker.read_issue_movement(
+                issue_key=issue.issue_key
+            )
+            final_cursor, _ = self._ledger.receipts(issue_key=issue.issue_key)
+            if (
+                snapshot.issue_key != issue.issue_key
+                or snapshot.updated_at != issue.updated_at
+                or cursor != final_cursor
+            ):
+                raise TrackerProtocolError(
+                    "issue movement changed during the gate observation",
+                    tool="read_issue_movement",
+                    detail=issue.issue_key,
+                )
+            own = self._ledger.wrote(
+                issue_key=issue.issue_key, updated_at=issue.updated_at
+            )
+            if previous is not None and mutations is not None and not own:
+                own = matches_own_mutations(
+                    before=previous[0], after=snapshot, mutations=mutations
+                )
+            if not own:
+                changed.append(issue.issue_key)
+            observed[key] = (snapshot, cursor)
+        # Commit a container's window only after every full observation succeeds.
+        self._observations.update(observed)
         self._advanced[signal, team_key] = self._marks[signal, team_key]
         self._marks[signal, team_key] = max(issue.updated_at for issue in issues)
-        return tuple(
-            issue.issue_key
-            for issue in issues
-            if not self._ledger.wrote(
-                issue_key=issue.issue_key,
-                updated_at=issue.updated_at,
-            )
-        )
+        return tuple(changed)
 
     async def _review_delta(
         self,

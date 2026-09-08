@@ -141,6 +141,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "issue_labels",
         "organize_mandates",
         "workflow_states",
+        "run_event_states",
         "marker_prefixes",
         "repos",
         "documents",
