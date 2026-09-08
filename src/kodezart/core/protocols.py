@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.audit import (
     TrackerArtifact,
     WriteBackJudgment,
@@ -94,6 +95,21 @@ class LogEmitter(Protocol):
     async def aerror(self, event: str, **kwargs: object) -> None: ...
 
     async def aexception(self, event: str, **kwargs: object) -> None: ...
+
+
+@runtime_checkable
+class GitSourceReader(Protocol):
+    """Read pinned Git objects without checking out or running repository code."""
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        """Resolve a commit-ish once to its complete immutable object identity."""
+        ...
+
+    async def read_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob:
+        """Read exact regular-file bytes; missing/unsupported objects refuse."""
+        ...
 
 
 @runtime_checkable

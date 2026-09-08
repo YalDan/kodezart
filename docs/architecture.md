@@ -38,6 +38,7 @@ does not exist.
 | ----------------- | ------------------------ | ---------------------------------------------------- |
 | LogEmitter        | structlog `stdlib.BoundLogger` | The five awaited emitters. No adapter class: the configured wrapper already satisfies the port, and a test asserts it |
 | GitService        | SubprocessGitService     | Git CLI via asyncio subprocess                       |
+| GitSourceReader   | SubprocessGitSourceReader | Pins local commits and reads exact regular-file blob bytes without checkout |
 | RepoCache         | LocalBareRepoCache       | Bare repo clones in a cache directory                |
 | AgentExecutor     | ClaudeClientExecutor     | **Default.** Persistent sessions via ClaudeSDKClient |
 | AgentExecutor     | ClaudeAgentExecutor      | One-shot via `query()`. Available but NOT wired in default composition root |
