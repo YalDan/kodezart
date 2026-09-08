@@ -23,7 +23,20 @@ consumers in both shipped prompt sets against 192 prompt digests captured on the
 dispatch base, preserving the authored bytes without changing existing goldens.
 The branch-name input still belongs to its earlier dispatch stage.
 
-The common route accepts `handed_off_for_delivery` and an authored
+The forge inputs are required constructor arguments with explicitly nullable
+values. `delivery_client_for_origin` selects all five together for an origin:
+no configured client or a `file://` origin supplies no PR creator. A healthy
+`handed_off_for_delivery` call then returns `review_passed_no_pr_adapter`,
+preserving the recorded lane, issue, head and base with `pr`, `checks_passed`
+and `checks_summary` all `None`. Dispatch identity and outcome validation still
+run, but no forge read, remote lookup, cleaner, session or outbound gate runs.
+Unobserved checks are never reported as passing or as undeclared CI. A stalled
+handoff still requires its PR route. A configured creator with any missing
+supporting query, content or check capability raises `DeliveryContextError`
+before I/O; an adapter error never becomes capability absence.
+
+With a PR creator configured, the common route accepts `handed_off_for_delivery`
+and an authored
 `stalled_pr_opened` handoff carrying its original trajectory. It verifies that the
 execution carries the dispatched issue's FIRE run identity, that the
 terminal head and recorded base agree with the call, that both branches exist
@@ -56,7 +69,8 @@ Tracker stalled handoffs refuse before lookup because their trajectory producer
 does not yet carry tracker criterion identities; no authored AC ids are minted
 for those references.
 
-The existing `ForgeQuery` is a separate required read dependency. After the
+The existing `ForgeQuery` is a separate read dependency required when the PR
+creator is configured. After the
 handoff identity is validated, the coordinator looks up the open PR for that
 repository and head. Only a successful empty lookup permits creation. An
 existing PR is read through the separate `PRContentEditor`: URL, number, head,
@@ -144,6 +158,7 @@ during watching cannot produce a stale successful result.
 
 | Observation | Result |
 | --- | --- |
+| Healthy handoff with no configured PR creator | `review_passed_no_pr_adapter`, retaining `pr=None` and unknown check facts |
 | Checks pass | Open PR and `ci_passed` |
 | No checks, and the adapter confirms no active workflow declaration | Open PR and `ci_not_configured`, retaining `checks_passed=None` |
 | Red checks that recover at the same commit | Ordinary green/no-CI result after bounded rerun |

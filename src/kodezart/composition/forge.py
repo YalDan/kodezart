@@ -37,6 +37,18 @@ def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
     )
 
 
+def delivery_client_for_origin(
+    *, client: GitHubAPIClient | None, repo_url: str
+) -> GitHubAPIClient | None:
+    """Select all delivery forge capabilities together for the supplied origin.
+
+    Pass this result into the coordinator's PR, content, query and check
+    slots. No configured client and a forge-less origin both establish
+    absence before the coordinator can ask a forge to act.
+    """
+    return None if is_forge_less_origin(repo_url) else client
+
+
 def forge_query_for_origin(
     *,
     client: ForgeQuery | None,
