@@ -127,7 +127,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     A collection a pass addresses SINGLY stays keyed, because a role or a
     position is what the template names: ``principals.approver``,
     ``principals.assignee`` and ``principals.1`` by role and position,
-    ``agent_identities.0`` and ``initiatives.1`` by position, and
+    ``agent_identities.0`` and ``principals.1`` by position, and
     ``documents``, ``records``, ``knowledge``, ``queue_states``, ``scope_labels``,
     ``workflow_states`` and ``endpoints`` by their configured key.  A role,
     position or key the config does not declare is an unbound placeholder
@@ -293,22 +293,6 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         "endpoints",
         dict(config.endpoints),
         absent=not config.endpoints,
-    )
-    # ``target_date`` is absent on a real initiative more often than not.
-    _bind_absentable(
-        bindings,
-        "initiatives",
-        {
-            str(index): {
-                "id": item.id,
-                "target_date": (
-                    None if item.target_date is None else item.target_date.isoformat()
-                ),
-                "target_date_absent": True if item.target_date is None else None,
-            }
-            for index, item in enumerate(config.initiatives)
-        },
-        absent=not config.initiatives,
     )
     # ``handle`` is the identifier a MENTION is recognised by and
     # ``tracker_user`` the display identity the tracker names the principal

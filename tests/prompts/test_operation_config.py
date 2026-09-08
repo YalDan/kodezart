@@ -147,7 +147,6 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "records",
         "knowledge",
         "endpoints",
-        "initiatives",
         "private_surface",
     }
     config = example_config()
@@ -158,7 +157,6 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
     assert config.organize_mandates == ()
     assert isinstance(config.issue_labels, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
-    assert config.initiatives[0].target_date == date(2026, 12, 31)
     assert config.repos[0].checks
     assert config.records[RunKind.FIRE_PREP.value].append_only is True
 
@@ -640,7 +638,7 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
 def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
     """Direction 2 again, straight from the templates to the model.
 
-    R2 added four fields — principals, agent_identities, repos, initiatives —
+    The principals, agent_identities and repos fields were introduced
     on the reasoning that the passes consume them.  A field no template can
     reach is a field the port did not actually port.
     """

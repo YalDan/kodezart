@@ -348,16 +348,8 @@ host_runner = "localhost:8000"
 cloudflare_docs_mcp = "https://example.invalid/docs-mcp"
 notion_connector = "example-notion-connector-id"
 
-# Initiatives the operation is steering toward. `target_date` is OPTIONAL and
-# omitting it is the ordinary case: most real initiatives carry none, and a
-# config that had to invent one would make its passes report a distance to a
-# commitment the tracker does not hold.
-[[initiatives]]
-id = "example-initiative"
-target_date = 2026-12-31
-
-[[initiatives]]
-id = "example-initiative-without-a-target-date"
+# Initiative membership and target dates are read from the tracker at run time.
+# A copied [[initiatives]] roster is rejected; team scope is the declared boundary.
 
 # Required before a tracker deployment starts. These rows classify events;
 # they do not grant a state writer or override tracker criterion rollup.

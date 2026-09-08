@@ -44,7 +44,6 @@ from kodezart.types.domain.operation import (
     ConfigOwnership,
     DocumentEntry,
     DocumentSystem,
-    Initiative,
     LifecycleStage,
     OperationConfig,
     Principal,
@@ -137,7 +136,6 @@ def operation_config() -> OperationConfig:
         },
         knowledge={},
         endpoints={},
-        initiatives=[Initiative(id="init-1")],
     )
 
 

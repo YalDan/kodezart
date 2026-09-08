@@ -37,7 +37,6 @@ COLLECTION_FIELDS = (
     "records",
     "knowledge",
     "endpoints",
-    "initiatives",
 )
 
 
