@@ -499,3 +499,7 @@ with an instruction verdict over an explicit addressed text set. A quoted
 mandate must occur exactly in its native source; absence requires full reads.
 Unsupported or unreachable surfaces yield unverifiable coverage. This consumer
 does not enumerate the full audit scope or publish/edit any tracker artifact.
+Before and after the mandate session, an active Git replacement reference
+refuses the observation even if the workspace reports the expected SHA and
+clean status. The native namespace read settles before cancellation releases
+the workspace; an unreadable namespace cannot establish a valid observation.

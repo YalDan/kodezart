@@ -276,6 +276,10 @@ class AuditMandateHunt:
         try:
             if cancelled:
                 raise asyncio.CancelledError
+            if await read_replace_refs(git=self._git, workspace=workspace):
+                raise AuditClaimReadError(
+                    "the mandate repository substitutes Git objects"
+                )
             if await read_workspace_head(git=self._git, workspace=workspace) != (
                 request.claim.head_sha,
                 False,
@@ -333,6 +337,10 @@ class AuditMandateHunt:
                     rate_limit_rejected=limited,
                 )
             judgment = AuditMandateJudgment.model_validate(result.structured_output)
+            if await read_replace_refs(git=self._git, workspace=workspace):
+                raise AuditClaimReadError(
+                    "the mandate repository substitutes Git objects"
+                )
             if await read_workspace_head(git=self._git, workspace=workspace) != (
                 request.claim.head_sha,
                 False,
