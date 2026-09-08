@@ -27,6 +27,14 @@ layers:
 All cross-layer dependencies point inward through protocols defined in
 `core/protocols.py`. Infrastructure adapters are wired in the composition root
 (`main.py` `lifespan()`).
+The lifespan registers each acquired resource with an `AsyncExitStack`.
+Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
+their records, then closes their transports; the checkpointer retains its
+context-managed lifetime. The same releases run on partial startup and
+exceptional exit, and one release failure does not skip later callbacks. The
+unwind is one owned task so repeated cancellation cannot interrupt a queue
+worker or close a transport before its consumers finish. Each cleanup failure
+is logged before propagation, so later failures cannot hide an earlier error.
 
 ## Component Diagram
 

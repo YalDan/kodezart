@@ -175,8 +175,8 @@ async def boot_tracker(
     refuse_foreign_credential(backend=config.tracker, token=token)
     caller = make_mcp_tool_caller(config=config, token=token)
     await caller.probe()
-    await caller.open()
     try:
+        await caller.open()
         tracker, ledger = build_tracker(
             config=config,
             operation=operation,
@@ -188,26 +188,26 @@ async def boot_tracker(
             tracker=tracker,
             config=operation,
         )
+        await log.ainfo(
+            "tracker_mappings_reconciled",
+            backend=config.tracker.value,
+            adopted=[
+                item.ref.describe()
+                for item in reconciliation.outcomes
+                if item.action is EnsureAction.ADOPTED
+            ],
+            created=[
+                item.ref.describe()
+                for item in reconciliation.outcomes
+                if item.action is EnsureAction.CREATED
+            ],
+        )
+        return DialledTracker(
+            tracker=tracker,
+            caller=caller,
+            operation=reconciliation.config,
+            ledger=ledger,
+        )
     except BaseException:
         await caller.close()
         raise
-    await log.ainfo(
-        "tracker_mappings_reconciled",
-        backend=config.tracker.value,
-        adopted=[
-            item.ref.describe()
-            for item in reconciliation.outcomes
-            if item.action is EnsureAction.ADOPTED
-        ],
-        created=[
-            item.ref.describe()
-            for item in reconciliation.outcomes
-            if item.action is EnsureAction.CREATED
-        ],
-    )
-    return DialledTracker(
-        tracker=tracker,
-        caller=caller,
-        operation=reconciliation.config,
-        ledger=ledger,
-    )
